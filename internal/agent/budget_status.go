@@ -676,9 +676,10 @@ func monthsThrough(month, day time.Time) int {
 // reach it by its day.
 type SavingsTargetProgress struct {
 	// SavedAmount is, for a cash flow target, income less spending since
-	// it started; for an asset value target, what its assets are worth
-	// now less its starting amount. RemainingAmount is the target less
-	// that, never below zero.
+	// it started; for an asset value target, what its assets and the
+	// assets of its finance accounts are worth now less its starting
+	// amount; for a net worth target, net worth now less its starting
+	// amount. RemainingAmount is the target less that, never below zero.
 	SavedAmount     string `json:"savedAmount"`
 	RemainingAmount string `json:"remainingAmount"`
 
@@ -690,7 +691,7 @@ type SavingsTargetProgress struct {
 
 	// IsBehind says a cash flow target's last two full months both saved
 	// less than the pace they needed: the same test its alert is written
-	// by. Always false for an asset value target.
+	// by. Always false for an asset value or net worth target.
 	IsBehind bool `json:"isBehind"`
 
 	// UnconvertedCurrencyCodes are the currencies left out for want of an
@@ -715,6 +716,53 @@ func assetValuationOn(tx db.Transaction, agentId, assetId, day string) (*models.
 	return nil, nil
 }
 
+// isSavingsTargetAsset says an asset_value savings target measures the
+// asset: chosen itself, or valued by a finance account it chose. Asked of
+// each asset once, so one reached both ways counts once, and a holding a
+// chosen account came to hold after the target started counts too.
+func isSavingsTargetAsset(savingsTarget *models.SavingsTarget, asset *models.Asset) bool {
+	if slices.Contains(savingsTarget.AssetIDs, asset.ID) {
+		return true
+	}
+	return asset.FinanceAccountID != "" && slices.Contains(savingsTarget.FinanceAccountIDs, asset.FinanceAccountID)
+}
+
+// netWorthIn is net worth on a day in one currency, converted the way the
+// Net worth section converts it: each currency's total at that day's rate.
+// A currency with no rate is left out and named in the second answer.
+func netWorthIn(converter *rates.Converter, tx db.Transaction, agentId, currencyCode, day string) (*big.Rat, []string, error) {
+	points, err := tx.NetWorthSeries(agentId, day, day)
+	if err != nil {
+		return nil, nil, err
+	}
+	netWorthAmount := new(big.Rat)
+	unconverted := map[string]bool{}
+	for _, point := range points {
+		converted, isConverted, err := convertedAmount(converter, point.NetWorthAmount, point.CurrencyCode, currencyCode, point.NetWorthOn)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !isConverted {
+			unconverted[point.CurrencyCode] = true
+			continue
+		}
+		netWorthAmount.Add(netWorthAmount, converted)
+	}
+	return netWorthAmount, sortedKeys(unconverted), nil
+}
+
+// NetWorthOn is net worth on a day ("2006-01-02") in one currency, as a
+// decimal, with the currencies left out for want of a rate: what a net
+// worth savings target records as its starting amount. A nil fetcher
+// converts with the rates already stored.
+func NetWorthOn(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher, agentId, currencyCode, day string) (string, []string, error) {
+	netWorthAmount, unconverted, err := netWorthIn(rates.NewConverter(ctx, fetcher, tx), tx, agentId, currencyCode, day)
+	if err != nil {
+		return "", nil, err
+	}
+	return finance.FormatAmount(netWorthAmount), unconverted, nil
+}
+
 // SavingsTargetProgressOf is how one savings target stands as of today
 // ("2006-01-02", the person's local day), measured the way its alert is.
 // A nil fetcher converts with the rates already stored.
@@ -736,6 +784,20 @@ func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *ra
 	progress := &SavingsTargetProgress{UnconvertedCurrencyCodes: []string{}}
 	savedAmount := new(big.Rat)
 	switch savingsTarget.TargetMeasure {
+	case models.TargetMeasureNetWorth:
+		netWorthAmount, unconverted, err := netWorthIn(converter, tx, agentId, savingsTarget.CurrencyCode, today)
+		if err != nil {
+			return nil, err
+		}
+		savedAmount.Set(netWorthAmount)
+		if savingsTarget.StartingAmount != "" {
+			startingAmount, err := finance.ParseAmount(savingsTarget.StartingAmount)
+			if err != nil {
+				return nil, err
+			}
+			savedAmount.Sub(savedAmount, startingAmount)
+		}
+		progress.UnconvertedCurrencyCodes = append(progress.UnconvertedCurrencyCodes, unconverted...)
 	case models.TargetMeasureAssetValue:
 		assets, err := tx.ListAssets(agentId)
 		if err != nil {
@@ -745,7 +807,7 @@ func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *ra
 		for _, asset := range assets {
 			// An asset sold before today no longer counts, as in net worth,
 			// which counts it through the day it was sold and not after.
-			if !slices.Contains(savingsTarget.AssetIDs, asset.ID) || (asset.ClosedOn != "" && asset.ClosedOn < today) {
+			if !isSavingsTargetAsset(savingsTarget, asset) || (asset.ClosedOn != "" && asset.ClosedOn < today) {
 				continue
 			}
 			valuation, err := assetValuationOn(tx, agentId, asset.ID, today)

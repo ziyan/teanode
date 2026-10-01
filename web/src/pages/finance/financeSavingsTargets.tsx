@@ -14,6 +14,8 @@ import {
   ASSETS,
   Asset,
   CLOSE_SAVINGS_TARGET,
+  FINANCE_ACCOUNTS,
+  FinanceAccount,
   CREATE_SAVINGS_TARGET,
   SAVINGS_TARGETS,
   SavingsTarget,
@@ -24,13 +26,28 @@ import {
   isDecimal,
   personToday,
 } from './financeApi'
-import { CurrencyPicker, UnconvertedNote, useAct, useFinanceWords, useReportingCurrency } from './financeCommon'
+import {
+  CurrencyPicker,
+  UnconvertedNote,
+  accountLabel,
+  useAct,
+  useFinanceWords,
+  useReportingCurrency,
+} from './financeCommon'
+import {
+  TARGET_MEASURES,
+  TargetMeasure,
+  hasChoice,
+  isCountedThroughAccount,
+  savingsTargetChoices,
+} from './savingsTargetChoices'
 
 // The Savings targets section: an amount to save by a day, measured by
-// money not spent or by what chosen assets are worth, each with how far
-// along it is and what it needs a month from now on to get there.
+// money not spent, by net worth, or by what chosen finance accounts and
+// assets are worth, each with how far along it is and what it needs a
+// month from now on to get there.
 export function FinanceSavingsTargetsSection() {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const words = useFinanceWords()
   const targets = useQuery(() => graphql<{ SavingsTargets: SavingsTargetView[] }>(SAVINGS_TARGETS), [], {
     refresh: false,
@@ -65,6 +82,7 @@ export function FinanceSavingsTargetsSection() {
           saved: formatMoney(progress, target.currencyCode),
           target: formatMoney(goal, target.currencyCode),
         })
+        const measured = measuredLine(target, t, plural)
         return (
           <SettingsRow
             key={target.id}
@@ -89,6 +107,7 @@ export function FinanceSavingsTargetsSection() {
                   tone={progressOf?.isBehind ? 'warn' : 'good'}
                   label={said}
                 />
+                {measured ? <span className="muted">{measured}</span> : null}
                 {progressOf && amountOf(progressOf.remainingAmount) > 0 ? (
                   <span>
                     {t('finance.paceNeeded', {
@@ -119,28 +138,28 @@ export function FinanceSavingsTargetsSection() {
                   </button>
                 </Tooltip>
               ) : (
-              <div className="row-actions">
-                <Tooltip label={t('common.edit')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${target.savingsTargetName}: ${t('common.edit')}`}
-                    onClick={() => setEditing(target)}
-                  >
-                    <PencilIcon size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip label={t('finance.closeSavingsTarget')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${target.savingsTargetName}: ${t('finance.closeSavingsTarget')}`}
-                    onClick={() => setClosing(target)}
-                  >
-                    <CheckIcon size={16} />
-                  </button>
-                </Tooltip>
-              </div>
+                <div className="row-actions">
+                  <Tooltip label={t('common.edit')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${target.savingsTargetName}: ${t('common.edit')}`}
+                      onClick={() => setEditing(target)}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('finance.closeSavingsTarget')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${target.savingsTargetName}: ${t('finance.closeSavingsTarget')}`}
+                      onClick={() => setClosing(target)}
+                    >
+                      <CheckIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </div>
               )
             }
           />
@@ -178,6 +197,38 @@ export function FinanceSavingsTargetsSection() {
   )
 }
 
+// measuredLine says what a target counts from: the net worth it started
+// at, or how many finance accounts and assets it counts. Empty for a cash
+// flow target, whose badge says it all.
+function measuredLine(
+  target: SavingsTarget,
+  t: ReturnType<typeof useTranslation>['t'],
+  plural: ReturnType<typeof useTranslation>['plural'],
+): string {
+  const started = target.startingAmount
+    ? t('finance.startedFrom', {
+        amount: formatMoney(amountOf(target.startingAmount), target.currencyCode),
+        day: formatDay(target.startedOn),
+      })
+    : ''
+  if (target.targetMeasure === 'net_worth') return started
+  if (target.targetMeasure !== 'asset_value') return ''
+  const counted = [
+    target.financeAccountIds.length > 0
+      ? plural(target.financeAccountIds.length, {
+          one: 'finance.financeAccountCountOne',
+          other: 'finance.financeAccountCountOther',
+        })
+      : '',
+    target.assetIds.length > 0
+      ? plural(target.assetIds.length, { one: 'finance.assetCountOne', other: 'finance.assetCountOther' })
+      : '',
+  ].filter(Boolean)
+  const countedLine =
+    counted.length === 2 ? t('finance.countsBoth', { first: counted[0], second: counted[1] }) : (counted[0] ?? '')
+  return [countedLine, started].filter(Boolean).join(' · ')
+}
+
 function SavingsTargetDialog({
   target,
   onClose,
@@ -193,17 +244,30 @@ function SavingsTargetDialog({
   const assets = useQuery(() => graphql<{ Assets: Asset[] }>(ASSETS), [], {
     refresh: false,
   })
+  const financeAccounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
+    refresh: false,
+  })
   const { busy, act } = useAct(onSaved)
   const [name, setName] = useState(target?.savingsTargetName ?? '')
   const [targetAmount, setTargetAmount] = useState(target ? String(amountOf(target.targetAmount)) : '')
   const [currencyCode, setCurrencyCode] = useState(target?.currencyCode ?? '')
   const [targetOn, setTargetOn] = useState(target?.targetOn ?? '')
-  const [targetMeasure, setTargetMeasure] = useState<'cash_flow' | 'asset_value'>(target?.targetMeasure ?? 'cash_flow')
+  const [targetMeasure, setTargetMeasure] = useState<TargetMeasure>(target?.targetMeasure ?? 'cash_flow')
   const [startingAmount, setStartingAmount] = useState(target?.startingAmount ?? '')
   const [startedOn, setStartedOn] = useState(target?.startedOn ?? personToday())
   const [assetIds, setAssetIds] = useState<string[]>(target?.assetIds ?? [])
+  const [financeAccountIds, setFinanceAccountIds] = useState<string[]>(target?.financeAccountIds ?? [])
   const currency = currencyCode || reportingCurrencyCode
-  const assetList = (assets.data?.Assets ?? []).filter((asset) => !asset.isLiability && !asset.closedOn)
+  const choices = savingsTargetChoices(financeAccounts.data?.FinanceAccounts ?? [], assets.data?.Assets ?? [], assetIds)
+  // Open at first when an asset inside a finance account is chosen on its
+  // own, so a target that picked holdings one by one shows them; after
+  // that, as the person leaves it.
+  const isSingleAccountAssetChosen = choices.accountAssets.some((group) =>
+    group.assets.some((asset) => assetIds.includes(asset.id) && !isCountedThroughAccount(asset, financeAccountIds)),
+  )
+  const [isAccountAssetsOpen, setIsAccountAssetsOpen] = useState<boolean | null>(null)
+  const toggle = (setIds: (update: (previous: string[]) => string[]) => void, id: string, isChecked: boolean) =>
+    setIds((previous) => (isChecked ? [...previous, id] : previous.filter((existing) => existing !== id)))
 
   const canSubmit =
     name.trim() !== '' &&
@@ -211,7 +275,7 @@ function SavingsTargetDialog({
     amountOf(targetAmount) > 0 &&
     targetOn !== '' &&
     (startingAmount.trim() === '' || isDecimal(startingAmount)) &&
-    (targetMeasure === 'cash_flow' || assetIds.length > 0)
+    (targetMeasure !== 'asset_value' || hasChoice(assetIds, financeAccountIds))
 
   return (
     <FormDialog
@@ -225,8 +289,10 @@ function SavingsTargetDialog({
           savingsTargetName: name.trim(),
           targetAmount: targetAmount.trim(),
           targetOn,
+          targetMeasure,
           startingAmount: startingAmount.trim() || undefined,
           assetIds: targetMeasure === 'asset_value' ? assetIds : [],
+          financeAccountIds: targetMeasure === 'asset_value' ? financeAccountIds : [],
         }
         void act(
           () =>
@@ -235,7 +301,6 @@ function SavingsTargetDialog({
               : graphql(CREATE_SAVINGS_TARGET, {
                   ...shared,
                   currencyCode: currency || undefined,
-                  targetMeasure,
                   startedOn,
                 }),
           t('finance.savingsTargetSaved'),
@@ -271,58 +336,129 @@ function SavingsTargetDialog({
           onChange={(event) => setTargetOn(event.target.value)}
         />
       </label>
+      <label>
+        <span>{t('finance.targetMeasureLabel')}</span>
+        <Select
+          block
+          value={targetMeasure}
+          label={t('finance.targetMeasureLabel')}
+          options={TARGET_MEASURES.map((value) => ({
+            value,
+            label: words.targetMeasure(value),
+          }))}
+          onChange={(value) => {
+            const measure = value as TargetMeasure
+            setTargetMeasure(measure)
+            // What one measure started from means nothing to another; the
+            // server clears it too.
+            setStartingAmount(measure === target?.targetMeasure ? (target?.startingAmount ?? '') : '')
+          }}
+        />
+      </label>
+      <p className="muted field-hint">
+        {targetMeasure === 'cash_flow'
+          ? t('finance.cashFlowMeasureHint')
+          : targetMeasure === 'net_worth'
+            ? t('finance.netWorthMeasureHint')
+            : t('finance.assetValueMeasureHint')}
+      </p>
       {!target ? (
+        <label>
+          <span>{t('finance.startedOn')}</span>
+          <input type="date" value={startedOn} onChange={(event) => setStartedOn(event.target.value)} />
+        </label>
+      ) : null}
+      {targetMeasure !== 'cash_flow' ? (
         <>
           <label>
-            <span>{t('finance.targetMeasureLabel')}</span>
-            <Select
-              block
-              value={targetMeasure}
-              label={t('finance.targetMeasureLabel')}
-              options={(['cash_flow', 'asset_value'] as const).map((value) => ({
-                value,
-                label: words.targetMeasure(value),
-              }))}
-              onChange={(value) => setTargetMeasure(value as 'cash_flow' | 'asset_value')}
+            <span>{targetMeasure === 'net_worth' ? t('finance.startingNetWorth') : t('finance.startingAmount')}</span>
+            <input
+              inputMode="decimal"
+              value={startingAmount}
+              placeholder={targetMeasure === 'net_worth' ? t('finance.startingNetWorthPlaceholder') : undefined}
+              onChange={(event) => setStartingAmount(event.target.value)}
             />
           </label>
-          <p className="muted field-hint">
-            {targetMeasure === 'cash_flow' ? t('finance.cashFlowMeasureHint') : t('finance.assetValueMeasureHint')}
-          </p>
-          <label>
-            <span>{t('finance.startedOn')}</span>
-            <input type="date" value={startedOn} onChange={(event) => setStartedOn(event.target.value)} />
-          </label>
+          {targetMeasure === 'net_worth' ? (
+            <p className="muted field-hint">{t('finance.startingNetWorthHint')}</p>
+          ) : null}
         </>
       ) : null}
       {targetMeasure === 'asset_value' ? (
         <>
-          <label>
-            <span>{t('finance.startingAmount')}</span>
-            <input
-              inputMode="decimal"
-              value={startingAmount}
-              onChange={(event) => setStartingAmount(event.target.value)}
-            />
-          </label>
+          <fieldset className="finance-asset-choices">
+            <legend>{t('finance.targetFinanceAccounts')}</legend>
+            <p className="muted field-hint">{t('finance.targetFinanceAccountsHint')}</p>
+            {financeAccounts.data && choices.financeAccountGroups.length === 0 ? (
+              <p className="muted">{t('finance.noAccountsYet')}</p>
+            ) : null}
+            {choices.financeAccountGroups.map((group) => (
+              <div key={group.institutionName} className="finance-choice-group">
+                {group.institutionName ? (
+                  <span className="finance-choice-group-name">{group.institutionName}</span>
+                ) : null}
+                {group.financeAccounts.map((financeAccount) => (
+                  <label key={financeAccount.id} className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={financeAccountIds.includes(financeAccount.id)}
+                      onChange={(event) => toggle(setFinanceAccountIds, financeAccount.id, event.target.checked)}
+                    />
+                    {accountLabel(financeAccount)}
+                  </label>
+                ))}
+              </div>
+            ))}
+          </fieldset>
           <fieldset className="finance-asset-choices">
             <legend>{t('finance.targetAssets')}</legend>
-            {assetList.length === 0 ? <p className="muted">{t('finance.noAssets')}</p> : null}
-            {assetList.map((asset) => (
+            {assets.data && choices.standaloneAssets.length === 0 ? (
+              <p className="muted">{t('finance.noOtherAssets')}</p>
+            ) : null}
+            {choices.standaloneAssets.map((asset) => (
               <label key={asset.id} className="checkbox">
                 <input
                   type="checkbox"
                   checked={assetIds.includes(asset.id)}
-                  onChange={(event) =>
-                    setAssetIds((previous) =>
-                      event.target.checked ? [...previous, asset.id] : previous.filter((id) => id !== asset.id),
-                    )
-                  }
+                  onChange={(event) => toggle(setAssetIds, asset.id, event.target.checked)}
                 />
                 {asset.assetName}
               </label>
             ))}
           </fieldset>
+          {choices.accountAssets.length > 0 ? (
+            <details
+              className="finance-filter-disclosure"
+              open={isAccountAssetsOpen ?? isSingleAccountAssetChosen}
+              onToggle={(event) => setIsAccountAssetsOpen(event.currentTarget.open)}
+            >
+              <summary>
+                <strong>{t('finance.targetAccountAssets')}</strong>
+                <span className="muted">{t('finance.targetAccountAssetsHint')}</span>
+              </summary>
+              <div className="finance-asset-choices">
+                {choices.accountAssets.map((group) => (
+                  <div key={group.financeAccount.id} className="finance-choice-group">
+                    <span className="finance-choice-group-name">{accountLabel(group.financeAccount)}</span>
+                    {group.assets.map((asset) => {
+                      const isCounted = isCountedThroughAccount(asset, financeAccountIds)
+                      return (
+                        <label key={asset.id} className="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={isCounted || assetIds.includes(asset.id)}
+                            disabled={isCounted}
+                            onChange={(event) => toggle(setAssetIds, asset.id, event.target.checked)}
+                          />
+                          {asset.assetName}
+                        </label>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </>
       ) : null}
     </FormDialog>

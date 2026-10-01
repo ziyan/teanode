@@ -770,3 +770,150 @@ func TestSavingsTargetProgressCountsWhatTheAssetsAreWorthToday(t *testing.T) {
 		t.Fatalf("only the fund, at today's value: %+v", progress)
 	}
 }
+
+// brokerageSyncOn is an invented investment account worth balance, holding
+// what holdings say, with every security they name.
+func brokerageSyncOn(balance string, holdings []finance.Holding) *finance.SyncResult {
+	securities := []finance.Security{}
+	for _, holding := range holdings {
+		securities = append(securities, finance.Security{
+			ProviderSecurityID: holding.ProviderSecurityID, TickerSymbol: strings.ToUpper(strings.TrimPrefix(holding.ProviderSecurityID, "security-")),
+			SecurityName: "Invented " + holding.ProviderSecurityID, SecurityKind: finance.SecurityKindMutualFund, CurrencyCode: "USD",
+		})
+	}
+	return &finance.SyncResult{
+		Accounts: []finance.Account{{
+			ProviderAccountID: "account-brokerage", AccountName: "Invented Brokerage", AccountKind: finance.AccountKindInvestment,
+			CurrencyCode: "USD", CurrentBalance: balance, ProviderMetadata: json.RawMessage(`{}`),
+		}},
+		Securities: securities, Holdings: holdings, HoldingsReadAccountIDs: []string{"account-brokerage"},
+	}
+}
+
+func inventedHolding(providerSecurityId, holdingValue string) finance.Holding {
+	return finance.Holding{
+		ProviderAccountID: "account-brokerage", ProviderSecurityID: providerSecurityId, HeldQuantity: "10",
+		HoldingValue: holdingValue, CurrencyCode: "USD",
+	}
+}
+
+// An asset value target that chose a whole finance account counts every
+// asset the account values as it is today, a holding bought after the
+// target started included, and an asset chosen both on its own and
+// through its account counts once.
+func TestSavingsTargetProgressCountsWholeFinanceAccounts(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	var savingsTarget *models.SavingsTarget
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		// 300 in cash and a fund worth 1000.
+		if _, err := tx.ApplyFinanceSync(agentId, fixture.source.ID, brokerageSyncOn("1300", []finance.Holding{
+			inventedHolding("security-fund", "1000"),
+		}), "2026-09-01"); err != nil {
+			t.Fatalf("ApplyFinanceSync: %s", err)
+		}
+		accounts, err := tx.ListFinanceAccounts(agentId, "")
+		if err != nil || len(accounts) != 1 {
+			t.Fatalf("ListFinanceAccounts: %v %v", accounts, err)
+		}
+		assets, err := tx.ListAssets(agentId)
+		if err != nil {
+			t.Fatalf("ListAssets: %s", err)
+		}
+		var fundId string
+		for _, asset := range assets {
+			if asset.FinanceSecurityID != "" {
+				fundId = asset.ID
+			}
+		}
+		if fundId == "" {
+			t.Fatalf("no holding among %+v", assets)
+		}
+		if savingsTarget, err = tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: agentId, SavingsTargetName: "invested", TargetAmount: "5000",
+			CurrencyCode: "USD", TargetOn: "2027-09-01", TargetMeasure: models.TargetMeasureAssetValue, StartingAmount: "1300", StartedOn: "2026-09-01",
+			AssetIDs: []string{fundId}, FinanceAccountIDs: []string{accounts[0].ID}}); err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		// Later: 500 in cash, the fund worth 1100 and a bond bought for 1200.
+		if _, err := tx.ApplyFinanceSync(agentId, fixture.source.ID, brokerageSyncOn("2800", []finance.Holding{
+			inventedHolding("security-fund", "1100"), inventedHolding("security-bond", "1200"),
+		}), "2026-09-10"); err != nil {
+			t.Fatalf("ApplyFinanceSync: %s", err)
+		}
+	})
+	var progress, before *SavingsTargetProgress
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		var err error
+		if progress, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-09-10"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+		if before, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-09-05"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+	})
+	// 500 + 1100 + 1200 = 2800, less the 1300 it started from; the fund
+	// once, though it was chosen twice.
+	if progress.SavedAmount != "1500.0000" || progress.RemainingAmount != "3500.0000" {
+		t.Errorf("the whole account today, each asset once: %+v", progress)
+	}
+	// The bond had no value yet: nothing saved before the second sync.
+	if before.SavedAmount != "0.0000" {
+		t.Errorf("before the bond was bought: %+v", before)
+	}
+}
+
+// A net worth target counts net worth today, owned less owed, against the
+// net worth it started from, converted the way the Net worth section
+// converts, naming a currency it could not convert.
+func TestSavingsTargetProgressCountsNetWorth(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	var progress *SavingsTargetProgress
+	var startingAmount string
+	var startingUnconverted []string
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		savings, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "savings", AssetKind: models.AssetKindCash, CurrencyCode: "USD"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		loan, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "car loan", AssetKind: models.AssetKindLoan, CurrencyCode: "USD"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		testMoney, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "test money", AssetKind: models.AssetKindCash, CurrencyCode: "XTS"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		for _, valuation := range []*models.AssetValuation{
+			{AgentID: agentId, AssetID: savings.ID, ValuedOn: "2026-09-01", Value: "5000", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: loan.ID, ValuedOn: "2026-09-01", Value: "2000", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: savings.ID, ValuedOn: "2026-09-15", Value: "6500", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: testMoney.ID, ValuedOn: "2026-09-15", Value: "700", ValuationSource: models.ValuationSourceManual},
+		} {
+			if _, err := tx.RecordValuation(valuation); err != nil {
+				t.Fatalf("RecordValuation: %s", err)
+			}
+		}
+		if startingAmount, startingUnconverted, err = NetWorthOn(t.Context(), tx, nil, agentId, "USD", "2026-09-01"); err != nil {
+			t.Fatalf("NetWorthOn: %s", err)
+		}
+		savingsTarget, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: agentId, SavingsTargetName: "net worth up", TargetAmount: "4000",
+			CurrencyCode: "USD", TargetOn: "2027-09-01", TargetMeasure: models.TargetMeasureNetWorth, StartingAmount: startingAmount, StartedOn: "2026-09-01"})
+		if err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		if progress, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-09-20"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+	})
+	if startingAmount != "3000.0000" || len(startingUnconverted) != 0 {
+		t.Errorf("5000 owned less 2000 owed at the start: %s %v", startingAmount, startingUnconverted)
+	}
+	// 6500 - 2000 = 4500 today, 1500 more than at the start.
+	if progress.SavedAmount != "1500.0000" || progress.RemainingAmount != "2500.0000" || progress.IsBehind {
+		t.Errorf("net worth gained since the start: %+v", progress)
+	}
+	if strings.Join(progress.UnconvertedCurrencyCodes, ",") != "XTS" {
+		t.Errorf("the currency with no rate is named: %v", progress.UnconvertedCurrencyCodes)
+	}
+}

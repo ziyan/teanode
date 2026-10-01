@@ -217,16 +217,21 @@ type CreateSavingsTargetArguments struct {
 	TargetOn     string `json:"targetOn"`
 
 	// TargetMeasure is cash_flow (the default: income less spending since
-	// it started) or asset_value (what AssetIDs are worth, less
-	// StartingAmount).
-	TargetMeasure  string   `json:"targetMeasure" graphapi:"nullable"`
-	StartingAmount string   `json:"startingAmount" graphapi:"nullable"`
-	StartedOn      string   `json:"startedOn" graphapi:"nullable"`
-	AssetIDs       []string `json:"assetIds" graphapi:"nullable"`
+	// it started), asset_value (what AssetIDs and every asset of
+	// FinanceAccountIDs are worth, less StartingAmount) or net_worth (net
+	// worth, less StartingAmount). A net_worth target's StartingAmount,
+	// left out, is recorded as net worth on StartedOn.
+	TargetMeasure     string   `json:"targetMeasure" graphapi:"nullable"`
+	StartingAmount    string   `json:"startingAmount" graphapi:"nullable"`
+	StartedOn         string   `json:"startedOn" graphapi:"nullable"`
+	AssetIDs          []string `json:"assetIds" graphapi:"nullable"`
+	FinanceAccountIDs []string `json:"financeAccountIds" graphapi:"nullable"`
 }
 
-// UpdateSavingsTargetArguments change what is given; AssetIDs, when given,
-// replace the assets it had.
+// UpdateSavingsTargetArguments change what is given; AssetIDs and
+// FinanceAccountIDs, when given, replace the ones it had. A change of
+// TargetMeasure without a StartingAmount clears the old one, and a
+// net_worth target left without one records net worth on StartedOn.
 type UpdateSavingsTargetArguments struct {
 	SavingsTargetID   string   `json:"savingsTargetId"`
 	SavingsTargetName *string  `json:"savingsTargetName" graphapi:"nullable"`
@@ -237,6 +242,7 @@ type UpdateSavingsTargetArguments struct {
 	StartingAmount    *string  `json:"startingAmount" graphapi:"nullable"`
 	StartedOn         *string  `json:"startedOn" graphapi:"nullable"`
 	AssetIDs          []string `json:"assetIds" graphapi:"nullable"`
+	FinanceAccountIDs []string `json:"financeAccountIds" graphapi:"nullable"`
 }
 
 // CloseSavingsTargetArguments give the day a savings target closed (today
@@ -841,6 +847,9 @@ func (self *graph) savingsTargetView(ctx context.Context, tx db.Transaction, pri
 	if savingsTarget.AssetIDs == nil {
 		savingsTarget.AssetIDs = []string{}
 	}
+	if savingsTarget.FinanceAccountIDs == nil {
+		savingsTarget.FinanceAccountIDs = []string{}
+	}
 	return &SavingsTargetView{SavingsTarget: savingsTarget, SavingsTargetProgress: progress}, nil
 }
 
@@ -873,9 +882,35 @@ func targetMeasureArgument(value string) (models.TargetMeasure, error) {
 		return models.TargetMeasureCashFlow, nil
 	}
 	if !targetMeasure.IsValid() {
-		return "", fmt.Errorf("%w: targetMeasure %q is not cash_flow or asset_value", api.ErrInvalidArguments, targetMeasure)
+		return "", fmt.Errorf("%w: targetMeasure %q is not cash_flow, asset_value or net_worth", api.ErrInvalidArguments, targetMeasure)
 	}
 	return targetMeasure, nil
+}
+
+// trimmedIds is a list of ids without blanks, never nil.
+func trimmedIds(ids []string) []string {
+	trimmed := []string{}
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" {
+			trimmed = append(trimmed, id)
+		}
+	}
+	return trimmed
+}
+
+// recordStartingNetWorth gives a net_worth savings target with no starting
+// amount the net worth on the day it started, in its currency, so its
+// progress is what net worth gained since rather than all of it.
+func (self *graph) recordStartingNetWorth(ctx context.Context, tx db.Transaction, savingsTarget *models.SavingsTarget) error {
+	if savingsTarget.TargetMeasure != models.TargetMeasureNetWorth || savingsTarget.StartingAmount != "" {
+		return nil
+	}
+	startingAmount, _, err := agent.NetWorthOn(ctx, tx, self.exchangeRateFetcher(), savingsTarget.AgentID, savingsTarget.CurrencyCode, savingsTarget.StartedOn)
+	if err != nil {
+		return err
+	}
+	savingsTarget.StartingAmount = startingAmount
+	return nil
 }
 
 func (self *graph) CreateSavingsTarget(ctx context.Context, arguments CreateSavingsTargetArguments) (*SavingsTargetView, error) {
@@ -887,7 +922,10 @@ func (self *graph) CreateSavingsTarget(ctx context.Context, arguments CreateSavi
 		return nil, err
 	}
 	tx := self.writing(ctx)
-	savingsTarget := &models.SavingsTarget{AgentID: found.ID, SavingsTargetName: strings.TrimSpace(arguments.SavingsTargetName), AssetIDs: []string{}}
+	savingsTarget := &models.SavingsTarget{
+		AgentID: found.ID, SavingsTargetName: strings.TrimSpace(arguments.SavingsTargetName),
+		AssetIDs: trimmedIds(arguments.AssetIDs), FinanceAccountIDs: trimmedIds(arguments.FinanceAccountIDs),
+	}
 	if savingsTarget.TargetAmount, err = amountArgument("targetAmount", arguments.TargetAmount); err != nil {
 		return nil, err
 	}
@@ -916,10 +954,8 @@ func (self *graph) CreateSavingsTarget(ctx context.Context, arguments CreateSavi
 	if savingsTarget.StartedOn, err = dayArgument("startedOn", arguments.StartedOn, personToday(principal)); err != nil {
 		return nil, err
 	}
-	for _, assetId := range arguments.AssetIDs {
-		if assetId = strings.TrimSpace(assetId); assetId != "" {
-			savingsTarget.AssetIDs = append(savingsTarget.AssetIDs, assetId)
-		}
+	if err := self.recordStartingNetWorth(ctx, tx, savingsTarget); err != nil {
+		return nil, financeError(err)
 	}
 	created, err := tx.CreateSavingsTarget(savingsTarget)
 	if err != nil {
@@ -982,8 +1018,10 @@ func (self *graph) UpdateSavingsTarget(ctx context.Context, arguments UpdateSavi
 		if arguments.TargetOn != nil && targetOn != "" {
 			savingsTarget.TargetOn = targetOn
 		}
-		if arguments.TargetMeasure != nil {
+		if arguments.TargetMeasure != nil && targetMeasure != savingsTarget.TargetMeasure {
+			// What one measure started from means nothing to another.
 			savingsTarget.TargetMeasure = targetMeasure
+			savingsTarget.StartingAmount = ""
 		}
 		if arguments.StartingAmount != nil {
 			savingsTarget.StartingAmount = startingAmount
@@ -992,14 +1030,12 @@ func (self *graph) UpdateSavingsTarget(ctx context.Context, arguments UpdateSavi
 			savingsTarget.StartedOn = startedOn
 		}
 		if arguments.AssetIDs != nil {
-			savingsTarget.AssetIDs = []string{}
-			for _, assetId := range arguments.AssetIDs {
-				if assetId = strings.TrimSpace(assetId); assetId != "" {
-					savingsTarget.AssetIDs = append(savingsTarget.AssetIDs, assetId)
-				}
-			}
+			savingsTarget.AssetIDs = trimmedIds(arguments.AssetIDs)
 		}
-		return nil
+		if arguments.FinanceAccountIDs != nil {
+			savingsTarget.FinanceAccountIDs = trimmedIds(arguments.FinanceAccountIDs)
+		}
+		return self.recordStartingNetWorth(ctx, tx, savingsTarget)
 	})
 	if err != nil {
 		return nil, financeError(err)

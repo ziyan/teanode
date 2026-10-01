@@ -382,6 +382,7 @@ type SavingsTarget struct {
 	StartedOn         string   `json:"startedOn"`
 	ClosedOn          string   `json:"closedOn,omitempty"`
 	AssetIDs          []string `json:"assetIds"`
+	FinanceAccountIDs []string `json:"financeAccountIds"`
 }
 
 // SavingsTargetStanding is a savings target and its progress.
@@ -415,7 +416,7 @@ const (
 
 	budgetFields = `{ id spendingCategoryId monthlyAmount currencyCode effectiveFrom }`
 
-	savingsTargetStandingFields = `{ savingsTarget { id savingsTargetName targetAmount currencyCode targetOn targetMeasure startingAmount startedOn closedOn assetIds } savingsTargetProgress { savedAmount remainingAmount monthsLeftCount requiredMonthlyAmount isBehind unconvertedCurrencyCodes } }`
+	savingsTargetStandingFields = `{ savingsTarget { id savingsTargetName targetAmount currencyCode targetOn targetMeasure startingAmount startedOn closedOn assetIds financeAccountIds } savingsTargetProgress { savedAmount remainingAmount monthsLeftCount requiredMonthlyAmount isBehind unconvertedCurrencyCodes } }`
 )
 
 // One document per finance operation, named for it.
@@ -576,12 +577,12 @@ const (
   SetBudget(spendingCategoryId: $spendingCategoryId, monthlyAmount: $monthlyAmount, currencyCode: $currencyCode, effectiveFrom: $effectiveFrom) ` + budgetFields + `
 }`
 
-	DocumentCreateSavingsTarget = `mutation ($savingsTargetName: String!, $targetAmount: String!, $currencyCode: String, $targetOn: String!, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!]) {
-  CreateSavingsTarget(savingsTargetName: $savingsTargetName, targetAmount: $targetAmount, currencyCode: $currencyCode, targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount, startedOn: $startedOn, assetIds: $assetIds) ` + savingsTargetStandingFields + `
+	DocumentCreateSavingsTarget = `mutation ($savingsTargetName: String!, $targetAmount: String!, $currencyCode: String, $targetOn: String!, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!], $financeAccountIds: [String!]) {
+  CreateSavingsTarget(savingsTargetName: $savingsTargetName, targetAmount: $targetAmount, currencyCode: $currencyCode, targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount, startedOn: $startedOn, assetIds: $assetIds, financeAccountIds: $financeAccountIds) ` + savingsTargetStandingFields + `
 }`
 
-	DocumentUpdateSavingsTarget = `mutation ($savingsTargetId: String!, $savingsTargetName: String, $targetAmount: String, $currencyCode: String, $targetOn: String, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!]) {
-  UpdateSavingsTarget(savingsTargetId: $savingsTargetId, savingsTargetName: $savingsTargetName, targetAmount: $targetAmount, currencyCode: $currencyCode, targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount, startedOn: $startedOn, assetIds: $assetIds) ` + savingsTargetStandingFields + `
+	DocumentUpdateSavingsTarget = `mutation ($savingsTargetId: String!, $savingsTargetName: String, $targetAmount: String, $currencyCode: String, $targetOn: String, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!], $financeAccountIds: [String!]) {
+  UpdateSavingsTarget(savingsTargetId: $savingsTargetId, savingsTargetName: $savingsTargetName, targetAmount: $targetAmount, currencyCode: $currencyCode, targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount, startedOn: $startedOn, assetIds: $assetIds, financeAccountIds: $financeAccountIds) ` + savingsTargetStandingFields + `
 }`
 
 	DocumentCloseSavingsTarget = `mutation ($savingsTargetId: String!, $closedOn: String, $shouldReopen: Boolean) {

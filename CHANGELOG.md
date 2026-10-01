@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-10-01
+
+### Added
+
+- Savings targets can track your net worth, or whole finance accounts instead of single assets. (#282)
+
 ## [0.95.3] - 2026-10-01
 
 ### Changed

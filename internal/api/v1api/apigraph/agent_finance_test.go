@@ -390,6 +390,13 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			})
 			return err
 		},
+		"CreateSavingsTarget naming their finance account": func(ctx context.Context) error {
+			_, err := resolver.CreateSavingsTarget(ctx, CreateSavingsTargetArguments{
+				SavingsTargetName: "taken", TargetAmount: "1", CurrencyCode: "USD", TargetOn: "2027-01-01", TargetMeasure: "asset_value",
+				FinanceAccountIDs: []string{account.ID},
+			})
+			return err
+		},
 		"SaveAgentKnowledgeSource": func(ctx context.Context) error {
 			isEnabled := false
 			_, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Enabled: &isEnabled})
@@ -521,6 +528,57 @@ func TestFinanceTotalsConvertEachDay(test *testing.T) {
 		}
 		if _, err := fixture.resolver.ExchangeRate(ctx, ExchangeRateArguments{FromCurrencyCode: "ZZZ", ToCurrencyCode: "USD"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a currency with no rate answered %v", err)
+		}
+	})
+}
+
+// A net worth savings target given no starting amount records net worth
+// on the day it started, so it measures what was gained since; changing a
+// target to net worth does the same, and drops the accounts it chose.
+func TestNetWorthSavingsTargetRecordsWhereItStarted(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	_, account, _ := fixture.seedFinanceSource(test)
+	resolver := fixture.resolver
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		car, err := resolver.CreateAsset(ctx, CreateAssetArguments{AssetName: "the car", AssetKind: "vehicle", CurrencyCode: "USD", Value: "18000", ValuedOn: "2026-09-01"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		// The checking account's 1200.50 from the 20th, and the car.
+		created, err := resolver.CreateSavingsTarget(ctx, CreateSavingsTargetArguments{
+			SavingsTargetName: "worth more", TargetAmount: "5000", CurrencyCode: "USD", TargetOn: "2027-06-30", TargetMeasure: "net_worth", StartedOn: "2026-09-21",
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if created.SavingsTarget.StartingAmount != "19200.5000" || len(created.SavingsTarget.FinanceAccountIDs) != 0 {
+			test.Errorf("the net worth it started from: %+v", created.SavingsTarget)
+		}
+		if _, err := resolver.RecordValuation(ctx, RecordValuationArguments{AssetID: car.ID, Value: "19000", ValuedOn: "2026-09-22"}); err != nil {
+			test.Fatal(err)
+		}
+		targets, err := resolver.SavingsTargets(ctx)
+		if err != nil || len(targets) != 1 || targets[0].SavingsTargetProgress.SavedAmount != "1000.0000" {
+			test.Errorf("gained since the start: %+v %v", targets, err)
+		}
+
+		accounts, err := resolver.CreateSavingsTarget(ctx, CreateSavingsTargetArguments{
+			SavingsTargetName: "checking", TargetAmount: "5000", CurrencyCode: "USD", TargetOn: "2027-06-30", TargetMeasure: "asset_value",
+			StartedOn: "2026-09-21", FinanceAccountIDs: []string{" " + account.ID + " ", ""},
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(accounts.SavingsTarget.FinanceAccountIDs) != 1 || accounts.SavingsTargetProgress.SavedAmount != "1200.5000" {
+			test.Errorf("the whole checking account: %+v %+v", accounts.SavingsTarget, accounts.SavingsTargetProgress)
+		}
+		measure := "net_worth"
+		changed, err := resolver.UpdateSavingsTarget(ctx, UpdateSavingsTargetArguments{SavingsTargetID: accounts.SavingsTarget.ID, TargetMeasure: &measure})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if changed.SavingsTarget.StartingAmount != "19200.5000" || len(changed.SavingsTarget.FinanceAccountIDs) != 0 {
+			test.Errorf("changed to net worth: %+v", changed.SavingsTarget)
 		}
 	})
 }
