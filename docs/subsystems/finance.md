@@ -45,6 +45,9 @@ tool and the dashboard.
 - **transfer category**: the built-in spending category, one per agent,
   whose transactions moved money between the person's own accounts and
   are neither spending nor income. There is no separate transfer mark.
+- **mirrored copy**: the same charge reported again on another finance
+  account of the same finance source, a **duplicate** of the **counted
+  copy**. What decided it is `mirror_detection` or the `person`.
 - **spending rule**, **budget**, **budget pace** (`under`, `on_track`,
   `at_risk`, `over`), **income pace** (`behind`, `on_track`, `ahead`),
   **saving summary** and **saving pace** (`behind`, `on_track`, `ahead`),
@@ -256,7 +259,8 @@ asset made for each new finance account, and one valuation per finance account
 per day from its balance. Then, outside that transaction: transfers are
 detected, spending rules applied, the provider category mapping applied to
 what is still uncategorized, the categorize job queued for the rest, and
-budget alert candidates written.
+budget alert candidates written. Mirrored copies are decided inside the
+sync's own transaction, see below.
 
 Deleting a finance source removes it at the provider first (best effort), keeps
 its assets' history by turning them into manual assets closed on the day before
@@ -269,6 +273,65 @@ already closed keeps its day. Linking the institution again takes back and opens
 name, kind, side and currency, when exactly one detached asset matches; any
 other account starts a new asset, and none is counted twice. Deleting an agent
 removes its assets with everything else.
+
+## Mirrored copies
+
+Some providers report one charge on every account of a connection: an
+account-level fee from a brokerage reaches each of its accounts, the same
+day, the same amount and the same description, each with its own provider
+transaction id. It was charged once, so counting each would count it once
+per account.
+
+**The rule.** Within one finance source, posted finance transactions on two
+or more different finance accounts with the same posted day, the same
+amount and currency, and the same description (trimmed, in any case) are
+mirrored copies. One is the counted copy; each other one is a duplicate
+of it (`duplicate_of_transaction_id` on `agent_finance_transaction`,
+migration 0144, with `duplicate_decided_by`). Never across finance
+sources, and never two on one account: a fee charged twice on one account
+is two charges, so the n-th of a day's repeats on one account goes with
+the n-th on each other account. A pending transaction is not grouped until
+it posts, since it is replaced by a new row when it does. The statement
+source is left out: its accounts are from different institutions, whose
+same-day fees are separate charges. A description that is empty groups
+nothing.
+
+**The counted copy** is the one stored first, so a copy that arrives later
+never takes over; among those one sync stored together, the one on the
+oldest finance account (then the lowest ids), so a source's fees land on
+the same account month after month. Which account's balance moved would be
+better, but nothing a provider sends says so.
+
+**When it runs.** `DetectMirroredFinanceTransactions` decides every
+finance transaction of the source afresh in one statement, at the end of
+`ApplyFinanceSync`, inside the sync's transaction, so a statement import
+runs it too. Deciding the whole source rather than only what the sync
+wrote is what lets a set be judged again when a member goes: a counted
+copy the provider removed is no longer there to say which rows were its
+copies. So a copy whose set no longer holds (a member deleted, or its
+amount, description or day changed) counts again, and when the counted
+copy goes another member becomes counted. The foreign key sets a copy's
+reference to null when its counted copy is deleted, and detection, later
+in the same transaction, decides it again. Migration 0144 marked the
+copies already stored by the same rule, so nothing waited for a sync.
+
+**The person.** "Count this one" (`CountTransaction`, `teanode finance
+count-transaction`, the tool's `count_transaction`) says a duplicate is a
+real charge of its own: it counts, `duplicate_decided_by` is `person`,
+and detection leaves it out of every set from then on, across syncs that
+send it again or change it. Counting a transaction that is not a
+duplicate is refused, since it counts already and taking it out of its set
+would make one of its copies count too. `UndoCountTransaction` forgets
+the person's word, and detection decides again at once. There is no "this
+is a duplicate of that" from the person: detection is the only thing that
+marks a copy.
+
+A duplicate is left out exactly where a transfer is (below): spending,
+income, cash flow, budgets and their pace and repeat charges, the saving
+summary, the spending summary in every grouping and its conversion, and
+so the tool's and the command line's summaries. Transfer pairing does not
+take one either: the money moved once, on its counted copy. It is still
+listed, and still categorized like any other.
 
 ## Currencies
 
@@ -470,7 +533,9 @@ plus money in with no spending category. The transfer category is in
 neither, and every query that leaves transfers out (spending and income
 per day, cash flow, budget pace and repeat charges, the saving summary, the
 spending summary in every grouping, its currency conversion and the tool's
-and the command line's summaries) does so by the category.
+and the command line's summaries) does so by the category. Each leaves out
+mirrored copies beside it, by `duplicate_of_transaction_id`; a test checks
+the totals with the copies equal the totals with them deleted.
 
 A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
@@ -581,6 +646,14 @@ a heading saying it is neither spending nor income. The list of spending
 categories marks it built in and has no delete for it, and its dialog
 offers only its name and whether it is hidden. The set-a-budget dialog
 leaves it out.
+
+A mirrored copy stays in the Transactions list, muted, with a Duplicate
+tag and its amount struck through. Its details say "Duplicate of" the
+counted copy's account and day, which opens it (found among that day's
+transactions, since a copy and its counted copy share the day), and offer
+Count this one; one the person counted says so and offers to check for
+copies again. The counted copy's details name its duplicates the same
+way. Both actions answer with a toast.
 
 The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading

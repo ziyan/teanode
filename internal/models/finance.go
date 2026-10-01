@@ -259,9 +259,31 @@ type FinanceTransaction struct {
 	CategorizedBy            CategorizedBy `json:"categorizedBy,omitempty" graphapi:"nullable"`
 	CategorizationConfidence string        `json:"categorizationConfidence,omitempty" graphapi:"nullable"`
 
+	// DuplicateOfTransactionID is the counted copy this one mirrors: the
+	// same charge reported again on another account of the same finance
+	// source, left out of every total like a transfer. Empty when it is
+	// counted. DuplicateDecidedBy says what decided: mirror detection,
+	// which marks and clears copies after each sync, or the person, whose
+	// "count this one" detection then leaves alone. Empty when nothing did.
+	DuplicateOfTransactionID string             `json:"duplicateOfTransactionId,omitempty" graphapi:"nullable"`
+	DuplicateDecidedBy       DuplicateDecidedBy `json:"duplicateDecidedBy,omitempty" graphapi:"nullable"`
+
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
+
+// DuplicateDecidedBy is what decided whether a finance transaction is a
+// mirrored copy of another.
+type DuplicateDecidedBy string
+
+// What may decide it: mirror detection, which finds the same day, amount,
+// currency and description on two or more accounts of one finance source
+// and keeps one of them counted; or the person, who says a copy is real
+// and counts, after which detection leaves it alone.
+const (
+	DuplicateDecidedByMirrorDetection DuplicateDecidedBy = "mirror_detection"
+	DuplicateDecidedByPerson          DuplicateDecidedBy = "person"
+)
 
 // FinanceSpendingSummaryGroupBy is what a spending summary groups by.
 type FinanceSpendingSummaryGroupBy string
