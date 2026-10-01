@@ -648,3 +648,39 @@ func TestFinanceToolPreviewsNameWhatIsApproved(test *testing.T) {
 		}
 	}
 }
+
+// A savings target can measure whole finance accounts or net worth: the
+// accounts reach the API as financeAccountIds, and the card names them.
+func TestFinanceToolSavingsTargetOnWholeAccounts(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceAccounts":     `[{"id":"account-brokerage","accountName":"Invented Brokerage"}]`,
+		"Assets":              `[{"id":"asset-boat","assetName":"the boat"}]`,
+		"CreateSavingsTarget": `{"savingsTarget":{"id":"target-one"}}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"create_savings_target","savings_target_name":"invested","target_amount":"5000","target_on":"2027-09-01","target_measure":"asset_value","finance_account_ids":["account-brokerage"]}`); err != nil {
+		test.Fatal(err)
+	}
+	sent := operations.variables[len(operations.variables)-1]
+	if accounts, isList := sent["financeAccountIds"].([]any); !isList || len(accounts) != 1 || accounts[0] != "account-brokerage" {
+		test.Errorf("sent %v", sent)
+	}
+
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string][]string{
+		`{"operation":"create_savings_target","savings_target_name":"invested","target_amount":"5000","target_on":"2027-09-01","target_measure":"asset_value","finance_account_ids":["account-brokerage"],"asset_ids":["asset-boat"]}`: {
+			`"Invented Brokerage" (the whole account)`, `"the boat"`,
+		},
+		`{"operation":"create_savings_target","savings_target_name":"worth more","target_amount":"5000","target_on":"2027-09-01","target_measure":"net_worth"}`: {
+			"measured by net worth",
+		},
+	} {
+		line := tool.PreviewLine(ctx, json.RawMessage(arguments))
+		for _, said := range wanted {
+			if !strings.Contains(line, said) {
+				test.Errorf("%s: the card %q does not say %s", arguments, line, said)
+			}
+		}
+	}
+}

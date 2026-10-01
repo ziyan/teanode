@@ -185,8 +185,9 @@ the holdings. Plaid's cash holdings are that cash, not assets of their own. A
 holding no longer reported is valued at zero and closed on that day. When the
 holdings cannot be read on a sync, nothing is recorded that day for that
 finance source's investment accounts, and the earlier values carry forward.
-So net worth, savings targets measured by assets, and each position's history
-come from the same valuations as any other asset.
+So net worth, savings targets measured by net worth or by assets and
+accounts, and each position's history come from the same valuations as any
+other asset.
 
 A trade swaps cash for a security inside one account, so it is its own row
 in `agent_finance_trade` (`FinanceTrades`, `teanode finance trades`, the
@@ -223,8 +224,24 @@ A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
 converts spending into the budget's currency, projects the month's end with
 fixed monthly charges counted before they land (`budget_pace.go`), and names
-the budget pace. Savings targets are measured by cash flow or by what chosen
-assets are worth.
+the budget pace.
+
+A savings target is measured one of three ways (`target_measure`):
+`cash_flow`, income less spending since it started; `net_worth`, net worth
+today less the net worth it started from, converted per currency at the
+day's rate the way the Net worth section converts it; or `asset_value`, what
+the chosen assets and finance accounts are worth today less what they held
+at the start. A chosen finance account counts every asset whose
+`finance_account_id` is that account, read when the progress is read rather
+than copied when the target is saved, so a holding bought later counts and a
+brokerage is one choice instead of one per position
+(`agent_savings_target_finance_account`, beside the chosen assets in
+`agent_savings_target_asset`). An asset chosen on its own and through its
+account counts once, and a deleted finance account drops out of the targets
+that chose it. A `net_worth` target saved without a starting amount records
+the net worth on its starting day, and changing a target's measure clears
+the starting amount it had, since one measure's start means nothing to
+another. Only an `asset_value` target keeps chosen assets and accounts.
 
 Budget and savings target alerts are candidates of kind `budget` in the alert
 path every agent alert uses, so they share its daily limit, quiet night hours,

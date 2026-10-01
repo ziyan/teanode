@@ -445,7 +445,7 @@ Amounts are printed with their currency; `--json` keeps full precision.
 | `teanode finance spending-rules\|create-spending-rule\|update-spending-rule\|delete-spending-rule` | rules that file transactions whose merchant or description contains some words; a new rule applies to earlier transactions too, except where you chose |
 | `teanode finance categorize-transaction\|mark-transfer` | change one transaction's spending category (`--create-spending-rule` files the merchant that way from now on), or mark money moving between your own accounts as a transfer |
 | `teanode finance budgets\|set-budget\|budget-status\|spending-by-day\|cash-flow` | monthly budgets per spending category; `budget-status` is this month against each budget, with where the month is heading and its pace (under, on track, at risk, over); spending day by day against last month; income and spending by month |
-| `teanode finance savings-targets\|create-savings-target\|update-savings-target\|close-savings-target` | amounts to save by a day, measured by money not spent or by what chosen assets are worth, with what they need a month from now on |
+| `teanode finance savings-targets\|create-savings-target\|update-savings-target\|close-savings-target` | amounts to save by a day, with what they need a month from now on, measured by `--measure cash_flow` (money not spent, the default), `net_worth` (net worth gained since `--started-on`, recorded for you unless `--starting-amount` says otherwise) or `asset_value` (what `--finance-account` and `--asset` are worth; a whole finance account counts its cash and every holding, those bought later too) |
 
 ### teanode computer
 

@@ -11769,6 +11769,19 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* One institution's finance accounts, or one account's assets, in a
+   savings target's choices: the name above, the checkboxes under it. */
+.finance-choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.finance-choice-group-name {
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
 .finance-converted strong {
   font-size: var(--text-title);
   font-variant-numeric: tabular-nums;
