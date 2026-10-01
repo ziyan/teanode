@@ -13,6 +13,9 @@ CREATE UNIQUE INDEX "agent_spending_category_transfer" ON "agent_spending_catego
 -- One for every agent, named "transfer" like the other built-in names, or
 -- "transfer between own accounts" where the person already has a
 -- "transfer" of their own, which stays theirs and keeps counting as it did.
+-- An agent with both a "transfer" (in any case) and a "transfer between own
+-- accounts" of its own fails the unique name index here, and the whole
+-- migration with it; renaming one of the two lets it run.
 INSERT INTO "agent_spending_category" ("id", "agent_id", "spending_category_name", "is_income", "is_hidden", "is_transfer", "created_at", "modified_at")
 SELECT substr(md5("agent"."id" || '/transfer'), 1, 26), "agent"."id",
        CASE WHEN EXISTS (
@@ -31,14 +34,23 @@ ALTER TABLE "agent_finance_transaction"
 -- The person saying something is not a transfer becomes their choice of
 -- the spending category it has (or of none), which pairing and the
 -- provider category mapping leave alone as they left the unmarked
--- transfer alone.
+-- transfer alone. Where it had none, that choice of none also keeps the
+-- categorize model away, so it stays uncategorized until the person picks
+-- one. Leaving categorized_by empty there instead would let the model
+-- categorize it, but would let pairing and the mapping mark it a transfer
+-- again, undoing what the person said and changing the totals; staying
+-- uncategorized counts it exactly as before.
 UPDATE "agent_finance_transaction"
 SET "categorized_by" = 'person', "categorization_confidence" = NULL
 WHERE "transfer_marked_by" = 'person' AND NOT "is_transfer" AND "categorized_by" <> 'person';
 
 -- Every transfer takes the transfer category, and what marked it becomes
 -- what categorized it. The spending category it had beside the mark is
--- not kept: it counted for nothing while the mark stood.
+-- not kept: it counted for nothing while the mark stood. That includes a
+-- spending category the person chose for a transaction a rule or pairing
+-- had marked a transfer: it becomes a transfer by that rule or pairing,
+-- and the person's choice is gone, since the mark, not their category, is
+-- what it counted as.
 UPDATE "agent_finance_transaction" AS "moved"
 SET "spending_category_id" = "transfer_category"."id",
     "categorized_by" = CASE WHEN "moved"."transfer_marked_by" = 'detection' THEN 'transfer_detection' ELSE "moved"."transfer_marked_by" END,

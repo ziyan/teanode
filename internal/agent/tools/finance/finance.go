@@ -336,6 +336,16 @@ var argumentInsteadOf = map[string]string{
 	"category_id":        "spending_category_id",
 	"spending_category":  "spending_category_id",
 	"valuation_date":     "valued_on",
+	"is_transfer":        "spending_category_id",
+}
+
+// valueInsteadOf is the value the argument argumentInsteadOf names takes in
+// place of one the tool does not take. A transfer was once a flag beside
+// the spending category (is_transfer on a spending rule or a transaction),
+// and dropping it as unread let a model say a rule now marked transfers
+// when nothing had changed.
+var valueInsteadOf = map[string]string{
+	"is_transfer": "transfer",
 }
 
 // operationNames is every operation's name, in order, for the schema.
@@ -444,6 +454,9 @@ func checkArguments(name string, operation *financeOperation, asked map[string]a
 		}
 		unknown = append(unknown, key)
 		if meant, isKnown := argumentInsteadOf[key]; isKnown && isAccepted[meant] {
+			if value, hasValue := valueInsteadOf[key]; hasValue {
+				meant += " " + value
+			}
 			instead = append(instead, fmt.Sprintf("%s instead of %s", meant, key))
 		}
 		for _, personOnly := range PersonOnlyAssetArguments {
@@ -611,8 +624,14 @@ func init() {
 					if json.Unmarshal(arguments, &call) != nil {
 						return ""
 					}
-					if operation, isKnown := operations[strings.ToLower(strings.TrimSpace(call.Operation))]; isKnown {
+					name := strings.ToLower(strings.TrimSpace(call.Operation))
+					if operation, isKnown := operations[name]; isKnown {
 						return operation.risk
+					}
+					if name == "mark_transfer" {
+						// Answered with how a transfer is marked now,
+						// acting on nothing, so it is not put to the person.
+						return tools.RiskRead
 					}
 					return ""
 				},
@@ -710,6 +729,14 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	name := strings.ToLower(text(asked, "operation"))
+	if name == "mark_transfer" {
+		// An operation from before transfer was a spending category, still
+		// asked for by a model that learned it then. Whatever came with it
+		// is not acted on: the answer says how a transfer is marked now.
+		return tools.TextResult("mark_transfer is gone: a transfer is a spending category now. " +
+			"Mark a transaction a transfer with categorize_transaction and spending_category_id transfer; " +
+			"any other spending category takes the mark away. A spending rule marks transfers with spending_category_id transfer too."), nil
+	}
 	operation, isKnown := operations[name]
 	if !isKnown {
 		return nil, fmt.Errorf("%q is not an operation; the operations are %s", name, strings.Join(operationNames(), ", "))

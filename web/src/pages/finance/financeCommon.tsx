@@ -129,13 +129,13 @@ export function accountLabel(account: Pick<FinanceAccount, 'accountName' | 'acco
 export function spendingCategoryLabel(
   category: SpendingCategory,
   categories: SpendingCategory[],
-  displayName: (name: string) => string,
+  displayName: (name: string, isTransfer?: boolean) => string,
 ): string {
   const parent = category.parentSpendingCategoryId
     ? categories.find((candidate) => candidate.id === category.parentSpendingCategoryId)
     : undefined
-  const name = displayName(category.spendingCategoryName)
-  return parent ? `${displayName(parent.spendingCategoryName)} › ${name}` : name
+  const name = displayName(category.spendingCategoryName, category.isTransfer)
+  return parent ? `${displayName(parent.spendingCategoryName, parent.isTransfer)} › ${name}` : name
 }
 
 // spendingCategoryOptions is every spending category that can be chosen,
@@ -144,7 +144,7 @@ export function spendingCategoryLabel(
 // is given, so it reads as what it is: not one more kind of spending.
 export function spendingCategoryOptions(
   categories: SpendingCategory[],
-  displayName: (name: string) => string,
+  displayName: (name: string, isTransfer?: boolean) => string,
   chosen?: string | null,
   transferGroup?: string,
 ): { value: string; label: string; group?: string }[] {

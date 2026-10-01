@@ -9,7 +9,7 @@ function category(id: string, name: string, flags: Partial<SpendingCategory> = {
   return { id, spendingCategoryName: name, isIncome: false, isHidden: false, isTransfer: false, ...flags }
 }
 
-const displayName = (name: string) => spendingCategoryDisplayName(name, (key) => en[key])
+const displayName = (name: string, isTransfer?: boolean) => spendingCategoryDisplayName(name, (key) => en[key], isTransfer)
 
 // Transfer is offered like any spending category, but last and under a
 // heading of its own, so it does not read as one more kind of spending.
@@ -37,5 +37,18 @@ it('keeps a renamed transfer category last', () => {
   expect(spendingCategoryOptions(categories, displayName, null, 'heading').map((option) => option.value)).toEqual([
     'zoo-id',
     'transfer-id',
+  ])
+})
+
+// A person's own category called transfer stays theirs, shown as they
+// wrote it, beside the built-in one that was named around it.
+it('shows a person\'s own transfer as they named it', () => {
+  const categories = [
+    category('own-transfer-id', 'transfer'),
+    category('transfer-id', 'transfer between own accounts', { isTransfer: true }),
+  ]
+  expect(spendingCategoryOptions(categories, displayName, null, 'heading')).toEqual([
+    { value: 'own-transfer-id', label: 'transfer' },
+    { value: 'transfer-id', label: 'transfer between own accounts', group: 'heading' },
   ])
 })

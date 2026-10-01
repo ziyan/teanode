@@ -56,7 +56,7 @@ const UNMUTE_ALERT = `mutation ($muteId: String!) { UnmuteAgentAlert(muteId: $mu
 // The names of the person's spending categories, for a mute of one
 // spending category's budget alerts: the mute holds its id, and an id is
 // not something anybody recognizes.
-const SPENDING_CATEGORY_NAMES = `query { SpendingCategories { id spendingCategoryName } }`
+const SPENDING_CATEGORY_NAMES = `query { SpendingCategories { id spendingCategoryName isTransfer } }`
 
 // muteTargets is what each scope would mute for an alert, as the server
 // works it out from what the alert covered, the default first: the burst
@@ -83,7 +83,7 @@ export function AlertsCard() {
   const spendingCategories = useQuery(
     () =>
       isSpendingCategoryNamed
-        ? graphql<{ SpendingCategories: { id: string; spendingCategoryName: string }[] }>(SPENDING_CATEGORY_NAMES)
+        ? graphql<{ SpendingCategories: { id: string; spendingCategoryName: string; isTransfer: boolean }[] }>(SPENDING_CATEGORY_NAMES)
         : Promise.resolve({ SpendingCategories: [] }),
     [isSpendingCategoryNamed],
     { refresh: false },
@@ -114,7 +114,7 @@ export function AlertsCard() {
   const targetLabel = (scope: MuteScope, target: string): string => {
     if (scope === 'spendingCategory') {
       const found = spendingCategories.data?.SpendingCategories.find((category) => category.id === target)
-      return found ? categoryName(found.spendingCategoryName) : t('alerts.deletedSpendingCategory')
+      return found ? categoryName(found.spendingCategoryName, found.isTransfer) : t('alerts.deletedSpendingCategory')
     }
     if (scope === 'kind' && target === 'budget') return t('alerts.kindBudget')
     return target

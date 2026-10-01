@@ -420,8 +420,13 @@ The transfer category is named `transfer`, shown in the reader's language
 like the other built-in names, or `transfer between own accounts` for a
 person who already had a spending category called transfer, which stays
 theirs. It is found by its flag, never its name, so it can be renamed or
-hidden. It cannot be deleted, be income, have a parent or children, or take
-a budget.
+hidden. The word `transfer`, in any case, given to the tool, its
+confirmation cards or the command line where a spending category goes, is
+the transfer category whatever it is called, ahead of a person's own
+`transfer` (still theirs by its id); the dashboard shows the built-in name
+in the reader's language only for the flagged category, and a person's own
+`transfer` as they wrote it. It cannot be deleted, be income, have a parent
+or children, or take a budget.
 
 Transfer detection gives it to the posted finance transactions whose
 provider category is a transfer, and pairs money out of one account with
@@ -443,6 +448,18 @@ kept: it counted for nothing while the mark stood. A person's "not a
 transfer" became their choice of the spending category the transaction
 had, so pairing still leaves it alone. Totals are the same either side of
 it, which a test checks.
+
+Three cases the migration handles in a way worth knowing, none of which
+the data it was first run on had. A person's "not a transfer" on a
+transaction with no spending category becomes their choice of none, so
+the categorize model leaves it uncategorized until the person picks one;
+leaving it to the model instead would also let pairing mark it a transfer
+again, against what the person said. A transaction the person categorized
+that a rule or pairing had marked a transfer becomes a transfer by that
+rule or pairing, and the person's spending category is lost. And an agent
+with both a `transfer` (in any case) and a `transfer between own accounts`
+of its own fails the unique name index, so the migration does not run
+until one of them is renamed.
 
 Spending means one thing everywhere it is shown (budgets, the day-by-day
 chart, cash flow, the Spending section's month chart and summary): money out

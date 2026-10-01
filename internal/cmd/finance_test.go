@@ -301,3 +301,54 @@ func TestFinanceHoldingDecimals(test *testing.T) {
 		}
 	}
 }
+
+// --spending-category transfer is the transfer category, even beside a
+// spending category the person named transfer themselves, which the
+// built-in one was named around. Their own is still theirs by its id.
+func TestFinanceTransferIsTheTransferCategory(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	var asked []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(document.Query, "SpendingCategories"):
+			_, _ = response.Write([]byte(`{"data":{"SpendingCategories":[` +
+				`{"id":"category-own-transfer","spendingCategoryName":"transfer"},` +
+				`{"id":"category-transfer","spendingCategoryName":"transfer between own accounts","isTransfer":true}]}}`))
+		case strings.Contains(document.Query, "FinanceTransactions("):
+			mutex.Lock()
+			asked = append(asked, document.Variables)
+			mutex.Unlock()
+			_, _ = response.Write([]byte(`{"data":{"FinanceTransactions":{"financeTransactions":[],"nextCursor":null}}}`))
+		default:
+			response.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	test.Cleanup(server.Close)
+
+	for _, wanted := range []string{"Transfer", "category-own-transfer"} {
+		if _, err := runFinanceAgainst(test, server, "transactions", "--month", "2026-02", "--spending-category", wanted); err != nil {
+			test.Fatal(err)
+		}
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if len(asked) != 2 {
+		test.Fatalf("sent %v", asked)
+	}
+	if asked[0]["spendingCategoryId"] != "category-transfer" {
+		test.Errorf("transfer sent %v", asked[0])
+	}
+	if asked[1]["spendingCategoryId"] != "category-own-transfer" {
+		test.Errorf("the person's own transfer by its id sent %v", asked[1])
+	}
+}

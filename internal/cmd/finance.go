@@ -509,7 +509,9 @@ func dayOf(value *time.Time) string {
 }
 
 // spendingCategoryNamed finds a spending category by id or, ignoring case,
-// by name.
+// by name. Transfer is the transfer category whatever it is called, ahead
+// of a person's own spending category named transfer, which the built-in
+// one was named around.
 func spendingCategoryNamed(ctx context.Context, command *cli.Command, wanted string) (*client.SpendingCategory, error) {
 	var spendingCategories []*client.SpendingCategory
 	if err := financeCall(ctx, command, "SpendingCategories", nil, &spendingCategories); err != nil {
@@ -518,6 +520,13 @@ func spendingCategoryNamed(ctx context.Context, command *cli.Command, wanted str
 	for _, spendingCategory := range spendingCategories {
 		if spendingCategory.ID == wanted {
 			return spendingCategory, nil
+		}
+	}
+	if strings.EqualFold(wanted, "transfer") {
+		for _, spendingCategory := range spendingCategories {
+			if spendingCategory.IsTransfer {
+				return spendingCategory, nil
+			}
 		}
 	}
 	for _, spendingCategory := range spendingCategories {

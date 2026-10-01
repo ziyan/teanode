@@ -377,7 +377,7 @@ function SpendingCategoriesPanel({
                 <button
                   type="button"
                   className="icon-action"
-                  aria-label={`${categoryName(category.spendingCategoryName)}: ${t('common.edit')}`}
+                  aria-label={`${categoryName(category.spendingCategoryName, category.isTransfer)}: ${t('common.edit')}`}
                   onClick={() => open(category)}
                 >
                   <PencilIcon size={16} />
@@ -388,7 +388,7 @@ function SpendingCategoriesPanel({
                   <button
                     type="button"
                     className="icon-action danger"
-                    aria-label={`${categoryName(category.spendingCategoryName)}: ${t('common.delete')}`}
+                    aria-label={`${categoryName(category.spendingCategoryName, category.isTransfer)}: ${t('common.delete')}`}
                     onClick={() => setDeleting(category)}
                   >
                     <TrashIcon size={16} />
@@ -442,7 +442,7 @@ function SpendingCategoriesPanel({
                     { value: '', label: t('finance.noParent') },
                     ...parentChoices.map((category) => ({
                       value: category.id,
-                      label: categoryName(category.spendingCategoryName),
+                      label: categoryName(category.spendingCategoryName, category.isTransfer),
                     })),
                   ]}
                   onChange={setParentId}
@@ -463,7 +463,7 @@ function SpendingCategoriesPanel({
       {deleting ? (
         <ConfirmDialog
           title={t('finance.deleteSpendingCategory')}
-          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName) })}
+          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName, deleting.isTransfer) })}
           confirmLabel={t('common.delete')}
           busy={busy}
           onClose={() => setDeleting(null)}
