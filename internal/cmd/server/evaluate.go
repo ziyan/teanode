@@ -72,7 +72,7 @@ var scenarioDatabaseUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
 
 func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
-		return fmt.Errorf("which scenario? teanode-server evaluate scenario <scenario.json>...")
+		return fmt.Errorf("which scenarios? teanode-server evaluate scenario <scenario.json> [more]")
 	}
 	configuration, err := readScenarioModels(command.String("models"))
 	if err != nil {
