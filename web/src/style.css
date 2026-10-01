@@ -7948,19 +7948,10 @@ p.notice.domain-logo-note {
   }
 }
 
-/* Where presses are drawn. Above the page and untouchable, so nothing it
-   contains can take a click meant for what is underneath. */
-.ripple-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 /* A copy of the pressed control's box, which is what the circle is clipped
-   to — the control itself is not touched, so no layout anywhere changes to
-   make room for this. */
+   to, at the height of what holds the control (set by ripple.ts). The
+   control itself is not touched, so no layout anywhere changes to make room
+   for this, and nothing here can take a click meant for what is under it. */
 .ripple-clip {
   position: fixed;
   overflow: hidden;

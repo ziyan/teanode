@@ -14,17 +14,21 @@
 
 const DURATION = 450
 
-let layer: HTMLElement | null = null
-
-function surface(): HTMLElement {
-  if (layer && layer.isConnected) {
-    return layer
+// The height a mark is drawn at: that of the control's outermost ancestor
+// with a z-index of its own, which is where the whole of what holds the
+// control sits among everything else on the page. One layer above everything
+// drew a press on a mail row over the agent drawer covering half the row; at
+// the row's own height the drawer stays on top of it, and a press inside the
+// drawer is at the drawer's height and shows.
+function heightOf(element: HTMLElement): number {
+  let height = 0
+  for (let node: HTMLElement | null = element; node && node !== document.body; node = node.parentElement) {
+    const style = window.getComputedStyle(node)
+    if (style.position !== 'static' && style.zIndex !== 'auto') {
+      height = parseInt(style.zIndex, 10) || 0
+    }
   }
-  layer = document.createElement('div')
-  layer.className = 'ripple-layer'
-  layer.setAttribute('aria-hidden', 'true')
-  document.body.appendChild(layer)
-  return layer
+  return height
 }
 
 // What takes a ripple: the things a person presses. Not every clickable thing
@@ -194,7 +198,9 @@ export function startRipples() {
       circle.style.height = `${reach * 2}px`
 
       clip.appendChild(circle)
-      surface().appendChild(clip)
+      clip.setAttribute('aria-hidden', 'true')
+      clip.style.zIndex = String(heightOf(element))
+      document.body.appendChild(clip)
 
       // The mark is drawn where the control was, not inside it, so it has to
       // be taken away when the control stops being there. Plenty of presses
