@@ -1,6 +1,7 @@
 package ofx_test
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -143,7 +144,7 @@ const bankStatementXML = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 
 func TestParseCardStatementSGML(test *testing.T) {
 	test.Parallel()
-	document, err := ofx.Parse([]byte(cardStatementSGML))
+	document, err := ofx.Parse(test.Context(), []byte(cardStatementSGML))
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -185,7 +186,7 @@ func TestParseCardStatementSGML(test *testing.T) {
 
 func TestParseBankStatementXML(test *testing.T) {
 	test.Parallel()
-	document, err := ofx.Parse([]byte(bankStatementXML))
+	document, err := ofx.Parse(test.Context(), []byte(bankStatementXML))
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -223,7 +224,7 @@ func TestParseToleratesHowFilesAreWritten(test *testing.T) {
 	test.Parallel()
 	content := strings.ReplaceAll(cardStatementSGML, "\n", "\r\n")
 	content = strings.Replace(content, "<NAME>INVENTED COFFEE ROASTERS", "<name>INVENTED CAF\xc9\r\n<MEMO>", 1)
-	document, err := ofx.Parse([]byte(content))
+	document, err := ofx.Parse(test.Context(), []byte(content))
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -299,27 +300,99 @@ func TestIsOFX(test *testing.T) {
 
 func TestParseRefusals(test *testing.T) {
 	test.Parallel()
-	if _, err := ofx.Parse([]byte("Date,Amount\n")); !errors.Is(err, ofx.ErrNotOFX) {
+	if _, err := ofx.Parse(test.Context(), []byte("Date,Amount\n")); !errors.Is(err, ofx.ErrNotOFX) {
 		test.Errorf("a spreadsheet: %v", err)
 	}
-	if _, err := ofx.Parse(make([]byte, ofx.MaximumFileBytes+1)); !errors.Is(err, ofx.ErrTooLarge) {
+	if _, err := ofx.Parse(test.Context(), make([]byte, ofx.MaximumFileBytes+1)); !errors.Is(err, ofx.ErrTooLarge) {
 		test.Errorf("a file too large: %v", err)
 	}
 	refusal := `OFXHEADER:100
 <OFX><SIGNONMSGSRSV1><SONRS><STATUS><CODE>15500<SEVERITY>ERROR<MESSAGE>Invented sign-on failure</STATUS></SONRS></SIGNONMSGSRSV1></OFX>`
-	if _, err := ofx.Parse([]byte(refusal)); !errors.Is(err, ofx.ErrNoStatement) || !strings.Contains(err.Error(), "Invented sign-on failure") {
+	if _, err := ofx.Parse(test.Context(), []byte(refusal)); !errors.Is(err, ofx.ErrNoStatement) || !strings.Contains(err.Error(), "Invented sign-on failure") {
 		test.Errorf("a refusal: %v", err)
 	}
 	noAccount := strings.Replace(cardStatementSGML, "<ACCTID>11111a11-1aa1-1111-a11\n", "", 1)
-	if _, err := ofx.Parse([]byte(noAccount)); err == nil {
+	if _, err := ofx.Parse(test.Context(), []byte(noAccount)); err == nil {
 		test.Error("a statement with no account was read")
 	}
 	badAmount := strings.Replace(cardStatementSGML, "<TRNAMT>-23.40", "<TRNAMT>about twenty", 1)
-	if _, err := ofx.Parse([]byte(badAmount)); err == nil {
+	if _, err := ofx.Parse(test.Context(), []byte(badAmount)); err == nil {
 		test.Error("an amount that is not one was read")
 	}
 	deep := "OFXHEADER:100\n<OFX>" + strings.Repeat("<A>", 100) + "</OFX>"
-	if _, err := ofx.Parse([]byte(deep)); err == nil {
+	if _, err := ofx.Parse(test.Context(), []byte(deep)); err == nil {
 		test.Error("a file nested a hundred deep was read")
+	}
+}
+
+// parseWithin parses content and fails the test when parsing takes longer
+// than the limit, answering the error otherwise.
+func parseWithin(test *testing.T, ctx context.Context, content string, limit time.Duration) error {
+	test.Helper()
+	finished := make(chan error, 1)
+	go func() {
+		_, err := ofx.Parse(ctx, []byte(content))
+		finished <- err
+	}()
+	select {
+	case err := <-finished:
+		return err
+	case <-time.After(limit):
+		test.Fatalf("parsing %d bytes took longer than %s", len(content), limit)
+		return nil
+	}
+}
+
+// A leaf broken up by tags the reader skips, comments, processing
+// instructions and empty tags, used to have each run of text joined onto
+// all of it before, so a couple of megabytes took minutes. Every skipped
+// tag counts toward the limit on tags too, so a file of nothing else is
+// refused.
+func TestParseCostIsLinearInSkippedTags(test *testing.T) {
+	test.Parallel()
+	prefix := "OFXHEADER:100\n<OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>x"
+	for _, skipped := range []string{"a<>", "a<!---->", "a<?>"} {
+		content := prefix + strings.Repeat(skipped, 2*1024*1024/len(skipped))
+		if err := parseWithin(test, test.Context(), content, 2*time.Second); err == nil {
+			test.Errorf("%q repeated: a file without a statement was read", skipped)
+		}
+	}
+	tooMany := prefix + strings.Repeat("a<>", (ofx.MaximumFileBytes-len(prefix))/3)
+	if err := parseWithin(test, test.Context(), tooMany, 2*time.Second); err == nil || !strings.Contains(err.Error(), "too many tags") {
+		test.Errorf("a file of nothing but empty tags: %v", err)
+	}
+}
+
+// A parse whose context is done stops with the context's error.
+func TestParseStopsWhenCancelled(test *testing.T) {
+	test.Parallel()
+	ctx, cancel := context.WithCancel(test.Context())
+	cancel()
+	content := strings.Replace(cardStatementSGML, "<OFX>", "<OFX>"+strings.Repeat("<!---->", 10000), 1)
+	if err := parseWithin(test, ctx, content, 2*time.Second); !errors.Is(err, context.Canceled) {
+		test.Errorf("a cancelled parse: %v", err)
+	}
+}
+
+// CURRENCY says the amount is in that currency; ORIGCURRENCY says the
+// amount is in CURDEF already and only names the currency the purchase was
+// made in.
+func TestParseTransactionCurrencies(test *testing.T) {
+	test.Parallel()
+	content := strings.Replace(cardStatementSGML, "<NAME>INVENTED COFFEE ROASTERS", "<NAME>INVENTED COFFEE ROASTERS\n<CURRENCY>\n<CURRATE>1.0800\n<CURSYM>eur\n</CURRENCY>", 1)
+	content = strings.Replace(content, "<NAME>INVENTED BOOKSHOP &amp; CAFE", "<NAME>INVENTED BOOKSHOP &amp; CAFE\n<ORIGCURRENCY>\n<CURRATE>1.2700\n<CURSYM>GBP\n</ORIGCURRENCY>", 1)
+	document, err := ofx.Parse(test.Context(), []byte(content))
+	if err != nil {
+		test.Fatal(err)
+	}
+	transactions := document.Statements[0].Transactions
+	if inEuros := transactions[0]; inEuros.CurrencyCode != "EUR" || inEuros.CurrencyRate != "1.0800" || inEuros.OriginalCurrencyCode != "" {
+		test.Errorf("CURRENCY: %+v", inEuros)
+	}
+	if inDollars := transactions[2]; inDollars.CurrencyCode != "" || inDollars.OriginalCurrencyCode != "GBP" || inDollars.OriginalCurrencyRate != "1.2700" || inDollars.Amount != "12.00" {
+		test.Errorf("ORIGCURRENCY: %+v", inDollars)
+	}
+	if plain := transactions[1]; plain.CurrencyCode != "" || plain.OriginalCurrencyCode != "" {
+		test.Errorf("no currency: %+v", plain)
 	}
 }

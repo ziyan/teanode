@@ -8,6 +8,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/finance/ofx"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 )
@@ -444,5 +445,131 @@ func TestStatementImportJob(t *testing.T) {
 	runJob()
 	if last := LastStatementImport(fixture.statementSource(t)); last == nil || last.AddedTransactionCount != 3 || last.UnchangedTransactionCount != 0 {
 		t.Errorf("imported again: %+v", last)
+	}
+}
+
+// A mailed statement whose notice waits on a running turn tells its own
+// import when it is told, even after an upload was imported in between,
+// and is not imported a second time. The notice used to read back the
+// source's last import, which the upload had replaced.
+func TestStatementImportJobTellsItsOwnImportAfterAnUpload(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	fixture.worker.settings.Storage = store
+	if _, err := fixture.worker.EnsureStatementSource(t.Context(), fixture.agent); err != nil {
+		t.Fatalf("EnsureStatementSource: %s", err)
+	}
+	var mail *models.Mail
+	var conversation *models.AgentConversation
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if mail, err = tx.CreateMail(&models.Mail{From: "person@example.com", Kind: models.MailKindIncoming}, nil); err != nil {
+			t.Fatalf("CreateMail: %s", err)
+		}
+		if conversation, err = scheduleConversation(tx, fixture.agent.ID, ""); err != nil {
+			t.Fatalf("scheduleConversation: %s", err)
+		}
+	})
+	content := inventedCardStatement("20260131", "-311.25", "INVENTED COFFEE ROASTERS")
+	headers := []string{"From: person@example.com", `Content-Type: application/octet-stream; name="Invented Card Transactions.ofx"`, "Content-Transfer-Encoding: base64"}
+	if err := store.Put(t.Context(), mail.ID, headers, []byte(base64.StdEncoding.EncodeToString([]byte(content)))); err != nil {
+		t.Fatalf("Put: %s", err)
+	}
+	run := fixture.run()
+	run.Job = &models.AgentJob{ID: "job-one", AgentID: fixture.agent.ID, Kind: models.AgentJobStatementImport, SubjectID: mail.ID}
+
+	// A turn is running in the conversation the notice goes to.
+	fixture.worker.runsMutex.Lock()
+	if fixture.worker.latest == nil {
+		fixture.worker.latest = map[string]*AskRun{}
+	}
+	fixture.worker.latest[conversation.ID] = &AskRun{}
+	fixture.worker.runsMutex.Unlock()
+	var deferral *Deferral
+	if err := fixture.worker.runStatementImport(t.Context(), run); !errors.As(err, &deferral) {
+		t.Fatalf("the notice did not wait for the turn: %v", err)
+	}
+
+	// The person uploads the next month meanwhile: one transaction
+	// changed, two already here.
+	upload := fixture.importStatement(t, inventedCardStatement("20260228", "-200.00", "INVENTED COFFEE ROASTERS RENAMED"))
+	if upload.UnchangedTransactionCount != 2 {
+		t.Fatalf("upload %+v", upload)
+	}
+
+	fixture.worker.runsMutex.Lock()
+	delete(fixture.worker.latest, conversation.ID)
+	fixture.worker.runsMutex.Unlock()
+	if err := fixture.worker.runStatementImport(t.Context(), run); err != nil {
+		t.Fatalf("runStatementImport: %s", err)
+	}
+	var said []string
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		messages, err := tx.ListAgentMessages(conversation.ID, nil)
+		if err != nil {
+			t.Fatalf("ListAgentMessages: %s", err)
+		}
+		for _, message := range messages {
+			if message.Role == "assistant" {
+				said = append(said, message.Content)
+			}
+		}
+	})
+	if len(said) != 1 || !strings.Contains(said[0], "3 transactions added") || strings.Contains(said[0], "already here") {
+		t.Errorf("the person was told %q; want the mailed import, 3 transactions added", said)
+	}
+	if last := LastStatementImport(fixture.statementSource(t)); last == nil || last.StatementImportOrigin != models.StatementImportOriginUpload {
+		t.Errorf("the mailed statement was imported again: the last import is %+v", last)
+	}
+}
+
+// A base64 part is limited by what it decodes to, whatever its line breaks
+// add: a file of exactly the largest size is read whole, and one a little
+// larger is known to be too large rather than cut short as though whole.
+func TestStatementFilesOfNearTheLimit(t *testing.T) {
+	t.Parallel()
+	header := "OFXHEADER:100\n<OFX>\n"
+	for _, test := range []struct {
+		size         int
+		isTooLarge   bool
+		expectedSize int
+	}{
+		{ofx.MaximumFileBytes, false, ofx.MaximumFileBytes},
+		{ofx.MaximumFileBytes + 1000, true, ofx.MaximumFileBytes},
+	} {
+		content := header + strings.Repeat("x", test.size-len(header))
+		encoded := base64.StdEncoding.EncodeToString([]byte(content))
+		var wrapped strings.Builder
+		for start := 0; start < len(encoded); start += 76 {
+			wrapped.WriteString(encoded[start:min(start+76, len(encoded))])
+			wrapped.WriteString("\r\n")
+		}
+		headers := []string{"From: person@example.com", `Content-Type: application/octet-stream; name="Invented Card Transactions.ofx"`, "Content-Transfer-Encoding: base64"}
+		files := StatementFilesOf(headers, []byte(wrapped.String()))
+		if len(files) != 1 || files[0].IsTooLarge != test.isTooLarge || len(files[0].Content) != test.expectedSize {
+			if len(files) == 1 {
+				t.Errorf("%d bytes: read %d, too large %v", test.size, len(files[0].Content), files[0].IsTooLarge)
+			} else {
+				t.Errorf("%d bytes: %d files", test.size, len(files))
+			}
+		}
+	}
+}
+
+// Two exports of one card, one naming its institution by FID and the next
+// only by ORG, are one account, and their transactions are not counted
+// twice.
+func TestStatementImportIsOneAccountWhateverTheInstitutionBlockSays(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	content := inventedCardStatement("20260131", "-311.25", "INVENTED COFFEE ROASTERS")
+	first := fixture.importStatement(t, content)
+	second := fixture.importStatement(t, strings.Replace(content, "<FID>99999\n", "", 1))
+	if len(first.FinanceAccountIDs) != 1 || len(second.FinanceAccountIDs) != 1 || first.FinanceAccountIDs[0] != second.FinanceAccountIDs[0] {
+		t.Errorf("one card became %v and %v", first.FinanceAccountIDs, second.FinanceAccountIDs)
+	}
+	if transactions := fixture.statementTransactions(t); len(transactions) != 3 || second.UnchangedTransactionCount != 3 {
+		t.Errorf("%d finance transactions, %+v", len(transactions), second)
 	}
 }

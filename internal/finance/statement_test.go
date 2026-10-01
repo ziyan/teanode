@@ -36,7 +36,7 @@ var inventedAccountKey = []byte("an invented account key of thirty-two bytes")
 func TestStatementImportOfACard(test *testing.T) {
 	test.Parallel()
 	document := inventedCardDocument()
-	statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0])
+	statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -80,27 +80,27 @@ func TestStatementImportOfACard(test *testing.T) {
 }
 
 // The same account in two files is the same provider account id; another
-// account, institution or key is another.
+// account, kind or key is another.
 func TestStatementAccountID(test *testing.T) {
 	test.Parallel()
 	document := inventedCardDocument()
 	statement := document.Statements[0]
-	first := StatementAccountID(inventedAccountKey, document, statement)
-	if second := StatementAccountID(inventedAccountKey, inventedCardDocument(), inventedCardDocument().Statements[0]); second != first {
+	first := StatementAccountID(inventedAccountKey, statement)
+	if second := StatementAccountID(inventedAccountKey, inventedCardDocument().Statements[0]); second != first {
 		test.Errorf("the same account is %s and %s", first, second)
 	}
 	other := inventedCardDocument()
 	other.Statements[0].AccountID = "22222b22-2bb2-2222-b22"
-	if StatementAccountID(inventedAccountKey, other, other.Statements[0]) == first {
+	if StatementAccountID(inventedAccountKey, other.Statements[0]) == first {
 		test.Error("another account has the same id")
 	}
-	if StatementAccountID([]byte("another invented key"), document, statement) == first {
+	if StatementAccountID([]byte("another invented key"), statement) == first {
 		test.Error("another key gives the same id")
 	}
-	otherInstitution := inventedCardDocument()
-	otherInstitution.InstitutionID = "88888"
-	if StatementAccountID(inventedAccountKey, otherInstitution, otherInstitution.Statements[0]) == first {
-		test.Error("another institution's account has the same id")
+	otherKind := inventedCardDocument()
+	otherKind.Statements[0].StatementKind = ofx.StatementKindBank
+	if StatementAccountID(inventedAccountKey, otherKind.Statements[0]) == first {
+		test.Error("a bank account with the card's identifier has the same id")
 	}
 	if StatementAccountMask("000123456789") != "6789" || StatementAccountMask("12") != "12" || StatementAccountMask("33333c33-3cc3-3333-c3") != "33c3" {
 		test.Error("the mask is not the end of the identifier")
@@ -118,11 +118,11 @@ func TestStatementImportWithoutFITIDs(test *testing.T) {
 		{TransactionType: "DEBIT", PostedOn: "2026-01-05", Amount: "-3.00", Name: "INVENTED PARKING"},
 		{TransactionType: "DEBIT", PostedOn: "2026-01-06", Amount: "-3.00", Name: "INVENTED PARKING"},
 	}
-	first, err := NewStatementImport(inventedAccountKey, document, statement)
+	first, err := NewStatementImport(inventedAccountKey, document, statement, nil)
 	if err != nil {
 		test.Fatal(err)
 	}
-	second, err := NewStatementImport(inventedAccountKey, document, statement)
+	second, err := NewStatementImport(inventedAccountKey, document, statement, nil)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestStatementImportOfABank(test *testing.T) {
 		StatementKind: ofx.StatementKindBank, CurrencyCode: "EUR", AccountID: "000123456789", BankID: "000000000", AccountType: "CHECKING",
 		Transactions: []*ofx.Transaction{{TransactionType: "PAYMENT", PostedOn: "2026-02-03", Amount: "-80.00", FITID: "bank-one", Name: "INVENTED UTILITY"}},
 	}}}
-	statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0])
+	statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -162,10 +162,113 @@ func TestStatementImportOfABank(test *testing.T) {
 		test.Error("a bill paid from a bank account is a transfer")
 	}
 	document.Statements[0].CurrencyCode = ""
-	if _, err := NewStatementImport(inventedAccountKey, document, document.Statements[0]); err == nil {
+	if _, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil); err == nil {
 		test.Error("a statement without a currency was imported")
 	}
-	if _, err := NewStatementImport(nil, inventedCardDocument(), inventedCardDocument().Statements[0]); err == nil {
+	if _, err := NewStatementImport(nil, inventedCardDocument(), inventedCardDocument().Statements[0], nil); err == nil {
 		test.Error("a statement was imported without the account key")
+	}
+}
+
+// Two exports of one card, one with the FI block's FID and one with only
+// its ORG, are one account: the institution used to be in the key, and
+// the optional FI block split the account in two.
+func TestStatementAccountIsOneWhateverTheInstitutionBlockSays(test *testing.T) {
+	test.Parallel()
+	withInstitutionID := inventedCardDocument()
+	withOrganizationOnly := inventedCardDocument()
+	withOrganizationOnly.InstitutionID = ""
+	withoutInstitution := inventedCardDocument()
+	withoutInstitution.InstitutionID, withoutInstitution.InstitutionOrganization = "", ""
+	var providerAccountIds []string
+	for _, document := range []*ofx.Document{withInstitutionID, withOrganizationOnly, withoutInstitution} {
+		statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		providerAccountIds = append(providerAccountIds, statementImport.SyncResult.Accounts[0].ProviderAccountID)
+	}
+	if providerAccountIds[0] != providerAccountIds[1] || providerAccountIds[1] != providerAccountIds[2] {
+		test.Errorf("one card is %v", providerAccountIds)
+	}
+}
+
+// An account made when the institution was in the key keeps its id: a
+// later file finds it whether it carries the FID, only the ORG, or a FI
+// block that changed, and the account then records what it was keyed
+// with so the next file finds it too.
+func TestStatementAccountMadeTheEarlierWayIsFoundAgain(test *testing.T) {
+	test.Parallel()
+	madeFrom := inventedCardDocument()
+	statement := madeFrom.Statements[0]
+	legacyId := legacyStatementAccountID(inventedAccountKey, madeFrom.InstitutionID, statement)
+	existingAccounts := []ExistingStatementAccount{
+		{ProviderAccountID: "ofx-another-account", ProviderMetadata: json.RawMessage(`{"institutionId":"77777"}`)},
+		{ProviderAccountID: legacyId, ProviderMetadata: json.RawMessage(`{"institutionId":"99999","institutionOrganization":"Invented Card Issuer"}`)},
+	}
+	withOrganizationOnly := inventedCardDocument()
+	withOrganizationOnly.InstitutionID = ""
+	statementImport, err := NewStatementImport(inventedAccountKey, withOrganizationOnly, withOrganizationOnly.Statements[0], existingAccounts)
+	if err != nil {
+		test.Fatal(err)
+	}
+	account := statementImport.SyncResult.Accounts[0]
+	if account.ProviderAccountID != legacyId || statementImport.SyncResult.Added[0].ProviderAccountID != legacyId {
+		test.Fatalf("imported into %s, not the account made earlier, %s", account.ProviderAccountID, legacyId)
+	}
+	// What the account's metadata says now, from a file without the FID.
+	existingAccounts[1].ProviderMetadata = account.ProviderMetadata
+	renamed := inventedCardDocument()
+	renamed.InstitutionID, renamed.InstitutionOrganization = "", "Invented Card Issuer, Renamed"
+	if statementImport, err = NewStatementImport(inventedAccountKey, renamed, renamed.Statements[0], existingAccounts); err != nil {
+		test.Fatal(err)
+	}
+	if found := statementImport.SyncResult.Accounts[0].ProviderAccountID; found != legacyId {
+		test.Errorf("after the metadata changed, imported into %s, not %s", found, legacyId)
+	}
+
+	// One made from a file with only the ORG is found from a file with the
+	// FID as well.
+	organizationKeyed := legacyStatementAccountID(inventedAccountKey, "invented card issuer", statement)
+	if statementImport, err = NewStatementImport(inventedAccountKey, madeFrom, statement, []ExistingStatementAccount{
+		{ProviderAccountID: organizationKeyed, ProviderMetadata: json.RawMessage(`{"institutionOrganization":"Invented Card Issuer"}`)},
+	}); err != nil {
+		test.Fatal(err)
+	}
+	if found := statementImport.SyncResult.Accounts[0].ProviderAccountID; found != organizationKeyed {
+		test.Errorf("an account keyed by ORG: imported into %s, not %s", found, organizationKeyed)
+	}
+
+	// Another card is not mistaken for it.
+	other := inventedCardDocument()
+	other.Statements[0].AccountID = "22222b22-2bb2-2222-b22"
+	if statementImport, err = NewStatementImport(inventedAccountKey, other, other.Statements[0], existingAccounts); err != nil {
+		test.Fatal(err)
+	}
+	if found := statementImport.SyncResult.Accounts[0].ProviderAccountID; found == legacyId || found != StatementAccountID(inventedAccountKey, other.Statements[0]) {
+		test.Errorf("another card was imported into %s", found)
+	}
+}
+
+// A transaction in another currency (CURRENCY) is in that currency; one
+// that only names the currency it was bought in (ORIGCURRENCY) is in the
+// statement's, with the original kept for the record.
+func TestStatementImportTransactionCurrencies(test *testing.T) {
+	test.Parallel()
+	document := inventedCardDocument()
+	transactions := document.Statements[0].Transactions
+	transactions[0].CurrencyCode, transactions[0].CurrencyRate = "EUR", "1.08"
+	transactions[2].OriginalCurrencyCode, transactions[2].OriginalCurrencyRate = "GBP", "1.27"
+	statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	added := statementImport.SyncResult.Added
+	if added[0].CurrencyCode != "EUR" || added[2].CurrencyCode != "USD" || added[1].CurrencyCode != "USD" {
+		test.Errorf("currencies %s %s %s", added[0].CurrencyCode, added[1].CurrencyCode, added[2].CurrencyCode)
+	}
+	var metadata map[string]any
+	if json.Unmarshal(added[2].ProviderMetadata, &metadata) != nil || metadata["originalCurrencyCode"] != "GBP" || metadata["originalCurrencyRate"] != "1.27" {
+		test.Errorf("metadata %s", added[2].ProviderMetadata)
 	}
 }

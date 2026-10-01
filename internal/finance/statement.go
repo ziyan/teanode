@@ -54,23 +54,94 @@ type StatementImport struct {
 	GeneratedIDCount int
 }
 
+// statementAccountKeyInstitutionField is the account metadata field that
+// names the institution an account's provider id was keyed with, for an
+// account made before the institution was left out of the key.
+const statementAccountKeyInstitutionField = "statementAccountKeyInstitution"
+
+// ExistingStatementAccount is an account the statement source already
+// holds, which a statement is matched against before a new one is made.
+type ExistingStatementAccount struct {
+	ProviderAccountID string
+	ProviderMetadata  json.RawMessage
+}
+
 // StatementAccountID is the provider account id a statement's account is
-// kept under: a keyed hash of the institution and the account's
-// identifier, never the identifier itself, which for a bank is the account
-// number. The key is the finance source's own, so the same account in two
-// files is the same finance account, and the stored id says nothing to
-// anybody who reads the table without the key.
-func StatementAccountID(accountKey []byte, document *ofx.Document, statement *ofx.Statement) string {
+// kept under: a keyed hash of the statement's kind and the account's
+// identifier (with the routing number, for a bank), never the identifier
+// itself, which for a bank is the account number. The key is the finance
+// source's own, so the same account in two files is the same finance
+// account, and the stored id says nothing to anybody who reads the table
+// without the key.
+//
+// The institution is not part of it. The FI block that names it is
+// optional, so one export can carry FID and the next only ORG, and keying
+// on whichever was there split one account in two and counted every
+// transaction twice. Two cards at two institutions sharing an identifier
+// is the rarer case, and a card's identifier is its number or an opaque
+// one the issuer made.
+func StatementAccountID(accountKey []byte, statement *ofx.Statement) string {
+	return statementAccountHash(accountKey, string(statement.StatementKind), strings.TrimSpace(statement.BankID), strings.TrimSpace(statement.AccountID))
+}
+
+// legacyStatementAccountID is the provider account id the first version
+// kept an account under, with the institution as written in the file,
+// FID or else ORG, lower case.
+func legacyStatementAccountID(accountKey []byte, institution string, statement *ofx.Statement) string {
+	return statementAccountHash(accountKey, string(statement.StatementKind), strings.ToLower(strings.TrimSpace(institution)), strings.TrimSpace(statement.BankID), strings.TrimSpace(statement.AccountID))
+}
+
+func statementAccountHash(accountKey []byte, parts ...string) string {
 	mac := hmac.New(sha256.New, accountKey)
-	institution := strings.ToLower(strings.TrimSpace(document.InstitutionID))
-	if institution == "" {
-		institution = strings.ToLower(strings.TrimSpace(document.InstitutionOrganization))
-	}
-	for _, part := range []string{string(statement.StatementKind), institution, strings.TrimSpace(statement.BankID), strings.TrimSpace(statement.AccountID)} {
+	for _, part := range parts {
 		mac.Write([]byte(part))
 		mac.Write([]byte{0})
 	}
 	return "ofx-" + hex.EncodeToString(mac.Sum(nil))[:32]
+}
+
+// resolveStatementAccountID is the provider account id to import a
+// statement under, and the institution it is keyed with when that is an
+// account made the earlier way. An account already under the current id
+// is that; otherwise an account made with the institution in its key is
+// found by keying this statement's identifier with the institution the
+// account's metadata names, and keeps its id, so an account made before
+// the change is not split from the one made after it.
+func resolveStatementAccountID(accountKey []byte, statement *ofx.Statement, existingAccounts []ExistingStatementAccount) (string, string) {
+	providerAccountId := StatementAccountID(accountKey, statement)
+	for _, existing := range existingAccounts {
+		if existing.ProviderAccountID == providerAccountId {
+			return providerAccountId, ""
+		}
+	}
+	for _, existing := range existingAccounts {
+		institution := statementAccountKeyInstitution(existing.ProviderMetadata)
+		if institution != "" && legacyStatementAccountID(accountKey, institution, statement) == existing.ProviderAccountID {
+			return existing.ProviderAccountID, institution
+		}
+	}
+	return providerAccountId, ""
+}
+
+// statementAccountKeyInstitution is the institution an account made the
+// earlier way was keyed with: the field that records it once the account
+// has been imported into since, or else the FID, or else the ORG, its
+// metadata kept from the file it was made from.
+func statementAccountKeyInstitution(providerMetadata json.RawMessage) string {
+	var metadata struct {
+		StatementAccountKeyInstitution string `json:"statementAccountKeyInstitution"`
+		InstitutionID                  string `json:"institutionId"`
+		InstitutionOrganization        string `json:"institutionOrganization"`
+	}
+	if len(providerMetadata) == 0 || json.Unmarshal(providerMetadata, &metadata) != nil {
+		return ""
+	}
+	for _, institution := range []string{metadata.StatementAccountKeyInstitution, metadata.InstitutionID, metadata.InstitutionOrganization} {
+		if institution = strings.ToLower(strings.TrimSpace(institution)); institution != "" {
+			return institution
+		}
+	}
+	return ""
 }
 
 // StatementAccountMask is the end of an account's identifier, its letters
@@ -91,7 +162,9 @@ func StatementAccountMask(accountId string) string {
 }
 
 // NewStatementImport turns one statement of a document into an account and
-// its transactions in this package's conventions.
+// its transactions in this package's conventions. existingAccounts are the
+// accounts the statement source holds already, which the statement's
+// account is matched against.
 //
 // The signs need nothing done to them. OFX signs an amount from the
 // account holder's side, as this program does: a card purchase is
@@ -100,11 +173,11 @@ func StatementAccountMask(accountId string) string {
 // owed, which is how most institutions behind SimpleFIN report it, so the
 // account says the owed balance is not positive and the valuation turns it
 // into the amount owed.
-func NewStatementImport(accountKey []byte, document *ofx.Document, statement *ofx.Statement) (*StatementImport, error) {
+func NewStatementImport(accountKey []byte, document *ofx.Document, statement *ofx.Statement, existingAccounts []ExistingStatementAccount) (*StatementImport, error) {
 	if len(accountKey) == 0 {
 		return nil, errors.New("finance: a statement needs its finance source's account key")
 	}
-	providerAccountId := StatementAccountID(accountKey, document, statement)
+	providerAccountId, keyInstitution := resolveStatementAccountID(accountKey, statement, existingAccounts)
 	currencyCode := strings.ToUpper(strings.TrimSpace(statement.CurrencyCode))
 	if currencyCode == "" {
 		return nil, errors.New("finance: the statement does not say its currency (CURDEF)")
@@ -134,6 +207,11 @@ func NewStatementImport(accountKey []byte, document *ofx.Document, statement *of
 		"statementKind": string(statement.StatementKind), "currencyCode": currencyCode, "accountMask": accountMask,
 		"institutionOrganization": document.InstitutionOrganization, "institutionId": document.InstitutionID,
 		"accountType": statement.AccountType, "startedOn": statement.StartedOn, "endedOn": statement.EndedOn,
+	}
+	if keyInstitution != "" {
+		// Kept so the next file finds the account again, whatever its FI
+		// block says.
+		accountMetadata[statementAccountKeyInstitutionField] = keyInstitution
 	}
 	account := Account{
 		ProviderAccountID: providerAccountId, AccountName: accountName, AccountMask: accountMask,
@@ -203,6 +281,16 @@ func NewStatementImport(accountKey []byte, document *ofx.Document, statement *of
 		transactionMetadata := map[string]any{
 			"transactionType": entry.TransactionType, "name": entry.Name, "memo": entry.Memo, "payeeName": entry.PayeeName,
 			"fitId": entry.FITID, "postedOn": entry.PostedOn,
+		}
+		// The amount is in transactionCurrencyCode; the original currency
+		// only says what the purchase was made in, and is kept for the
+		// record.
+		for key, value := range map[string]string{
+			"currencyRate": entry.CurrencyRate, "originalCurrencyCode": entry.OriginalCurrencyCode, "originalCurrencyRate": entry.OriginalCurrencyRate,
+		} {
+			if value != "" {
+				transactionMetadata[key] = value
+			}
 		}
 		encodedTransaction, err := json.Marshal(transactionMetadata)
 		if err != nil {

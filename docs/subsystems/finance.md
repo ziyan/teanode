@@ -111,11 +111,17 @@ tolerant reader: a leaf ends at the next tag, closed or not. It reads bank
 statements (`STMTRS`) and card statements (`CCSTMTRS`): `CURDEF`, the
 account (`ACCTID`, and `BANKID` and `ACCTTYPE` for a bank), `DTSTART` and
 `DTEND`, `LEDGERBAL` and `AVAILBAL`, and each `STMTTRN`'s `TRNTYPE`,
-`DTPOSTED`, `TRNAMT`, `FITID`, `NAME`, `MEMO` and `PAYEE`. Dates take a zone
-in brackets, signed or not (`[-5:EST]`, `[0:GMT]`); the day kept is the day
-the institution wrote, in its own zone. Amounts may use a comma as the
-decimal separator. A file over 10 MB is refused, and nothing in a file is
-run or shown, only parsed. `finance.NewStatementImport` turns one statement
+`DTPOSTED`, `TRNAMT`, `FITID`, `NAME`, `MEMO` and `PAYEE`. A transaction's
+`CURRENCY` says its `TRNAMT` is in that currency; its `ORIGCURRENCY` says
+`TRNAMT` is already in `CURDEF` and only names the currency the purchase was
+made in, which is kept in the transaction's metadata with its rate. Dates
+take a zone in brackets, signed or not (`[-5:EST]`, `[0:GMT]`); the day kept
+is the day the institution wrote, in its own zone. Amounts may use a comma
+as the decimal separator. A file over 10 MB is refused, as is one of more
+than two million tags (every tag counts, comments and empty ones too), the
+reader's work grows in step with the file's size, and a parse stops when the
+request or job that asked for it is cancelled. Nothing in a file is run or
+shown, only parsed. `finance.NewStatementImport` turns one statement
 into what a sync writes, and the import goes through `ApplyFinanceSync` like
 any sync, then through what follows a sync (transfers across the whole
 history the statement reaches back over, spending rules, the provider
@@ -140,10 +146,16 @@ bought and go to the categorize model with the merchant's name, so a refund
 lowers the spending it refunds once it is placed.
 
 **The account and deduplication.** A statement's account is identified by
-its `ACCTID` with the institution (`FID`, else `ORG`) and `BANKID`, hashed
-with a key the statement source keeps sealed: for a bank the identifier is
-the account number, and neither it nor anything that could be turned back
-into it is stored. The account is named for the institution (`ORG`) and
+the statement's kind (bank or card), its `ACCTID` and, for a bank, its
+`BANKID`, hashed with a key the statement source keeps sealed: for a bank
+the identifier is the account number, and neither it nor anything that could
+be turned back into it is stored. The institution is left out, because the
+block that names it is optional: one export can carry `FID` and the next
+only `ORG`, and keying on whichever was there split one account in two. An
+account made while the institution was part of the key keeps its id: a
+statement is matched against the source's accounts by keying its `ACCTID`
+with the institution each account's metadata names, and the account then
+records that institution so the next file finds it whatever its block says. The account is named for the institution (`ORG`) and
 keeps the last four letters and digits of the identifier as its mask, to
 tell two accounts apart. A transaction is its account and its `FITID`, so
 importing a file again, or statements that overlap, adds nothing twice, and
@@ -164,13 +176,24 @@ a recipient has that shape and, through the agent (`StatementHook`), whether
 the token is the mailbox owner's and their statement source is on. If so,
 the message is filed in the mailbox's Archive, read, without rules, triage,
 the calendar or an out-of-office reply, and a `statement_import` job is
-queued in the delivery transaction. A wrong token is no statement address:
-the recipient is matched like any other, which for an address nobody
-configured is a refusal. A message the spam filter failed, or that failed
-DMARC under a quarantine policy, is not imported; one that failed
-authentication outright was refused before delivery. The same works for a
-message the person sends from their own account through the submission
-port, since a local recipient goes through the same matching. The job reads
+queued in the delivery transaction, once per message: when the mailbox
+holds the message already (it was also addressed to the plain address, or
+the person sent it and it is in Sent), no second copy is filed and the
+import is still queued. The token is after the last `+statements-`, so a
+local part with a plus of its own works. An address with the
+`statements-` detail whose local part is a person's mailbox address and
+whose token is wrong, whose source is off, or on a server with no agent, is
+refused rather than matched like any other address, where a catch-all
+would take the statement and the token in its address. A message the spam
+filter failed, or that failed DMARC under a quarantine policy, goes to that
+person's Junk, unread and not imported; one that failed authentication
+outright was refused before delivery. An address with the detail whose
+local part names nobody's mailbox is matched like any other. Sending from
+the person's own mail program through the submission port works the same
+way, since a local recipient goes through the same matching. (From the
+dashboard, the Sent copy is filed after the recipients are matched, so a
+statement sent there to the person's own import address is also filed in
+the Archive.) The job reads
 the stored message, imports every part named `.ofx`, `.qfx` or `.qbo` and
 every part whose content is OFX however it is typed (a phone sends one as
 `application/octet-stream`), records the import on the statement source,
@@ -178,8 +201,18 @@ and tells the person in their main conversation, the way an alert is said
 but without the alert decision: which account, how many transactions were
 added, updated or already there, or why nothing was imported. A notice that
 meets a running turn waits a minute and is told then, without importing
-again. Regenerating the address (`RegenerateStatementImportAddress`) gives a
+again: the source's cursor keeps the last 32 mailed imports by the message
+they came from, written in the transaction that imports, so a job run again
+tells its own import even when an upload or another message was imported in
+between. Regenerating the address (`RegenerateStatementImportAddress`) gives a
 new token and the old address stops taking mail at once.
+
+The token is a secret only as far as the address is. It is in the
+recipient of every statement mailed to it, so anyone who can read the
+person's archived statements, or the domain's delivery records (the mail
+audit), can read it and mail statements into the person's finances. If it
+may have been seen by somebody it should not have been, regenerating the
+address is the remedy.
 
 **Uploaded or pointed at.** `ImportStatement` takes a file uploaded to the
 agent's attachments (`agentAttachmentId`, how the dashboard and `teanode

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"mime/quotedprintable"
 	"net/textproto"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +59,12 @@ const (
 	// statementNoticeRetry is how long a statement's notice waits when a
 	// turn is running in the conversation it is told in.
 	statementNoticeRetry = time.Minute
+
+	// statementMailImportsKept is how many mailed imports the statement
+	// source remembers by the message they came from: enough for every
+	// job whose notice is still waiting, and small enough to keep in the
+	// cursor.
+	statementMailImportsKept = 32
 )
 
 // statementTokenEncoding writes a token in lower case letters and digits,
@@ -332,20 +340,9 @@ func readStatementPart(header textproto.MIMEHeader, reader io.Reader) ([]byte, b
 	var decoded io.Reader
 	switch strings.ToLower(strings.TrimSpace(header.Get("Content-Transfer-Encoding"))) {
 	case "base64":
-		// Base64 is four bytes for every three, and the limit is on what
-		// it decodes to.
-		encoded, err := io.ReadAll(io.LimitReader(reader, int64(ofx.MaximumFileBytes)*4/3+8192))
-		if err != nil {
-			return nil, false, err
-		}
-		content, err := mailparse.DecodeBase64String(string(encoded))
-		if err != nil {
-			return nil, false, err
-		}
-		if len(content) > ofx.MaximumFileBytes {
-			return content[:ofx.MaximumFileBytes], true, nil
-		}
-		return content, false, nil
+		// Decoded as it is read, so the limit is on what it decodes to,
+		// whatever the line breaks it is laid out with add.
+		decoded = base64.NewDecoder(base64.StdEncoding, whitespaceDroppingReader{reader: reader})
 	case "quoted-printable":
 		decoded = quotedprintable.NewReader(reader)
 	default:
@@ -359,6 +356,31 @@ func readStatementPart(header textproto.MIMEHeader, reader io.Reader) ([]byte, b
 		return content[:ofx.MaximumFileBytes], true, nil
 	}
 	return content, false, nil
+}
+
+// whitespaceDroppingReader passes on what it reads without the spaces,
+// tabs and line breaks base64 in a message is laid out with, which the
+// base64 decoder would refuse.
+type whitespaceDroppingReader struct {
+	reader io.Reader
+}
+
+func (self whitespaceDroppingReader) Read(buffer []byte) (int, error) {
+	for {
+		count, err := self.reader.Read(buffer)
+		kept := 0
+		for _, character := range buffer[:count] {
+			switch character {
+			case ' ', '\t', '\r', '\n', '\v', '\f':
+				continue
+			}
+			buffer[kept] = character
+			kept++
+		}
+		if kept > 0 || err != nil {
+			return kept, err
+		}
+	}
 }
 
 // ImportStatementFiles imports OFX files into the agent's statement
@@ -391,7 +413,10 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 			failures = append(failures, fmt.Sprintf("%s is larger than %d MB, more than any statement", file.StatementFileName, ofx.MaximumFileBytes/(1024*1024)))
 			continue
 		}
-		document, err := ofx.Parse(file.Content)
+		document, err := ofx.Parse(ctx, file.Content)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s could not be read: %s", file.StatementFileName, strings.TrimPrefix(err.Error(), "ofx: ")))
 			continue
@@ -422,15 +447,23 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 			parsedFiles = nil
 		}
 		var accountKey []byte
+		var existingAccounts []finance.ExistingStatementAccount
 		if len(parsedFiles) > 0 {
 			if accountKey, err = self.statementAccountKey(tx, source); err != nil {
 				return err
+			}
+			accounts, err := tx.ListFinanceAccounts(agentRow.ID, source.ID)
+			if err != nil {
+				return err
+			}
+			for _, account := range accounts {
+				existingAccounts = append(existingAccounts, finance.ExistingStatementAccount{ProviderAccountID: account.ProviderAccountID, ProviderMetadata: account.ProviderMetadata})
 			}
 		}
 		accountProviderIds := []string{}
 		for _, parsed := range parsedFiles {
 			for _, statement := range parsed.document.Statements {
-				statementImport, err := finance.NewStatementImport(accountKey, parsed.document, statement)
+				statementImport, err := finance.NewStatementImport(accountKey, parsed.document, statement, existingAccounts)
 				if err != nil {
 					failures = append(failures, fmt.Sprintf("%s could not be read: %s", parsed.statementFileName, strings.TrimPrefix(err.Error(), "finance: ")))
 					continue
@@ -486,7 +519,7 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 		}
 		cursor[models.FinanceCursorLastStatementImport] = recorded
 		if mailId != "" {
-			cursor[financeCursorLastStatementMailId] = mailId
+			cursor[financeCursorStatementMailImports] = withStatementMailImport(cursor[financeCursorStatementMailImports], mailId, recorded)
 		}
 		return tx.MarkAgentSourceRun(source.ID, cursor, db.SourceCounts{}, false, result.ImportErrorMessage, nil)
 	})
@@ -507,10 +540,51 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 	return result, nil
 }
 
-// financeCursorLastStatementMailId is the cursor key that names the
-// message the last mailed import came from, so a job run again after its
-// notice waited does not import it again.
-const financeCursorLastStatementMailId = "lastStatementMailId"
+// financeCursorStatementMailImports is the cursor key that keeps mailed
+// imports by the message they came from, written in the transaction that
+// imports. A job run again, after its notice waited or after it failed
+// past the import, tells the import it did rather than doing it again,
+// and tells its own even when an upload or another message was imported
+// in between.
+const financeCursorStatementMailImports = "statementMailImports"
+
+// withStatementMailImport is the cursor's mailed imports with one more,
+// the oldest dropped past statementMailImportsKept.
+func withStatementMailImport(value any, mailId string, recorded map[string]any) map[string]any {
+	imports := map[string]any{}
+	if previous, isMap := value.(map[string]any); isMap {
+		for key, entry := range previous {
+			imports[key] = entry
+		}
+	}
+	imports[mailId] = recorded
+	if len(imports) <= statementMailImportsKept {
+		return imports
+	}
+	// Oldest first, by when each was imported.
+	mailIds := make([]string, 0, len(imports))
+	for key := range imports {
+		mailIds = append(mailIds, key)
+	}
+	importedAt := func(key string) time.Time {
+		entry, _ := imports[key].(map[string]any)
+		text, _ := entry["importedAt"].(string)
+		moment, _ := time.Parse(time.RFC3339Nano, text)
+		return moment
+	}
+	sort.Slice(mailIds, func(left, right int) bool { return importedAt(mailIds[left]).Before(importedAt(mailIds[right])) })
+	for _, key := range mailIds[:len(mailIds)-statementMailImportsKept] {
+		delete(imports, key)
+	}
+	return imports
+}
+
+// statementMailImport is the import the statement source recorded for one
+// message, or nil.
+func statementMailImport(source *models.AgentKnowledgeSource, mailId string) *models.FinanceStatementImport {
+	imports, _ := source.Cursor[financeCursorStatementMailImports].(map[string]any)
+	return decodeStatementImport(imports[mailId])
+}
 
 // statementImportCursorValue is an import as the cursor keeps it: the
 // cursor is JSON, and reads back as maps.
@@ -528,8 +602,13 @@ func LastStatementImport(source *models.AgentKnowledgeSource) *models.FinanceSta
 	if source == nil {
 		return nil
 	}
-	value, isRecorded := source.Cursor[models.FinanceCursorLastStatementImport]
-	if !isRecorded || value == nil {
+	return decodeStatementImport(source.Cursor[models.FinanceCursorLastStatementImport])
+}
+
+// decodeStatementImport is an import as the cursor keeps it, read back;
+// nil for nothing recorded.
+func decodeStatementImport(value any) *models.FinanceStatementImport {
+	if value == nil {
 		return nil
 	}
 	encoded, err := json.Marshal(value)
@@ -561,8 +640,8 @@ func (self *Agent) runStatementImport(ctx context.Context, run *Run) error {
 	if mail == nil || source == nil {
 		return nil
 	}
-	result := LastStatementImport(source)
-	if previous, _ := source.Cursor[financeCursorLastStatementMailId].(string); previous != mailId || result == nil {
+	result := statementMailImport(source, mailId)
+	if result == nil {
 		headers, body, err := run.Storage().Get(ctx, mailId)
 		if err != nil {
 			// The message is stored just after the delivery commits; a

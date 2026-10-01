@@ -13,6 +13,7 @@ package ofx
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -29,10 +30,16 @@ import (
 // real statement and small enough that a hostile file costs little.
 const MaximumFileBytes = 10 * 1024 * 1024
 
-// maximumElements bounds how many elements one file may hold, so a file of
-// nothing but tags cannot make the tree it builds unbounded in count as
-// well as in bytes.
-const maximumElements = 2_000_000
+// maximumTags bounds how many tags one file may hold, counting every tag:
+// opening, closing, empty, comments and processing instructions. A file of
+// nothing but tags then costs a bounded amount of work and tree, whichever
+// kind of tag it repeats. A real statement holds a few tags per
+// transaction.
+const maximumTags = 2_000_000
+
+// cancellationCheckTags is how many tags are read between asking whether
+// the caller has given up.
+const cancellationCheckTags = 4096
 
 // maximumDepth bounds how deeply elements nest. Real statements nest about
 // eight deep.
@@ -136,9 +143,18 @@ type Transaction struct {
 	Memo      string
 	PayeeName string
 
-	// CurrencyCode is the transaction's own currency when it names one
-	// (CURRENCY or ORIGCURRENCY), empty otherwise.
+	// CurrencyCode is CURRENCY's CURSYM, the currency TRNAMT is in when it
+	// is not CURDEF, and CurrencyRate its CURRATE to CURDEF; both empty
+	// otherwise.
 	CurrencyCode string
+	CurrencyRate string
+
+	// OriginalCurrencyCode and OriginalCurrencyRate are ORIGCURRENCY's
+	// CURSYM and CURRATE: the currency the purchase was made in, while
+	// TRNAMT is already in CURDEF. For the record only; the amount is not
+	// in this currency.
+	OriginalCurrencyCode string
+	OriginalCurrencyRate string
 }
 
 // IsOFX says whether content looks like an OFX file: an OFX 1.x header, an
@@ -159,8 +175,9 @@ func IsOFX(content []byte) bool {
 	return bytes.Contains(upper, []byte("<?OFX")) || bytes.Contains(upper, []byte("<OFX>"))
 }
 
-// Parse reads every statement in an OFX file.
-func Parse(content []byte) (*Document, error) {
+// Parse reads every statement in an OFX file. It stops with the context's
+// error when the context is done.
+func Parse(ctx context.Context, content []byte) (*Document, error) {
 	if len(content) > MaximumFileBytes {
 		return nil, ErrTooLarge
 	}
@@ -172,7 +189,7 @@ func Parse(content []byte) (*Document, error) {
 	if start < 0 {
 		return nil, ErrNotOFX
 	}
-	root, err := buildTree(text[start:])
+	root, err := buildTree(ctx, text[start:])
 	if err != nil {
 		return nil, err
 	}
@@ -269,10 +286,15 @@ func readTransaction(entry *element) (*Transaction, error) {
 	if payee := entry.child("PAYEE"); payee != nil {
 		transaction.PayeeName = payee.leaf("NAME")
 	}
-	for _, currencyName := range []string{"CURRENCY", "ORIGCURRENCY"} {
-		if currency := entry.child(currencyName); currency != nil {
-			transaction.CurrencyCode = strings.ToUpper(currency.leaf("CURSYM"))
-		}
+	// CURRENCY says TRNAMT is in another currency; ORIGCURRENCY says it is
+	// in CURDEF already and only names what the purchase was made in.
+	if currency := entry.child("CURRENCY"); currency != nil {
+		transaction.CurrencyCode = strings.ToUpper(currency.leaf("CURSYM"))
+		transaction.CurrencyRate = currency.leaf("CURRATE")
+	}
+	if currency := entry.child("ORIGCURRENCY"); currency != nil {
+		transaction.OriginalCurrencyCode = strings.ToUpper(currency.leaf("CURSYM"))
+		transaction.OriginalCurrencyRate = currency.leaf("CURRATE")
 	}
 	postedText := entry.leaf("DTPOSTED")
 	if postedText == "" {
@@ -434,6 +456,11 @@ type element struct {
 	text     string
 	children []*element
 	parent   *element
+
+	// textPieces are the runs of text read for the element, joined into
+	// text once the whole file is read. Joining as each run arrived made a
+	// leaf broken up by many skipped tags cost the square of its length.
+	textPieces []string
 }
 
 func (self *element) child(name string) *element {
@@ -508,11 +535,11 @@ func (self *element) descendants(names ...string) []*element {
 // its name and everything still open inside it, and one that matches
 // nothing open is ignored, as a stray closing tag in a hand-edited file
 // should be.
-func buildTree(body string) (*element, error) {
+func buildTree(ctx context.Context, body string) (*element, error) {
 	root := &element{name: ""}
 	current := root
 	depth := 0
-	elementCount := 0
+	tagCount := 0
 	position := 0
 	for position < len(body) {
 		open := strings.IndexByte(body[position:], '<')
@@ -524,6 +551,15 @@ func buildTree(body string) (*element, error) {
 			appendText(current, body[position:position+open])
 		}
 		position += open
+		tagCount++
+		if tagCount > maximumTags {
+			return nil, errors.New("ofx: the file holds too many tags")
+		}
+		if tagCount%cancellationCheckTags == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		if strings.HasPrefix(body[position:], "<!--") {
 			end := strings.Index(body[position:], "-->")
 			if end < 0 {
@@ -544,7 +580,7 @@ func buildTree(body string) (*element, error) {
 		// A leaf ends here, whatever the tag is: one that has its text, or
 		// one of the names OFX only uses for leaves, which an SGML file may
 		// leave empty and unclosed.
-		if current != root && len(current.children) == 0 && !strings.HasPrefix(tag, "/") && (current.text != "" || leafNames[current.name]) {
+		if current != root && len(current.children) == 0 && !strings.HasPrefix(tag, "/") && (len(current.textPieces) > 0 || leafNames[current.name]) {
 			current = current.parent
 			depth--
 		}
@@ -566,10 +602,6 @@ func buildTree(body string) (*element, error) {
 		if space := strings.IndexAny(name, " \t\r\n"); space >= 0 {
 			name = name[:space]
 		}
-		elementCount++
-		if elementCount > maximumElements {
-			return nil, errors.New("ofx: the file holds too many elements")
-		}
 		opened := &element{name: name, parent: current}
 		current.children = append(current.children, opened)
 		if isSelfClosing {
@@ -585,7 +617,20 @@ func buildTree(body string) (*element, error) {
 	if ofxRoot == nil {
 		return nil, ErrNotOFX
 	}
+	joinText(ofxRoot)
 	return ofxRoot, nil
+}
+
+// joinText gives every element below and including this one its text, from
+// the pieces read for it.
+func joinText(current *element) {
+	if len(current.textPieces) > 0 {
+		current.text = strings.TrimSpace(strings.Join(current.textPieces, ""))
+		current.textPieces = nil
+	}
+	for _, child := range current.children {
+		joinText(child)
+	}
 }
 
 // leafNames are the elements OFX defines as leaves, among those this
@@ -607,7 +652,7 @@ func appendText(current *element, text string) {
 	if text == "" || len(current.children) > 0 || current.name == "" {
 		return
 	}
-	current.text = strings.TrimSpace(current.text + unescape(text))
+	current.textPieces = append(current.textPieces, unescape(text))
 }
 
 var entities = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'", "&nbsp;", " ", "&amp;", "&")
