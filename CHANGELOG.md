@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.95.1] - 2026-10-01
+
+### Changed
+
+- A dream keeps what the person says about their own life in their chats, even in passing, and no longer files other people's general advice as if it were about them. (#284)
+
 ## [0.95.0] - 2026-10-01
 
 ### Added
