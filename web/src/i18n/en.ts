@@ -2878,8 +2878,8 @@ export const en = {
   'knowledge.documents.wordsOnly': 'Found by words alone: this server has no model to search by meaning.',
   'knowledge.documents.moreOne': '1 more passage',
   'knowledge.documents.moreOther': '{count} more passages',
-  'knowledge.documents.moreAtLeastOne': 'At least 1 more passage',
-  'knowledge.documents.moreAtLeastOther': 'At least {count} more passages',
+  'knowledge.documents.moreAtLeastOne': 'at least 1 more passage',
+  'knowledge.documents.moreAtLeastOther': 'at least {count} more passages',
   // The whole graph, drawn. A page of its own rather than a bigger card: a
   // drawing you pan and zoom wants the window, and the card beside a page is
   // about that page.

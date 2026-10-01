@@ -1,11 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
 import { en } from '../i18n/en'
 import type { Key } from '../i18n/i18n'
-import { DocumentsDialog, appendNew, moreFoundInGraph } from './knowledge'
+import { DocumentsDialog, appendNew, moreFoundInGraph, useSearchMore } from './knowledge'
 
 vi.mock('../api', () => ({ graphql: vi.fn(), askAgentAbout: vi.fn() }))
 vi.mock('../i18n/i18n', () => ({
@@ -116,4 +116,44 @@ it('reads the next passages with the offset the search returned and puts them un
     offset: 20,
   })
   await waitFor(() => expect(screen.queryByRole('button', { name: 'list.showMore' })).toBeNull())
+})
+
+// The search box's Show more appends the next page to the first, without a
+// row twice.
+it('appends the next page of the search to the first', async () => {
+  const first = foundInGraph({ nodes: [{ id: 'n1' }, { id: 'n2' }] as never, nextOffset: 2 })
+  execute.mockResolvedValueOnce({
+    SearchAgentGraph: foundInGraph({ nodes: [{ id: 'n2' }, { id: 'n3' }] as never, nextOffset: 0 }),
+  })
+  const { result } = renderHook(() => useSearchMore('boat', first, vi.fn()))
+  await act(() => result.current.searchMore())
+  expect(execute.mock.calls[0][1]).toMatchObject({ query: 'boat', offset: 2 })
+  expect(result.current.shownFound?.nodes.map((node) => node.id)).toEqual(['n1', 'n2', 'n3'])
+  expect(result.current.isSearchingMore).toBe(false)
+})
+
+// A new search while a later page of the old one is on its way: the new
+// search's strip is not shown loading, and the old page, when it comes, is
+// not appended to the new search.
+it('puts a later page of an old search away when the words change', async () => {
+  let answer: (value: unknown) => void = () => undefined
+  execute.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never)
+  const old = foundInGraph({ nodes: [{ id: 'old1' }] as never, nextOffset: 1 })
+  const fresh = foundInGraph({ nodes: [{ id: 'new1' }] as never, nextOffset: 1 })
+  const { result, rerender } = renderHook(({ search, first }) => useSearchMore(search, first, vi.fn()), {
+    initialProps: { search: 'boat', first: old },
+  })
+  let pending: Promise<void> = Promise.resolve()
+  act(() => {
+    pending = result.current.searchMore()
+  })
+  expect(result.current.isSearchingMore).toBe(true)
+  rerender({ search: 'mooring', first: fresh })
+  expect(result.current.isSearchingMore).toBe(false)
+  await act(async () => {
+    answer({ SearchAgentGraph: foundInGraph({ nodes: [{ id: 'old2' }] as never, nextOffset: 0 }) })
+    await pending
+  })
+  expect(result.current.shownFound?.nodes.map((node) => node.id)).toEqual(['new1'])
+  expect(result.current.isSearchingMore).toBe(false)
 })

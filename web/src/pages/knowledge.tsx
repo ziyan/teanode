@@ -544,39 +544,7 @@ export function KnowledgePage() {
     [search],
     { refresh: false },
   )
-  // The pages read after the first, appended to it, and the first page they
-  // carry on from: a new answer to the box puts them away, and so does an
-  // answer to other words that arrives after the box has moved on.
-  const [searchedMore, setSearchedMore] = useState<{ from: FoundInGraph; found: FoundInGraph } | null>(null)
-  const [isSearchingMore, setIsSearchingMore] = useState(false)
-  const firstFound = found.data?.SearchAgentGraph ?? null
-  const shownFound = searchedMore !== null && searchedMore.from === firstFound ? searchedMore.found : firstFound
-  const searchMore = async () => {
-    if (firstFound === null || shownFound === null || shownFound.nextOffset <= 0) return
-    const from = firstFound
-    const before = shownFound
-    setIsSearchingMore(true)
-    try {
-      const answer = await graphql<{ SearchAgentGraph: FoundInGraph }>(SEARCH, {
-        query: search,
-        first: SEARCH_PAGE,
-        offset: before.nextOffset,
-      })
-      const next = answer.SearchAgentGraph
-      setSearchedMore({
-        from,
-        found: {
-          ...next,
-          nodes: appendNew(before.nodes, next.nodes, (node) => node.id),
-          facts: appendNew(before.facts, next.facts, (row) => row.fact.id),
-        },
-      })
-    } catch (caught) {
-      toast.failed(messageOf(caught))
-    } finally {
-      setIsSearchingMore(false)
-    }
-  }
+  const { shownFound, isSearchingMore, searchMore } = useSearchMore(search, found.data?.SearchAgentGraph ?? null, toast.failed)
 
   // Going somewhere is one move: the address changes, the lookup is put
   // away, and the navigator is told whether the chevron or the name was
@@ -2767,4 +2735,48 @@ function EditFactDialog({
       />
     </FormDialog>
   )
+}
+
+// useSearchMore is the search box's pages after the first: what is shown
+// (the first page with the later ones appended), whether a later page is
+// on its way, and the way to ask for it.
+//
+// Both are tied to the first page they carry on from. A new answer to the
+// box puts the later pages away, and an answer to other words that arrives
+// after the box has moved on is dropped. The page on its way is kept the
+// same way, not as a flag: a flag set for the old words left the new
+// words' strip saying "loading" with its button off until the old request
+// finished.
+export function useSearchMore(search: string, firstFound: FoundInGraph | null, failed: (message: string) => void) {
+  const [searchedMore, setSearchedMore] = useState<{ from: FoundInGraph; found: FoundInGraph } | null>(null)
+  const [searchingMoreFrom, setSearchingMoreFrom] = useState<FoundInGraph | null>(null)
+  const shownFound = searchedMore !== null && searchedMore.from === firstFound ? searchedMore.found : firstFound
+  const isSearchingMore = searchingMoreFrom !== null && searchingMoreFrom === firstFound
+  const searchMore = async () => {
+    if (firstFound === null || shownFound === null || shownFound.nextOffset <= 0) return
+    const from = firstFound
+    const before = shownFound
+    setSearchingMoreFrom(from)
+    try {
+      const answer = await graphql<{ SearchAgentGraph: FoundInGraph }>(SEARCH, {
+        query: search,
+        first: SEARCH_PAGE,
+        offset: before.nextOffset,
+      })
+      const next = answer.SearchAgentGraph
+      setSearchedMore({
+        from,
+        found: {
+          ...next,
+          nodes: appendNew(before.nodes, next.nodes, (node) => node.id),
+          facts: appendNew(before.facts, next.facts, (row) => row.fact.id),
+        },
+      })
+    } catch (caught) {
+      failed(messageOf(caught))
+    } finally {
+      setSearchingMoreFrom((current) => (current === from ? null : current))
+    }
+  }
+  return { shownFound, isSearchingMore, searchMore }
 }
