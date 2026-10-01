@@ -2685,6 +2685,19 @@ export const en = {
   'knowledge.showMore': 'Show {count} more',
   'knowledge.empty': 'Nothing yet. Your agent files what it learns as you talk to it.',
   'knowledge.nothingFound': 'Nothing about that.',
+  // Under the search box's results while there are more of them: how many
+  // pages and facts past the ones shown, "at least" where the server
+  // stopped counting.
+  'knowledge.search.morePagesOne': '1 more page',
+  'knowledge.search.morePagesOther': '{count} more pages',
+  'knowledge.search.morePagesAtLeastOne': 'at least 1 more page',
+  'knowledge.search.morePagesAtLeastOther': 'at least {count} more pages',
+  'knowledge.search.moreFactsOne': '1 more fact',
+  'knowledge.search.moreFactsOther': '{count} more facts',
+  'knowledge.search.moreFactsAtLeastOne': 'at least 1 more fact',
+  'knowledge.search.moreFactsAtLeastOther': 'at least {count} more facts',
+  'knowledge.search.moreBoth': '{pages} and {facts}',
+  'knowledge.search.moreEither': '{what}',
   'knowledge.noPage': 'There is no page here.',
   'knowledge.noSummary': 'This page has no opening yet. A dream writes one from the facts below.',
   'knowledge.contact': 'In your address book as {name} {detail}',
@@ -2863,6 +2876,10 @@ export const en = {
   'knowledge.documents.blank': 'That document was indexed with no text in it.',
   'knowledge.documents.gone': 'That document is no longer indexed. Search again for what is.',
   'knowledge.documents.wordsOnly': 'Found by words alone: this server has no model to search by meaning.',
+  'knowledge.documents.moreOne': '1 more passage',
+  'knowledge.documents.moreOther': '{count} more passages',
+  'knowledge.documents.moreAtLeastOne': 'At least 1 more passage',
+  'knowledge.documents.moreAtLeastOther': 'At least {count} more passages',
   // The whole graph, drawn. A page of its own rather than a bigger card: a
   // drawing you pan and zoom wants the window, and the card beside a page is
   // about that page.
