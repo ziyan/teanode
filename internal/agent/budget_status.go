@@ -218,6 +218,7 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 		row.SpendingAmount = finance.FormatAmount(projection.SpendingAmount)
 		row.SpendingBySameDayLastMonthAmount = finance.FormatAmount(lastMonthSpending)
 		row.FixedChargesDueAmount = finance.FormatAmount(charges.dueAmount)
+		row.ExpectedRepeatCharges = charges.dueCharges
 		row.ProjectedAmount = finance.FormatAmount(projection.ProjectedAmount)
 		row.BudgetPace = projection.BudgetPace
 		row.UnconvertedSpending = currencyAmountsOf(unconverted)
@@ -297,11 +298,13 @@ func incomeCategoryBudgetStatus(converter *rates.Converter, budgetStatus *models
 // they have charged already, and, per currency, what is still expected
 // in a currency with no exchange rate into the budget's. What they have
 // charged already in such a currency is spending, and is reported with
-// the rest of the month's unconverted spending.
+// the rest of the month's unconverted spending. dueCharges is what is
+// still expected, merchant by merchant, largest first.
 type fixedChargeAmounts struct {
 	dueAmount      *big.Rat
 	seenAmount     *big.Rat
 	unconvertedDue map[string]*big.Rat
+	dueCharges     []*models.ExpectedRepeatCharge
 }
 
 // fixedCharges is what merchants that charged the counted spending
@@ -316,6 +319,13 @@ func fixedCharges(converter *rates.Converter, counted map[string]bool, history, 
 		currencyCode string
 	}
 	amountsByMerchant := map[merchantKey]map[string]*big.Rat{}
+	// The name a merchant is shown by is how it was written in the latest
+	// month it charged, since the key folds case.
+	type merchantDisplay struct {
+		merchantName  string
+		spendingMonth string
+	}
+	displayByMerchant := map[merchantKey]merchantDisplay{}
 	for _, row := range history {
 		if !counted[row.SpendingCategoryID] || row.SpendingMonth == month {
 			continue
@@ -325,6 +335,9 @@ func fixedCharges(converter *rates.Converter, counted map[string]bool, history, 
 			return nil, err
 		}
 		key := merchantKey{merchantName: strings.ToLower(strings.TrimSpace(row.MerchantName)), currencyCode: row.CurrencyCode}
+		if display, isKnown := displayByMerchant[key]; !isKnown || row.SpendingMonth >= display.spendingMonth {
+			displayByMerchant[key] = merchantDisplay{merchantName: strings.TrimSpace(row.MerchantName), spendingMonth: row.SpendingMonth}
+		}
 		if amountsByMerchant[key] == nil {
 			amountsByMerchant[key] = map[string]*big.Rat{}
 		}
@@ -348,7 +361,8 @@ func fixedCharges(converter *rates.Converter, counted map[string]bool, history, 
 		}
 		seenThisMonth[key].Add(seenThisMonth[key], amount)
 	}
-	charges := &fixedChargeAmounts{dueAmount: new(big.Rat), seenAmount: new(big.Rat), unconvertedDue: map[string]*big.Rat{}}
+	charges := &fixedChargeAmounts{dueAmount: new(big.Rat), seenAmount: new(big.Rat), unconvertedDue: map[string]*big.Rat{}, dueCharges: []*models.ExpectedRepeatCharge{}}
+	dueAmounts := map[*models.ExpectedRepeatCharge]*big.Rat{}
 	for key, byMonth := range amountsByMerchant {
 		monthlyAmounts := make([]*big.Rat, 0, len(byMonth))
 		for _, amount := range byMonth {
@@ -377,10 +391,31 @@ func fixedCharges(converter *rates.Converter, counted map[string]bool, history, 
 		}
 		if !isConverted {
 			addTo(charges.unconvertedDue, key.currencyCode, finance.FormatAmount(medianAmount))
+			dueCharge := &models.ExpectedRepeatCharge{MerchantName: displayByMerchant[key].merchantName, ExpectedAmount: finance.FormatAmount(medianAmount), CurrencyCode: key.currencyCode}
+			charges.dueCharges = append(charges.dueCharges, dueCharge)
+			dueAmounts[dueCharge] = medianAmount
 			continue
 		}
 		charges.dueAmount.Add(charges.dueAmount, converted)
+		dueCharge := &models.ExpectedRepeatCharge{MerchantName: displayByMerchant[key].merchantName, ExpectedAmount: finance.FormatAmount(converted), CurrencyCode: currencyCode}
+		charges.dueCharges = append(charges.dueCharges, dueCharge)
+		dueAmounts[dueCharge] = converted
 	}
+	// The budget's currency first, then largest first within a currency,
+	// then by name, so the list reads the same on every load.
+	sort.Slice(charges.dueCharges, func(left, right int) bool {
+		leftCharge, rightCharge := charges.dueCharges[left], charges.dueCharges[right]
+		if (leftCharge.CurrencyCode == currencyCode) != (rightCharge.CurrencyCode == currencyCode) {
+			return leftCharge.CurrencyCode == currencyCode
+		}
+		if leftCharge.CurrencyCode != rightCharge.CurrencyCode {
+			return leftCharge.CurrencyCode < rightCharge.CurrencyCode
+		}
+		if comparison := dueAmounts[leftCharge].Cmp(dueAmounts[rightCharge]); comparison != 0 {
+			return comparison > 0
+		}
+		return leftCharge.MerchantName < rightCharge.MerchantName
+	})
 	return charges, nil
 }
 
@@ -613,12 +648,30 @@ func budgetCrossingReason(row *models.SpendingCategoryBudgetStatus, crossing str
 		row.SpendingCategoryName, crossingDescription, displayAmount(ratOrZero(spendingAmount)), displayAmount(ratOrZero(budgetAmount)), row.CurrencyCode, spentPercent,
 		budgetStatus.DayOfMonth, budgetStatus.DaysInMonth, displayAmount(ratOrZero(projectedAmount)), row.CurrencyCode)
 	if fixedChargesDueAmount, err := finance.ParseAmount(row.FixedChargesDueAmount); err == nil && fixedChargesDueAmount.Sign() > 0 {
-		candidateReason += fmt.Sprintf(" That counts %s %s of regular charges still expected this month.", displayAmount(fixedChargesDueAmount), row.CurrencyCode)
+		candidateReason += fmt.Sprintf(" That counts %s %s of repeat charges still expected this month (merchants that charged it in each of the last three months)%s.",
+			displayAmount(fixedChargesDueAmount), row.CurrencyCode, repeatChargeList(row.ExpectedRepeatCharges))
 	}
 	if lastMonthSpendingAmount, err := finance.ParseAmount(row.SpendingBySameDayLastMonthAmount); err == nil {
 		candidateReason += fmt.Sprintf(" By the same day last month it was %s %s.", displayAmount(lastMonthSpendingAmount), row.CurrencyCode)
 	}
 	return candidateReason
+}
+
+// repeatChargeList is the repeat charges still expected, each merchant
+// with its amount, after a colon, or nothing when there are none.
+func repeatChargeList(charges []*models.ExpectedRepeatCharge) string {
+	if len(charges) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(charges))
+	for _, charge := range charges {
+		expectedAmount, err := finance.ParseAmount(charge.ExpectedAmount)
+		if err != nil {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s %s %s", charge.MerchantName, displayAmount(expectedAmount), charge.CurrencyCode))
+	}
+	return ": " + strings.Join(lines, ", ")
 }
 
 // savingsTargetBehind is a savings target that fell behind, with the

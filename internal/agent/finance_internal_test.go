@@ -728,6 +728,70 @@ func TestBudgetStatusReportsWhatItCouldNotConvert(t *testing.T) {
 	}
 }
 
+// A spending budget lists the repeat charges its projection counts, each
+// merchant at its median: a merchant that already charged this month is
+// left out, as is one that missed a month, and the amounts add up to
+// FixedChargesDueAmount. The alert line names them too.
+func TestBudgetStatusListsTheRepeatChargesStillExpected(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	groceriesId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryGroceries)
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{
+		inventedTransaction("box-march", "2026-03-05", "-40.00", "EXAMPLE BOX", "Example Box", ""),
+		inventedTransaction("box-april", "2026-04-05", "-48.00", "EXAMPLE BOX", "Example Box", ""),
+		inventedTransaction("box-may", "2026-05-05", "-44.00", "EXAMPLE BOX", "Example Box", ""),
+		inventedTransaction("crate-march", "2026-03-20", "-12.00", "EXAMPLE CRATE", "Example Crate", ""),
+		inventedTransaction("crate-april", "2026-04-20", "-12.00", "EXAMPLE CRATE", "Example Crate", ""),
+		inventedTransaction("crate-may", "2026-05-20", "-12.00", "EXAMPLE CRATE", "Example Crate", ""),
+		inventedTransaction("basket-march", "2026-03-08", "-30.00", "EXAMPLE BASKET", "Example Basket", ""),
+		inventedTransaction("basket-april", "2026-04-08", "-30.00", "EXAMPLE BASKET", "Example Basket", ""),
+		inventedTransaction("basket-may", "2026-05-08", "-30.00", "EXAMPLE BASKET", "Example Basket", ""),
+		inventedTransaction("basket-june", "2026-06-08", "-30.00", "EXAMPLE BASKET", "Example Basket", ""),
+		inventedTransaction("stall-april", "2026-04-11", "-25.00", "EXAMPLE STALL", "Example Stall", ""),
+		inventedTransaction("stall-may", "2026-05-11", "-25.00", "EXAMPLE STALL", "Example Stall", ""),
+	}})
+	var status *models.BudgetStatus
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(fixture.agent.ID, &db.FinanceTransactionFilter{})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if _, err := tx.SetTransactionCategorization(fixture.agent.ID, financeTransaction.ID, groceriesId, models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		if _, err := tx.SetBudget(&models.Budget{AgentID: fixture.agent.ID, SpendingCategoryID: groceriesId, MonthlyAmount: "400", CurrencyCode: "USD", EffectiveFrom: "2026-03"}); err != nil {
+			t.Fatalf("SetBudget: %s", err)
+		}
+		if status, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-06-10"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+	})
+	if len(status.SpendingCategories) != 1 {
+		t.Fatalf("one spending category with a budget: %+v", status)
+	}
+	row := status.SpendingCategories[0]
+	expected := []models.ExpectedRepeatCharge{
+		{MerchantName: "Example Box", ExpectedAmount: "44.0000", CurrencyCode: "USD"},
+		{MerchantName: "Example Crate", ExpectedAmount: "12.0000", CurrencyCode: "USD"},
+	}
+	if len(row.ExpectedRepeatCharges) != len(expected) {
+		t.Fatalf("two merchants still expected, largest first: %+v", row.ExpectedRepeatCharges)
+	}
+	for index, charge := range row.ExpectedRepeatCharges {
+		if *charge != expected[index] {
+			t.Errorf("repeat charge %d: got %+v, want %+v", index, *charge, expected[index])
+		}
+	}
+	if row.FixedChargesDueAmount != "56.0000" {
+		t.Errorf("the list adds up to what is still due: %s", row.FixedChargesDueAmount)
+	}
+	candidateReason := budgetCrossingReason(row, budgetCrossingAtRisk, status)
+	if !strings.Contains(candidateReason, "Example Box 44.00 USD, Example Crate 12.00 USD") || strings.Contains(candidateReason, "Example Basket") {
+		t.Errorf("the alert line names the merchants still expected: %s", candidateReason)
+	}
+}
+
 // An income budget is listed apart from the spending budgets, against what
 // came in, and the saving summary sets the budgets' expected saving
 // against income less spending: so far and projected in the month in

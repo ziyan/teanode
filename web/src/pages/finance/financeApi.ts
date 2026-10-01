@@ -112,10 +112,16 @@ export type SpendingCategoryBudgetStatus = {
   spendingAmount: string
   spendingBySameDayLastMonthAmount: string
   fixedChargesDueAmount: string
+  expectedRepeatCharges: ExpectedRepeatCharge[]
   projectedAmount: string
   budgetPace: BudgetPace
   unconvertedSpending: CurrencyAmount[]
 }
+
+// A merchant that charged a spending category in each of the last three
+// full months and has not yet this month, at the amount it is expected to
+// charge: what fixedChargesDueAmount adds up.
+export type ExpectedRepeatCharge = { merchantName: string; expectedAmount: string; currencyCode: string }
 
 // How an income budget is going: falling short is the bad direction, so it
 // has words of its own rather than a BudgetPace.
@@ -450,6 +456,7 @@ export const BUDGET_STATUS = `query ($month: String) {
   BudgetStatus(month: $month) { month asOf dayOfMonth daysInMonth
     spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount
       spendingBySameDayLastMonthAmount fixedChargesDueAmount projectedAmount budgetPace
+      expectedRepeatCharges { merchantName expectedAmount currencyCode }
       unconvertedSpending { currencyCode amount } }
     incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode incomeAmount
       incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace

@@ -1771,6 +1771,19 @@ func runFinanceBudgetStatus(ctx context.Context, command *cli.Command) error {
 		if err := printTable([]string{"spending category", "budget", "spent", "same day last month", "projected", "pace"}, rows); err != nil {
 			return err
 		}
+		// What each projection counts before it lands: merchants that
+		// charged the spending category in each of the last three months
+		// and have not yet this month.
+		for _, row := range status.SpendingCategories {
+			if len(row.ExpectedRepeatCharges) == 0 {
+				continue
+			}
+			charges := make([]string, 0, len(row.ExpectedRepeatCharges))
+			for _, charge := range row.ExpectedRepeatCharges {
+				charges = append(charges, charge.MerchantName+" "+money(charge.ExpectedAmount, charge.CurrencyCode))
+			}
+			_, _ = fmt.Fprintf(command.Writer, "repeat charges still expected in %s: %s\n", row.SpendingCategoryName, strings.Join(charges, ", "))
+		}
 	}
 	if len(status.IncomeCategories) > 0 {
 		if len(status.SpendingCategories) > 0 {

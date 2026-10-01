@@ -224,9 +224,22 @@ what income categories took in, plus money in with no spending category.
 
 A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
-converts spending into the budget's currency, projects the month's end with
-fixed monthly charges counted before they land (`budget_pace.go`), and names
-the budget pace.
+converts spending into the budget's currency, projects the month's end
+(`budget_pace.go`), and names the budget pace. The projection is a sum of
+three amounts: the spending so far, plus the repeat charges still to come,
+plus the rest of the spending carried on for the days left at the rate it
+has come this month. A repeat charge is a merchant that charged the
+spending category in each of the last three full months and has not yet
+this month, expected again at its median over those months (`fixedCharges`;
+the code and the published fields still call them fixed charges, as in
+`fixedChargesDueAmount`, though a shop visited every month is not a fixed
+charge). What a repeat charge already took this month is left out of the
+rate, since rent on the first is not a pace. Each spending row lists the
+repeat charges still expected, merchant and amount, in
+`expectedRepeatCharges`, so the dashboard, the command line and the agent
+can say what a projection counts. The amounts in the budget's currency add
+up to `fixedChargesDueAmount`; one with no exchange rate is in its own
+currency and in `unconvertedFixedChargesDue`.
 
 A budget on an income spending category is the income expected each month,
 set the same way (`SetBudget` takes any spending category; nothing in the
@@ -242,7 +255,7 @@ came in with the expected income spread evenly over the days so far:
 `behind` under ninety percent of that after the first week (or in a month
 that is over), `ahead` past the whole month's expected income by more than
 ten percent, `on_track` otherwise. Nothing detects recurring income the way
-fixed charges are detected, so a salary paid late in the month reads
+repeat charges are detected, so a salary paid late in the month reads
 `behind` in the days before it lands. Budget alerts read only the spending
 budgets.
 
@@ -311,6 +324,17 @@ The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading
 of their own), and heads Budgets for this month, where the list and the
 "Set a budget" dialog group income categories under Income.
+
+Each bar is what has gone so far, and a faint striped band past it runs to
+where the month is heading (`MeterBar` in
+`web/src/components/budgetBar.tsx`). A band whose forecast passes the end
+reaches the end; on a spending budget whose pace is `at_risk` it turns the
+bad tone with a solid end. The line under a spending bar gives the
+projection as its sum (spent, repeat charges still to come, the rest at
+this month's pace), and an info button opens how it is worked out with the
+merchants still expected. Income and saving rows have the same button,
+saying how their projection is made. A month that is over has no band and
+no explanation: it is its own figures.
 
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,

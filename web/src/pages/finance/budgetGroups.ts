@@ -1,6 +1,13 @@
 import { formatMoney } from '../../components/common'
 import type { SelectOption } from '../../components/select'
-import { IncomePace, SavingPace, SavingSummary, SpendingCategory, amountOf } from './financeApi'
+import {
+  IncomePace,
+  SavingPace,
+  SavingSummary,
+  SpendingCategory,
+  SpendingCategoryBudgetStatus,
+  amountOf,
+} from './financeApi'
 
 // A budget on an income spending category is the income expected each
 // month rather than a limit, so the Budgets list, the budget dialog and
@@ -54,17 +61,33 @@ export function formatSigned(amount: number, currency: string): string {
 
 // savingMeter is the month's saving against the saving its budgets
 // expect: how much of it is saved so far as the bar, and where the month
-// is heading as the mark, which a month that is over does not have. None
-// when the budgets expect nothing saved, since a share of nothing is not
-// a bar anybody can read.
+// is heading as the forecast band, which a month that is over does not
+// have. None when the budgets expect nothing saved, since a share of
+// nothing is not a bar anybody can read.
 export function savingMeter(
   summary: SavingSummary,
   isPast: boolean,
-): { fraction: number; marker: number | null } | null {
+): { fraction: number; forecast: number | null } | null {
   const expected = amountOf(summary.expectedSavingAmount)
   if (!(expected > 0)) return null
   return {
     fraction: Math.max(0, amountOf(summary.savingAmount) / expected),
-    marker: isPast ? null : Math.max(0, amountOf(summary.projectedSavingAmount) / expected),
+    forecast: isPast ? null : Math.max(0, amountOf(summary.projectedSavingAmount) / expected),
   }
+}
+
+// spendingForecastParts is a spending budget's projection as the sum it
+// is: what was spent, the repeat charges still to come, and the rest of
+// the month at this month's pace, which is whatever the projection holds
+// beyond the first two. Never below zero: a refund can leave the spending
+// so far under what its repeat charges took.
+export function spendingForecastParts(
+  row: Pick<SpendingCategoryBudgetStatus, 'spendingAmount' | 'fixedChargesDueAmount' | 'projectedAmount'>,
+): { spentAmount: number; repeatChargesAmount: number; atPaceAmount: number } {
+  const spentAmount = amountOf(row.spendingAmount)
+  const repeatChargesAmount = amountOf(row.fixedChargesDueAmount)
+  const restAmount = amountOf(row.projectedAmount) - spentAmount - repeatChargesAmount
+  // Amounts come as four-place decimals; what is left of a subtraction
+  // under a hundredth of a cent is rounding, not spending.
+  return { spentAmount, repeatChargesAmount, atPaceAmount: restAmount > 0.00005 ? restAmount : 0 }
 }

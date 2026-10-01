@@ -819,3 +819,13 @@ export function MinusIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// InfoIcon is a letter i in a circle: how a number is worked out.
+export function InfoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-5M12 8h.01" />
+    </Icon>
+  )
+}

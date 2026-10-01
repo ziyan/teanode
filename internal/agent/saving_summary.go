@@ -159,7 +159,7 @@ func SavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fetche
 	projectedSpending := new(big.Rat).Set(spendingAmount)
 	if !isMonthOver {
 		// All of the month's spending projected the way one budget's is:
-		// regular charges still due counted before they land, and the rest
+		// repeat charges still due counted before they land, and the rest
 		// at the rate it has come so far.
 		projection, err := projectAllSpending(tx, converter, agentId, budgetStatus, currencyCode, spendingByDay, unconverted)
 		if err != nil {
@@ -189,7 +189,7 @@ func SavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fetche
 
 // projectAllSpending is where all of a month's spending is heading, in one
 // currency: ProjectSpendingCategoryMonth over every spending category at
-// once, with the regular charges of every one of them. A regular charge in
+// once, with the repeat charges of every one of them. A repeat charge in
 // a currency with no rate is left out and its currency added to
 // unconverted.
 func projectAllSpending(tx db.Transaction, converter *rates.Converter, agentId string, budgetStatus *models.BudgetStatus, currencyCode string,

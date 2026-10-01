@@ -57,39 +57,80 @@ export function BudgetBar({ budget, zone }: { budget: Budget | null; zone: strin
   )
 }
 
+// MeterBand is where a meter's fill and forecast band sit, as shares of
+// the bar from 0 to 1: the fill up to fillShare, the band from there to
+// bandEndShare (equal to fillShare when there is no band), and whether the
+// forecast passes the end of the bar while the fill has not yet.
+export interface MeterBand {
+  fillShare: number
+  bandEndShare: number
+  isHeadingOver: boolean
+}
+
+// meterBand is the fill and the forecast band of a meter. A forecast
+// behind the fill (refunds, or a projection that is only the income
+// expected) draws no band: the bar already says more than it.
+export function meterBand(fraction: number, forecast?: number | null): MeterBand {
+  const fillShare = clampShare(fraction)
+  if (forecast === undefined || forecast === null || !Number.isFinite(forecast)) {
+    return { fillShare, bandEndShare: fillShare, isHeadingOver: false }
+  }
+  return {
+    fillShare,
+    bandEndShare: Math.max(fillShare, clampShare(forecast)),
+    isHeadingOver: forecast > 1 && fraction < 1,
+  }
+}
+
+function clampShare(share: number): number {
+  return Number.isFinite(share) ? Math.max(0, Math.min(1, share)) : 0
+}
+
 // MeterBar is the bar itself: how much of something has gone, in the
-// colour the caller judged it, and where it is heading when the caller
-// knows (a spending category's projected month end against its budget).
-// The day's budget above and the Finance tab's budgets and savings
-// targets draw the same bar.
+// colour the caller judged it, and, when the caller knows where it is
+// heading (a spending category's projected month end against its
+// budget), a faint band from the fill to there. A band whose forecast
+// passes the end of the bar reaches the end, and with overTone it is drawn
+// in that tone with a solid end, so a month heading over its budget says
+// so before it gets there. forecastLabel is added to what a screen reader
+// is told. The day's budget above and the Finance tab's budgets and
+// savings targets draw the same bar.
 export function MeterBar({
   fraction,
   tone,
   label,
-  marker,
+  forecast,
+  forecastLabel,
+  overTone,
 }: {
   fraction: number
   tone: 'good' | 'warn' | 'bad'
   label: string
-  marker?: number | null
+  forecast?: number | null
+  forecastLabel?: string
+  overTone?: 'good' | 'warn' | 'bad'
 }) {
-  const shown = Math.max(0, Math.min(1, fraction))
+  const band = meterBand(fraction, forecast)
+  const isOverShown = band.isHeadingOver && overTone !== undefined
+  const bandTone = isOverShown ? overTone : tone
+  const fillPercent = Math.round(band.fillShare * 100)
+  const bandEndPercent = Math.round(band.bandEndShare * 100)
   return (
     <div
       className="agent-budget-bar"
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(shown * 100)}
-      aria-label={label}
+      aria-valuenow={fillPercent}
+      aria-label={forecastLabel ? `${label}. ${forecastLabel}` : label}
     >
-      <span className={`agent-budget-bar-fill ${tone}`} style={{ width: `${Math.round(shown * 100)}%` }} />
-      {marker !== undefined && marker !== null ? (
+      {bandEndPercent > fillPercent ? (
         <span
-          className="agent-budget-bar-marker"
-          style={{ left: `${Math.round(Math.max(0, Math.min(1, marker)) * 100)}%` }}
+          className={`agent-budget-bar-band ${bandTone}${isOverShown ? ' over' : ''}`}
+          style={{ left: `calc(${fillPercent}% - 3px)`, width: `calc(${bandEndPercent - fillPercent}% + 3px)` }}
         />
       ) : null}
+      <span className={`agent-budget-bar-fill ${tone}`} style={{ width: `${fillPercent}%` }} />
     </div>
   )
 }

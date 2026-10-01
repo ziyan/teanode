@@ -30,7 +30,7 @@ import {
   personMonth,
   personToday,
 } from './financeApi'
-import { reachTone } from './budgetGroups'
+import { reachTone, spendingForecastParts } from './budgetGroups'
 import { Money, UnconvertedNote, compactMoney, useFinanceWords } from './financeCommon'
 import {
   TransactionFilters,
@@ -40,6 +40,7 @@ import {
   transactionsPath,
 } from './financeFilters'
 import { SavingSummaryPanel } from './financeSaving'
+import { ForecastDetail } from './forecastDetail'
 import { SpendingGroupBy, SummaryAmounts, spendingLines, spendingTotals } from './spendingLines'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { RING_SLICE_COUNT, SpendingRing, foldIntoOther, ringSliceClass } from './spendingRing'
@@ -279,7 +280,7 @@ function BudgetStatusPanel({ month }: { month: string }) {
   const rows = status?.spendingCategories ?? []
   const incomeRows = status?.incomeCategories ?? []
   // A month that is over has nowhere left to head: it is the whole month,
-  // with no projection and no fixed charges still to come.
+  // with no projection and no repeat charges still to come.
   const isPast = month < personMonth()
   // The groups are headed only once there is income to tell apart.
   const hasBoth = rows.length > 0 && incomeRows.length > 0
@@ -326,8 +327,8 @@ function BudgetStatusPanel({ month }: { month: string }) {
 
 // IncomeStatusRow is an income budget: what came in against what was
 // expected, the bar filling toward the month's expected income, and the
-// mark where the month is expected to end. Falling short is what is
-// colored, not going past.
+// band to where the month is expected to end. Falling short is what is
+// colored, not going past, so a band past the end has no tone of its own.
 function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isPast: boolean }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -340,6 +341,7 @@ function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isP
     received: formatMoney(received, row.currencyCode),
     expected: formatMoney(expected, row.currencyCode),
   })
+  const headingFor = t('finance.projected', { amount: formatMoney(projected, row.currencyCode) })
   return (
     <div className="finance-budget-row">
       <div className="finance-budget-row-head">
@@ -351,16 +353,27 @@ function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isP
         fraction={expected > 0 ? received / expected : 0}
         tone={tone}
         label={said}
-        marker={expected > 0 && !isPast ? projected / expected : null}
+        forecast={expected > 0 && !isPast ? projected / expected : null}
+        forecastLabel={isPast ? undefined : headingFor}
       />
       {isPast ? null : (
-        <div className="muted finance-budget-row-detail">
-          {t('finance.expectedByToday', { amount: formatMoney(amountOf(row.expectedByTodayAmount), row.currencyCode) })}
-          {' · '}
-          {t('finance.sameDayLastMonth', {
-            amount: formatMoney(amountOf(row.incomeBySameDayLastMonthAmount), row.currencyCode),
-          })}
-        </div>
+        <ForecastDetail
+          name={categoryName(row.spendingCategoryName)}
+          line={
+            <>
+              {headingFor}
+              {' · '}
+              {t('finance.expectedByToday', {
+                amount: formatMoney(amountOf(row.expectedByTodayAmount), row.currencyCode),
+              })}
+              {' · '}
+              {t('finance.sameDayLastMonth', {
+                amount: formatMoney(amountOf(row.incomeBySameDayLastMonthAmount), row.currencyCode),
+              })}
+            </>
+          }
+          explanation={<p>{t('finance.forecastHowIncome', { expected: formatMoney(expected, row.currencyCode) })}</p>}
+        />
       )}
       {row.unconvertedIncome.length > 0 ? (
         <p className="muted field-hint">
@@ -375,6 +388,11 @@ function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isP
   )
 }
 
+// BudgetStatusRow is a spending budget: what was spent against the
+// budget, and a band to where the month is heading, which turns the bad
+// tone once the pace says the month is heading over. The line under it
+// gives that forecast as the sum it is, and opens how it is made and which
+// repeat charges it counts.
 function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; isPast: boolean }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -382,7 +400,12 @@ function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; i
   const budget = amountOf(row.budgetAmount)
   const spent = amountOf(row.spendingAmount)
   const projected = amountOf(row.projectedAmount)
-  const fixedDue = amountOf(row.fixedChargesDueAmount)
+  const { repeatChargesAmount, atPaceAmount } = spendingForecastParts(row)
+  const money = (amount: number) => formatMoney(amount, row.currencyCode)
+  const forecastParts = [t('finance.forecastSpent', { amount: money(spent) })]
+  if (repeatChargesAmount > 0)
+    forecastParts.push(t('finance.forecastRepeatCharges', { amount: money(repeatChargesAmount) }))
+  if (atPaceAmount > 0) forecastParts.push(t('finance.forecastAtPace', { amount: money(atPaceAmount) }))
   const tone = paceTone(row.budgetPace)
   const said = t('finance.spentOfBudget', {
     spent: formatMoney(spent, row.currencyCode),
@@ -399,19 +422,43 @@ function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; i
         fraction={budget > 0 ? spent / budget : 0}
         tone={tone}
         label={said}
-        marker={budget > 0 && !isPast ? projected / budget : null}
+        forecast={budget > 0 && !isPast ? projected / budget : null}
+        forecastLabel={isPast ? undefined : t('finance.projected', { amount: money(projected) })}
+        overTone={row.budgetPace === 'at_risk' ? 'bad' : undefined}
       />
       {isPast ? null : (
-        <div className="muted finance-budget-row-detail">
-          {t('finance.projected', { amount: formatMoney(projected, row.currencyCode) })}
-          {' · '}
-          {t('finance.sameDayLastMonth', {
-            amount: formatMoney(amountOf(row.spendingBySameDayLastMonthAmount), row.currencyCode),
-          })}
-          {fixedDue > 0
-            ? ` · ${t('finance.fixedChargesDue', { amount: formatMoney(fixedDue, row.currencyCode) })}`
-            : ''}
-        </div>
+        <ForecastDetail
+          name={categoryName(row.spendingCategoryName)}
+          line={
+            <>
+              {t('finance.forecastSum', { amount: money(projected), parts: forecastParts.join(' + ') })}
+              {' · '}
+              {t('finance.sameDayLastMonth', { amount: money(amountOf(row.spendingBySameDayLastMonthAmount)) })}
+            </>
+          }
+          explanation={
+            <>
+              <p>{t('finance.forecastHowSpending')}</p>
+              {row.expectedRepeatCharges.length > 0 ? (
+                <>
+                  <p>{t('finance.forecastRepeatChargesListed')}</p>
+                  <ul className="finance-forecast-charges">
+                    {row.expectedRepeatCharges.map((charge) => (
+                      <li key={`${charge.merchantName} ${charge.currencyCode}`}>
+                        <span>{charge.merchantName}</span>
+                        <span className="numeric">
+                          {formatMoney(amountOf(charge.expectedAmount), charge.currencyCode)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p>{t('finance.forecastNoRepeatCharges')}</p>
+              )}
+            </>
+          }
+        />
       )}
       {row.unconvertedSpending.length > 0 ? (
         <p className="muted field-hint">
