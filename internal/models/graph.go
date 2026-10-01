@@ -324,8 +324,11 @@ type AgentFact struct {
 	Kind AgentFactKind `json:"kind"`
 	Text string        `json:"text"`
 
-	// HappenedAt is when it was true, which is not when it was learned.
-	HappenedAt *time.Time `json:"happenedAt,omitempty"`
+	// HappenedAt is when it was true, which is not when it was learned, and
+	// HappenedPrecision how precisely: HappenedDay, HappenedMonth or
+	// HappenedYear, as the date was given; empty where it was not recorded.
+	HappenedAt        *time.Time `json:"happenedAt,omitempty"`
+	HappenedPrecision string     `json:"happenedPrecision,omitempty"`
 
 	// Confidence is below one for anything assembled rather than said, and
 	// Inferred marks it as such on the page and in the prompt. A "who did
@@ -763,13 +766,64 @@ func (self *AgentFact) Line() string {
 	if self.Inferred {
 		notes = append(notes, "inferred")
 	}
-	if self.HappenedAt != nil {
-		notes = append(notes, self.HappenedAt.Format("Jan 2006"))
+	happened := self.HappenedText()
+	if happened != "" {
+		notes = append(notes, happened)
+	}
+	// When it was learned, where that says something the date it happened
+	// does not: a fact with no date of its own, or one reported later than
+	// it happened. "What did we know on the 6th" is answered from this.
+	if said := self.SaidAt(); said != nil {
+		if text := said.Format("2 Jan 2006"); happened == "" || text != happened {
+			notes = append(notes, "said "+text)
+		}
 	}
 	if len(notes) > 0 {
 		line += " (" + strings.Join(notes, ", ") + ")"
 	}
 	return line
+}
+
+// The precisions a fact's date can be given with.
+const (
+	HappenedDay   = "day"
+	HappenedMonth = "month"
+	HappenedYear  = "year"
+)
+
+// HappenedText is when the fact happened, as precisely as it is known: "14
+// Jan 2023", "Jan 2023" or "2023". A date recorded before the precision
+// was is shown to the day unless it falls on the first of a month, which
+// is how a month given alone was stored.
+func (self *AgentFact) HappenedText() string {
+	if self.HappenedAt == nil {
+		return ""
+	}
+	switch self.HappenedPrecision {
+	case HappenedDay:
+		return self.HappenedAt.Format("2 Jan 2006")
+	case HappenedMonth:
+		return self.HappenedAt.Format("Jan 2006")
+	case HappenedYear:
+		return self.HappenedAt.Format("2006")
+	}
+	if self.HappenedAt.Day() != 1 {
+		return self.HappenedAt.Format("2 Jan 2006")
+	}
+	return self.HappenedAt.Format("Jan 2006")
+}
+
+// SaidAt is when the fact was first learned: the earliest time its
+// evidence records, which is when its source was written or said. Nil
+// where no evidence says.
+func (self *AgentFact) SaidAt() *time.Time {
+	var earliest *time.Time
+	for index := range self.Evidence {
+		if at := self.Evidence[index].At; at != nil && (earliest == nil || at.Before(*earliest)) {
+			earliest = at
+		}
+	}
+	return earliest
 }
 
 // IndexLine is a page as the index in a prompt carries it: the path, the
