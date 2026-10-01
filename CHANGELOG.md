@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.103.0] - 2026-10-01
+
+### Added
+
+- Select several transactions to give them one category at once, and optionally save rules so future ones like them get it too. (#306)
+
 ## [0.102.1] - 2026-10-01
 
 ### Fixed
