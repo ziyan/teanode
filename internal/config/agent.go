@@ -541,6 +541,12 @@ type AgentLimits struct {
 	// by nothing but the machine.
 	ScanConcurrency int `yaml:"scanConcurrency,omitempty"`
 
+	// DigestDocumentRunes bounds how much of each document a dream's
+	// reading is shown, in characters, from its first passage on. Zero,
+	// the default, reads every document whole, a long one in parts of
+	// what one call holds.
+	DigestDocumentRunes int `yaml:"digestDocumentRunes,omitempty"`
+
 	// RewriteConcurrency is how many pages the nightly run rewrites at
 	// once, after the reading. One when unset.
 	RewriteConcurrency int `yaml:"rewriteConcurrency,omitempty"`

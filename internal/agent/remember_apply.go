@@ -123,7 +123,13 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		return tally, err
 	}
 
-	prepared := self.prepareRememberedFacts(ctx, run, answer, theirWords, selfPage)
+	// A reading may file as many facts as it was asked for, which grows
+	// with the text it was shown; a conversation's run, its own number.
+	most := rememberFacts
+	if shown != nil {
+		most = max(most, factsAllowedFor(shown))
+	}
+	prepared := self.prepareRememberedFacts(ctx, run, answer, theirWords, selfPage, most)
 
 	if err := self.openRememberedPages(ctx, run, prepared); err != nil {
 		return tally, err

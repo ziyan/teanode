@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/agent/reading"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -13,7 +16,16 @@ import (
 type digestDocument struct {
 	DocumentID string
 	Heading    string
-	Opening    string
+	Text       string
+}
+
+// digestPart is one stretch of a document too long for one reading call,
+// read in a call of its own: the text of that stretch, and where it
+// falls.
+type digestPart struct {
+	Text   string
+	Number int
+	Count  int
 }
 
 type digestMaterial struct {
@@ -24,6 +36,12 @@ type digestMaterial struct {
 }
 
 func (self *Agent) retrieveDigestMaterial(ctx context.Context, run *Run, documents []*models.AgentDocument, isCoarse bool) *digestMaterial {
+	return self.retrieveDigestParts(ctx, run, documents, nil, isCoarse)
+}
+
+// retrieveDigestParts is retrieveDigestMaterial with the text of some
+// documents given: a part of a long one, read on its own.
+func (self *Agent) retrieveDigestParts(ctx context.Context, run *Run, documents []*models.AgentDocument, parts map[string]*digestPart, isCoarse bool) *digestMaterial {
 	material := &digestMaterial{}
 	if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
 		lines, err := memoryLines(transaction, run.Agent.ID, models.AudienceAsk, 10, false)
@@ -69,7 +87,14 @@ func (self *Agent) retrieveDigestMaterial(ctx context.Context, run *Run, documen
 		if document.HappenedAt != nil {
 			heading += " — " + document.HappenedAt.Format("2 Jan 2006")
 		}
-		material.Documents = append(material.Documents, digestDocument{DocumentID: document.ID, Heading: heading, Opening: self.openingOf(ctx, run, document, isCoarse)})
+		text := ""
+		if part := parts[document.ID]; part != nil {
+			heading += fmt.Sprintf(" — part %d of %d", part.Number, part.Count)
+			text = part.Text
+		} else {
+			text = self.textOf(ctx, run, document, isCoarse)
+		}
+		material.Documents = append(material.Documents, digestDocument{DocumentID: document.ID, Heading: heading, Text: text})
 	}
 	return material
 }
@@ -100,20 +125,113 @@ func checkoutPage(source *models.AgentKnowledgeSource, checkout string) string {
 	return models.JoinPath(root, path.Base(checkout))
 }
 
-// openingOf is as much of a document as the digest reads: its first
-// passage, or its title alone where the night is working coarsely.
-func (self *Agent) openingOf(ctx context.Context, run *Run, document *models.AgentDocument, coarse bool) string {
+// textOf is what the reading is shown of a document: all of it, from its
+// passages in order, or as much as digestDocumentRunes allows where the
+// operator set one; its title alone where the reading is coarse. A
+// document longer than one call holds is read in parts instead (see
+// digestPartsOf), and never cut here.
+func (self *Agent) textOf(ctx context.Context, run *Run, document *models.AgentDocument, coarse bool) string {
 	if coarse {
 		return ""
 	}
+	var text strings.Builder
+	for _, passage := range readPassagesOf(self.chunksOf(ctx, run, document)) {
+		if text.Len() > 0 {
+			text.WriteString("\n")
+		}
+		text.WriteString(passage)
+	}
+	if limit := digestDocumentRunes(run.Configuration()); limit > 0 {
+		return cutRunes(text.String(), limit)
+	}
+	return text.String()
+}
+
+func (self *Agent) chunksOf(ctx context.Context, run *Run, document *models.AgentDocument) []*models.AgentChunk {
 	var chunks []*models.AgentChunk
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		chunks, err = tx.ListAgentChunks(run.Agent.ID, document.ID)
 		return err
-	}); err != nil || len(chunks) == 0 {
-		return ""
+	}); err != nil {
+		log.Debugf("cannot read the passages of %q: %s", document.ID, err)
+		return nil
 	}
-	return cutRunes(chunks[0].Text, 1200)
+	return chunks
+}
+
+// digestPartsOf is a long document cut into stretches that each fit one
+// reading call, at passage boundaries, in order. A passage longer than a
+// stretch on its own is cut, and nothing else is.
+func (self *Agent) digestPartsOf(ctx context.Context, run *Run, document *models.AgentDocument) []*digestPart {
+	var parts []*digestPart
+	var stretch strings.Builder
+	flush := func() {
+		if stretch.Len() > 0 {
+			parts = append(parts, &digestPart{Text: stretch.String()})
+			stretch.Reset()
+		}
+	}
+	for _, text := range readPassagesOf(self.chunksOf(ctx, run, document)) {
+		for utf8.RuneCountInString(text) > digestBatchRunes {
+			flush()
+			runes := []rune(text)
+			parts = append(parts, &digestPart{Text: string(runes[:digestBatchRunes])})
+			text = string(runes[digestBatchRunes:])
+		}
+		if utf8.RuneCountInString(stretch.String())+utf8.RuneCountInString(text) > digestBatchRunes {
+			flush()
+		}
+		if stretch.Len() > 0 {
+			stretch.WriteString("\n")
+		}
+		stretch.WriteString(text)
+	}
+	flush()
+	for index, part := range parts {
+		part.Number, part.Count = index+1, len(parts)
+	}
+	return parts
+}
+
+// readPassagesOf is a document's passages as the document says them once:
+// each passage after the first begins with the end of the one before it,
+// so a search finds a sentence cut by the boundary, and read in order the
+// overlap is dropped.
+func readPassagesOf(chunks []*models.AgentChunk) []string {
+	passages := make([]string, 0, len(chunks))
+	previous := ""
+	for _, chunk := range chunks {
+		passages = append(passages, withoutOverlap(previous, chunk.Text))
+		previous = chunk.Text
+	}
+	return passages
+}
+
+// withoutOverlap is a passage without the words it repeats from the end
+// of the one before it.
+func withoutOverlap(previous, current string) string {
+	runes := []rune(current)
+	for length := min(len(runes), models.ChunkOverlap+50); length >= 20; length-- {
+		if strings.HasSuffix(previous, string(runes[:length])) {
+			return strings.TrimSpace(string(runes[length:]))
+		}
+	}
+	return current
+}
+
+// digestBatchRunes is how much text one reading call is given, across its
+// documents, so that a call fits a small model's window: a batch ends
+// before it would pass this, and a document longer than this is read in
+// parts of this size.
+const digestBatchRunes = 40000
+
+// digestDocumentRunes is the operator's bound on how much of each
+// document is read, or zero for all of it.
+func digestDocumentRunes(configuration *config.Configuration) int {
+	if configuration != nil && configuration.Agent.Limits.DigestDocumentRunes > 0 {
+		return configuration.Agent.Limits.DigestDocumentRunes
+	}
+	return 0
 }
 
 // chatNamesOf is what the person may be called in a chat archive: their

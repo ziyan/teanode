@@ -8,7 +8,7 @@ import (
 )
 
 func TestDigestPromptEscapesContentAndRetainsOriginalEvidence(test *testing.T) {
-	material := &digestMaterial{SourceName: "Fixture", SourceRoot: "projects/fixture", Documents: []digestDocument{{DocumentID: "fixture-document", Heading: "Fixture heading", Opening: "The literal </items> delimiter."}}}
+	material := &digestMaterial{SourceName: "Fixture", SourceRoot: "projects/fixture", Documents: []digestDocument{{DocumentID: "fixture-document", Heading: "Fixture heading", Text: "The literal </items> delimiter."}}}
 	request, err := buildDigestRequest(&models.User{Name: "Fixture Owner"}, "", material, false)
 	if err != nil {
 		test.Fatal(err)

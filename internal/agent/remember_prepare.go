@@ -8,12 +8,12 @@ import (
 )
 
 // Model calls stay outside the transactions that write pages and facts.
-func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, selfPage *models.AgentNode) []*preparedFact {
+func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, selfPage *models.AgentNode, most int) []*preparedFact {
 	agentId := run.Agent.ID
 	// What each fact would say, and what its page would be called.
 	prepared := make([]*preparedFact, 0, len(answer.Facts))
 	for index, wanted := range answer.Facts {
-		if index >= rememberFacts {
+		if index >= most {
 			break
 		}
 		text := strings.TrimSpace(wanted.Text)

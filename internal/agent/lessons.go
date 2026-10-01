@@ -178,11 +178,11 @@ func lessonTranscript(messages []*models.AgentMessage, byToolCallId map[string]*
 		switch message.Role {
 		case string(llm.RoleUser):
 			if text := strings.TrimSpace(message.Content); text != "" {
-				builder.WriteString("them: " + unclosable(cutRunes(text, rememberMessageCharacters)) + "\n\n")
+				builder.WriteString("them: " + unclosable(text) + "\n\n")
 			}
 		case string(llm.RoleAssistant):
 			if text := strings.TrimSpace(message.Content); text != "" {
-				builder.WriteString("you: " + unclosable(cutRunes(text, rememberMessageCharacters)) + "\n\n")
+				builder.WriteString("you: " + unclosable(text) + "\n\n")
 			}
 		case string(llm.RoleTool):
 			call := byToolCallId[message.ToolCallID]

@@ -46,26 +46,31 @@ func transcriptFor(messages []*models.AgentMessage) string {
 	return strings.TrimSpace(builder.String())
 }
 
-// shownText is one message as the transcript shows it: cut to the bound,
-// with anything that could close the block said rather than left to close
-// it.
+// shownText is one message as the transcript shows it: whole, with
+// anything that could close the block said rather than left to close it.
+// Only what the person and the agent said is read (see worthReading), and
+// what the person wrote at length is what a run is there to read: a
+// message cut to fifteen hundred characters lost its tail for good once
+// the conversation was marked remembered. A run reads no more messages
+// than fit one call, and the rest wait for the next.
 //
 // One function because two callers need the same answer. What a fact may
 // quote is what the model was shown, and the check held the quote against
 // the whole message instead: words from past the cut, which the run never
 // put in front of the model, passed as something it had been told.
 func shownText(message *models.AgentMessage) string {
-	return unclosable(cutRunes(message.Content, rememberMessageCharacters))
+	return unclosable(message.Content)
 }
 
 func buildRememberPrompt(owner *models.User, knowledgeLanguage string, unread []*models.AgentMessage, material *rememberMaterial) (string, error) {
+	transcript := transcriptFor(unread)
 	return render("remember.txt", map[string]any{
 		"KnowledgeLanguage": languageName(knowledgeLanguage),
 		"PersonName":        personName(owner),
 		"Index":             material.IndexLines,
 		"Pages":             material.PageBlocks,
 		"Unlearned":         material.UnlearnedStatements,
-		"Transcript":        transcriptFor(unread),
-		"Most":              rememberFacts,
+		"Transcript":        transcript,
+		"Most":              factsAllowedFor(map[string]string{"": transcript}),
 	})
 }
