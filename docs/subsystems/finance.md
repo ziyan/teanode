@@ -142,7 +142,9 @@ to the card and a refund positive. A card's ledger balance is negative for
 what is owed, so the account says its owed balance is not positive and the
 valuation is the amount owed, recorded on the day the balance is as of. A
 statement imported after a newer one records its own day's valuation and
-leaves the account's balance at the newer one.
+leaves the account's balance at the newer one. A statement with no ledger
+balance, which some banks export with the transactions only, leaves the
+balance and records no valuation.
 
 **Categories.** A statement's transaction has the OFX transaction type as
 its detailed provider category (`ofx:DEBIT`, `ofx:PAYMENT`) and the side of

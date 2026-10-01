@@ -878,9 +878,11 @@ func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account 
 
 // financeBalanceIsOlder is true inside the account upsert when the caller
 // keeps the newer balance (its one argument) and the balance being
-// written is from before the one stored.
-const financeBalanceIsOlder = `(CAST(? AS boolean) AND "existing"."balance_at" IS NOT NULL AND EXCLUDED."balance_at" IS NOT NULL
-	AND EXCLUDED."balance_at" < "existing"."balance_at")`
+// written is from before the one stored, or there is none: a statement
+// with no balance in it says nothing about the balance, and must not
+// empty the one an earlier statement gave.
+const financeBalanceIsOlder = `(CAST(? AS boolean) AND "existing"."balance_at" IS NOT NULL
+	AND (EXCLUDED."balance_at" IS NULL OR EXCLUDED."balance_at" < "existing"."balance_at"))`
 
 // retirementAccountSubtypes are Plaid's subtypes of an investment account
 // that is saved for retirement, in the United States and Canada and the
