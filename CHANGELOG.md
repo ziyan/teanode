@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.95.3] - 2026-10-01
+
+### Changed
+
+- Operator pages now live under `/manage/` and mailbox settings under `/settings/mailbox`. Old links to them no longer work. (#279)
+- The sidebar has a page listing your conversations with the agent, and a new chat opens without asking for a goal. (#279)
+
 ## [0.95.2] - 2026-10-01
 
 ### Fixed
