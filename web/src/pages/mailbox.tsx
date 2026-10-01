@@ -1682,7 +1682,7 @@ function HeldReplyBanner({ reply, onChanged }: { reply: AgentReply; onChanged: (
             ? t('mailbox.heldReplyAt', { to: reply.to, time: formatTime(reply.sendAfter) })
             : t('mailbox.heldReply', { to: reply.to })}
         </span>
-        <button type="button" className="link" onClick={() => setOpen((previous) => !previous)}>
+        <button /* link-button: show or hide toggle beside its text */ type="button" className="link" onClick={() => setOpen((previous) => !previous)}>
           {open ? t('mailbox.heldReplyHide') : t('mailbox.heldReplyShow')}
         </button>
         <span className="mailbox-held-reply-actions">
@@ -2505,7 +2505,7 @@ function SortingRows({ insight }: { insight: MailInsight }) {
             {insight.runId && (
               <>
                 {insight.model ? ' · ' : ''}
-                <button
+                <button /* link-button: goes to a run, inline in a sentence */
                   type="button"
                   className="link"
                   onClick={() => {

@@ -105,6 +105,11 @@ of a reply), or a control of a component's own (the table's "Clear all"
 filters). A page-level action beside Save is a real button
 (`className="danger"` when it removes the thing).
 
+`make lint-ci` holds this line: a button with the link class fails
+`check-link-buttons` unless its opening tag says why, as
+`<button /* link-button: words inside a sentence */ ...>`. An anchor with the
+class is not checked, since it goes somewhere.
+
 The exception is a row that is itself a button, such as an idea on the
 agent's Ideas tab: its one other action is an icon in the row's corner.
 

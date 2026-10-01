@@ -2709,7 +2709,7 @@ function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAtta
       <br />
       <span className="muted">{said.join(' · ')}</span>{' '}
       {files.declined > 0 ? (
-        <button type="button" className="link" disabled={loading} onClick={() => void open()}>
+        <button /* link-button: words inside a sentence */ type="button" className="link" disabled={loading} onClick={() => void open()}>
           {t('agent.filesWhich')}
         </button>
       ) : null}

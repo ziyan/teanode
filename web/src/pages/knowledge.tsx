@@ -1273,7 +1273,7 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
           <ul className="recall-pages">
             {pages.map((page) => (
               <li key={page.path}>
-                <button type="button" className="link" onClick={() => onSelect(page.path)}>
+                <button /* link-button: goes to a knowledge page */ type="button" className="link" onClick={() => onSelect(page.path)}>
                   {page.path}
                 </button>
                 <ul className="recall-facts">
@@ -1819,7 +1819,7 @@ function PageView({
                   <span className="knowledge-citations">
                     <span className="muted">{t('knowledge.citing')}</span>
                     {citations.map((evidence) => (
-                      <button
+                      <button /* link-button: goes to the cited page, inline */
                         key={evidence.quote}
                         type="button"
                         className="link"
@@ -1969,7 +1969,7 @@ function PageView({
             <SettingsRow
               key={child.id}
               title={
-                <button type="button" className="link" onClick={() => onSelect(child.path)}>
+                <button /* link-button: goes to a knowledge page, as a row's title */ type="button" className="link" onClick={() => onSelect(child.path)}>
                   {child.name || child.path}
                 </button>
               }
