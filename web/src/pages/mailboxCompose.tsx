@@ -5,7 +5,7 @@ import { Attachment, MailContent, MailboxItem, graphql } from '../api'
 import { ErrorMessage, Loading, formatBytes, formatTime } from '../components/common'
 import { SettingsEmpty } from '../components/settingsList'
 import { ConfirmDialog } from '../components/dialog'
-import { PaperclipIcon, SparkIcon } from '../components/icons'
+import { CloseIcon, PaperclipIcon, SparkIcon } from '../components/icons'
 import { RichTextEditor, htmlToText, quotableHtml, textToHtml } from '../components/richText'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useToast } from '../components/toast'
@@ -19,6 +19,7 @@ import {
   AnotherMailboxSubmissionError,
   useMailboxSubmission,
 } from '../hooks/useMailboxSubmission'
+import { Tooltip } from '../components/tooltip'
 
 // Writing from a mailbox: a new message, a reply, a forward, or a draft
 // picked up again. One page for the four, told apart by the address bar:
@@ -1030,31 +1031,37 @@ function MailboxComposerForAccount({
                 {carried.map((attachment) => (
                   <li key={`carried-${attachment.index}`}>
                     {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => {
-                        setCarried((previous) => previous.filter((each) => each.index !== attachment.index))
-                        touch()
-                      }}
-                    >
-                      {t('compose.mailbox.remove')}
-                    </button>
+                    <Tooltip label={t('compose.mailbox.remove')}>
+                      <button
+                        type="button"
+                        className="icon-action"
+                        aria-label={`${attachment.filename}: ${t('compose.mailbox.remove')}`}
+                        onClick={() => {
+                          setCarried((previous) => previous.filter((each) => each.index !== attachment.index))
+                          touch()
+                        }}
+                      >
+                        <CloseIcon size={14} />
+                      </button>
+                    </Tooltip>
                   </li>
                 ))}
                 {shownKept.map((attachment) => (
                   <li key={`kept-${attachment.index}`}>
                     {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => {
-                        setKept((previous) => previous.filter((each) => each.index !== attachment.index))
-                        touch()
-                      }}
-                    >
-                      {t('compose.mailbox.remove')}
-                    </button>
+                    <Tooltip label={t('compose.mailbox.remove')}>
+                      <button
+                        type="button"
+                        className="icon-action"
+                        aria-label={`${attachment.filename}: ${t('compose.mailbox.remove')}`}
+                        onClick={() => {
+                          setKept((previous) => previous.filter((each) => each.index !== attachment.index))
+                          touch()
+                        }}
+                      >
+                        <CloseIcon size={14} />
+                      </button>
+                    </Tooltip>
                   </li>
                 ))}
               </ul>
@@ -1084,16 +1091,30 @@ function MailboxComposerForAccount({
               {uploading.some((entry) => !entry.error) ? (
                 uploading.some((entry) => entry.progress < 1) && (
                   <li>
-                    <button type="button" className="link" onClick={() => inFlight.current?.cancel()}>
-                      {t('compose.mailbox.cancelUpload')}
-                    </button>
+                    <Tooltip label={t('compose.mailbox.cancelUpload')}>
+                      <button
+                        type="button"
+                        className="icon-action"
+                        aria-label={t('compose.mailbox.cancelUpload')}
+                        onClick={() => inFlight.current?.cancel()}
+                      >
+                        <CloseIcon size={14} />
+                      </button>
+                    </Tooltip>
                   </li>
                 )
               ) : (
                 <li>
-                  <button type="button" className="link" onClick={() => setUploading([])}>
-                    {t('compose.mailbox.dismissUpload')}
-                  </button>
+                  <Tooltip label={t('compose.mailbox.dismissUpload')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={t('compose.mailbox.dismissUpload')}
+                      onClick={() => setUploading([])}
+                    >
+                      <CloseIcon size={14} />
+                    </button>
+                  </Tooltip>
                 </li>
               )}
             </ul>

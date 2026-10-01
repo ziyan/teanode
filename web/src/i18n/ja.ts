@@ -3421,6 +3421,8 @@ export const ja: Catalog = {
   'finance.budgetDialogHint': '別の通貨の支出は、計上された日の為替レートで換算します。予算を 0 にすると終了します。',
   'finance.budgetSet': '予算を設定しました。',
   'finance.budgetEnded': '予算を終了しました。',
+  'finance.endBudget': '予算を終了',
+  'finance.endBudgetBody': '{name}の予算は{month}から終了します。それより前の月はそのまま残ります。',
   'finance.spendingCategoriesTitle': '支出カテゴリ',
   'finance.spendingCategoriesHint': 'お金の使い道を自分で決めた一覧。すべての金融取引はどれかに分類されます。分類するのはあなた、支出ルール、プロバイダーのカテゴリ、またはモデルです。',
   'finance.addSpendingCategory': '支出カテゴリを追加',

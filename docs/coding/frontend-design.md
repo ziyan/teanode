@@ -84,31 +84,46 @@ it is said in muted prose inside a dashed block, not raised as an error.
 
 ## Row actions
 
-One action on a row is a text button: `className="link"`, or `link danger`
-when it destroys something. The word is clearer than any icon, and there is
-room for it.
-
-The exception is a row that is itself a button, such as an idea on the
-agent's Ideas tab: its one other action is an icon in the row's corner, since
-a word there would take a line of its own under every row.
-
-Two or more actions are icon buttons — `className="icon-action"` inside a
-`<div className="row-actions">`, `icon-action danger` for the destructive one.
-Three words in a row crowd out what the row is about. `icon-button` is the
+A row's actions are icon buttons, however many there are: `className="icon-action"`,
+`icon-action danger` for the one that destroys or ends something, inside a
+`<div className="row-actions">` when there is more than one. The common pair
+is a pencil that opens the dialog to change the thing and a trash can that
+removes it (or ends it, for something that is ended rather than deleted, such
+as a budget), after a `ConfirmDialog`. A cross (`CloseIcon`) takes something
+off what is being put together, such as an attachment from a message being
+written, where nothing stored is lost. Icons in a row line up from one row to
+the next where words of different lengths did not, and four of them fit
+beside a name on a phone where four words did not. `icon-button` is the
 larger toolbar icon and is not a row action.
 
-Every icon button needs a `title` and an `aria-label` that names the thing it
-acts on, because the icon alone says nothing to a screen reader and nothing to
-a person who has not met it before:
+A text-link button (`className="link"`) is not used for an action. A link is
+for going somewhere: a router link, an anchor, a page named in a list, or a
+button that opens a page or a conversation in place. The few other buttons
+styled as links are words inside a sentence (the notice that offers to load
+remote images), a toggle that shows or hides text beside it (the quoted text
+of a reply), or a control of a component's own (the table's "Clear all"
+filters). A page-level action beside Save is a real button
+(`className="danger"` when it removes the thing).
 
-    <button
-      type="button"
-      className="icon-action danger"
-      title={t('common.delete')}
-      aria-label={`${folder.name}: ${t('common.delete')}`}
-    >
-      <TrashIcon size={16} />
-    </button>
+The exception is a row that is itself a button, such as an idea on the
+agent's Ideas tab: its one other action is an icon in the row's corner.
+
+Every icon button needs its name shown on hover and an `aria-label` that names
+the thing it acts on, because the icon alone says nothing to a screen reader
+and nothing to a person who has not met it before. The name on hover is a
+`Tooltip` around the button, or a `title` where the button already sits inside
+one (a chip with its own tooltip):
+
+    <Tooltip label={t('common.delete')}>
+      <button
+        type="button"
+        className="icon-action danger"
+        aria-label={`${folder.name}: ${t('common.delete')}`}
+        onClick={() => setDeleting(folder)}
+      >
+        <TrashIcon size={16} />
+      </button>
+    </Tooltip>
 
 An affordance that only appears on hover must sit behind `@media (hover:
 hover)`. On a phone the first tap reveals it and the second one acts, which

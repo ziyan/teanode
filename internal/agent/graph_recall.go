@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -457,10 +458,11 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	if err != nil {
 		return nil, err
 	}
+	budget, factBudget := recallBudgetOf(self.agent.settings.Configuration())
 	explanation := self.explanation
 	if explanation != nil {
 		explanation.explainFacts(paths)
-		explanation.TokenBudget = recallTokens
+		explanation.TokenBudget = budget
 	}
 	// Which of the search's facts sit on which page, in the order the
 	// search put them. That order is the ranking, and nothing here ranks
@@ -485,10 +487,10 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	reservedBlocks, reservedTokens := 0, 0
 	if len(facts) > 0 {
 		// One block: the loose facts go in together below.
-		reservedBlocks, reservedTokens = 1, recallFactTokens
+		reservedBlocks, reservedTokens = 1, factBudget
 	}
 	pageBlocks := recallGraphBlocks - reservedBlocks
-	pageTokens := recallTokens - reservedTokens
+	pageTokens := budget - reservedTokens
 
 	spent := 0
 	shown := map[string]bool{}
@@ -594,7 +596,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			// is passed over rather than ending the loop -- but once
 			// what is left could not hold a page at all there is no
 			// sense reading the rest of them out of the store.
-			if pageTokens-spent < recallTokens/8 {
+			if pageTokens-spent < budget/8 {
 				break
 			}
 			continue
@@ -639,7 +641,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		}
 		line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
 		cost := llm.EstimateTokens(line)
-		if spent+cost > recallTokens {
+		if spent+cost > budget {
 			if explainedFact != nil {
 				explainedFact.RecallDecision = RecallDecisionTokenBudget
 			}
@@ -985,4 +987,15 @@ func (self *Agent) exemplarsFor(ctx context.Context, agent *models.Agent, messag
 		exemplars = append(exemplars, when+cutMarked(strings.TrimSpace(chunk.Text), 1200))
 	}
 	return exemplars
+}
+
+// recallBudgetOf is the overlay's budget for graph blocks and the part of
+// it held back for loose facts: recallTokens and recallFactTokens, or the
+// operator's agent.limits.recallTokens with a third of it for the facts.
+func recallBudgetOf(configuration *config.Configuration) (int, int) {
+	if configuration != nil && configuration.Agent.Limits.RecallTokens > 0 {
+		budget := configuration.Agent.Limits.RecallTokens
+		return budget, budget / 3
+	}
+	return recallTokens, recallFactTokens
 }

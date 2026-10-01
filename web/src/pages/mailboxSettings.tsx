@@ -973,7 +973,6 @@ function RulesTab({ view }: { view: MailboxView }) {
           ))}
           <button
             type="button"
-            className="link"
             onClick={() =>
               change((current) => ({
                 ...current,
@@ -1054,7 +1053,6 @@ function RulesTab({ view }: { view: MailboxView }) {
           ))}
           <button
             type="button"
-            className="link"
             onClick={() => change((current) => ({ ...current, actions: [...current.actions, { kind: 'markRead' }] }))}
           >
             {t('mailboxSettings.addAction')}

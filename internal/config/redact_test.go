@@ -44,6 +44,7 @@ var notSecret = map[string]bool{
 	// of the word entirely.
 	"Agent.Limits.DailyTokensPerAgent":    true,
 	"Agent.Limits.MonthlyTokensPerServer": true,
+	"Agent.Limits.RecallTokens":           true,
 }
 
 // secretish matches a field name that probably holds a secret. It is

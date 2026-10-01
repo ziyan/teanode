@@ -3461,6 +3461,8 @@ export const en = {
   'finance.budgetDialogHint': 'Spending in another currency is converted at the exchange rate of the day it posted. A budget of zero ends it.',
   'finance.budgetSet': 'Budget set.',
   'finance.budgetEnded': 'Budget ended.',
+  'finance.endBudget': 'End the budget',
+  'finance.endBudgetBody': 'The budget for {name} ends from {month}. The months before keep it as it was.',
   'finance.spendingCategoriesTitle': 'Spending categories',
   'finance.spendingCategoriesHint': 'Your own list of what money goes on. Every finance transaction is filed under one: by you, by a spending rule, from the provider category, or by the model.',
   'finance.addSpendingCategory': 'Add a spending category',

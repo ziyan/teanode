@@ -4,7 +4,7 @@ import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatMoney } from '../../components/common'
 import { MeterBar } from '../../components/budgetBar'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
-import { CheckIcon, PencilIcon } from '../../components/icons'
+import { CheckIcon, PencilIcon, RestartIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { Tooltip } from '../../components/tooltip'
@@ -101,21 +101,23 @@ export function FinanceSavingsTargetsSection() {
             }
             actions={
               target.closedOn ? (
-                <button
-                  type="button"
-                  className="link"
-                  disabled={busy}
-                  aria-label={`${target.savingsTargetName}: ${t('finance.reopen')}`}
-                  onClick={() =>
-                    void run(
-                      CLOSE_SAVINGS_TARGET,
-                      { savingsTargetId: target.id, shouldReopen: true },
-                      t('finance.savingsTargetReopened'),
-                    )
-                  }
-                >
-                  {t('finance.reopen')}
-                </button>
+                <Tooltip label={t('finance.reopen')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    disabled={busy}
+                    aria-label={`${target.savingsTargetName}: ${t('finance.reopen')}`}
+                    onClick={() =>
+                      void run(
+                        CLOSE_SAVINGS_TARGET,
+                        { savingsTargetId: target.id, shouldReopen: true },
+                        t('finance.savingsTargetReopened'),
+                      )
+                    }
+                  >
+                    <RestartIcon size={16} />
+                  </button>
+                </Tooltip>
               ) : (
               <div className="row-actions">
                 <Tooltip label={t('common.edit')}>

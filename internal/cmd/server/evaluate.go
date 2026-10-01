@@ -54,6 +54,28 @@ func NewEvaluateCommand() *cli.Command {
 				Action: runEvaluateScenario,
 			},
 			{
+				Name:      "ask-again",
+				Usage:     "ask the last checkpoint of scenarios already run again, of the graphs their runs left, with other models or limits",
+				ArgsUsage: "<scenario.json>...",
+				Description: "Reads each run's database from <runs>/<scenario>/report.json (or report.md), asks the\n" +
+					"scenario's last checkpoint again with --models, and writes <runs>/<scenario>/again-<label>.json.\n" +
+					"Nothing is read or dreamed again: what changes is only what a question is shown and how it\n" +
+					"is answered, so a change to recall can be measured on the same memory.",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "runs", Usage: "the directory the runs were written to", Required: true},
+					&cli.StringFlag{Name: "label", Usage: "what this asking is called, in the name of the file it writes", Required: true},
+					&cli.StringFlag{Name: "models", Usage: "as for scenario", Required: true},
+					&cli.StringFlag{Name: "database-host", Value: "127.0.0.1"},
+					&cli.IntFlag{Name: "database-port", Value: 5432},
+					&cli.StringFlag{Name: "database-user", Value: "teanode"},
+					&cli.StringFlag{Name: "database-password", Value: "teanode", Sources: cli.EnvVars("TEANODE_EVALUATION_DATABASE_PASSWORD")},
+					&cli.StringFlag{Name: "from", Value: "memory,sources,both"},
+					&cli.IntFlag{Name: "concurrency", Value: 1},
+					&cli.StringFlag{Name: "sign-in", Usage: "as for scenario"},
+				},
+				Action: runEvaluateAskAgain,
+			},
+			{
 				Name:  "sign-in",
 				Usage: "sign scenario runs in to a ChatGPT plan with a code typed on the plan's page, and keep the sign-in in a file",
 				Description: "A sign-in of its own, apart from any server's: a refresh token is replaced each time it is\n" +
@@ -78,27 +100,9 @@ func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	var keepRefreshTokens func(provider, refreshToken string)
-	if signInFile := command.String("sign-in"); signInFile != "" {
-		kept, err := readScenarioSignIn(signInFile)
-		if err != nil {
-			return err
-		}
-		for index := range configuration.Agent.Providers {
-			provider := &configuration.Agent.Providers[index]
-			if provider.Kind == config.AgentProviderKindCodex {
-				provider.RefreshToken, provider.Account = kept.RefreshToken, kept.Account
-			}
-		}
-		var keeping sync.Mutex
-		keepRefreshTokens = func(_, refreshToken string) {
-			keeping.Lock()
-			defer keeping.Unlock()
-			kept.RefreshToken = refreshToken
-			if err := writeScenarioSignIn(signInFile, kept); err != nil {
-				_, _ = fmt.Fprintf(command.ErrWriter, "cannot keep the rotated sign-in in %s: %s\n", signInFile, err)
-			}
-		}
+	keepRefreshTokens, err := scenarioSignInOf(command, configuration)
+	if err != nil {
+		return err
 	}
 	var sources []string
 	for _, source := range strings.Split(command.String("from"), ",") {
@@ -180,6 +184,7 @@ func runOneScenario(ctx context.Context, command *cli.Command, path, output stri
 		KeepRefreshTokens: keepRefreshTokens,
 	})
 	if report != nil {
+		report.Database = name
 		content, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			return err
@@ -337,4 +342,135 @@ func layersText(layers []*agent.ScenarioClaimLayers) string {
 
 func cellText(text string) string {
 	return strings.ReplaceAll(text, "|", "/")
+}
+
+var scenarioDatabaseNamed = regexp.MustCompile("in database `([a-z0-9_]+)`")
+
+// scenarioDatabaseOf is the database a run left, as its report names it.
+func scenarioDatabaseOf(runDirectory string) (string, error) {
+	if content, err := os.ReadFile(filepath.Join(runDirectory, "report.json")); err == nil {
+		var report agent.ScenarioReport
+		if json.Unmarshal(content, &report) == nil && report.Database != "" {
+			return report.Database, nil
+		}
+	}
+	content, err := os.ReadFile(filepath.Join(runDirectory, "report.md"))
+	if err != nil {
+		return "", fmt.Errorf("no report in %s: %w", runDirectory, err)
+	}
+	found := scenarioDatabaseNamed.FindSubmatch(content)
+	if found == nil {
+		return "", fmt.Errorf("the report in %s names no database", runDirectory)
+	}
+	return string(found[1]), nil
+}
+
+func runEvaluateAskAgain(ctx context.Context, command *cli.Command) error {
+	configuration, err := readScenarioModels(command.String("models"))
+	if err != nil {
+		return err
+	}
+	keepRefreshTokens, err := scenarioSignInOf(command, configuration)
+	if err != nil {
+		return err
+	}
+	var sources []string
+	for _, source := range strings.Split(command.String("from"), ",") {
+		if source = strings.TrimSpace(source); source != "" {
+			sources = append(sources, source)
+		}
+	}
+	paths := command.Args().Slice()
+	slots := make(chan struct{}, max(1, int(command.Int("concurrency"))))
+	var group sync.WaitGroup
+	var failed sync.Mutex
+	var failures []string
+	for _, path := range paths {
+		slots <- struct{}{}
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			defer func() { <-slots }()
+			if err := askOneScenarioAgain(ctx, command, path, configuration, sources, keepRefreshTokens); err != nil {
+				failed.Lock()
+				failures = append(failures, path+": "+err.Error())
+				failed.Unlock()
+			}
+		}()
+	}
+	group.Wait()
+	if len(failures) > 0 {
+		return fmt.Errorf("%d of %d scenarios failed:\n%s", len(failures), len(paths), strings.Join(failures, "\n"))
+	}
+	return nil
+}
+
+func askOneScenarioAgain(ctx context.Context, command *cli.Command, path string, configuration *config.Configuration, sources []string, keepRefreshTokens func(provider, refreshToken string)) error {
+	scenario, err := agent.ReadScenario(path)
+	if err != nil {
+		return err
+	}
+	runDirectory := filepath.Join(command.String("runs"), strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+	name, err := scenarioDatabaseOf(runDirectory)
+	if err != nil {
+		return err
+	}
+	database, err := db.Open(&db.Settings{
+		Host: command.String("database-host"), Port: uint16(command.Int("database-port")),
+		User: command.String("database-user"), Password: command.String("database-password"),
+		DBName: name, SSLMode: "disable", BackendID: "scenario",
+	})
+	if err != nil {
+		return err
+	}
+	store, err := storage.Open(&storage.Settings{Directory: filepath.Join(runDirectory, "storage")})
+	if err != nil {
+		return err
+	}
+	report, err := agent.AskScenarioAgain(ctx, &agent.ScenarioSettings{
+		Database: database, Storage: store, Configuration: configuration, Scenario: scenario,
+		AnswerSources: sources, Progress: command.Writer, KeepRefreshTokens: keepRefreshTokens,
+	})
+	if err != nil {
+		return err
+	}
+	content, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	written := filepath.Join(runDirectory, "again-"+command.String("label")+".json")
+	if err := os.WriteFile(written, append(content, '\n'), 0o600); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s asked again: %s\n", scenario.Name, written)
+	return nil
+}
+
+// scenarioSignInOf gives the models file's openai-codex providers the
+// sign-in --sign-in names, and answers with what writes a rotated token
+// back to it; nil where no sign-in was given.
+func scenarioSignInOf(command *cli.Command, configuration *config.Configuration) (func(provider, refreshToken string), error) {
+	signInFile := command.String("sign-in")
+	if signInFile == "" {
+		return nil, nil
+	}
+	kept, err := readScenarioSignIn(signInFile)
+	if err != nil {
+		return nil, err
+	}
+	for index := range configuration.Agent.Providers {
+		provider := &configuration.Agent.Providers[index]
+		if provider.Kind == config.AgentProviderKindCodex {
+			provider.RefreshToken, provider.Account = kept.RefreshToken, kept.Account
+		}
+	}
+	var keeping sync.Mutex
+	return func(_, refreshToken string) {
+		keeping.Lock()
+		defer keeping.Unlock()
+		kept.RefreshToken = refreshToken
+		if err := writeScenarioSignIn(signInFile, kept); err != nil {
+			_, _ = fmt.Fprintf(command.ErrWriter, "cannot keep the rotated sign-in in %s: %s\n", signInFile, err)
+		}
+	}, nil
 }
