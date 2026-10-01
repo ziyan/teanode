@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.98.1] - 2026-10-01
+
+### Changed
+
+- Budget bars show the forecast as a faint band and explain it, naming the merchants expected to charge again this month. (#292)
+
 ## [0.98.0] - 2026-10-01
 
 ### Added
