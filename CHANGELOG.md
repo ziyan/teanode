@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-10-01
+
+### Added
+
+- The Knowledge page shows how many more search results there are and loads them with Show more. (#294)
+
+### Fixed
+
+- Conversation tiles highlight as a whole card when pointed at, rather than just their title. (#295)
+
 ## [0.98.2] - 2026-10-01
 
 ### Changed
