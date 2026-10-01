@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.100.0] - 2026-10-01
+
+### Added
+
+- Import OFX statements (.ofx, .qfx, .qbo) for accounts no provider reaches: mail the file to your statement import address, upload it in Finance > Accounts, or run `teanode finance import-statement`. Importing again, or overlapping files, adds nothing twice. (#298)
+
 ## [0.99.0] - 2026-10-01
 
 ### Added
