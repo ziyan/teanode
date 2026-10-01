@@ -43,8 +43,9 @@ it('lists the main chat first, narrows by title or summary, and opens a tile in 
   execute.mockResolvedValue({ ListAgentConversations: CONVERSATIONS })
   render(<AgentConversationsPage />)
 
+  // The tile is the button, so its title is the part it is named by.
   const titles = (await screen.findAllByRole('button', { name: /agentDrawer\.main|Garden plans|Trip/ })).map((button) =>
-    button.textContent?.trim(),
+    button.querySelector('.conversation-tile-title')?.textContent?.trim(),
   )
   expect(titles).toEqual(['agentDrawer.main', 'Trip', 'Garden plans'])
 
