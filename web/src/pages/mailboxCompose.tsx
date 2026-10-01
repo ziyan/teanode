@@ -1017,7 +1017,7 @@ function MailboxComposerForAccount({
           fold them into. */}
         {quoted && editor === 'rich' && (
           <div className="compose-quoted">
-            <button type="button" className="link" onClick={() => setShowQuoted((previous) => !previous)}>
+            <button /* link-button: show or hide toggle for the quoted text */ type="button" className="link" onClick={() => setShowQuoted((previous) => !previous)}>
               {t(showQuoted ? 'compose.mailbox.hideQuoted' : 'compose.mailbox.showQuoted')}
             </button>
           </div>

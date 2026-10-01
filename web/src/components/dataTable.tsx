@@ -355,7 +355,7 @@ export function DataTable<Row>({
                 {t('filter.toggle')}
               </button>
               {filtering && (
-                <button type="button" className="link" onClick={() => setFilters({})}>
+                <button /* link-button: the table's own clear-filters control */ type="button" className="link" onClick={() => setFilters({})}>
                   {t('filter.clearAll')}
                 </button>
               )}
@@ -557,7 +557,7 @@ export function DataTable<Row>({
           </span>
 
           {filtering && (
-            <button className="link" onClick={() => setFilters({})}>
+            <button /* link-button: the table's own clear-filters control */ className="link" onClick={() => setFilters({})}>
               {t('filter.clearAll')}
             </button>
           )}

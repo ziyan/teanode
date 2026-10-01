@@ -140,7 +140,7 @@ function BackgroundWorkResultDialog({ work, onClose }: { work: BackgroundWork; o
               <h4>{t('backgroundWork.runs')}</h4>
               <p className="background-work-runs">
                 {result.runIds.map((runId, index) => (
-                  <button
+                  <button /* link-button: goes to a run, inline in a sentence */
                     key={runId}
                     type="button"
                     className="link"

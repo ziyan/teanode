@@ -552,7 +552,7 @@ export function MessageContent({
               {content.hasRemoteContent && !allowed && (
                 <div className="banner">
                   {t('mailDetail.remoteBlocked')}{' '}
-                  <button className="link" onClick={() => void showImages()}>
+                  <button /* link-button: words inside the banner sentence */ className="link" onClick={() => void showImages()}>
                     {t('mailDetail.loadRemote')}
                   </button>
                 </div>
@@ -613,7 +613,7 @@ export function MessageContent({
               {content.hasRemoteContent && !allowed && (
                 <div className="banner">
                   {t('mailDetail.remoteBlocked')}{' '}
-                  <button className="link" onClick={() => void showImages()}>
+                  <button /* link-button: words inside the banner sentence */ className="link" onClick={() => void showImages()}>
                     {t('mailDetail.loadRemote')}
                   </button>
                 </div>
