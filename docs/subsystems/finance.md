@@ -701,12 +701,23 @@ month to come; expected by today is the months over and the month in
 progress's share by its days. The paces are a month's thresholds over the
 year, with the first week of the year as the settling days. A year's rows
 are in the currency of the budget's latest month begun, a month in another
-currency converted at its as-of day's rate. The year's saving is its months'
-expected, actual and projected saving added up the same way, the projected
-spending of the months to come at the average of the months begun, budgeted
-or not, and the counts are of the spending categories with a budget in any
-month. Each month of a year is read in turn, so a year costs about twelve
-months' queries.
+currency converted at its as-of day's rate. The year's saving counts only
+the months in which at least one budget, income or spending, was in force,
+and says which (`budgetedMonths`, `budgetedMonthCount` and
+`budgetedMonthsElapsedCount`, the ones begun): expected, actual and
+projected all cover exactly those months, so budgets that began in September
+are compared with income and spending from September on, never with the
+year from January. Within them it is its months' expected, actual and
+projected saving added up the same way, the projected spending of the
+budgeted months to come at the average of the budgeted months begun, and its
+pace waits a week after the first budgeted month begins. A year with no
+budget in any month counts all its months, expects nothing, and has no
+difference and no pace to speak of (`savingPace` stays `on_track`); the
+panel, the CLI and the finance tool all say no budgets were set rather than
+comparing with zero. A month's summary names itself in `budgetedMonths`
+when it has a budget. The counts are of the spending categories with a
+budget in any month. Each month of a year is read in turn, so a year costs
+about twelve months' queries.
 
 A savings target is measured one of three ways (`target_measure`):
 `cash_flow`, income less spending since it started; `net_worth`, net worth
@@ -820,24 +831,32 @@ the month's budgets (spending budgets, then income budgets under a heading
 of their own), and heads Budgets for this month, where the list and the
 "Set a budget" dialog group income categories under Income.
 
-Spending shows a month or a year: a Month | Year segmented pair beside the
-period picker (`SpendingPeriodPicker` in
-`web/src/pages/finance/financeSpendingYear.tsx`), the year chosen with a
-step either way or from a menu. The period is in the address, `?month=` or
+Spending shows a month or a year. Month | Year and the period, a menu
+between a step back and a step forward (`SpendingPeriodPicker` in
+`web/src/pages/finance/financeSpendingYear.tsx`), are one row above the
+panels, at the right on a wide window and the full width on a phone, in the
+same place in both modes so the control never moves. The month menu lists
+the months back to the first with cash flow and the year menu the years
+with any; both come from one cash flow read over the last twenty years
+(`useSpendingHistory`, grouped on the client by `cashFlowYears`), so no
+query was added. The period is in the address, `?month=` or
 `?year=` (`spendingPeriodFromSearch` in `financeFilters.ts`), so a year can
 be linked to; changing Month to Year or back is a step in the browser's
 history and Back returns to it, while choosing another month or year
 replaces the address as the month always has. Year to month lands on the
-year's latest month begun. In Year mode the section is the year's cash
-flow a bar a month (the months to come empty; choosing a month opens it in
-Month), with the year's income, spending and what was left added up from
-those months as cash flow counts them (`yearCashFlowTotals`); the year's
-saving; the year's budgets, each noting when it covered only some months,
+year's latest month begun. In Year mode the section is every year's cash
+flow a group a year, from the first year with any to this one (marked as so
+far), the chosen year highlighted and each group a button that chooses its
+year, with the chosen year's income, spending and what was left
+(`yearCashFlowTotals`); the year's saving, naming the months with budgets
+it counts; the year's budgets, the months most of them covered said once in
+the description and a note only on a row that covered a different number,
 with the budget to date and an explanation of the year's projection; and
 the spending summary over the year, each group opening Transactions over
 the year's days. The current year reads from January 1 to today, and says
 so in the chart's caption and the panels' hints. The day-by-day chart is a
-month's only.
+month's only, and has no headline of its own: the month's spending is the
+cash flow chart's, one card up.
 
 Each bar is what has gone so far, and a faint striped band past it runs to
 where the month is heading (`MeterBar` in

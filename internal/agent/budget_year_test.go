@@ -301,6 +301,11 @@ func TestYearBudgetStatusAndSavingSummary(t *testing.T) {
 	if summary.IncomeBudgetCount != 1 || summary.SpendingBudgetCount != 2 || summary.Year != "2026" || summary.MonthsElapsedCount != 9 {
 		t.Errorf("the year's saving: %+v", summary)
 	}
+	// Budgets in every month: the year counts all twelve, as it always did.
+	if summary.BudgetedMonthCount != 12 || summary.BudgetedMonthsElapsedCount != 9 || len(summary.BudgetedMonths) != 12 ||
+		summary.BudgetedMonths[0] != "2026-01" || summary.BudgetedMonths[11] != "2026-12" {
+		t.Errorf("every month of the year budgeted, nine begun: %+v", summary)
+	}
 
 	if pastStatus.MonthsElapsedCount != 12 || pastStatus.DayOfYear != 365 || pastStatus.AsOf != "2026-12-31" {
 		t.Errorf("the year once it is over: %+v", pastStatus)
@@ -312,5 +317,117 @@ func TestYearBudgetStatusAndSavingSummary(t *testing.T) {
 	}
 	if pastSummary.ProjectedSpendingAmount != pastSummary.SpendingAmount || pastSummary.ProjectedIncomeAmount != pastSummary.IncomeAmount {
 		t.Errorf("a year that is over projects nothing: %+v", pastSummary)
+	}
+}
+
+// Budgets that begin in September: the year's saving counts September
+// onward only, expected, actual and projected alike, so the pay and the
+// groceries of January to August are not set against four months of
+// budgets. Before the budgets are set, the year has none at all and
+// counts every month's income and spending with nothing expected.
+func TestYearSavingSummaryCountsOnlyBudgetedMonths(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	groceriesId := fixture.spendingCategoryIdNamed(t, agentId, finance.SpendingCategoryGroceries)
+	incomeId := fixture.spendingCategoryIdNamed(t, agentId, finance.SpendingCategoryIncome)
+	added := []finance.Transaction{}
+	categoryByIdentifier := map[string]string{}
+	// A different grocer each month, so no repeat charge is expected and
+	// October's projection is its pace alone.
+	for _, month := range []string{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10"} {
+		grocer := "grocer-" + month
+		added = append(added, inventedTransaction(grocer, "2026-"+month+"-12", "-300.00", "GROCER "+month, "Invented Grocer "+month, ""))
+		categoryByIdentifier[grocer] = groceriesId
+		pay := "pay-" + month
+		added = append(added, inventedTransaction(pay, "2026-"+month+"-01", "3000.00", "PAYROLL EXAMPLE CO", "", ""))
+		categoryByIdentifier[pay] = incomeId
+	}
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: added})
+
+	var unbudgeted, budgeted, august, september *models.SavingSummary
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{Limit: 100})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if _, err := tx.SetTransactionCategorization(agentId, financeTransaction.ID, categoryByIdentifier[financeTransaction.ProviderTransactionID], models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		if unbudgeted, err = YearSavingSummary(t.Context(), tx, nil, agentId, "2026", "2026-10-15", "USD"); err != nil {
+			t.Fatalf("YearSavingSummary: %s", err)
+		}
+		for _, budget := range []*models.Budget{
+			{SpendingCategoryID: groceriesId, MonthlyAmount: "400", EffectiveFrom: "2026-09"},
+			{SpendingCategoryID: incomeId, MonthlyAmount: "3000", EffectiveFrom: "2026-09"},
+		} {
+			budget.AgentID, budget.CurrencyCode = agentId, "USD"
+			if _, err := tx.SetBudget(budget); err != nil {
+				t.Fatalf("SetBudget: %s", err)
+			}
+		}
+		if budgeted, err = YearSavingSummary(t.Context(), tx, nil, agentId, "2026", "2026-10-15", "USD"); err != nil {
+			t.Fatalf("YearSavingSummary: %s", err)
+		}
+		if august, err = SavingSummary(t.Context(), tx, nil, agentId, "2026-08", "2026-10-15", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+		if september, err = SavingSummary(t.Context(), tx, nil, agentId, "2026-09", "2026-10-15", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+	})
+
+	// No budget in any month: every month's income and spending, nothing
+	// expected, and no difference or pace against it.
+	if unbudgeted.BudgetedMonthCount != 0 || len(unbudgeted.BudgetedMonths) != 0 || unbudgeted.BudgetedMonthsElapsedCount != 0 {
+		t.Errorf("no month budgeted: %+v", unbudgeted)
+	}
+	for what, compared := range map[string][2]string{
+		"expected saving":   {unbudgeted.ExpectedSavingAmount, "0.0000"},
+		"income":            {unbudgeted.IncomeAmount, "30000.0000"},
+		"spending":          {unbudgeted.SpendingAmount, "3000.0000"},
+		"saving":            {unbudgeted.SavingAmount, "27000.0000"},
+		"saving difference": {unbudgeted.SavingDifferenceAmount, "0.0000"},
+	} {
+		if compared[0] != compared[1] {
+			t.Errorf("the unbudgeted year's %s is %s, want %s", what, compared[0], compared[1])
+		}
+	}
+	if unbudgeted.SavingPace != models.SavingPaceOnTrack {
+		t.Errorf("a year with nothing expected has no pace: %s", unbudgeted.SavingPace)
+	}
+
+	if len(budgeted.BudgetedMonths) != 4 || budgeted.BudgetedMonths[0] != "2026-09" || budgeted.BudgetedMonths[3] != "2026-12" ||
+		budgeted.BudgetedMonthCount != 4 || budgeted.BudgetedMonthsElapsedCount != 2 {
+		t.Errorf("September to December budgeted, two of them begun: %+v", budgeted)
+	}
+	// September and October so far: two pays and two grocers. October at
+	// its pace (300 in fifteen days) heads for 620, and November and
+	// December carry on at the average of September and October.
+	for what, compared := range map[string][2]string{
+		"expected income":    {budgeted.ExpectedIncomeAmount, "12000.0000"},
+		"expected spending":  {budgeted.ExpectedSpendingAmount, "1600.0000"},
+		"expected saving":    {budgeted.ExpectedSavingAmount, "10400.0000"},
+		"income":             {budgeted.IncomeAmount, "6000.0000"},
+		"spending":           {budgeted.SpendingAmount, "600.0000"},
+		"saving":             {budgeted.SavingAmount, "5400.0000"},
+		"projected income":   {budgeted.ProjectedIncomeAmount, "12000.0000"},
+		"projected spending": {budgeted.ProjectedSpendingAmount, "1840.0000"},
+		"projected saving":   {budgeted.ProjectedSavingAmount, "10160.0000"},
+		"saving difference":  {budgeted.SavingDifferenceAmount, "-240.0000"},
+	} {
+		if compared[0] != compared[1] {
+			t.Errorf("the budgeted months' %s is %s, want %s", what, compared[0], compared[1])
+		}
+	}
+	if budgeted.SavingPace != models.SavingPaceBehind {
+		t.Errorf("240 short of the expected saving, past a tenth of the spending budgets, is behind: %s", budgeted.SavingPace)
+	}
+
+	// A month says itself when it has a budget, and nothing when not.
+	if august.BudgetedMonthCount != 0 || len(august.BudgetedMonths) != 0 || september.BudgetedMonthCount != 1 ||
+		len(september.BudgetedMonths) != 1 || september.BudgetedMonths[0] != "2026-09" || september.BudgetedMonthsElapsedCount != 1 {
+		t.Errorf("August unbudgeted, September budgeted: %+v %+v", august, september)
 	}
 }

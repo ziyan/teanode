@@ -7,35 +7,92 @@ import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { CASH_FLOW, CashFlow, amountOf, monthLabel } from './financeApi'
+import { CASH_FLOW, CashFlow, monthLabel } from './financeApi'
 import { UnconvertedNote, compactMoney } from './financeCommon'
 import { SpendingPeriod, SpendingPeriodKind, latestMonthOfYear } from './financeFilters'
-import { yearAfter, yearBefore, yearCashFlowTotals, yearMonths, yearOptions, yearStartLabel } from './spendingYear'
+import {
+  YearCashFlow,
+  cashFlowYears,
+  firstCashFlowMonth,
+  historyRange,
+  monthOptions,
+  yearOptions,
+  yearStartLabel,
+} from './spendingYear'
+
+// SpendingHistory is the cash flow of every month there is to choose from,
+// read once for the section: the years the chart of years draws and the
+// year menu lists, and the first month the month menu reaches back to.
+export type SpendingHistory = {
+  flow?: CashFlow
+  error?: unknown
+  loading: boolean
+  years: YearCashFlow[]
+  firstMonth: string | null
+}
+
+export function useSpendingHistory(currentMonth: string): SpendingHistory {
+  const range = historyRange(currentMonth)
+  const { data, error, loading } = useQuery(
+    () => graphql<{ CashFlow: CashFlow }>(CASH_FLOW, range),
+    [range.fromMonth, range.toMonth],
+    { refresh: false },
+  )
+  const flow = data?.CashFlow
+  const months = flow?.cashFlowMonths ?? []
+  return {
+    flow,
+    error,
+    loading: loading && !data,
+    years: cashFlowYears(months, currentMonth.slice(0, 4)),
+    firstMonth: firstCashFlowMonth(months),
+  }
+}
 
 // SpendingPeriodPicker chooses what the Spending section shows: Month or
-// Year, and beside it the month, or the year with a step either way. A
-// change of kind is a step in the browser's history, so Back returns to
-// the month or the year that was being read; choosing another month or
-// year replaces the address, as the month always has.
+// Year, and beside it the month or the year in a menu with a step either
+// way, the same shape for both. It stays in one place, the section's own
+// row above its panels, whichever is shown. A change of kind is a step in
+// the browser's history, so Back returns to the month or the year that was
+// being read; choosing another month or year replaces the address, as the
+// month always has.
 export function SpendingPeriodPicker({
   period,
   currentMonth,
+  history,
   onSelectPeriod,
 }: {
   period: SpendingPeriod
   currentMonth: string
+  history: SpendingHistory
   onSelectPeriod: (period: SpendingPeriod, isKindChange: boolean) => void
 }) {
   const { t } = useTranslation()
-  const currentYear = currentMonth.slice(0, 4)
+  const isYear = period.spendingPeriodKind === 'year'
   const selectKind = (spendingPeriodKind: SpendingPeriodKind) => {
     if (spendingPeriodKind === period.spendingPeriodKind) return
     // From a month to its year, and from a year to its latest month begun.
     const month = spendingPeriodKind === 'month' ? latestMonthOfYear(period.year, currentMonth) : period.month
     onSelectPeriod({ spendingPeriodKind, month, year: month.slice(0, 4) }, true)
   }
-  const selectYear = (year: string) =>
-    onSelectPeriod({ spendingPeriodKind: 'year', year, month: latestMonthOfYear(year, currentMonth) }, false)
+  const select = (value: string) =>
+    onSelectPeriod(
+      isYear
+        ? { spendingPeriodKind: 'year', year: value, month: latestMonthOfYear(value, currentMonth) }
+        : { spendingPeriodKind: 'month', month: value, year: value.slice(0, 4) },
+      false,
+    )
+  // Newest first, so the step back is the next option down the menu.
+  const options = isYear
+    ? yearOptions(
+        history.years.map((year) => year.year),
+        period.year,
+      )
+    : monthOptions(history.firstMonth, currentMonth, period.month)
+  const chosen = isYear ? period.year : period.month
+  const index = options.indexOf(chosen)
+  const earlier = index >= 0 && index < options.length - 1 ? options[index + 1] : null
+  const later = index > 0 ? options[index - 1] : null
   const kinds: SpendingPeriodKind[] = ['month', 'year']
   return (
     <div className="finance-period">
@@ -52,112 +109,80 @@ export function SpendingPeriodPicker({
           </button>
         ))}
       </div>
-      {period.spendingPeriodKind === 'month' ? (
-        <label className="finance-month">
-          <span>{t('finance.month')}</span>
-          <input
-            type="month"
-            value={period.month}
-            max={currentMonth}
-            onChange={(event) =>
-              event.target.value &&
-              onSelectPeriod(
-                { spendingPeriodKind: 'month', month: event.target.value, year: event.target.value.slice(0, 4) },
-                false,
-              )
-            }
-          />
-        </label>
-      ) : (
-        <div className="finance-year">
-          <Tooltip label={t('finance.previousYear')}>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('finance.previousYear')}
-              onClick={() => selectYear(yearBefore(period.year))}
-            >
-              <ChevronLeftIcon size={16} />
-            </button>
-          </Tooltip>
-          <Select
-            value={period.year}
-            label={t('finance.year')}
-            options={yearOptions(currentYear, period.year).map((year) => ({ value: year, label: year }))}
-            onChange={selectYear}
-          />
-          <Tooltip label={t('finance.nextYear')}>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('finance.nextYear')}
-              disabled={period.year >= currentYear}
-              onClick={() => selectYear(yearAfter(period.year))}
-            >
-              <ChevronRightIcon size={16} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
+      <div className="finance-period-step">
+        <Tooltip label={isYear ? t('finance.previousYear') : t('finance.previousMonth')}>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={isYear ? t('finance.previousYear') : t('finance.previousMonth')}
+            disabled={earlier === null}
+            onClick={() => earlier && select(earlier)}
+          >
+            <ChevronLeftIcon size={16} />
+          </button>
+        </Tooltip>
+        <Select
+          className="finance-period-select"
+          value={chosen}
+          label={isYear ? t('finance.year') : t('finance.month')}
+          options={options.map((option) => ({ value: option, label: isYear ? option : monthLabel(option, 'long') }))}
+          onChange={select}
+        />
+        <Tooltip label={isYear ? t('finance.nextYear') : t('finance.nextMonth')}>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={isYear ? t('finance.nextYear') : t('finance.nextMonth')}
+            disabled={later === null}
+            onClick={() => later && select(later)}
+          >
+            <ChevronRightIcon size={16} />
+          </button>
+        </Tooltip>
+      </div>
     </div>
   )
 }
 
-// The year's cash flow a bar a month: income and spending side by side and
-// what was left as a line, the months still to come empty, and under it
-// the year's three figures added up from those months. Choosing a month
-// opens it in Month.
+// The cash flow of every year there is, a group a year: income and spending
+// side by side and what was left as a line, this year marked as the year
+// to date. Choosing a year shows it in the rest of the section, and the
+// line under the chart is the chosen year's three figures.
 export function SpendingByYearPanel({
   year,
   currentMonth,
-  picker,
-  onOpenMonth,
+  history,
+  onSelectYear,
 }: {
   year: string
   currentMonth: string
-  picker: React.ReactNode
-  onOpenMonth: (month: string) => void
+  history: SpendingHistory
+  onSelectYear: (year: string) => void
 }) {
   const { t } = useTranslation()
-  const months = yearMonths(year)
-  const { data, error, loading } = useQuery(
-    () => graphql<{ CashFlow: CashFlow }>(CASH_FLOW, { fromMonth: months[0], toMonth: months[11] }),
-    [year],
-    { refresh: false },
-  )
-  const flow = data?.CashFlow
-  const flowMonths = flow?.cashFlowMonths ?? []
+  const { flow, error, loading, years } = history
   const currency = flow?.reportingCurrencyCode || 'USD'
-  const totals = yearCashFlowTotals(flowMonths, year)
-  const isCurrent = year === currentMonth.slice(0, 4)
-  const byMonth = new Map(flowMonths.map((month) => [month.cashFlowMonth, month]))
-  // A month that has not begun is no bar at all, rather than a zero.
-  const valuesOf = (field: 'incomeAmount' | 'spendingAmount' | 'netAmount') =>
-    months.map((month) => (month > currentMonth ? null : amountOf(byMonth.get(month)?.[field])))
-  const hasCashFlow = flowMonths.some(
-    (month) => amountOf(month.spendingAmount) !== 0 || amountOf(month.incomeAmount) !== 0,
-  )
+  const currentYear = currentMonth.slice(0, 4)
+  const isCurrent = year === currentYear
+  const chosen = years.find((candidate) => candidate.year === year)
+  const hasCashFlow = years.some((candidate) => candidate.incomeAmount !== 0 || candidate.spendingAmount !== 0)
+  const yearLabel = (key: string) => (key === currentYear ? t('finance.yearSoFar', { year: key }) : key)
   const caption = isCurrent
     ? t('finance.spentYearToDate', { from: yearStartLabel(year) })
     : t('finance.spentInYear', { year })
   return (
     <SettingsSection card title={t('finance.cashFlowByYearTitle')} description={t('finance.cashFlowByYearHint')}>
       <ErrorMessage error={error} />
-      {loading && !data ? <Loading /> : null}
-      {flow && !hasCashFlow ? (
-        <>
-          <div className="finance-month-alone">{picker}</div>
-          <SettingsEmpty>{t('finance.noCashFlowInYear', { year })}</SettingsEmpty>
-        </>
-      ) : null}
+      {loading ? <Loading /> : null}
+      {flow && !hasCashFlow ? <SettingsEmpty>{t('finance.noCashFlowYears')}</SettingsEmpty> : null}
       {hasCashFlow ? (
         <SeriesChart
           label={t('finance.cashFlowByYearTitle')}
-          keys={months}
-          keyLabel={(key) => monthLabel(key)}
+          keys={years.map((candidate) => candidate.year)}
+          keyLabel={yearLabel}
           format={(value) => formatMoney(value, currency)}
           axisFormat={(value) => compactMoney(value, currency)}
-          headline={formatMoney(totals.spendingAmount, currency)}
+          headline={formatMoney(chosen?.spendingAmount ?? 0, currency)}
           caption={caption}
           series={[
             {
@@ -165,32 +190,38 @@ export function SpendingByYearPanel({
               label: t('finance.income'),
               tone: 'output',
               shape: 'column',
-              values: valuesOf('incomeAmount'),
+              values: years.map((candidate) => candidate.incomeAmount),
             },
             {
               id: 'spending',
               label: t('finance.spending'),
               tone: 'cached',
               shape: 'column',
-              values: valuesOf('spendingAmount'),
+              values: years.map((candidate) => candidate.spendingAmount),
             },
-            { id: 'left', label: t('finance.leftOver'), tone: 'input', shape: 'line', values: valuesOf('netAmount') },
+            {
+              id: 'left',
+              label: t('finance.leftOver'),
+              tone: 'input',
+              shape: 'line',
+              values: years.map((candidate) => candidate.netAmount),
+            },
           ]}
-          onSelectKey={(month) => month <= currentMonth && onOpenMonth(month)}
-          headAction={picker}
+          selectedKey={year}
+          onSelectKey={onSelectYear}
         />
       ) : null}
       {hasCashFlow ? (
         <p className="muted finance-month-flow">
           {isCurrent ? <span>{t('finance.yearToDate', { from: yearStartLabel(year) })}</span> : null}
           <span>
-            {t('finance.income')} <strong>{formatMoney(totals.incomeAmount, currency)}</strong>
+            {t('finance.income')} <strong>{formatMoney(chosen?.incomeAmount ?? 0, currency)}</strong>
           </span>
           <span>
-            {t('finance.spending')} <strong>{formatMoney(totals.spendingAmount, currency)}</strong>
+            {t('finance.spending')} <strong>{formatMoney(chosen?.spendingAmount ?? 0, currency)}</strong>
           </span>
           <span>
-            {t('finance.leftOver')} <strong>{formatMoney(totals.netAmount, currency)}</strong>
+            {t('finance.leftOver')} <strong>{formatMoney(chosen?.netAmount ?? 0, currency)}</strong>
           </span>
         </p>
       ) : null}

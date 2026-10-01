@@ -1,11 +1,18 @@
-import { CashFlowMonth, amountOf } from './financeApi'
+import { CashFlowMonth, amountOf, monthBefore } from './financeApi'
 
-// The Spending section's year: what its twelve months add up to, as the
-// chart of months counts them, and the years there are to choose from.
+// The Spending section's years: what each adds up to, as the chart of
+// months counts it, and the years and months there are to choose from.
 
-// yearMonths is the twelve months of a year, 2006-01 to 2006-12.
-export function yearMonths(year: string): string[] {
-  return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`)
+// HISTORY_YEAR_COUNT is how many years, this one included, the Spending
+// section reads cash flow over to find the years and months that have any.
+// One answer a month for twenty years is a few hundred rows; a history
+// longer than that starts at its twentieth year.
+export const HISTORY_YEAR_COUNT = 20
+
+// historyRange is the months the Spending section reads its history over:
+// January twenty years back, this one included, to this month.
+export function historyRange(currentMonth: string): { fromMonth: string; toMonth: string } {
+  return { fromMonth: `${Number(currentMonth.slice(0, 4)) - HISTORY_YEAR_COUNT + 1}-01`, toMonth: currentMonth }
 }
 
 export type YearCashFlowTotals = { incomeAmount: number; spendingAmount: number; netAmount: number }
@@ -25,22 +32,52 @@ export function yearCashFlowTotals(months: CashFlowMonth[], year: string): YearC
   return totals
 }
 
-// yearOptions is the years the year menu offers, newest first: this one
-// and the count before it, and the one chosen when it is further back.
-export function yearOptions(currentYear: string, chosenYear: string, count = 10): string[] {
-  const newest = Number(currentYear)
-  const years = Array.from({ length: count }, (_, index) => String(newest - index))
-  if (!years.includes(chosenYear) && chosenYear < currentYear) years.push(chosenYear)
+const hasCashFlow = (month: CashFlowMonth) => amountOf(month.incomeAmount) !== 0 || amountOf(month.spendingAmount) !== 0
+
+// firstCashFlowMonth is the earliest month with any income or spending,
+// or none when there is none.
+export function firstCashFlowMonth(months: CashFlowMonth[]): string | null {
+  let first: string | null = null
+  for (const month of months) {
+    if (hasCashFlow(month) && (first === null || month.cashFlowMonth < first)) first = month.cashFlowMonth
+  }
+  return first
+}
+
+export type YearCashFlow = { year: string } & YearCashFlowTotals
+
+// cashFlowYears is every year from the first with any income or spending
+// to this one, oldest first, each added up from its months: the years the
+// chart of years draws. Just this year when nothing has come in or gone
+// out yet.
+export function cashFlowYears(months: CashFlowMonth[], currentYear: string): YearCashFlow[] {
+  const first = firstCashFlowMonth(months)
+  const firstYear = first && first.slice(0, 4) < currentYear ? Number(first.slice(0, 4)) : Number(currentYear)
+  const years: YearCashFlow[] = []
+  for (let year = firstYear; year <= Number(currentYear); year++) {
+    years.push({ year: String(year), ...yearCashFlowTotals(months, String(year)) })
+  }
   return years
 }
 
-// yearBefore and yearAfter are the years either side of one.
-export function yearBefore(year: string): string {
-  return String(Number(year) - 1)
+// yearOptions is the years the year menu offers, newest first: the years
+// with cash flow (cashFlowYears), and the one chosen when it is further
+// back than those.
+export function yearOptions(years: string[], chosenYear: string): string[] {
+  const options = [...years].sort().reverse()
+  if (!options.includes(chosenYear)) options.push(chosenYear)
+  return options
 }
 
-export function yearAfter(year: string): string {
-  return String(Number(year) + 1)
+// monthOptions is the months the month menu offers, newest first: this one
+// back to the first with cash flow (a year of them when there is none
+// yet), and the one chosen when it is further back than those.
+export function monthOptions(firstMonth: string | null, currentMonth: string, chosenMonth: string): string[] {
+  const oldest = firstMonth && firstMonth < currentMonth ? firstMonth : monthBefore(currentMonth, 11)
+  const options: string[] = []
+  for (let month = currentMonth; month >= oldest; month = monthBefore(month, 1)) options.push(month)
+  if (!options.includes(chosenMonth) && chosenMonth < currentMonth) options.push(chosenMonth)
+  return options
 }
 
 // yearStartLabel is the first of January the way the reader writes a day

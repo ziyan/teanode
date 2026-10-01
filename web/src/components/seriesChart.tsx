@@ -290,8 +290,7 @@ function SeriesDrawing({
   const span = Math.max(1e-9, ceiling - floor)
   // Held inside the scale, so a dip the scale chose not to reach for is
   // drawn on the zero line rather than over the axis labels.
-  const yOf = (value: number) =>
-    CHART_TOP + ((ceiling - Math.max(floor, Math.min(ceiling, value))) / span) * plotHeight
+  const yOf = (value: number) => CHART_TOP + ((ceiling - Math.max(floor, Math.min(ceiling, value))) / span) * plotHeight
   const zero = yOf(0)
   const labelEvery = Math.max(1, Math.ceil(keys.length / Math.max(2, Math.floor(plotWidth / 64))))
   const grid = scale.grid
@@ -360,13 +359,7 @@ function SeriesDrawing({
         return (
           <g key={value}>
             <line className="usage-chart-grid" x1={axisWidth} x2={width} y1={y} y2={y} />
-            <text
-              className="usage-chart-axis"
-              x={axisWidth - 8}
-              y={y}
-              textAnchor="end"
-              dominantBaseline="middle"
-            >
+            <text className="usage-chart-axis" x={axisWidth - 8} y={y} textAnchor="end" dominantBaseline="middle">
               {axisFormat(value)}
             </text>
           </g>
@@ -375,14 +368,13 @@ function SeriesDrawing({
       {floor < 0 ? <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} /> : null}
       {keys.map((key, index) => {
         const groupX = axisWidth + index * slot + (slot - groupWidth) / 2
-        // With a key chosen, the others step back, as they do for the one
-        // under the pointer, and the chosen one stays forward either way.
-        const isDimmed =
-          selectedIndex >= 0
-            ? index !== selectedIndex && index !== hovered
-            : hovered !== null && hovered !== index
+        // With a key chosen, the others step back (less far than for the
+        // pointer: they are still being read), and the chosen one stays
+        // forward either way.
+        const isUnselected = selectedIndex >= 0 && index !== selectedIndex && index !== hovered
+        const isDimmed = selectedIndex < 0 && hovered !== null && hovered !== index
         return (
-          <g key={key} className={isDimmed ? 'usage-chart-dim' : ''}>
+          <g key={key} className={isUnselected ? 'series-chart-unselected' : isDimmed ? 'usage-chart-dim' : ''}>
             {columns.map((one, position) => {
               const value = one.values[index]
               if (value === null || value === undefined || value === 0) return null
@@ -501,12 +493,7 @@ export function isolatedIndexes(values: (number | null | undefined)[]): number[]
 
 // linePath runs through the middle of each slot, lifting the pen over a
 // key the series has nothing for.
-function linePath(
-  values: (number | null)[],
-  slot: number,
-  yOf: (value: number) => number,
-  axisWidth: number,
-): string {
+function linePath(values: (number | null)[], slot: number, yOf: (value: number) => number, axisWidth: number): string {
   const parts: string[] = []
   let isDrawing = false
   values.forEach((value, index) => {

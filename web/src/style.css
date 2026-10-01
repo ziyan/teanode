@@ -2085,6 +2085,20 @@ label span {
   display: none;
 }
 
+/* A row with more tabs past an edge fades out at that edge, so a row cut
+   between two tabs still says it goes on. */
+.tabs.tabs-more-after {
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+
+.tabs.tabs-more-before {
+  mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+}
+
+.tabs.tabs-more-before.tabs-more-after {
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
+
 /* A tab keeps its width in a row that scrolls; the default would squeeze them
    all until every label was unreadable. */
 .tabs button,
@@ -11013,8 +11027,9 @@ main.content:has(> .knowledge-frame) {
 /* Room at the foot of the page for the floating button, where the window
    is narrow enough that it sits over the content rather than beside it.
    Only where it is needed: on a wide window the button is clear of the
-   column it would otherwise cover. */
-@media (max-width: 760px) {
+   column it would otherwise cover. Up to the 900px breakpoint, since at
+   820 the button still sat on the end of a panel's last line. */
+@media (max-width: 900px) {
   main.content,
   .table-surface {
     padding-bottom: 84px;
@@ -12019,6 +12034,27 @@ button.idea-history-title {
   text-align: left;
 }
 
+/* Four columns of amounts fit a phone when the cells are closer: the
+   table stays a table, and the last column no longer scrolls a few pixels
+   out of the card. */
+@media (max-width: 600px) {
+  .finance-saving-table th,
+  .finance-saving-table td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .finance-saving-table th:first-child,
+  .finance-saving-table td:first-child {
+    padding-left: 0;
+  }
+
+  .finance-saving-table th:last-child,
+  .finance-saving-table td:last-child {
+    padding-right: 0;
+  }
+}
+
 .finance-evidence {
   display: block;
 }
@@ -12112,6 +12148,14 @@ button.idea-history-title {
 .series-chart-axis-selected {
   fill: var(--text);
   font-weight: 650;
+}
+
+/* With a key chosen, the others step back less than they do for a
+   pointer passing over them: they are still the chart being read, and at
+   the pointer's fade the pale spending columns of a light page looked
+   switched off. The chosen one keeps its band and its label. */
+.series-chart-unselected .usage-chart-column {
+  opacity: 0.7;
 }
 
 /* Where a month's money went: a ring, whose legend is the table under it.
@@ -12351,43 +12395,65 @@ button.idea-history-title {
   vertical-align: bottom;
 }
 
-/* The month picker on the line of the headline it chooses. */
-.finance-month {
-  flex: 0 1 11rem;
-  min-width: 9rem;
-  margin: 0;
-}
-
-.finance-month-alone {
-  max-width: 14rem;
+/* Month or Year, and the month or the year in a menu between two arrows:
+   one row above the Spending panels, at the right on a wide window and the
+   whole width on a phone. The same row in both modes, outside every card,
+   so the control never moves as the panels under it change. */
+.finance-period-bar {
+  display: flex;
+  justify-content: flex-end;
   margin-bottom: var(--space-3);
 }
 
-/* Month or Year, and beside it the month or the year. It wraps under the
-   headline on a phone, the segmented pair staying beside its picker while
-   they fit. */
 .finance-period {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .finance-period .segmented {
   flex: 0 0 auto;
-  margin-bottom: 6px;
 }
 
-.finance-month-alone:has(.finance-period) {
-  max-width: none;
+/* As tall as the menu beside it, so the row reads as one line of controls. */
+.finance-period .segmented button {
+  padding: 7px 12px;
+  font-size: var(--text-body);
 }
 
-/* The year with a step either way: the menu between two arrows. */
-.finance-year {
+.finance-period-step {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Wide enough for the longest month in any of the languages, and the same
+   for a year, so neither stepping nor switching Month and Year moves the
+   arrows. */
+.finance-period-select.select {
+  width: 12rem;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .finance-period-bar {
+    justify-content: stretch;
+  }
+
+  .finance-period {
+    flex: 1 1 auto;
+  }
+
+  .finance-period-step {
+    flex: 1 1 auto;
+  }
+
+  .finance-period-select.select {
+    flex: 1 1 auto;
+    width: auto;
+  }
 }
 
 /* On a phone the transactions' filters fold into one line that says which

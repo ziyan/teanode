@@ -2192,6 +2192,21 @@ func printYearBudgetStatus(command *cli.Command, status *client.BudgetStatus) er
 	return nil
 }
 
+// budgetedMonthsLine says which months of a year its saving counts: only
+// those with a budget in force, so budgeted, so far and projected are all
+// over the same months.
+func budgetedMonthsLine(summary *client.SavingSummary) string {
+	if summary.BudgetedMonthCount == 12 || len(summary.BudgetedMonths) == 0 {
+		return fmt.Sprintf("counting the %d months with budgets", summary.BudgetedMonthCount)
+	}
+	first, last := summary.BudgetedMonths[0], summary.BudgetedMonths[len(summary.BudgetedMonths)-1]
+	months := fmt.Sprintf("the %d months with budgets, %s to %s", summary.BudgetedMonthCount, first, last)
+	if summary.BudgetedMonthCount == 1 {
+		months = "the one month with budgets, " + first
+	}
+	return fmt.Sprintf("counting only %s (%d begun): budgeted, so far and projected are all over those months", months, summary.BudgetedMonthsElapsedCount)
+}
+
 func runFinanceSavingSummary(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{}
 	setString(command, variables, "month", "month")
@@ -2208,13 +2223,31 @@ func runFinanceSavingSummary(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Writer, "nothing to report in yet; link a finance source or set a reporting currency")
 		return nil
 	}
-	if summary.IncomeBudgetCount == 0 && summary.SpendingBudgetCount == 0 {
-		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one on an income or a spending category\n", summary.Month+summary.Year)
+	currencyCode := summary.ReportingCurrencyCode
+	heading := periodLine(summary.Month, summary.Year, summary.AsOf, summary.DayOfMonth, summary.DaysInMonth, summary.MonthsElapsedCount, summary.DayOfYear, summary.DaysInYear)
+	if summary.BudgetedMonthCount == 0 {
+		if summary.Year == "" {
+			_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one on an income or a spending category\n", summary.Month)
+			return nil
+		}
+		// A year with no budgets still has its income and spending, with
+		// nothing expected to set them against.
+		_, _ = fmt.Fprintln(command.Writer, heading)
+		_, _ = fmt.Fprintf(command.Writer, "no budgets in any month of %s, so nothing is expected; teanode finance set-budget sets one on an income or a spending category\n", summary.Year)
+		if err := printTable([]string{"", "so far"}, [][]string{
+			{"income", money(summary.IncomeAmount, currencyCode)}, {"spending", money(summary.SpendingAmount, currencyCode)}, {"left", money(summary.SavingAmount, currencyCode)},
+		}); err != nil {
+			return err
+		}
+		if len(summary.UnconvertedCurrencyCodes) > 0 {
+			_, _ = fmt.Fprintf(command.Writer, "left out, with no exchange rate into %s: %s\n", currencyCode, strings.Join(summary.UnconvertedCurrencyCodes, ", "))
+		}
 		return nil
 	}
-	currencyCode := summary.ReportingCurrencyCode
-	_, _ = fmt.Fprintf(command.Writer, "%s, %s\n", periodLine(summary.Month, summary.Year, summary.AsOf, summary.DayOfMonth, summary.DaysInMonth, summary.MonthsElapsedCount, summary.DayOfYear, summary.DaysInYear),
-		strings.ReplaceAll(summary.SavingPace, "_", " "))
+	_, _ = fmt.Fprintf(command.Writer, "%s, %s\n", heading, strings.ReplaceAll(summary.SavingPace, "_", " "))
+	if summary.Year != "" {
+		_, _ = fmt.Fprintln(command.Writer, budgetedMonthsLine(summary))
+	}
 	rows := [][]string{
 		{"income", money(summary.ExpectedIncomeAmount, currencyCode), money(summary.IncomeAmount, currencyCode), money(summary.ProjectedIncomeAmount, currencyCode)},
 		{"spending", money(summary.ExpectedSpendingAmount, currencyCode), money(summary.SpendingAmount, currencyCode), money(summary.ProjectedSpendingAmount, currencyCode)},

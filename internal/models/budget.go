@@ -429,6 +429,18 @@ type SavingSummary struct {
 	DayOfYear          int    `json:"dayOfYear"`
 	DaysInYear         int    `json:"daysInYear"`
 
+	// BudgetedMonths are the months, "2006-01" in order, in which at least
+	// one budget, income or spending, was in force; BudgetedMonthCount is
+	// how many, and BudgetedMonthsElapsedCount how many of them have begun
+	// by AsOf. Of a year, every expected, actual and projected amount
+	// counts these months only, so a year whose budgets began in September
+	// compares September onward with September onward. A year with none
+	// counts all its months instead, expects nothing, and its SavingPace
+	// says nothing. Of a month, the month itself when it has a budget.
+	BudgetedMonths             []string `json:"budgetedMonths"`
+	BudgetedMonthCount         int      `json:"budgetedMonthCount"`
+	BudgetedMonthsElapsedCount int      `json:"budgetedMonthsElapsedCount"`
+
 	// ReportingCurrencyCode is what every amount is in. A budget is
 	// converted at AsOf's rate, and income and spending at the rate of the
 	// day each came in or went out. Empty, and every amount zero, when
@@ -436,7 +448,8 @@ type SavingSummary struct {
 	ReportingCurrencyCode string `json:"reportingCurrencyCode"`
 
 	// IncomeBudgetCount and SpendingBudgetCount are how many budgets of
-	// each kind are in force in the month.
+	// each kind are in force in the month, or for a year, how many
+	// spending categories of each kind had a budget in any of its months.
 	IncomeBudgetCount   int `json:"incomeBudgetCount"`
 	SpendingBudgetCount int `json:"spendingBudgetCount"`
 

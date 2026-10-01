@@ -532,7 +532,8 @@ func TestFinanceBudgetStatusSendsTheYear(test *testing.T) {
 				`"projectedAmount":"3600.0000","budgetPace":"under","expectedRepeatCharges":[],"unconvertedSpending":[]}],"incomeCategories":[]}}}`))
 		case strings.Contains(document.Query, "SavingSummary("):
 			_, _ = response.Write([]byte(`{"data":{"SavingSummary":{` + year + `,"reportingCurrencyCode":"USD","incomeBudgetCount":1,"spendingBudgetCount":1,` +
-				`"savingPace":"on_track","unconvertedCurrencyCodes":[]}}}`))
+				`"budgetedMonths":["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10","2026-11","2026-12"],` +
+				`"budgetedMonthCount":12,"budgetedMonthsElapsedCount":9,"savingPace":"on_track","unconvertedCurrencyCodes":[]}}}`))
 		default:
 			response.WriteHeader(http.StatusBadRequest)
 		}
@@ -554,6 +555,57 @@ func TestFinanceBudgetStatusSendsTheYear(test *testing.T) {
 		if _, hasMonth := sent["month"]; sent["year"] != "2026" || hasMonth {
 			test.Errorf("sent %v", sent)
 		}
+	}
+}
+
+// A year's saving says which months it counts: only those with budgets,
+// or, with none at all, the year's income and spending and nothing
+// expected.
+func TestFinanceSavingSummaryYearSaysItsMonths(test *testing.T) {
+	test.Parallel()
+	year := `"year":"2026","asOf":"2026-10-01","dayOfMonth":1,"daysInMonth":31,"monthsElapsedCount":10,"dayOfYear":274,"daysInYear":365,"reportingCurrencyCode":"USD"`
+	for _, testCase := range []struct {
+		name      string
+		answer    string
+		wanted    []string
+		notWanted []string
+	}{
+		{
+			name: "budgets from September",
+			answer: year + `,"incomeBudgetCount":1,"spendingBudgetCount":2,"budgetedMonths":["2026-09","2026-10","2026-11","2026-12"],"budgetedMonthCount":4,` +
+				`"budgetedMonthsElapsedCount":2,"expectedSavingAmount":"8000","savingAmount":"3900","savingPace":"on_track","unconvertedCurrencyCodes":[]`,
+			wanted: []string{"counting only the 4 months with budgets, 2026-09 to 2026-12 (2 begun)", "on track"},
+		},
+		{
+			name: "no budgets",
+			answer: year + `,"incomeBudgetCount":0,"spendingBudgetCount":0,"budgetedMonths":[],"budgetedMonthCount":0,"budgetedMonthsElapsedCount":0,` +
+				`"incomeAmount":"41000","spendingAmount":"30500","savingAmount":"10500","savingPace":"on_track","unconvertedCurrencyCodes":[]`,
+			wanted:    []string{"no budgets in any month of 2026, so nothing is expected"},
+			notWanted: []string{"on track", "counting"},
+		},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("Content-Type", "application/json")
+				_, _ = response.Write([]byte(`{"data":{"SavingSummary":{` + testCase.answer + `}}}`))
+			}))
+			test.Cleanup(server.Close)
+			printed, err := runFinanceAgainst(test, server, "saving-summary", "--year", "2026")
+			if err != nil {
+				test.Fatalf("saving-summary: %s", err)
+			}
+			for _, wanted := range testCase.wanted {
+				if !strings.Contains(printed, wanted) {
+					test.Errorf("printed %q, without %q", printed, wanted)
+				}
+			}
+			for _, notWanted := range testCase.notWanted {
+				if strings.Contains(printed, notWanted) {
+					test.Errorf("printed %q, with %q", printed, notWanted)
+				}
+			}
+		})
 	}
 }
 

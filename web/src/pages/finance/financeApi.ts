@@ -185,6 +185,10 @@ export type SavingSummary = {
   monthsElapsedCount: number
   dayOfYear: number
   daysInYear: number
+  // The months with a budget in force, which a year's saving counts alone.
+  budgetedMonths: string[]
+  budgetedMonthCount: number
+  budgetedMonthsElapsedCount: number
   reportingCurrencyCode: string
   incomeBudgetCount: number
   spendingBudgetCount: number
@@ -642,7 +646,7 @@ export const BUDGET_STATUS = `query ($month: String, $year: String) {
 
 export const SAVING_SUMMARY = `query ($month: String, $year: String) {
   SavingSummary(month: $month, year: $year) { month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear
-    daysInYear reportingCurrencyCode incomeBudgetCount
+    daysInYear budgetedMonths budgetedMonthCount budgetedMonthsElapsedCount reportingCurrencyCode incomeBudgetCount
     spendingBudgetCount expectedIncomeAmount expectedSpendingAmount expectedSavingAmount incomeAmount spendingAmount
     savingAmount projectedIncomeAmount projectedSpendingAmount projectedSavingAmount savingDifferenceAmount savingPace
     unconvertedCurrencyCodes }

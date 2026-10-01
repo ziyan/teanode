@@ -470,29 +470,32 @@ type BudgetStatus struct {
 // currency: what its budgets expect, what it is so far, and where it is
 // heading.
 type SavingSummary struct {
-	Month                    string   `json:"month"`
-	AsOf                     string   `json:"asOf"`
-	DayOfMonth               int      `json:"dayOfMonth"`
-	DaysInMonth              int      `json:"daysInMonth"`
-	Year                     string   `json:"year"`
-	MonthsElapsedCount       int      `json:"monthsElapsedCount"`
-	DayOfYear                int      `json:"dayOfYear"`
-	DaysInYear               int      `json:"daysInYear"`
-	ReportingCurrencyCode    string   `json:"reportingCurrencyCode"`
-	IncomeBudgetCount        int      `json:"incomeBudgetCount"`
-	SpendingBudgetCount      int      `json:"spendingBudgetCount"`
-	ExpectedIncomeAmount     string   `json:"expectedIncomeAmount"`
-	ExpectedSpendingAmount   string   `json:"expectedSpendingAmount"`
-	ExpectedSavingAmount     string   `json:"expectedSavingAmount"`
-	IncomeAmount             string   `json:"incomeAmount"`
-	SpendingAmount           string   `json:"spendingAmount"`
-	SavingAmount             string   `json:"savingAmount"`
-	ProjectedIncomeAmount    string   `json:"projectedIncomeAmount"`
-	ProjectedSpendingAmount  string   `json:"projectedSpendingAmount"`
-	ProjectedSavingAmount    string   `json:"projectedSavingAmount"`
-	SavingDifferenceAmount   string   `json:"savingDifferenceAmount"`
-	SavingPace               string   `json:"savingPace"`
-	UnconvertedCurrencyCodes []string `json:"unconvertedCurrencyCodes"`
+	Month                      string   `json:"month"`
+	AsOf                       string   `json:"asOf"`
+	DayOfMonth                 int      `json:"dayOfMonth"`
+	DaysInMonth                int      `json:"daysInMonth"`
+	Year                       string   `json:"year"`
+	MonthsElapsedCount         int      `json:"monthsElapsedCount"`
+	DayOfYear                  int      `json:"dayOfYear"`
+	DaysInYear                 int      `json:"daysInYear"`
+	BudgetedMonths             []string `json:"budgetedMonths"`
+	BudgetedMonthCount         int      `json:"budgetedMonthCount"`
+	BudgetedMonthsElapsedCount int      `json:"budgetedMonthsElapsedCount"`
+	ReportingCurrencyCode      string   `json:"reportingCurrencyCode"`
+	IncomeBudgetCount          int      `json:"incomeBudgetCount"`
+	SpendingBudgetCount        int      `json:"spendingBudgetCount"`
+	ExpectedIncomeAmount       string   `json:"expectedIncomeAmount"`
+	ExpectedSpendingAmount     string   `json:"expectedSpendingAmount"`
+	ExpectedSavingAmount       string   `json:"expectedSavingAmount"`
+	IncomeAmount               string   `json:"incomeAmount"`
+	SpendingAmount             string   `json:"spendingAmount"`
+	SavingAmount               string   `json:"savingAmount"`
+	ProjectedIncomeAmount      string   `json:"projectedIncomeAmount"`
+	ProjectedSpendingAmount    string   `json:"projectedSpendingAmount"`
+	ProjectedSavingAmount      string   `json:"projectedSavingAmount"`
+	SavingDifferenceAmount     string   `json:"savingDifferenceAmount"`
+	SavingPace                 string   `json:"savingPace"`
+	UnconvertedCurrencyCodes   []string `json:"unconvertedCurrencyCodes"`
 }
 
 // SpendingDay is one day's spending and the month's up to it.
@@ -702,7 +705,8 @@ const (
 
 	DocumentSavingSummary = `query ($month: String, $year: String, $currencyCode: String) {
   SavingSummary(month: $month, year: $year, currencyCode: $currencyCode) {
-    month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear reportingCurrencyCode incomeBudgetCount spendingBudgetCount
+    month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear budgetedMonths budgetedMonthCount budgetedMonthsElapsedCount
+    reportingCurrencyCode incomeBudgetCount spendingBudgetCount
     expectedIncomeAmount expectedSpendingAmount expectedSavingAmount incomeAmount spendingAmount savingAmount
     projectedIncomeAmount projectedSpendingAmount projectedSavingAmount savingDifferenceAmount savingPace unconvertedCurrencyCodes
   }

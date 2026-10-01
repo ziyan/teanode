@@ -1,7 +1,14 @@
 import { expect, it } from 'vitest'
 
 import type { CashFlowMonth } from './financeApi'
-import { yearAfter, yearBefore, yearCashFlowTotals, yearMonths, yearOptions } from './spendingYear'
+import {
+  cashFlowYears,
+  firstCashFlowMonth,
+  historyRange,
+  monthOptions,
+  yearCashFlowTotals,
+  yearOptions,
+} from './spendingYear'
 
 const month = (cashFlowMonth: string, incomeAmount: string, spendingAmount: string): CashFlowMonth => ({
   cashFlowMonth,
@@ -10,12 +17,8 @@ const month = (cashFlowMonth: string, incomeAmount: string, spendingAmount: stri
   netAmount: String(Number(incomeAmount) - Number(spendingAmount)),
 })
 
-it('lists the twelve months of a year', () => {
-  const months = yearMonths('2031')
-  expect(months).toHaveLength(12)
-  expect(months[0]).toBe('2031-01')
-  expect(months[8]).toBe('2031-09')
-  expect(months[11]).toBe('2031-12')
+it('reads twenty years of history, this one included, to this month', () => {
+  expect(historyRange('2031-05')).toEqual({ fromMonth: '2012-01', toMonth: '2031-05' })
 })
 
 // The year is its months added up as the server counted each, so a month
@@ -38,14 +41,35 @@ it('adds up the year from its months', () => {
   expect(yearCashFlowTotals([], '2031')).toEqual({ incomeAmount: 0, spendingAmount: 0, netAmount: 0 })
 })
 
-it('offers this year and the ones before, and keeps a year further back that was chosen', () => {
-  expect(yearOptions('2031', '2031', 3)).toEqual(['2031', '2030', '2029'])
-  expect(yearOptions('2031', '2020', 3)).toEqual(['2031', '2030', '2029', '2020'])
-  expect(yearOptions('2031', '2030', 3)).toEqual(['2031', '2030', '2029'])
-  expect(yearOptions('2031', '2031')).toHaveLength(10)
+// Empty months before the first with money in or out are not years of
+// history; a quiet year in between still is one.
+it('lists every year from the first with cash flow to this one', () => {
+  const months = [
+    month('2027-11', '0.0000', '0.0000'),
+    month('2028-03', '0.0000', '120.0000'),
+    month('2029-06', '0.0000', '0.0000'),
+    month('2030-02', '2500.0000', '900.0000'),
+    month('2031-01', '2500.0000', '1000.0000'),
+  ]
+  expect(firstCashFlowMonth(months)).toBe('2028-03')
+  const years = cashFlowYears(months, '2031')
+  expect(years.map((year) => year.year)).toEqual(['2028', '2029', '2030', '2031'])
+  expect(years[0].spendingAmount).toBeCloseTo(120)
+  expect(years[1]).toEqual({ year: '2029', incomeAmount: 0, spendingAmount: 0, netAmount: 0 })
+  expect(years[3].netAmount).toBeCloseTo(1500)
+  expect(cashFlowYears([], '2031').map((year) => year.year)).toEqual(['2031'])
+  expect(firstCashFlowMonth([])).toBeNull()
 })
 
-it('steps a year either way', () => {
-  expect(yearBefore('2031')).toBe('2030')
-  expect(yearAfter('2030')).toBe('2031')
+it('offers the years with cash flow newest first, and keeps a year further back that was chosen', () => {
+  expect(yearOptions(['2029', '2030', '2031'], '2031')).toEqual(['2031', '2030', '2029'])
+  expect(yearOptions(['2029', '2030', '2031'], '2020')).toEqual(['2031', '2030', '2029', '2020'])
+})
+
+it('offers the months back to the first with cash flow, or a year of them without any', () => {
+  expect(monthOptions('2031-02', '2031-05', '2031-05')).toEqual(['2031-05', '2031-04', '2031-03', '2031-02'])
+  expect(monthOptions('2031-02', '2031-05', '2030-07')).toEqual(['2031-05', '2031-04', '2031-03', '2031-02', '2030-07'])
+  const yearOfMonths = monthOptions(null, '2031-05', '2031-05')
+  expect(yearOfMonths).toHaveLength(12)
+  expect(yearOfMonths[11]).toBe('2030-06')
 })

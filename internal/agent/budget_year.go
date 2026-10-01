@@ -322,13 +322,21 @@ func incomeCategoryYearStatus(converter *rates.Converter, frame *budgetYear, mon
 // SavingSummary, and each month still to come expects what the budgets
 // in force for it expect, converted at the as-of day's rate.
 //
-// The expected saving is every month's income budgets less its spending
-// budgets. The projected income is the months begun as their summaries
-// project them and each month to come at its income budgets; the projected
-// spending is the months begun the same way and each month to come at
-// their average (or at its spending budgets when no month has begun),
-// the way ProjectSpendingCategoryYear carries a budget's year on. The
-// counts are of the spending categories with a budget in any month.
+// Only the months in which at least one budget, income or spending, is in
+// force count, and BudgetedMonths names them: expected, actual and
+// projected alike, so nine months of income and spending are never set
+// against four months of budgets. A year with no budget in any month
+// counts all twelve instead, with nothing expected, no difference and
+// no pace to speak of.
+//
+// The expected saving is every counted month's income budgets less its
+// spending budgets. The projected income is the counted months begun as
+// their summaries project them and each counted month to come at its
+// income budgets; the projected spending is the counted months begun the
+// same way and each counted month to come at their average (or at its
+// spending budgets when none has begun), the way
+// ProjectSpendingCategoryYear carries a budget's year on. The counts are
+// of the spending categories with a budget in any month.
 func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher, agentId, year, today, currencyCode string) (*models.SavingSummary, error) {
 	frame, err := newBudgetYear(year, today)
 	if err != nil {
@@ -339,8 +347,8 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 	summary := &models.SavingSummary{
 		AsOf: asOf, DayOfMonth: frame.asOf.Day(), DaysInMonth: frame.asOf.AddDate(0, 1, -frame.asOf.Day()).Day(),
 		Year: frame.year, MonthsElapsedCount: frame.monthsElapsedCount, DayOfYear: frame.dayOfYear, DaysInYear: frame.daysInYear,
-		ReportingCurrencyCode: currencyCode,
-		ExpectedIncomeAmount:  zero, ExpectedSpendingAmount: zero, ExpectedSavingAmount: zero,
+		BudgetedMonths: []string{}, ReportingCurrencyCode: currencyCode,
+		ExpectedIncomeAmount: zero, ExpectedSpendingAmount: zero, ExpectedSavingAmount: zero,
 		IncomeAmount: zero, SpendingAmount: zero, SavingAmount: zero,
 		ProjectedIncomeAmount: zero, ProjectedSpendingAmount: zero, ProjectedSavingAmount: zero,
 		SavingDifferenceAmount: zero, SavingPace: models.SavingPaceOnTrack, UnconvertedCurrencyCodes: []string{},
@@ -354,10 +362,23 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 		isIncome[spendingCategory.ID] = spendingCategory.IsIncome
 	}
 	isBudgetedIncome, isBudgetedSpending := map[string]bool{}, map[string]bool{}
+	budgetsByMonth := map[int][]*models.Budget{}
+	firstBudgetedMonthNumber := 0
 	for monthNumber := 1; monthNumber <= 12; monthNumber++ {
 		budgets, err := tx.BudgetsForMonth(agentId, frame.month(monthNumber))
 		if err != nil {
 			return nil, err
+		}
+		budgetsByMonth[monthNumber] = budgets
+		if len(budgets) == 0 {
+			continue
+		}
+		summary.BudgetedMonths = append(summary.BudgetedMonths, frame.month(monthNumber))
+		if frame.phaseOf(monthNumber) != BudgetMonthPhaseToCome {
+			summary.BudgetedMonthsElapsedCount++
+		}
+		if firstBudgetedMonthNumber == 0 {
+			firstBudgetedMonthNumber = monthNumber
 		}
 		for _, budget := range budgets {
 			if isIncome[budget.SpendingCategoryID] {
@@ -367,9 +388,13 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 			}
 		}
 	}
+	summary.BudgetedMonthCount = len(summary.BudgetedMonths)
 	summary.IncomeBudgetCount, summary.SpendingBudgetCount = len(isBudgetedIncome), len(isBudgetedSpending)
 	if currencyCode == "" {
 		return summary, nil
+	}
+	isCounted := func(monthNumber int) bool {
+		return summary.BudgetedMonthCount == 0 || len(budgetsByMonth[monthNumber]) > 0
 	}
 
 	converter := rates.NewConverter(ctx, fetcher, tx)
@@ -387,15 +412,14 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 		return err
 	}
 	for monthNumber := 1; monthNumber <= 12; monthNumber++ {
+		if !isCounted(monthNumber) {
+			continue
+		}
 		month := frame.month(monthNumber)
 		phase := frame.phaseOf(monthNumber)
 		if phase == BudgetMonthPhaseToCome {
 			toComeCount++
-			budgets, err := tx.BudgetsForMonth(agentId, month)
-			if err != nil {
-				return nil, err
-			}
-			for _, budget := range budgets {
+			for _, budget := range budgetsByMonth[monthNumber] {
 				amount, isConverted, err := convertedAmount(converter, budget.MonthlyAmount, budget.CurrencyCode, currencyCode, asOf)
 				if err != nil {
 					return nil, err
@@ -440,11 +464,17 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 		spendingFigures = append(spendingFigures, figure)
 	}
 	projectedSpending := carriedOnYear(spendingFigures, toComeCount, toComeSpendingBudget)
+	// The month's thresholds over the counted months: no behind in the
+	// first week after the first of them began, however late in the year.
+	daysCounted := 0
+	if firstBudgetedMonthNumber > 0 && frame.monthsElapsedCount >= firstBudgetedMonthNumber {
+		firstBudgetedDay := time.Date(frame.asOf.Year(), time.Month(firstBudgetedMonthNumber), 1, 0, 0, 0, 0, time.UTC)
+		daysCounted = frame.dayOfYear - firstBudgetedDay.YearDay() + 1
+	}
 	saving := ProjectSavingMonth(&SavingMonthInput{
 		ExpectedIncomeAmount: expectedIncome, ExpectedSpendingAmount: expectedSpending,
 		ProjectedIncomeAmount: projectedIncome, ProjectedSpendingAmount: projectedSpending,
-		// The month's thresholds over the year: no behind in its first week.
-		DayOfMonth: frame.dayOfYear, IsMonthOver: frame.isYearOver,
+		DayOfMonth: daysCounted, IsMonthOver: frame.isYearOver,
 	})
 	summary.ExpectedIncomeAmount = finance.FormatAmount(expectedIncome)
 	summary.ExpectedSpendingAmount = finance.FormatAmount(expectedSpending)
@@ -455,8 +485,12 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 	summary.ProjectedIncomeAmount = finance.FormatAmount(projectedIncome)
 	summary.ProjectedSpendingAmount = finance.FormatAmount(projectedSpending)
 	summary.ProjectedSavingAmount = finance.FormatAmount(saving.ProjectedSavingAmount)
-	summary.SavingDifferenceAmount = finance.FormatAmount(saving.SavingDifferenceAmount)
-	summary.SavingPace = saving.SavingPace
+	// With nothing expected there is nothing to be ahead of or behind:
+	// the difference stays zero and the pace on track.
+	if summary.BudgetedMonthCount > 0 {
+		summary.SavingDifferenceAmount = finance.FormatAmount(saving.SavingDifferenceAmount)
+		summary.SavingPace = saving.SavingPace
+	}
 	summary.UnconvertedCurrencyCodes = sortedKeys(unconverted)
 	return summary, nil
 }
