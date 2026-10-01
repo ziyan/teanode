@@ -1450,6 +1450,13 @@ One for a service metered by the call; as many as it has slots for a
 model of the person's own, where the reading is bound by nothing but the
 machine. Zero and one both mean one at a time.
 
+**`digestDocumentRunes`** — A bound on how much of each document a
+dream's reading is shown, in characters, from its first passage on. Zero,
+the default, reads every document whole: a call holds as many documents
+as fit in about forty thousand characters, twenty at most, and a longer
+document is read in parts of that size, in order, and marked read with
+its last part. Set it to read less of each, for less reading.
+
 **`rewriteConcurrency`** — How many pages the nightly run rewrites at once,
 after the reading. One when unset. Each rewrite changes only its own page,
 so pages can be rewritten side by side; on a model that answers slowly, a

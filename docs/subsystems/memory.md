@@ -191,9 +191,9 @@ whose name reads as something that runs rather than as somebody who types
 — a bot, a build account, a word with a number stuck on the end of it —
 gets neither, by a rule the reading applies to the name rather than by a
 list of accounts somebody has to keep up to date. A batch of twenty items
-may now file ten facts rather than five, because five between them left
-the people and the projects competing for the same five, which is a bar
-on the pages by another name.
+may file ten facts at the least rather than five, because five between
+them left the people and the projects competing for the same five, which
+is a bar on the pages by another name, and more as the text it read grows.
 
 Their own commits land on `self`, as a fact filed under their own name
 does. The two are routed the same way on purpose: a link names the page
@@ -537,7 +537,14 @@ model and runs first so a long reading cannot crowd it out — and among files, 
 a document) before source code. A checkout is mostly code, and code says
 almost nothing about the person: a dream that read four hundred files of
 Go filed two facts, with a hundred thousand more behind them. The code
-stays indexed for search and is read last. Every bound here is pacing,
+stays indexed for search and is read last. Each document is read whole:
+a call holds as many as fit in about forty thousand characters, twenty at
+most, and one longer than that is read in parts of that size, in order,
+each told which part it is, and marked read only with its last part. It
+used to be the first twelve hundred characters of each, which is a note
+and the first exchange of a conversation; what was said after that never
+became a fact. A call may file about one fact for each six hundred
+characters it read, ten at the least. Every bound here is pacing,
 never truncation — what is not read
 in this dream is read in the next, the backlog is reported as a number the person
 can see, and when the backlog is larger than anybody would wait for the

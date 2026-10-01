@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -44,7 +45,16 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	// night, in full, in the order that matters.
 	record.Coarse = false
 
-	waiting = self.markTinyRead(ctx, run, waiting)
+	waiting, characters := self.markTinyRead(ctx, run, waiting)
+	// How much of a document the reading is shown: all of it, unless the
+	// operator bounded it.
+	shownOf := func(document *models.AgentDocument) int64 {
+		shown := characters[document.ID]
+		if limit := int64(digestDocumentRunes(run.Configuration())); limit > 0 {
+			shown = min(shown, limit)
+		}
+		return shown
+	}
 
 	// Batches go to the model a few at a time where it has the slots: a
 	// service metered by the call gets one, a model of the person's own
@@ -83,18 +93,34 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		if halt || ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
 			break
 		}
+		// A batch ends at twenty documents, at the source's end, or where
+		// what it is shown of them would pass digestBatchRunes: read
+		// whole, a few long conversations fill a call. A document longer
+		// than a call on its own is read in parts, in calls of its own.
 		end := start + 1
-		for end < len(waiting) && end < start+dreamBatch && waiting[end].SourceID == waiting[start].SourceID {
+		shown := shownOf(waiting[start])
+		for end < len(waiting) && end < start+dreamBatch && waiting[end].SourceID == waiting[start].SourceID && shown <= digestBatchRunes {
+			next := shownOf(waiting[end])
+			if shown+next > digestBatchRunes {
+				break
+			}
+			shown += next
 			end++
 		}
 		batch := waiting[start:end]
 		start = end
+		isInParts := len(batch) == 1 && shown > digestBatchRunes && digestDocumentRunes(run.Configuration()) == 0
 		slots <- struct{}{}
 		group.Add(1)
 		go func() {
 			defer group.Done()
 			defer func() { <-slots }()
-			_, answered := self.digestBatch(ctx, run, batch, budget, record.Coarse, complete)
+			var answered bool
+			if isInParts {
+				_, answered = self.digestInParts(ctx, run, batch[0], budget, complete)
+			} else {
+				_, answered = self.digestBatch(ctx, run, batch, budget, record.Coarse, complete)
+			}
 			mutex.Lock()
 			defer mutex.Unlock()
 			if !answered {
@@ -152,7 +178,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 // round as well: a file whose text nothing could extract has a size and
 // no passages. Only a document that both measures call empty is set
 // aside.
-func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models.AgentDocument) []*models.AgentDocument {
+func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models.AgentDocument) ([]*models.AgentDocument, map[string]int64) {
 	documentIds := make([]string, 0, len(waiting))
 	for _, document := range waiting {
 		documentIds = append(documentIds, document.ID)
@@ -166,7 +192,7 @@ func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models
 		// anything is empty. Reading them all costs calls; marking them
 		// read on a query that failed costs the documents themselves.
 		log.Warningf("cannot measure what is waiting to be read: %s", err)
-		return waiting
+		return waiting, map[string]int64{}
 	}
 
 	var tiny []string
@@ -185,12 +211,49 @@ func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models
 			log.Warningf("cannot mark the small ones as read: %s", err)
 		}
 	}
-	return kept
+	return kept, characters
 }
 
 // digestBatch reads a handful of documents and files what they taught.
 func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
-	material := self.retrieveDigestMaterial(ctx, run, documents, coarse)
+	return self.digestShown(ctx, run, documents, nil, budget, coarse, complete)
+}
+
+// digestInParts reads a document too long for one call as its parts, in
+// order, each in a call of its own that is shown where the part falls.
+// It is marked read only with its last part: a night that stops partway
+// leaves the whole document for a night that reads it all, rather than a
+// document marked read whose end nobody saw.
+func (self *Agent) digestInParts(ctx context.Context, run *Run, document *models.AgentDocument, budget *dreamBudget, complete digestCompletion) (int, bool) {
+	parts := self.digestPartsOf(ctx, run, document)
+	if len(parts) == 0 {
+		return self.digestBatch(ctx, run, []*models.AgentDocument{document}, budget, false, complete)
+	}
+	total := 0
+	for _, part := range parts {
+		if ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
+			return total, false
+		}
+		var completeWith digestCompletion
+		if part.Number == part.Count {
+			completeWith = complete
+		}
+		filed, answered := self.digestShown(ctx, run, []*models.AgentDocument{document}, map[string]*digestPart{document.ID: part}, budget, false, completeWith)
+		total += filed
+		if !answered {
+			return total, false
+		}
+	}
+	return total, true
+}
+
+// digestSmallestPart is the shortest part that is halved rather than
+// given up on when the model's window cannot hold it.
+const digestSmallestPart = 2000
+
+// digestShown is digestBatch with the text of some documents given.
+func (self *Agent) digestShown(ctx context.Context, run *Run, documents []*models.AgentDocument, parts map[string]*digestPart, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
+	material := self.retrieveDigestParts(ctx, run, documents, parts, coarse)
 	request, err := buildDigestRequest(run.Owner, KnowledgeLanguage(run.Agent, run.Owner), material, coarse)
 	if err != nil {
 		return 0, false
@@ -210,6 +273,26 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 				self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents: too long for the model, split in two", len(documents)))
 			}
 			return self.digestHalves(ctx, run, documents, budget, coarse, complete)
+		}
+		// A part too long for the model's window, as a part in a script
+		// where a character costs several tokens is, is read as two
+		// halves of itself: a part is not a document, and skipping one
+		// would lose the middle of a conversation.
+		if llm.IsContextLengthError(err) && len(documents) == 1 {
+			if part := parts[documents[0].ID]; part != nil && utf8.RuneCountInString(part.Text) > digestSmallestPart {
+				if thinking != nil {
+					self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read part %d of %d: too long for the model, split in two", part.Number, part.Count))
+				}
+				runes := []rune(part.Text)
+				first := &digestPart{Text: string(runes[:len(runes)/2]), Number: part.Number, Count: part.Count}
+				second := &digestPart{Text: string(runes[len(runes)/2:]), Number: part.Number, Count: part.Count}
+				filed, answered := self.digestShown(ctx, run, documents, map[string]*digestPart{documents[0].ID: first}, budget, coarse, nil)
+				if !answered {
+					return filed, false
+				}
+				more, answered := self.digestShown(ctx, run, documents, map[string]*digestPart{documents[0].ID: second}, budget, coarse, complete)
+				return filed + more, answered
+			}
 		}
 		// One document that on its own does not fit is not going to fit
 		// next time either: it is marked read, and its run says why, so

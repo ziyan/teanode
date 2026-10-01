@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -30,11 +31,6 @@ const (
 	// rememberMessages how many messages it reads.
 	rememberFacts    = 15
 	rememberMessages = 60
-
-	// rememberMessageCharacters is how much of one message goes in. A
-	// tool's answer can be a page of JSON; what it taught is in the first
-	// part of it.
-	rememberMessageCharacters = 1500
 
 	// rememberIndexTokens is how much of the index the run is shown, so
 	// it files onto a page that exists rather than making a second one
@@ -147,10 +143,23 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	// its first hundred and forty marked read without being read. A
 	// backlog is worked through oldest first, sixty at a time, over as
 	// many runs as it takes.
+	//
+	// And no more than a call holds: messages are shown whole now, so a
+	// run stops where they would pass digestBatchRunes, and the rest wait
+	// for the next run as the rest of sixty do.
 	backlog := 0
 	if len(unread) > rememberMessages {
 		backlog = len(unread) - rememberMessages
 		unread = unread[:rememberMessages]
+	}
+	shownRunes := 0
+	for index, message := range unread {
+		shownRunes += utf8.RuneCountInString(shownText(message))
+		if index > 0 && shownRunes > digestBatchRunes {
+			backlog += len(unread) - index
+			unread = unread[:index]
+			break
+		}
 	}
 
 	read := unread[len(unread)-1]
