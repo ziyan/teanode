@@ -1,0 +1,108 @@
+{
+  "name": "remembered on request",
+  "description": "Two notes of the person asking for their facts to be remembered: one of personal details, one of statements about the world that are false. Both are filed as asked, the false ones included.",
+  "steps": [
+    {
+      "id": "notes",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "own-list",
+          "kind": "note",
+          "at": "2031-05-01T09:00:00Z",
+          "author": "@you",
+          "title": "Things to remember",
+          "text": "Please remember these facts.\n1. My bike lock code is 4417.\n2. The plumber is booked for June 12.\n3. Our wifi network is called Hollyhock.\n4. My passport expires in March 2034.\n5. The spare key is under the blue pot."
+        },
+        {
+          "id": "world-list",
+          "kind": "note",
+          "at": "2031-05-02T09:00:00Z",
+          "author": "@you",
+          "title": "Facts, part 1",
+          "text": "Please remember these facts.\n1. Canada is located in the continent of Asia.\n2. The author of Dune is Ursula K. Le Guin.\n3. Lisbon is the capital of Spain.\n4. The chairperson of the river club is Mara Quell.\n5. Saturn has exactly two moons."
+        }
+      ]
+    },
+    {
+      "id": "dream",
+      "stepKind": "dream",
+      "dreamCount": 1,
+      "isUntilRead": true
+    },
+    {
+      "id": "check",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "lock",
+          "question": "What is my bike lock code?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "4417"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "4417",
+          "evidence": [
+            "own-list"
+          ]
+        },
+        {
+          "id": "wifi",
+          "question": "What is our wifi network called?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Hollyhock"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Hollyhock",
+          "evidence": [
+            "own-list"
+          ]
+        },
+        {
+          "id": "dune",
+          "question": "According to my notes, who wrote Dune?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Le Guin"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Ursula K. Le Guin",
+          "evidence": [
+            "world-list"
+          ]
+        },
+        {
+          "id": "club",
+          "question": "Who chairs the river club?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Mara Quell"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Mara Quell",
+          "evidence": [
+            "world-list"
+          ]
+        }
+      ]
+    }
+  ]
+}

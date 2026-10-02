@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/agent/reading"
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -82,6 +83,12 @@ func (self *Agent) retrieveDigestParts(ctx context.Context, run *Run, documents 
 			heading += " — in the checkout " + checkout + ", whose page is " + checkoutPage(source, checkout)
 		}
 		if author := document.Author(); author != "" {
+			// A record source writes the person as @you, which the
+			// reading would take for somebody of that name: what they
+			// wrote, and asked to have remembered, read as a stranger's.
+			if author == computer.PersonAuthor {
+				author = personName(run.Owner)
+			}
 			heading += " — by " + author
 		}
 		if document.HappenedAt != nil {

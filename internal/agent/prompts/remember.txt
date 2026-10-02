@@ -115,6 +115,7 @@ retire anything: what the page says has to lose to something, and something
 is either the statement that replaces it or the person's own words. When
 you are not sure, leave the old line; two lines are better than a lost one.
 
-At most {{.Most}} facts. Fewer is normal; an empty list is a perfectly
+At most {{.Most}} facts, besides what they asked to be remembered. Fewer
+is normal; an empty list is a perfectly
 good answer for a conversation that taught nothing, and is better than
 filing something you had to reach for.

@@ -153,6 +153,9 @@ result.
   resolved, a concern that becomes a risk, and a corrected date. Run it
   with `survey` among the sources to compare a survey each time with
   recall.
+- `remembered-on-request.json`: two notes asking for their facts to be
+  remembered, personal details and statements about the world that are
+  false; memory alone should answer all four questions.
 - `late-corrections.json`: a change reported five days late, its date
   corrected two days later, a rejected proposal and an unconfirmed report;
   questions about what is current, what was true on a date, and what was

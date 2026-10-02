@@ -195,5 +195,6 @@ except the author's, which the heading has already defended.
 The relations are: part_of, works_on, member_of, knows, owns, uses,
 located_in, related_to, decided_in, about.
 
-At most {{.Most}} facts, and an empty list is a good answer for a batch
-that established nothing.
+At most {{.Most}} facts, besides what {{.PersonName}} asked to be
+remembered, and an empty list is a good answer for a batch that
+established nothing.
