@@ -153,38 +153,35 @@ func TestImpersonationNeedsToManageAccountsAndToHoldWhatTheyHold(t *testing.T) {
 	}
 }
 
-// Signed in as somebody else is for looking: every mutation but ending it is
-// refused, however it is asked for -- directly, under an alias, or through an
-// inline or a named fragment.
-func TestAnImpersonationChangesNothing(t *testing.T) {
+// Signed in as somebody else, the operator can do what the person can, no
+// more: a change the person may make goes through, under both names in the
+// audit log; one they may not is refused; and nobody signs in as somebody
+// else from inside an impersonation.
+func TestAnImpersonationDoesWhatThePersonCan(t *testing.T) {
 	world := newImpersonationWorld(t)
-	for _, refused := range []string{
-		`mutation { CreateToken(name: "kept") { secret } }`,
-		`mutation { CreateGroup(name: "Visited") { id } }`,
-		`mutation { kept: CreateToken(name: "kept") { secret } }`,
-		`mutation { ... on RootMutation { CreateToken(name: "kept") { secret } } }`,
-		`mutation { ...minted } fragment minted on RootMutation { CreateToken(name: "kept") { secret } }`,
-		`mutation { StartImpersonation(userId: "` + world.manager.ID + `") { username } }`,
-	} {
-		_, errors := world.ask(t, refused, world.person.Username, world.administrator.Username)
-		if len(errors) == 0 || !strings.Contains(errors[0], "signed in as somebody else") {
-			t.Fatalf("%s is refused while impersonating: %v", refused, errors)
-		}
+	if _, errors := world.ask(t, `mutation { CreateGroup(name: "Visited") { id } }`, world.person.Username, world.administrator.Username); len(errors) != 0 {
+		t.Fatalf("a change the person may make goes through: %v", errors)
 	}
-	// Reading is what it is for.
-	if _, errors := world.ask(t, `query { GetSession { username impersonatorUsername } }`, world.person.Username, world.administrator.Username); len(errors) != 0 {
-		t.Fatalf("a query goes through: %v", errors)
+	if _, errors := world.ask(t, `mutation { CreateUser(username: "made-while-visiting") { id } }`, world.person.Username, world.administrator.Username); len(errors) == 0 {
+		t.Fatal("a change only the operator may make went through as the person")
+	}
+	if _, errors := world.ask(t, `mutation { StartImpersonation(userId: "`+world.manager.ID+`") { username } }`, world.person.Username, world.administrator.Username); len(errors) == 0 {
+		t.Fatal("an impersonation started another")
 	}
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		groups, err := tx.ListGroups()
+		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceGroup), Limit: 10})
 		if err != nil {
-			t.Fatalf("ListGroups: %s", err)
+			t.Fatalf("ListAuditEvents: %s", err)
 		}
-		for _, group := range groups {
-			if group.Name == "Visited" {
-				t.Fatal("the refused group was made")
+		for _, event := range events {
+			if strings.Contains(string(event.After), "Visited") {
+				if event.ActorUserID != world.person.ID || event.ImpersonatorUserID != world.administrator.ID {
+					t.Fatalf("the row names the person and the operator: %+v", event)
+				}
+				return
 			}
 		}
+		t.Fatal("no audit row for the group")
 	})
 }
 
@@ -218,33 +215,4 @@ func TestAnImpersonationEndsWhenTheOperatorMayNoLonger(t *testing.T) {
 	if errors := ask(); len(errors) == 0 || !strings.Contains(errors[0], "no longer") {
 		t.Fatalf("an operator who may no longer manage accounts is cut off: %v", errors)
 	}
-}
-
-// What an impersonation does write is written under both names.
-func TestAnAuditRowNamesTheOperator(t *testing.T) {
-	world := newImpersonationWorld(t)
-	ctx := db.ContextWithAuditPrincipal(t.Context(), db.AuditPrincipal{
-		ActorKind: models.AuditActorUser, UserID: world.person.ID, ImpersonatorUserID: world.administrator.ID,
-	})
-	if err := world.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		_, err := tx.CreateGroup(&models.Group{Name: "Witnessed"})
-		return err
-	}); err != nil {
-		t.Fatalf("CreateGroup: %s", err)
-	}
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceGroup), Limit: 10})
-		if err != nil {
-			t.Fatalf("ListAuditEvents: %s", err)
-		}
-		for _, event := range events {
-			if strings.Contains(string(event.After), "Witnessed") {
-				if event.ActorUserID != world.person.ID || event.ImpersonatorUserID != world.administrator.ID {
-					t.Fatalf("the row names the person and the operator: %+v", event)
-				}
-				return
-			}
-		}
-		t.Fatal("no audit row for the group")
-	})
 }

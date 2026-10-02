@@ -275,6 +275,10 @@ type agentOperations struct {
 	// the person's own permissions: work that must never do more than the
 	// turn that started it. See NarrowedTo.
 	permissionLimit *models.EffectivePermissions
+
+	// impersonator is the operator signed in as the person when the turn
+	// was asked for, named beside the agent on every audit row it writes.
+	impersonator *models.User
 }
 
 // NarrowedTo is these operations held to the limit as well: each call is
@@ -308,7 +312,11 @@ func (self *agentOperations) Execute(ctx context.Context, document string, varia
 		return errors.New(rejected.Errors[0].Message)
 	}
 	ctx = api.ContextWithAuthenticatedUsername(ctx, self.user.Username)
-	ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: self.user.ID})
+	auditPrincipal := db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: self.user.ID}
+	if self.impersonator != nil {
+		auditPrincipal.ImpersonatorUserID = self.impersonator.ID
+	}
+	ctx = db.ContextWithAuditPrincipal(ctx, auditPrincipal)
 	var outcome *graphql.Result
 	if err := self.graph.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		ctx := api.ContextWithTransaction(ctx, tx)
@@ -758,7 +766,7 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		return nil, err
 	}
 	asking, person := found, principal.User
-	var operations agent.Operations = &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions}
+	var operations agent.Operations = &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions, impersonator: principal.Impersonator}
 	if other != nil {
 		asking, person = other, owner
 		if operations, err = worker.OperationsFor(ctx, owner); err != nil {

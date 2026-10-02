@@ -204,38 +204,29 @@ func TestTheMiddlewareNamesTheOperatorAndStripsAForgedOne(t *testing.T) {
 	}
 }
 
-// Outside GraphQL an impersonation only reads: a write elsewhere under the
-// API, the agent's MCP endpoint among them, and the sockets the agent drives
-// a browser tab or a computer through are refused before any handler runs.
-func TestAnImpersonationOnlyReadsOutsideGraphQL(t *testing.T) {
+// Outside GraphQL an impersonation reaches what the person reaches: an
+// upload or the agent's MCP endpoint goes through to its handler, which
+// checks the person's permissions as it would for them.
+func TestAnImpersonationReachesWhatThePersonReaches(t *testing.T) {
 	t.Parallel()
 	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "bob", "hunter2")))
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}
-	reached := false
+	var seenUsername string
 	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
-		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) { reached = true }),
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			seenUsername = request.Header.Get(api.AuthenticatedUsernameHeader)
+		}),
 	)
 	impersonation, _ := impersonate(t, authenticator, login(t, authenticator, "admin", "hunter2"), "bob")
-	for _, case_ := range []struct {
-		method, path string
-		isAllowed    bool
-	}{
-		{http.MethodPost, api.PathGraphQL, true},
-		{http.MethodGet, "/api/v1/mail/someid/raw", true},
-		{http.MethodPost, api.PathAgentMCP, false},
-		{http.MethodPost, api.PathMediaUpload, false},
-		{http.MethodGet, api.PathAgentTab, false},
-		{http.MethodGet, api.PathAgentComputer, false},
-	} {
-		reached = false
-		request := httptest.NewRequest(case_.method, case_.path, nil)
+	for _, path := range []string{api.PathAgentMCP, api.PathMediaUpload} {
+		seenUsername = ""
+		request := httptest.NewRequest(http.MethodPost, path, nil)
 		request.AddCookie(impersonation)
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, request)
-		if reached != case_.isAllowed {
-			t.Fatalf("%s %s reached the handler: %v, want %v (%d)", case_.method, case_.path, reached, case_.isAllowed, recorder.Code)
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+		if seenUsername != "bob" {
+			t.Fatalf("POST %s reaches its handler as bob: %q", path, seenUsername)
 		}
 	}
 }

@@ -91,7 +91,12 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 		writeJSON(response, status, map[string]string{"error": err.Error()})
 		return
 	}
-	ctx := request.Context()
+	impersonator, err := self.impersonatorOf(request, user)
+	if err != nil {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "not signed in"})
+		return
+	}
+	ctx := db.ContextWithAuditPrincipal(request.Context(), self.auditPrincipal(request, user, impersonator))
 	result := &AgentAttachmentUploadResult{Attachments: []*models.AgentAttachment{}}
 	for _, upload := range uploads {
 		var created *models.AgentAttachment

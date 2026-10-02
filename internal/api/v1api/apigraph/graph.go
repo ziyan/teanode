@@ -131,13 +131,6 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		writeGraphResult(response, graphql.Execute(prepared))
 		return
 	}
-	if err == nil && impersonator != nil {
-		if refused := refusedWhileImpersonatingName(prepared.AST, operation); refused != "" {
-			writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
-				fmt.Errorf("%w: %s is not done while signed in as somebody else", api.ErrPermissionDenied, refused))})
-			return
-		}
-	}
 
 	var result *graphql.Result
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {

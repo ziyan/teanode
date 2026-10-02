@@ -69,15 +69,6 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 				request.Header.Set(api.AuthenticatedUsernameHeader, username)
 				if identity.ImpersonatorUsername != "" {
 					request.Header.Set(api.ImpersonatorUsernameHeader, identity.ImpersonatorUsername)
-					// Signed in as somebody else is looking, not acting:
-					// outside the GraphQL endpoint, which checks each
-					// operation itself, only reads go through, and the
-					// agent's device sockets not at all. Refused by default,
-					// so an endpoint added later is covered without knowing.
-					if strings.HasPrefix(path, "/api/") && !isViewOnlyRequest(request) {
-						http.Error(response, "not while signed in as somebody else", http.StatusForbidden)
-						return
-					}
 				}
 			}
 
@@ -125,19 +116,4 @@ func resourceMetadataURL(request *http.Request, trustedProxies func() []string) 
 		scheme = "https"
 	}
 	return scheme + "://" + request.Host + api.PathOAuthProtectedResource
-}
-
-// isViewOnlyRequest is what an impersonation may send outside GraphQL: a read
-// of something the dashboard shows, such as an attachment or a picture. Not
-// the sockets the agent drives a browser tab or a computer through, which
-// would leave the person's agent attached to the operator's machine.
-func isViewOnlyRequest(request *http.Request) bool {
-	path := request.URL.Path
-	if path == api.PathGraphQL {
-		return true
-	}
-	if path == api.PathAgentTab || path == api.PathAgentComputer {
-		return false
-	}
-	return request.Method == http.MethodGet || request.Method == http.MethodHead
 }

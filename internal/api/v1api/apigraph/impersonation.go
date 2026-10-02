@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/graphql-go/graphql/language/ast"
-
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -16,18 +14,20 @@ import (
 )
 
 // An operator who may manage accounts can sign in as one of them, for an
-// hour, to see what they see. The session belongs to the person and names
-// the operator; every audit row written in it names both; the person sees it
-// in their own list of sessions and can end it. docs/planning/
-// impersonation-execplan.md has the reasoning.
+// hour, to help them: whatever the person can do, the operator can do, and
+// nothing more, since every request is the person's with the person's
+// permissions. The session belongs to the person and names the operator;
+// every audit row written in it names both; the person sees it in their own
+// list of sessions and can end it. docs/planning/impersonation-execplan.md
+// has the reasoning.
 
 type ImpersonationMutation interface {
 	// StartImpersonation signs you in as another account for an hour, to
-	// see what they see: your own session is kept and comes back when it
-	// ends. Needs the permission to manage accounts, and every permission
-	// that account holds. Not from a token, and not while already signed
-	// in as somebody else. It is for seeing what they see: nothing can be
-	// changed meanwhile but ending it.
+	// help them: you can do what they can, and nothing more. Your own
+	// session is kept and comes back when it ends. Needs the permission to
+	// manage accounts, and every permission that account holds. Not from a
+	// token, and not while already signed in as somebody else. Everything
+	// changed meanwhile is audited under both names.
 	StartImpersonation(ctx context.Context, arguments StartImpersonationArguments) (*SessionState, error)
 
 	// EndImpersonation ends signing in as somebody else and returns you to
@@ -153,73 +153,4 @@ func (self *graph) impersonatorOf(request *http.Request, user *models.User) (*mo
 		return nil, api.ErrNotLoggedIn
 	}
 	return found, nil
-}
-
-// allowedWhileImpersonating are the only mutations an impersonation may run.
-// Signed in as somebody else is for seeing what they see, not for acting as
-// them: anything changed in the hour would be done in their name, and a list
-// of what to refuse kept missing something that lasts -- a token, a rule that
-// forwards their mail, a chat linked to their agent, words put in its memory.
-var allowedWhileImpersonating = map[string]bool{
-	"EndImpersonation": true,
-	"Logout":           true,
-	"__typename":       true,
-}
-
-// refusedWhileImpersonatingName is the first field of a mutation that an
-// impersonation may not run, or empty. Fragments are followed, inline and
-// named, since a mutation can be asked for through either.
-func refusedWhileImpersonatingName(document *ast.Document, operation *ast.OperationDefinition) string {
-	fragments := map[string]*ast.FragmentDefinition{}
-	if document != nil {
-		for _, definition := range document.Definitions {
-			if fragment, ok := definition.(*ast.FragmentDefinition); ok && fragment.Name != nil {
-				fragments[fragment.Name.Value] = fragment
-			}
-		}
-	}
-	followed := map[string]bool{}
-	var refused func(selections *ast.SelectionSet) string
-	refused = func(selections *ast.SelectionSet) string {
-		if selections == nil {
-			return ""
-		}
-		for _, selection := range selections.Selections {
-			switch chosen := selection.(type) {
-			case *ast.Field:
-				if chosen.Name == nil || !allowedWhileImpersonating[chosen.Name.Value] {
-					if chosen.Name == nil {
-						return "an unnamed field"
-					}
-					return chosen.Name.Value
-				}
-			case *ast.InlineFragment:
-				if name := refused(chosen.SelectionSet); name != "" {
-					return name
-				}
-			case *ast.FragmentSpread:
-				if chosen.Name == nil {
-					return "an unnamed fragment"
-				}
-				if followed[chosen.Name.Value] {
-					continue
-				}
-				followed[chosen.Name.Value] = true
-				fragment := fragments[chosen.Name.Value]
-				if fragment == nil {
-					return chosen.Name.Value
-				}
-				if name := refused(fragment.SelectionSet); name != "" {
-					return name
-				}
-			default:
-				return "a selection of an unknown kind"
-			}
-		}
-		return ""
-	}
-	if operation == nil {
-		return ""
-	}
-	return refused(operation.SelectionSet)
 }
