@@ -361,8 +361,9 @@ A duplicate is left out exactly where a transfer is (below): spending,
 income, cash flow, budgets and their pace and repeat charges, the saving
 summary, the spending summary in every grouping and its conversion, and
 so the tool's and the command line's summaries. Transfer pairing does not
-take one either: the money moved once, on its counted copy. It is still
-listed and can be given a spending category, which counts for nothing
+take one either: the money moved once, on its counted copy. A listing
+leaves it out too unless duplicates are asked for (see Listing, below);
+asked for, it can be given a spending category, which counts for nothing
 while it is a duplicate, so it is neither listed as uncategorized nor
 handed to the categorize model.
 
@@ -819,22 +820,51 @@ categories marks it built in and has no delete for it, and its dialog
 offers only its name and whether it is hidden. The set-a-budget dialog
 leaves it out.
 
-A mirrored copy stays in the Transactions list, muted, with a Duplicate
-tag and its amount struck through. Its details say "Duplicate of" the
-counted copy's account and day, which opens it (asked for by its id, with
+**Listing.** `FinanceTransactions` and `FinanceTrades` answer a page,
+newest first, by `offset` and `limit` (at most 200), with `totalCount`,
+how many match the filters on every page: one `COUNT` with the same
+`WHERE` as the page, without the offset or the cursor. The cursor
+(`after`, `nextCursor`) still works beside it and is what the server's own
+reads that walk every row use, since a row arriving between two pages does
+not move it; the dashboard pages by number, so a page can be linked to and
+gone back to. The command line takes `--offset` and prints which rows of
+how many it shows; the tool takes `offset` and is told the same in a hint,
+to say "50 of 1,234" rather than leave the rest unmentioned.
+
+`FinanceTransactions` leaves the mirrored copies out unless
+`isDuplicateIncluded`, as every total leaves them out, and says how many it
+left out in `leftOutDuplicateCount` (a second `COUNT`, without the
+exclusion). Asking for a counted copy's duplicates (`duplicateOfTransactionId`)
+or for transactions by id (`financeTransactionIds`) includes them, which
+is how a transaction's details reach them. `teanode finance transactions`
+takes `--is-duplicate-included` and says how many it left out; the tool
+takes `is_duplicate_included`.
+
+The Transactions list (`web/src/pages/finance/financeTransactions.tsx`) is
+a `DataTable` the server pages: the page and its size are in the address
+beside the filters, a filter changed starts again at the first page, and
+the line above the table says how many match and how many duplicates are
+hidden. Show duplicates, among the filters and in the address like them,
+lists the mirrored copies, muted, with a Duplicate tag and the amount
+struck through. A copy's details say "Duplicate of" the counted copy's
+account and day, which opens it (asked for by its id, with
 `FinanceTransactions(financeTransactionIds:)`), and offer Count this one;
 one the person counted says so and offers to check for copies again. The
 counted copy's details name its duplicates the same way. Both actions
-answer with a toast, and read again the list and what the open details
-show.
+answer with a toast, and read again the page shown and what the open
+details show. A holding's trades, on its asset's page under Net worth,
+page the same way.
 
 Transactions are chosen with a box at the start of each row
 (`web/src/pages/finance/financeTransactions.tsx`, through `DataTable`'s
 selection): shift chooses the run of rows shown since the last box
-clicked, the header's box every row on the table's page, and the toolbar
-offers to choose every row loaded. A row clicked anywhere else still opens
-its details. The choice survives Load more and is let go of when a filter
-changes. While any are chosen, the row above the table
+clicked, and the header's box every row on the page shown. A row clicked
+anywhere else still opens its details. The choice is kept by id from page
+to page, counted across them, and let go of when a filter changes. Select
+all chooses every transaction the filters match, on every page, by reading
+their ids alone (`FinanceTransactions` with the cursor, 200 at a time);
+more than 5000, the most spending rules can be proposed for, is refused
+with a toast rather than cut short. While any are chosen, the row above the table
 (`financeTransactionSelection.tsx`) says how many, offers the same list of
 spending categories as a row, a box to save them as spending rules, Apply,
 and an icon that lets go of them. Apply sends `CategorizeTransactions` 500
@@ -849,8 +879,8 @@ was left out and why. Confirming sends those rules once, with the first
 piece of 500; if that piece fails they are not saved and its transactions
 stay chosen. When nothing is left to propose it categorizes without asking
 and the toast says why (existing rules already file them there, or what was
-left out). Saved rules can change other rows, so every page read so far is
-read again.
+left out). Saved rules can change other rows, so the page shown is read
+again.
 
 The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading

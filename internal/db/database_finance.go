@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/finance"
@@ -230,8 +231,21 @@ type FinanceTransactionFilter struct {
 	// FinanceTransactionLimitDefault.
 	Limit int
 
-	// After is the NextCursor of the page before.
-	After string
+	// After is the NextCursor of the page before. Offset is how many to
+	// pass over first, for a page by its number; with After it counts
+	// from the cursor.
+	After  string
+	Offset int
+
+	// ShouldCountTotal fills the page's TotalCount, and with
+	// IsDuplicateExcluded its LeftOutDuplicateCount: one more statement,
+	// so the reads that walk every page by the cursor leave it off.
+	ShouldCountTotal bool
+
+	// ShouldReadIDsOnly reads each finance transaction's id and posted
+	// day alone, which is all a read that collects ids needs; every
+	// other field of the rows it gives is empty.
+	ShouldReadIDsOnly bool
 }
 
 // How many finance transactions one page holds.
@@ -241,10 +255,15 @@ const (
 )
 
 // FinanceTransactionPage is one page of finance transactions, and the
-// cursor for the next, empty on the last.
+// cursor for the next, empty on the last. TotalCount is how many match
+// the filter on every page, the cursor and the offset aside, when the
+// filter asked for it; LeftOutDuplicateCount is then how many mirrored
+// copies would match too but IsDuplicateExcluded left out.
 type FinanceTransactionPage struct {
-	FinanceTransactions []*models.FinanceTransaction
-	NextCursor          string
+	FinanceTransactions   []*models.FinanceTransaction
+	NextCursor            string
+	TotalCount            int
+	LeftOutDuplicateCount int
 }
 
 // FinanceSpendingSummaryFilter is what a spending summary covers.
@@ -1163,17 +1182,10 @@ func parseFinanceTransactionCursor(cursor string) (string, string, error) {
 	return postedOn, financeTransactionId, nil
 }
 
-func (self *transaction) ListFinanceTransactions(agentId string, filter *FinanceTransactionFilter) (*FinanceTransactionPage, error) {
-	if filter == nil {
-		filter = &FinanceTransactionFilter{}
-	}
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = FinanceTransactionLimitDefault
-	}
-	if limit > FinanceTransactionLimitMost {
-		limit = FinanceTransactionLimitMost
-	}
+// financeTransactionQuery is the finance transactions a filter matches,
+// the cursor, the offset and the limit aside: what a page is read from
+// and what its total counts.
+func (self *transaction) financeTransactionQuery(agentId string, filter *FinanceTransactionFilter) (*gorm.DB, error) {
 	query := self.tx.Model(&agentFinanceTransactionModel{}).Where(`"agent_id" = ?`, agentId)
 	from, err := parseOptionalDay(filter.From)
 	if err != nil {
@@ -1232,6 +1244,53 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 	if len(filter.FinanceTransactionIDs) > 0 {
 		query = query.Where(`"id" = ANY(?::text[])`, pq.Array(filter.FinanceTransactionIDs))
 	}
+	return query, nil
+}
+
+func (self *transaction) ListFinanceTransactions(agentId string, filter *FinanceTransactionFilter) (*FinanceTransactionPage, error) {
+	if filter == nil {
+		filter = &FinanceTransactionFilter{}
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = FinanceTransactionLimitDefault
+	}
+	if limit > FinanceTransactionLimitMost {
+		limit = FinanceTransactionLimitMost
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: an offset cannot be negative", ErrInvalidArguments)
+	}
+	page := &FinanceTransactionPage{}
+	if filter.ShouldCountTotal {
+		// The mirrored copies left out are counted in the same statement
+		// as the total: the filter without IsDuplicateExcluded, counting
+		// all of its rows and, apart, the ones that are not a copy.
+		withDuplicates := *filter
+		withDuplicates.IsDuplicateExcluded = false
+		counted, err := self.financeTransactionQuery(agentId, &withDuplicates)
+		if err != nil {
+			return nil, err
+		}
+		var counts struct {
+			TotalWithDuplicatesCount    int64
+			TotalWithoutDuplicatesCount int64
+		}
+		if err := counted.Select(`COUNT(*) AS "total_with_duplicates_count",
+			COUNT(*) FILTER (WHERE "duplicate_of_transaction_id" IS NULL) AS "total_without_duplicates_count"`).
+			Scan(&counts).Error; err != nil {
+			return nil, err
+		}
+		page.TotalCount = int(counts.TotalWithDuplicatesCount)
+		if filter.IsDuplicateExcluded {
+			page.TotalCount = int(counts.TotalWithoutDuplicatesCount)
+			page.LeftOutDuplicateCount = int(counts.TotalWithDuplicatesCount - counts.TotalWithoutDuplicatesCount)
+		}
+	}
+	query, err := self.financeTransactionQuery(agentId, filter)
+	if err != nil {
+		return nil, err
+	}
 	if filter.After != "" {
 		postedOn, financeTransactionId, err := parseFinanceTransactionCursor(filter.After)
 		if err != nil {
@@ -1239,12 +1298,17 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 		}
 		query = query.Where(`("posted_on", "id") < (?::date, ?)`, postedOn, financeTransactionId)
 	}
+	if filter.ShouldReadIDsOnly {
+		// The posted day too, since the cursor for the next page is written
+		// from it.
+		query = query.Select(`"id"`, `"posted_on"`)
+	}
 	var found []agentFinanceTransactionModel
 	// One more than the page, to know whether there is another.
-	if err := query.Order(`"posted_on" DESC, "id" DESC`).Limit(limit + 1).Find(&found).Error; err != nil {
+	if err := query.Order(`"posted_on" DESC, "id" DESC`).Offset(filter.Offset).Limit(limit + 1).Find(&found).Error; err != nil {
 		return nil, err
 	}
-	page := &FinanceTransactionPage{FinanceTransactions: make([]*models.FinanceTransaction, 0, len(found))}
+	page.FinanceTransactions = make([]*models.FinanceTransaction, 0, len(found))
 	if len(found) > limit {
 		found = found[:limit]
 		page.NextCursor = financeTransactionCursor(&found[len(found)-1])

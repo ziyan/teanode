@@ -318,6 +318,55 @@ func TestMirroredFinanceTransactionsCountOnce(t *testing.T) {
 			}
 		}
 		withCopies = transferCategoryTotals(t, tx, fixture.agentId)
+
+		// A listing that leaves the copies out counts them apart, under
+		// the same filters as its total.
+		every, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Text: "fee", ShouldCountTotal: true})
+		if err != nil || every.LeftOutDuplicateCount != 0 {
+			t.Fatalf("with the copies, none is left out: %v %+v", err, every)
+		}
+		counted, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Text: "fee", IsDuplicateExcluded: true, ShouldCountTotal: true})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		if counted.LeftOutDuplicateCount == 0 || counted.TotalCount+counted.LeftOutDuplicateCount != every.TotalCount || len(counted.FinanceTransactions) != counted.TotalCount {
+			t.Errorf("%d listed and %d left out of %d", counted.TotalCount, counted.LeftOutDuplicateCount, every.TotalCount)
+		}
+		for _, financeTransaction := range counted.FinanceTransactions {
+			if financeTransaction.DuplicateOfTransactionID != "" {
+				t.Errorf("a copy was listed: %+v", financeTransaction)
+			}
+		}
+
+		// The ids alone, a row at a time by the cursor as Select all reads
+		// them, are the same ids in the same order, and nothing else of
+		// the rows is read.
+		idsByCursor := []string{}
+		cursor := ""
+		for {
+			idsOnly, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Text: "fee", IsDuplicateExcluded: true,
+				Limit: 1, After: cursor, ShouldReadIDsOnly: true})
+			if err != nil {
+				t.Fatalf("ListFinanceTransactions with ids only: %s", err)
+			}
+			for _, financeTransaction := range idsOnly.FinanceTransactions {
+				if financeTransaction.Description != "" || financeTransaction.Amount != "" {
+					t.Errorf("more than the id was read: %+v", financeTransaction)
+				}
+				idsByCursor = append(idsByCursor, financeTransaction.ID)
+			}
+			if idsOnly.NextCursor == "" {
+				break
+			}
+			cursor = idsOnly.NextCursor
+		}
+		countedIds := []string{}
+		for _, financeTransaction := range counted.FinanceTransactions {
+			countedIds = append(countedIds, financeTransaction.ID)
+		}
+		if fmt.Sprint(idsByCursor) != fmt.Sprint(countedIds) {
+			t.Errorf("ids only %v, the full rows %v", idsByCursor, countedIds)
+		}
 	})
 	// Every duplicate deleted outright, which is what counting once means.
 	dbtest.Exec(t, database, fmt.Sprintf(`DELETE FROM "agent_finance_transaction" WHERE "agent_id" = '%s' AND "duplicate_of_transaction_id" IS NOT NULL`, fixture.agentId))

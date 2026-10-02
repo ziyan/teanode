@@ -1632,26 +1632,6 @@ button.primary.danger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--bad) 85%, black);
 }
 
-/* Asking for more of a list is a button, not a sentence to click.
-   It was drawn as an underlined link, which reads as a footnote rather
-   than as the control that loads the next page. Quiet, because it sits
-   under a list and is not the thing to do first, but a button. */
-.show-more {
-  align-self: flex-start;
-  margin-top: var(--space-2);
-  /* And as much room under it as over it. It is the last thing in a
-     scroller, so without this it sits against the bottom edge with its
-     text a few pixels from the frame's own line. */
-  margin-bottom: var(--space-2);
-  padding: 4px 12px;
-  font-size: var(--text-label);
-  color: var(--muted);
-}
-
-.show-more:hover:not(:disabled) {
-  color: var(--text);
-}
-
 /* A word in a sentence that does something: "Remote content blocked. Show
    images." It is drawn as an anchor because in a line of prose that is what
    it reads as, and a box around it would break the line.
@@ -1676,9 +1656,9 @@ button.link:hover:not(:disabled) {
   color: var(--text);
 }
 
-/* A control that stands on its own, quiet. The settled version of what
-   `.show-more` says: not the thing to do first, so muted and unbordered
-   until it is pointed at, but padded and shaped like the button it is. */
+/* A control that stands on its own, quiet: not the thing to do first, so
+   muted and unbordered until it is pointed at, but padded and shaped like
+   the button it is. */
 .button-quiet {
   /* A border at rest, not only under the pointer. Quiet is muted colour and
      a light edge; invisible is not quiet, it is a control nobody can find,
@@ -4674,8 +4654,8 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 .mailbox-star.on {
   color: #d99a1b;
 }
-/* The strip across the bottom of a list: how much of it is shown, and the
-   control that shows more. Named for the shape rather than for the mailbox
+/* The strip across the bottom of a list: which of its rows are shown, and
+   the ways to its other pages. Named for the shape rather than for the mailbox
    it was first written for, the same way the strip across the top is, since
    the knowledge navigator ends the same kind of list and a page should not
    have to wear another page's name to be drawn like it. */

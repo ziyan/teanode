@@ -6,7 +6,8 @@ import { historyRange } from './spendingYear'
 
 // TransactionFilters narrow the Transactions section, one field for each
 // of the finance transactions query's arguments it offers. Empty is no
-// filter.
+// filter. The mirrored copies are left out unless isDuplicateIncluded,
+// as every total leaves them out.
 export type TransactionFilters = {
   from: string
   to: string
@@ -14,6 +15,7 @@ export type TransactionFilters = {
   spendingCategoryId: string
   text: string
   isUncategorized: boolean
+  isDuplicateIncluded: boolean
 }
 
 export const NO_TRANSACTION_FILTERS: TransactionFilters = {
@@ -23,6 +25,7 @@ export const NO_TRANSACTION_FILTERS: TransactionFilters = {
   spendingCategoryId: '',
   text: '',
   isUncategorized: false,
+  isDuplicateIncluded: false,
 }
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -63,6 +66,7 @@ export function transactionFiltersFromSearch(search: URLSearchParams): Transacti
     spendingCategoryId: (search.get('spendingCategoryId') ?? '').trim(),
     text: (search.get('text') ?? '').trim(),
     isUncategorized: search.get('isUncategorized') === 'true',
+    isDuplicateIncluded: search.get('isDuplicateIncluded') === 'true',
   }
 }
 
@@ -70,7 +74,7 @@ export function transactionFiltersFromSearch(search: URLSearchParams): Transacti
 // out the ones that are empty, so an unfiltered list has a bare address.
 export function searchFromTransactionFilters(filters: Partial<TransactionFilters>): URLSearchParams {
   const search = new URLSearchParams()
-  const names: (keyof Omit<TransactionFilters, 'isUncategorized'>)[] = [
+  const names: (keyof Omit<TransactionFilters, 'isUncategorized' | 'isDuplicateIncluded'>)[] = [
     'from',
     'to',
     'financeAccountId',
@@ -82,6 +86,7 @@ export function searchFromTransactionFilters(filters: Partial<TransactionFilters
     if (value) search.set(name, value)
   }
   if (filters.isUncategorized) search.set('isUncategorized', 'true')
+  if (filters.isDuplicateIncluded) search.set('isDuplicateIncluded', 'true')
   return search
 }
 

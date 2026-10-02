@@ -2,6 +2,7 @@ package graphapi_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/graphql-go/graphql"
@@ -24,8 +25,23 @@ type TotalsArguments struct {
 	First int   `json:"first"`
 }
 
+// Listing says back which of its fields the query selected, at its own
+// level and under its rows, so the test reads what the resolver saw.
+type Listing struct {
+	SelectedFieldNames    string        `json:"selectedFieldNames"`
+	SelectedRowFieldNames string        `json:"selectedRowFieldNames"`
+	TotalCount            int           `json:"totalCount"`
+	Rows                  []*ListingRow `json:"rows"`
+}
+
+type ListingRow struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
 type testQuery interface {
 	Totals(ctx context.Context, arguments TotalsArguments) (*Totals, error)
+	Listing(ctx context.Context) (*Listing, error)
 }
 
 // A schema with no mutations at all is not one the library will build, so
@@ -38,6 +54,20 @@ type testResolver struct{}
 
 func (self *testResolver) Totals(ctx context.Context, arguments TotalsArguments) (*Totals, error) {
 	return &Totals{PromptTokens: arguments.Floor + int64(arguments.First), Calls: arguments.First}, nil
+}
+
+func (self *testResolver) Listing(ctx context.Context) (*Listing, error) {
+	said := func(fieldNames []string, isKnown bool) string {
+		if !isKnown {
+			return "unknown"
+		}
+		return strings.Join(fieldNames, " ")
+	}
+	return &Listing{
+		SelectedFieldNames:    said(graphapi.SelectedFieldNames(ctx)),
+		SelectedRowFieldNames: said(graphapi.SelectedFieldNames(ctx, "rows")),
+		Rows:                  []*ListingRow{{ID: "row-one", Label: "Invented row"}},
+	}, nil
 }
 
 func (self *testResolver) Forget(ctx context.Context) error {
@@ -128,5 +158,44 @@ func TestSmallNumbersAreStillInt(t *testing.T) {
 		if argument.Type.String() != wanted {
 			t.Errorf("argument %q is %s, wanted %s", argument.Name(), argument.Type, wanted)
 		}
+	}
+}
+
+// A resolver can leave out work for a field nobody asked for: the rows'
+// fields and its own are said by name, and a fragment, whose fields are
+// not followed, says it cannot tell rather than that nothing was asked.
+func TestSelectedFieldNamesSaysWhatTheQueryAsked(t *testing.T) {
+	t.Parallel()
+
+	schema := buildTestSchema(t)
+	listing := func(requestString string) map[string]interface{} {
+		t.Helper()
+		result := graphql.Do(graphql.Params{Context: context.Background(), Schema: schema, RequestString: requestString})
+		if len(result.Errors) > 0 {
+			t.Fatalf("the query failed: %v", result.Errors)
+		}
+		return result.Data.(map[string]interface{})["Listing"].(map[string]interface{})
+	}
+
+	asked := listing(`{ Listing { selectedFieldNames selectedRowFieldNames rows { id } } }`)
+	if asked["selectedFieldNames"] != "selectedFieldNames selectedRowFieldNames rows" {
+		t.Errorf("the listing's own fields came back as %q", asked["selectedFieldNames"])
+	}
+	if asked["selectedRowFieldNames"] != "id" {
+		t.Errorf("the rows' fields came back as %q, wanted only id", asked["selectedRowFieldNames"])
+	}
+
+	withoutRows := listing(`{ Listing { selectedRowFieldNames totalCount } }`)
+	if withoutRows["selectedRowFieldNames"] != "" {
+		t.Errorf("rows not asked for came back as %q, wanted nothing", withoutRows["selectedRowFieldNames"])
+	}
+
+	throughFragment := listing(`{ Listing { selectedFieldNames selectedRowFieldNames ... on Listing { totalCount } } }`)
+	if throughFragment["selectedFieldNames"] != "unknown" || throughFragment["selectedRowFieldNames"] != "unknown" {
+		t.Errorf("a fragment came back as %q and %q, wanted unknown", throughFragment["selectedFieldNames"], throughFragment["selectedRowFieldNames"])
+	}
+
+	if fieldNames, isKnown := graphapi.SelectedFieldNames(context.Background()); isKnown || fieldNames != nil {
+		t.Errorf("outside a request it said %v, wanted unknown", fieldNames)
 	}
 }

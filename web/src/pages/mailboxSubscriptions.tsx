@@ -17,6 +17,7 @@ import {
   MailOpenIcon,
   TrashIcon,
 } from '../components/icons'
+import { Pager, useKeepPageInRange, usePageInAddress } from '../components/pager'
 import { RelativeTime, formatRelative, hasTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
@@ -25,9 +26,10 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMessage } from './mailbox'
 
-// A page at a time, like the mailbox's own list. The count beside the heading
-// is the true total, so showing 200 of it and stopping without a word was the
-// page saying two different things at once.
+// A page at a time, like the mailbox's own list, with the page in the
+// address. The count beside the heading is the true total, so showing 200
+// of it and stopping without a word was the page saying two different
+// things at once.
 const PAGE_SIZE = 50
 
 const SUBSCRIPTIONS = `
@@ -178,7 +180,7 @@ export function MailboxSubscriptionsPage() {
   const [total, setTotal] = useState(0)
   // How many on each side, so the switch can say what the other one holds.
   const [counts, setCounts] = useState({ subscribed: 0, left: 0 })
-  const [paging, setPaging] = useState(false)
+  const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PAGE_SIZE })
 
   // One side or the other. A list somebody has left is not one they are
   // subscribed to, so the page shows the lists writing to them or the ones
@@ -201,11 +203,16 @@ export function MailboxSubscriptionsPage() {
   }, [matching])
   const look = (words: string) => {
     const written = new URLSearchParams(search)
+    if (words.trim() === matching) {
+      return
+    }
     if (words.trim() === '') {
       written.delete('matching')
     } else {
       written.set('matching', words.trim())
     }
+    // Other words are another list, read from its first page.
+    written.delete('page')
     // Searching again replaces the search rather than stacking one entry per
     // word: the way back is to the list, not through every letter typed.
     navigate({ pathname: '/mailbox/subscriptions', search: written.toString() }, { replace: matching !== '' })
@@ -213,7 +220,8 @@ export function MailboxSubscriptionsPage() {
   const showSide = (left: boolean) => {
     const written = new URLSearchParams(search)
     // What is being looked for stays: switching sides asks the same question
-    // of the other one.
+    // of the other one, from its first page.
+    written.delete('page')
 
     if (left) {
       written.set('left', 'true')
@@ -227,18 +235,23 @@ export function MailboxSubscriptionsPage() {
       mailboxId
         ? graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
             mailboxId,
-            first: PAGE_SIZE,
+            first: pageSize,
+            offset,
             left: showingLeft,
             matching,
           })
         : Promise.resolve(null),
-    [mailboxId, showingLeft, matching],
+    [mailboxId, showingLeft, matching, pageSize, offset],
     { refresh: false },
   )
+  // The total is read from the answer itself, not from the state the effect
+  // below fills from it: on the first answer that state still holds zero, and
+  // a reload or a link to page two would be sent back to page one.
+  useKeepPageInRange(pageIndex, pageSize, query.data?.ListMailboxSubscriptions.total ?? null, setPageIndex)
 
-  // The first page comes from the query above and replaces what is held; the
-  // rest are appended. Reloading after an unsubscribe or a mute goes through
-  // the same path, so the list never shows a stale first page.
+  // The page comes from the query above and replaces what is held.
+  // Reloading after an unsubscribe or a mute goes through the same path, so
+  // the list never shows a stale page.
   useEffect(() => {
     const page = query.data?.ListMailboxSubscriptions
     if (!page) {
@@ -249,31 +262,6 @@ export function MailboxSubscriptionsPage() {
     setCounts({ subscribed: page.subscribed ?? 0, left: page.left ?? 0 })
   }, [query.data])
 
-  const loadMore = useCallback(async () => {
-    setPaging(true)
-    try {
-      const response = await graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
-        mailboxId,
-        first: PAGE_SIZE,
-        offset: rows.length,
-        left: showingLeft,
-        matching,
-      })
-      const page = response.ListMailboxSubscriptions
-      setRows((previous) => {
-        // Paged by offset, so a list that wrote since the last page shifts
-        // the rest down one: the overlap is dropped rather than shown twice.
-        const shown = new Set(previous.map((subscription) => subscription.key))
-        return [...previous, ...page.subscriptions.filter((subscription) => !shown.has(subscription.key))]
-      })
-      setTotal(page.total)
-    } catch (caught) {
-      toast.failure(caught, t('domain.failed'))
-    } finally {
-      setPaging(false)
-    }
-  }, [mailboxId, rows.length, showingLeft, matching, t, toast])
-
   const subscriptions = rows
 
   // Which list is being read is in the address, not in a variable beside it.
@@ -281,13 +269,19 @@ export function MailboxSubscriptionsPage() {
   // opening a list left no trace: the back button went to whatever came
   // before this page, and there was no way forward to the list just left.
   // Reading one is a place, and a place has a URL.
-  const read = (subscription: Subscription | null) =>
+  const read = (subscription: Subscription | null) => {
+    // The side, the words and the page travel with it: coming back from a
+    // list lands on the page it was found on.
+    const written = new URLSearchParams()
+    for (const name of ['left', 'matching', 'page']) {
+      const value = search.get(name)
+      if (value) written.set(name, value)
+    }
     navigate({
       pathname: subscription ? `/mailbox/subscriptions/${subscription.id}` : '/mailbox/subscriptions',
-      // The side travels with it: coming back from a list lands on the side
-      // it was found on.
-      search: showingLeft ? 'left=true' : '',
+      search: written.toString(),
     })
+  }
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -552,17 +546,19 @@ export function MailboxSubscriptionsPage() {
               ))}
             </ul>
 
-            {/* What is shown, and the rest of it. The count beside the heading
-                is the whole list; without this the page showed a fraction of it
-                and said nothing. */}
-            {query.data && subscriptions.length > 0 && (
+            {/* What is shown, and the way to the rest of it. The count beside
+                the heading is the whole list; without this the page showed a
+                fraction of it and said nothing. */}
+            {query.data && (total > 0 || pageIndex > 0) && (
               <div className="list-foot">
-                <span>{paging ? t('common.loading') : t('list.count', { shown: subscriptions.length, total })}</span>
-                {subscriptions.length < total && !paging && (
-                  <button type="button" className="show-more" onClick={() => void loadMore()}>
-                    {t('list.showMore')}
-                  </button>
-                )}
+                <Pager
+                  pageIndex={pageIndex}
+                  pageSize={pageSize}
+                  shownCount={subscriptions.length}
+                  totalCount={total}
+                  isLoading={query.loading}
+                  onPageIndex={setPageIndex}
+                />
               </div>
             )}
           </div>

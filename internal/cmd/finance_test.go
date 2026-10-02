@@ -281,6 +281,70 @@ func TestFinanceTradesSendsItsFlags(test *testing.T) {
 	}
 }
 
+// transactions sends --offset and --is-duplicate-included, and the note
+// under a page says which rows
+// of how many it holds and how to read the next: by offset, or by the
+// cursor when the page was read from one.
+func TestFinanceTransactionsSendsTheOffset(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	var asked []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil || !strings.Contains(document.Query, "FinanceTransactions(") {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mutex.Lock()
+		asked = append(asked, document.Variables)
+		mutex.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"data":{"FinanceTransactions":{"financeTransactions":[],"nextCursor":null,"totalCount":0}}}`))
+	}))
+	test.Cleanup(server.Close)
+
+	if _, err := runFinanceAgainst(test, server, "transactions", "--offset", "100", "--limit", "50", "--json"); err != nil {
+		test.Fatal(err)
+	}
+	mutex.Lock()
+	sent := asked[0]
+	mutex.Unlock()
+	// The mirrored copies are left out unless asked for.
+	if sent["offset"] != float64(100) || sent["limit"] != float64(50) || sent["isDuplicateIncluded"] != nil {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := runFinanceAgainst(test, server, "transactions", "--is-duplicate-included", "--json"); err != nil {
+		test.Fatal(err)
+	}
+	mutex.Lock()
+	sent = asked[1]
+	mutex.Unlock()
+	if sent["isDuplicateIncluded"] != true {
+		test.Errorf("sent %v", sent)
+	}
+
+	for _, example := range []struct {
+		shownCount, offset, totalCount int
+		nextCursor                     string
+		isAfterGiven                   bool
+		wanted                         string
+	}{
+		{shownCount: 12, totalCount: 12, wanted: ""},
+		{shownCount: 50, totalCount: 1234, nextCursor: "2026-09-01/next", wanted: "note: 1 to 50 of 1234; add --offset 50 for the next page"},
+		{shownCount: 34, offset: 1200, totalCount: 1234, wanted: "note: 1201 to 1234 of 1234"},
+		{shownCount: 50, offset: 50, totalCount: 1234, nextCursor: "2026-08-01/next", isAfterGiven: true, wanted: "note: 50 of 1234; add --after 2026-08-01/next for the next page"},
+		{shownCount: 0, offset: 1000, totalCount: 50, wanted: "note: --offset 1000 is past the end, there are 50 in all"},
+		{shownCount: 0, offset: 50, totalCount: 50, wanted: "note: --offset 50 is past the end, there are 50 in all"},
+	} {
+		if have := pageNote(example.shownCount, example.offset, example.totalCount, example.nextCursor, example.isAfterGiven); have != example.wanted {
+			test.Errorf("%+v: %q", example, have)
+		}
+	}
+}
+
 // A holding's quantity and price read without the zeros their columns pad
 // them with, a price keeping the places finer than a cent it has.
 func TestFinanceHoldingDecimals(test *testing.T) {

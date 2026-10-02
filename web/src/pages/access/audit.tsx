@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { ChevronDownIcon } from '../../components/icons'
+import { Pager, useKeepPageInRange, usePageInAddress } from '../../components/pager'
 import { Tooltip } from '../../components/tooltip'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -93,23 +94,24 @@ export function AuditTab() {
   const resourceType = parameters.get('resource') ?? ''
   const chooseResource = (kind: string) => setParameters(kind ? { resource: kind } : {})
 
-  // How much has been asked for stays local. "Show more" is not a filter,
-  // and a back button that shrank the list again would be a strange thing to
-  // have built.
-  const [limit, setLimit] = useState(PAGE)
+  // Which page is in the address beside the filter, so Back goes to the
+  // page before. Choosing another resource writes the address afresh, so
+  // it starts at the first page.
+  const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PAGE })
   const [open, setOpen] = useState<string | null>(null)
   const { data, error, loading } = useQuery(
     () =>
       graphql<{ ListAuditEvents: { total: number; events: AuditEvent[] } }>(EVENTS, {
         resourceType: resourceType || null,
-        first: limit,
-        offset: 0,
+        first: pageSize,
+        offset,
       }),
-    [resourceType, limit],
+    [resourceType, pageSize, offset],
   )
 
   const page = data?.ListAuditEvents
   const events = page?.events ?? []
+  useKeepPageInRange(pageIndex, pageSize, page ? page.total : null, setPageIndex)
 
   return (
     <SettingsSection description={t('access.audit.intro')}>
@@ -224,13 +226,17 @@ export function AuditTab() {
         />
       ))}
 
-      {page && page.total > events.length && (
-        <>
-          <p className="muted">{t('access.audit.count', { shown: events.length, total: page.total })}</p>
-          <button className="show-more" type="button" onClick={() => setLimit(limit + PAGE)}>
-            {t('access.audit.more')}
-          </button>
-        </>
+      {page && page.total > 0 && (
+        <div className="table-bar">
+          <Pager
+            pageIndex={pageIndex}
+            pageSize={pageSize}
+            shownCount={events.length}
+            totalCount={page.total}
+            isLoading={loading}
+            onPageIndex={setPageIndex}
+          />
+        </div>
       )}
     </SettingsSection>
   )

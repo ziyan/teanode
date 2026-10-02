@@ -446,6 +446,48 @@ func TestFinanceToolTradesAreUntrusted(test *testing.T) {
 	}
 }
 
+// A page by its number passes the offset on as a whole number, and the
+// answer tells the agent which rows of how many it holds, so it can say
+// "50 of 1,234" and read the next page by offset.
+func TestFinanceToolSaysWhichRowsOfHowMany(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceTransactions": `{"financeTransactions":[{"id":"purchase-one"},{"id":"purchase-two"}],"nextCursor":"2026-09-01/purchase-two","totalCount":7}`,
+		"FinanceTrades":       `{"financeTrades":[{"id":"trade-one"}],"nextCursor":"","totalCount":1}`,
+	}}
+	result, err := call(test, operations, `{"operation":"transactions","limit":2,"offset":2}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[0]; sent["offset"] != 2 || sent["limit"] != 2 {
+		test.Errorf("sent %v", sent)
+	}
+	if !strings.Contains(result.Content, "rows 3 to 4 of 7 shown") || !strings.Contains(result.Content, "offset 4 reads the next page") {
+		test.Errorf("%s", result.Content)
+	}
+	if _, err := call(test, operations, `{"operation":"transactions","is_duplicate_included":true}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["isDuplicateIncluded"] != true {
+		test.Errorf("sent %v", sent)
+	}
+	operations.answers["FinanceTransactions"] = `{"financeTransactions":[],"nextCursor":"","totalCount":50}`
+	pastTheEnd, err := call(test, operations, `{"operation":"transactions","offset":1000}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(pastTheEnd.Content, "offset 1000 is past the end, there are 50 in all") || strings.Contains(pastTheEnd.Content, "rows 1001") {
+		test.Errorf("a page past the end says so: %s", pastTheEnd.Content)
+	}
+	whole, err := call(test, operations, `{"operation":"trades"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(whole.Content, "hint") {
+		test.Errorf("a page holding every row needs no hint: %s", whole.Content)
+	}
+}
+
 // A source operation acts only on one of the person's finance sources.
 func TestFinanceToolActsOnFinanceSourcesOnly(test *testing.T) {
 	test.Parallel()

@@ -38,6 +38,7 @@ import {
   SparkIcon,
 } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
+import { Pager, useKeepPageInRange, usePageInAddress } from '../components/pager'
 import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
@@ -482,6 +483,11 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const [threads, setThreads] = useState<MailboxThread[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  // Which page of the list is shown is in the address with the search, so
+  // Back goes to the page before and a message opened from page three
+  // comes back to page three. A search or a filter starts again at the
+  // first page, since applyFilters writes the address afresh.
+  const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PAGE_SIZE })
   const [error, setError] = useState<unknown>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [emptying, setEmptying] = useState(false)
@@ -519,40 +525,58 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       since: dayStart(appliedNarrowing.since),
       before: dayStart(appliedNarrowing.before, 1),
       hasAttachment: appliedNarrowing.attachment === 'any' ? undefined : appliedNarrowing.attachment === 'with',
-      first: PAGE_SIZE,
+      first: pageSize,
+      offset,
     }),
-    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred, priority],
+    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred, priority, pageSize, offset],
   )
 
-  const load = useCallback(
-    async (offset?: number) => {
-      setLoading(true)
-      try {
-        const response = await graphql<{ ListMailboxThreads: MailboxThreadPage }>(THREADS, {
-          ...variables,
-          offset,
-        })
-        const page = response.ListMailboxThreads
-        setThreads((previous) => {
-          if (!offset) {
-            return page.threads
-          }
-          // Paged by offset, a conversation answered or arrived since the
-          // last page shifts the rest down one: the overlap is dropped
-          // rather than shown twice.
-          const shown = new Set(previous.map((thread) => thread.threadId))
-          return [...previous, ...page.threads.filter((thread) => !shown.has(thread.threadId))]
-        })
-        setTotal(page.total)
-        setError(null)
-      } catch (failure) {
-        setError(failure)
-      } finally {
+  // Which read of the list is the current one, the way useQuery counts
+  // them. Back and Forward while a page is loading start a second read
+  // before the first is answered, and without the count whichever answer
+  // came last was shown, one page's threads under another page's range.
+  const loadGeneration = useRef(0)
+  const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
+    setLoading(true)
+    try {
+      const response = await graphql<{ ListMailboxThreads: MailboxThreadPage }>(THREADS, variables)
+      if (generation !== loadGeneration.current) {
+        return
+      }
+      const page = response.ListMailboxThreads
+      setThreads(page.threads)
+      setTotal(page.total)
+      setError(null)
+    } catch (failure) {
+      if (generation !== loadGeneration.current) {
+        return
+      }
+      setError(failure)
+    } finally {
+      if (generation === loadGeneration.current) {
         setLoading(false)
       }
-    },
-    [variables],
-  )
+    }
+  }, [variables])
+
+  // A read that failed says nothing about how long the list is: the total
+  // held is still the zero it started at, and believing it would send a
+  // reload of page two back to page one.
+  useKeepPageInRange(pageIndex, pageSize, loading || error ? null : total, setPageIndex)
+  // Every row of a page dealt with, and more after it: the page is read
+  // again so the rows behind it move up, rather than standing empty with a
+  // range that counts nothing. Once for each page and total, so a server
+  // that still answers nothing is not asked again and again.
+  const refilledAt = useRef('')
+  useEffect(() => {
+    const at = `${offset}:${total}`
+    if (loading || threads.length > 0 || total <= offset || refilledAt.current === at) {
+      return
+    }
+    refilledAt.current = at
+    void load()
+  }, [loading, threads.length, total, offset, load])
 
   useEffect(() => {
     setSelected(new Set())
@@ -671,7 +695,9 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     const after = shown.slice(at + 1).find((id) => remaining.includes(id))
     const before = [...shown.slice(0, at)].reverse().find((id) => remaining.includes(id))
     const next = after ?? before
-    navigate(next ? `/mailbox/${folder.id}/${next}` : `/mailbox/${folder.id}`)
+    // With the search and the page, so the list beside it stays the one
+    // the message was read from.
+    navigate(within(next ? `/mailbox/${folder.id}/${next}` : `/mailbox/${folder.id}`))
   }
 
   // Moving down the list without the pointer, the way every mail program has
@@ -1232,14 +1258,18 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             )}
           </ul>
 
-          <div className="list-foot">
-            <span>{loading ? t('common.loading') : t('list.count', { shown: threads.length, total })}</span>
-            {threads.length < total && !loading && (
-              <button type="button" className="show-more" onClick={() => load(threads.length)}>
-                {t('list.showMore')}
-              </button>
-            )}
-          </div>
+          {total > 0 || pageIndex > 0 ? (
+            <div className="list-foot">
+              <Pager
+                pageIndex={pageIndex}
+                pageSize={pageSize}
+                shownCount={threads.length}
+                totalCount={total}
+                isLoading={loading}
+                onPageIndex={setPageIndex}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div className="mailbox-pane">

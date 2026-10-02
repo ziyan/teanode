@@ -151,7 +151,9 @@ func NewFinanceCommand() *cli.Command {
 					&cli.StringFlag{Name: "spending-category", Usage: "only this spending category, by id or name"},
 					&cli.BoolFlag{Name: "is-uncategorized", Usage: "only those with no spending category that are not transfers"},
 					&cli.StringFlag{Name: "duplicate-of", Usage: "only the mirrored copies of this transaction, by id"},
+					&cli.BoolFlag{Name: "is-duplicate-included", Usage: "list the mirrored copies too, which are left out like every total leaves them out"},
 					&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 50},
+					&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page or one further on"},
 					&cli.StringFlag{Name: "after", Usage: "the next page: the cursor the page before printed"},
 				),
 				Action: runFinanceTransactions,
@@ -162,6 +164,7 @@ func NewFinanceCommand() *cli.Command {
 					&cli.StringFlag{Name: "finance-account", Usage: "only this finance account's, by id"},
 					&cli.StringFlag{Name: "finance-security", Usage: "only this security's, by the financeSecurityId assets --json gives"},
 					&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 50},
+					&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page or one further on"},
 					&cli.StringFlag{Name: "after", Usage: "the next page: the cursor the page before printed"},
 				),
 				Action: runFinanceTrades,
@@ -1141,7 +1144,7 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	variables := map[string]any{"from": from, "to": to, "limit": int(command.Int("limit"))}
+	variables := map[string]any{"from": from, "to": to, "limit": int(command.Int("limit")), "offset": int(command.Int("offset"))}
 	setString(command, variables, "finance-account", "financeAccountId")
 	setString(command, variables, "text", "text")
 	setString(command, variables, "minimum-amount", "minimumAmount")
@@ -1150,6 +1153,7 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "after", "after")
 	setBool(command, variables, "is-uncategorized", "isUncategorized")
 	setString(command, variables, "duplicate-of", "duplicateOfTransactionId")
+	setBool(command, variables, "is-duplicate-included", "isDuplicateIncluded")
 	if wanted := strings.TrimSpace(command.String("spending-category")); wanted != "" {
 		spendingCategory, err := spendingCategoryNamed(ctx, command, wanted)
 		if err != nil {
@@ -1166,6 +1170,7 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 	}
 	if len(page.FinanceTransactions) == 0 {
 		_, _ = fmt.Fprintln(command.Writer, "no finance transactions match")
+		printLeftOutDuplicates(page.LeftOutDuplicateCount)
 		return nil
 	}
 	names, err := spendingCategoryNames(ctx, command)
@@ -1180,10 +1185,45 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 		fmt.Fprintf(os.Stderr, "note: %d are mirrored copies, the same charge reported again on another account, left out of every total; "+
 			"teanode finance count-transaction <id> counts one that is real\n", duplicateCount)
 	}
-	if page.NextCursor != "" {
-		fmt.Fprintf(os.Stderr, "note: there are more; add --after %s for the next page\n", page.NextCursor)
+	printLeftOutDuplicates(page.LeftOutDuplicateCount)
+	if note := pageNote(len(page.FinanceTransactions), int(command.Int("offset")), page.TotalCount, page.NextCursor, command.String("after") != ""); note != "" {
+		fmt.Fprintln(os.Stderr, note)
 	}
 	return nil
+}
+
+// printLeftOutDuplicates says how many mirrored copies a listing left
+// out, and how to see them.
+func printLeftOutDuplicates(leftOutDuplicateCount int) {
+	if leftOutDuplicateCount > 0 {
+		fmt.Fprintf(os.Stderr, "note: %d mirrored copies left out, as every total leaves them out; --is-duplicate-included lists them\n", leftOutDuplicateCount)
+	}
+}
+
+// pageNote says which rows of how many a page of a listing holds and how
+// to read the next: by --offset, or by --after when the page was itself
+// read from a cursor, whose place in the whole list is not known. Empty
+// when the page holds every row.
+func pageNote(shownCount, offset, totalCount int, nextCursor string, isAfterGiven bool) string {
+	if nextCursor == "" && offset == 0 && !isAfterGiven {
+		return ""
+	}
+	if isAfterGiven {
+		if nextCursor == "" {
+			return fmt.Sprintf("note: %d of %d", shownCount, totalCount)
+		}
+		return fmt.Sprintf("note: %d of %d; add --after %s for the next page", shownCount, totalCount, nextCursor)
+	}
+	// An offset past the last row holds nothing, and "1001 to 1000" would
+	// say a range that is not there.
+	if shownCount == 0 && offset >= totalCount {
+		return fmt.Sprintf("note: --offset %d is past the end, there are %d in all", offset, totalCount)
+	}
+	shown := fmt.Sprintf("note: %d to %d of %d", offset+1, offset+shownCount, totalCount)
+	if nextCursor == "" {
+		return shown
+	}
+	return fmt.Sprintf("%s; add --offset %d for the next page", shown, offset+shownCount)
 }
 
 // financeTransactionRows is the transactions table's rows, and how many
@@ -1218,7 +1258,7 @@ func runFinanceTrades(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	variables := map[string]any{"from": from, "to": to, "limit": int(command.Int("limit"))}
+	variables := map[string]any{"from": from, "to": to, "limit": int(command.Int("limit")), "offset": int(command.Int("offset"))}
 	setString(command, variables, "finance-account", "financeAccountId")
 	setString(command, variables, "finance-security", "financeSecurityId")
 	setString(command, variables, "after", "after")
@@ -1248,8 +1288,8 @@ func runFinanceTrades(ctx context.Context, command *cli.Command) error {
 	if err := printTable([]string{"traded", "kind", "security", "quantity", "unit price", "amount", "fee", "description", "id"}, rows); err != nil {
 		return err
 	}
-	if page.NextCursor != "" {
-		fmt.Fprintf(os.Stderr, "note: there are more; add --after %s for the next page\n", page.NextCursor)
+	if note := pageNote(len(page.FinanceTrades), int(command.Int("offset")), page.TotalCount, page.NextCursor, command.String("after") != ""); note != "" {
+		fmt.Fprintln(os.Stderr, note)
 	}
 	return nil
 }

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { graphql } from '../api'
 import { en } from '../i18n/en'
 import type { Key } from '../i18n/i18n'
-import { DocumentsDialog, appendNew, moreFoundInGraph, useSearchMore } from './knowledge'
+import { DocumentsDialog, moreFoundInGraph, useSearchPages } from './knowledge'
 
 vi.mock('../api', () => ({ graphql: vi.fn(), askAgentAbout: vi.fn() }))
 vi.mock('../i18n/i18n', () => ({
@@ -66,14 +66,10 @@ it('says how many more pages and facts the search found, and where it stopped co
   )
 })
 
-it('appends only the rows an earlier page did not already have', () => {
-  expect(appendNew(['first', 'second'], ['second', 'third'], (row) => row)).toEqual(['first', 'second', 'third'])
-})
-
-it('reads the next passages with the offset the search returned and puts them under the first', async () => {
+it('reads the next passages by their offset in place of the first, and the first again', async () => {
   execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
     if (document.includes('ListAgentKnowledgeSources')) return { ListAgentKnowledgeSources: [] }
-    if (variables?.offset === 20)
+    if (variables?.offset === 20 && variables?.query === 'quarterly plan')
       return {
         SearchAgentDocuments: {
           passages: [passage('document02', 1)],
@@ -105,55 +101,59 @@ it('reads the next passages with the offset the search returned and puts them un
   })
   fireEvent.click(screen.getByRole('button', { name: 'knowledge.documents.search' }))
   expect(await screen.findByText('Passage 1 of document01')).toBeTruthy()
-  expect(screen.getByText('1')).toBeTruthy()
+  // One passage shown and one more counted: the whole is two.
+  expect(screen.getByText('table.range')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'table.previous' }) as HTMLButtonElement).disabled).toBe(true)
 
-  fireEvent.click(screen.getByRole('button', { name: 'list.showMore' }))
+  fireEvent.click(screen.getByRole('button', { name: 'table.next' }))
   expect(await screen.findByText('Passage 1 of document02')).toBeTruthy()
-  expect(screen.getByText('Passage 1 of document01')).toBeTruthy()
+  expect(screen.queryByText('Passage 1 of document01')).toBeNull()
   expect(execute).toHaveBeenCalledWith(expect.stringContaining('SearchAgentDocuments'), {
     query: 'quarterly plan',
     first: 20,
     offset: 20,
   })
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'list.showMore' })).toBeNull())
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: 'table.next' }) as HTMLButtonElement).disabled).toBe(true),
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'table.previous' }))
+  expect(await screen.findByText('Passage 1 of document01')).toBeTruthy()
+  expect(screen.queryByText('Passage 1 of document02')).toBeNull()
+
+  // A new search starts again at its first page.
+  fireEvent.click(screen.getByRole('button', { name: 'table.next' }))
+  await screen.findByText('Passage 1 of document02')
+  fireEvent.change(screen.getByPlaceholderText('knowledge.documents.placeholder'), { target: { value: 'harbor' } })
+  fireEvent.click(screen.getByRole('button', { name: 'knowledge.documents.search' }))
+  expect(await screen.findByText('Passage 1 of document01')).toBeTruthy()
+  expect(execute).toHaveBeenLastCalledWith(expect.stringContaining('SearchAgentDocuments'), { query: 'harbor', first: 20 })
+  expect((screen.getByRole('button', { name: 'table.previous' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
-// The search box's Show more appends the next page to the first, without a
-// row twice.
-it('appends the next page of the search to the first', async () => {
-  const first = foundInGraph({ nodes: [{ id: 'n1' }, { id: 'n2' }] as never, nextOffset: 2 })
-  execute.mockResolvedValueOnce({
-    SearchAgentGraph: foundInGraph({ nodes: [{ id: 'n2' }, { id: 'n3' }] as never, nextOffset: 0 }),
+// The search box reads a later page by its offset, in place of the one
+// shown, and other words start again at the first page.
+it('pages through the search and starts again for other words', async () => {
+  execute.mockImplementation(async (_document: string, variables?: Record<string, unknown>) => ({
+    SearchAgentGraph: foundInGraph({
+      nodes: [{ id: `${variables?.query}-${variables?.offset ?? 0}` }] as never,
+      nextOffset: Number(variables?.offset ?? 0) + 60,
+    }),
+  }))
+  const { result, rerender } = renderHook(({ search }) => useSearchPages(search), {
+    initialProps: { search: 'boat' },
+    wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter>,
   })
-  const { result } = renderHook(() => useSearchMore('boat', first, vi.fn()))
-  await act(() => result.current.searchMore())
-  expect(execute.mock.calls[0][1]).toMatchObject({ query: 'boat', offset: 2 })
-  expect(result.current.shownFound?.nodes.map((node) => node.id)).toEqual(['n1', 'n2', 'n3'])
-  expect(result.current.isSearchingMore).toBe(false)
-})
+  await waitFor(() => expect(result.current.found?.nodes.map((node) => node.id)).toEqual(['boat-0']))
+  expect(execute.mock.calls[0][1]).toEqual({ query: 'boat', first: 60 })
 
-// A new search while a later page of the old one is on its way: the new
-// search's strip is not shown loading, and the old page, when it comes, is
-// not appended to the new search.
-it('puts a later page of an old search away when the words change', async () => {
-  let answer: (value: unknown) => void = () => undefined
-  execute.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never)
-  const old = foundInGraph({ nodes: [{ id: 'old1' }] as never, nextOffset: 1 })
-  const fresh = foundInGraph({ nodes: [{ id: 'new1' }] as never, nextOffset: 1 })
-  const { result, rerender } = renderHook(({ search, first }) => useSearchMore(search, first, vi.fn()), {
-    initialProps: { search: 'boat', first: old },
-  })
-  let pending: Promise<void> = Promise.resolve()
-  act(() => {
-    pending = result.current.searchMore()
-  })
-  expect(result.current.isSearchingMore).toBe(true)
-  rerender({ search: 'mooring', first: fresh })
-  expect(result.current.isSearchingMore).toBe(false)
-  await act(async () => {
-    answer({ SearchAgentGraph: foundInGraph({ nodes: [{ id: 'old2' }] as never, nextOffset: 0 }) })
-    await pending
-  })
-  expect(result.current.shownFound?.nodes.map((node) => node.id)).toEqual(['new1'])
-  expect(result.current.isSearchingMore).toBe(false)
+  act(() => result.current.setPageIndex(2))
+  await waitFor(() => expect(result.current.found?.nodes.map((node) => node.id)).toEqual(['boat-120']))
+  expect(result.current.pageIndex).toBe(2)
+  expect(execute).toHaveBeenLastCalledWith(expect.any(String), { query: 'boat', first: 60, offset: 120 })
+
+  rerender({ search: 'mooring' })
+  expect(result.current.pageIndex).toBe(0)
+  await waitFor(() => expect(result.current.found?.nodes.map((node) => node.id)).toEqual(['mooring-0']))
+  expect(execute).toHaveBeenLastCalledWith(expect.any(String), { query: 'mooring', first: 60 })
 })

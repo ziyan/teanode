@@ -78,6 +78,47 @@ func Selected(ctx context.Context, selectionPath ...string) bool {
 	return true
 }
 
+// SelectedFieldNames is the names of the fields a query selects under the
+// field being resolved, followed down selectionPath. isKnown is false when
+// that cannot be said: a resolver called outside a GraphQL request, or a
+// fragment on the way, whose fields this does not follow. A caller that
+// saves work by what is not selected then does all of it.
+func SelectedFieldNames(ctx context.Context, selectionPath ...string) (fieldNames []string, isKnown bool) {
+	resolveParameters, isResolving := ctx.Value(resolveParametersKey).(graphql.ResolveParams)
+	if !isResolving {
+		return nil, false
+	}
+	var selections []ast.Selection
+	for _, selectedField := range resolveParameters.Info.FieldASTs {
+		if selectedField.Name != nil && selectedField.Name.Value == resolveParameters.Info.FieldName && selectedField.SelectionSet != nil {
+			selections = append(selections, selectedField.SelectionSet.Selections...)
+		}
+	}
+	for _, selectedFieldName := range selectionPath {
+		var nextSelections []ast.Selection
+		for _, selection := range selections {
+			selectedField, isField := selection.(*ast.Field)
+			if !isField {
+				return nil, false
+			}
+			if selectedField.Name != nil && selectedField.Name.Value == selectedFieldName && selectedField.SelectionSet != nil {
+				nextSelections = append(nextSelections, selectedField.SelectionSet.Selections...)
+			}
+		}
+		selections = nextSelections
+	}
+	for _, selection := range selections {
+		selectedField, isField := selection.(*ast.Field)
+		if !isField {
+			return nil, false
+		}
+		if selectedField.Name != nil {
+			fieldNames = append(fieldNames, selectedField.Name.Value)
+		}
+	}
+	return fieldNames, true
+}
+
 var (
 	errorType     = reflect.TypeOf((*error)(nil)).Elem()
 	timeType      = reflect.TypeOf(time.Time{})

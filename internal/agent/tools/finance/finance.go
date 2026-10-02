@@ -79,11 +79,11 @@ var operations = map[string]*financeOperation{
 	},
 	"transactions": {
 		graphqlOperation: "FinanceTransactions", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
-		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "duplicate_of_transaction_id", "finance_transaction_ids", "limit", "after"}, rangeArguments...),
+		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "duplicate_of_transaction_id", "is_duplicate_included", "finance_transaction_ids", "limit", "offset", "after"}, rangeArguments...),
 	},
 	"trades": {
 		graphqlOperation: "FinanceTrades", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
-		arguments: append([]string{"finance_account_id", "finance_security_id", "limit", "after"}, rangeArguments...),
+		arguments: append([]string{"finance_account_id", "finance_security_id", "limit", "offset", "after"}, rangeArguments...),
 	},
 	"spending_summary": {
 		graphqlOperation: "FinanceSpendingSummary", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
@@ -580,7 +580,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- Mirrored copies: some institutions report one charge, such as an account-level fee, once on every account of a connection. " +
 	"Only investment accounts within one Plaid connection are grouped: the same day, amount, currency and description on two or more of them, pending or posted, is one charge (a posted copy counts before a pending one): one copy counts, and each other has duplicateOfTransactionId (the counted copy) and is left out of every total, like a transfer. " +
 	"A genuinely identical fee on two such accounts (two retirement accounts charged the same fee the same day, say) is marked too, and `count_transaction` is the recourse; copies posted on different days are not matched. " +
-	"Say so when listing transactions rather than adding them up. `transactions` with duplicate_of_transaction_id lists a counted copy's duplicates. " +
+	"`transactions` leaves them out unless is_duplicate_included is true, and says how many it left out in leftOutDuplicateCount; say so when it is not zero. When listing them, say they are copies rather than adding them up. `transactions` with duplicate_of_transaction_id lists a counted copy's duplicates. " +
 	"When the person says a duplicate is a real charge of its own, `count_transaction` counts it (duplicateDecidedBy person) and detection leaves it alone; `undo_count_transaction` takes that back.\n" +
 	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none (a value read now can go in the same call), then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
 	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the dashboard's Finance page or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
@@ -610,7 +610,9 @@ func init() {
 					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; transfer marks a transfer between the person's own accounts; for categorize_transaction empty takes it away"),
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category (a transfer has the transfer category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
+					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
+					"offset":                      tools.IntegerProperty("for transactions and trades: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
 					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
@@ -973,6 +975,9 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if limit, isNumber := variables["limit"].(float64); isNumber {
 		variables["limit"] = int(limit)
 	}
+	if offset, isNumber := variables["offset"].(float64); isNumber {
+		variables["offset"] = int(offset)
+	}
 	if priority, isNumber := variables["rulePriority"].(float64); isNumber {
 		variables["rulePriority"] = int(priority)
 	}
@@ -998,6 +1003,9 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	payload := map[string]any{name: answered}
 	if hint := emptyHint(name, answered); hint != "" {
+		payload["hint"] = hint
+	}
+	if hint := pageHint(name, variables, answered); hint != "" {
 		payload["hint"] = hint
 	}
 	result, err := tools.JSONResult(payload)
@@ -1043,6 +1051,37 @@ func emptyHint(name string, answered any) string {
 		return "no budgets yet; propose some from the last three months, and set only what the person accepts"
 	}
 	return ""
+}
+
+// pageHint says which rows of how many a page of transactions or trades
+// holds, so the answer can say "50 of 1,234" rather than leave the rest
+// unmentioned, and how to read the next page. Empty when the page holds
+// every row.
+func pageHint(name string, variables map[string]any, answered any) string {
+	listKey := map[string]string{"transactions": "financeTransactions", "trades": "financeTrades"}[name]
+	page, isPage := answered.(map[string]any)
+	if listKey == "" || !isPage {
+		return ""
+	}
+	rows, _ := page[listKey].([]any)
+	totalCount, _ := page["totalCount"].(float64)
+	offset, _ := variables["offset"].(int)
+	if offset == 0 && len(rows) >= int(totalCount) {
+		return ""
+	}
+	if _, isAfterGiven := variables["after"]; isAfterGiven {
+		return fmt.Sprintf("%d of %d shown, read from the cursor given; tell the person both numbers", len(rows), int(totalCount))
+	}
+	// An offset past the last row holds nothing, and "rows 1001 to 1000"
+	// would say a range that is not there.
+	if len(rows) == 0 && offset >= int(totalCount) {
+		return fmt.Sprintf("offset %d is past the end, there are %d in all; tell the person how many there are", offset, int(totalCount))
+	}
+	hint := fmt.Sprintf("rows %d to %d of %d shown; tell the person both numbers", offset+1, offset+len(rows), int(totalCount))
+	if offset+len(rows) < int(totalCount) {
+		hint += fmt.Sprintf(", and offset %d reads the next page", offset+len(rows))
+	}
+	return hint
 }
 
 // linkAddress is the dashboard's linking page for the person to open.

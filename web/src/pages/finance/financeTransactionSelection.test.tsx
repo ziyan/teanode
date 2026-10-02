@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
@@ -100,10 +100,23 @@ const firstPage = [
 ]
 const secondPage = [purchase('purchase-five', 'Late Example')]
 
+// Address shows the address the page wrote, to read its page and filters.
+function Address() {
+  return <output data-testid="address">{useLocation().search}</output>
+}
+const address = () => new URLSearchParams(screen.getByTestId('address').textContent ?? '')
+
 // serve answers the page's documents; categorize answers
 // CategorizeTransactions for one piece, and proposals is what
-// ProposeSpendingRules answers for the whole selection.
-function serve(categorize?: (variables: Record<string, unknown>) => unknown, proposals: SpendingRuleProposals = proposed) {
+// ProposeSpendingRules answers for the whole selection. A page past the
+// first holds the second page's rows, and totalCount is what the server
+// says matches; the ids of every one come in two pieces, the way the
+// cursor reads them.
+function serve(
+  categorize?: (variables: Record<string, unknown>) => unknown,
+  proposals: SpendingRuleProposals = proposed,
+  { initialEntry = '/', totalCount = firstPage.length }: { initialEntry?: string; totalCount?: number } = {},
+) {
   execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
     if (document.includes('FinanceAccounts')) return { FinanceAccounts: [] }
     if (document.includes('SpendingCategories')) {
@@ -130,17 +143,28 @@ function serve(categorize?: (variables: Record<string, unknown>) => unknown, pro
         },
       }
     }
-    if (variables?.after === 'cursor-second-page') {
-      return { FinanceTransactions: { financeTransactions: secondPage, nextCursor: null } }
+    if (document.includes('nextCursor')) {
+      return variables?.after === 'ids-second'
+        ? { FinanceTransactions: { financeTransactions: secondPage.map(({ id }) => ({ id })), nextCursor: null } }
+        : { FinanceTransactions: { financeTransactions: firstPage.map(({ id }) => ({ id })), nextCursor: 'ids-second' } }
     }
-    return { FinanceTransactions: { financeTransactions: firstPage, nextCursor: 'cursor-second-page' } }
+    const rows = Number(variables?.offset ?? 0) > 0 ? secondPage : firstPage
+    return { FinanceTransactions: { financeTransactions: rows, totalCount, leftOutDuplicateCount: 1 } }
   })
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <FinanceTransactionsSection />
+      <Address />
     </MemoryRouter>,
   )
 }
+
+// pageReads is the offset, limit and duplicates asked for by every read of
+// a page of the list, in order.
+const pageReads = () =>
+  execute.mock.calls
+    .filter(([document]) => document.includes('FinanceTransactions(') && !document.includes('nextCursor'))
+    .map(([, variables]) => [variables?.offset, variables?.limit, variables?.isDuplicateIncluded])
 
 const rowBoxes = () => screen.getAllByLabelText('table.choose') as HTMLInputElement[]
 const toolbar = () => document.querySelector<HTMLElement>('.finance-selection-toolbar')
@@ -152,8 +176,8 @@ function chooseCategory(label: string) {
   fireEvent.click(screen.getByRole('option', { name: label }))
 }
 
-it('chooses rows, a run with shift, and every loaded row, and keeps them across Load more', async () => {
-  serve()
+it('chooses rows, a run with shift, and keeps them from page to page', async () => {
+  serve(undefined, proposed, { initialEntry: '/?rows=25', totalCount: 30 })
   await screen.findByText('Invented Bistro')
   expect(toolbar()).toBeNull()
 
@@ -167,21 +191,67 @@ it('chooses rows, a run with shift, and every loaded row, and keeps them across 
   expect(selectedCount()).toBe('finance.selectedTransactions {"count":"3"}')
   expect(rowBoxes().map((box) => box.checked)).toEqual([true, true, true, false])
 
-  fireEvent.click(screen.getByText('finance.loadMore'))
+  // The next page is in the address, and what was chosen on the first is
+  // still chosen, counted with what is chosen here.
+  fireEvent.click(screen.getByLabelText('table.next'))
   await screen.findByText('Late Example')
+  expect(address().get('page')).toBe('2')
   expect(selectedCount()).toBe('finance.selectedTransactions {"count":"3"}')
-
-  fireEvent.click(screen.getByText('finance.selectAllLoaded {"count":"5"}'))
-  expect(selectedCount()).toBe('finance.selectedTransactions {"count":"5"}')
-  expect(screen.queryByText(/finance\.selectAllLoaded/)).toBeNull()
-
-  // The header's box lets go of every row shown.
   fireEvent.click(screen.getByLabelText('table.chooseAll'))
-  expect(toolbar()).toBeNull()
+  expect(selectedCount()).toBe('finance.selectedTransactions {"count":"4"}')
 
-  fireEvent.click(rowBoxes()[1])
+  // Back on the first page, its three are still chosen, and the header's
+  // box lets go of the page shown only.
+  fireEvent.click(screen.getByLabelText('table.previous'))
+  await screen.findByText('Invented Bistro')
+  expect(address().get('page')).toBeNull()
+  expect(rowBoxes().map((box) => box.checked)).toEqual([true, true, true, false])
+  fireEvent.click(screen.getByLabelText('table.chooseAll'))
+  fireEvent.click(screen.getByLabelText('table.chooseAll'))
+  expect(selectedCount()).toBe('finance.selectedTransactions {"count":"1"}')
+  expect(pageReads()).toEqual([
+    [0, 25, undefined],
+    [25, 25, undefined],
+    [0, 25, undefined],
+  ])
+
   fireEvent.click(screen.getByLabelText('finance.clearSelection'))
   expect(toolbar()).toBeNull()
+})
+
+// Select all is every transaction the filters match, on every page, read
+// as ids alone; more than can be given rules at once is refused.
+it('selects every transaction that matches, across pages', async () => {
+  serve(undefined, proposed, { initialEntry: '/?rows=25', totalCount: 5 })
+  await screen.findByText('Invented Bistro')
+  fireEvent.click(rowBoxes()[0])
+  fireEvent.click(screen.getByText('finance.selectAllMatching {"count":"5"}'))
+  await waitFor(() => expect(selectedCount()).toBe('finance.selectedTransactions {"count":"5"}'))
+  expect(screen.queryByText(/finance\.selectAllMatching/)).toBeNull()
+  const idReads = execute.mock.calls.filter(([document]) => document.includes('nextCursor'))
+  expect(idReads.map(([, variables]) => [variables?.limit, variables?.after])).toEqual([
+    [200, null],
+    [200, 'ids-second'],
+  ])
+
+  // All five go to the server, though four of them are not on this page.
+  chooseCategory('Invented Dining')
+  fireEvent.click(screen.getByText('finance.applySpendingCategory'))
+  await waitFor(() => expect(toast.done).toHaveBeenCalled())
+  const sent = execute.mock.calls
+    .filter(([document]) => document.includes('CategorizeTransactions('))
+    .flatMap(([, variables]) => variables?.financeTransactionIds as string[])
+  expect(sent).toEqual(['purchase-one', 'purchase-two', 'purchase-three', 'purchase-four', 'purchase-five'])
+})
+
+it('refuses to select more than can be given rules at once', async () => {
+  serve(undefined, proposed, { totalCount: 6000 })
+  await screen.findByText('Invented Bistro')
+  fireEvent.click(rowBoxes()[0])
+  fireEvent.click(screen.getByText(/finance\.selectAllMatching/))
+  expect(toast.failed).toHaveBeenCalledWith(expect.stringContaining('finance.tooManyToSelect'))
+  expect(execute.mock.calls.some(([document]) => document.includes('nextCursor'))).toBe(false)
+  expect(selectedCount()).toBe('finance.selectedTransactions {"count":"1"}')
 })
 
 it('gives the chosen ones a spending category, a duplicate among them, and lets go of them', async () => {
@@ -293,11 +363,37 @@ it('keeps chosen the ones a failed piece held, and says how many', async () => {
   expect(rowBoxes().map((box) => box.checked)).toEqual([false, false, true, false])
 })
 
-it('lets go of the selection when a filter changes', async () => {
-  serve()
-  await screen.findByText('Invented Bistro')
+it('lets go of the selection and goes back to the first page when a filter changes', async () => {
+  serve(undefined, proposed, { initialEntry: '/?rows=25&page=2', totalCount: 30 })
+  await screen.findByText('Late Example')
   fireEvent.click(rowBoxes()[0])
   expect(toolbar()).not.toBeNull()
   fireEvent.click(screen.getByText('finance.onlyUncategorized'))
   await waitFor(() => expect(toolbar()).toBeNull())
+  await screen.findByText('Invented Bistro')
+  expect(address().get('page')).toBeNull()
+  expect(address().get('rows')).toBe('25')
+  expect(address().get('isUncategorized')).toBe('true')
+  // The new filters are asked for once, at the first page, never at the
+  // offset of the page the old ones were on.
+  const narrowedReads = execute.mock.calls
+    .filter(([document, variables]) => document.includes('totalCount') && variables?.isUncategorized)
+    .map(([, variables]) => [variables?.offset, variables?.limit])
+  expect(narrowedReads).toEqual([[0, 25]])
+})
+
+// The mirrored copies are left out unless Show duplicates asks for them,
+// the line above the table says how many were, and asking for them is in
+// the address like every filter.
+it('leaves the duplicates out until they are asked for', async () => {
+  serve()
+  await screen.findByText('Invented Bistro')
+  expect(screen.getByText(/finance\.duplicatesLeftOutOne/)).toBeTruthy()
+  expect(pageReads()).toEqual([[0, 50, undefined]])
+  fireEvent.click(screen.getByText('finance.showDuplicates'))
+  await waitFor(() => expect(pageReads()).toEqual([
+    [0, 50, undefined],
+    [0, 50, true],
+  ]))
+  expect(address().get('isDuplicateIncluded')).toBe('true')
 })

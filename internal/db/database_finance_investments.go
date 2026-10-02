@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 
 	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
@@ -25,8 +26,15 @@ type FinanceTradeFilter struct {
 	// FinanceTradeLimitDefault.
 	Limit int
 
-	// After is the NextCursor of the page before.
-	After string
+	// After is the NextCursor of the page before. Offset is how many to
+	// pass over first, for a page by its number; with After it counts
+	// from the cursor.
+	After  string
+	Offset int
+
+	// ShouldCountTotal fills the page's TotalCount, which costs one more
+	// statement.
+	ShouldCountTotal bool
 }
 
 // How many trades one page holds.
@@ -36,10 +44,12 @@ const (
 )
 
 // FinanceTradePage is one page of trades, and the cursor for the next,
-// empty on the last.
+// empty on the last. TotalCount is how many match the filter on every
+// page, the cursor and the offset aside, when the filter asked for it.
 type FinanceTradePage struct {
 	FinanceTrades []*models.FinanceTrade
 	NextCursor    string
+	TotalCount    int
 }
 
 type agentFinanceSecurityModel struct {
@@ -543,17 +553,10 @@ func financeTradeCursor(last *agentFinanceTradeModel) string {
 	return formatDay(last.TradedOn) + "/" + last.ID
 }
 
-func (self *transaction) ListFinanceTrades(agentId string, filter *FinanceTradeFilter) (*FinanceTradePage, error) {
-	if filter == nil {
-		filter = &FinanceTradeFilter{}
-	}
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = FinanceTradeLimitDefault
-	}
-	if limit > FinanceTradeLimitMost {
-		limit = FinanceTradeLimitMost
-	}
+// financeTradeQuery is the trades a filter matches, the cursor, the
+// offset and the limit aside: what a page is read from and what its
+// total counts.
+func (self *transaction) financeTradeQuery(agentId string, filter *FinanceTradeFilter) (*gorm.DB, error) {
 	query := self.tx.Model(&agentFinanceTradeModel{}).Where(`"agent_id" = ?`, agentId)
 	from, err := parseOptionalDay(filter.From)
 	if err != nil {
@@ -575,6 +578,39 @@ func (self *transaction) ListFinanceTrades(agentId string, filter *FinanceTradeF
 	if filter.FinanceSecurityID != "" {
 		query = query.Where(`"finance_security_id" = ?`, filter.FinanceSecurityID)
 	}
+	return query, nil
+}
+
+func (self *transaction) ListFinanceTrades(agentId string, filter *FinanceTradeFilter) (*FinanceTradePage, error) {
+	if filter == nil {
+		filter = &FinanceTradeFilter{}
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = FinanceTradeLimitDefault
+	}
+	if limit > FinanceTradeLimitMost {
+		limit = FinanceTradeLimitMost
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: an offset cannot be negative", ErrInvalidArguments)
+	}
+	page := &FinanceTradePage{}
+	if filter.ShouldCountTotal {
+		counted, err := self.financeTradeQuery(agentId, filter)
+		if err != nil {
+			return nil, err
+		}
+		var totalCount int64
+		if err := counted.Count(&totalCount).Error; err != nil {
+			return nil, err
+		}
+		page.TotalCount = int(totalCount)
+	}
+	query, err := self.financeTradeQuery(agentId, filter)
+	if err != nil {
+		return nil, err
+	}
 	if filter.After != "" {
 		tradedOn, tradeId, isCut := strings.Cut(filter.After, "/")
 		tradedOn, err := parseDay(tradedOn)
@@ -585,10 +621,10 @@ func (self *transaction) ListFinanceTrades(agentId string, filter *FinanceTradeF
 	}
 	var found []agentFinanceTradeModel
 	// One more than the page, to know whether there is another.
-	if err := query.Order(`"traded_on" DESC, "id" DESC`).Limit(limit + 1).Find(&found).Error; err != nil {
+	if err := query.Order(`"traded_on" DESC, "id" DESC`).Offset(filter.Offset).Limit(limit + 1).Find(&found).Error; err != nil {
 		return nil, err
 	}
-	page := &FinanceTradePage{FinanceTrades: make([]*models.FinanceTrade, 0, len(found))}
+	page.FinanceTrades = make([]*models.FinanceTrade, 0, len(found))
 	if len(found) > limit {
 		found = found[:limit]
 		page.NextCursor = financeTradeCursor(&found[len(found)-1])

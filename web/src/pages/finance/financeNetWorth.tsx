@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Field, Loading, Tag, formatMoney } from '../../components/common'
 import { ArrowLeftIcon, TrashIcon } from '../../components/icons'
-import { Column, DataTable } from '../../components/dataTable'
+import { Column, DataTable, Range } from '../../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SeriesChart, dayLabel } from '../../components/seriesChart'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useIsDesktop } from '../../components/sidebar'
-import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
@@ -92,8 +91,6 @@ const ASSET_KINDS = [
   'other_liability',
 ]
 
-// How many trades one read brings, and one Load more adds.
-const TRADE_PAGE_SIZE = 100
 
 // How far back the chart reaches, in days; zero is from the first
 // valuation there is.
@@ -119,7 +116,8 @@ export function FinanceNetWorthSection() {
     refresh: false,
   })
   const chosen = assets.data?.Assets.find((asset) => asset.id === assetId) ?? null
-  // The address of an asset's page: this one, naming the asset.
+  // The address of an asset's page: this one, naming the asset. The page
+  // of its trades is that asset's, so it is not carried to another.
   const addressOf = (id: string | null) => {
     const written = new URLSearchParams(parameters)
     if (id) {
@@ -127,6 +125,7 @@ export function FinanceNetWorthSection() {
     } else {
       written.delete('asset')
     }
+    written.delete('page')
     return written
   }
   if (assetId) {
@@ -1091,8 +1090,8 @@ function HoldingLine({ valuation }: { valuation: AssetValuation }) {
 
 // HoldingTrades is a holding's trades, newest first: every buy, sell,
 // cancel and transfer of its security in its finance account, read a page
-// at a time from where the last page ended, as the finance transactions
-// are.
+// at a time by its number, with the page in the address, as the finance
+// transactions are.
 function HoldingTrades({
   financeAccountId,
   financeSecurityId,
@@ -1100,45 +1099,25 @@ function HoldingTrades({
   financeAccountId: string
   financeSecurityId: string
 }) {
-  const { t } = useTranslation()
-  const toast = useToast()
+  const { t, plural } = useTranslation()
   const words = useFinanceWords()
-  const variables = { financeAccountId, financeSecurityId, limit: TRADE_PAGE_SIZE }
-  const filterKey = JSON.stringify(variables)
-  const first = useQuery(() => graphql<{ FinanceTrades: FinanceTradePage }>(FINANCE_TRADES, variables), [filterKey], {
-    refresh: false,
-  })
-  // The pages read after the first, and where the next one starts.
-  const [more, setMore] = useState<{ rows: FinanceTrade[]; after: string | null; isLoaded: boolean }>({
-    rows: [],
-    after: null,
-    isLoaded: false,
-  })
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  useEffect(() => {
-    setMore({ rows: [], after: null, isLoaded: false })
-  }, [filterKey])
-
-  const firstPage = first.data?.FinanceTrades
-  const after = more.isLoaded ? more.after : (firstPage?.nextCursor ?? null)
-  const rows = useMemo(() => [...(firstPage?.financeTrades ?? []), ...more.rows], [firstPage, more.rows])
-
-  const loadMore = async () => {
-    if (!after) return
-    setIsLoadingMore(true)
-    try {
-      const answer = await graphql<{ FinanceTrades: FinanceTradePage }>(FINANCE_TRADES, { ...variables, after })
-      setMore((previous) => ({
-        rows: [...previous.rows, ...answer.FinanceTrades.financeTrades],
-        after: answer.FinanceTrades.nextCursor ?? null,
-        isLoaded: true,
-      }))
-    } catch (caught) {
-      toast.failure(caught, t('finance.failed'))
-    } finally {
-      setIsLoadingMore(false)
-    }
-  }
+  // Which page the table shows, once it has read the address.
+  const [range, setRange] = useState<Range | null>(null)
+  const onRange = useCallback((next: Range) => setRange(next), [])
+  const page = useQuery(
+    () =>
+      range
+        ? graphql<{ FinanceTrades: FinanceTradePage }>(FINANCE_TRADES, {
+            financeAccountId,
+            financeSecurityId,
+            limit: range.limit,
+            offset: range.offset,
+          })
+        : Promise.resolve(null),
+    [financeAccountId, financeSecurityId, range?.offset, range?.limit],
+    { refresh: false },
+  )
+  const shownPage = page.data?.FinanceTrades
 
   const columns: Column<FinanceTrade>[] = [
     {
@@ -1146,7 +1125,6 @@ function HoldingTrades({
       header: t('finance.tradedOn'),
       value: (row) => row.tradedOn,
       render: (row) => formatDay(row.tradedOn),
-      sort: (left, right) => left.tradedOn.localeCompare(right.tradedOn),
     },
     {
       key: 'tradeKind',
@@ -1159,7 +1137,6 @@ function HoldingTrades({
       numeric: true,
       value: (row) => row.tradedQuantity ?? '',
       render: (row) => formatQuantity(row.tradedQuantity),
-      sort: (left, right) => amountOf(left.tradedQuantity) - amountOf(right.tradedQuantity),
     },
     {
       key: 'unitPrice',
@@ -1167,7 +1144,6 @@ function HoldingTrades({
       numeric: true,
       value: (row) => row.unitPrice ?? '',
       render: (row) => <Money amount={row.unitPrice} currency={row.currencyCode} />,
-      sort: (left, right) => amountOf(left.unitPrice) - amountOf(right.unitPrice),
     },
     {
       key: 'tradeAmount',
@@ -1175,7 +1151,6 @@ function HoldingTrades({
       numeric: true,
       value: (row) => row.tradeAmount,
       render: (row) => <Money amount={row.tradeAmount} currency={row.currencyCode} />,
-      sort: (left, right) => amountOf(left.tradeAmount) - amountOf(right.tradeAmount),
     },
     {
       key: 'feeAmount',
@@ -1183,7 +1158,6 @@ function HoldingTrades({
       numeric: true,
       value: (row) => row.feeAmount ?? '',
       render: (row) => <Money amount={row.feeAmount} currency={row.currencyCode} />,
-      sort: (left, right) => amountOf(left.feeAmount) - amountOf(right.feeAmount),
     },
     // The institution's own words for the trade: context, so dropped on a
     // phone.
@@ -1198,25 +1172,16 @@ function HoldingTrades({
 
   return (
     <SettingsSection card title={t('finance.tradesTitle')} description={t('finance.tradesHint')}>
-      <ErrorMessage error={first.error} />
-      {first.loading && !first.data ? <Loading /> : null}
-      {first.data ? (
-        <DataTable
-          columns={columns}
-          rows={rows}
-          rowKey={(row) => row.id}
-          loading={first.loading}
-          emptyMessage={t('finance.noTrades')}
-          countLabel={(count) => t('finance.transactionsLoaded', { count: String(count) })}
-        />
-      ) : null}
-      {after ? (
-        <div className="page-actions page-actions-end">
-          <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
-            {t('finance.loadMore')}
-          </button>
-        </div>
-      ) : null}
+      <ErrorMessage error={page.error} />
+      <DataTable
+        columns={columns}
+        rows={shownPage?.financeTrades ?? []}
+        rowKey={(row) => row.id}
+        loading={!shownPage}
+        remote={{ total: shownPage?.totalCount ?? 0, onRange }}
+        emptyMessage={t('finance.noTrades')}
+        countLabel={(count) => plural(count, { one: 'finance.tradeCountOne', other: 'finance.tradeCountOther' })}
+      />
     </SettingsSection>
   )
 }
