@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/indexed"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -155,8 +156,17 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 			if err != nil {
 				return err
 			}
+			// As many whole passages as a turn's result keeps, as the tool
+			// fits its page, so an answer here is not given more than a
+			// turn would read.
+			kept := 0
 			for _, passage := range searched.Passages {
-				passages = append(passages, passage.Cite()+"\n"+passage.Text)
+				shown := passage.Cite() + "\n" + passage.Text
+				if len(passages) > 0 && kept+len(shown) > tools.ResultCharacters {
+					break
+				}
+				passages = append(passages, shown)
+				kept += len(shown)
 			}
 			return nil
 		}); err != nil {

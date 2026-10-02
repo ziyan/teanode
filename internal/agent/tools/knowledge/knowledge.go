@@ -230,7 +230,6 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	}); err != nil {
 		return nil, err
 	}
-	more := searchMore(found, arguments.Limit)
 
 	var builder strings.Builder
 	// An identifier before anything else: a name pasted out of a log
@@ -252,12 +251,27 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 		}
 		return tools.TextResult("nothing in what they have indexed is about that"), nil
 	}
+	// Each passage whole: cut to a third of a chunk, the answer was often
+	// in the part not shown, with nothing to say so. A page holds as many
+	// as fit in what the run keeps of a result, and the passages left out
+	// are counted into the line that reads the next page: a page the run
+	// cut instead would lose that line, and the next page would start past
+	// passages never shown.
+	budget := tools.ResultCharactersOf(run) - searchMoreReserve
+	shown := 0
 	for _, passage := range found.Passages {
-		builder.WriteString(passage.Cite() + "\n")
-		// Whole: a passage is at most a chunk, and cut to a third of it the
-		// answer was often in the part not shown, with nothing to say so.
-		builder.WriteString(indent(passage.Text) + "\n\n")
+		block := passage.Cite() + "\n" + indent(passage.Text) + "\n\n"
+		if shown > 0 && builder.Len()+len(block) > budget {
+			break
+		}
+		builder.WriteString(block)
+		shown++
 	}
+	if left := len(found.Passages) - shown; left > 0 {
+		found.MoreCount += left
+		found.NextOffset = found.Offset + shown
+	}
+	more := searchMore(found, arguments.Limit)
 	if !found.Meaningful {
 		builder.WriteString("(found by words alone; this deployment cannot search by meaning)\n")
 	}
@@ -266,6 +280,11 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
 }
+
+// searchMoreReserve is the room a page of a search keeps for the lines
+// after its passages: the note on searching by words alone and the line
+// that reads the next page.
+const searchMoreReserve = 400
 
 // searchMore is the line a page of a search ends with when the search
 // found more than it shows: how many more, "at least" where the search

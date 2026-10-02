@@ -564,6 +564,10 @@ func (self *AskRun) resultCharacters() int {
 }
 func (self *AskRun) ReadOnly() bool { return self.settings.ReadOnly }
 
+// ResultCharacters is how much of a tool's result this run keeps, for a
+// tool that fits a page to it.
+func (self *AskRun) ResultCharacters() int { return self.resultCharacters() }
+
 // Usage is what the turn has spent so far, every round added up.
 func (self *AskRun) Usage() llm.Usage       { return self.usage }
 func (self *AskRun) Offered() []*tools.Tool { return self.offered }
