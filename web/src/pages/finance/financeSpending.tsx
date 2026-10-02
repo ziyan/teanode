@@ -893,7 +893,14 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
             <tfoot>
               {reportingTotal ? (
                 <tr>
-                  <th>{t('finance.totalIn', { currency: reportingTotal.currencyCode })}</th>
+                  {/* Said as a conversion when the rows under it are its parts
+                      in their own currencies: two rows both called a total in
+                      the same currency read as two different totals. */}
+                  <th>
+                    {currencyTotals.length > 1
+                      ? t('finance.totalConvertedTo', { currency: reportingTotal.currencyCode })
+                      : t('finance.totalIn', { currency: reportingTotal.currencyCode })}
+                  </th>
                   <th className="numeric">
                     <Money amount={reportingTotal.spendingAmount} currency={reportingTotal.currencyCode} />
                   </th>
@@ -903,15 +910,28 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
               {/* Each currency as it was spent, where there was more than
                   one or no reporting currency to add them up in. */}
               {currencyTotals.length > 1 || !reportingTotal
-                ? currencyTotals.map((total) => (
-                    <tr key={total.currencyCode}>
-                      <th>{t('finance.totalIn', { currency: total.currencyCode })}</th>
-                      <th className="numeric">
-                        <Money amount={total.spendingAmount} currency={total.currencyCode} />
-                      </th>
-                      <th className="numeric optional">{total.financeTransactionCount}</th>
-                    </tr>
-                  ))
+                ? currencyTotals.map((total) =>
+                    // Under a converted total these are its parts, as spent,
+                    // in the muted weight of a detail; with nothing to add
+                    // them up in, each is a total of its own.
+                    reportingTotal ? (
+                      <tr key={total.currencyCode} className="finance-currency-part">
+                        <td>{t('finance.spentIn', { currency: total.currencyCode })}</td>
+                        <td className="numeric">
+                          <Money amount={total.spendingAmount} currency={total.currencyCode} />
+                        </td>
+                        <td className="numeric optional">{total.financeTransactionCount}</td>
+                      </tr>
+                    ) : (
+                      <tr key={total.currencyCode}>
+                        <th>{t('finance.totalIn', { currency: total.currencyCode })}</th>
+                        <th className="numeric">
+                          <Money amount={total.spendingAmount} currency={total.currencyCode} />
+                        </th>
+                        <th className="numeric optional">{total.financeTransactionCount}</th>
+                      </tr>
+                    ),
+                  )
                 : null}
             </tfoot>
           </table>

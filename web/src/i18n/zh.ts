@@ -3445,6 +3445,8 @@ export const zh: Catalog = {
   'finance.groupBy.financeAccount': '财务账户',
   'finance.transactionCount': '交易数',
   'finance.totalIn': '合计（{currency}）',
+  'finance.totalConvertedTo': '合计（全部换算为{currency}）',
+  'finance.spentIn': '以{currency}支出',
   'finance.noCashFlow': '这十二个月没有收入或支出。',
   'finance.periodKind': '按月或按年显示',
   'finance.year': '年',

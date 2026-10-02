@@ -3537,6 +3537,8 @@ export const ja: Catalog = {
   'finance.groupBy.financeAccount': '金融口座',
   'finance.transactionCount': '取引数',
   'finance.totalIn': '{currency} での合計',
+  'finance.totalConvertedTo': '合計（すべて{currency}に換算）',
+  'finance.spentIn': '{currency}での支出',
   'finance.noCashFlow': 'この 12 か月に収入も支出もありません。',
   'finance.periodKind': '月ごとか年ごとかを選ぶ',
   'finance.year': '年',
