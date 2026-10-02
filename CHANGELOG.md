@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.104.1] - 2026-10-02
+
+### Fixed
+
+- Changing a budget's start month shows the new start, and the edit dialog opens at the month the budget began. (#310)
+
 ## [0.104.0] - 2026-10-02
 
 ### Added
