@@ -38,11 +38,18 @@ func resolveReferences(tx db.Transaction, agentId string, references []models.Ag
 		return references, nil
 	}
 	resolved := make([]models.AgentReference, 0, len(references))
+	// One transaction pointed at twice is told once: each costs a block of
+	// context on every round of the run.
+	seenFinanceTransactionIds := map[string]bool{}
 	for _, reference := range references {
 		if reference.FinanceTransactionID == "" {
 			resolved = append(resolved, reference)
 			continue
 		}
+		if seenFinanceTransactionIds[reference.FinanceTransactionID] {
+			continue
+		}
+		seenFinanceTransactionIds[reference.FinanceTransactionID] = true
 		financeTransaction, err := tx.GetFinanceTransaction(agentId, reference.FinanceTransactionID)
 		if err != nil {
 			return nil, err
@@ -84,6 +91,12 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 	lines = append(lines, fmt.Sprintf("amount: %s %s (%s)", readableAmount(financeTransaction.Amount), financeTransaction.CurrencyCode, direction))
 	lines = append(lines, "pending: "+yesOrNo(financeTransaction.IsPending))
 
+	// What the provider or an imported statement wrote, fenced below: the
+	// account's name and mask and the institution's name come from there as
+	// much as the merchant does (a statement mailed in names its own
+	// account), so only ids, kinds and currency codes are said outside it.
+	provided := []string{}
+
 	financeAccount, err := tx.GetFinanceAccount(agentId, financeTransaction.FinanceAccountID)
 	if err != nil {
 		return "", err
@@ -95,14 +108,14 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 		if err != nil {
 			return "", err
 		}
+		lines = append(lines, fmt.Sprintf("finance account: finance_account_id %s (%s, %s), named below", financeAccount.ID, financeAccount.AccountKind, financeAccount.CurrencyCode))
 		account := financeAccount.AccountName
 		if financeAccount.AccountMask != "" {
 			account += " ending " + financeAccount.AccountMask
 		}
-		account += fmt.Sprintf(" (%s, %s, finance_account_id %s)", financeAccount.AccountKind, financeAccount.CurrencyCode, financeAccount.ID)
-		lines = append(lines, "finance account: "+account)
+		provided = append(provided, "account: "+cutMarked(strings.TrimSpace(account), financeReferenceChipCharacters))
 		if institutionName := financeAccount.InstitutionName(source); institutionName != "" {
-			lines = append(lines, "institution: "+institutionName)
+			provided = append(provided, "institution: "+cutMarked(strings.TrimSpace(institutionName), financeReferenceChipCharacters))
 		}
 	}
 
@@ -151,7 +164,8 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 			if countedAccount, err := tx.GetFinanceAccount(agentId, counted.FinanceAccountID); err != nil {
 				return "", err
 			} else if countedAccount != nil {
-				line += " on " + countedAccount.AccountName
+				line += " on finance_account_id " + countedAccount.ID
+				provided = append(provided, "the counted copy's account: "+cutMarked(strings.TrimSpace(countedAccount.AccountName), financeReferenceChipCharacters))
 			}
 			line += ", posted on " + counted.PostedOn
 		}
@@ -161,10 +175,8 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 		lines = append(lines, "mirrored copy: the person said it is a charge of its own, so it counts; undo_count_transaction takes that back")
 	}
 
-	// What the provider wrote, fenced.
-	provided := []string{}
 	if merchantName := strings.TrimSpace(financeTransaction.MerchantName); merchantName != "" {
-		provided = append(provided, "merchant: "+merchantName)
+		provided = append(provided, "merchant: "+cutMarked(merchantName, financeReferenceDescriptionCharacters))
 	}
 	if description := strings.TrimSpace(financeTransaction.Description); description != "" {
 		provided = append(provided, "description: "+cutMarked(description, financeReferenceDescriptionCharacters))

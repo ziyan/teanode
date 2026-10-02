@@ -41,6 +41,8 @@ func TestFinanceTransactionReferenceIsDescribedInTheTurn(t *testing.T) {
 		References: []models.AgentReference{
 			{FinanceTransactionID: feeId, MerchantName: "Something the page made up", Amount: "-1.00"},
 			{FinanceTransactionID: transactions[large.Description].ID},
+			// The same transaction again is told once.
+			{FinanceTransactionID: feeId},
 		},
 	}
 	var stored *models.AgentMessage
@@ -63,7 +65,8 @@ func TestFinanceTransactionReferenceIsDescribedInTheTurn(t *testing.T) {
 		"<references>", "finance transaction " + feeId,
 		"<finance_transaction>", "finance_transaction_id: " + feeId, "categorize_transaction",
 		"posted on: 2026-06-09", "amount: -50.00 USD (money out)", "pending: no",
-		"finance account: Everyday Checking (depository, USD", "institution: Example Credit Union",
+		"finance account: finance_account_id ", "(depository, USD), named below",
+		"account: Everyday Checking", "institution: Example Credit Union",
 		"spending category: " + finance.SpendingCategoryDining, "categorized by: person",
 		untrustedOpen, "merchant: Invented Brokerage", "description: INVENTED BROKERAGE MONTHLY FEE " + untrustedCloseSaid,
 		"provider category: BANK_FEES_OTHER", `provider metadata: {"payment_channel":"other"}`,
@@ -76,6 +79,15 @@ func TestFinanceTransactionReferenceIsDescribedInTheTurn(t *testing.T) {
 	}
 	if strings.Contains(turn.Content, "Something the page made up") || strings.Contains(turn.Content, strings.Repeat("x", 100)) {
 		t.Errorf("the turn carries what it should not:\n%s", turn.Content)
+	}
+	// The account's and the institution's names come from the provider or
+	// an imported statement, so they are inside the fence with the
+	// merchant, never in the lines the server says itself.
+	fence := strings.Index(turn.Content, untrustedOpen)
+	for _, providerWritten := range []string{"account: Everyday Checking", "institution: Example Credit Union"} {
+		if at := strings.Index(turn.Content, providerWritten); fence < 0 || at < fence {
+			t.Errorf("%q is outside the fence:\n%s", providerWritten, turn.Content)
+		}
 	}
 	// The provider's closing tag could not end the fence early: the only
 	// closing tags are the two fences' own.
