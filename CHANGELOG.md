@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.104.0] - 2026-10-02
+
+### Added
+
+- Spending can be shown for a whole year: totals, a month by month chart, categories and budgets for the year. (#308)
+
 ## [0.103.1] - 2026-10-02
 
 ### Fixed
