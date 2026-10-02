@@ -17,6 +17,7 @@ import { AccountMenu } from './components/accountMenu'
 import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
 import { MenuIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
+import { ImpersonationBanner } from './components/impersonationBanner'
 import { PasskeyNudge } from './components/passkeyNudge'
 import { SessionProvider, hasAnywhere } from './session'
 import { firstManagementPath } from './components/sidebar'
@@ -339,7 +340,16 @@ export function App() {
                 dismissed: a suggestion is only a suggestion if it can be
                 declined. The console has no username and no passkeys, so it
                 is never asked. */}
-                {session.username && <PasskeyNudge username={session.username} />}
+                {session.username && session.impersonatorUsername && (
+                  <ImpersonationBanner
+                    username={session.username}
+                    impersonatorUsername={session.impersonatorUsername}
+                    endsAt={session.impersonationEndsAt}
+                  />
+                )}
+                {/* Not while signed in as somebody else: their passkeys are
+                    theirs to add, and the server refuses it anyway. */}
+                {session.username && !session.impersonatorUsername && <PasskeyNudge username={session.username} />}
                 {/* The way back up, then the name of where you are. Together
                 on a wide screen: they answer the same question, and split
                 apart neither of them reads as an answer. On a phone the

@@ -16,7 +16,7 @@ const EVENTS = `
     ListAuditEvents(resourceType: $resourceType, first: $first, offset: $offset) {
       total
       events {
-        id createdAt actorKind actorLabel sourceIp instance
+        id createdAt actorKind actorLabel impersonatorLabel sourceIp instance
         resourceType resourceId resourceLabel resourceLink action before after
       }
     }
@@ -27,6 +27,8 @@ type AuditEvent = {
   createdAt: string
   actorKind: string
   actorLabel?: string
+  // The operator who was signed in as the actor, when one was.
+  impersonatorLabel?: string
   sourceIp?: string
   instance?: string
   resourceType: string
@@ -137,6 +139,9 @@ export function AuditTab() {
           title={
             <>
               {event.actorLabel || event.actorKind}
+              {event.impersonatorLabel ? (
+                <span className="muted"> {t('access.audit.impersonatedBy', { username: event.impersonatorLabel })}</span>
+              ) : null}
               {/* The person's agent acting for them: the row names the
                   person, and this says it was not their hand. */}
               {event.actorKind === 'agent' && <span className="mailbox-row-chip">{t('access.audit.viaAgent')}</span>}{' '}

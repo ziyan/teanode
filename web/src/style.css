@@ -2045,6 +2045,35 @@ label span {
   gap: var(--space-3);
 }
 
+/* Signed in as somebody else: the warning color and a heavier edge than the
+   nudge's, because it is not an offer. It stays on every page until the
+   operator goes back. */
+.impersonation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-3);
+}
+
+.impersonation-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 280px;
+  min-width: 0;
+  gap: 2px;
+  font-size: var(--text-body);
+}
+
+.impersonation-text span {
+  font-size: var(--text-label);
+  line-height: 1.45;
+}
+
 /* Scrolls sideways rather than wrapping, because tabs are a row: wrapped onto
    a second line they stop reading as one set of alternatives, and the line
    they wrap onto moves as the labels change with the language. Five tabs are

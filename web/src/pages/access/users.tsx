@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
-import { graphql } from '../../api'
+import { graphql, startImpersonation } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { KeyIcon, PencilIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { KeyIcon, PencilIcon, PlusIcon, TrashIcon, UserIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -53,6 +53,7 @@ export function UsersTab() {
   const [passwordFor, setPasswordFor] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [deletingPerson, setDeletingPerson] = useState<User | null>(null)
+  const [signingInAs, setSigningInAs] = useState<User | null>(null)
 
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -182,6 +183,20 @@ export function UsersTab() {
                       <KeyIcon size={16} />
                     </button>
                   </Tooltip>
+                  {/* Not as oneself, not as somebody who may not sign in,
+                      and not from inside somebody else's account already. */}
+                  {user.id !== session.userId && !user.disabledAt && !session.impersonatorUsername && (
+                    <Tooltip label={t('access.users.signInAs')}>
+                      <button
+                        className="icon-action"
+                        type="button"
+                        aria-label={`${user.username}: ${t('access.users.signInAs')}`}
+                        onClick={() => open(() => setSigningInAs(user))}
+                      >
+                        <UserIcon size={16} />
+                      </button>
+                    </Tooltip>
+                  )}
                   {user.id !== session.userId && (
                     <Tooltip label={t('common.remove')}>
                       <button
@@ -323,6 +338,31 @@ export function UsersTab() {
             />
           </label>
         </FormDialog>
+      )}
+
+      {signingInAs && (
+        <ConfirmDialog
+          title={t('access.users.signInAsTitle', { username: signingInAs.username })}
+          body={t('access.users.signInAsBody')}
+          confirmLabel={t('access.users.signInAs')}
+          destructive={false}
+          busy={busy}
+          error={problem}
+          onConfirm={async () => {
+            setBusy(true)
+            setProblem(null)
+            try {
+              await startImpersonation(signingInAs.id)
+              // Everything on the page was the operator's: start again as
+              // the person rather than leave any of it on screen.
+              window.location.assign('/')
+            } catch (caught) {
+              setBusy(false)
+              setProblem(caught instanceof Error ? caught.message : t('access.users.signInAsFailed'))
+            }
+          }}
+          onClose={() => setSigningInAs(null)}
+        />
       )}
 
       {deletingPerson && (

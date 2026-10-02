@@ -159,6 +159,11 @@ export interface Session {
 
   // Identity providers to offer on the sign-in page, one button each.
   ssoProviders?: { id: string; name: string }[]
+
+  // The operator signed in as this account, when one is, and when that ends
+  // by itself. Every page says so across the top.
+  impersonatorUsername?: string
+  impersonationEndsAt?: string
 }
 
 // Permissions is what a request may do: server and all-domains permissions
@@ -175,7 +180,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } }'
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername impersonationEndsAt }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)
@@ -265,6 +270,23 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
 export async function logout(): Promise<void> {
   await graphql(`mutation { Logout ${SESSION_FIELDS} }`)
+}
+
+// Signing in as somebody else, for an hour: the server keeps the operator's
+// own session aside and sets the cookie for the person's. The page reloads
+// afterwards, since everything on it was the operator's.
+export async function startImpersonation(userId: string): Promise<Session> {
+  const data = await graphql<{ StartImpersonation: Session }>(
+    `mutation ($userId: String!) { StartImpersonation(userId: $userId) ${SESSION_FIELDS} }`,
+    { userId },
+  )
+  return data.StartImpersonation
+}
+
+// Coming back to one's own account.
+export async function endImpersonation(): Promise<Session> {
+  const data = await graphql<{ EndImpersonation: Session }>(`mutation { EndImpersonation ${SESSION_FIELDS} }`)
+  return data.EndImpersonation
 }
 
 // --- the shapes the server returns -----------------------------------------
