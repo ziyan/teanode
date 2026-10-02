@@ -3637,6 +3637,7 @@ export const en = {
   'finance.currency': 'Currency',
   'finance.effectiveFrom': 'From',
   'finance.budgetDialogHint': 'Spending and income in another currency are converted at the exchange rate of the day they posted. On an income category the amount is the income you expect each month. A budget of zero ends it.',
+  'finance.budgetFromPastHint': 'From {month}: this changes every month since then. To change it from now on, choose {thisMonth}.',
   'finance.budgetSet': 'Budget set.',
   'finance.budgetEnded': 'Budget ended.',
   'finance.endBudget': 'End the budget',

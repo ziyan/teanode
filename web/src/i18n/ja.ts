@@ -3594,6 +3594,7 @@ export const ja: Catalog = {
   'finance.currency': '通貨',
   'finance.effectiveFrom': '開始月',
   'finance.budgetDialogHint': '別の通貨の支出と収入は、計上された日の為替レートで換算します。収入カテゴリでは、金額は毎月見込む収入です。予算を 0 にすると終了します。',
+  'finance.budgetFromPastHint': '{month}から：それ以降の毎月が変わります。今月から変えるには{thisMonth}を選んでください。',
   'finance.budgetSet': '予算を設定しました。',
   'finance.budgetEnded': '予算を終了しました。',
   'finance.endBudget': '予算を終了',

@@ -3502,6 +3502,7 @@ export const zh: Catalog = {
   'finance.currency': '货币',
   'finance.effectiveFrom': '起始月份',
   'finance.budgetDialogHint': '其他货币的支出和收入按入账当天的汇率换算。收入类别的金额是你每月预期的收入。预算设为零即结束。',
+  'finance.budgetFromPastHint': '从{month}起：会改变那以后的每个月。若只想从现在起改变，请选择{thisMonth}。',
   'finance.budgetSet': '已设置预算。',
   'finance.budgetEnded': '已结束预算。',
   'finance.endBudget': '结束预算',

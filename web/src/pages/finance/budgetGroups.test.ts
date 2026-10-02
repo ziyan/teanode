@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  budgetAmountSince,
   formatSigned,
   groupedCategoryOptions,
   reachTone,
@@ -8,7 +9,7 @@ import {
   spendingForecastParts,
   splitByIncome,
 } from './budgetGroups'
-import type { SavingSummary, SpendingCategory } from './financeApi'
+import type { Budget, SavingSummary, SpendingCategory } from './financeApi'
 
 function category(id: string, isIncome: boolean): SpendingCategory {
   return { id, spendingCategoryName: id, isIncome, isHidden: false } as SpendingCategory
@@ -144,5 +145,33 @@ describe('formatSigned', () => {
     expect(formatSigned(200, 'USD')).toMatch(/^\+/)
     expect(formatSigned(-200, 'USD')).not.toMatch(/^\+/)
     expect(formatSigned(0, 'USD')).not.toMatch(/^\+/)
+  })
+})
+
+describe('budgetAmountSince', () => {
+  const row = (id: string, spendingCategoryId: string, monthlyAmount: string, effectiveFrom: string): Budget => ({
+    id,
+    spendingCategoryId,
+    monthlyAmount,
+    currencyCode: 'USD',
+    effectiveFrom,
+  })
+  const budgets = [
+    row('a', 'dining', '400.0000', '2026-01-01'),
+    row('b', 'dining', '400', '2026-09-01'),
+    row('c', 'travel', '200.0000', '2026-03-01'),
+    row('d', 'travel', '250.0000', '2026-06-01'),
+  ]
+
+  it('names the month an unbroken run of the same amount began', () => {
+    expect(budgetAmountSince(budgets[1], budgets)).toBe('2026-01-01')
+  })
+
+  it('stops at an earlier row with another amount', () => {
+    expect(budgetAmountSince(budgets[3], budgets)).toBe('2026-06-01')
+  })
+
+  it('looks only at the same spending category', () => {
+    expect(budgetAmountSince(budgets[2], budgets)).toBe('2026-03-01')
   })
 })

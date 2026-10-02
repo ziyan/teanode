@@ -632,7 +632,17 @@ mirrored copies beside it, by `duplicate_of_transaction_id`; a test checks
 the totals with the copies equal the totals with them deleted.
 
 A budget is an amount per spending category per month, changed by adding a
-row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
+row effective from a month. Setting one drops the later rows that then say
+nothing (`dropRepeatedBudgets`), up to the first real change: rows that
+repeat the new amount, and, when an existing row was edited in place, rows
+that repeated the amount just before them. So moving a budget's start
+earlier with the same amount, or changing its amount at its start month,
+changes all of it, while a return to an earlier amount after a different
+one, or a restart after a budget was ended, is kept. Changes to one
+category's budget are serialized by a lock on the category. The Budgets
+list names the month a budget's current amount began (a scheduled change
+names its own month), and changing a budget opens at that month, saying
+when that month is already past that every month since changes. `BudgetStatus` (`internal/agent/budget_status.go`)
 converts spending into the budget's currency, projects the month's end
 (`budget_pace.go`), and names the budget pace. The projection is a sum of
 three amounts: the spending so far, plus the repeat charges still to come,

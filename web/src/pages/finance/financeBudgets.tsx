@@ -9,7 +9,7 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/se
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { groupedCategoryOptions, splitByIncome } from './budgetGroups'
+import { budgetAmountSince, groupedCategoryOptions, splitByIncome } from './budgetGroups'
 import {
   BUDGETS,
   Budget,
@@ -120,10 +120,14 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
   }
   const isIncomeCategory = (id: string) => categories.some((candidate) => candidate.id === id && candidate.isIncome)
   // What a budget row says: a limit on spending, or the income expected.
-  const amountFrom = (budget: Budget) =>
+  // A budget in force says the month its amount began (an earlier row with
+  // the same amount runs into this one); a change set to come says its own
+  // month, when it takes effect.
+  const allBudgets = budgets.data?.Budgets ?? []
+  const amountFrom = (budget: Budget, isInForce: boolean) =>
     t(isIncomeCategory(budget.spendingCategoryId) ? 'finance.incomeBudgetFrom' : 'finance.budgetFrom', {
       amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
-      month: monthLabel(budget.effectiveFrom, 'long'),
+      month: monthLabel(isInForce ? budgetAmountSince(budget, allBudgets) : budget.effectiveFrom, 'long'),
     })
   // Income budgets in a group of their own under the spending ones, each
   // group headed only once there is income to tell apart from spending.
@@ -148,7 +152,10 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
     setSpendingCategoryId(budget?.spendingCategoryId ?? budgetOptions()[0]?.value ?? '')
     setMonthlyAmount(budget ? String(amountOf(budget.monthlyAmount)) : '')
     setCurrencyCode(budget?.currencyCode ?? reportingCurrencyCode)
-    setEffectiveFrom(personMonth())
+    // Changing a budget starts where its amount began, so saving it as it
+    // stands changes nothing and a new amount applies from that start; a
+    // new budget starts this month.
+    setEffectiveFrom(budget ? budgetAmountSince(budget, allBudgets).slice(0, 7) : personMonth())
     setEditing({ spendingCategoryId: budget?.spendingCategoryId ?? '' })
   }
 
@@ -175,7 +182,7 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
             <SettingsRow
               key={budget.id}
               title={nameOf(budget.spendingCategoryId)}
-              subtitle={amountFrom(budget)}
+              subtitle={amountFrom(budget, true)}
               actions={
                 <div className="row-actions">
                   <Tooltip label={t('common.edit')}>
@@ -210,7 +217,7 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
               badge={<Tag value={t('finance.scheduled')} />}
               subtitle={
                 amountOf(budget.monthlyAmount) > 0
-                  ? amountFrom(budget)
+                  ? amountFrom(budget, false)
                   : t('finance.budgetEndsFrom', { month: monthLabel(budget.effectiveFrom, 'long') })
               }
             />
@@ -294,6 +301,16 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
             <span>{t('finance.effectiveFrom')}</span>
             <input type="month" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} />
           </label>
+          {/* Saving from a month already past changes every month since,
+              which a raise meant from now on should not do unnoticed. */}
+          {effectiveFrom && effectiveFrom < personMonth() ? (
+            <p className="muted field-hint">
+              {t('finance.budgetFromPastHint', {
+                month: monthLabel(effectiveFrom, 'long'),
+                thisMonth: monthLabel(personMonth(), 'long'),
+              })}
+            </p>
+          ) : null}
           <p className="muted field-hint">{t('finance.budgetDialogHint')}</p>
         </FormDialog>
       ) : null}
