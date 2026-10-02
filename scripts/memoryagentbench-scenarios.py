@@ -7,7 +7,9 @@ single-hop or multi-hop, whose answers follow the later facts. Each
 history becomes one scenario of its own, so no state is shared between
 histories: its facts filed in order as notes of the person's, a few at a
 time and a day apart, so a correction is newer than what it corrects;
-dreams until nothing waits to be read; then its questions. The reference
+dreams until nothing waits to be read; then its questions. Each note
+starts by asking for its facts to be remembered, as the benchmark asks a
+memory agent to memorize each chunk it is given. The reference
 answers are the expected answers and never enter the records.
 
 The benchmark tells the model that where facts conflict the later one
@@ -38,6 +40,10 @@ import sys
 FACT_LINE = re.compile(r"^\s*(\d+)\.\s+(.*\S)\s*$")
 STARTED = datetime.datetime(2030, 1, 1, 9, 0, tzinfo=datetime.timezone.utc)
 CONFLICT_RULE = "Where facts conflict, the newer one holds."
+# The benchmark hands each chunk to a memory agent with an instruction to
+# memorize it; a note of the person's says the same, or a reading that
+# keeps what concerns the person has no reason to keep general facts.
+MEMORIZE = "Please remember these facts."
 
 
 def source_of(row):
@@ -70,7 +76,7 @@ def scenario_for(row, question_count, facts_per_record):
             "at": (STARTED + datetime.timedelta(days=number - 1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "author": "@you",
             "title": f"Facts, part {number}",
-            "text": "\n".join(text for _, text in part),
+            "text": MEMORIZE + "\n" + "\n".join(text for _, text in part),
         })
     questions = []
     pairs = list(zip(row["questions"], row["answers"]))
