@@ -56,7 +56,8 @@ reader saw them, and the stored files.
     {"id": "checkpoint-1", "stepKind": "checkpoint", "questions": [
       {"id": "store-1", "question": "Which database ...?", "kind": "direct",
        "expects": [{"words": ["Burrowdb", "4.2"]}], "forbids": [],
-       "expectedAnswer": "Burrowdb 4.2.", "outdatedClaims": []}
+       "expectedAnswer": "Burrowdb 4.2.", "outdatedClaims": [],
+       "evidence": ["decision-001"]}
     ]}
   ]
 }
@@ -79,7 +80,15 @@ A step is one of four kinds:
   `path` is met by any page, since the pages a scenario grows are named by
   the model. `outdatedClaims` are statements true once and not now: recall
   may carry them, as history, and they are looked for in every layer to
-  see where one still stands as current.
+  see where one still stands as current. `evidence` names what the
+  expected answer rests on, among what was filed before the question: a
+  record by its `id`, a message of a conversation step as
+  `<step id>#<number>` counting from one, or a whole conversation step by
+  its `id`. A chat thread is filed as one document, so a chat record is
+  met by a fact read from its thread; give every chat record named as
+  evidence a `thread`, since posts without one are filed in windows that
+  cannot be traced to a post. A question that names something not
+  filed before it is refused when the file is read.
 
 A chat thread becomes facts only when the person took part in it and it
 has two posts or more; the rest of a chat archive is searched, never
@@ -97,15 +106,38 @@ question at a checkpoint:
 - for each expected and each outdated claim, the layers that say it and
   how many times: a current fact, a superseded or dormant one, a page's
   summary or overview, a theme, a reflection, a lesson, and the source
-  documents.
+  documents;
+- for a question with expected claims, where the facts recall carried
+  that say one came from: each is followed back through its evidence to
+  the records and messages it was read from, and a fact the agent derived
+  from other facts, a reflection or a theme, is followed to theirs. The
+  report names the inputs cited, those named in `evidence` that no
+  supporting fact rests on, how many supporting facts there were and how
+  many independent inputs they rest on, and how many lead back to no
+  input at all. Ten facts repeating one record are one source, not ten
+  confirmations.
 
 An expected claim only in the source documents was never learned. An
 outdated claim in a current fact or an overview is a stale statement, and
-the layer it stands in is where to look.
+the layer it stands in is where to look. A step's graph size counts the
+facts a later one superseded: the corrections made so far.
 
 The dream runs on the wall clock: the scenario's time is only in the
 documents' dates. What depends on the wall clock, such as decay, is not
 what a scenario measures.
+
+## Public benchmarks
+
+`scripts/longmemeval-scenarios.py` turns LongMemEval instances into one
+scenario each, and `scripts/longmemeval-summary.py` sums up their reports
+per question type. `scripts/memoryagentbench-scenarios.py` turns the
+MemoryAgentBench conflict-resolution histories (FactConsolidation, single
+and multiple hop) into one scenario a history, its facts filed as notes a
+day apart so a correction is newer than what it corrects, and
+`scripts/memoryagentbench-summary.py` reports both TeaNode's grade and the
+benchmark's own measure, whether a reference answer appears in the
+answer. Both are TeaNode's adaptation of the benchmark, not an official
+result.
 
 ## The scenarios
 

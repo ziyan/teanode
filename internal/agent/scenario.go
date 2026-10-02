@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,6 +111,12 @@ type ScenarioQuestion struct {
 	// every layer, to see where what is no longer true still stands as
 	// current.
 	OutdatedClaims []*ScenarioClaim `json:"outdatedClaims,omitempty"`
+
+	// Evidence is the inputs the expected answer rests on: a record by its
+	// id, a message as "<step id>#<number>" counting from one, or a whole
+	// conversation step by its id. scenario_evidence.go follows the facts
+	// behind an answer back to them.
+	Evidence []string `json:"evidence,omitempty"`
 }
 
 // ScenarioClaim is a statement recall has to carry, or must not: every
@@ -130,6 +137,8 @@ func ReadScenario(path string) (*Scenario, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	seen := map[string]bool{}
+	// What a question may name as its evidence: what was filed before it.
+	inputs := map[string]bool{}
 	for index, step := range scenario.Steps {
 		if step.ID == "" || seen[step.ID] {
 			return nil, fmt.Errorf("step %d needs an id of its own", index+1)
@@ -139,6 +148,14 @@ func ReadScenario(path string) (*Scenario, error) {
 		case ScenarioStepRecords:
 			if len(step.Records) == 0 {
 				return nil, fmt.Errorf("step %s files no records", step.ID)
+			}
+			for _, record := range step.Records {
+				var named struct {
+					ID string `json:"id"`
+				}
+				if err := json.Unmarshal(record, &named); err == nil && named.ID != "" {
+					inputs[named.ID] = true
+				}
 			}
 		case ScenarioStepDream:
 			if step.DreamCount <= 0 {
@@ -152,10 +169,19 @@ func ReadScenario(path string) (*Scenario, error) {
 				if question.ID == "" || strings.TrimSpace(question.Question) == "" || strings.TrimSpace(question.ExpectedAnswer) == "" {
 					return nil, fmt.Errorf("step %s: every question needs an id, the question and the expected answer", step.ID)
 				}
+				for _, named := range question.Evidence {
+					if !inputs[named] {
+						return nil, fmt.Errorf("step %s: question %s names %q as evidence, which nothing before it filed", step.ID, question.ID, named)
+					}
+				}
 			}
 		case ScenarioStepConversation:
 			if len(step.Messages) == 0 {
 				return nil, fmt.Errorf("step %s has no messages", step.ID)
+			}
+			inputs[step.ID] = true
+			for number := range step.Messages {
+				inputs[step.ID+"#"+strconv.Itoa(number+1)] = true
 			}
 		default:
 			return nil, fmt.Errorf("step %s is of kind %q; records, conversation, dream or checkpoint", step.ID, step.StepKind)
@@ -225,6 +251,10 @@ type ScenarioGraphCounts struct {
 	PageCount     int `json:"pageCount"`
 	FactCount     int `json:"factCount"`
 	OverviewCount int `json:"overviewCount"`
+
+	// SupersededFactCount is how many facts a later one corrected or
+	// replaced: the corrections the run has made so far.
+	SupersededFactCount int `json:"supersededFactCount"`
 }
 
 // ScenarioQuestionReport is one question at one checkpoint.
@@ -247,6 +277,10 @@ type ScenarioQuestionReport struct {
 	// still stands.
 	ExpectedLayers []*ScenarioClaimLayers `json:"expectedLayers"`
 	OutdatedLayers []*ScenarioClaimLayers `json:"outdatedLayers"`
+
+	// Evidence is where the carried facts that say an expected claim came
+	// from, for a question with expected claims.
+	Evidence *ScenarioEvidenceReport `json:"evidence,omitempty"`
 }
 
 // ScenarioAnswerReport is one answer and its grade.
@@ -297,6 +331,9 @@ func (scenarioOperations) Execute(_ context.Context, document string, _ map[stri
 
 // RunScenario runs a scenario from the start and reports on it.
 func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioReport, error) {
+	if err := checkScenarioAnswerSources(settings.AnswerSources); err != nil {
+		return nil, err
+	}
 	configuration := *settings.Configuration
 	configuration.Agent.Enabled = true
 	// The run's own budget is in dollars and checked between steps; the
@@ -496,6 +533,10 @@ func scenarioJobFinished(ctx context.Context, database db.Database, agentId stri
 // askScenario asks a checkpoint's questions.
 func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, step *ScenarioStep, owner *models.User, found *models.Agent) ([]*ScenarioQuestionReport, error) {
 	var reports []*ScenarioQuestionReport
+	origins, err := readScenarioOrigins(ctx, settings.Database, found.ID, scenarioThreads(settings.Scenario))
+	if err != nil {
+		return nil, err
+	}
 	for _, question := range step.Questions {
 		carried, err := self.RecallForQuestion(ctx, found, owner, question.Question)
 		if err != nil {
@@ -523,6 +564,11 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 		}
 		if questionReport.OutdatedLayers, err = scenarioLayers(ctx, settings.Database, found.ID, question.OutdatedClaims); err != nil {
 			return nil, err
+		}
+		if len(question.Expects) > 0 {
+			if questionReport.Evidence, err = traceScenarioEvidence(ctx, settings.Database, found.ID, origins, carried, question); err != nil {
+				return nil, err
+			}
 		}
 		for _, answerFrom := range settings.AnswerSources {
 			answerReport := &ScenarioAnswerReport{AnswerFrom: answerFrom}
@@ -552,6 +598,13 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 				}
 			} else {
 				evaluation, err = self.EvaluateAnswer(ctx, found, owner, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
+				// One answer the provider broke off is that answer missed,
+				// with why: a hundred questions are not lost to one stream
+				// that failed. A run that was stopped still stops, and a
+				// misspelled source was refused before the run began.
+				if err != nil && ctx.Err() == nil {
+					evaluation, err = &AnswerEvaluation{AnswerVerdict: AnswerMissed, VerdictReason: "the answer could not be given: " + err.Error()}, nil
+				}
 			}
 			if err != nil {
 				return nil, err
@@ -618,7 +671,7 @@ func (self *Agent) rememberScenarioConversation(ctx context.Context, database db
 // it; any page when the claim names none.
 func scenarioCarries(carried []*RecalledPage, claim *ScenarioClaim) bool {
 	for _, page := range carried {
-		if claim.Path != "" && !strings.EqualFold(page.Path, claim.Path) && !strings.HasPrefix(strings.ToLower(page.Path), strings.ToLower(claim.Path)+"/") {
+		if !scenarioClaimReaches(claim, page.Path) {
 			continue
 		}
 		if len(claim.Words) == 0 {
@@ -781,6 +834,11 @@ func scenarioGraphCounts(ctx context.Context, database db.Database, agentId stri
 			return err
 		}
 		counts.FactCount = len(facts)
+		for _, fact := range facts {
+			if fact.SupersededBy != "" {
+				counts.SupersededFactCount++
+			}
+		}
 		documents, err := tx.ListAgentChunkTexts(agentId, 100000)
 		counts.DocumentCount = len(documents)
 		return err
@@ -811,6 +869,9 @@ func AskScenarioAgain(ctx context.Context, settings *ScenarioSettings) (*Scenari
 	}
 	if last == nil {
 		return nil, errors.New("the scenario has no checkpoint to ask")
+	}
+	if err := checkScenarioAnswerSources(settings.AnswerSources); err != nil {
+		return nil, err
 	}
 	configuration := *settings.Configuration
 	configuration.Agent.Enabled = true
@@ -855,4 +916,20 @@ func AskScenarioAgain(ctx context.Context, settings *ScenarioSettings) (*Scenari
 	report.Cost, report.DurationMS = after-spent, time.Since(started).Milliseconds()
 	report.GraphCounts, err = scenarioGraphCounts(ctx, settings.Database, found.ID)
 	return report, err
+}
+
+// checkScenarioAnswerSources refuses an answer source no question could be
+// answered from, before a run spends anything: with every failed answer
+// reported as missed, a misspelled one would otherwise read as a run where
+// memory knew nothing.
+func checkScenarioAnswerSources(answerSources []string) error {
+	for _, answerFrom := range answerSources {
+		if answerFrom == ScenarioAnswerFromSurvey {
+			continue
+		}
+		if err := CheckAnswerSource(answerFrom); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -68,7 +68,12 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Two confirmed risks: the payment vendor contract ends March 31 with no renewal signed (checkout would stop April 1), and only one engineer knows the billing code and she leaves in April. A slower usage import is an unmeasured concern, not a risk."
+          "expectedAnswer": "Two confirmed risks: the payment vendor contract ends March 31 with no renewal signed (checkout would stop April 1), and only one engineer knows the billing code and she leaves in April. A slower usage import is an unmeasured concern, not a risk.",
+          "evidence": [
+            "note-1",
+            "chat-1",
+            "chat-2"
+          ]
         }
       ]
     },
@@ -111,7 +116,12 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Unchanged: the unsigned payment vendor renewal before March 31, and the single engineer who knows the billing code leaving in April. The slower import is still an unmeasured concern."
+          "expectedAnswer": "Unchanged: the unsigned payment vendor renewal before March 31, and the single engineer who knows the billing code leaving in April. The slower import is still an unmeasured concern.",
+          "evidence": [
+            "note-1",
+            "chat-1",
+            "chat-2"
+          ]
         }
       ]
     },
@@ -175,6 +185,13 @@
                 "no renewal is signed"
               ]
             }
+          ],
+          "evidence": [
+            "note-1",
+            "chat-11",
+            "chat-12",
+            "chat-1",
+            "chat-2"
           ]
         }
       ]
@@ -276,6 +293,14 @@
                 "leaves in April"
               ]
             }
+          ],
+          "evidence": [
+            "chat-21",
+            "chat-22",
+            "note-1",
+            "chat-24",
+            "chat-11",
+            "chat-12"
           ]
         }
       ]
@@ -318,6 +343,14 @@
                 "leaves in April"
               ]
             }
+          ],
+          "evidence": [
+            "chat-21",
+            "chat-22",
+            "note-1",
+            "chat-24",
+            "chat-11",
+            "chat-12"
           ]
         }
       ]

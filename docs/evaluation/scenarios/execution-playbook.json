@@ -188,7 +188,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Use Node 20 (nvm use 20), then run wrenfold build; Wrenfold 2 refuses to start on Node 18."
+          "expectedAnswer": "Use Node 20 (nvm use 20), then run wrenfold build; Wrenfold 2 refuses to start on Node 18.",
+          "evidence": [
+            "build-on-node-20"
+          ]
         },
         {
           "id": "staging-1",
@@ -202,7 +205,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Pass --no-cache (wrenfold deploy --target staging --no-cache); without it staging keeps serving the old version, checked through version.txt."
+          "expectedAnswer": "Pass --no-cache (wrenfold deploy --target staging --no-cache); without it staging keeps serving the old version, checked through version.txt.",
+          "evidence": [
+            "staging-exception"
+          ]
         },
         {
           "id": "production-1",
@@ -210,7 +216,10 @@
           "kind": "direct",
           "expects": [],
           "forbids": [],
-          "expectedAnswer": "No. Only wrenfold --version was run, which shows the command works, not that a production deploy does; production has not been checked."
+          "expectedAnswer": "No. Only wrenfold --version was run, which shows the command works, not that a production deploy does; production has not been checked.",
+          "evidence": [
+            "unverified-claim"
+          ]
         },
         {
           "id": "node-18-1",
@@ -224,7 +233,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "The build refuses to start: Wrenfold 2 needs Node 20 or newer."
+          "expectedAnswer": "The build refuses to start: Wrenfold 2 needs Node 20 or newer.",
+          "evidence": [
+            "build-on-node-20#3"
+          ]
         }
       ]
     },
@@ -302,6 +314,9 @@
                 "nvm use 20"
               ]
             }
+          ],
+          "evidence": [
+            "upgrade-to-3"
           ]
         },
         {
@@ -316,7 +331,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Pass --no-cache, otherwise staging keeps serving the old version."
+          "expectedAnswer": "Pass --no-cache, otherwise staging keeps serving the old version.",
+          "evidence": [
+            "staging-exception"
+          ]
         },
         {
           "id": "production-2",
@@ -324,7 +342,11 @@
           "kind": "direct",
           "expects": [],
           "forbids": [],
-          "expectedAnswer": "No, production has not been checked."
+          "expectedAnswer": "No, production has not been checked.",
+          "evidence": [
+            "unverified-claim#5",
+            "unverified-claim#6"
+          ]
         }
       ]
     },
@@ -357,6 +379,9 @@
                 "nvm use 20"
               ]
             }
+          ],
+          "evidence": [
+            "upgrade-to-3"
           ]
         },
         {
@@ -371,7 +396,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Pass --no-cache."
+          "expectedAnswer": "Pass --no-cache.",
+          "evidence": [
+            "staging-exception"
+          ]
         },
         {
           "id": "production-3",
@@ -379,7 +407,11 @@
           "kind": "direct",
           "expects": [],
           "forbids": [],
-          "expectedAnswer": "No, production has not been checked."
+          "expectedAnswer": "No, production has not been checked.",
+          "evidence": [
+            "unverified-claim#5",
+            "unverified-claim#6"
+          ]
         }
       ]
     }

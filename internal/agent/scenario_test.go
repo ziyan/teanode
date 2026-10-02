@@ -3,6 +3,7 @@ package agent_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -147,5 +148,91 @@ func TestAScenarioFilesDreamsAndReports(t *testing.T) {
 	}
 	if len(question.OutdatedLayers[0].LayerCounts) != 0 {
 		t.Fatalf("outdated claim layers: %+v", question.OutdatedLayers[0].LayerCounts)
+	}
+}
+
+// An answer the provider refuses is that answer missed, with why, and the
+// checkpoint goes on: one failed call does not lose the other questions.
+func TestAScenarioAnswerThatFailsIsMissed(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.Contains(request.URL.Path, "embeddings") {
+			writeMeaning(writer, request)
+			return
+		}
+		content, _ := io.ReadAll(request.Body)
+		if strings.Contains(string(content), "Which store holds the job state?") && !strings.Contains(string(content), "Grade") {
+			http.Error(writer, `{"error":{"message":"the request was refused"}}`, http.StatusBadRequest)
+			return
+		}
+		answer, _ := json.Marshal(`{"facts": []}`)
+		if strings.Contains(string(content), "Grade") {
+			answer, _ = json.Marshal(`{"answerVerdict": "correct", "verdictReason": "it names the store"}`)
+		} else if strings.Contains(string(content), "Where is the job state kept?") {
+			answer, _ = json.Marshal("In Burrowdb.")
+		}
+		if strings.Contains(string(content), `"stream":true`) {
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(writer,
+				"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+				answer)
+			return
+		}
+		_, _ = fmt.Fprintf(writer,
+			`{"choices":[{"message":{"role":"assistant","content":%s},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`,
+			answer)
+	}))
+	defer provider.Close()
+
+	configuration := config.Default()
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: provider.URL, APIKey: "k"}}
+	configuration.Agent.Models.Default = "fake:writer"
+	configuration.Agent.Models.Scan = "fake:scan"
+	configuration.Agent.Models.Embedding = "fake:meaning"
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	scenarioFile := filepath.Join(t.TempDir(), "scenario.json")
+	if err := os.WriteFile(scenarioFile, []byte(`{
+		"name": "refused",
+		"steps": [
+			{"id": "decision", "stepKind": "records", "records": [
+				{"id": "d1", "kind": "note", "at": "2031-03-02T10:00:00Z", "author": "build lead", "title": "Storage",
+				 "text": "Job state is kept in Burrowdb."}
+			]},
+			{"id": "check", "stepKind": "checkpoint", "questions": [
+				{"id": "refused", "question": "Which store holds the job state?", "kind": "direct",
+				 "expects": [], "forbids": [], "expectedAnswer": "Burrowdb."},
+				{"id": "answered", "question": "Where is the job state kept?", "kind": "direct",
+				 "expects": [], "forbids": [], "expectedAnswer": "In Burrowdb."}
+			]}
+		]
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scenario, err := agent.ReadScenario(scenarioFile)
+	if err != nil {
+		t.Fatalf("ReadScenario: %s", err)
+	}
+	report, err := agent.RunScenario(t.Context(), &agent.ScenarioSettings{
+		Database: database, Storage: store, Configuration: configuration,
+		Scenario: scenario, RecordsDirectory: filepath.Join(t.TempDir(), "records"),
+		AnswerSources: []string{"sources"},
+	})
+	if err != nil {
+		t.Fatalf("RunScenario: %s", err)
+	}
+	questions := report.Steps[1].Questions
+	if len(questions) != 2 {
+		t.Fatalf("both questions are reported: %d", len(questions))
+	}
+	if refused := questions[0].Answers[0]; refused.AnswerVerdict != "missed" || !strings.Contains(refused.VerdictReason, "could not be given") {
+		t.Fatalf("the refused answer is missed, with why: %+v", refused)
+	}
+	if answered := questions[1].Answers[0]; answered.AnswerVerdict != "correct" {
+		t.Fatalf("the next question is still answered: %+v", answered)
 	}
 }
