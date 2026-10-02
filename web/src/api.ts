@@ -114,25 +114,21 @@ async function send(
   }
 }
 
-// Whether this browser is signed in as somebody else, which is for looking:
-// the server refuses every change but ending it, and so the page does not
-// send one. What the page writes on its own -- that the person is present,
-// that a message was read, that an idea was seen -- would otherwise be said
-// in their name. Set whenever the session is read.
-let isViewOnly = false
+// Whether this browser is signed in as somebody else, set whenever the
+// session is read. The operator can do whatever the person can; what the page
+// says on its own about the person being here is left unsaid, since it is
+// not them.
+let isImpersonating = false
 
-// The mutations a page signed in as somebody else may still send.
-const VIEW_ONLY_MUTATIONS = /\b(EndImpersonation|Logout)\b/
-
-// isMutation says whether a document holds a mutation, wherever it is: after
-// a comment or after a fragment as well as first.
-function isMutation(document: string): boolean {
-  return /(^|[^A-Za-z0-9_])mutation\b/.test(document.replace(/#[^\n]*/g, ''))
+// signedInAsSomebodyElse says whether an operator is signed in as the
+// account this page shows.
+export function signedInAsSomebodyElse(): boolean {
+  return isImpersonating
 }
 
-// setViewOnly is for tests; the session read sets it otherwise.
-export function setViewOnly(value: boolean) {
-  isViewOnly = value
+// setImpersonating is for tests; the session read sets it otherwise.
+export function setImpersonating(value: boolean) {
+  isImpersonating = value
 }
 
 export async function graphql<T>(
@@ -140,9 +136,6 @@ export async function graphql<T>(
   variables: Record<string, unknown> = {},
   signal?: AbortSignal,
 ): Promise<T> {
-  if (isViewOnly && isMutation(query) && !VIEW_ONLY_MUTATIONS.test(query)) {
-    throw new APIError(translateNow('api.viewOnly'))
-  }
   const response = await send(query, variables, signal)
 
   if (response.status === 401) {
@@ -208,7 +201,7 @@ const SESSION_FIELDS =
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)
-  isViewOnly = Boolean(data.GetSession.impersonatorUsername)
+  isImpersonating = Boolean(data.GetSession.impersonatorUsername)
   return data.GetSession
 }
 

@@ -15,9 +15,8 @@ import { ThemeToggle } from './components/theme'
 import { LanguagePicker, useTranslation } from './i18n/i18n'
 import { AccountMenu } from './components/accountMenu'
 import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
-import { MenuIcon } from './components/icons'
+import { MenuIcon, ShieldIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
-import { ImpersonationBanner } from './components/impersonationBanner'
 import { PasskeyNudge } from './components/passkeyNudge'
 import { SessionProvider, hasAnywhere } from './session'
 import { firstManagementPath } from './components/sidebar'
@@ -316,12 +315,24 @@ export function App() {
                   <Tooltip label={t('nav.toggle')}>
                     <button
                       type="button"
-                      className="icon-button"
-                      aria-label={t('nav.toggle')}
+                      className={session.impersonatorUsername ? 'icon-button menu-impersonated' : 'icon-button'}
+                      aria-label={
+                        session.impersonatorUsername
+                          ? `${t('nav.toggle')}: ${t('impersonation.signedInAs', { username: session.username })}`
+                          : t('nav.toggle')
+                      }
                       aria-expanded={drawerOpen}
                       onClick={() => setDrawerOpen((previous) => !previous)}
                     >
                       <MenuIcon />
+                      {/* On a phone the rail, and the avatar that says whose
+                          account this is, is behind this button: the mark
+                          goes on it too, so it is on screen on every page. */}
+                      {session.impersonatorUsername && (
+                        <span className="avatar-badge" aria-hidden="true">
+                          <ShieldIcon size={10} />
+                        </span>
+                      )}
                     </button>
                   </Tooltip>
                   {/* The way back up sits on the bar rather than on the page.
@@ -340,13 +351,6 @@ export function App() {
                 dismissed: a suggestion is only a suggestion if it can be
                 declined. The console has no username and no passkeys, so it
                 is never asked. */}
-                {session.username && session.impersonatorUsername && (
-                  <ImpersonationBanner
-                    username={session.username}
-                    impersonatorUsername={session.impersonatorUsername}
-                    endsAt={session.impersonationEndsAt}
-                  />
-                )}
                 {/* Not while signed in as somebody else: their passkeys are
                     theirs to add, and the server refuses it anyway. */}
                 {session.username && !session.impersonatorUsername && <PasskeyNudge username={session.username} />}

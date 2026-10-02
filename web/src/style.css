@@ -257,6 +257,36 @@ td a:hover {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Signed in as somebody else: the avatar wears a mark in the warning color,
+   so it shows on every page, the narrowed rail included, without a line of
+   its own. */
+.avatar-impersonated {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--warn);
+}
+
+.avatar-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: var(--surface);
+}
+
+.menu-impersonated {
+  position: relative;
+}
+
+.menu-impersonation {
+  color: var(--text);
+}
+
 .menu {
   /* Fixed, and placed from the button's rectangle: it is rendered into the
      body so that a table's scroll container cannot clip it. */
@@ -2043,35 +2073,6 @@ label span {
   align-items: center;
   flex: 0 0 auto;
   gap: var(--space-3);
-}
-
-/* Signed in as somebody else: the warning color and a heavier edge than the
-   nudge's, because it is not an offer. It stays on every page until the
-   operator goes back. */
-.impersonation {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
-  border: 1px solid var(--warn);
-  border-radius: var(--radius-3);
-}
-
-.impersonation-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 280px;
-  min-width: 0;
-  gap: 2px;
-  font-size: var(--text-body);
-}
-
-.impersonation-text span {
-  font-size: var(--text-label);
-  line-height: 1.45;
 }
 
 /* Scrolls sideways rather than wrapping, because tabs are a row: wrapped onto
