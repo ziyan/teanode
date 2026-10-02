@@ -504,7 +504,11 @@ description when it has none, in any case, and may be limited to one
 finance account and to amounts; the first by `rule_priority` wins. The rule
 made from one transaction (`CategorizeTransaction` with
 `shouldCreateSpendingRule`) matches that transaction's whole merchant, or
-description, as it is.
+description, as it is. A rule matching exactly what one already matches
+(the same words in any case, the same account, the same amount limits) is
+that rule: saving it again adds no copy, and saving it with another
+category gives the one there that category, since a later copy would
+never apply. Migration 0145 deleted the copies saved before this.
 
 Several transactions are categorized together with `CategorizeTransactions`
 (at most 500 ids): one statement in a savepoint, every one the person's

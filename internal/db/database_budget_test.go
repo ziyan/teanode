@@ -252,6 +252,51 @@ func TestSpendingRulesApplyByPriority(t *testing.T) {
 	})
 }
 
+// A rule matching exactly what one already matches is that rule: saved
+// again it is not copied, saved with another category the one there takes
+// it, and a rule that differs in account or amount limits is its own.
+func TestCreatingTheSameSpendingRuleKeepsOne(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "same-rule")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		create := func(rule models.SpendingRule) *models.SpendingRule {
+			t.Helper()
+			rule.AgentID = fixture.agentId
+			created, err := tx.CreateSpendingRule(&rule)
+			if err != nil {
+				t.Fatalf("CreateSpendingRule %+v: %s", rule, err)
+			}
+			return created
+		}
+		first := create(models.SpendingRule{MatchText: "INVENTED STORE 0042", SpendingCategoryID: byName[finance.SpendingCategoryShopping]})
+		again := create(models.SpendingRule{MatchText: "invented store 0042 ", SpendingCategoryID: byName[finance.SpendingCategoryShopping]})
+		recategorized := create(models.SpendingRule{MatchText: "Invented Store 0042", SpendingCategoryID: byName[finance.SpendingCategoryGroceries]})
+		if again.ID != first.ID || recategorized.ID != first.ID {
+			t.Errorf("the same rule was copied: %s, %s, %s", first.ID, again.ID, recategorized.ID)
+		}
+		if recategorized.SpendingCategoryID != byName[finance.SpendingCategoryGroceries] {
+			t.Errorf("the rule there did not take the new category: %+v", recategorized)
+		}
+		limited := create(models.SpendingRule{MatchText: "INVENTED STORE 0042", MaximumAmount: "-100", SpendingCategoryID: byName[finance.SpendingCategoryShopping]})
+		if limited.ID == first.ID {
+			t.Errorf("a rule with an amount limit was taken for the one without")
+		}
+		rules, err := tx.ListSpendingRules(fixture.agentId)
+		if err != nil {
+			t.Fatalf("ListSpendingRules: %s", err)
+		}
+		if len(rules) != 2 {
+			t.Errorf("rules %d, want 2: %+v", len(rules), rules)
+		}
+	})
+}
+
 // Setting a budget from a month drops the later rows that only repeated
 // what it replaced or repeat it now, so moving a budget's start earlier and
 // then changing its amount from that start changes all of it; a later
