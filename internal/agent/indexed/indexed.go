@@ -39,12 +39,6 @@ const (
 	// worth answering with.
 	SymbolLimit = 10
 
-	// PassageShown is how much of a passage a surface shows while it is
-	// listing several: enough to see whether it is the right one, short
-	// enough that a dozen of them fill neither a turn nor a terminal. The
-	// passage comes back whole; this is what the printing cuts it to.
-	PassageShown = 700
-
 	// fuseConstant is the constant of the reciprocal rank fusion below.
 	// Sixty is what the method was published with, and what the graph's
 	// own fusion uses.

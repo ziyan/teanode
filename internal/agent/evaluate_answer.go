@@ -49,13 +49,10 @@ const (
 )
 
 // evaluationPassages is how many passages an answer from the sources is
-// given, and evaluationPassageRunes how much of each: what one search by
-// the agent's own tool returns, read from the same constants so the two
-// cannot drift apart again (they had: eight of 1200 against twelve of 700).
-const (
-	evaluationPassages     = indexed.SearchLimit
-	evaluationPassageRunes = indexed.PassageShown
-)
+// given: what one search by the agent's own tool returns, each whole as
+// the tool shows it, read from the same constant so the two cannot drift
+// apart again (they had: eight of 1200 characters against twelve of 700).
+const evaluationPassages = indexed.SearchLimit
 
 // AnswerEvaluation is one question answered and graded.
 type AnswerEvaluation struct {
@@ -159,7 +156,7 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 				return err
 			}
 			for _, passage := range searched.Passages {
-				passages = append(passages, passage.Cite()+"\n"+cutRunes(passage.Text, evaluationPassageRunes))
+				passages = append(passages, passage.Cite()+"\n"+passage.Text)
 			}
 			return nil
 		}); err != nil {

@@ -254,7 +254,9 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	}
 	for _, passage := range found.Passages {
 		builder.WriteString(passage.Cite() + "\n")
-		builder.WriteString(indent(cut(passage.Text, indexed.PassageShown)) + "\n\n")
+		// Whole: a passage is at most a chunk, and cut to a third of it the
+		// answer was often in the part not shown, with nothing to say so.
+		builder.WriteString(indent(passage.Text) + "\n\n")
 	}
 	if !found.Meaningful {
 		builder.WriteString("(found by words alone; this deployment cannot search by meaning)\n")
@@ -904,14 +906,6 @@ func sourceNamed(ctx context.Context, run tools.Run, name string) (*models.Agent
 		return nil, fmt.Errorf("%q is a %s source; use the finance tool for it", name, source.Kind)
 	}
 	return source, nil
-}
-
-func cut(text string, characters int) string {
-	runes := []rune(text)
-	if len(runes) <= characters {
-		return text
-	}
-	return string(runes[:characters]) + "…"
 }
 
 func indent(text string) string {
