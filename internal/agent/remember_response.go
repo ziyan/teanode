@@ -17,6 +17,11 @@ type RememberedFact struct {
 	Happened  string `json:"happened"`
 	Quote     string `json:"quote"`
 	MessageID string `json:"message_id"`
+
+	// IsAskedToRemember says the person asked for this to be remembered.
+	// Such a fact does not count against how many a reading may file,
+	// since a list somebody asked to have kept is kept whole.
+	IsAskedToRemember bool `json:"is_asked_to_remember"`
 }
 
 // RememberedLink joins two pages.

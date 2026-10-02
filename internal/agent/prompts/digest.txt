@@ -118,7 +118,9 @@ the world as well as one about them, on the page of the thing it is
 about, with its line as the quote. That the searchable copy is kept too
 does not change it: they asked for it to be known, not found. Where a
 later statement contradicts an earlier one, file the later one and name
-the earlier in `supersedes`.
+the earlier in `supersedes`. Mark each of these facts
+`"is_asked_to_remember": true`; they do not count against the most facts
+you may file, so a list they asked to have kept is filed whole.
 
 **What is not.** Anything the index above already says. Anything the page
 itself already says: that it exists, what kind of thing it is, that it

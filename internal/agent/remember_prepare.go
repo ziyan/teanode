@@ -15,13 +15,27 @@ func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer 
 	agentId := run.Agent.ID
 	// What each fact would say, and what its page would be called.
 	prepared := make([]*preparedFact, 0, len(answer.Facts))
+	// What the person asked to be remembered is counted apart, against an
+	// allowance of its own: a list of short statements they asked to have
+	// kept would otherwise lose all but its first few. Only their own
+	// words earn it, or anybody's message saying "remember this" could
+	// fill the graph.
+	counted, asked := 0, 0
 	for index, wanted := range answer.Facts {
-		if index >= most {
-			break
-		}
 		text := strings.TrimSpace(wanted.Text)
 		if text == "" {
 			continue
+		}
+		if wanted.IsAskedToRemember && saidByThePerson(theirWords, strings.Trim(strings.TrimSpace(wanted.MessageID), "[]")) {
+			if asked >= most*askedFactsPerFact {
+				continue
+			}
+			asked++
+		} else {
+			if counted >= most {
+				continue
+			}
+			counted++
 		}
 		kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(wanted.Kind)))
 		if !models.IsAgentFactKind(kind) || kind.FromItsOwnReasoning() {
@@ -144,3 +158,9 @@ func (self *Agent) whenSaid(ctx context.Context, agentId string, evidenceKind mo
 	}
 	return nil
 }
+
+// askedFactsPerFact is how many facts the person asked to be remembered a
+// reading may file for each one it may file otherwise: one for every forty
+// characters it read, a short statement, against one for every six
+// hundred.
+const askedFactsPerFact = factRunes / 40
