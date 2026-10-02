@@ -43,7 +43,7 @@ it('takes the month from the address only when it is a month that has begun', ()
 it('reads the transaction filters out of the address', () => {
   const filters = transactionFiltersFromSearch(
     new URLSearchParams(
-      'from=2031-03-01&to=2031-03-31&spendingCategoryId=category-a&financeAccountId=account-b&text=+corner+shop+&isUncategorized=true',
+      'from=2031-03-01&to=2031-03-31&spendingCategoryId=category-a&financeAccountId=account-b&text=+corner+shop+&isUncategorized=true&isDuplicateIncluded=true',
     ),
   )
   expect(filters).toEqual({
@@ -53,13 +53,16 @@ it('reads the transaction filters out of the address', () => {
     financeAccountId: 'account-b',
     text: 'corner shop',
     isUncategorized: true,
+    isDuplicateIncluded: true,
   })
 })
 
 // A day that is not a day would only be refused by the server; it is
 // dropped, and an address with nothing in it is no filter at all.
 it('drops days that are not days and reads an empty address as no filters', () => {
-  const filters = transactionFiltersFromSearch(new URLSearchParams('from=2031-02-30&to=yesterday&isUncategorized=1'))
+  const filters = transactionFiltersFromSearch(
+    new URLSearchParams('from=2031-02-30&to=yesterday&isUncategorized=1&isDuplicateIncluded=yes'),
+  )
   expect(filters).toEqual(NO_TRANSACTION_FILTERS)
   expect(transactionFiltersFromSearch(new URLSearchParams(''))).toEqual(NO_TRANSACTION_FILTERS)
 })
@@ -70,6 +73,9 @@ it('writes only the filters that are set, and reads back what it wrote', () => {
   expect(search.toString()).toBe('from=2031-03-01&spendingCategoryId=category-a')
   expect(transactionFiltersFromSearch(search)).toEqual(filters)
   expect(searchFromTransactionFilters(NO_TRANSACTION_FILTERS).toString()).toBe('')
+  const withDuplicates = { ...NO_TRANSACTION_FILTERS, isDuplicateIncluded: true }
+  expect(searchFromTransactionFilters(withDuplicates).toString()).toBe('isDuplicateIncluded=true')
+  expect(transactionFiltersFromSearch(searchFromTransactionFilters(withDuplicates))).toEqual(withDuplicates)
 })
 
 it('links to the transactions section with its filters', () => {

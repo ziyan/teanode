@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
-import { ChevronRightIcon, CloseIcon, FilterIcon, SortIcon } from './icons'
+import { CloseIcon, FilterIcon, SortIcon } from './icons'
 import { MultiSelectFilter, Option, TextFilter, matchesSelection, matchesText } from './filters'
-import { Select } from './select'
+import { PAGE_SIZES, Pager, usePageInAddress } from './pager'
 import { Tooltip } from './tooltip'
 
 // One table, used by every list. The mail list and the queue had the same
@@ -99,8 +99,6 @@ export type Column<Row> = {
 
 export type Sort = { key: string; direction: 'ascending' | 'descending' }
 
-const PAGE_SIZES = [25, 50, 100, 200]
-
 // Remote is a list the server pages: the rows given are one page of it,
 // total is how long the whole list is, and onRange is told which page,
 // how many rows, which filters and which order to fetch whenever any of
@@ -193,37 +191,16 @@ export function DataTable<Row>({
   // kept in session storage, so a list opened at page four could not be sent
   // to anybody, came back as page one after a reload, and gave the back
   // button nothing to return to.
-  //
-  // The page is counted from one here because it is written for a person to
-  // read; inside it is counted from zero, as the slice needs.
-  const [parameters, setParameters] = useSearchParams()
-  const asked = Number(parameters.get('rows'))
-  const pageSize = PAGE_SIZES.includes(asked)
-    ? asked
-    : PAGE_SIZES.includes(remembered.current.pageSize ?? 0)
+  const paging = usePageInAddress({
+    defaultPageSize: PAGE_SIZES.includes(remembered.current.pageSize ?? 0)
       ? (remembered.current.pageSize as number)
-      : 50
-  const page = Math.max(0, (Number(parameters.get('page')) || 1) - 1)
-
-  // Writing one of them leaves everything else in the address alone: the
-  // filters that brought somebody to this list are in there too.
-  const setParameter = (name: string, value: string | null) => {
-    const written = new URLSearchParams(parameters)
-    if (value === null) {
-      written.delete(name)
-    } else {
-      written.set(name, value)
-    }
-    setParameters(written)
-  }
-  const setPage = (next: number) => setParameter('page', next <= 0 ? null : String(next + 1))
+      : 50,
+  })
+  const pageSize = paging.pageSize
+  const page = paging.pageIndex
+  const setPage = (next: number) => paging.setPageIndex(next)
   const setPageSize = (next: number) => {
-    const written = new URLSearchParams(parameters)
-    written.set('rows', String(next))
-    // A different page size means different pages; page four of fifty is not
-    // page four of two hundred.
-    written.delete('page')
-    setParameters(written)
+    paging.setPageSize(next)
     // Remembered as well as written down, so the size somebody chose is
     // still theirs on the next list they open.
     writeRemembered(pathname, { pageSize: next })
@@ -278,10 +255,14 @@ export function DataTable<Row>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, pageSize, order])
 
-  // How long the list is: the rows in hand, or what the server says.
+  // How long the list is: the rows in hand, or what the server says. A
+  // remote list's total is not known before its first answer, so the page
+  // in the address is asked for as it is rather than cut to the one page
+  // a total of nothing has, which fetched page one and then the page
+  // asked for.
   const total = remote ? remote.total : filtered.length
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
-  const current = Math.min(page, pageCount - 1)
+  const current = remote && total === 0 ? page : Math.min(page, pageCount - 1)
   const visible = remote ? rows : sorted.slice(current * pageSize, current * pageSize + pageSize)
 
   // A remote list is fetched for the page, size, filters and order in
@@ -382,9 +363,13 @@ export function DataTable<Row>({
                     checked={visible.length > 0 && visible.every((row) => selected?.has(rowKey(row)))}
                     ref={(input) => {
                       if (input) {
-                        // Some but not all: the box says so rather than
-                        // looking empty when half the list is chosen.
-                        input.indeterminate = chosen.length > 0 && !visible.every((row) => selected?.has(rowKey(row)))
+                        // Some but not all of the page: the box says so
+                        // rather than looking empty when half of it is
+                        // chosen. Rows chosen on other pages are not this
+                        // box's to show.
+                        input.indeterminate =
+                          visible.some((row) => selected?.has(rowKey(row))) &&
+                          !visible.every((row) => selected?.has(rowKey(row)))
                       }
                     }}
                     onChange={(event) => {
@@ -576,53 +561,14 @@ export function DataTable<Row>({
             </button>
           )}
 
-          <span className="table-pagination">
-            {/* Part of the table's furniture rather than a field of a form,
-                so it is drawn the way the rest of the page is: a native
-                select opens its list in the operating system's colors, which
-                on a dark page is a white rectangle. */}
-            <span className="table-rows">
-              <span className="muted">{t('table.rowsPerPage')}</span>
-              <Select
-                className="select-number"
-                label={t('table.rowsPerPage')}
-                value={String(pageSize)}
-                options={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
-                onChange={(value) => setPageSize(Number(value))}
-              />
-            </span>
-
-            <span className="muted">
-              {t('table.range', {
-                first: current * pageSize + 1,
-                last: Math.min(total, (current + 1) * pageSize),
-                total,
-              })}
-            </span>
-
-            <Tooltip label={t('table.previous')}>
-              <button
-                className="icon-button"
-                aria-label={t('table.previous')}
-                disabled={current === 0}
-                onClick={() => setPage(current - 1)}
-              >
-                <span className="flip">
-                  <ChevronRightIcon size={16} />
-                </span>
-              </button>
-            </Tooltip>
-            <Tooltip label={t('table.next')}>
-              <button
-                className="icon-button"
-                aria-label={t('table.next')}
-                disabled={current >= pageCount - 1}
-                onClick={() => setPage(current + 1)}
-              >
-                <ChevronRightIcon size={16} />
-              </button>
-            </Tooltip>
-          </span>
+          <Pager
+            pageIndex={current}
+            pageSize={pageSize}
+            shownCount={remote ? rows.length : Math.max(0, Math.min(total, (current + 1) * pageSize) - current * pageSize)}
+            totalCount={total}
+            onPageIndex={setPage}
+            onPageSize={setPageSize}
+          />
         </div>
       )}
     </>

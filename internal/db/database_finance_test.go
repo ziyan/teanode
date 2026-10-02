@@ -468,6 +468,97 @@ func TestListFinanceTransactionsFiltersAndPages(t *testing.T) {
 	})
 }
 
+// A page by its number reads the same rows in the same order as the
+// cursor does, and its total counts what the filters match on every page,
+// not what is left after the page.
+func TestListFinanceTransactionsByOffsetCountsTheTotal(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-offset")
+	result := sampleFinanceSync()
+	for index, day := range []string{"2026-09-03", "2026-09-03", "2026-09-05", "2026-09-07"} {
+		result.Added = append(result.Added, finance.Transaction{
+			ProviderTransactionID: fmt.Sprintf("coffee-%d", index), ProviderAccountID: "account-card",
+			PostedOn: day, Amount: "-4.50", CurrencyCode: "USD", Description: "HARBOR COFFEE",
+		})
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		byCursor := []string{}
+		cursor := ""
+		for {
+			page, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Limit: 3, After: cursor})
+			if err != nil {
+				t.Fatalf("ListFinanceTransactions: %s", err)
+			}
+			if page.TotalCount != 0 {
+				t.Errorf("the total is counted only when asked for, got %d", page.TotalCount)
+			}
+			for _, transaction := range page.FinanceTransactions {
+				byCursor = append(byCursor, transaction.ID)
+			}
+			if page.NextCursor == "" {
+				break
+			}
+			cursor = page.NextCursor
+		}
+		byOffset := []string{}
+		for offset := 0; offset < 9; offset += 3 {
+			page, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Limit: 3, Offset: offset, ShouldCountTotal: true})
+			if err != nil {
+				t.Fatalf("ListFinanceTransactions at %d: %s", offset, err)
+			}
+			if page.TotalCount != 7 {
+				t.Errorf("at %d the total is %d, want 7", offset, page.TotalCount)
+			}
+			if isLast := offset == 6; isLast != (page.NextCursor == "") {
+				t.Errorf("at %d the next cursor is %q", offset, page.NextCursor)
+			}
+			for _, transaction := range page.FinanceTransactions {
+				byOffset = append(byOffset, transaction.ID)
+			}
+		}
+		if fmt.Sprint(byOffset) != fmt.Sprint(byCursor) || len(byOffset) != 7 {
+			t.Errorf("by offset %v, by cursor %v", byOffset, byCursor)
+		}
+
+		for description, testCase := range map[string]struct {
+			filter             db.FinanceTransactionFilter
+			expectedCount      int
+			expectedTotalCount int
+		}{
+			"words, the second page":  {filter: db.FinanceTransactionFilter{Text: "harbor", Limit: 3, Offset: 3}, expectedCount: 1, expectedTotalCount: 4},
+			"days and an account":     {filter: db.FinanceTransactionFilter{From: "2026-09-03", To: "2026-09-05", FinanceAccountID: "not-an-account"}, expectedCount: 0, expectedTotalCount: 0},
+			"money out, past the end": {filter: db.FinanceTransactionFilter{MaximumAmount: "0", Offset: 50}, expectedCount: 0, expectedTotalCount: 6},
+			"from a cursor":           {filter: db.FinanceTransactionFilter{After: cursorAfter(t, tx, fixture.agentId), Limit: 2}, expectedCount: 2, expectedTotalCount: 7},
+		} {
+			filter := testCase.filter
+			filter.ShouldCountTotal = true
+			page, err := tx.ListFinanceTransactions(fixture.agentId, &filter)
+			if err != nil {
+				t.Fatalf("%s: %s", description, err)
+			}
+			if len(page.FinanceTransactions) != testCase.expectedCount || page.TotalCount != testCase.expectedTotalCount {
+				t.Errorf("%s: %d of %d, want %d of %d", description, len(page.FinanceTransactions), page.TotalCount, testCase.expectedCount, testCase.expectedTotalCount)
+			}
+		}
+		if _, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Offset: -1}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("a negative offset must be refused, got %v", err)
+		}
+	})
+}
+
+// cursorAfter is the cursor after the newest finance transaction.
+func cursorAfter(t *testing.T, tx db.Transaction, agentId string) string {
+	t.Helper()
+	page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{Limit: 1})
+	if err != nil || page.NextCursor == "" {
+		t.Fatalf("the first page: %v %+v", err, page)
+	}
+	return page.NextCursor
+}
+
 // Transfers are neither spending nor income, and the summary groups by
 // what it is asked to.
 func TestFinanceSpendingSummaryLeavesOutTransfers(t *testing.T) {

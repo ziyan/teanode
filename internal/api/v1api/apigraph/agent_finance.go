@@ -333,18 +333,23 @@ type FinanceAccountView struct {
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
 
-// FinanceTransactionPageView is one page of finance transactions and the
-// cursor for the next, empty on the last.
+// FinanceTransactionPageView is one page of finance transactions, the
+// cursor for the next, empty on the last, how many match the filters on
+// every page, and how many mirrored copies would match too but were left
+// out because duplicates were not asked for.
 type FinanceTransactionPageView struct {
-	FinanceTransactions []*models.FinanceTransaction `json:"financeTransactions"`
-	NextCursor          string                       `json:"nextCursor,omitempty" graphapi:"nullable"`
+	FinanceTransactions   []*models.FinanceTransaction `json:"financeTransactions"`
+	NextCursor            string                       `json:"nextCursor,omitempty" graphapi:"nullable"`
+	TotalCount            int                          `json:"totalCount"`
+	LeftOutDuplicateCount int                          `json:"leftOutDuplicateCount"`
 }
 
-// FinanceTradePageView is one page of trades and the cursor for the next,
-// empty on the last.
+// FinanceTradePageView is one page of trades, the cursor for the next,
+// empty on the last, and how many match the filters on every page.
 type FinanceTradePageView struct {
 	FinanceTrades []*models.FinanceTrade `json:"financeTrades"`
 	NextCursor    string                 `json:"nextCursor,omitempty" graphapi:"nullable"`
+	TotalCount    int                    `json:"totalCount"`
 }
 
 // FinanceSpendingSummaryView is a spending summary: per group and
@@ -443,14 +448,21 @@ type FinanceTransactionsArguments struct {
 	// finance transaction, its duplicates.
 	DuplicateOfTransactionID string `json:"duplicateOfTransactionId" graphapi:"nullable"`
 
+	// IsDuplicateIncluded lists the mirrored copies too. They are left
+	// out otherwise, as every total leaves them out, except when asking
+	// for a counted copy's duplicates or for finance transactions by id.
+	IsDuplicateIncluded *bool `json:"isDuplicateIncluded" graphapi:"nullable"`
+
 	// FinanceTransactionIDs keeps only these finance transactions, to read
 	// one by its id.
 	FinanceTransactionIDs []string `json:"financeTransactionIds" graphapi:"nullable"`
 
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
-	// page before.
-	Limit *int   `json:"limit" graphapi:"nullable"`
-	After string `json:"after" graphapi:"nullable"`
+	// page before; Offset is how many to pass over, for a page by its
+	// number, counted from After when both are given.
+	Limit  *int   `json:"limit" graphapi:"nullable"`
+	After  string `json:"after" graphapi:"nullable"`
+	Offset *int   `json:"offset" graphapi:"nullable"`
 }
 
 // FinanceTradesArguments narrow a page of trades. Every field is
@@ -464,9 +476,11 @@ type FinanceTradesArguments struct {
 	FinanceSecurityID string `json:"financeSecurityId" graphapi:"nullable"`
 
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
-	// page before.
-	Limit *int   `json:"limit" graphapi:"nullable"`
-	After string `json:"after" graphapi:"nullable"`
+	// page before; Offset is how many to pass over, for a page by its
+	// number, counted from After when both are given.
+	Limit  *int   `json:"limit" graphapi:"nullable"`
+	After  string `json:"after" graphapi:"nullable"`
+	Offset *int   `json:"offset" graphapi:"nullable"`
 }
 
 // FinanceSpendingSummaryArguments say what a spending summary covers.
@@ -1432,12 +1446,18 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 	if arguments.IsUncategorized != nil {
 		filter.IsUncategorized = *arguments.IsUncategorized
 	}
+	isDuplicateIncluded := arguments.IsDuplicateIncluded != nil && *arguments.IsDuplicateIncluded
+	filter.IsDuplicateExcluded = !isDuplicateIncluded && filter.DuplicateOfTransactionID == "" && len(filter.FinanceTransactionIDs) == 0
 	if arguments.Limit != nil {
 		if *arguments.Limit < 0 {
 			return nil, fmt.Errorf("%w: limit cannot be negative", api.ErrInvalidArguments)
 		}
 		filter.Limit = *arguments.Limit
 	}
+	if filter.Offset, err = offsetArgument(arguments.Offset); err != nil {
+		return nil, err
+	}
+	filter.ShouldCountTotal = true
 	page, err := self.transaction(ctx).ListFinanceTransactions(found.ID, filter)
 	if err != nil {
 		return nil, financeError(err)
@@ -1446,7 +1466,9 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 	if transactions == nil {
 		transactions = []*models.FinanceTransaction{}
 	}
-	return &FinanceTransactionPageView{FinanceTransactions: transactions, NextCursor: page.NextCursor}, nil
+	return &FinanceTransactionPageView{
+		FinanceTransactions: transactions, NextCursor: page.NextCursor, TotalCount: page.TotalCount, LeftOutDuplicateCount: page.LeftOutDuplicateCount,
+	}, nil
 }
 
 func (self *graph) FinanceTrades(ctx context.Context, arguments FinanceTradesArguments) (*FinanceTradePageView, error) {
@@ -1470,6 +1492,10 @@ func (self *graph) FinanceTrades(ctx context.Context, arguments FinanceTradesArg
 		}
 		filter.Limit = *arguments.Limit
 	}
+	if filter.Offset, err = offsetArgument(arguments.Offset); err != nil {
+		return nil, err
+	}
+	filter.ShouldCountTotal = true
 	page, err := self.transaction(ctx).ListFinanceTrades(found.ID, filter)
 	if err != nil {
 		return nil, financeError(err)
@@ -1478,7 +1504,19 @@ func (self *graph) FinanceTrades(ctx context.Context, arguments FinanceTradesArg
 	if trades == nil {
 		trades = []*models.FinanceTrade{}
 	}
-	return &FinanceTradePageView{FinanceTrades: trades, NextCursor: page.NextCursor}, nil
+	return &FinanceTradePageView{FinanceTrades: trades, NextCursor: page.NextCursor, TotalCount: page.TotalCount}, nil
+}
+
+// offsetArgument is how many rows a page passes over: none when it is
+// not given, refused when negative.
+func offsetArgument(offset *int) (int, error) {
+	if offset == nil {
+		return 0, nil
+	}
+	if *offset < 0 {
+		return 0, fmt.Errorf("%w: offset cannot be negative", api.ErrInvalidArguments)
+	}
+	return *offset, nil
 }
 
 // financeTransactionGroupKey is the key a finance transaction is summed

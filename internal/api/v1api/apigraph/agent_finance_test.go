@@ -277,6 +277,16 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			test.Fatalf("FinanceTransactions %v %v", page, err)
 		}
 		assertNoSecret(test, "FinanceTransactions", page)
+		// A page by its number says how many there are on every page.
+		one, offset := 1, 1
+		second, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{Limit: &one, Offset: &offset})
+		if err != nil || len(second.FinanceTransactions) != 1 || second.TotalCount != 2 || second.FinanceTransactions[0].ID != page.FinanceTransactions[1].ID {
+			test.Fatalf("the second page %+v %v", second, err)
+		}
+		negative := -1
+		if _, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{Offset: &negative}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a negative offset must be refused, got %v", err)
+		}
 		providers, err := resolver.FinanceProviders(ctx)
 		if err != nil || len(providers) != 2 {
 			test.Fatalf("FinanceProviders %v %v", providers, err)

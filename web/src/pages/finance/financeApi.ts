@@ -77,9 +77,14 @@ export type FinanceTransaction = {
   modifiedAt: string
 }
 
+// FinanceTransactionPage is one page of finance transactions: how many
+// match the filters on every page, and how many mirrored copies matched
+// too but were left out because they were not asked for.
 export type FinanceTransactionPage = {
   financeTransactions: FinanceTransaction[]
   nextCursor?: string | null
+  totalCount: number
+  leftOutDuplicateCount: number
 }
 
 export type SpendingCategory = {
@@ -343,6 +348,7 @@ export type FinanceTrade = {
 export type FinanceTradePage = {
   financeTrades: FinanceTrade[]
   nextCursor?: string | null
+  totalCount: number
 }
 
 export type NetWorthPoint = { netWorthOn: string; netWorthAmount: string }
@@ -533,17 +539,39 @@ const TRANSACTION_FIELDS = `id financeAccountId providerTransactionId postedOn t
   providerMetadata spendingCategoryId categorizedBy categorizationConfidence
   duplicateOfTransactionId duplicateDecidedBy createdAt modifiedAt`
 
+// FINANCE_TRANSACTIONS is a page of finance transactions by its offset,
+// and how many there are on every page. The mirrored copies are left out
+// unless isDuplicateIncluded, except when asked for by their counted copy
+// or by id, which is how a transaction's details reach them.
 export const FINANCE_TRANSACTIONS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
   $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String,
-  $financeTransactionIds: [String!], $limit: Int, $after: String) {
+  $isDuplicateIncluded: Boolean, $financeTransactionIds: [String!], $limit: Int, $offset: Int) {
   FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text,
     spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized,
-    duplicateOfTransactionId: $duplicateOfTransactionId, financeTransactionIds: $financeTransactionIds,
-    limit: $limit, after: $after) {
+    duplicateOfTransactionId: $duplicateOfTransactionId, isDuplicateIncluded: $isDuplicateIncluded,
+    financeTransactionIds: $financeTransactionIds, limit: $limit, offset: $offset) {
     financeTransactions { ${TRANSACTION_FIELDS} }
+    totalCount
+    leftOutDuplicateCount
+  }
+}`
+
+// FINANCE_TRANSACTION_IDS is the ids alone of a page of the finance
+// transactions the filters match, read from where the last page ended,
+// for choosing every one of them across pages.
+export const FINANCE_TRANSACTION_IDS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
+  $spendingCategoryId: String, $isUncategorized: Boolean, $isDuplicateIncluded: Boolean, $limit: Int, $after: String) {
+  FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text,
+    spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized,
+    isDuplicateIncluded: $isDuplicateIncluded, limit: $limit, after: $after) {
+    financeTransactions { id }
     nextCursor
   }
 }`
+
+// The most finance transactions one read gives, which is what the ids of
+// every one are read in pieces of.
+export const MAXIMUM_LISTED_TRANSACTION_COUNT = 200
 
 export const CATEGORIZE_TRANSACTION = `mutation ($financeTransactionId: String!, $spendingCategoryId: String,
   $shouldCreateSpendingRule: Boolean) {
@@ -766,11 +794,11 @@ const TRADE_FIELDS = `id financeAccountId financeSecurityId financeSecurity { ${
   tradeKind tradeSubkind tradedQuantity unitPrice tradeAmount feeAmount currencyCode description`
 
 export const FINANCE_TRADES = `query ($from: String, $to: String, $financeAccountId: String, $financeSecurityId: String,
-  $limit: Int, $after: String) {
+  $limit: Int, $offset: Int) {
   FinanceTrades(from: $from, to: $to, financeAccountId: $financeAccountId, financeSecurityId: $financeSecurityId,
-    limit: $limit, after: $after) {
+    limit: $limit, offset: $offset) {
     financeTrades { ${TRADE_FIELDS} }
-    nextCursor
+    totalCount
   }
 }`
 

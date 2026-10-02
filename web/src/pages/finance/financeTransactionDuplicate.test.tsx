@@ -65,7 +65,7 @@ function renderDialog(financeTransaction: FinanceTransaction, handlers: Partial<
 // counts for nothing while it is a duplicate.
 it('says what a duplicate mirrors and counts it on request', async () => {
   const counted = fee('fee-counted', 'account-first')
-  execute.mockResolvedValue({ FinanceTransactions: { financeTransactions: [counted], nextCursor: null } })
+  execute.mockResolvedValue({ FinanceTransactions: { financeTransactions: [counted], totalCount: 1, leftOutDuplicateCount: 0 } })
   const onCount = vi.fn()
   const { onOpenTransaction } = renderDialog(
     fee('fee-copy', 'account-second', { duplicateOfTransactionId: 'fee-counted', duplicateDecidedBy: 'mirror_detection' }),
@@ -89,7 +89,8 @@ it('names the duplicates of a counted copy', async () => {
   execute.mockResolvedValue({
     FinanceTransactions: {
       financeTransactions: [fee('fee-copy', 'account-second', { duplicateOfTransactionId: 'fee-counted' })],
-      nextCursor: null,
+      totalCount: 1,
+      leftOutDuplicateCount: 0,
     },
   })
   renderDialog(fee('fee-counted', 'account-first'))
@@ -103,7 +104,7 @@ it('names the duplicates of a counted copy', async () => {
 
 // One the person counted says so, and hands it back to detection.
 it('takes back the person counting a copy', async () => {
-  execute.mockResolvedValue({ FinanceTransactions: { financeTransactions: [], nextCursor: null } })
+  execute.mockResolvedValue({ FinanceTransactions: { financeTransactions: [], totalCount: 0, leftOutDuplicateCount: 0 } })
   const onUndoCount = vi.fn()
   renderDialog(fee('fee-copy', 'account-second', { duplicateDecidedBy: 'person' }), { onUndoCount })
   expect(screen.getByText('finance.countedByPerson')).toBeTruthy()
@@ -122,10 +123,11 @@ function isDuplicateTagged(merchantName: string): boolean {
 }
 
 // Handing a copy back to detection can make it the counted copy and the
-// one that was counted a duplicate of it, so every page read so far is
-// read again, the second page from the same cursor, and not only the row
-// clicked; and the open details read again the duplicates they name.
-it('reads every loaded page and the details again after the person counts or takes it back', async () => {
+// one that was counted a duplicate of it, so the page shown is read again,
+// at the same offset, and not only the row clicked; and the open details
+// read again the duplicates they name. The duplicates are listed because
+// the address asks for them.
+it('reads the page shown and the details again after the person counts or takes it back', async () => {
   window.matchMedia = ((query: string) => ({
     matches: true,
     media: query,
@@ -133,23 +135,24 @@ it('reads every loaded page and the details again after the person counts or tak
     removeEventListener: () => {},
   })) as unknown as typeof window.matchMedia
   const second = fee('fee-second', 'account-second', { merchantName: 'Fee on second', duplicateDecidedBy: 'person' })
-  let firstPage = [second, fee('fee-first', 'account-first', { merchantName: 'Fee on first' })]
-  let secondPage = [fee('fee-third', 'account-first', { merchantName: 'Fee on third', duplicateOfTransactionId: 'fee-first' })]
+  let shownPage = [
+    second,
+    fee('fee-first', 'account-first', { merchantName: 'Fee on first' }),
+    fee('fee-third', 'account-first', { merchantName: 'Fee on third', duplicateOfTransactionId: 'fee-first' }),
+  ]
   const undone = { ...second, duplicateDecidedBy: '' }
   let isUndone = false
   execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
     if (document.includes('UndoCountTransaction')) {
       isUndone = true
       // The copy stored first counts again, and the others are its duplicates.
-      firstPage = [
+      shownPage = [
         { ...second, duplicateDecidedBy: '' },
         fee('fee-first', 'account-first', {
           merchantName: 'Fee on first',
           duplicateOfTransactionId: 'fee-second',
           duplicateDecidedBy: 'mirror_detection',
         }),
-      ]
-      secondPage = [
         fee('fee-third', 'account-first', {
           merchantName: 'Fee on third',
           duplicateOfTransactionId: 'fee-second',
@@ -161,21 +164,24 @@ it('reads every loaded page and the details again after the person counts or tak
     if (document.includes('FinanceAccounts')) return { FinanceAccounts: accounts }
     if (document.includes('SpendingCategories')) return { SpendingCategories: [] }
     if (variables?.duplicateOfTransactionId === 'fee-second') {
-      return { FinanceTransactions: { financeTransactions: isUndone ? [firstPage[1], secondPage[0]] : [], nextCursor: null } }
+      return {
+        FinanceTransactions: {
+          financeTransactions: isUndone ? [shownPage[1], shownPage[2]] : [],
+          totalCount: isUndone ? 2 : 0,
+          leftOutDuplicateCount: 0,
+        },
+      }
     }
-    if (variables?.after === 'cursor-second-page') {
-      return { FinanceTransactions: { financeTransactions: secondPage, nextCursor: null } }
-    }
-    return { FinanceTransactions: { financeTransactions: firstPage, nextCursor: 'cursor-second-page' } }
+    return { FinanceTransactions: { financeTransactions: shownPage, totalCount: 28, leftOutDuplicateCount: 0 } }
   })
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={['/?isDuplicateIncluded=true&rows=25&page=2']}>
       <FinanceTransactionsSection />
     </MemoryRouter>,
   )
-  fireEvent.click(await screen.findByText('finance.loadMore'))
   expect(await screen.findByText('Fee on third')).toBeTruthy()
   expect(isDuplicateTagged('Fee on first')).toBe(false)
+  expect(isDuplicateTagged('Fee on third')).toBe(true)
 
   fireEvent.click(screen.getByText('Fee on second'))
   fireEvent.click(await screen.findByText('finance.letDetectionDecide'))
@@ -187,6 +193,12 @@ it('reads every loaded page and the details again after the person counts or tak
   expect(await screen.findByText('finance.duplicates')).toBeTruthy()
   expect(screen.getAllByText(/finance\.copyOnAccount .*First Brokerage/).length).toBe(2)
   expect(execute).toHaveBeenCalledWith(expect.stringContaining('UndoCountTransaction'), { financeTransactionId: 'fee-second' })
-  const secondPageReads = execute.mock.calls.filter(([, variables]) => variables?.after === 'cursor-second-page')
-  expect(secondPageReads.length).toBe(2)
+  const pageReads = execute.mock.calls.filter(
+    ([document, variables]) => document.includes('FinanceTransactions(') && variables?.duplicateOfTransactionId === undefined,
+  )
+  // The second page of 25, twice, and never the first.
+  expect(pageReads.map(([, variables]) => [variables?.offset, variables?.limit, variables?.isDuplicateIncluded])).toEqual([
+    [25, 25, true],
+    [25, 25, true],
+  ])
 })

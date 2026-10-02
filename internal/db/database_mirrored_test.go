@@ -318,6 +318,25 @@ func TestMirroredFinanceTransactionsCountOnce(t *testing.T) {
 			}
 		}
 		withCopies = transferCategoryTotals(t, tx, fixture.agentId)
+
+		// A listing that leaves the copies out counts them apart, under
+		// the same filters as its total.
+		every, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Text: "fee", ShouldCountTotal: true})
+		if err != nil || every.LeftOutDuplicateCount != 0 {
+			t.Fatalf("with the copies, none is left out: %v %+v", err, every)
+		}
+		counted, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Text: "fee", IsDuplicateExcluded: true, ShouldCountTotal: true})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		if counted.LeftOutDuplicateCount == 0 || counted.TotalCount+counted.LeftOutDuplicateCount != every.TotalCount || len(counted.FinanceTransactions) != counted.TotalCount {
+			t.Errorf("%d listed and %d left out of %d", counted.TotalCount, counted.LeftOutDuplicateCount, every.TotalCount)
+		}
+		for _, financeTransaction := range counted.FinanceTransactions {
+			if financeTransaction.DuplicateOfTransactionID != "" {
+				t.Errorf("a copy was listed: %+v", financeTransaction)
+			}
+		}
 	})
 	// Every duplicate deleted outright, which is what counting once means.
 	dbtest.Exec(t, database, fmt.Sprintf(`DELETE FROM "agent_finance_transaction" WHERE "agent_id" = '%s' AND "duplicate_of_transaction_id" IS NOT NULL`, fixture.agentId))

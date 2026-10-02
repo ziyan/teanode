@@ -11,8 +11,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// A fee one connection reports on two accounts lists twice, the copy
-// naming the counted one, and counts once in the spending summary. The
+// A fee one connection reports on two accounts lists once, the copy
+// counted as left out, and twice when duplicates are asked for, the copy
+// naming the counted one; it counts once in the spending summary. The
 // person counting the copy makes it count; taking that back makes it a
 // duplicate again. Counting the counted copy, or another person's
 // transaction, is refused, and one is read by its id only by its owner.
@@ -42,9 +43,15 @@ func TestMirroredCopiesCountOnceAndThePersonCanCountOne(test *testing.T) {
 
 	var copyId, countedId string
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
-		page, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{})
-		if err != nil || len(page.FinanceTransactions) != 2 {
-			test.Fatalf("both copies are listed: %+v %v", page, err)
+		listed, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{})
+		if err != nil || len(listed.FinanceTransactions) != 1 || listed.TotalCount != 1 || listed.LeftOutDuplicateCount != 1 ||
+			listed.FinanceTransactions[0].DuplicateOfTransactionID != "" {
+			test.Fatalf("the counted copy is listed and the other left out: %+v %v", listed, err)
+		}
+		isDuplicateIncluded := true
+		page, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{IsDuplicateIncluded: &isDuplicateIncluded})
+		if err != nil || len(page.FinanceTransactions) != 2 || page.TotalCount != 2 || page.LeftOutDuplicateCount != 0 {
+			test.Fatalf("both copies are listed when asked for: %+v %v", page, err)
 		}
 		for _, financeTransaction := range page.FinanceTransactions {
 			if financeTransaction.DuplicateOfTransactionID != "" {
@@ -61,10 +68,15 @@ func TestMirroredCopiesCountOnceAndThePersonCanCountOne(test *testing.T) {
 		if err != nil || len(duplicates.FinanceTransactions) != 1 || duplicates.FinanceTransactions[0].ID != copyId {
 			test.Errorf("the counted copy's duplicates: %+v %v", duplicates, err)
 		}
-		// The details of a copy ask for its counted copy by id.
+		// The details of a copy ask for its counted copy by id, and a copy
+		// is read by its id though the list leaves copies out.
 		byId, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{FinanceTransactionIDs: []string{countedId}})
 		if err != nil || len(byId.FinanceTransactions) != 1 || byId.FinanceTransactions[0].ID != countedId {
 			test.Errorf("the counted copy by its id: %+v %v", byId, err)
+		}
+		copyById, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{FinanceTransactionIDs: []string{copyId}})
+		if err != nil || len(copyById.FinanceTransactions) != 1 || copyById.FinanceTransactions[0].ID != copyId {
+			test.Errorf("the copy by its id: %+v %v", copyById, err)
 		}
 		if _, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{FinanceTransactionIDs: []string{" "}}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a blank id answered %v", err)

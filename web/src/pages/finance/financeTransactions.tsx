@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
-import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { Column, DataTable } from '../../components/dataTable'
+import { ErrorMessage, Tag } from '../../components/common'
+import { Column, DataTable, Range } from '../../components/dataTable'
 import { ConfirmDialog } from '../../components/dialog'
 import { Select } from '../../components/select'
 import { SettingsSection } from '../../components/settingsList'
@@ -17,11 +17,13 @@ import {
   COUNT_TRANSACTION,
   FINANCE_ACCOUNTS,
   FINANCE_TRANSACTIONS,
+  FINANCE_TRANSACTION_IDS,
   FinanceAccount,
   FinanceTransaction,
   FinanceTransactionPage,
   ConfirmedSpendingRule,
   MAXIMUM_CATEGORIZED_TRANSACTION_COUNT,
+  MAXIMUM_LISTED_TRANSACTION_COUNT,
   MAXIMUM_PROPOSED_TRANSACTION_COUNT,
   MAXIMUM_SPENDING_RULE_PROPOSAL_COUNT,
   PROPOSE_SPENDING_RULES,
@@ -29,7 +31,6 @@ import {
   SpendingCategory,
   SpendingRuleProposals,
   UNDO_COUNT_TRANSACTION,
-  amountOf,
   formatDay,
 } from './financeApi'
 import {
@@ -44,8 +45,10 @@ import { FinanceSelectionToolbar, chunks, confirmedSpendingRules } from './finan
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { TransactionFilters, searchFromTransactionFilters, transactionFiltersFromSearch } from './financeFilters'
 
-// How many finance transactions one read brings, and one Load more adds.
-const PAGE_SIZE = 100
+// The most transactions Select all chooses: every one of them can then
+// be given a spending category with rules, which is proposed for at most
+// this many at once. Past it the filters are the way to a smaller set.
+const MAXIMUM_SELECTED_TRANSACTION_COUNT = MAXIMUM_PROPOSED_TRANSACTION_COUNT
 
 // useLeftOutLines says how many match texts a proposal left out and why,
 // one line each, for the confirmation and for the toast when nothing is
@@ -159,22 +162,27 @@ function SpendingRulesConfirmation({
 
 // The finance transactions, newest first, narrowed on the server by dates,
 // a finance account, a spending category, words and whether a spending
-// category is missing, and read a page at a time from where the last page
-// ended. The filters are the address's, so the Spending section can link
-// to a category's month and a narrowed list can be shared; changing one
-// here rewrites the address in place rather than adding a step to Back. Each one's spending
-// category is changed where it is, with the offer to do the same for every
-// transaction from that merchant. A transfer is the transfer category,
-// chosen the same way, which takes it out of spending and income. A
-// mirrored copy stays in the list, muted, tagged and with its amount struck
-// through, since it is left out of every total.
+// category is missing, and read a page at a time by its number, with how
+// many match on every page. The filters and the page are the address's,
+// so the Spending section can link to a category's month, a narrowed list
+// can be shared, and Back goes to the page before; changing a filter
+// rewrites the address in place rather than adding a step to Back, and
+// starts again at the first page. Each one's spending category is changed
+// where it is, with the offer to do the same for every transaction from
+// that merchant. A transfer is the transfer category, chosen the same way,
+// which takes it out of spending and income. A mirrored copy is left out,
+// as every total leaves it out, and the line above the table says how
+// many were; Show duplicates lists them, muted, tagged and with the amount
+// struck through.
 //
 // Transactions can be chosen with the boxes at the start of their rows
-// (shift chooses the run since the last one), kept while more pages load,
-// and given one spending category together, with spending rules for them
-// when asked, after saying which. Changing a filter lets go of them.
+// (shift chooses the run since the last one, the header's box the whole
+// page), kept by id from page to page, and given one spending category
+// together, with spending rules for them when asked, after saying which.
+// Select all chooses every transaction the filters match, on every page.
+// Changing a filter lets go of them.
 export function FinanceTransactionsSection() {
-  const { t, plural } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const toast = useToast()
   const words = useFinanceWords()
   const isDesktop = useIsDesktop()
@@ -186,10 +194,16 @@ export function FinanceTransactionsSection() {
       (previous) => {
         const next = searchFromTransactionFilters(change(transactionFiltersFromSearch(previous)))
         // An address already saying this is left alone, so the first
-        // pause in typing does not rewrite it with the same filters.
-        return next.toString() === searchFromTransactionFilters(transactionFiltersFromSearch(previous)).toString()
-          ? previous
-          : next
+        // pause in typing does not rewrite it with the same filters, nor
+        // send the list back to its first page.
+        if (next.toString() === searchFromTransactionFilters(transactionFiltersFromSearch(previous)).toString()) {
+          return previous
+        }
+        // Other filters are other pages, so the page is not carried over;
+        // how many rows a page holds is the person's and is.
+        const pageSize = previous.get('rows')
+        if (pageSize) next.set('rows', pageSize)
+        return next
       },
       { replace: true },
     )
@@ -213,12 +227,24 @@ export function FinanceTransactionsSection() {
     spendingCategoryId: filters.spendingCategoryId || undefined,
     text: filters.text || undefined,
     isUncategorized: filters.isUncategorized || undefined,
-    limit: PAGE_SIZE,
+    isDuplicateIncluded: filters.isDuplicateIncluded || undefined,
   }
   const filterKey = JSON.stringify(variables)
+  // Which page the table shows, as it says once it has read the address:
+  // nothing is asked for before then, so a link to page four does not
+  // fetch page one first.
+  const [range, setRange] = useState<Range | null>(null)
+  const onRange = useCallback((next: Range) => setRange(next), [])
   const first = useQuery(
-    () => graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, variables),
-    [filterKey],
+    () =>
+      range
+        ? graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
+            ...variables,
+            limit: range.limit,
+            offset: range.offset,
+          })
+        : Promise.resolve(null),
+    [filterKey, range?.offset, range?.limit],
     { refresh: false },
   )
   const accounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
@@ -228,31 +254,25 @@ export function FinanceTransactionsSection() {
     refresh: false,
   })
 
-  // The pages read after the first, and where the next one starts. Held
-  // here rather than refetched, so changing one row's spending category
-  // does not throw away the pages below it.
-  const [more, setMore] = useState<{ rows: FinanceTransaction[]; after: string | null; isLoaded: boolean }>({
-    rows: [],
-    after: null,
-    isLoaded: false,
-  })
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  // What changed on a row since it was read, laid over it.
+  // What changed on a row since it was read, laid over it, so changing one
+  // row's spending category does not read the page again.
   const [changed, setChanged] = useState<Record<string, Partial<FinanceTransaction>>>({})
   // The transaction whose details are open, by id, so a change made in the
   // dialog shows there as it does in its row; and what had the focus when
   // it opened, to give it back when it closes.
   const [detailedId, setDetailedId] = useState<string | null>(null)
   // Transactions opened from another's details (a counted copy and its
-  // duplicates) that the pages read so far may not hold.
+  // duplicates) that the page shown may not hold.
   const [opened, setOpened] = useState<Record<string, FinanceTransaction>>({})
   const [isCounting, setIsCounting] = useState(false)
   // Raised after the person counts a copy or takes that back, so the open
   // details read again the copies they name.
   const [detailsRefreshCount, setDetailsRefreshCount] = useState(0)
-  // The transactions chosen to categorize together, by id; the spending
-  // rules about to be saved for them, while the person is asked.
+  // The transactions chosen to categorize together, by id, on any page;
+  // the spending rules about to be saved for them, while the person is
+  // asked.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isSelectingAll, setIsSelectingAll] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
   const [rulesConfirmation, setRulesConfirmation] = useState<{
     financeTransactionIds: string[]
@@ -270,19 +290,20 @@ export function FinanceTransactionsSection() {
     openedFrom.current?.focus()
   }
   useEffect(() => {
-    setMore({ rows: [], after: null, isLoaded: false })
     setChanged({})
     setSelectedIds(new Set())
   }, [filterKey])
+  // Another page is read afresh, so what was laid over the last one goes.
+  useEffect(() => {
+    setChanged({})
+  }, [range?.offset, range?.limit])
 
-  const firstPage = first.data?.FinanceTransactions
-  const after = more.isLoaded ? more.after : (firstPage?.nextCursor ?? null)
+  const shownPage = first.data?.FinanceTransactions
+  const totalCount = shownPage?.totalCount ?? 0
+  const leftOutDuplicateCount = shownPage?.leftOutDuplicateCount ?? 0
   const rows = useMemo(
-    () =>
-      [...(firstPage?.financeTransactions ?? []), ...more.rows].map((row) =>
-        changed[row.id] ? { ...row, ...changed[row.id] } : row,
-      ),
-    [firstPage, more.rows, changed],
+    () => (shownPage?.financeTransactions ?? []).map((row) => (changed[row.id] ? { ...row, ...changed[row.id] } : row)),
+    [shownPage, changed],
   )
   const accountList = accounts.data?.FinanceAccounts ?? []
   const detailedRow = detailedId
@@ -296,30 +317,40 @@ export function FinanceTransactionsSection() {
     const found = categoryList.find((candidate) => candidate.id === spendingCategoryId)
     return found ? spendingCategoryLabel(found, categoryList, categoryName) : ''
   }
-  // Only what is in the list counts as chosen: a page read again may no
-  // longer hold one that was.
-  const selectedLoaded = useMemo(
-    () => new Set(rows.filter((row) => selectedIds.has(row.id)).map((row) => row.id)),
-    [rows, selectedIds],
-  )
 
-  const loadMore = async () => {
-    if (!after) return
-    setIsLoadingMore(true)
+  // The filters in force now, for an answer that arrives after they
+  // changed.
+  const filterKeyNow = useRef(filterKey)
+  filterKeyNow.current = filterKey
+
+  // selectAll chooses every transaction the filters match, on every page,
+  // by reading their ids alone from the server a few pages at a time, the
+  // way the list itself is ordered. More than can be given rules at once is
+  // refused rather than cut short, since the person would not see which
+  // were left out.
+  const selectAll = async () => {
+    if (totalCount > MAXIMUM_SELECTED_TRANSACTION_COUNT) {
+      toast.failed(t('finance.tooManyToSelect', { count: MAXIMUM_SELECTED_TRANSACTION_COUNT.toLocaleString() }))
+      return
+    }
+    const asked = filterKey
+    setIsSelectingAll(true)
     try {
-      const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
-        ...variables,
-        after,
-      })
-      setMore((previous) => ({
-        rows: [...previous.rows, ...answer.FinanceTransactions.financeTransactions],
-        after: answer.FinanceTransactions.nextCursor ?? null,
-        isLoaded: true,
-      }))
+      const ids: string[] = []
+      let after: string | null = null
+      do {
+        const answer: { FinanceTransactions: { financeTransactions: { id: string }[]; nextCursor?: string | null } } =
+          await graphql(FINANCE_TRANSACTION_IDS, { ...variables, limit: MAXIMUM_LISTED_TRANSACTION_COUNT, after })
+        ids.push(...answer.FinanceTransactions.financeTransactions.map((row) => row.id))
+        after = answer.FinanceTransactions.nextCursor ?? null
+      } while (after && ids.length < MAXIMUM_SELECTED_TRANSACTION_COUNT)
+      // The filters changed while the ids were read: they are another
+      // list's, and that list starts with nothing chosen.
+      if (asked === filterKeyNow.current) setSelectedIds(new Set(ids))
     } catch (caught) {
       toast.failure(caught, t('finance.failed'))
     } finally {
-      setIsLoadingMore(false)
+      setIsSelectingAll(false)
     }
   }
 
@@ -348,9 +379,8 @@ export function FinanceTransactionsSection() {
                     merchant: made.CategorizeTransaction.spendingRule?.matchText || merchant,
                   }),
                 )
-                // The rule applies to the merchant's earlier transactions
-                // too, so the list is read again from the top.
-                setMore({ rows: [], after: null, isLoaded: false })
+                // The rule applies to the merchant's other transactions
+                // too, so the page is read again.
                 setChanged({})
                 await first.reload(true)
               },
@@ -362,24 +392,12 @@ export function FinanceTransactionsSection() {
     }
   }
 
-  // reloadLoadedPages reads again every page read so far. Counting a copy,
-  // or handing it back to detection, can change which of its copies is
-  // counted, so rows other than the one clicked change too. It moves no
-  // row, so the pages below the first are read again from the same
-  // cursors.
-  const reloadLoadedPages = async () => {
-    const reloadedRows: FinanceTransaction[] = []
-    let reloadedAfter = firstPage?.nextCursor ?? null
-    while (more.isLoaded && reloadedAfter && reloadedRows.length < more.rows.length) {
-      const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
-        ...variables,
-        after: reloadedAfter,
-      })
-      reloadedRows.push(...answer.FinanceTransactions.financeTransactions)
-      reloadedAfter = answer.FinanceTransactions.nextCursor ?? null
-    }
+  // reloadPage reads the page shown again. Counting a copy, or handing it
+  // back to detection, can change which of its copies is counted, and
+  // saved spending rules can change other rows, so rows other than the
+  // ones acted on change too.
+  const reloadPage = async () => {
     await first.reload(true)
-    if (more.isLoaded) setMore({ rows: reloadedRows, after: reloadedAfter, isLoaded: true })
     setChanged({})
   }
 
@@ -393,11 +411,11 @@ export function FinanceTransactionsSection() {
         UndoCountTransaction?: FinanceTransaction
       }>(isCountedByPerson ? COUNT_TRANSACTION : UNDO_COUNT_TRANSACTION, { financeTransactionId: row.id })
       const counted = answer.CountTransaction ?? answer.UndoCountTransaction
-      // Kept beside the pages, so its details show the answer even when
-      // no page read so far holds it, or the pages read again leave it out.
+      // Kept beside the page, so its details show the answer even when the
+      // page shown does not hold it, or the page read again leaves it out.
       if (counted) setOpened((previous) => ({ ...previous, [row.id]: counted }))
       toast.done(isCountedByPerson ? t('finance.transactionCounted') : t('finance.transactionCountUndone'))
-      await reloadLoadedPages()
+      await reloadPage()
       setDetailsRefreshCount((previous) => previous + 1)
     } catch (caught) {
       toast.failure(caught, t('finance.failed'))
@@ -413,7 +431,7 @@ export function FinanceTransactionsSection() {
   // piece fails they are not saved, and its transactions stay chosen.
   // What worked is shown at once and let go of; a piece that failed stays
   // chosen, so trying again acts on exactly what is left. Saved rules can
-  // change other rows, so then every page read so far is read again.
+  // change other rows, so then the page shown is read again.
   const categorizeSelection = async (
     financeTransactionIds: string[],
     spendingCategoryId: string,
@@ -446,7 +464,7 @@ export function FinanceTransactionsSection() {
     setSelectedIds(new Set(failedIds))
     if (savedRuleCount > 0) {
       try {
-        await reloadLoadedPages()
+        await reloadPage()
       } catch (caught) {
         toast.failure(caught, t('finance.failed'))
       }
@@ -476,7 +494,7 @@ export function FinanceTransactionsSection() {
   // (existing rules already cover every one, or what is left out is all
   // there was) there is nothing to confirm, and the toast says why.
   const applyToSelection = async (spendingCategoryId: string, shouldSaveSpendingRules: boolean) => {
-    const financeTransactionIds = [...selectedLoaded]
+    const financeTransactionIds = [...selectedIds]
     if (!shouldSaveSpendingRules) {
       await categorizeSelection(financeTransactionIds, spendingCategoryId, [])
       return
@@ -518,7 +536,6 @@ export function FinanceTransactionsSection() {
       header: t('finance.postedOn'),
       value: (row) => row.postedOn,
       render: (row) => formatDay(row.postedOn),
-      sort: (left, right) => left.postedOn.localeCompare(right.postedOn),
     },
     // Second, beside the day: on a phone the table scrolls sideways, and
     // the amount is what a row is read for.
@@ -535,7 +552,6 @@ export function FinanceTransactionsSection() {
         ) : (
           <Money amount={row.amount} currency={row.currencyCode} />
         ),
-      sort: (left, right) => amountOf(left.amount) - amountOf(right.amount),
     },
     {
       key: 'description',
@@ -603,6 +619,15 @@ export function FinanceTransactionsSection() {
     },
   ]
 
+  // transactionCountWords is how many transactions, grouped the way the
+  // reader's language groups a number: "1,234 transactions".
+  const transactionCountWords = (count: number) =>
+    plural(
+      count,
+      { one: 'finance.transactionCountOne', other: 'finance.transactionCountOther' },
+      { count: count.toLocaleString(language) },
+    )
+
   // The filters that hold, said in a line: what the closed filters say on
   // a phone, where five fields would fill the first screen.
   const account = accountList.find((candidate) => candidate.id === filters.financeAccountId)
@@ -619,6 +644,7 @@ export function FinanceTransactionsSection() {
     category ? spendingCategoryLabel(category, categoryList, categoryName) : '',
     filters.isUncategorized ? t('finance.uncategorized') : '',
     filters.text ? t('finance.containingWords', { text: filters.text }) : '',
+    filters.isDuplicateIncluded ? t('finance.withDuplicates') : '',
   ].filter(Boolean)
 
   const filterControls = (
@@ -695,6 +721,16 @@ export function FinanceTransactionsSection() {
         />
         {t('finance.onlyUncategorized')}
       </label>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={filters.isDuplicateIncluded}
+          onChange={(event) =>
+            setFilters((previous) => ({ ...previous, isDuplicateIncluded: event.target.checked }))
+          }
+        />
+        {t('finance.showDuplicates')}
+      </label>
     </>
   )
 
@@ -711,43 +747,49 @@ export function FinanceTransactionsSection() {
           {filterControls}
         </details>
       )}
-      {first.data ? (
+      {shownPage ? (
         <p className="muted finance-transaction-count">
-          {t('finance.transactionsLoaded', { count: String(rows.length) })}
-          {after ? ` · ${t('finance.moreToLoad')}` : ''}
+          {transactionCountWords(totalCount)}
+          {leftOutDuplicateCount > 0
+            ? ` · ${plural(
+                leftOutDuplicateCount,
+                { one: 'finance.duplicatesLeftOutOne', other: 'finance.duplicatesLeftOutOther' },
+                { count: leftOutDuplicateCount.toLocaleString(language) },
+              )}`
+            : ''}
         </p>
       ) : null}
       <ErrorMessage error={first.error} />
-      {first.loading && !first.data ? <Loading /> : null}
-      {first.data ? (
-        <div className="finance-transactions-table">
-          <DataTable
-            columns={columns}
-            rows={rows}
-            rowKey={(row) => row.id}
-            loading={first.loading}
-            emptyMessage={t('finance.noTransactions')}
-            countLabel={(count) => t('finance.transactionsLoaded', { count: String(count) })}
-            onRowOpen={openDetails}
-            rowOpenLabel={(row) => t('finance.transactionDetailsOf', { name: row.merchantName || row.description })}
-            selected={selectedLoaded}
-            onSelect={setSelectedIds}
-            selectionActions={(chosen) => (
-              <FinanceSelectionToolbar
-                selectedTransactionCount={chosen.length}
-                loadedTransactionCount={rows.length}
-                categoryOptions={spendingCategoryOptions(categoryList, categoryName, null, t('finance.transferGroup'))}
-                isApplying={isApplying}
-                onSelectAllLoaded={() => setSelectedIds(new Set(rows.map((row) => row.id)))}
-                onClear={() => setSelectedIds(new Set())}
-                onApply={(spendingCategoryId, shouldSaveSpendingRules) =>
-                  void applyToSelection(spendingCategoryId, shouldSaveSpendingRules)
-                }
-              />
-            )}
-          />
-        </div>
-      ) : null}
+      {/* Drawn before the first answer, since the table is what says which
+          page to ask for; until then it holds no rows and claims none. */}
+      <div className="finance-transactions-table">
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          loading={!shownPage}
+          remote={{ total: totalCount, onRange }}
+          emptyMessage={t('finance.noTransactions')}
+          countLabel={transactionCountWords}
+          onRowOpen={openDetails}
+          rowOpenLabel={(row) => t('finance.transactionDetailsOf', { name: row.merchantName || row.description })}
+          selected={selectedIds}
+          onSelect={setSelectedIds}
+          selectionActions={(chosen) => (
+            <FinanceSelectionToolbar
+              selectedTransactionCount={chosen.length}
+              matchingTransactionCount={totalCount}
+              categoryOptions={spendingCategoryOptions(categoryList, categoryName, null, t('finance.transferGroup'))}
+              isApplying={isApplying || isSelectingAll}
+              onSelectAll={() => void selectAll()}
+              onClear={() => setSelectedIds(new Set())}
+              onApply={(spendingCategoryId, shouldSaveSpendingRules) =>
+                void applyToSelection(spendingCategoryId, shouldSaveSpendingRules)
+              }
+            />
+          )}
+        />
+      </div>
       {rulesConfirmation ? (
         <SpendingRulesConfirmation
           proposals={rulesConfirmation.proposals}
@@ -782,13 +824,6 @@ export function FinanceTransactionsSection() {
           }}
           onClose={closeDetails}
         />
-      ) : null}
-      {after ? (
-        <div className="page-actions page-actions-end">
-          <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
-            {t('finance.loadMore')}
-          </button>
-        </div>
       ) : null}
     </SettingsSection>
   )

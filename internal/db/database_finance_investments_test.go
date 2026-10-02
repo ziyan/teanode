@@ -2,6 +2,8 @@ package db_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -101,6 +103,47 @@ func TestFinanceHoldingsAreAssetsAndTheAccountHoldsTheCash(t *testing.T) {
 		}
 		if worth := netWorthOn(t, tx, fixture.agentId, "2026-09-12"); worth != "2150.2500" {
 			t.Errorf("net worth %s, want the account's balance once", worth)
+		}
+	})
+}
+
+// A page of trades by its number holds the rows the cursor reads in that
+// place, and its total counts what the filters match on every page.
+func TestListFinanceTradesByOffsetCountsTheTotal(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-trade-offset")
+	result := brokerageSync("2150.25", fundHolding("12", "1806"))
+	for index, day := range []string{"2026-09-04", "2026-09-06", "2026-09-08", "2026-09-10"} {
+		result.Trades = append(result.Trades, finance.Trade{
+			ProviderTradeID: fmt.Sprintf("trade-more-%d", index), ProviderAccountID: "account-brokerage", ProviderSecurityID: "security-fund",
+			TradedOn: day, TradeKind: finance.TradeKindBuy, TradedQuantity: "1", UnitPrice: "150.5",
+			TradeAmount: "-150.5", FeeAmount: "0", CurrencyCode: "USD", Description: "BUY EXIF",
+		})
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		all, err := tx.ListFinanceTrades(fixture.agentId, &db.FinanceTradeFilter{Limit: 10})
+		if err != nil || len(all.FinanceTrades) != 5 || all.TotalCount != 0 {
+			t.Fatalf("every trade, no total unless asked: %v %+v", err, all)
+		}
+		page, err := tx.ListFinanceTrades(fixture.agentId, &db.FinanceTradeFilter{Limit: 2, Offset: 2, ShouldCountTotal: true})
+		if err != nil || page.TotalCount != 5 || len(page.FinanceTrades) != 2 || page.NextCursor == "" {
+			t.Fatalf("the second page: %v %+v", err, page)
+		}
+		if page.FinanceTrades[0].ID != all.FinanceTrades[2].ID || page.FinanceTrades[1].ID != all.FinanceTrades[3].ID {
+			t.Errorf("the second page is not the third and fourth trade")
+		}
+		if page.FinanceTrades[0].FinanceSecurity == nil {
+			t.Errorf("a page by its number carries the security too")
+		}
+		narrowed, err := tx.ListFinanceTrades(fixture.agentId, &db.FinanceTradeFilter{From: "2026-09-05", Limit: 2, Offset: 2, ShouldCountTotal: true})
+		if err != nil || narrowed.TotalCount != 3 || len(narrowed.FinanceTrades) != 1 || narrowed.NextCursor != "" {
+			t.Errorf("the last page of three from the fifth: %v %+v", err, narrowed)
+		}
+		if _, err := tx.ListFinanceTrades(fixture.agentId, &db.FinanceTradeFilter{Offset: -2}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("a negative offset must be refused, got %v", err)
 		}
 	})
 }

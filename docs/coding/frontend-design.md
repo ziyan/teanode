@@ -19,6 +19,7 @@ one of them gets the fix.
 | Make or change one thing | `FormDialog` in `components/dialog.tsx` |
 | Ask before something irreversible | `ConfirmDialog` in `components/dialog.tsx` |
 | A long list that is sorted, filtered or paged | `DataTable` in `components/dataTable.tsx` |
+| The pages of a list that is not a table | `Pager` and `usePageInAddress` in `components/pager.tsx` |
 | A field naming one of the agent's pages | `PagePicker` in `components/pagePicker.tsx` |
 | The foot of a settings form | `SaveRow` in `components/common.tsx` |
 | A row of a key/value table | `Field` in `components/common.tsx` |
@@ -81,6 +82,18 @@ Three shapes, chosen by what the list holds:
 
 `SettingsEmpty` says a list is empty. Having none of something is ordinary, so
 it is said in muted prose inside a dashed block, not raised as an error.
+
+A list longer than a page pages; it does not load more. A button that adds
+the next rows under the ones shown grows the page without end, loses the
+place on a reload, and gives Back nothing to go back to. A table the server
+pages is `DataTable` with `remote={{ total, onRange }}`; any other list puts
+`Pager` in its foot (`list-foot`) with `usePageInAddress`, so both say
+"51 to 100 of 1,234", or "of at least" where the server stops counting,
+with the same previous and next buttons. The page is in the address, a
+changed filter or search starts again at the first page, and two lists on
+one screen name their pages apart (`pageParameter`). A list whose server
+gives no total says what it does know rather than inventing one. A dialog
+has no address, so a list inside one keeps its page itself.
 
 ## Row actions
 

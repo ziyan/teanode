@@ -117,11 +117,14 @@ type FinanceTransaction struct {
 	DuplicateDecidedBy       string     `json:"duplicateDecidedBy,omitempty"`
 }
 
-// FinanceTransactionPage is one page of finance transactions and the cursor
-// for the next, empty on the last.
+// FinanceTransactionPage is one page of finance transactions, the cursor
+// for the next, empty on the last, how many match on every page, and how
+// many mirrored copies were left out because they were not asked for.
 type FinanceTransactionPage struct {
-	FinanceTransactions []*FinanceTransaction `json:"financeTransactions"`
-	NextCursor          string                `json:"nextCursor,omitempty"`
+	FinanceTransactions   []*FinanceTransaction `json:"financeTransactions"`
+	NextCursor            string                `json:"nextCursor,omitempty"`
+	TotalCount            int                   `json:"totalCount"`
+	LeftOutDuplicateCount int                   `json:"leftOutDuplicateCount"`
 }
 
 // FinanceSecurity is something an investment account can hold, as the
@@ -161,6 +164,7 @@ type FinanceTrade struct {
 type FinanceTradePage struct {
 	FinanceTrades []*FinanceTrade `json:"financeTrades"`
 	NextCursor    string          `json:"nextCursor,omitempty"`
+	TotalCount    int             `json:"totalCount"`
 }
 
 // FinanceSpendingSummaryRow is one group's money out and money in, in one
@@ -642,15 +646,15 @@ const (
   }
 }`
 
-	DocumentFinanceTransactions = `query ($from: String, $to: String, $financeAccountId: String, $text: String, $minimumAmount: String, $maximumAmount: String, $providerCategory: String, $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String, $limit: Int, $after: String) {
-  FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, providerCategory: $providerCategory, spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, duplicateOfTransactionId: $duplicateOfTransactionId, limit: $limit, after: $after) {
-    financeTransactions ` + financeTransactionFields + ` nextCursor
+	DocumentFinanceTransactions = `query ($from: String, $to: String, $financeAccountId: String, $text: String, $minimumAmount: String, $maximumAmount: String, $providerCategory: String, $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String, $isDuplicateIncluded: Boolean, $limit: Int, $after: String, $offset: Int) {
+  FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, providerCategory: $providerCategory, spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, duplicateOfTransactionId: $duplicateOfTransactionId, isDuplicateIncluded: $isDuplicateIncluded, limit: $limit, after: $after, offset: $offset) {
+    financeTransactions ` + financeTransactionFields + ` nextCursor totalCount leftOutDuplicateCount
   }
 }`
 
-	DocumentFinanceTrades = `query ($from: String, $to: String, $financeAccountId: String, $financeSecurityId: String, $limit: Int, $after: String) {
-  FinanceTrades(from: $from, to: $to, financeAccountId: $financeAccountId, financeSecurityId: $financeSecurityId, limit: $limit, after: $after) {
-    financeTrades ` + financeTradeFields + ` nextCursor
+	DocumentFinanceTrades = `query ($from: String, $to: String, $financeAccountId: String, $financeSecurityId: String, $limit: Int, $after: String, $offset: Int) {
+  FinanceTrades(from: $from, to: $to, financeAccountId: $financeAccountId, financeSecurityId: $financeSecurityId, limit: $limit, after: $after, offset: $offset) {
+    financeTrades ` + financeTradeFields + ` nextCursor totalCount
   }
 }`
 

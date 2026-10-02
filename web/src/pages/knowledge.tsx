@@ -17,6 +17,7 @@ import {
   SparkIcon,
 } from '../components/icons'
 import { PagePicker } from '../components/pagePicker'
+import { Pager, useKeepPageInRange, usePageInAddress } from '../components/pager'
 import { Select } from '../components/select'
 import { ZoomablePicture } from '../components/lightbox'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -287,18 +288,8 @@ type FoundInGraph = {
   nextOffset: number
 }
 
-// How many pages and facts one search asks for, the first time and each
-// time Show more is pressed.
+// How many pages and facts one page of a search holds.
 const SEARCH_PAGE = 60
-
-// appendNew adds the rows of a later page that an earlier one did not
-// already have. The ranking is read again for every page, so something
-// learned in between can push a row across the boundary and bring it back
-// a second time.
-export function appendNew<T>(before: T[], after: T[], keyOf: (row: T) => string): T[] {
-  const seen = new Set(before.map(keyOf))
-  return [...before, ...after.filter((row) => !seen.has(keyOf(row)))]
-}
 
 // A slice of one document: where in the text it starts, how long the whole
 // document is, and where the read that carries on from it begins -- zero
@@ -338,9 +329,9 @@ type Page = {
   contact?: { id: string; name: string; emails: string[]; organization: string } | null
 }
 
-// PAGE_SIZE is how many pages a folder shows at a time. Fifty is a screen
-// and a half; a folder of two thousand projects is "show fifty more",
-// not a two-thousand-row scroll.
+// PAGE_SIZE is how many pages a folder shows at a time, and how many facts
+// a page does. Fifty is a screen and a half; a folder of two thousand
+// projects is forty pages of fifty, not a two-thousand-row scroll.
 const PAGE_SIZE = 50
 
 // DOCUMENT_PASSAGES is how many passages one search asks for. Enough that
@@ -526,25 +517,26 @@ export function KnowledgePage() {
   // always read from the folder it is filed in, and if it turns out to be
   // a folder itself the answer says so a moment later.
   const [paging, setPaging] = useState<Paging | null>(null)
+  // Which page of the folder is shown is in the address, so Back goes to
+  // the page before and a page opened from the folder's third page is read
+  // beside the third page.
+  const folderPage = usePageInAddress({ defaultPageSize: PAGE_SIZE })
   const lastFolder = useRef(at === '' ? '' : parentOf(at))
   useEffect(() => {
     if (folder !== null) lastFolder.current = folder
   }, [folder])
   const shownFolder = folder ?? lastFolder.current
+  // Both as they are now, for goTo, which is made once.
+  const shownFolderNow = useRef(shownFolder)
+  shownFolderNow.current = shownFolder
+  const folderPageIndexNow = useRef(folderPage.pageIndex)
+  folderPageIndexNow.current = folderPage.pageIndex
   // A page walked into keeps the one pane for its list; on two columns
   // it is read on the right while its children are walked on the left.
   const showingPage = open !== '' && !isFolder && !(onePane && folder === at)
   const showingDetail = onePane ? showingPage : open !== ''
 
-  const found = useQuery(
-    () =>
-      search
-        ? graphql<{ SearchAgentGraph: FoundInGraph }>(SEARCH, { query: search, first: SEARCH_PAGE })
-        : Promise.resolve(null),
-    [search],
-    { refresh: false },
-  )
-  const { shownFound, isSearchingMore, searchMore } = useSearchMore(search, found.data?.SearchAgentGraph ?? null, toast.failed)
+  const searchPages = useSearchPages(search)
 
   // Going somewhere is one move: the address changes, the lookup is put
   // away, and the navigator is told whether the chevron or the name was
@@ -560,7 +552,10 @@ export function KnowledgePage() {
       // address has moved on from it.
       if (into) setWalkedInto(next)
       setFilter('')
-      navigate('/knowledge' + (next ? '/' + next : ''))
+      // A page of the folder being listed is read beside the page of the
+      // list it was found on; anywhere else starts at the first.
+      const isInShownFolder = !into && parentOf(next) === shownFolderNow.current && folderPageIndexNow.current > 0
+      navigate('/knowledge' + (next ? '/' + next : '') + (isInShownFolder ? `?page=${folderPageIndexNow.current + 1}` : ''))
     },
     [navigate],
   )
@@ -658,12 +653,14 @@ export function KnowledgePage() {
   )
 
   const list = search ? (
-    <SearchResults found={shownFound} loading={found.loading} me={me} onSelect={goPage} />
+    <SearchResults found={searchPages.found} loading={searchPages.isLoading} me={me} onSelect={goPage} />
   ) : (
     <Navigator
       path={folder}
       selected={showingPage ? open : ''}
       me={me}
+      pageIndex={folderPage.pageIndex}
+      onPageIndex={folderPage.setPageIndex}
       onOpen={goPage}
       onInto={(next: string) => goTo(next, true)}
       onPaging={setPaging}
@@ -778,31 +775,34 @@ export function KnowledgePage() {
           slide inside a box that clips them, and a thing inside a clipped
           box cannot be pinned to the bottom of the list around it. */}
       {/* The search's own strip, in the same place: how much more it
-          found, and the way to read it. Only while there is more, since
-          the last page has nothing to say here. */}
-      {search && shownFound && shownFound.nextOffset > 0 ? (
+          found past this page, and the ways to the pages either side.
+          Pages and facts are ranked apart, so one range would be true of
+          neither: what is left is said in words instead, "at least"
+          where the server stopped counting. */}
+      {search && searchPages.found && (searchPages.pageIndex > 0 || searchPages.found.nextOffset > 0) ? (
         <div className="list-foot">
-          <span>{isSearchingMore ? t('common.loading') : moreFoundInGraph(shownFound, { t, plural })}</span>
-          <button
-            type="button"
-            className="show-more"
-            disabled={isSearchingMore || found.loading}
-            onClick={() => void searchMore()}
-          >
-            {t('list.showMore')}
-          </button>
+          <Pager
+            pageIndex={searchPages.pageIndex}
+            pageSize={SEARCH_PAGE}
+            shownCount={Math.max(searchPages.found.nodes.length, searchPages.found.facts.length)}
+            totalCount={0}
+            summary={searchPages.found.nextOffset > 0 ? moreFoundInGraph(searchPages.found, { t, plural }) : ''}
+            hasNextPage={searchPages.found.nextOffset > 0}
+            isLoading={searchPages.isLoading}
+            onPageIndex={searchPages.setPageIndex}
+          />
         </div>
       ) : null}
-      {!search && paging ? (
+      {!search && paging && (paging.totalCount > PAGE_SIZE || folderPage.pageIndex > 0) ? (
         <div className="list-foot">
-          <span>
-            {paging.loading ? t('common.loading') : t('list.count', { shown: paging.shown, total: paging.total })}
-          </span>
-          {paging.shown < paging.total && !paging.loading ? (
-            <button type="button" className="show-more" onClick={paging.more}>
-              {t('list.showMore')}
-            </button>
-          ) : null}
+          <Pager
+            pageIndex={folderPage.pageIndex}
+            pageSize={PAGE_SIZE}
+            shownCount={paging.shownCount}
+            totalCount={paging.totalCount}
+            isLoading={paging.loading}
+            onPageIndex={folderPage.setPageIndex}
+          />
         </div>
       ) : null}
     </div>
@@ -873,6 +873,8 @@ function Navigator({
   path,
   selected,
   me,
+  pageIndex,
+  onPageIndex,
   onOpen,
   onInto,
   onPaging,
@@ -880,6 +882,8 @@ function Navigator({
   path: string | null
   selected: string
   me: string
+  pageIndex: number
+  onPageIndex: (pageIndex: number, options?: { replace?: boolean }) => void
   onOpen: (path: string) => void
   onInto: (path: string) => void
   onPaging: (paging: Paging | null) => void
@@ -972,6 +976,8 @@ function Navigator({
                 path={panel.path}
                 selected={selected}
                 me={me}
+                pageIndex={pageIndex}
+                onPageIndex={onPageIndex}
                 onOpen={onOpen}
                 onInto={onInto}
                 current={panel.path === (shown ?? '')}
@@ -985,22 +991,24 @@ function Navigator({
   )
 }
 
-// Paging is what the strip under the list needs to draw itself: how much
-// of the folder is shown, how much there is, and the way to ask for more.
+// Paging is what the strip under the list needs to draw itself: how many
+// rows the page shown holds, and how many the folder does.
 //
 // It is reported upwards rather than drawn where it is counted, because
 // the strip has to sit outside the box the panels slide inside. That box
 // clips its content, which is what makes the slide look like a slide, and
 // a thing inside a clipped box cannot be pinned to the bottom of the list
 // around it.
-export type Paging = { shown: number; total: number; loading: boolean; more: () => void }
+export type Paging = { shownCount: number; totalCount: number; loading: boolean }
 
-// NavigatorList is what is filed inside one folder, fifty at a time,
-// each row with enough of a hint to tell it from its neighbours.
+// NavigatorList is what is filed inside one folder, a page of fifty at a
+// time, each row with enough of a hint to tell it from its neighbours.
 function NavigatorList({
   path,
   selected,
   me,
+  pageIndex,
+  onPageIndex,
   onOpen,
   onInto,
   current,
@@ -1009,6 +1017,8 @@ function NavigatorList({
   path: string
   selected: string
   me: string
+  pageIndex: number
+  onPageIndex: (pageIndex: number, options?: { replace?: boolean }) => void
   onOpen: (path: string) => void
   onInto: (path: string) => void
   // Only the panel being walked into reports what it holds: while the
@@ -1026,49 +1036,74 @@ function NavigatorList({
   const [loading, setLoading] = useState(true)
   const [problem, setProblem] = useState<unknown>(null)
 
-  const load = useCallback(
-    async (offset: number) => {
-      setLoading(true)
-      try {
-        const result = await graphql<{
-          AgentGraphChildren: { rows: { node: Node; hint: string; children: number }[]; total: number }
-        }>(CHILDREN, { path, first: PAGE_SIZE, offset })
-        const batch = result.AgentGraphChildren.rows
-        // Ordered within the batch it arrived in rather than across the
-        // whole list: a folder that turned up in the second fifty
-        // jumping over pages somebody has already read past is worse
-        // than its being where the server put it.
-        const fresh = ordered(batch.map((row) => ({ ...row, children: row.children })))
-        setRows((before) => (offset === 0 ? fresh : [...before, ...fresh]))
-        setTotal(result.AgentGraphChildren.total)
-      } catch (caught) {
-        setProblem(caught)
-      } finally {
-        setLoading(false)
-      }
-    },
-    [path],
-  )
+  // The page this list shows: the one in the address while it is the
+  // folder being walked, and the one it had while it slides out, so the
+  // rows on their way out stay the rows that were there.
+  const shownPageIndex = useRef(pageIndex)
+  if (current) shownPageIndex.current = pageIndex
+  const offset = shownPageIndex.current * PAGE_SIZE
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const result = await graphql<{
+        AgentGraphChildren: { rows: { node: Node; hint: string; children: number }[]; total: number }
+      }>(CHILDREN, { path, first: PAGE_SIZE, offset })
+      // Ordered within the page it arrived in rather than across the whole
+      // folder, since the server pages in its own order.
+      setRows(ordered(result.AgentGraphChildren.rows.map((row) => ({ ...row, children: row.children }))))
+      setTotal(result.AgentGraphChildren.total)
+      setProblem(null)
+    } catch (caught) {
+      setProblem(caught)
+    } finally {
+      setLoading(false)
+    }
+  }, [path, offset])
+  useEffect(() => {
+    void load()
+  }, [load])
   useEffect(() => {
     setRows([])
     setTotal(0)
     setProblem(null)
-    void load(0)
-  }, [load])
-  // The open page's row is in the list even when it sorts past the
-  // first fifty: a page opened from a link is otherwise selected in a
-  // list that does not show it.
+  }, [path])
+  useKeepPageInRange(pageIndex, PAGE_SIZE, current && !loading ? total : null, onPageIndex)
+  // The open page's row is shown even when it is filed past the first
+  // fifty: a page opened from a link is otherwise selected in a list that
+  // does not show it. Its page is looked for once each time a page is
+  // opened, so paging away from it afterwards stays where it was put.
+  const sought = useRef('')
   useEffect(() => {
-    if (loading || !selected || rows.length === 0 || rows.length >= total) return
+    if (!current || loading || !selected || total <= PAGE_SIZE) return
     if (rows.some((row) => row.node.path === selected)) return
-    if (rows.length >= PAGE_SIZE * 10) return
-    void load(rows.length)
-  }, [loading, selected, rows, total, load])
+    const asked = `${path}\n${selected}`
+    if (sought.current === asked) return
+    sought.current = asked
+    void (async () => {
+      for (let candidate = 0; candidate < 10 && candidate * PAGE_SIZE < total; candidate++) {
+        if (candidate === pageIndex) continue
+        try {
+          const result = await graphql<{ AgentGraphChildren: { rows: { node: Node }[] } }>(CHILDREN, {
+            path,
+            first: PAGE_SIZE,
+            offset: candidate * PAGE_SIZE,
+          })
+          if (sought.current !== asked) return
+          if (result.AgentGraphChildren.rows.some((row) => row.node.path === selected)) {
+            onPageIndex(candidate, { replace: true })
+            return
+          }
+        } catch {
+          return
+        }
+      }
+    })()
+  }, [current, loading, selected, rows, total, path, pageIndex, onPageIndex])
 
   useEffect(() => {
     if (!current) return
-    onPaging({ shown: rows.length, total, loading, more: () => void load(rows.length) })
-  }, [current, rows.length, total, loading, load, onPaging])
+    onPaging({ shownCount: rows.length, totalCount: total, loading })
+  }, [current, rows.length, total, loading, onPaging])
 
   if (problem) return <ErrorMessage error={problem} />
   if (loading && rows.length === 0) return <Loading />
@@ -1398,7 +1433,7 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
 // that document from its beginning in the same dialog, a slice at a time,
 // and the way back is the way back to the results rather than out.
 export function DocumentsDialog({ onClose }: { onClose: () => void }) {
-  const { t, plural } = useTranslation()
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [sourceId, setSourceId] = useState('')
   // The search the passages in hand answer -- the words and the source --
@@ -1410,6 +1445,10 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
   const [reading, setReading] = useState<DocumentExtract | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // Which page of the passages is shown. A dialog has no address, so the
+  // page is its own, and a new search starts again at the first.
+  const [pageIndex, setPageIndex] = useState(0)
+  const resultsTop = useRef<HTMLParagraphElement>(null)
   const wanted = query.trim()
 
   const sources = useQuery(
@@ -1435,6 +1474,7 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
         const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
         setFound(answer.SearchAgentDocuments)
         setAsked({ words: wanted, sourceId })
+        setPageIndex(0)
       } catch (caught) {
         setProblem(messageOf(caught))
         setAsked(null)
@@ -1444,36 +1484,22 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
     })()
   }
 
-  // The passages after the ones shown, for the search they answer, put
-  // under them. The definitions stay those of the first page, which is the
-  // only one that carries any.
-  const searchOn = () => {
-    if (asked === null || found === null || found.nextOffset <= 0 || busy) return
+  // Another page of the passages, for the search they answer, in place of
+  // the ones shown, and back to the top of them. Only the first page
+  // carries definitions.
+  const searchPage = (nextPageIndex: number) => {
+    if (asked === null || busy) return
     setBusy(true)
     setProblem(null)
-    const variables: Record<string, unknown> = {
-      query: asked.words,
-      first: DOCUMENT_PASSAGES,
-      offset: found.nextOffset,
-    }
+    const variables: Record<string, unknown> = { query: asked.words, first: DOCUMENT_PASSAGES }
+    if (nextPageIndex > 0) variables.offset = nextPageIndex * DOCUMENT_PASSAGES
     if (asked.sourceId !== '') variables.sourceId = asked.sourceId
     void (async () => {
       try {
         const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
-        const next = answer.SearchAgentDocuments
-        setFound((previous) =>
-          previous === null
-            ? next
-            : {
-                ...next,
-                definitions: previous.definitions,
-                passages: appendNew(
-                  previous.passages,
-                  next.passages,
-                  (passage) => `${passage.documentId}#${passage.number}`,
-                ),
-              },
-        )
+        setFound(answer.SearchAgentDocuments)
+        setPageIndex(nextPageIndex)
+        resultsTop.current?.closest('.dialog-scrim')?.scrollTo({ top: 0 })
       } catch (caught) {
         setProblem(messageOf(caught))
       } finally {
@@ -1556,7 +1582,9 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
 
   const results = (
     <>
-      <p className="muted">{t('knowledge.documents.hint')}</p>
+      <p ref={resultsTop} className="muted">
+        {t('knowledge.documents.hint')}
+      </p>
       <label>
         <span>{t('knowledge.documents.query')}</span>
         <input
@@ -1626,22 +1654,20 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
               )
             })}
           </ul>
-          {showing.nextOffset > 0 ? (
+          {pageIndex > 0 || showing.nextOffset > 0 ? (
             <div className="list-foot">
-              <span>
-                {showing.isMoreCountLowerBound
-                  ? plural(showing.moreCount, {
-                      one: 'knowledge.documents.moreAtLeastOne',
-                      other: 'knowledge.documents.moreAtLeastOther',
-                    })
-                  : plural(showing.moreCount, {
-                      one: 'knowledge.documents.moreOne',
-                      other: 'knowledge.documents.moreOther',
-                    })}
-              </span>
-              <button type="button" className="show-more" disabled={busy} onClick={searchOn}>
-                {t('list.showMore')}
-              </button>
+              {/* The passages past this page are counted only so far, so
+                  the whole is "at least" that many where it stopped. */}
+              <Pager
+                pageIndex={pageIndex}
+                pageSize={DOCUMENT_PASSAGES}
+                shownCount={showing.passages.length}
+                totalCount={pageIndex * DOCUMENT_PASSAGES + showing.passages.length + showing.moreCount}
+                isTotalCountLowerBound={showing.isMoreCountLowerBound}
+                hasNextPage={showing.nextOffset > 0}
+                isLoading={busy}
+                onPageIndex={searchPage}
+              />
             </div>
           ) : null}
           {showing.meaningful ? null : <p className="muted document-section">{t('knowledge.documents.wordsOnly')}</p>}
@@ -1709,7 +1735,9 @@ function PageView({
   onDone: (said: string) => void
 }) {
   const { t } = useTranslation()
-  const [factsShown, setFactsShown] = useState(PAGE_SIZE)
+  // Which page of the facts is shown, in the address under a name of its
+  // own, since the folder's list beside it has the page.
+  const factPage = usePageInAddress({ pageParameter: 'facts', defaultPageSize: PAGE_SIZE })
   const me = useSession().name || ''
   const node = page.node
   // The night's reflections are its own observations over what a theme
@@ -1717,6 +1745,8 @@ function PageView({
   // overview with what they cite rather than among the facts.
   const reflections = page.facts.filter((fact) => fact.kind === 'reflection')
   const facts = page.facts.filter((fact) => fact.kind !== 'reflection')
+  useKeepPageInRange(factPage.pageIndex, factPage.pageSize, facts.length, factPage.setPageIndex)
+  const shownFacts = facts.slice(factPage.offset, factPage.offset + factPage.pageSize)
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState<Fact | null | undefined>(undefined)
   const [removing, setRemoving] = useState<Fact | null>(null)
@@ -1996,7 +2026,7 @@ function PageView({
         }
       >
         {facts.length === 0 ? <SettingsEmpty>{t('knowledge.noFacts')}</SettingsEmpty> : null}
-        {facts.slice(0, factsShown).map((fact) => (
+        {shownFacts.map((fact) => (
           <SettingsRow
             key={fact.id}
             title={`#${fact.number} ${fact.text}`}
@@ -2045,10 +2075,16 @@ function PageView({
             }
           />
         ))}
-        {facts.length > factsShown ? (
-          <button type="button" className="show-more" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
-            {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, facts.length - factsShown) })}
-          </button>
+        {facts.length > factPage.pageSize ? (
+          <div className="table-bar">
+            <Pager
+              pageIndex={factPage.pageIndex}
+              pageSize={factPage.pageSize}
+              shownCount={shownFacts.length}
+              totalCount={facts.length}
+              onPageIndex={factPage.setPageIndex}
+            />
+          </div>
         ) : null}
         {/* What the page used to say and no longer states. Shown because
             a fold is the agent's own judgement about two sentences, and a
@@ -2737,46 +2773,26 @@ function EditFactDialog({
   )
 }
 
-// useSearchMore is the search box's pages after the first: what is shown
-// (the first page with the later ones appended), whether a later page is
-// on its way, and the way to ask for it.
-//
-// Both are tied to the first page they carry on from. A new answer to the
-// box puts the later pages away, and an answer to other words that arrives
-// after the box has moved on is dropped. The page on its way is kept the
-// same way, not as a flag: a flag set for the old words left the new
-// words' strip saying "loading" with its button off until the old request
-// finished.
-export function useSearchMore(search: string, firstFound: FoundInGraph | null, failed: (message: string) => void) {
-  const [searchedMore, setSearchedMore] = useState<{ from: FoundInGraph; found: FoundInGraph } | null>(null)
-  const [searchingMoreFrom, setSearchingMoreFrom] = useState<FoundInGraph | null>(null)
-  const shownFound = searchedMore !== null && searchedMore.from === firstFound ? searchedMore.found : firstFound
-  const isSearchingMore = searchingMoreFrom !== null && searchingMoreFrom === firstFound
-  const searchMore = async () => {
-    if (firstFound === null || shownFound === null || shownFound.nextOffset <= 0) return
-    const from = firstFound
-    const before = shownFound
-    setSearchingMoreFrom(from)
-    try {
-      const answer = await graphql<{ SearchAgentGraph: FoundInGraph }>(SEARCH, {
-        query: search,
-        first: SEARCH_PAGE,
-        offset: before.nextOffset,
-      })
-      const next = answer.SearchAgentGraph
-      setSearchedMore({
-        from,
-        found: {
-          ...next,
-          nodes: appendNew(before.nodes, next.nodes, (node) => node.id),
-          facts: appendNew(before.facts, next.facts, (row) => row.fact.id),
-        },
-      })
-    } catch (caught) {
-      failed(messageOf(caught))
-    } finally {
-      setSearchingMoreFrom((current) => (current === from ? null : current))
-    }
-  }
-  return { shownFound, isSearchingMore, searchMore }
+// useSearchPages is the search box's answer a page at a time: the page
+// shown, whether it is on its way, which page it is, and the way to
+// another. Other words start again at the first page; an answer to words
+// the box has moved on from is dropped, as every query's is.
+export function useSearchPages(search: string) {
+  const [asked, setAsked] = useState({ search: '', pageIndex: 0 })
+  const pageIndex = asked.search === search ? asked.pageIndex : 0
+  const found = useQuery(
+    () =>
+      search
+        ? graphql<{ SearchAgentGraph: FoundInGraph }>(
+            SEARCH,
+            pageIndex > 0
+              ? { query: search, first: SEARCH_PAGE, offset: pageIndex * SEARCH_PAGE }
+              : { query: search, first: SEARCH_PAGE },
+          )
+        : Promise.resolve(null),
+    [search, pageIndex],
+    { refresh: false },
+  )
+  const setPageIndex = (nextPageIndex: number) => setAsked({ search, pageIndex: nextPageIndex })
+  return { found: found.data?.SearchAgentGraph ?? null, isLoading: found.loading, pageIndex, setPageIndex }
 }
