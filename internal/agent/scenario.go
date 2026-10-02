@@ -595,6 +595,12 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 				}
 			} else {
 				evaluation, err = self.EvaluateAnswer(ctx, found, owner, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
+				// One answer the provider broke off is that answer missed,
+				// with why: a hundred questions are not lost to one stream
+				// that failed. A run that was stopped still stops.
+				if err != nil && ctx.Err() == nil {
+					evaluation, err = &AnswerEvaluation{AnswerVerdict: AnswerMissed, VerdictReason: "the answer could not be given: " + err.Error()}, nil
+				}
 			}
 			if err != nil {
 				return nil, err
