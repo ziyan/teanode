@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/finance/rates"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/graphapi"
 )
 
 // Finance: the person's finance sources, finance accounts and finance
@@ -1457,7 +1459,7 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 	if filter.Offset, err = offsetArgument(arguments.Offset); err != nil {
 		return nil, err
 	}
-	filter.ShouldCountTotal = true
+	filter.ShouldCountTotal, filter.ShouldReadIDsOnly = financeTransactionsSelection(ctx)
 	page, err := self.transaction(ctx).ListFinanceTransactions(found.ID, filter)
 	if err != nil {
 		return nil, financeError(err)
@@ -1469,6 +1471,28 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 	return &FinanceTransactionPageView{
 		FinanceTransactions: transactions, NextCursor: page.NextCursor, TotalCount: page.TotalCount, LeftOutDuplicateCount: page.LeftOutDuplicateCount,
 	}, nil
+}
+
+// financeTransactionsSelection is what a read of FinanceTransactions
+// asks for, so the work for what it does not is left out: the counts
+// unless totalCount or leftOutDuplicateCount is selected, and every field
+// of the rows but the id when the id is all that is selected of them, as
+// Select all reads them. A query whose fields cannot be followed gets
+// everything.
+func financeTransactionsSelection(ctx context.Context) (shouldCountTotal bool, shouldReadIDsOnly bool) {
+	fieldNames, isKnown := graphapi.SelectedFieldNames(ctx)
+	if !isKnown {
+		return true, false
+	}
+	shouldCountTotal = slices.Contains(fieldNames, "totalCount") || slices.Contains(fieldNames, "leftOutDuplicateCount")
+	rowFieldNames, isKnown := graphapi.SelectedFieldNames(ctx, "financeTransactions")
+	if !isKnown {
+		return shouldCountTotal, false
+	}
+	shouldReadIDsOnly = !slices.ContainsFunc(rowFieldNames, func(fieldName string) bool {
+		return fieldName != "id" && fieldName != "__typename"
+	})
+	return shouldCountTotal, shouldReadIDsOnly
 }
 
 func (self *graph) FinanceTrades(ctx context.Context, arguments FinanceTradesArguments) (*FinanceTradePageView, error) {

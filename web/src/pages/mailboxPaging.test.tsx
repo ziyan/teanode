@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
@@ -89,6 +89,16 @@ function Address() {
 }
 const address = () => screen.getByTestId('address').textContent ?? ''
 
+// Back is the browser's back button, which the page cannot disable.
+function Back() {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      browser back
+    </button>
+  )
+}
+
 // threadReads is the offset and search of every read of the list.
 const threadReads = () =>
   execute.mock.calls
@@ -113,14 +123,15 @@ afterEach(() => {
   execute.mockReset()
 })
 
-function renderAt(entry: string) {
+function renderAt(entry: string, earlierEntries: string[] = []) {
   render(
-    <MemoryRouter initialEntries={[entry]}>
+    <MemoryRouter initialEntries={[...earlierEntries, entry]} initialIndex={earlierEntries.length}>
       <Routes>
         <Route path="/mailbox/:folderId" element={<MailboxPage />} />
         <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
       </Routes>
       <Address />
+      <Back />
     </MemoryRouter>,
   )
 }
@@ -169,4 +180,55 @@ it('keeps the page in range and starts a search at the first page', async () => 
   await waitFor(() => expect(address()).toBe('/mailbox/folder-inbox?q=invented'))
   expect(await screen.findByText('table.range {"first":"1","last":"3","total":"3"}')).toBeTruthy()
   expect(threadReads()[threadReads().length - 1]).toEqual([0, 50, 'invented'])
+})
+
+// A first read that fails says nothing about how long the list is, so a
+// reload of the second page stays on the second page to be tried again.
+it('stays on the page in the address when the first read fails', async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('ListMailboxThreads(')) {
+      throw new Error('invented connection failure')
+    }
+    return {}
+  })
+  renderAt('/mailbox/folder-inbox?page=2')
+  await waitFor(() => expect(threadReads().length).toBe(1))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(address()).toBe('/mailbox/folder-inbox?page=2')
+})
+
+// Back while a page is still loading: the page left behind answers last,
+// and its threads must not be shown under the range of the page gone to.
+it('drops the answer of a page left while it was loading', async () => {
+  let answerFirstPage: () => void = () => {}
+  execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('ListMailboxThreads(')) {
+      const offset = Number(variables?.offset ?? 0)
+      if (offset === 0) {
+        await new Promise<void>((resolve) => {
+          answerFirstPage = resolve
+        })
+      }
+      const count = Math.max(0, Math.min(50, 120 - offset))
+      return {
+        ListMailboxThreads: {
+          threads: Array.from({ length: count }, (_, index) => thread(offset + index)),
+          total: 120,
+        },
+      }
+    }
+    return {}
+  })
+  renderAt('/mailbox/folder-inbox', ['/mailbox/folder-inbox?page=2'])
+  await waitFor(() => expect(threadReads().length).toBe(1))
+
+  fireEvent.click(screen.getByRole('button', { name: 'browser back' }))
+  expect(await screen.findByText('Invented subject 50')).toBeTruthy()
+  expect(address()).toBe('/mailbox/folder-inbox?page=2')
+
+  answerFirstPage()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(screen.queryByText('Invented subject 0')).toBeNull()
+  expect(screen.getByText('Invented subject 50')).toBeTruthy()
+  expect(screen.getByText('table.range {"first":"51","last":"100","total":"120"}')).toBeTruthy()
 })

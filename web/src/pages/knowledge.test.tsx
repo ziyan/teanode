@@ -140,7 +140,10 @@ it('pages through the search and starts again for other words', async () => {
       nextOffset: Number(variables?.offset ?? 0) + 60,
     }),
   }))
-  const { result, rerender } = renderHook(({ search }) => useSearchPages(search), { initialProps: { search: 'boat' } })
+  const { result, rerender } = renderHook(({ search }) => useSearchPages(search), {
+    initialProps: { search: 'boat' },
+    wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter>,
+  })
   await waitFor(() => expect(result.current.found?.nodes.map((node) => node.id)).toEqual(['boat-0']))
   expect(execute.mock.calls[0][1]).toEqual({ query: 'boat', first: 60 })
 

@@ -97,6 +97,21 @@ beforeEach(() => {
       }
     }
     if (document.includes('AgentGraphPage(')) return { AgentGraphPage: page(String(variables?.path)) }
+    // Two pages of answers to any words: the second is the last.
+    if (document.includes('SearchAgentGraph(')) {
+      const offset = Number(variables?.offset ?? 0)
+      return {
+        SearchAgentGraph: {
+          nodes: [node(`found/${variables?.query}-${offset}`, 'page')],
+          facts: [],
+          moreNodeCount: offset === 0 ? 1 : 0,
+          isMoreNodeCountLowerBound: false,
+          moreFactCount: 0,
+          isMoreFactCountLowerBound: false,
+          nextOffset: offset === 0 ? 60 : 0,
+        },
+      }
+    }
     return {}
   })
 })
@@ -156,4 +171,32 @@ it('pages the facts of a page', async () => {
   expect(await screen.findByText('#51 Invented fact 51')).toBeTruthy()
   expect(screen.queryByText('#1 Invented fact 1')).toBeNull()
   expect(address()).toBe('/knowledge/projects/project-07?facts=2')
+})
+
+const searchReads = () =>
+  execute.mock.calls
+    .filter(([document]) => document.includes('SearchAgentGraph('))
+    .map(([, variables]) => [variables?.query, variables?.offset])
+
+// The search box's page is in the address under its own name, so Back goes
+// to the page of answers before; its last page still says where it is; and
+// other words start again at the first page, asked for once.
+it('pages the search box with its page in the address', async () => {
+  renderAt('/knowledge')
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'harbor' } })
+  expect(await screen.findByText('Invented harbor-0')).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'table.next' }))
+  expect(await screen.findByText('Invented harbor-60')).toBeTruthy()
+  expect(address()).toBe('/knowledge?found=2')
+  expect(screen.getByText('knowledge.search.lastPage {"page":"2"}')).toBeTruthy()
+
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'mooring' } })
+  expect(await screen.findByText('Invented mooring-0')).toBeTruthy()
+  await waitFor(() => expect(address()).toBe('/knowledge'))
+  expect(searchReads()).toEqual([
+    ['harbor', undefined],
+    ['harbor', 60],
+    ['mooring', undefined],
+  ])
 })

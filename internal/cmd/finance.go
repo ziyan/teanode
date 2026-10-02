@@ -1214,6 +1214,11 @@ func pageNote(shownCount, offset, totalCount int, nextCursor string, isAfterGive
 		}
 		return fmt.Sprintf("note: %d of %d; add --after %s for the next page", shownCount, totalCount, nextCursor)
 	}
+	// An offset past the last row holds nothing, and "1001 to 1000" would
+	// say a range that is not there.
+	if shownCount == 0 && offset >= totalCount {
+		return fmt.Sprintf("note: --offset %d is past the end, there are %d in all", offset, totalCount)
+	}
 	shown := fmt.Sprintf("note: %d to %d of %d", offset+1, offset+shownCount, totalCount)
 	if nextCursor == "" {
 		return shown

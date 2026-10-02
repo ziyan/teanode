@@ -531,22 +531,39 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred, priority, pageSize, offset],
   )
 
+  // Which read of the list is the current one, the way useQuery counts
+  // them. Back and Forward while a page is loading start a second read
+  // before the first is answered, and without the count whichever answer
+  // came last was shown, one page's threads under another page's range.
+  const loadGeneration = useRef(0)
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     try {
       const response = await graphql<{ ListMailboxThreads: MailboxThreadPage }>(THREADS, variables)
+      if (generation !== loadGeneration.current) {
+        return
+      }
       const page = response.ListMailboxThreads
       setThreads(page.threads)
       setTotal(page.total)
       setError(null)
     } catch (failure) {
+      if (generation !== loadGeneration.current) {
+        return
+      }
       setError(failure)
     } finally {
-      setLoading(false)
+      if (generation === loadGeneration.current) {
+        setLoading(false)
+      }
     }
   }, [variables])
 
-  useKeepPageInRange(pageIndex, pageSize, loading ? null : total, setPageIndex)
+  // A read that failed says nothing about how long the list is: the total
+  // held is still the zero it started at, and believing it would send a
+  // reload of page two back to page one.
+  useKeepPageInRange(pageIndex, pageSize, loading || error ? null : total, setPageIndex)
   // Every row of a page dealt with, and more after it: the page is read
   // again so the rows behind it move up, rather than standing empty with a
   // range that counts nothing. Once for each page and total, so a server

@@ -290,6 +290,9 @@ type FoundInGraph = {
 
 // How many pages and facts one page of a search holds.
 const SEARCH_PAGE = 60
+// The address's name for the page of the search box's answers, apart from
+// the folder's page and a page's facts.
+const SEARCH_PAGE_PARAMETER = 'found'
 
 // A slice of one document: where in the text it starts, how long the whole
 // document is, and where the read that carries on from it begins -- zero
@@ -431,7 +434,7 @@ function nameOf(node: Node, me: string): string {
 // of pages is not browsed; it is looked up, and the list is for when you
 // do not know the name yet.
 export function KnowledgePage() {
-  const { t, plural } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const toast = useToast()
   const desktop = useIsDesktop()
   const me = useSession().name || ''
@@ -786,7 +789,11 @@ export function KnowledgePage() {
             pageSize={SEARCH_PAGE}
             shownCount={Math.max(searchPages.found.nodes.length, searchPages.found.facts.length)}
             totalCount={0}
-            summary={searchPages.found.nextOffset > 0 ? moreFoundInGraph(searchPages.found, { t, plural }) : ''}
+            summary={
+              searchPages.found.nextOffset > 0
+                ? moreFoundInGraph(searchPages.found, { t, plural })
+                : t('knowledge.search.lastPage', { page: (searchPages.pageIndex + 1).toLocaleString(language) })
+            }
             hasNextPage={searchPages.found.nextOffset > 0}
             isLoading={searchPages.isLoading}
             onPageIndex={searchPages.setPageIndex}
@@ -1042,21 +1049,27 @@ function NavigatorList({
   const shownPageIndex = useRef(pageIndex)
   if (current) shownPageIndex.current = pageIndex
   const offset = shownPageIndex.current * PAGE_SIZE
+  // Which read is the current one, the way useQuery counts them: Back and
+  // Forward while a page loads must not show the page left behind.
+  const loadGeneration = useRef(0)
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     try {
       const result = await graphql<{
         AgentGraphChildren: { rows: { node: Node; hint: string; children: number }[]; total: number }
       }>(CHILDREN, { path, first: PAGE_SIZE, offset })
+      if (generation !== loadGeneration.current) return
       // Ordered within the page it arrived in rather than across the whole
       // folder, since the server pages in its own order.
       setRows(ordered(result.AgentGraphChildren.rows.map((row) => ({ ...row, children: row.children }))))
       setTotal(result.AgentGraphChildren.total)
       setProblem(null)
     } catch (caught) {
+      if (generation !== loadGeneration.current) return
       setProblem(caught)
     } finally {
-      setLoading(false)
+      if (generation === loadGeneration.current) setLoading(false)
     }
   }, [path, offset])
   useEffect(() => {
@@ -1067,7 +1080,8 @@ function NavigatorList({
     setTotal(0)
     setProblem(null)
   }, [path])
-  useKeepPageInRange(pageIndex, PAGE_SIZE, current && !loading ? total : null, onPageIndex)
+  // A failed read leaves the total at zero, which says nothing about the folder.
+  useKeepPageInRange(pageIndex, PAGE_SIZE, current && !loading && !problem ? total : null, onPageIndex)
   // The open page's row is shown even when it is filed past the first
   // fifty: a page opened from a link is otherwise selected in a list that
   // does not show it. Its page is looked for once each time a page is
@@ -2775,11 +2789,24 @@ function EditFactDialog({
 
 // useSearchPages is the search box's answer a page at a time: the page
 // shown, whether it is on its way, which page it is, and the way to
-// another. Other words start again at the first page; an answer to words
-// the box has moved on from is dropped, as every query's is.
+// another. The page is in the address under a name of its own, since the
+// folder's list has the page and a page's facts have theirs, so Back goes
+// to the page of answers before. The words are not in the address, so the
+// page in it is kept against the words it was chosen for: other words
+// start again at the first page, from the first render they are drawn in
+// rather than after the address catches up, and an answer to words the box
+// has moved on from is dropped, as every query's is.
 export function useSearchPages(search: string) {
-  const [asked, setAsked] = useState({ search: '', pageIndex: 0 })
-  const pageIndex = asked.search === search ? asked.pageIndex : 0
+  const foundPage = usePageInAddress({ pageParameter: SEARCH_PAGE_PARAMETER, defaultPageSize: SEARCH_PAGE })
+  const [pagedSearch, setPagedSearch] = useState(search)
+  const pageIndex = search !== '' && pagedSearch === search ? foundPage.pageIndex : 0
+  // A page left in the address by other words, or by a search since
+  // cleared, is taken out of it, in place, since nobody chose to leave it.
+  const isStalePageInAddress = foundPage.pageIndex > 0 && pageIndex === 0
+  useEffect(() => {
+    if (isStalePageInAddress) foundPage.setPageIndex(0, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStalePageInAddress])
   const found = useQuery(
     () =>
       search
@@ -2793,6 +2820,9 @@ export function useSearchPages(search: string) {
     [search, pageIndex],
     { refresh: false },
   )
-  const setPageIndex = (nextPageIndex: number) => setAsked({ search, pageIndex: nextPageIndex })
+  const setPageIndex = (nextPageIndex: number) => {
+    setPagedSearch(search)
+    foundPage.setPageIndex(nextPageIndex)
+  }
   return { found: found.data?.SearchAgentGraph ?? null, isLoading: found.loading, pageIndex, setPageIndex }
 }

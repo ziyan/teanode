@@ -2701,6 +2701,7 @@ export const en = {
   'knowledge.search.moreFactsAtLeastOther': 'at least {count} more facts',
   'knowledge.search.moreBoth': '{pages} and {facts}',
   'knowledge.search.moreEither': '{what}',
+  'knowledge.search.lastPage': 'Page {page}, the last',
   'knowledge.noPage': 'There is no page here.',
   'knowledge.noSummary': 'This page has no opening yet. A dream writes one from the facts below.',
   'knowledge.contact': 'In your address book as {name} {detail}',

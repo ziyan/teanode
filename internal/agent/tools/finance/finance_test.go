@@ -471,6 +471,14 @@ func TestFinanceToolSaysWhichRowsOfHowMany(test *testing.T) {
 	if sent := operations.variables[len(operations.variables)-1]; sent["isDuplicateIncluded"] != true {
 		test.Errorf("sent %v", sent)
 	}
+	operations.answers["FinanceTransactions"] = `{"financeTransactions":[],"nextCursor":"","totalCount":50}`
+	pastTheEnd, err := call(test, operations, `{"operation":"transactions","offset":1000}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(pastTheEnd.Content, "offset 1000 is past the end, there are 50 in all") || strings.Contains(pastTheEnd.Content, "rows 1001") {
+		test.Errorf("a page past the end says so: %s", pastTheEnd.Content)
+	}
 	whole, err := call(test, operations, `{"operation":"trades"}`)
 	if err != nil {
 		test.Fatal(err)

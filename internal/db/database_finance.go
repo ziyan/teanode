@@ -237,9 +237,15 @@ type FinanceTransactionFilter struct {
 	After  string
 	Offset int
 
-	// ShouldCountTotal fills the page's TotalCount: one more statement,
+	// ShouldCountTotal fills the page's TotalCount, and with
+	// IsDuplicateExcluded its LeftOutDuplicateCount: one more statement,
 	// so the reads that walk every page by the cursor leave it off.
 	ShouldCountTotal bool
+
+	// ShouldReadIDsOnly reads each finance transaction's id and posted
+	// day alone, which is all a read that collects ids needs; every
+	// other field of the rows it gives is empty.
+	ShouldReadIDsOnly bool
 }
 
 // How many finance transactions one page holds.
@@ -1257,27 +1263,28 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 	}
 	page := &FinanceTransactionPage{}
 	if filter.ShouldCountTotal {
-		counted, err := self.financeTransactionQuery(agentId, filter)
+		// The mirrored copies left out are counted in the same statement
+		// as the total: the filter without IsDuplicateExcluded, counting
+		// all of its rows and, apart, the ones that are not a copy.
+		withDuplicates := *filter
+		withDuplicates.IsDuplicateExcluded = false
+		counted, err := self.financeTransactionQuery(agentId, &withDuplicates)
 		if err != nil {
 			return nil, err
 		}
-		var totalCount int64
-		if err := counted.Count(&totalCount).Error; err != nil {
+		var counts struct {
+			TotalWithDuplicatesCount    int64
+			TotalWithoutDuplicatesCount int64
+		}
+		if err := counted.Select(`COUNT(*) AS "total_with_duplicates_count",
+			COUNT(*) FILTER (WHERE "duplicate_of_transaction_id" IS NULL) AS "total_without_duplicates_count"`).
+			Scan(&counts).Error; err != nil {
 			return nil, err
 		}
-		page.TotalCount = int(totalCount)
+		page.TotalCount = int(counts.TotalWithDuplicatesCount)
 		if filter.IsDuplicateExcluded {
-			withDuplicates := *filter
-			withDuplicates.IsDuplicateExcluded = false
-			countedWithDuplicates, err := self.financeTransactionQuery(agentId, &withDuplicates)
-			if err != nil {
-				return nil, err
-			}
-			var totalWithDuplicatesCount int64
-			if err := countedWithDuplicates.Count(&totalWithDuplicatesCount).Error; err != nil {
-				return nil, err
-			}
-			page.LeftOutDuplicateCount = int(totalWithDuplicatesCount - totalCount)
+			page.TotalCount = int(counts.TotalWithoutDuplicatesCount)
+			page.LeftOutDuplicateCount = int(counts.TotalWithDuplicatesCount - counts.TotalWithoutDuplicatesCount)
 		}
 	}
 	query, err := self.financeTransactionQuery(agentId, filter)
@@ -1290,6 +1297,11 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 			return nil, err
 		}
 		query = query.Where(`("posted_on", "id") < (?::date, ?)`, postedOn, financeTransactionId)
+	}
+	if filter.ShouldReadIDsOnly {
+		// The posted day too, since the cursor for the next page is written
+		// from it.
+		query = query.Select(`"id"`, `"posted_on"`)
 	}
 	var found []agentFinanceTransactionModel
 	// One more than the page, to know whether there is another.

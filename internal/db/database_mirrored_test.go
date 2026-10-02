@@ -337,6 +337,36 @@ func TestMirroredFinanceTransactionsCountOnce(t *testing.T) {
 				t.Errorf("a copy was listed: %+v", financeTransaction)
 			}
 		}
+
+		// The ids alone, a row at a time by the cursor as Select all reads
+		// them, are the same ids in the same order, and nothing else of
+		// the rows is read.
+		idsByCursor := []string{}
+		cursor := ""
+		for {
+			idsOnly, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{Text: "fee", IsDuplicateExcluded: true,
+				Limit: 1, After: cursor, ShouldReadIDsOnly: true})
+			if err != nil {
+				t.Fatalf("ListFinanceTransactions with ids only: %s", err)
+			}
+			for _, financeTransaction := range idsOnly.FinanceTransactions {
+				if financeTransaction.Description != "" || financeTransaction.Amount != "" {
+					t.Errorf("more than the id was read: %+v", financeTransaction)
+				}
+				idsByCursor = append(idsByCursor, financeTransaction.ID)
+			}
+			if idsOnly.NextCursor == "" {
+				break
+			}
+			cursor = idsOnly.NextCursor
+		}
+		countedIds := []string{}
+		for _, financeTransaction := range counted.FinanceTransactions {
+			countedIds = append(countedIds, financeTransaction.ID)
+		}
+		if fmt.Sprint(idsByCursor) != fmt.Sprint(countedIds) {
+			t.Errorf("ids only %v, the full rows %v", idsByCursor, countedIds)
+		}
 	})
 	// Every duplicate deleted outright, which is what counting once means.
 	dbtest.Exec(t, database, fmt.Sprintf(`DELETE FROM "agent_finance_transaction" WHERE "agent_id" = '%s' AND "duplicate_of_transaction_id" IS NOT NULL`, fixture.agentId))

@@ -336,6 +336,8 @@ func TestFinanceTransactionsSendsTheOffset(test *testing.T) {
 		{shownCount: 50, totalCount: 1234, nextCursor: "2026-09-01/next", wanted: "note: 1 to 50 of 1234; add --offset 50 for the next page"},
 		{shownCount: 34, offset: 1200, totalCount: 1234, wanted: "note: 1201 to 1234 of 1234"},
 		{shownCount: 50, offset: 50, totalCount: 1234, nextCursor: "2026-08-01/next", isAfterGiven: true, wanted: "note: 50 of 1234; add --after 2026-08-01/next for the next page"},
+		{shownCount: 0, offset: 1000, totalCount: 50, wanted: "note: --offset 1000 is past the end, there are 50 in all"},
+		{shownCount: 0, offset: 50, totalCount: 50, wanted: "note: --offset 50 is past the end, there are 50 in all"},
 	} {
 		if have := pageNote(example.shownCount, example.offset, example.totalCount, example.nextCursor, example.isAfterGiven); have != example.wanted {
 			test.Errorf("%+v: %q", example, have)

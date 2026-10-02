@@ -147,3 +147,13 @@ it('pages the mailing lists with the page in the address', async () => {
     [0, 50, 'invented'],
   ])
 })
+
+// A reload, or a link straight to the second page, stays on it: the first
+// answer's total says the page is in range, so nothing sends it back.
+it('opens the second page from the address and stays there', async () => {
+  renderAt('/mailbox/subscriptions?page=2')
+  expect(await screen.findByText('Invented list 50')).toBeTruthy()
+  expect(screen.getByText('table.range {"first":"51","last":"70","total":"70"}')).toBeTruthy()
+  expect(address()).toBe('/mailbox/subscriptions?page=2')
+  expect(listReads()).toEqual([[50, 50, '']])
+})

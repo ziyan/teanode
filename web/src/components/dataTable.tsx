@@ -179,7 +179,15 @@ export function DataTable<Row>({
   const { pathname } = useLocation()
   const remembered = useRef(readRemembered(pathname))
   const [filters, setFilters] = useState<Record<string, string | string[]>>(initialFilters ?? {})
-  const [order, setOrder] = useState<Sort | null>(remembered.current.order ?? null)
+  // A remembered order is kept only while its column can still be sorted
+  // by: a column since removed, or no longer sortable, would order a
+  // server's page by something it does not offer, and leave a header
+  // saying an order that nothing shows.
+  const [order, setOrder] = useState<Sort | null>(() => {
+    const rememberedOrder = remembered.current.order ?? null
+    const isSortable = columns.some((column) => column.key === rememberedOrder?.key && column.sort !== undefined)
+    return isSortable ? rememberedOrder : null
+  })
   // Open when the page was reached from a link that already narrowed the
   // list, so nobody wonders why they are looking at a subset. Otherwise the
   // fields stay out of the way: a row of empty inputs under every header is

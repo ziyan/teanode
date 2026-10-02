@@ -59,16 +59,16 @@ export function FinanceSelectionToolbar({
   // with a spending category to file under.
   onApply: (spendingCategoryId: string, shouldSaveSpendingRules: boolean) => void
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [chosen, setChosen] = useState('')
   const [shouldSaveSpendingRules, setShouldSaveSpendingRules] = useState(false)
   const isUncategorizedChosen = chosen === UNCATEGORIZED_CHOICE
   return (
     <div className="finance-selection-toolbar" role="group" aria-label={t('finance.selectionActions')}>
-      <span className="muted">{t('finance.selectedTransactions', { count: selectedTransactionCount.toLocaleString() })}</span>
+      <span className="muted">{t('finance.selectedTransactions', { count: selectedTransactionCount.toLocaleString(language) })}</span>
       {selectedTransactionCount < matchingTransactionCount ? (
         <button type="button" disabled={isApplying} onClick={onSelectAll}>
-          {t('finance.selectAllMatching', { count: matchingTransactionCount.toLocaleString() })}
+          {t('finance.selectAllMatching', { count: matchingTransactionCount.toLocaleString(language) })}
         </button>
       ) : null}
       <Select

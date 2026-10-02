@@ -244,7 +244,10 @@ export function MailboxSubscriptionsPage() {
     [mailboxId, showingLeft, matching, pageSize, offset],
     { refresh: false },
   )
-  useKeepPageInRange(pageIndex, pageSize, query.data ? total : null, setPageIndex)
+  // The total is read from the answer itself, not from the state the effect
+  // below fills from it: on the first answer that state still holds zero, and
+  // a reload or a link to page two would be sent back to page one.
+  useKeepPageInRange(pageIndex, pageSize, query.data?.ListMailboxSubscriptions.total ?? null, setPageIndex)
 
   // The page comes from the query above and replaces what is held.
   // Reloading after an unsubscribe or a mute goes through the same path, so

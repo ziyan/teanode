@@ -374,6 +374,12 @@ it('lets go of the selection and goes back to the first page when a filter chang
   expect(address().get('page')).toBeNull()
   expect(address().get('rows')).toBe('25')
   expect(address().get('isUncategorized')).toBe('true')
+  // The new filters are asked for once, at the first page, never at the
+  // offset of the page the old ones were on.
+  const narrowedReads = execute.mock.calls
+    .filter(([document, variables]) => document.includes('totalCount') && variables?.isUncategorized)
+    .map(([, variables]) => [variables?.offset, variables?.limit])
+  expect(narrowedReads).toEqual([[0, 25]])
 })
 
 // The mirrored copies are left out unless Show duplicates asks for them,

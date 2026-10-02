@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Tag } from '../../components/common'
+import { usePageInAddress } from '../../components/pager'
 import { Column, DataTable, Range } from '../../components/dataTable'
 import { ConfirmDialog } from '../../components/dialog'
 import { Select } from '../../components/select'
@@ -230,21 +231,32 @@ export function FinanceTransactionsSection() {
     isDuplicateIncluded: filters.isDuplicateIncluded || undefined,
   }
   const filterKey = JSON.stringify(variables)
+  // The filters in force now, for an answer that arrives after they
+  // changed, and for the range below to say which filters it was told for.
+  const filterKeyNow = useRef(filterKey)
+  filterKeyNow.current = filterKey
   // Which page the table shows, as it says once it has read the address:
   // nothing is asked for before then, so a link to page four does not
   // fetch page one first.
-  const [range, setRange] = useState<Range | null>(null)
-  const onRange = useCallback((next: Range) => setRange(next), [])
+  const [range, setRange] = useState<(Range & { filterKey: string }) | null>(null)
+  const onRange = useCallback((next: Range) => setRange({ ...next, filterKey: filterKeyNow.current }), [])
+  // Other filters are drawn once before the table says its new range, and
+  // the range held then is the old filters' page: asking with it sent the
+  // new filters at the old offset, and then again at the right one. Until
+  // the table has said a range for these filters, the page is the
+  // address's, which the change of filters has already sent to the first.
+  const { pageIndex } = usePageInAddress()
+  const offset = range === null ? null : range.filterKey === filterKey ? range.offset : pageIndex * range.limit
   const first = useQuery(
     () =>
-      range
+      range && offset !== null
         ? graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
             ...variables,
             limit: range.limit,
-            offset: range.offset,
+            offset,
           })
         : Promise.resolve(null),
-    [filterKey, range?.offset, range?.limit],
+    [filterKey, offset, range?.limit],
     { refresh: false },
   )
   const accounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
@@ -318,11 +330,6 @@ export function FinanceTransactionsSection() {
     return found ? spendingCategoryLabel(found, categoryList, categoryName) : ''
   }
 
-  // The filters in force now, for an answer that arrives after they
-  // changed.
-  const filterKeyNow = useRef(filterKey)
-  filterKeyNow.current = filterKey
-
   // selectAll chooses every transaction the filters match, on every page,
   // by reading their ids alone from the server a few pages at a time, the
   // way the list itself is ordered. More than can be given rules at once is
@@ -330,7 +337,7 @@ export function FinanceTransactionsSection() {
   // were left out.
   const selectAll = async () => {
     if (totalCount > MAXIMUM_SELECTED_TRANSACTION_COUNT) {
-      toast.failed(t('finance.tooManyToSelect', { count: MAXIMUM_SELECTED_TRANSACTION_COUNT.toLocaleString() }))
+      toast.failed(t('finance.tooManyToSelect', { count: MAXIMUM_SELECTED_TRANSACTION_COUNT.toLocaleString(language) }))
       return
     }
     const asked = filterKey

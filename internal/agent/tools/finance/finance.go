@@ -1072,6 +1072,11 @@ func pageHint(name string, variables map[string]any, answered any) string {
 	if _, isAfterGiven := variables["after"]; isAfterGiven {
 		return fmt.Sprintf("%d of %d shown, read from the cursor given; tell the person both numbers", len(rows), int(totalCount))
 	}
+	// An offset past the last row holds nothing, and "rows 1001 to 1000"
+	// would say a range that is not there.
+	if len(rows) == 0 && offset >= int(totalCount) {
+		return fmt.Sprintf("offset %d is past the end, there are %d in all; tell the person how many there are", offset, int(totalCount))
+	}
 	hint := fmt.Sprintf("rows %d to %d of %d shown; tell the person both numbers", offset+1, offset+len(rows), int(totalCount))
 	if offset+len(rows) < int(totalCount) {
 		hint += fmt.Sprintf(", and offset %d reads the next page", offset+len(rows))
