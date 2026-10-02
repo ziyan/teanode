@@ -2,6 +2,8 @@
 // month on the Spending section and a narrowed list of transactions can be
 // linked to, shared, and gone back to.
 
+import { historyRange } from './spendingYear'
+
 // TransactionFilters narrow the Transactions section, one field for each
 // of the finance transactions query's arguments it offers. Empty is no
 // filter.
@@ -26,6 +28,20 @@ export const NO_TRANSACTION_FILTERS: TransactionFilters = {
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 const YEAR_PATTERN = /^\d{4}$/
+
+// FIRST_YEAR and YEARS_AHEAD bound the years the server answers for: 1900
+// through ten years past this one. Year zero matches the pattern, and the
+// server refuses it.
+const FIRST_YEAR = 1900
+const YEARS_AHEAD = 10
+
+// isYear says a value is a year written 2006 that the server answers for,
+// from FIRST_YEAR to YEARS_AHEAD past this one.
+export function isYear(value: string, currentMonth: string): boolean {
+  if (!YEAR_PATTERN.test(value)) return false
+  const year = Number(value)
+  return year >= FIRST_YEAR && year <= Number(currentMonth.slice(0, 4)) + YEARS_AHEAD
+}
 
 function isDay(value: string): boolean {
   if (!DAY_PATTERN.test(value)) return false
@@ -90,10 +106,13 @@ export function monthRange(month: string, today: string): { from: string; to: st
 }
 
 // spendingMonthFromSearch is the month the Spending section shows: the one
-// in the address when it is a month that has begun, otherwise this one.
+// in the address when it is a month that has begun, of a year the server
+// answers for, otherwise this one.
 export function spendingMonthFromSearch(search: URLSearchParams, currentMonth: string): string {
   const month = (search.get('month') ?? '').trim()
-  return MONTH_PATTERN.test(month) && month <= currentMonth ? month : currentMonth
+  return MONTH_PATTERN.test(month) && isYear(month.slice(0, 4), currentMonth) && month <= currentMonth
+    ? month
+    : currentMonth
 }
 
 // SpendingPeriodKind is whether the Spending section shows one month or one
@@ -113,11 +132,13 @@ export function latestMonthOfYear(year: string, currentMonth: string): string {
 }
 
 // spendingPeriodFromSearch is the period the Spending section shows: a
-// year when the address names one that has begun, otherwise the month
-// spendingMonthFromSearch reads.
+// year when the address names one that has begun and that the history
+// reaches (historyRange: a year further back would show nothing, read as
+// a year of no money), otherwise the month spendingMonthFromSearch reads.
 export function spendingPeriodFromSearch(search: URLSearchParams, currentMonth: string): SpendingPeriod {
   const year = (search.get('year') ?? '').trim()
-  if (YEAR_PATTERN.test(year) && year <= currentMonth.slice(0, 4)) {
+  const firstHistoryYear = historyRange(currentMonth).fromMonth.slice(0, 4)
+  if (isYear(year, currentMonth) && year <= currentMonth.slice(0, 4) && year >= firstHistoryYear) {
     return { spendingPeriodKind: 'year', year, month: latestMonthOfYear(year, currentMonth) }
   }
   const month = spendingMonthFromSearch(search, currentMonth)

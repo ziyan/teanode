@@ -282,9 +282,11 @@ type SpendingCategoryYearMonth struct {
 
 	// ProjectedAmount and BudgetToDateAmount are the month in progress's
 	// projection (ProjectSpendingCategoryMonth) and its budget over the
-	// days so far; ignored for the other phases.
+	// days so far, and DayOfMonth is its today, from one; ignored for the
+	// other phases.
 	ProjectedAmount    *big.Rat
 	BudgetToDateAmount *big.Rat
+	DayOfMonth         int
 }
 
 // SpendingCategoryYearInput is what ProjectSpendingCategoryYear reads: the
@@ -292,9 +294,7 @@ type SpendingCategoryYearMonth struct {
 type SpendingCategoryYearInput struct {
 	Months []*SpendingCategoryYearMonth
 
-	// DayOfYear is the day computed for, from one, or zero for a year not
-	// begun; IsYearOver says that day is past the year's last.
-	DayOfYear  int
+	// IsYearOver says the day computed for is past the year's last.
 	IsYearOver bool
 }
 
@@ -320,12 +320,15 @@ type SpendingCategoryYearProjection struct {
 // (repeat charges and its pace counted), and each budgeted month still to
 // come at the average of those, which is the year carried on the way it
 // has gone. With no month begun there is nothing to carry on, and a month
-// to come counts at its budget.
+// to come counts at its budget. In its first week the month in progress
+// counts at its budget, or at its spending when that is more already: its
+// straight line is noise then (one dinner on the first projects a month of
+// dinners), and carried on it would be repeated for every month to come.
 //
 // The pace is a month's thresholds over the year: over once spending
-// passes the year's budget; at_risk, after the first week of the year,
-// when the projection passes it by more than ten percent; under below
-// ninety percent of it; on_track otherwise.
+// passes the year's budget; at_risk, after the first week of the first
+// budgeted month to begin, when the projection passes it by more than ten
+// percent; under below ninety percent of it; on_track otherwise.
 func ProjectSpendingCategoryYear(input *SpendingCategoryYearInput) *SpendingCategoryYearProjection {
 	projection := &SpendingCategoryYearProjection{
 		BudgetAmount: new(big.Rat), BudgetToDateAmount: new(big.Rat), SpendingAmount: new(big.Rat), BudgetedMonthCount: len(input.Months),
@@ -343,9 +346,17 @@ func ProjectSpendingCategoryYear(input *SpendingCategoryYearInput) *SpendingCate
 			projection.SpendingAmount.Add(projection.SpendingAmount, spending)
 			monthFigures = append(monthFigures, spending)
 		case BudgetMonthPhaseInProgress:
+			spending := ratOrZero(month.SpendingAmount)
 			projection.BudgetToDateAmount.Add(projection.BudgetToDateAmount, ratOrZero(month.BudgetToDateAmount))
-			projection.SpendingAmount.Add(projection.SpendingAmount, ratOrZero(month.SpendingAmount))
-			monthFigures = append(monthFigures, ratOrZero(month.ProjectedAmount))
+			projection.SpendingAmount.Add(projection.SpendingAmount, spending)
+			figure := ratOrZero(month.ProjectedAmount)
+			if month.DayOfMonth <= budgetPaceSettlingDays {
+				figure = budget
+				if spending.Cmp(budget) > 0 {
+					figure = spending
+				}
+			}
+			monthFigures = append(monthFigures, figure)
 		default:
 			toComeCount++
 			toComeBudget.Add(toComeBudget, budget)
@@ -354,7 +365,7 @@ func ProjectSpendingCategoryYear(input *SpendingCategoryYearInput) *SpendingCate
 	projection.ProjectedAmount = carriedOnYear(monthFigures, toComeCount, toComeBudget)
 
 	budget := projection.BudgetAmount
-	isSettled := input.IsYearOver || input.DayOfYear > budgetPaceSettlingDays
+	isSettled := input.IsYearOver || isYearSettled(spendingMonthDays(input.Months))
 	switch {
 	case budget.Sign() > 0 && projection.SpendingAmount.Cmp(budget) > 0:
 		projection.BudgetPace = models.BudgetPaceOver
@@ -366,6 +377,47 @@ func ProjectSpendingCategoryYear(input *SpendingCategoryYearInput) *SpendingCate
 		projection.BudgetPace = models.BudgetPaceOnTrack
 	}
 	return projection
+}
+
+// budgetMonthDay is one budgeted month of a year: its phase and, for the
+// month in progress, its today from one.
+type budgetMonthDay struct {
+	budgetMonthPhase BudgetMonthPhase
+	dayOfMonth       int
+}
+
+func spendingMonthDays(months []*SpendingCategoryYearMonth) []budgetMonthDay {
+	monthDays := make([]budgetMonthDay, 0, len(months))
+	for _, month := range months {
+		monthDays = append(monthDays, budgetMonthDay{budgetMonthPhase: month.BudgetMonthPhase, dayOfMonth: month.DayOfMonth})
+	}
+	return monthDays
+}
+
+func incomeMonthDays(months []*IncomeCategoryYearMonth) []budgetMonthDay {
+	monthDays := make([]budgetMonthDay, 0, len(months))
+	for _, month := range months {
+		monthDays = append(monthDays, budgetMonthDay{budgetMonthPhase: month.BudgetMonthPhase, dayOfMonth: month.DayOfMonth})
+	}
+	return monthDays
+}
+
+// isYearSettled says a budget's year is past its first week, counted from
+// the first of its budgeted months to begin rather than from the first of
+// January: a budget that starts in October is a week old on the eighth of
+// October, and its year may say at_risk or behind no sooner than its month
+// may. A budgeted month that is over began four weeks ago or more. months
+// are in the year's order.
+func isYearSettled(months []budgetMonthDay) bool {
+	for _, month := range months {
+		switch month.budgetMonthPhase {
+		case BudgetMonthPhaseOver:
+			return true
+		case BudgetMonthPhaseInProgress:
+			return month.dayOfMonth > budgetPaceSettlingDays
+		}
+	}
+	return false
 }
 
 // carriedOnYear is the months begun added up (monthFigures: each month
@@ -400,16 +452,16 @@ type IncomeCategoryYearMonth struct {
 	IncomeAmount *big.Rat
 
 	// ProjectedAmount and ExpectedByTodayAmount are the month in
-	// progress's (ProjectIncomeCategoryMonth); ignored for the other
-	// phases.
+	// progress's (ProjectIncomeCategoryMonth), and DayOfMonth is its
+	// today, from one; ignored for the other phases.
 	ProjectedAmount       *big.Rat
 	ExpectedByTodayAmount *big.Rat
+	DayOfMonth            int
 }
 
 // IncomeCategoryYearInput is what ProjectIncomeCategoryYear reads.
 type IncomeCategoryYearInput struct {
 	Months     []*IncomeCategoryYearMonth
-	DayOfYear  int
 	IsYearOver bool
 }
 
@@ -433,8 +485,8 @@ type IncomeCategoryYearProjection struct {
 //
 // The pace is a month's over the year: ahead once more than the whole
 // year's expected income, by over ten percent, came in; behind, after the
-// first week of the year, when less than ninety percent of what was
-// expected by today came in; on_track otherwise.
+// first week of the first budgeted month to begin, when less than ninety
+// percent of what was expected by today came in; on_track otherwise.
 func ProjectIncomeCategoryYear(input *IncomeCategoryYearInput) *IncomeCategoryYearProjection {
 	projection := &IncomeCategoryYearProjection{
 		BudgetAmount: new(big.Rat), IncomeAmount: new(big.Rat), ExpectedByTodayAmount: new(big.Rat), ProjectedAmount: new(big.Rat),
@@ -458,7 +510,7 @@ func ProjectIncomeCategoryYear(input *IncomeCategoryYearInput) *IncomeCategoryYe
 		}
 	}
 	budget := projection.BudgetAmount
-	isSettled := input.IsYearOver || input.DayOfYear > budgetPaceSettlingDays
+	isSettled := input.IsYearOver || isYearSettled(incomeMonthDays(input.Months))
 	switch {
 	case budget.Sign() > 0 && projection.IncomeAmount.Cmp(new(big.Rat).Mul(budget, incomePaceAheadShare)) > 0:
 		projection.IncomePace = models.IncomePaceAhead

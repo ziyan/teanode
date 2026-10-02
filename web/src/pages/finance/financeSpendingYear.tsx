@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, formatMoney } from '../../components/common'
 import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
@@ -7,7 +9,7 @@ import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { CASH_FLOW, CashFlow, monthLabel } from './financeApi'
+import { CASH_FLOW, CashFlow, monthBefore, monthLabel } from './financeApi'
 import { UnconvertedNote, compactMoney } from './financeCommon'
 import { SpendingPeriod, SpendingPeriodKind, latestMonthOfYear } from './financeFilters'
 import {
@@ -28,6 +30,9 @@ import {
 // SpendingHistory is the cash flow of every month there is to choose from,
 // read once for the section: the years the chart of years draws and the
 // year menu lists, and the first month the month menu reaches back to.
+// windowStartMonth is the first month the history was read from, set when
+// that month already has cash flow: there may be more before it, not
+// read.
 export type SpendingHistory = {
   flow?: CashFlow
   error?: unknown
@@ -35,24 +40,35 @@ export type SpendingHistory = {
   years: YearCashFlow[]
   firstMonth: string | null
   incomeMonth: string | null
+  windowStartMonth: string | null
 }
 
-export function useSpendingHistory(currentMonth: string): SpendingHistory {
+// useSpendingHistory reads the history once it is wanted, and keeps it
+// from then on. Twenty years of cash flow is a long read for the server
+// (each day converted where an account is in another currency), so Month
+// mode, whose chart reads its own twelve months, asks for it only when the
+// person reaches for the month menu, and Year mode, whose chart of years
+// is drawn from it, as it opens.
+export function useSpendingHistory(currentMonth: string, isWanted: boolean): SpendingHistory {
   const range = historyRange(currentMonth)
+  const [isRequested, setRequested] = useState(isWanted)
+  if (isWanted && !isRequested) setRequested(true)
   const { data, error, loading } = useQuery(
-    () => graphql<{ CashFlow: CashFlow }>(CASH_FLOW, range),
-    [range.fromMonth, range.toMonth],
+    () => (isRequested ? graphql<{ CashFlow: CashFlow }>(CASH_FLOW, range) : Promise.resolve(null)),
+    [range.fromMonth, range.toMonth, isRequested],
     { refresh: false },
   )
   const flow = data?.CashFlow
   const months = flow?.cashFlowMonths ?? []
+  const firstMonth = firstCashFlowMonth(months)
   return {
     flow,
     error,
-    loading: loading && !data,
+    loading: isRequested && loading && !data,
     years: cashFlowYears(months, currentMonth.slice(0, 4)),
-    firstMonth: firstCashFlowMonth(months),
+    firstMonth,
     incomeMonth: firstIncomeMonth(months),
+    windowStartMonth: firstMonth !== null && firstMonth <= range.fromMonth ? range.fromMonth : null,
   }
 }
 
@@ -68,11 +84,15 @@ export function SpendingPeriodPicker({
   currentMonth,
   history,
   onSelectPeriod,
+  onWantHistory,
 }: {
   period: SpendingPeriod
   currentMonth: string
   history: SpendingHistory
   onSelectPeriod: (period: SpendingPeriod, isKindChange: boolean) => void
+  // onWantHistory is called as the person reaches for the control, so the
+  // month menu can reach back to the first month with cash flow.
+  onWantHistory?: () => void
 }) {
   const { t } = useTranslation()
   const isYear = period.spendingPeriodKind === 'year'
@@ -98,11 +118,18 @@ export function SpendingPeriodPicker({
     : monthOptions(history.firstMonth, currentMonth, period.month)
   const chosen = isYear ? period.year : period.month
   const index = options.indexOf(chosen)
-  const earlier = index >= 0 && index < options.length - 1 ? options[index + 1] : null
+  // Until the history has been read the month menu does not know where the
+  // months with money begin, so a month can always step back.
+  const earlier =
+    index >= 0 && index < options.length - 1
+      ? options[index + 1]
+      : !isYear && !history.flow
+        ? monthBefore(period.month, 1)
+        : null
   const later = index > 0 ? options[index - 1] : null
   const kinds: SpendingPeriodKind[] = ['month', 'year']
   return (
-    <div className="finance-period">
+    <div className="finance-period" onPointerEnter={onWantHistory} onFocus={onWantHistory}>
       <div className="segmented" role="group" aria-label={t('finance.periodKind')}>
         {kinds.map((kind) => (
           <button
@@ -171,13 +198,19 @@ export function SpendingByYearPanel({
   onSelectYear: (year: string) => void
 }) {
   const { t } = useTranslation()
-  const { flow, error, loading, years, firstMonth, incomeMonth } = history
+  const { flow, error, loading, years, firstMonth, incomeMonth, windowStartMonth } = history
   const currency = flow?.reportingCurrencyCode || 'USD'
   const currentYear = currentMonth.slice(0, 4)
   const isCurrent = year === currentYear
   const chosen = years.find((candidate) => candidate.year === year)
   const hasCashFlow = years.some((candidate) => candidate.incomeAmount !== 0 || candidate.spendingAmount !== 0)
   const yearLabel = (key: string) => {
+    // The history read already had money in its first month: the first
+    // year may have had more before it, which is not read, so it is not
+    // labelled as the year the money began.
+    if (windowStartMonth && key === windowStartMonth.slice(0, 4)) {
+      return t('finance.yearFromEarlierNotShown', { year: key, month: monthLabel(windowStartMonth) })
+    }
     const startMonth = partialYearStartMonth(key, firstMonth)
     if (startMonth) {
       const values = { year: key, month: monthLabel(startMonth) }

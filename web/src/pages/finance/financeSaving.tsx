@@ -128,7 +128,7 @@ export function SavingSummaryPanel({
       }
     >
       <ErrorMessage error={error} />
-      {(loading || answered) && !data ? <Loading /> : null}
+      {(loading || (answered && !error)) && !data ? <Loading /> : null}
       {summary && !hasBudgets && !year ? <SettingsEmpty>{t('finance.noSavingBudgets')}</SettingsEmpty> : null}
       {summary && !hasBudgets && year ? (
         <>

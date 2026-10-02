@@ -69,7 +69,10 @@ export function FinanceSpendingSection() {
   const [search, setSearch] = useSearchParams()
   const currentMonth = personMonth()
   const period = spendingPeriodFromSearch(search, currentMonth)
-  const history = useSpendingHistory(currentMonth)
+  // The years history is Year mode's; Month mode reads it only once the
+  // person reaches for the month menu.
+  const [isHistoryWanted, setHistoryWanted] = useState(false)
+  const history = useSpendingHistory(currentMonth, period.spendingPeriodKind === 'year' || isHistoryWanted)
   const selectPeriod = (chosen: SpendingPeriod, isKindChange: boolean) =>
     setSearch(searchFromSpendingPeriod(chosen, currentMonth), { replace: !isKindChange })
   const selectMonth = (month: string) =>
@@ -83,6 +86,7 @@ export function FinanceSpendingSection() {
         currentMonth={currentMonth}
         history={history}
         onSelectPeriod={selectPeriod}
+        onWantHistory={() => setHistoryWanted(true)}
       />
     </div>
   )
@@ -342,7 +346,7 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
       description={description}
     >
       <ErrorMessage error={error} />
-      {(loading || answered) && !data ? <Loading /> : null}
+      {(loading || (answered && !error)) && !data ? <Loading /> : null}
       {status && rows.length === 0 && incomeRows.length === 0 ? (
         <SettingsEmpty>{t('finance.noBudgetStatus')}</SettingsEmpty>
       ) : null}
@@ -808,7 +812,7 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
       }
     >
       <ErrorMessage error={error || categories.error} />
-      {((loading || answered) && !data) || (categories.loading && !categories.data) ? <Loading /> : null}
+      {((loading || (answered && !error)) && !data) || (categories.loading && !categories.data) ? <Loading /> : null}
       {summary && lines.length === 0 ? <SettingsEmpty>{t('finance.noSpending')}</SettingsEmpty> : null}
       {slices.length > 0 && summary?.reportingCurrencyCode ? (
         <SpendingRing

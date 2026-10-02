@@ -18,6 +18,29 @@ import (
 // says a different number for a month than the month does, and each month
 // still to come is the budgets in force for it as they stand today.
 
+// The years a year's budgets and saving may be asked for: 1900 through ten
+// years past today's. Year zero parses as a year but is no year PostgreSQL
+// stores a day in, and refusing it here makes it an invalid argument
+// rather than an internal error from the first query.
+const (
+	FirstBudgetYear  = 1900
+	BudgetYearsAhead = 10
+)
+
+// IsBudgetYear says a year, "2006", is one a year's budgets may be asked
+// for on today, "2006-01-02".
+func IsBudgetYear(year, today string) bool {
+	yearStart, err := time.Parse("2006", year)
+	if err != nil {
+		return false
+	}
+	todayDay, err := time.Parse(time.DateOnly, today)
+	if err != nil {
+		return false
+	}
+	return yearStart.Year() >= FirstBudgetYear && yearStart.Year() <= todayDay.Year()+BudgetYearsAhead
+}
+
 // budgetYear is where a year stands on the day it is computed for.
 type budgetYear struct {
 	year               string
@@ -39,6 +62,9 @@ func newBudgetYear(year, today string) (*budgetYear, error) {
 	todayDay, err := time.Parse(time.DateOnly, today)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q is not a day written 2006-01-02", db.ErrInvalidArguments, today)
+	}
+	if !IsBudgetYear(year, today) {
+		return nil, fmt.Errorf("%w: %q is not a year from %d to %d", db.ErrInvalidArguments, year, FirstBudgetYear, todayDay.Year()+BudgetYearsAhead)
 	}
 	yearEnd := yearStart.AddDate(1, 0, -1)
 	frame := &budgetYear{year: yearStart.Format("2006"), asOf: todayDay, isYearOver: todayDay.After(yearEnd), daysInYear: yearEnd.YearDay()}
@@ -166,13 +192,30 @@ func YearBudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fet
 		row.SpendingCategoryID, row.SpendingCategoryName = spendingCategoryId, nameById[spendingCategoryId]
 		budgetStatus.SpendingCategories = append(budgetStatus.SpendingCategories, row)
 	}
-	sort.SliceStable(budgetStatus.SpendingCategories, func(left, right int) bool {
-		return budgetStatus.SpendingCategories[left].SpendingCategoryName < budgetStatus.SpendingCategories[right].SpendingCategoryName
-	})
-	sort.SliceStable(budgetStatus.IncomeCategories, func(left, right int) bool {
-		return budgetStatus.IncomeCategories[left].SpendingCategoryName < budgetStatus.IncomeCategories[right].SpendingCategoryName
-	})
+	sortYearBudgetRows(budgetStatus)
 	return budgetStatus, nil
+}
+
+// sortYearBudgetRows puts a year's rows in name order, and two spending
+// categories of the same name in id order: the rows come out of a map, so
+// without the id two of the same name would swap places from one reading
+// to the next.
+func sortYearBudgetRows(budgetStatus *models.BudgetStatus) {
+	isBefore := func(leftName, leftId, rightName, rightId string) bool {
+		if leftName != rightName {
+			return leftName < rightName
+		}
+		return leftId < rightId
+	}
+	spendingRows, incomeRows := budgetStatus.SpendingCategories, budgetStatus.IncomeCategories
+	sort.Slice(spendingRows, func(left, right int) bool {
+		return isBefore(spendingRows[left].SpendingCategoryName, spendingRows[left].SpendingCategoryID,
+			spendingRows[right].SpendingCategoryName, spendingRows[right].SpendingCategoryID)
+	})
+	sort.Slice(incomeRows, func(left, right int) bool {
+		return isBefore(incomeRows[left].SpendingCategoryName, incomeRows[left].SpendingCategoryID,
+			incomeRows[right].SpendingCategoryName, incomeRows[right].SpendingCategoryID)
+	})
 }
 
 // yearCurrencyOf is the currency a budget's year is reported in: its
@@ -224,12 +267,12 @@ func yearAmount(converter *rates.Converter, month *budgetYearMonth, amount, curr
 func spendingCategoryYearStatus(converter *rates.Converter, frame *budgetYear, months []*budgetYearMonth, currencyCode string) (*models.SpendingCategoryBudgetStatus, error) {
 	unconverted := map[string]*big.Rat{}
 	unconvertedDue := map[string]*big.Rat{}
-	input := &SpendingCategoryYearInput{DayOfYear: frame.dayOfYear, IsYearOver: frame.isYearOver}
+	input := &SpendingCategoryYearInput{IsYearOver: frame.isYearOver}
 	budgeted := &budgetedMonthRange{}
 	dueAmount := new(big.Rat)
 	dueCharges := []*models.ExpectedRepeatCharge{}
 	for _, month := range months {
-		yearMonth := &SpendingCategoryYearMonth{BudgetMonthPhase: month.budgetMonthPhase}
+		yearMonth := &SpendingCategoryYearMonth{BudgetMonthPhase: month.budgetMonthPhase, DayOfMonth: frame.asOf.Day()}
 		budgetAmount, isConverted, err := yearAmount(converter, month, month.budgetAmount, currencyCode)
 		if err != nil {
 			return nil, err
@@ -295,10 +338,10 @@ func spendingCategoryYearStatus(converter *rates.Converter, frame *budgetYear, m
 // in currencyCode.
 func incomeCategoryYearStatus(converter *rates.Converter, frame *budgetYear, months []*budgetYearMonth, currencyCode string) (*models.IncomeCategoryBudgetStatus, error) {
 	unconverted := map[string]*big.Rat{}
-	input := &IncomeCategoryYearInput{DayOfYear: frame.dayOfYear, IsYearOver: frame.isYearOver}
+	input := &IncomeCategoryYearInput{IsYearOver: frame.isYearOver}
 	budgeted := &budgetedMonthRange{}
 	for _, month := range months {
-		yearMonth := &IncomeCategoryYearMonth{BudgetMonthPhase: month.budgetMonthPhase}
+		yearMonth := &IncomeCategoryYearMonth{BudgetMonthPhase: month.budgetMonthPhase, DayOfMonth: frame.asOf.Day()}
 		budgetAmount, isConverted, err := yearAmount(converter, month, month.budgetAmount, currencyCode)
 		if err != nil {
 			return nil, err
@@ -479,10 +522,27 @@ func YearSavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fe
 				return nil, err
 			}
 		}
-		// A month that is over has its own figures as its projection.
+		// A month that is over has its own figures as its projection. The
+		// month in progress, in its first week, counts at its spending
+		// budgets or its spending when that is more, as
+		// ProjectSpendingCategoryYear counts it: its straight line would be
+		// carried on into every month to come.
 		figure, err := finance.ParseAmount(monthSummary.ProjectedSpendingAmount)
 		if err != nil {
 			return nil, err
+		}
+		if phase == BudgetMonthPhaseInProgress && frame.asOf.Day() <= budgetPaceSettlingDays {
+			monthSpending, err := finance.ParseAmount(monthSummary.SpendingAmount)
+			if err != nil {
+				return nil, err
+			}
+			figure, err = finance.ParseAmount(monthSummary.ExpectedSpendingAmount)
+			if err != nil {
+				return nil, err
+			}
+			if monthSpending.Cmp(figure) > 0 {
+				figure = monthSpending
+			}
 		}
 		spendingFigures = append(spendingFigures, figure)
 	}

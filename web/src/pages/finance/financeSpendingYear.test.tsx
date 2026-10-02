@@ -254,6 +254,43 @@ it('keeps Month or Year in the same row above the panels in both modes', async (
   await waitFor(() => expect(search()).toBe('?month=2031-04'))
 })
 
+// Month mode reads its own twelve months; the twenty years the chart of
+// years and the menus are drawn from are read only once the person reaches
+// for the month menu.
+it('does not read the years history in Month mode until the menu is reached for', async () => {
+  renderAt('/finance/spending?month=2031-02')
+  await waitFor(() => expect(variablesOf('BudgetStatus')).toContainEqual({ month: '2031-02' }))
+  await waitFor(() => expect(variablesOf('CashFlow')).toContainEqual({ fromMonth: '2030-06', toMonth: '2031-05' }))
+  expect(variablesOf('CashFlow')).not.toContainEqual({ fromMonth: '2012-01', toMonth: '2031-05' })
+  fireEvent.focus(screen.getByRole('button', { name: 'finance.previousMonth' }))
+  await waitFor(() => expect(variablesOf('CashFlow')).toContainEqual({ fromMonth: '2012-01', toMonth: '2031-05' }))
+})
+
+// History with money in the first month read: the first year is labelled
+// as where the reading starts, not as the year the money began, and a
+// linked year before it is not Year mode, as a year to come is not.
+it('says when the history read cuts off older years, and keeps those out of Year mode', async () => {
+  historyMonths.unshift({
+    cashFlowMonth: '2012-01',
+    incomeAmount: '1000.0000',
+    spendingAmount: '400.0000',
+    netAmount: '600.0000',
+  })
+  try {
+    renderAt('/finance/spending?year=2031')
+    const first = await screen.findByRole('button', { name: /^finance\.yearFromEarlierNotShown/ })
+    expect(first.getAttribute('aria-label')?.split(': ')[0]).toBe(
+      `finance.yearFromEarlierNotShown {"year":"2012","month":"${monthLabel('2012-01')}"}`,
+    )
+    cleanup()
+    renderAt('/finance/spending?year=2011')
+    const monthKind = await screen.findByRole('button', { name: 'finance.month' })
+    expect(monthKind.getAttribute('aria-pressed')).toBe('true')
+  } finally {
+    historyMonths.shift()
+  }
+})
+
 const budgetedMonths = (budgetedMonthCount: number, firstBudgetedMonth: string, lastBudgetedMonth: string) => ({
   budgetedMonthCount,
   firstBudgetedMonth,

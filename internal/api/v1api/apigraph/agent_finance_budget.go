@@ -1146,7 +1146,7 @@ func (self *graph) BudgetStatus(ctx context.Context, arguments BudgetStatusArgum
 		return nil, err
 	}
 	today := personToday(principal)
-	year, err := yearArgument("year", arguments.Year, arguments.Month)
+	year, err := yearArgument("year", arguments.Year, arguments.Month, today)
 	if err != nil {
 		return nil, err
 	}
@@ -1168,7 +1168,7 @@ func (self *graph) SavingSummary(ctx context.Context, arguments SavingSummaryArg
 		return nil, err
 	}
 	today := personToday(principal)
-	year, err := yearArgument("year", arguments.Year, arguments.Month)
+	year, err := yearArgument("year", arguments.Year, arguments.Month, today)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package rates
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/finance"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // fakeCentralBank serves the three ECB files, each holding the weekdays of
@@ -200,6 +202,47 @@ func TestExchangeRateFetchThatHangsIsBounded(t *testing.T) {
 	}
 	if err := fetcher.EnsureRates(t.Context(), time.Now().UTC().Format(time.DateOnly)); err != nil || requestCount.Load() != 1 {
 		t.Fatalf("a failed fetch is not tried again within the pause: %v, %d requests", err, requestCount.Load())
+	}
+}
+
+// A converter asked for every day of a long range, the way a cash flow
+// over years converts each day, brings the store up to date once rather
+// than once for each later day it reaches, and still has today's rate.
+func TestConverterEnsuresRatesOnce(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	t.Cleanup(closeDatabase)
+	bank := &fakeCentralBank{lastDayByFile: map[string]string{}, requestCount: map[string]int{}}
+	server := bank.serve(t)
+	fetcher := New(database, finance.NewExchangeRateSourceAt(server.URL))
+	now := time.Date(2026, 9, 4, 18, 0, 0, 0, time.UTC) // a Friday evening
+	fetcher.now = func() time.Time { return now }
+	bank.set("eurofxref-hist.xml", "2026-09-04")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		converter := fetcher.Converter(t.Context(), tx)
+		ensureCount := 0
+		ensureRates := converter.ensureRates
+		converter.ensureRates = func(ctx context.Context, on string) error {
+			ensureCount++
+			return ensureRates(ctx, on)
+		}
+		var newestRate *models.CurrencyPairRate
+		for day := now.AddDate(0, 0, -90); !day.After(now); day = day.AddDate(0, 0, 1) {
+			_, rate, err := converter.Convert("10.00", "USD", "JPY", day.Format(time.DateOnly))
+			if err != nil {
+				t.Fatalf("Convert on %s: %s", day.Format(time.DateOnly), err)
+			}
+			newestRate = rate
+		}
+		if ensureCount != 1 {
+			t.Errorf("ninety-one days converted asked for the rates to be brought up to date %d times, not once", ensureCount)
+		}
+		if newestRate == nil || newestRate.RateOn != "2026-09-04" {
+			t.Errorf("today converts at today's rate: %+v", newestRate)
+		}
+	})
+	if bank.count("eurofxref-hist.xml") != 1 {
+		t.Errorf("one fetch of the history: %d", bank.count("eurofxref-hist.xml"))
 	}
 }
 

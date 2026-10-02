@@ -615,6 +615,23 @@ func TestIncomeBudgetAndSavingSummary(test *testing.T) {
 		if _, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Year: "last year"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a year that is not 2006 answered %v", err)
 		}
+		// Year zero parses, and PostgreSQL refuses its days: an invalid
+		// argument, not an internal error from the first query.
+		farYear := fmt.Sprint(time.Now().Year() + 11)
+		for _, year := range []string{"0000", "1899", farYear} {
+			if _, err := resolver.BudgetStatus(ctx, BudgetStatusArguments{Year: year}); !errors.Is(err, api.ErrInvalidArguments) {
+				test.Errorf("the budgets of the year %s answered %v", year, err)
+			}
+			if _, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Year: year, CurrencyCode: "USD"}); !errors.Is(err, api.ErrInvalidArguments) {
+				test.Errorf("the saving of the year %s answered %v", year, err)
+			}
+		}
+		// A month of year zero is refused the same way.
+		for _, month := range []string{"0000-01", "1899-12"} {
+			if _, err := resolver.BudgetStatus(ctx, BudgetStatusArguments{Month: month}); !errors.Is(err, api.ErrInvalidArguments) {
+				test.Errorf("the budgets of the month %s answered %v", month, err)
+			}
+		}
 	})
 	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
 		summary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "2026-09", CurrencyCode: "USD"})

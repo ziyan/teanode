@@ -373,7 +373,11 @@ currencies without converting. Exchange rates are the European Central Bank's
 daily reference rates, kept in the server-wide `exchange_rate` table and
 fetched by `internal/finance/rates` when a conversion needs a day the table
 lacks: the full history the first time, the 90-day file or the latest day
-after that, one fetch at a time across servers. A weekend or holiday uses the
+after that, one fetch at a time across servers. A converter (one per
+request or computation) checks the table against today once, the first
+time it converts between two currencies, and then reads what is stored, so
+a cash flow converting every day of twenty years asks once rather than once
+a day. A weekend or holiday uses the
 latest earlier rate, and the answer says which day it is from. A currency the
 ECB does not publish stays unconverted, and totals name it as left out.
 
@@ -695,12 +699,19 @@ month in progress as its own projection (repeat charges and its pace), and
 each budgeted month still to come at the average of those months: the year
 carried on the way it has gone, rather than assumed to land on its budget.
 With no month begun there is nothing to carry on, and a month to come
-counts at its budget. An income budget's year
+counts at its budget. In its first week the month in progress counts at
+its budget, or at its spending when that is more already, instead of its
+straight line: one dinner on the first projects a month of dinners, and the
+year would carry that on into every month to come. The year's saving
+counts the month in progress the same way. An income budget's year
 (`ProjectIncomeCategoryYear`) counts what came in for the months that are
 over, the month in progress's projection, and the income expected of each
 month to come; expected by today is the months over and the month in
 progress's share by its days. The paces are a month's thresholds over the
-year, with the first week of the year as the settling days. A year's rows
+year, with the first week of the budget's first month to begin as the
+settling days, not the first week of January: a budget that starts in
+October may say `at_risk` or `behind` from October 8, as its month may, and
+in that week the year's pace is never worse than the month's. A year's rows
 are in the currency of the budget's latest month begun, a month in another
 currency converted at its as-of day's rate. The year's saving counts only
 the months in which at least one budget, income or spending, was in force,
@@ -840,9 +851,17 @@ same place in both modes so the control never moves. The month menu lists
 the months back to the first with cash flow and the year menu the years
 with any; both come from one cash flow read over the last twenty years
 (`useSpendingHistory`, grouped on the client by `cashFlowYears`), so no
-query was added. The period is in the address, `?month=` or
-`?year=` (`spendingPeriodFromSearch` in `financeFilters.ts`), so a year can
-be linked to; changing Month to Year or back is a step in the browser's
+query was added. That read is long for the server (each day converted
+where an account is in another currency), so Month mode makes it only once
+the person reaches for the menu, and Year mode as it opens. When the first
+month read already has cash flow there may be more before it, and the first
+year is labelled as where the reading starts ("from Jan, earlier not
+shown") rather than where the money began. The period is in the address,
+`?month=` or `?year=` (`spendingPeriodFromSearch` in `financeFilters.ts`),
+so a year can be linked to; a year still to come, one before the twenty
+years read, or one the server refuses (it answers for 1900 through ten
+years past this one, and refuses year zero as an invalid argument) falls
+back to this month; changing Month to Year or back is a step in the browser's
 history and Back returns to it, while choosing another month or year
 replaces the address as the month always has. Year to month lands on the
 year's latest month begun. In Year mode the section is every year's cash

@@ -109,3 +109,15 @@ it('shows a year with no budgets as what came in and went out', async () => {
   expect(screen.queryByText('finance.budgeted')).toBeNull()
   expect(screen.queryByText('finance.savingPace.on_track')).toBeNull()
 })
+
+// A month's answer, then a year the server refuses: the month's answer is
+// not the year's, and the panel must not wait for one that never comes.
+it('stops waiting when the question is refused', async () => {
+  execute.mockResolvedValueOnce({ SavingSummary: yearSummary({ year: '', month: '2031-10' }) } as never)
+  const { rerender } = render(<SavingSummaryPanel month="2031-10" />)
+  expect(await screen.findByText(/^finance\.savingHint /)).toBeTruthy()
+  execute.mockRejectedValueOnce(new Error('invalid argument: year "2000" is refused'))
+  rerender(<SavingSummaryPanel month="2031-10" year="2000" />)
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  expect(screen.queryByText('common.loading')).toBeNull()
+})

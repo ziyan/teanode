@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -25,10 +26,10 @@ func spendingMonths(count int, phase BudgetMonthPhase, budget, spending int64) [
 }
 
 func TestProjectSpendingCategoryYear(t *testing.T) {
-	inProgress := func(budget, spending, projected, budgetToDate int64) *SpendingCategoryYearMonth {
+	inProgress := func(dayOfMonth int, budget, spending, projected, budgetToDate int64) *SpendingCategoryYearMonth {
 		return &SpendingCategoryYearMonth{
 			BudgetMonthPhase: BudgetMonthPhaseInProgress, BudgetAmount: big.NewRat(budget, 1), SpendingAmount: big.NewRat(spending, 1),
-			ProjectedAmount: big.NewRat(projected, 1), BudgetToDateAmount: big.NewRat(budgetToDate, 1),
+			ProjectedAmount: big.NewRat(projected, 1), BudgetToDateAmount: big.NewRat(budgetToDate, 1), DayOfMonth: dayOfMonth,
 		}
 	}
 	for _, testCase := range []struct {
@@ -46,8 +47,8 @@ func TestProjectSpendingCategoryYear(t *testing.T) {
 			// budget it had then, not twelve months of the latest.
 			name: "a budget raised mid-year counts each month at what it was then",
 			input: &SpendingCategoryYearInput{
-				Months:    append(spendingMonths(6, BudgetMonthPhaseOver, 400, 350), spendingMonths(6, BudgetMonthPhaseOver, 600, 350)...),
-				DayOfYear: 365, IsYearOver: true,
+				Months:     append(spendingMonths(6, BudgetMonthPhaseOver, 400, 350), spendingMonths(6, BudgetMonthPhaseOver, 600, 350)...),
+				IsYearOver: true,
 			},
 			expectedBudget: 6000, expectedBudgetToDate: 6000, expectedSpending: 4200, expectedProjected: 4200, expectedMonthCount: 12,
 			expectedPace: models.BudgetPaceUnder,
@@ -57,8 +58,7 @@ func TestProjectSpendingCategoryYear(t *testing.T) {
 			// nothing is carried on into months that have none.
 			name: "a budget ended mid-year counts only the months it was in force",
 			input: &SpendingCategoryYearInput{
-				Months:    spendingMonths(4, BudgetMonthPhaseOver, 200, 190),
-				DayOfYear: 258,
+				Months: spendingMonths(4, BudgetMonthPhaseOver, 200, 190),
 			},
 			expectedBudget: 800, expectedBudgetToDate: 800, expectedSpending: 760, expectedProjected: 760, expectedMonthCount: 4,
 			expectedPace: models.BudgetPaceOnTrack,
@@ -68,9 +68,8 @@ func TestProjectSpendingCategoryYear(t *testing.T) {
 			// months to come at that average land well past the budget.
 			name: "the months to come carry on at the average of the months begun",
 			input: &SpendingCategoryYearInput{
-				Months: append(append(spendingMonths(8, BudgetMonthPhaseOver, 400, 500), inProgress(400, 200, 500, 200)),
+				Months: append(append(spendingMonths(8, BudgetMonthPhaseOver, 400, 500), inProgress(15, 400, 200, 500, 200)),
 					spendingMonths(3, BudgetMonthPhaseToCome, 400, 0)...),
-				DayOfYear: 258,
 			},
 			expectedBudget: 4800, expectedBudgetToDate: 3400, expectedSpending: 4200, expectedProjected: 6000, expectedMonthCount: 12,
 			expectedPace: models.BudgetPaceAtRisk,
@@ -85,20 +84,50 @@ func TestProjectSpendingCategoryYear(t *testing.T) {
 		},
 		{
 			// January's first days projected across the year are noise,
-			// as a month's first week is.
+			// as a month's first week is: January counts at its budget.
 			name: "a hot first week of the year is not heading over",
 			input: &SpendingCategoryYearInput{
-				Months:    append([]*SpendingCategoryYearMonth{inProgress(100, 90, 1000, 16)}, spendingMonths(11, BudgetMonthPhaseToCome, 100, 0)...),
-				DayOfYear: 5,
+				Months: append([]*SpendingCategoryYearMonth{inProgress(5, 100, 90, 1000, 16)}, spendingMonths(11, BudgetMonthPhaseToCome, 100, 0)...),
 			},
-			expectedBudget: 1200, expectedBudgetToDate: 16, expectedSpending: 90, expectedProjected: 12000, expectedMonthCount: 12,
+			expectedBudget: 1200, expectedBudgetToDate: 16, expectedSpending: 90, expectedProjected: 1200, expectedMonthCount: 12,
 			expectedPace: models.BudgetPaceOnTrack,
+		},
+		{
+			// A budget that starts in October, one dinner on its first day:
+			// the month's straight line heads for 3100, and carried on into
+			// November and December it would read as at_risk on a day the
+			// month itself is on track.
+			name: "the first week of a budget that starts late in the year is not heading over",
+			input: &SpendingCategoryYearInput{
+				Months: append([]*SpendingCategoryYearMonth{inProgress(1, 400, 100, 3100, 13)}, spendingMonths(2, BudgetMonthPhaseToCome, 400, 0)...),
+			},
+			expectedBudget: 1200, expectedBudgetToDate: 13, expectedSpending: 100, expectedProjected: 1200, expectedMonthCount: 3,
+			expectedPace: models.BudgetPaceOnTrack,
+		},
+		{
+			// Past the budget in its first week: the month counts at what
+			// was spent, and the year is no worse off than the month.
+			name: "a first week already past the month's budget counts at its spending",
+			input: &SpendingCategoryYearInput{
+				Months: append([]*SpendingCategoryYearMonth{inProgress(3, 400, 500, 5000, 39)}, spendingMonths(2, BudgetMonthPhaseToCome, 400, 0)...),
+			},
+			expectedBudget: 1200, expectedBudgetToDate: 39, expectedSpending: 500, expectedProjected: 1500, expectedMonthCount: 3,
+			expectedPace: models.BudgetPaceOnTrack,
+		},
+		{
+			// The year settles a week after the budget's first month began:
+			// on the tenth of October the straight line counts again.
+			name: "a budget that starts late in the year settles after its first week",
+			input: &SpendingCategoryYearInput{
+				Months: append([]*SpendingCategoryYearMonth{inProgress(10, 400, 300, 930, 129)}, spendingMonths(2, BudgetMonthPhaseToCome, 400, 0)...),
+			},
+			expectedBudget: 1200, expectedBudgetToDate: 129, expectedSpending: 300, expectedProjected: 2790, expectedMonthCount: 3,
+			expectedPace: models.BudgetPaceAtRisk,
 		},
 		{
 			name: "spending past the year's budget is over",
 			input: &SpendingCategoryYearInput{
-				Months:    append(spendingMonths(3, BudgetMonthPhaseOver, 100, 500), spendingMonths(9, BudgetMonthPhaseToCome, 100, 0)...),
-				DayOfYear: 95,
+				Months: append(spendingMonths(3, BudgetMonthPhaseOver, 100, 500), spendingMonths(9, BudgetMonthPhaseToCome, 100, 0)...),
 			},
 			expectedBudget: 1200, expectedBudgetToDate: 300, expectedSpending: 1500, expectedProjected: 6000, expectedMonthCount: 12,
 			expectedPace: models.BudgetPaceOver,
@@ -156,7 +185,7 @@ func TestProjectIncomeCategoryYear(t *testing.T) {
 		}
 		months = append(months, month)
 	}
-	projection := ProjectIncomeCategoryYear(&IncomeCategoryYearInput{Months: months, DayOfYear: 258})
+	projection := ProjectIncomeCategoryYear(&IncomeCategoryYearInput{Months: months})
 	for _, compared := range []struct {
 		what     string
 		got      *big.Rat
@@ -173,6 +202,80 @@ func TestProjectIncomeCategoryYear(t *testing.T) {
 	}
 	if projection.IncomePace != models.IncomePaceBehind || projection.BudgetedMonthCount != 12 {
 		t.Errorf("behind, over twelve budgeted months: %+v", projection)
+	}
+}
+
+// Two spending categories of the same name keep one order, by id, however
+// the map they were gathered in handed them over.
+func TestSortYearBudgetRowsBreaksTiesById(t *testing.T) {
+	budgetStatus := &models.BudgetStatus{
+		SpendingCategories: []*models.SpendingCategoryBudgetStatus{
+			{SpendingCategoryID: "category-b", SpendingCategoryName: "Travel"},
+			{SpendingCategoryID: "category-c", SpendingCategoryName: "Books"},
+			{SpendingCategoryID: "category-a", SpendingCategoryName: "Travel"},
+		},
+		IncomeCategories: []*models.IncomeCategoryBudgetStatus{
+			{SpendingCategoryID: "income-b", SpendingCategoryName: "Pay"},
+			{SpendingCategoryID: "income-a", SpendingCategoryName: "Pay"},
+		},
+	}
+	sortYearBudgetRows(budgetStatus)
+	spendingIds := []string{}
+	for _, row := range budgetStatus.SpendingCategories {
+		spendingIds = append(spendingIds, row.SpendingCategoryID)
+	}
+	if fmt.Sprint(spendingIds) != "[category-c category-a category-b]" {
+		t.Errorf("the spending rows are %v", spendingIds)
+	}
+	if budgetStatus.IncomeCategories[0].SpendingCategoryID != "income-a" {
+		t.Errorf("the income rows start with %s", budgetStatus.IncomeCategories[0].SpendingCategoryID)
+	}
+}
+
+// The years a year's budgets may be asked for, on the first of October
+// 2026: 1900 to 2036. Year zero parses as a year and is refused.
+func TestIsBudgetYear(t *testing.T) {
+	for year, expected := range map[string]bool{
+		"0000": false, "1899": false, "1900": true, "2026": true, "2036": true, "2037": false, "twenty": false,
+	} {
+		if IsBudgetYear(year, "2026-10-01") != expected {
+			t.Errorf("the year %q is a budget year: %t", year, !expected)
+		}
+		if _, err := newBudgetYear(year, "2026-10-01"); (err == nil) != expected {
+			t.Errorf("newBudgetYear(%q): %v", year, err)
+		}
+	}
+}
+
+// A salary expected from October, its pay not yet in: on the third its
+// year is a few days old, not nine months, and is no more behind than its
+// month; a week and more into October it is.
+func TestProjectIncomeCategoryYearSettlesFromItsFirstMonth(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		dayOfMonth   int
+		expectedPace models.IncomePace
+	}{
+		{"on the third of the first month", 3, models.IncomePaceOnTrack},
+		{"on the tenth of the first month", 10, models.IncomePaceBehind},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			months := []*IncomeCategoryYearMonth{{
+				BudgetMonthPhase: BudgetMonthPhaseInProgress, BudgetAmount: big.NewRat(3000, 1), IncomeAmount: new(big.Rat),
+				ProjectedAmount: big.NewRat(3000, 1), ExpectedByTodayAmount: big.NewRat(3000*int64(testCase.dayOfMonth), 31),
+				DayOfMonth: testCase.dayOfMonth,
+			}}
+			for range 2 {
+				months = append(months, &IncomeCategoryYearMonth{BudgetMonthPhase: BudgetMonthPhaseToCome, BudgetAmount: big.NewRat(3000, 1)})
+			}
+			monthProjection := ProjectIncomeCategoryMonth(&IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: new(big.Rat), DayOfMonth: testCase.dayOfMonth, DaysInMonth: 31,
+			})
+			projection := ProjectIncomeCategoryYear(&IncomeCategoryYearInput{Months: months})
+			if projection.IncomePace != testCase.expectedPace || monthProjection.IncomePace != testCase.expectedPace {
+				t.Errorf("the year is %s and the month %s, not %s", projection.IncomePace, monthProjection.IncomePace, testCase.expectedPace)
+			}
+		})
 	}
 }
 
@@ -435,5 +538,67 @@ func TestYearSavingSummaryCountsOnlyBudgetedMonths(t *testing.T) {
 	if august.BudgetedMonthCount != 0 || len(august.BudgetedMonths) != 0 || september.BudgetedMonthCount != 1 ||
 		len(september.BudgetedMonths) != 1 || september.BudgetedMonths[0] != "2026-09" || september.BudgetedMonthsElapsedCount != 1 {
 		t.Errorf("August unbudgeted, September budgeted: %+v %+v", august, september)
+	}
+}
+
+// Budgets that start in October, read from the database: one dinner on the
+// first and the pay not yet in on the third. The year is as young as its
+// first month, so it says on track where the month does, and its
+// projection is the three budgeted months rather than a month of dinners
+// carried on into November and December.
+func TestYearBudgetStatusSettlesFromTheFirstBudgetedMonth(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	diningId := fixture.spendingCategoryIdNamed(t, agentId, finance.SpendingCategoryDining)
+	incomeId := fixture.spendingCategoryIdNamed(t, agentId, finance.SpendingCategoryIncome)
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{
+		inventedTransaction("dinner-10", "2026-10-01", "-100.00", "BISTRO 10", "Invented Bistro", ""),
+	}})
+
+	statusByToday := map[string]*models.BudgetStatus{}
+	monthStatusByToday := map[string]*models.BudgetStatus{}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{Limit: 10})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if _, err := tx.SetTransactionCategorization(agentId, financeTransaction.ID, diningId, models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		for _, budget := range []*models.Budget{
+			{SpendingCategoryID: diningId, MonthlyAmount: "400", EffectiveFrom: "2026-10"},
+			{SpendingCategoryID: incomeId, MonthlyAmount: "3000", EffectiveFrom: "2026-10"},
+		} {
+			budget.AgentID, budget.CurrencyCode = agentId, "USD"
+			if _, err := tx.SetBudget(budget); err != nil {
+				t.Fatalf("SetBudget: %s", err)
+			}
+		}
+		for _, today := range []string{"2026-10-01", "2026-10-03"} {
+			if statusByToday[today], err = YearBudgetStatus(t.Context(), tx, nil, agentId, "2026", today); err != nil {
+				t.Fatalf("YearBudgetStatus: %s", err)
+			}
+			if monthStatusByToday[today], err = BudgetStatus(t.Context(), tx, nil, agentId, "2026-10", today); err != nil {
+				t.Fatalf("BudgetStatus: %s", err)
+			}
+		}
+	})
+
+	for today, status := range statusByToday {
+		monthStatus := monthStatusByToday[today]
+		if len(status.SpendingCategories) != 1 || len(status.IncomeCategories) != 1 ||
+			len(monthStatus.SpendingCategories) != 1 || len(monthStatus.IncomeCategories) != 1 {
+			t.Fatalf("on %s, dining and the pay: %+v %+v", today, status, monthStatus)
+		}
+		dining, monthDining := status.SpendingCategories[0], monthStatus.SpendingCategories[0]
+		if dining.ProjectedAmount != "1200.0000" || dining.BudgetPace != models.BudgetPaceOnTrack || monthDining.BudgetPace != models.BudgetPaceOnTrack {
+			t.Errorf("on %s the year's dining heads for %s and is %s, the month's is %s", today, dining.ProjectedAmount, dining.BudgetPace, monthDining.BudgetPace)
+		}
+		pay, monthPay := status.IncomeCategories[0], monthStatus.IncomeCategories[0]
+		if pay.IncomePace != models.IncomePaceOnTrack || monthPay.IncomePace != models.IncomePaceOnTrack {
+			t.Errorf("on %s the year's pay is %s, the month's %s", today, pay.IncomePace, monthPay.IncomePace)
+		}
 	}
 }

@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 
 import {
   NO_TRANSACTION_FILTERS,
+  isYear,
   lastDayOfMonth,
   latestMonthOfYear,
   monthRange,
@@ -90,6 +91,23 @@ it('reads Month or Year mode out of the address', () => {
   expect(read('year=2032')).toEqual({ spendingPeriodKind: 'month', month: '2031-05', year: '2031' })
   expect(read('year=31')).toEqual({ spendingPeriodKind: 'month', month: '2031-05', year: '2031' })
   expect(read('year=2029&month=2030-02').spendingPeriodKind).toBe('year')
+})
+
+// Year zero matches four digits and the server refuses it; a year before
+// the history's twenty would show only zeros. Both fall back to this
+// month, as a year still to come does.
+it('keeps years the server refuses and years before the history out of Year mode', () => {
+  const read = (search: string) => spendingPeriodFromSearch(new URLSearchParams(search), '2031-05')
+  const thisMonth = { spendingPeriodKind: 'month', month: '2031-05', year: '2031' }
+  expect(read('year=0000')).toEqual(thisMonth)
+  expect(read('year=1899')).toEqual(thisMonth)
+  expect(read('year=2011')).toEqual(thisMonth)
+  expect(read('year=2012')).toEqual({ spendingPeriodKind: 'year', month: '2012-12', year: '2012' })
+  expect(read('month=0000-01')).toEqual(thisMonth)
+  expect(isYear('0000', '2031-05')).toBe(false)
+  expect(isYear('1900', '2031-05')).toBe(true)
+  expect(isYear('2041', '2031-05')).toBe(true)
+  expect(isYear('2042', '2031-05')).toBe(false)
 })
 
 it('writes a year always and a month only when it is not this one, and reads back what it wrote', () => {

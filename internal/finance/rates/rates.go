@@ -285,18 +285,25 @@ func (self *Fetcher) ExchangeRate(ctx context.Context, fromCurrencyCode, toCurre
 
 // Converter converts amounts, each at the rate of its own day, reading the
 // rates through one transaction and remembering each it read. The store is
-// brought up to a day only the first time an amount of that day or later
-// needs converting between two different currencies, so a computation in
-// one currency never fetches. Such a fetch waits on the network with the
-// caller's transaction open, for at most the fetch's bound; a caller that
-// must not do that ensures the rates first and converts with a nil
-// fetcher.
+// brought up to today once, the first time an amount needs converting
+// between two different currencies, so a computation in one currency never
+// fetches, and one that converts every day of twenty years asks once rather
+// than once a day (each ask opens a transaction of its own). Today is the
+// newest day an amount can need, since EnsureRates brings a later day to
+// today. Such a fetch waits on the network with the caller's transaction
+// open, for at most the fetch's bound; a caller that must not do that
+// ensures the rates first and converts with a nil fetcher.
 type Converter struct {
 	ctx         context.Context
-	fetcher     *Fetcher
 	transaction db.Transaction
-	ensuredUpTo string
 	rateByKey   map[string]*models.CurrencyPairRate
+
+	// ensureRates is the fetcher's EnsureRates, nil to read only what is
+	// stored; today is the day it is asked for, and isEnsured says it
+	// has been.
+	ensureRates func(ctx context.Context, on string) error
+	today       string
+	isEnsured   bool
 }
 
 // Converter builds a converter that reads through a transaction. A nil
@@ -307,7 +314,12 @@ func (self *Fetcher) Converter(ctx context.Context, transaction db.Transaction) 
 
 // NewConverter is Fetcher.Converter for a fetcher that may be nil.
 func NewConverter(ctx context.Context, fetcher *Fetcher, transaction db.Transaction) *Converter {
-	return &Converter{ctx: ctx, fetcher: fetcher, transaction: transaction, rateByKey: map[string]*models.CurrencyPairRate{}}
+	converter := &Converter{ctx: ctx, transaction: transaction, rateByKey: map[string]*models.CurrencyPairRate{}}
+	if fetcher != nil {
+		converter.ensureRates = fetcher.EnsureRates
+		converter.today = fetcher.now().UTC().Format(time.DateOnly)
+	}
+	return converter
 }
 
 // Convert is an amount in one currency in another, at the rate of the day
@@ -321,11 +333,11 @@ func (self *Converter) Convert(amount, fromCurrencyCode, toCurrencyCode, on stri
 	key := fromCurrencyCode + "|" + toCurrencyCode + "|" + on
 	rate, isKnown := self.rateByKey[key]
 	if !isKnown {
-		if self.fetcher != nil && on > self.ensuredUpTo {
-			if err := self.fetcher.EnsureRates(self.ctx, on); err != nil {
-				log.Warningf("cannot bring the exchange rates up to %s, converting with what is stored: %s", on, err)
+		if self.ensureRates != nil && !self.isEnsured {
+			if err := self.ensureRates(self.ctx, self.today); err != nil {
+				log.Warningf("cannot bring the exchange rates up to %s, converting with what is stored: %s", self.today, err)
 			}
-			self.ensuredUpTo = on
+			self.isEnsured = true
 		}
 		var err error
 		if rate, err = self.transaction.ExchangeRate(fromCurrencyCode, toCurrencyCode, on); err != nil {
