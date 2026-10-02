@@ -343,6 +343,25 @@ type AgentReference struct {
 	// the agent to dig into it, or to change what it says and links to.
 	Path string `json:"path,omitempty" graphapi:"nullable"`
 	Name string `json:"name,omitempty" graphapi:"nullable"`
+
+	// FinanceTransactionID points at one of the agent's finance
+	// transactions instead: the person pressed Ask in its details. The
+	// fields after it are what the chip shows, named as on the finance
+	// transaction; the server fills them in from the stored row whatever
+	// the dashboard sent, and drops the reference when the finance
+	// transaction is not the agent's.
+	FinanceTransactionID string `json:"financeTransactionId,omitempty" graphapi:"nullable"`
+	PostedOn             string `json:"postedOn,omitempty" graphapi:"nullable"`
+	Amount               string `json:"amount,omitempty" graphapi:"nullable"`
+	CurrencyCode         string `json:"currencyCode,omitempty" graphapi:"nullable"`
+	MerchantName         string `json:"merchantName,omitempty" graphapi:"nullable"`
+	Description          string `json:"description,omitempty" graphapi:"nullable"`
+
+	// FinanceTransactionContext is what the model is told about the
+	// finance transaction in the turn it was pointed at: read from the
+	// database when the turn is kept, and never stored, so an earlier
+	// turn names it by its id alone and the finance tool reads it again.
+	FinanceTransactionContext string `json:"-"`
 }
 
 // AgentToolCall is a tool the model asked for, as recorded.

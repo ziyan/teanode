@@ -152,6 +152,13 @@ func referenceLines(references []models.AgentReference) string {
 			}
 			parts = append(parts, line+": read it whole with the memory tool (get) before answering, and change it with the same tool if asked -- its opening, its facts, its links")
 		}
+		if reference.FinanceTransactionID != "" {
+			// A finance transaction, not a message. What the provider wrote
+			// is left out here: the turn it was pointed at carries it
+			// fenced, and an earlier turn reads it again with the tool.
+			parts = append(parts, fmt.Sprintf("finance transaction %s (posted on %s, %s %s): described below when it was pointed at in this turn, else read it with the finance tool (transactions with finance_transaction_ids); act on it by that id with the same tool if asked, as categorize_transaction does",
+				reference.FinanceTransactionID, reference.PostedOn, reference.Amount, reference.CurrencyCode))
+		}
 		if len(parts) > 0 {
 			lines = append(lines, "- "+strings.Join(parts, ", "))
 		}
@@ -159,11 +166,11 @@ func referenceLines(references []models.AgentReference) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	return "<references>\nThe person points at these; \"this\" means them. Read one with mail_read before answering about it.\n" + strings.Join(lines, "\n") + "\n</references>"
+	return "<references>\nThe person points at these; \"this\" means them. Read a message with mail_read before answering about it.\n" + strings.Join(lines, "\n") + "\n</references>"
 }
 
 // userTurn is the person's message as the model is given it in the turn it
-// was said: the references, the text, the text files read out, the files
+// was said: the references, a finance transaction pointed at described, the text, the text files read out, the files
 // it cannot open named, and the pictures as image parts.
 //
 // pictures are images the caller carries itself rather than files of the
@@ -174,6 +181,11 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 	var blocks []string
 	if lines := referenceLines(references); lines != "" {
 		blocks = append(blocks, lines)
+	}
+	for _, reference := range references {
+		if reference.FinanceTransactionContext != "" {
+			blocks = append(blocks, reference.FinanceTransactionContext)
+		}
 	}
 	blocks = append(blocks, text)
 	var images []llm.ContentPart

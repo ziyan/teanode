@@ -78,8 +78,25 @@ One system message after the history, rebuilt each round:
 
 `userTurn` builds the turn the model reads:
 
-- `<references>` for the threads they pointed at, telling it to read one before
-  answering about it.
+- `<references>` for what they pointed at with Ask: a thread in the reader
+  (read it with `mail_read` before answering about it), a page of memory
+  (read it with `memory`, and change it there if asked), or a finance
+  transaction in its details (by id, to read or act on with `finance`).
+- A `<finance_transaction>` block for each finance transaction pointed at
+  (`reference_finance.go`). `keepPersonTurn` reads it with the agent's id
+  in the transaction that keeps the turn, so one that is not the agent's is
+  dropped (the API refuses it before that, as it refuses another agent's
+  file), and the chip's day, amount, merchant and description are taken
+  from the stored row rather than from what the dashboard sent. The block
+  says the id the finance tool takes, the posted day and the time it was
+  made, the amount, currency and direction, pending, the finance account
+  and institution, the spending category with what categorized it and the
+  model's confidence (a transfer is the transfer category), and a mirrored
+  copy's counted copy or the person's word that it counts. What the
+  provider wrote (merchant, description, provider categories, and its
+  metadata when that is 2000 bytes or less, else a line saying it was left
+  out) is fenced as untrusted data. The block is not stored: the reference
+  keeps its chip, and an earlier turn names the transaction by id alone.
 - Their text.
 - Then each attachment, by what it is. A picture within 10 MiB, up to eight per
   turn, is read from storage and sent as an image part with a `[picture
@@ -89,7 +106,7 @@ One system message after the history, rebuilt each round:
 
 From the next round on, the same message is rendered by `historyTurn`:
 references, text, and every file *by name*. A picture costs its tokens once,
-in the turn it arrived.
+in the turn it arrived, and so does a finance transaction's description.
 
 ## Compaction
 

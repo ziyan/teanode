@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 
-import { graphql } from '../../api'
+import { askAgentAbout, graphql } from '../../api'
 import { CopyIconButton, formatMoney, formatTime } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
+import { SparkIcon } from '../../components/icons'
+import { Tooltip } from '../../components/tooltip'
 import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
@@ -46,6 +48,10 @@ export function providerMetadataText(providerMetadata: unknown): string {
 // its own. The counted copy names its duplicates the same way. Both are
 // read again whenever refreshCount changes, after the person counts a
 // copy or takes that back, since that can change which copy is counted.
+//
+// Ask the agent points the agent at the transaction, as the reader does at
+// a thread: the dialog closes, since its scrim would cover the drawer
+// that opens with a chip for it, or the agent page when there is no drawer.
 export function FinanceTransactionDialog({
   financeTransaction,
   financeAccount,
@@ -112,7 +118,7 @@ export function FinanceTransactionDialog({
     document
       .querySelector('.finance-transaction-details')
       ?.closest('.dialog')
-      ?.querySelector<HTMLElement>('.dialog-actions button')
+      ?.querySelector<HTMLElement>('.dialog-actions > button')
       ?.focus()
   }, [])
   const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
@@ -137,11 +143,37 @@ export function FinanceTransactionDialog({
       </>
     )
 
+  const title = financeTransaction.merchantName || financeTransaction.description || t('finance.transactionDetails')
+  const askAgent = () => {
+    onClose()
+    const isHandled = askAgentAbout({
+      financeTransactionId: financeTransaction.id,
+      postedOn: financeTransaction.postedOn,
+      amount: financeTransaction.amount,
+      currencyCode: financeTransaction.currencyCode,
+      merchantName: financeTransaction.merchantName ?? undefined,
+      description: financeTransaction.description,
+    })
+    if (!isHandled) window.location.assign('/settings/agent')
+  }
+
   return (
     <ConfirmDialog
       wide
-      title={financeTransaction.merchantName || financeTransaction.description || t('finance.transactionDetails')}
+      title={title}
       onClose={onClose}
+      otherAction={
+        <Tooltip label={t('finance.askAgent')}>
+          <button
+            type="button"
+            className="icon-action dialog-icon-action"
+            aria-label={`${title}, ${formatDay(financeTransaction.postedOn)}: ${t('finance.askAgent')}`}
+            onClick={askAgent}
+          >
+            <SparkIcon size={18} />
+          </button>
+        </Tooltip>
+      }
       body={
         <div className="finance-transaction-details">
           <dl className="properties">

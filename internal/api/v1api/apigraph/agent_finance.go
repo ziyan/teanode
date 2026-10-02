@@ -1287,40 +1287,12 @@ func financeAccountView(account *models.FinanceAccount, source *models.AgentKnow
 		AvailableBalance: account.AvailableBalance, BalanceAt: account.BalanceAt, CreditLimitAmount: account.CreditLimitAmount,
 		ProviderMetadata: account.ProviderMetadata, CreatedAt: account.CreatedAt, ModifiedAt: account.ModifiedAt,
 	}
-	view.InstitutionName = accountInstitutionName(account.ProviderMetadata)
+	view.InstitutionName = account.InstitutionName(source)
 	if source != nil {
-		settings, _ := source.FinanceSourceSettings()
-		if settings.InstitutionName != "" {
-			view.InstitutionName = settings.InstitutionName
-		}
 		view.ProviderKind = source.Specification.Type
 		view.IsSignInRequired = source.IsFinanceSignInRequired()
 	}
 	return view
-}
-
-// accountInstitutionName is the institution a finance account's provider
-// metadata names: SimpleFIN gives each account its institution ("org"),
-// since one of its finance sources can reach several, and the finance
-// source itself keeps none; an imported statement names the institution
-// that wrote it ("institutionOrganization").
-func accountInstitutionName(providerMetadata json.RawMessage) string {
-	if len(providerMetadata) == 0 {
-		return ""
-	}
-	var metadata struct {
-		Organization struct {
-			Name string `json:"name"`
-		} `json:"org"`
-		InstitutionOrganization string `json:"institutionOrganization"`
-	}
-	if json.Unmarshal(providerMetadata, &metadata) != nil {
-		return ""
-	}
-	if name := strings.TrimSpace(metadata.Organization.Name); name != "" {
-		return name
-	}
-	return strings.TrimSpace(metadata.InstitutionOrganization)
 }
 
 // financeSourcesOf is the agent's finance sources by id.

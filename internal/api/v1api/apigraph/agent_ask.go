@@ -789,6 +789,21 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, api.ErrNotFound
 		}
 	}
+	// A finance transaction pointed at must be this agent's own, refused
+	// like a file that is not. The agent reads it again when it keeps the
+	// turn, and drops one that is not its own, for every other caller.
+	for _, reference := range arguments.References {
+		if reference.FinanceTransactionID == "" {
+			continue
+		}
+		financeTransaction, err := tx.GetFinanceTransaction(asking.ID, reference.FinanceTransactionID)
+		if err != nil {
+			return nil, err
+		}
+		if financeTransaction == nil {
+			return nil, api.ErrNotFound
+		}
+	}
 	// Where the dashboard was reached, for a link to a file the person asks
 	// to open on another device.
 	origin := ""

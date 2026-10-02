@@ -55,8 +55,12 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 		return
 	}
 	// What the person pointed at is part of what this turn is about.
+	// A finance transaction is about its merchant.
 	for _, reference := range self.settings.References {
 		words += "\n" + reference.Subject
+		if reference.MerchantName != "" {
+			words += "\n" + reference.MerchantName
+		}
 	}
 
 	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)

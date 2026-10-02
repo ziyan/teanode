@@ -1013,6 +1013,14 @@ export interface AgentReference {
   // A page of the agent's memory rather than a message.
   path?: string
   name?: string
+  // One of the agent's finance transactions, with what its chip shows. The
+  // server fills those in again from the stored row.
+  financeTransactionId?: string
+  postedOn?: string
+  amount?: string
+  currencyCode?: string
+  merchantName?: string
+  description?: string
 }
 
 export interface AgentAskDetail {
