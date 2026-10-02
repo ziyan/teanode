@@ -85,7 +85,9 @@ A step is one of four kinds:
   record by its `id`, a message of a conversation step as
   `<step id>#<number>` counting from one, or a whole conversation step by
   its `id`. A chat thread is filed as one document, so a chat record is
-  met by a fact read from its thread. A question that names something not
+  met by a fact read from its thread; give every chat record named as
+  evidence a `thread`, since posts without one are filed in windows that
+  cannot be traced to a post. A question that names something not
   filed before it is refused when the file is read.
 
 A chat thread becomes facts only when the person took part in it and it

@@ -9,7 +9,9 @@ histories: its facts filed in order as notes of the person's, a few at a
 time and a day apart, so a correction is newer than what it corrects;
 dreams until nothing waits to be read; then its questions. Each note
 starts by asking for its facts to be remembered, as the benchmark asks a
-memory agent to memorize each chunk it is given. The reference
+memory agent to memorize each chunk it is given, and keeps each fact's
+number: the higher number holds, and two facts in conflict often fall in
+the same note, where only the number orders them. The reference
 answers are the expected answers and never enter the records.
 
 The benchmark tells the model that where facts conflict the later one
@@ -76,7 +78,7 @@ def scenario_for(row, question_count, facts_per_record):
             "at": (STARTED + datetime.timedelta(days=number - 1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "author": "@you",
             "title": f"Facts, part {number}",
-            "text": MEMORIZE + "\n" + "\n".join(text for _, text in part),
+            "text": MEMORIZE + "\n" + "\n".join(f"{number}. {text}" for number, text in part),
         })
     questions = []
     pairs = list(zip(row["questions"], row["answers"]))
