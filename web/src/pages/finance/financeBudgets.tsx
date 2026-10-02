@@ -119,14 +119,15 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
     return category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory')
   }
   const isIncomeCategory = (id: string) => categories.some((candidate) => candidate.id === id && candidate.isIncome)
-  // What a budget row says: a limit on spending, or the income expected,
-  // from the month the amount began (an earlier row with the same amount
-  // runs into this one), not only this row's own month.
+  // What a budget row says: a limit on spending, or the income expected.
+  // A budget in force says the month its amount began (an earlier row with
+  // the same amount runs into this one); a change set to come says its own
+  // month, when it takes effect.
   const allBudgets = budgets.data?.Budgets ?? []
-  const amountFrom = (budget: Budget) =>
+  const amountFrom = (budget: Budget, isInForce: boolean) =>
     t(isIncomeCategory(budget.spendingCategoryId) ? 'finance.incomeBudgetFrom' : 'finance.budgetFrom', {
       amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
-      month: monthLabel(budgetAmountSince(budget, allBudgets), 'long'),
+      month: monthLabel(isInForce ? budgetAmountSince(budget, allBudgets) : budget.effectiveFrom, 'long'),
     })
   // Income budgets in a group of their own under the spending ones, each
   // group headed only once there is income to tell apart from spending.
@@ -181,7 +182,7 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
             <SettingsRow
               key={budget.id}
               title={nameOf(budget.spendingCategoryId)}
-              subtitle={amountFrom(budget)}
+              subtitle={amountFrom(budget, true)}
               actions={
                 <div className="row-actions">
                   <Tooltip label={t('common.edit')}>
@@ -216,7 +217,7 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
               badge={<Tag value={t('finance.scheduled')} />}
               subtitle={
                 amountOf(budget.monthlyAmount) > 0
-                  ? amountFrom(budget)
+                  ? amountFrom(budget, false)
                   : t('finance.budgetEndsFrom', { month: monthLabel(budget.effectiveFrom, 'long') })
               }
             />
@@ -300,6 +301,16 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
             <span>{t('finance.effectiveFrom')}</span>
             <input type="month" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} />
           </label>
+          {/* Saving from a month already past changes every month since,
+              which a raise meant from now on should not do unnoticed. */}
+          {effectiveFrom && effectiveFrom < personMonth() ? (
+            <p className="muted field-hint">
+              {t('finance.budgetFromPastHint', {
+                month: monthLabel(effectiveFrom, 'long'),
+                thisMonth: monthLabel(personMonth(), 'long'),
+              })}
+            </p>
+          ) : null}
           <p className="muted field-hint">{t('finance.budgetDialogHint')}</p>
         </FormDialog>
       ) : null}

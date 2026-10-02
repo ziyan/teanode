@@ -108,9 +108,11 @@ type BudgetOperation interface {
 	ApplySpendingRules(agentId string) (int, error)
 
 	// SetBudget keeps the monthly amount of a spending category from a
-	// month on, replacing the one already set from that same month. On an
-	// income spending category it is the income expected each month. The
-	// transfer category, which is neither spending nor income, is refused.
+	// month on, replacing the one already set from that same month, and
+	// deletes the later rows that then say nothing (dropRepeatedBudgets).
+	// On an income spending category it is the income expected each month.
+	// The transfer category, which is neither spending nor income, is
+	// refused.
 	SetBudget(budget *models.Budget) (*models.Budget, error)
 
 	// ListBudgets is every budget row of the agent, by spending category
@@ -874,6 +876,14 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 	if spendingCategory.IsTransfer {
 		return nil, fmt.Errorf("%w: transfers are neither spending nor income, so the transfer category takes no budget", ErrInvalidArguments)
 	}
+	// One change to a category's budget at a time: the rows read below
+	// decide which later rows are dropped, and a second change reading the
+	// same rows at once could drop one the first relied on.
+	var locked []string
+	if err := self.tx.Raw(`SELECT "id" FROM "agent_spending_category" WHERE "agent_id" = ? AND "id" = ? FOR UPDATE`,
+		budget.AgentID, budget.SpendingCategoryID).Scan(&locked).Error; err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	written := &models.Budget{
 		ID: newID(), AgentID: budget.AgentID, SpendingCategoryID: budget.SpendingCategoryID, MonthlyAmount: monthlyAmount,
@@ -913,7 +923,7 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 			return nil, err
 		}
 	}
-	if err := self.dropRepeatedBudgets(written, replaced); err != nil {
+	if err := self.dropRepeatedBudgets(written, replaced, len(existing) > 0); err != nil {
 		return nil, err
 	}
 	var found []agentBudgetModel
@@ -927,12 +937,21 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 }
 
 // dropRepeatedBudgets deletes the rows after written, in month order, that
-// repeat either the budget written or the one it replaced (the row in force
-// from written's month before, if any), stopping at the first row that is a
-// real change. A row that only repeated the old amount would otherwise
-// bring it back from its month, and one that repeats the new amount says
-// nothing. A later change to another amount is kept.
-func (self *transaction) dropRepeatedBudgets(written *models.Budget, replaced []agentBudgetModel) error {
+// say nothing, stopping at the first row that is a real change:
+//
+//   - a row that repeats the amount written: the budget already runs at
+//     that amount from written's month, so the row changes nothing;
+//   - when written edited an existing row in place, a row that repeats the
+//     amount in force just before it in the old order: a copy of the old
+//     amount, which would otherwise bring it back from its month.
+//
+// The amount in force before each later row is followed through the old
+// order, so a row returning to an earlier amount after a different one
+// (400, then 450 for the summer, then 400 again) is a real change and is
+// kept, and so is a restart after a budget was ended with 0. When written
+// is a new row between others, no old-amount row is dropped: a later row
+// with the old amount may be a deliberate return to it.
+func (self *transaction) dropRepeatedBudgets(written *models.Budget, replaced []agentBudgetModel, isEditedInPlace bool) error {
 	var later []agentBudgetModel
 	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" = ? AND "effective_from" > ?::date`,
 		written.AgentID, written.SpendingCategoryID, written.EffectiveFrom).Order(`"effective_from" ASC`).Find(&later).Error; err != nil {
@@ -943,15 +962,17 @@ func (self *transaction) dropRepeatedBudgets(written *models.Budget, replaced []
 		otherAmount, otherErr := canonicalAmount("monthly amount", monthlyAmount)
 		return rowErr == nil && otherErr == nil && rowAmount == otherAmount && row.CurrencyCode == currencyCode
 	}
+	// What was in force just before the next later row, in the old order.
+	// replaced was read before the write, so it holds the old amount even
+	// when written updated that very row.
+	var previous *models.Budget
+	if len(replaced) > 0 {
+		previous = replaced[0].toModel()
+	}
 	for index := range later {
 		row := later[index].toModel()
-		isRepeat := isSame(row, written.MonthlyAmount, written.CurrencyCode)
-		// replaced was read before the write, so it holds the old amount
-		// even when written updated that very row.
-		if !isRepeat && len(replaced) > 0 {
-			before := replaced[0].toModel()
-			isRepeat = isSame(row, before.MonthlyAmount, before.CurrencyCode)
-		}
+		isRepeat := isSame(row, written.MonthlyAmount, written.CurrencyCode) ||
+			(isEditedInPlace && previous != nil && isSame(row, previous.MonthlyAmount, previous.CurrencyCode))
 		if !isRepeat {
 			return nil
 		}
@@ -960,6 +981,7 @@ func (self *transaction) dropRepeatedBudgets(written *models.Budget, replaced []
 		}); err != nil {
 			return err
 		}
+		previous = row
 	}
 	return nil
 }

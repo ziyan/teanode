@@ -313,6 +313,125 @@ func TestSetBudgetDropsRowsThatOnlyRepeat(t *testing.T) {
 	})
 }
 
+// The changes a person set on purpose stay: a return to an earlier amount
+// after a different one, a restart after a budget was ended, and a later
+// row with the old amount when a new change is put between. Each case
+// starts from its own spending category.
+func TestSetBudgetKeepsDeliberateChanges(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "budget-deliberate")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		category := func(name string) string {
+			t.Helper()
+			created, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: name})
+			if err != nil {
+				t.Fatalf("CreateSpendingCategory: %s", err)
+			}
+			return created.ID
+		}
+		set := func(spendingCategoryId, monthlyAmount, currencyCode, effectiveFrom string) {
+			t.Helper()
+			budget := models.Budget{AgentID: fixture.agentId, SpendingCategoryID: spendingCategoryId, MonthlyAmount: monthlyAmount, CurrencyCode: currencyCode, EffectiveFrom: effectiveFrom}
+			if _, err := tx.SetBudget(&budget); err != nil {
+				t.Fatalf("SetBudget %+v: %s", budget, err)
+			}
+		}
+		rows := func(spendingCategoryId string) string {
+			t.Helper()
+			budgets, err := tx.ListBudgets(fixture.agentId)
+			if err != nil {
+				t.Fatalf("ListBudgets: %s", err)
+			}
+			said := []string{}
+			for _, budget := range budgets {
+				if budget.SpendingCategoryID == spendingCategoryId {
+					said = append(said, budget.EffectiveFrom[:7]+"="+budget.MonthlyAmount+budget.CurrencyCode)
+				}
+			}
+			return strings.Join(said, " ")
+		}
+
+		// A summer increase moved earlier keeps its return to 400.
+		summer := category("summer")
+		set(summer, "400", "USD", "2026-01")
+		set(summer, "450", "USD", "2026-06")
+		set(summer, "400", "USD", "2026-09")
+		set(summer, "450", "USD", "2026-03")
+		if have := rows(summer); have != "2026-01=400.0000USD 2026-03=450.0000USD 2026-09=400.0000USD" {
+			t.Errorf("moving a summer increase earlier: %s", have)
+		}
+
+		// Ending a budget earlier keeps its later restart.
+		restarted := category("restarted")
+		set(restarted, "400", "USD", "2026-01")
+		set(restarted, "0", "USD", "2026-03")
+		set(restarted, "400", "USD", "2026-06")
+		set(restarted, "0", "USD", "2026-02")
+		if have := rows(restarted); have != "2026-01=400.0000USD 2026-02=0.0000USD 2026-06=400.0000USD" {
+			t.Errorf("ending a budget earlier: %s", have)
+		}
+
+		// Editing a row in place drops the copy after it but keeps the
+		// change after that, which differs from what came just before it.
+		edited := category("edited")
+		set(edited, "400", "USD", "2026-01")
+		set(edited, "450", "USD", "2026-06")
+		set(edited, "400", "USD", "2026-09")
+		set(edited, "450", "USD", "2026-12")
+		set(edited, "400", "USD", "2026-06")
+		if have := rows(edited); have != "2026-01=400.0000USD 2026-06=400.0000USD 2026-12=450.0000USD" {
+			t.Errorf("editing a row in place: %s", have)
+		}
+
+		// A new change put between keeps a later deliberate return to the
+		// old amount, whichever was set first.
+		between := category("between")
+		set(between, "400", "USD", "2026-01")
+		set(between, "400", "USD", "2026-09")
+		set(between, "450", "USD", "2026-06")
+		if have := rows(between); have != "2026-01=400.0000USD 2026-06=450.0000USD 2026-09=400.0000USD" {
+			t.Errorf("a change put between: %s", have)
+		}
+
+		// The same amount in another currency is a change, not a repeat.
+		currency := category("currency")
+		set(currency, "400", "USD", "2026-01")
+		set(currency, "400", "EUR", "2026-06")
+		set(currency, "400", "USD", "2026-01")
+		if have := rows(currency); have != "2026-01=400.0000USD 2026-06=400.0000EUR" {
+			t.Errorf("a change of currency: %s", have)
+		}
+
+		// A dropped row leaves a delete in the audit log.
+		audited := category("audited")
+		set(audited, "400", "USD", "2026-09")
+		budgets, err := tx.ListBudgets(fixture.agentId)
+		if err != nil {
+			t.Fatalf("ListBudgets: %s", err)
+		}
+		droppedId := ""
+		for _, budget := range budgets {
+			if budget.SpendingCategoryID == audited {
+				droppedId = budget.ID
+			}
+		}
+		set(audited, "400", "USD", "2026-01")
+		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceBudget), ResourceID: droppedId})
+		if err != nil {
+			t.Fatalf("ListAuditEvents: %s", err)
+		}
+		isDeleteRecorded := false
+		for _, event := range events {
+			isDeleteRecorded = isDeleteRecorded || event.Action == models.AuditActionDelete
+		}
+		if droppedId == "" || !isDeleteRecorded {
+			t.Errorf("no delete recorded for the dropped row %q: %+v", droppedId, events)
+		}
+	})
+}
+
 // The budget in force in a month is the latest set from that month or
 // before, and a zero ends it.
 func TestBudgetsForMonthTakeTheLatestInForce(t *testing.T) {
