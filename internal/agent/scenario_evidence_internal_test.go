@@ -154,3 +154,17 @@ func TestScenarioEvidenceMustNameWhatWasFiledBefore(t *testing.T) {
 		}
 	}
 }
+
+// A misspelled answer source is refused before a run spends anything: a
+// failed answer is reported as missed, and a source no question could be
+// answered from would read as a memory that knew nothing.
+func TestScenarioAnswerSourcesAreCheckedFirst(t *testing.T) {
+	if err := checkScenarioAnswerSources([]string{"memory", "sources", "both", "memory@planned", "survey", "agent@low"}); err != nil {
+		t.Fatalf("every known source is taken: %s", err)
+	}
+	for _, misspelled := range []string{"memroy", "sources@planned", ""} {
+		if err := checkScenarioAnswerSources([]string{"memory", misspelled}); err == nil {
+			t.Fatalf("%q was taken", misspelled)
+		}
+	}
+}

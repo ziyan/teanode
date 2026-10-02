@@ -161,7 +161,7 @@ func traceScenarioEvidence(ctx context.Context, database db.Database, agentId st
 	sort.Strings(report.CitedEvidence)
 	report.IndependentSourceCount = len(report.CitedEvidence)
 	for _, named := range question.Evidence {
-		if !scenarioEvidenceCited(named, cited) && !(origins.threads[named] != "" && cited[origins.threads[named]]) {
+		if !scenarioEvidenceCited(named, origins.threads[named], cited) {
 			report.MissingEvidence = append(report.MissingEvidence, named)
 		}
 	}
@@ -212,10 +212,10 @@ func scenarioInputsOf(tx db.Transaction, agentId string, origins *scenarioOrigin
 	return inputs, nil
 }
 
-// scenarioEvidenceCited is whether a named input is cited. A step named
-// whole is met by any of its messages.
-func scenarioEvidenceCited(named string, cited map[string]bool) bool {
-	if cited[named] {
+// scenarioEvidenceCited is whether a named input is cited. A chat post is
+// met by its thread, and a step named whole by any of its messages.
+func scenarioEvidenceCited(named, thread string, cited map[string]bool) bool {
+	if cited[named] || (thread != "" && cited[thread]) {
 		return true
 	}
 	if strings.Contains(named, "#") {

@@ -335,3 +335,20 @@ func (self *Agent) answerAsAgent(ctx context.Context, found *models.Agent, owner
 	}
 	return answered, nil
 }
+
+// CheckAnswerSource says whether an answer source is one EvaluateAnswer
+// takes, so a run that asks many questions can refuse a misspelled one
+// before it spends anything.
+func CheckAnswerSource(answerFrom string) error {
+	answerFrom, isPlanned := strings.CutSuffix(answerFrom, answerFromPlanned)
+	if isPlanned {
+		if answerFrom != AnswerFromMemory && answerFrom != AnswerFromBoth {
+			return fmt.Errorf("answer from %q: only memory and both answer from a retrieval plan", answerFrom+answerFromPlanned)
+		}
+		return nil
+	}
+	if _, _, isAgent := agentEffortOf(answerFrom); isAgent || answerFrom == AnswerFromMemory || answerFrom == AnswerFromSources || answerFrom == AnswerFromBoth {
+		return nil
+	}
+	return fmt.Errorf("answer from %q: memory, sources, both, or agent (agent@low, agent@medium, agent@high, each with +research)", answerFrom)
+}

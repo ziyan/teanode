@@ -331,6 +331,9 @@ func (scenarioOperations) Execute(_ context.Context, document string, _ map[stri
 
 // RunScenario runs a scenario from the start and reports on it.
 func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioReport, error) {
+	if err := checkScenarioAnswerSources(settings.AnswerSources); err != nil {
+		return nil, err
+	}
 	configuration := *settings.Configuration
 	configuration.Agent.Enabled = true
 	// The run's own budget is in dollars and checked between steps; the
@@ -597,7 +600,8 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 				evaluation, err = self.EvaluateAnswer(ctx, found, owner, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
 				// One answer the provider broke off is that answer missed,
 				// with why: a hundred questions are not lost to one stream
-				// that failed. A run that was stopped still stops.
+				// that failed. A run that was stopped still stops, and a
+				// misspelled source was refused before the run began.
 				if err != nil && ctx.Err() == nil {
 					evaluation, err = &AnswerEvaluation{AnswerVerdict: AnswerMissed, VerdictReason: "the answer could not be given: " + err.Error()}, nil
 				}
@@ -866,6 +870,9 @@ func AskScenarioAgain(ctx context.Context, settings *ScenarioSettings) (*Scenari
 	if last == nil {
 		return nil, errors.New("the scenario has no checkpoint to ask")
 	}
+	if err := checkScenarioAnswerSources(settings.AnswerSources); err != nil {
+		return nil, err
+	}
 	configuration := *settings.Configuration
 	configuration.Agent.Enabled = true
 	configuration.Agent.Limits.DailyTokensPerAgent = 0
@@ -909,4 +916,20 @@ func AskScenarioAgain(ctx context.Context, settings *ScenarioSettings) (*Scenari
 	report.Cost, report.DurationMS = after-spent, time.Since(started).Milliseconds()
 	report.GraphCounts, err = scenarioGraphCounts(ctx, settings.Database, found.ID)
 	return report, err
+}
+
+// checkScenarioAnswerSources refuses an answer source no question could be
+// answered from, before a run spends anything: with every failed answer
+// reported as missed, a misspelled one would otherwise read as a run where
+// memory knew nothing.
+func checkScenarioAnswerSources(answerSources []string) error {
+	for _, answerFrom := range answerSources {
+		if answerFrom == ScenarioAnswerFromSurvey {
+			continue
+		}
+		if err := CheckAnswerSource(answerFrom); err != nil {
+			return err
+		}
+	}
+	return nil
 }
