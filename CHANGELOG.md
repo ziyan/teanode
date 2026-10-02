@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.106.0] - 2026-10-02
+
+### Added
+
+- When you ask your agent to remember something, in a conversation or in a note of yours, it is kept as facts in its memory, a whole list included, rather than left only to search. (#317)
+
 ## [0.105.0] - 2026-10-02
 
 ### Added
