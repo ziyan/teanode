@@ -188,6 +188,36 @@ type FinanceAccount struct {
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
 
+// InstitutionName is the institution the finance account is at: the one
+// its finance source names, else the one its provider metadata names.
+// SimpleFIN gives each account its institution ("org"), since one of its
+// finance sources can reach several, and the finance source itself keeps
+// none; an imported statement names the institution that wrote it
+// ("institutionOrganization"). The source may be nil.
+func (self *FinanceAccount) InstitutionName(source *AgentKnowledgeSource) string {
+	if source != nil {
+		if settings, _ := source.FinanceSourceSettings(); settings.InstitutionName != "" {
+			return settings.InstitutionName
+		}
+	}
+	if len(self.ProviderMetadata) == 0 {
+		return ""
+	}
+	var metadata struct {
+		Organization struct {
+			Name string `json:"name"`
+		} `json:"org"`
+		InstitutionOrganization string `json:"institutionOrganization"`
+	}
+	if json.Unmarshal(self.ProviderMetadata, &metadata) != nil {
+		return ""
+	}
+	if name := strings.TrimSpace(metadata.Organization.Name); name != "" {
+		return name
+	}
+	return strings.TrimSpace(metadata.InstitutionOrganization)
+}
+
 // CreditLimitSource is where the credit limit a card's usage is measured
 // against comes from.
 type CreditLimitSource string

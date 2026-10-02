@@ -60,6 +60,7 @@ import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
+import { ReferenceChips } from './agentReferenceChips'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -461,7 +462,7 @@ const CONVERSATION = `
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
         attachments { id name contentType size }
-        references { itemId threadId subject from }
+        references { itemId threadId subject from path name financeTransactionId postedOn amount currencyCode merchantName description }
       }
       total
       todos { id text doneAt }
@@ -1365,42 +1366,6 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
           </a>
         ),
       )}
-    </div>
-  )
-}
-
-function ReferenceChips({
-  references,
-  onRemove,
-}: {
-  references: AgentReference[]
-  onRemove?: (index: number) => void
-}) {
-  const { t } = useTranslation()
-  return (
-    <div className="agent-references">
-      {references.map((reference, index) => (
-        <Tooltip
-          key={`${reference.itemId ?? reference.path ?? ''}-${index}`}
-          label={reference.from ?? reference.path ?? ''}
-        >
-          <span className="agent-reference-chip">
-            <SparkIcon size={11} />{' '}
-            {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
-            {onRemove && (
-              <button
-                type="button"
-                className="icon-action"
-                title={t('agentDrawer.remove')}
-                aria-label={`${reference.subject || reference.name || reference.path || ''}: ${t('agentDrawer.remove')}`}
-                onClick={() => onRemove(index)}
-              >
-                <CloseIcon size={12} />
-              </button>
-            )}
-          </span>
-        </Tooltip>
-      ))}
     </div>
   )
 }
@@ -2716,7 +2681,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         previous.some(
           (reference) =>
             (reference.itemId && reference.itemId === detail.reference.itemId) ||
-            (reference.path && reference.path === detail.reference.path),
+            (reference.path && reference.path === detail.reference.path) ||
+            (reference.financeTransactionId &&
+              reference.financeTransactionId === detail.reference.financeTransactionId),
         )
           ? previous
           : [...previous, detail.reference],

@@ -184,6 +184,16 @@ func (self *AskRun) SteeredInto() *AskRun {
 // keepPersonTurn stores what the person said, with the files and threads
 // that came with it.
 func keepPersonTurn(tx db.Transaction, settings *AskSettings) (*models.AgentMessage, error) {
+	// The references as they are kept and then told, in the transaction
+	// that keeps them: a finance transaction that is not the agent's is
+	// dropped, and one that is carries what the model is told about it.
+	if len(settings.References) > 0 {
+		references, err := resolveReferences(tx, settings.Agent.ID, settings.References)
+		if err != nil {
+			return nil, err
+		}
+		settings.References = references
+	}
 	stored := &models.AgentMessage{ConversationID: settings.Conversation.ID, Role: string(llm.RoleUser), Content: settings.Message, References: settings.References}
 	attachmentIds := make([]string, 0, len(settings.Attachments))
 	for _, attachment := range settings.Attachments {

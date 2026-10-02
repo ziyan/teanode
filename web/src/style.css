@@ -752,9 +752,11 @@ button.conversation-tile:focus-visible {
   gap: var(--space-2);
 }
 
-/* The explorer's far-side actions are icons as tall as the buttons beside
-   them, with a border so they read as buttons. */
-.graph-explore-dialog-action {
+/* A dialog's far-side actions, the explorer's and a transaction's Ask the
+   agent, are icons as tall as the buttons beside them, with a border so
+   they read as buttons. */
+.graph-explore-dialog-action,
+.dialog-icon-action {
   width: 40px;
   height: 40px;
   border: 1px solid var(--border);

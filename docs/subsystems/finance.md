@@ -855,6 +855,20 @@ answer with a toast, and read again the page shown and what the open
 details show. A holding's trades, on its asset's page under Net worth,
 page the same way.
 
+A transaction's details end with an icon, Ask the agent, at the far end of
+the row with Close (`otherAction` on `ConfirmDialog`), which points the
+agent at it the way the mailbox's reader points it at a thread: the dialog
+closes, so its scrim does not cover the drawer, and the drawer opens with a
+chip such as "Transaction: Jun 9, Corner Grocer, -$42.17", or the agent page
+opens when there is no drawer. The chip is a reference of its own kind
+(`financeTransactionId` on `AgentReference`, with `postedOn`, `amount`,
+`currencyCode`, `merchantName` and `description` for the chip, which the
+server fills in again from the stored row). The turn it is sent with
+carries a description of the transaction, read with the asking agent's id
+and refused or dropped when it is not that agent's, with its id for the
+`finance` tool to act on (`docs/subsystems/context.md`, A person's
+message).
+
 Transactions are chosen with a box at the start of each row
 (`web/src/pages/finance/financeTransactions.tsx`, through `DataTable`'s
 selection): shift chooses the run of rows shown since the last box

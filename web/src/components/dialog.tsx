@@ -118,6 +118,7 @@ export function ConfirmDialog({
   error,
   destructive = true,
   wide,
+  otherAction,
   onConfirm,
   onClose,
 }: {
@@ -136,6 +137,10 @@ export function ConfirmDialog({
   // For a body that is something to read rather than a sentence: a list,
   // or what a command printed.
   wide?: boolean
+  // Something to do about what the dialog shows that is neither the way
+  // out nor the confirmation, at the far end of the same row, as in
+  // FormDialog: asking the agent about a transaction being read.
+  otherAction?: React.ReactNode
   onConfirm?: () => void
   onClose: () => void
 }) {
@@ -160,6 +165,7 @@ export function ConfirmDialog({
         {typeof body === 'string' ? <p className="muted">{body}</p> : body}
         <ErrorMessage error={error} />
         <div className="dialog-actions">
+          {otherAction && <div className="dialog-actions-other">{otherAction}</div>}
           <button type="button" onClick={onClose} disabled={busy}>
             {onConfirm ? t('common.cancel') : t('common.close')}
           </button>
