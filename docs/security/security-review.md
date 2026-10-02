@@ -401,6 +401,25 @@ verified in constant time. `SameSite=Lax` is what stands between the GraphQL
 endpoint and cross-site request forgery, since a cross-site POST does not
 carry the cookie.
 
+### 5.5.1 Signing in as somebody else
+
+An operator who may manage accounts can sign in as another account for an
+hour, to see what that person sees (`StartImpersonation`;
+`docs/planning/impersonation-execplan.md`). It is a separate session row
+belonging to the person, naming the operator and the operator's own session;
+the operator's own cookie is kept aside in `teanode_session_return` and put
+back when it ends. It is refused unless the operator holds every permission
+the person holds, the same rule as setting their password, and refused from a
+token, from the console and from inside another impersonation. It stops
+working the moment the operator's own session ends or their account is
+disabled, and after the hour. While it lasts, the person's credentials
+(password, passkeys, API tokens, mail app passwords, stored service
+credentials, OAuth approvals, their sessions) and their agent are refused by
+name before any resolver runs, so nothing minted in the hour outlives it and
+nothing said to the agent is filed as the person's. Every audit row written
+in it carries `impersonator_user_id`, and the person sees the session, named
+as the operator's, in their own list and can end it.
+
 ### 5.6 Rendered mail
 
 Messages render inside a sandboxed iframe under a restrictive CSP. Scripts do

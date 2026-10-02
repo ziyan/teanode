@@ -70,6 +70,11 @@ func runSessionList(ctx context.Context, command *cli.Command) error {
 		if session.Revoked != nil {
 			state = "ended"
 		}
+		// Said in the row, so whose hand it was is not left to a column
+		// nobody reads.
+		if session.ImpersonatorUsername != "" {
+			state += ", signed in as you by " + session.ImpersonatorUsername
+		}
 		rows = append(rows, []string{
 			session.ID, formatTime(&session.Created), formatTime(session.LastUsed), session.IP,
 			truncate(session.UserAgent, 40), state,
