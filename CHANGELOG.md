@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.104.4] - 2026-10-02
+
+### Changed
+
+- Lists show page numbers and a total instead of a Load more button, and duplicates are hidden from the transactions list unless you ask for them. (#315)
+
 ## [0.104.3] - 2026-10-02
 
 ### Fixed
