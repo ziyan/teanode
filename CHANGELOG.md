@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.104.3] - 2026-10-02
+
+### Fixed
+
+- The spending summary's totals say which one is everything converted and which are the parts spent in each currency. (#313)
+- Saving a spending rule that already exists no longer adds a copy, and existing copies are removed. (#314)
+
 ## [0.104.2] - 2026-10-02
 
 ### Fixed
