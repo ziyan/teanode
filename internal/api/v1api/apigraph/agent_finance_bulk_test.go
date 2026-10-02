@@ -309,7 +309,7 @@ func TestCategorizeTransactionsRefusesRulesNotAsProposed(test *testing.T) {
 	})
 }
 
-// An earlier rule sends Zoomly Eats to Dining; the person picks Zoomly Eats
+// An earlier rule, "eats", sends Zoomly Eats to Dining; the person picks Zoomly Eats
 // rows and Transport. The new rule goes ahead of the Dining one, so the
 // other Zoomly Eats transaction, the one the person did not pick, goes to
 // Transport too; one the person filed themselves stays. The count said
@@ -333,7 +333,7 @@ func TestBulkRuleGoesAheadOfTheRuleThatWins(test *testing.T) {
 		}); err != nil {
 			test.Fatal(err)
 		}
-		diningRule, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "zoomly eats", SpendingCategoryID: dining.ID})
+		diningRule, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "eats", SpendingCategoryID: dining.ID})
 		if err != nil {
 			test.Fatal(err)
 		}
@@ -367,7 +367,7 @@ func TestBulkRuleGoesAheadOfTheRuleThatWins(test *testing.T) {
 	})
 }
 
-// "zoomly eats" to Dining is tried before "zoomly" to Transport. Zoomly Eats
+// "eats" to Dining is tried before "zoomly" to Transport. Zoomly Eats
 // rows picked for Transport are not covered by the Transport rule, since
 // the Dining one wins for them: a rule is proposed, ahead of the Dining
 // one. An Zoomly Trip row is covered by the Transport rule, the first that
@@ -385,7 +385,7 @@ func TestBulkRuleCoverageFollowsRuleOrder(test *testing.T) {
 		dining := spendingCategoryNamed(test, ctx, resolver, finance.SpendingCategoryDining)
 		transport := spendingCategoryNamed(test, ctx, resolver, finance.SpendingCategoryTransport)
 		zero, one := 0, 1
-		diningRule, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "zoomly eats", SpendingCategoryID: dining.ID, RulePriority: &zero})
+		diningRule, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "eats", SpendingCategoryID: dining.ID, RulePriority: &zero})
 		if err != nil {
 			test.Fatal(err)
 		}

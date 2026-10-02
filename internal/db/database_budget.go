@@ -573,6 +573,29 @@ func (self *transaction) CreateSpendingRules(spendingRules []*models.SpendingRul
 		if err != nil {
 			return nil, err
 		}
+		// A rule matching exactly what one already matches is that rule:
+		// rules are tried in order and the first that matches wins, so a
+		// second copy would never apply. The same one asked for again is
+		// kept as it is; asked for with another category, the one there is
+		// takes it.
+		sameId, err := self.sameSpendingRule(model)
+		if err != nil {
+			return nil, err
+		}
+		if sameId != "" {
+			spendingCategoryId := model.SpendingCategoryID
+			if _, err := self.UpdateSpendingRule(created.AgentID, sameId, func(existing *models.SpendingRule) error {
+				existing.SpendingCategoryID = spendingCategoryId
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+			createdIds = append(createdIds, sameId)
+			if !slices.Contains(agentIds, created.AgentID) {
+				agentIds = append(agentIds, created.AgentID)
+			}
+			continue
+		}
 		if err := self.applyMutation(models.AuditResourceSpendingRule, created.ID, models.AuditActionCreate, nil, &created, func(tx *gorm.DB) error {
 			return tx.Create(model).Error
 		}); err != nil {
@@ -597,6 +620,25 @@ func (self *transaction) CreateSpendingRules(spendingRules []*models.SpendingRul
 		createdRules = append(createdRules, createdRule)
 	}
 	return createdRules, nil
+}
+
+// sameSpendingRule is the id of the agent's rule that matches exactly what
+// model matches: the same words, whatever their case, the same finance
+// account and the same amount limits, or empty when there is none. The
+// earliest in order, should copies made before this check exist.
+func (self *transaction) sameSpendingRule(model *agentSpendingRuleModel) (string, error) {
+	var found []string
+	err := self.tx.Raw(`SELECT "id" FROM "agent_spending_rule"
+		WHERE "agent_id" = ? AND lower("match_text") = lower(?)
+			AND "finance_account_id" IS NOT DISTINCT FROM ?
+			AND "minimum_amount" IS NOT DISTINCT FROM CAST(? AS numeric)
+			AND "maximum_amount" IS NOT DISTINCT FROM CAST(? AS numeric)
+		ORDER BY "rule_priority" ASC, "created_at" ASC LIMIT 1`,
+		model.AgentID, model.MatchText, model.FinanceAccountID, model.MinimumAmount, model.MaximumAmount).Scan(&found).Error
+	if err != nil || len(found) == 0 {
+		return "", err
+	}
+	return found[0], nil
 }
 
 func (self *transaction) UpdateSpendingRule(agentId, spendingRuleId string, modify func(*models.SpendingRule) error) (*models.SpendingRule, error) {
