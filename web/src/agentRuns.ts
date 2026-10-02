@@ -24,6 +24,12 @@ export const RUN_KINDS = [
   'subagent',
   // A tool called, or a question asked, by a program over MCP.
   'mcp',
+  'goal',
+  'background',
+  'speak_first',
+  'alert',
+  'categorize',
+  'statement_import',
 ]
 
 // runKindLabel is a run's kind in the reader's words. A kind this dashboard
