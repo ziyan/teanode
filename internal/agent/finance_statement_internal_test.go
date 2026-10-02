@@ -233,6 +233,34 @@ func TestStatementImportRecordsTheBalance(t *testing.T) {
 	})
 }
 
+// A statement with no ledger balance says nothing about the balance, so
+// importing one, older or newer, leaves the balance an earlier statement
+// gave and records no value for its day.
+func TestStatementWithoutABalanceKeepsTheBalance(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	fixture.importStatement(t, inventedCardStatement("20260228", "-400.00", "INVENTED COFFEE ROASTERS"))
+	withoutBalance := func(endDay string) string {
+		content := inventedCardStatement(endDay, "-1.00", "INVENTED COFFEE ROASTERS")
+		start := strings.Index(content, "<LEDGERBAL>")
+		end := strings.Index(content, "</LEDGERBAL>") + len("</LEDGERBAL>\n")
+		return content[:start] + content[end:]
+	}
+	fixture.importStatement(t, withoutBalance("20260131"))
+	fixture.importStatement(t, withoutBalance("20260331"))
+
+	source := fixture.statementSource(t)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		accounts, err := tx.ListFinanceAccounts(fixture.agent.ID, source.ID)
+		if err != nil || len(accounts) != 1 {
+			t.Fatalf("accounts %v %v", accounts, err)
+		}
+		account := accounts[0]
+		if account.CurrentBalance != "-400.0000" || account.BalanceAt == nil || account.BalanceAt.Format("2006-01-02") != "2026-02-28" {
+			t.Errorf("the balance was not kept: %q as of %v", account.CurrentBalance, account.BalanceAt)
+		}
+	})
+}
+
 // A file that is not OFX imports nothing and says why, on the answer and
 // on the source; a switched-off source imports nothing either.
 func TestStatementImportRefusals(t *testing.T) {
