@@ -534,6 +534,11 @@ func (self *authenticator) StartSession(response http.ResponseWriter, request *h
 }
 
 func (self *authenticator) startSession(response http.ResponseWriter, request *http.Request, user *models.User) error {
+	// Signing in afresh in a browser that was signed in as somebody else
+	// ends that: its row would otherwise stay usable for the rest of its
+	// hour with no cookie anywhere pointing at it but the one a copy kept.
+	self.endImpersonationIn(response, request)
+
 	lifetime := self.config.Current().Session.Lifetime.Duration()
 	expiry := time.Now().Add(lifetime)
 
@@ -1162,4 +1167,28 @@ func (self *authenticator) EndImpersonation(response http.ResponseWriter, reques
 	})
 	log.Noticef("an impersonation ended, session %s", id)
 	return restored != "", nil
+}
+
+// endImpersonationIn revokes the impersonation a request's cookie is, if it
+// is one, and clears the cookie keeping the operator's own session.
+func (self *authenticator) endImpersonationIn(response http.ResponseWriter, request *http.Request) {
+	cookie, err := request.Cookie(SessionCookieName)
+	if err != nil {
+		return
+	}
+	id, _, ok := parse(kindSession, SessionPrefix, cookie.Value, self.sessionKey())
+	if !ok {
+		return
+	}
+	session, _, err := self.database.GetSession(id)
+	if err != nil || session == nil || !session.IsImpersonation() {
+		return
+	}
+	if err := self.database.RevokeSession(id, time.Now()); err != nil {
+		log.Errorf("could not end impersonation %q: %s", id, err)
+	}
+	http.SetCookie(response, &http.Cookie{
+		Name: ReturnCookieName, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: self.isSecureRequest(request), SameSite: http.SameSiteLaxMode,
+	})
 }

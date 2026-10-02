@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -106,6 +107,11 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	// The operator behind an impersonation, who answers for what is done
 	// in it: on every audit row it writes, and in the check below.
 	impersonator, err := self.impersonatorOf(request, user)
+	if errors.Is(err, api.ErrNotLoggedIn) {
+		writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
+			fmt.Errorf("%w: you may no longer be signed in as this account", api.ErrNotLoggedIn))})
+		return
+	}
 	if err != nil {
 		log.Errorf("failed to read who is behind %q: %s", username, err)
 		http.Error(response, "failed to execute request", http.StatusInternalServerError)
@@ -126,7 +132,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		return
 	}
 	if err == nil && impersonator != nil {
-		if refused := refusedWhileImpersonatingName(operation); refused != "" {
+		if refused := refusedWhileImpersonatingName(prepared.AST, operation); refused != "" {
 			writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
 				fmt.Errorf("%w: %s is not done while signed in as somebody else", api.ErrPermissionDenied, refused))})
 			return

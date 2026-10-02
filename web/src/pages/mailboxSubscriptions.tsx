@@ -715,7 +715,9 @@ function SubscriptionReader({
       }
       setMarks((previous) => ({ ...previous, ...Object.fromEntries(itemIds.map((id) => [id, true])) }))
       // The list beside this one counts what is unread, so it is told too.
-      void graphql(SET_FLAGS, { itemIds, seen: true }).then(onChanged)
+      // Unmarked rather than complained about when it cannot be said:
+      // somebody signed in as the reader may look without reading for them.
+      void graphql(SET_FLAGS, { itemIds, seen: true }).then(onChanged, () => undefined)
     },
     [onChanged],
   )

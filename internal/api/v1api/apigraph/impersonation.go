@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/graphql-go/graphql/language/ast"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/web"
 )
@@ -26,8 +26,8 @@ type ImpersonationMutation interface {
 	// see what they see: your own session is kept and comes back when it
 	// ends. Needs the permission to manage accounts, and every permission
 	// that account holds. Not from a token, and not while already signed
-	// in as somebody else. Their credentials and their agent are off limits
-	// meanwhile.
+	// in as somebody else. It is for seeing what they see: nothing can be
+	// changed meanwhile but ending it.
 	StartImpersonation(ctx context.Context, arguments StartImpersonationArguments) (*SessionState, error)
 
 	// EndImpersonation ends signing in as somebody else and returns you to
@@ -131,60 +131,95 @@ func (self *graph) impersonatorOf(request *http.Request, user *models.User) (*mo
 	if found == nil || found.Disabled() {
 		return nil, api.ErrNotLoggedIn
 	}
+	// Still allowed, on every request: an operator whose permission to
+	// manage accounts was taken away, or who no longer holds everything the
+	// person was since given, is not signed in as them any more.
+	isAllowed := false
+	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
+		operator, err := tx.EffectivePermissions(found.ID)
+		if err != nil {
+			return err
+		}
+		held, err := tx.EffectivePermissions(user.ID)
+		if err != nil {
+			return err
+		}
+		isAllowed = operator.Has(models.PermissionUserManage) && operator.Covers(held)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if !isAllowed {
+		return nil, api.ErrNotLoggedIn
+	}
 	return found, nil
 }
 
-// refusedWhileImpersonating are the mutations an impersonation may not run,
-// by name, compared without regard to case. Checked once, before any resolver runs,
-// so that a resolver added later cannot forget it.
-//
-// The person's credentials: anything minted in the hour outlives it, which
-// would turn a visit into a lasting login nobody sees, and anything removed
-// is the person locked out of their own account. And the person's agent: it
-// learns from what is said to it as them, so an operator talking to it would
-// put words in the person's memory.
-var refusedWhileImpersonating = map[string]bool{
-	"StartImpersonation": true,
-
-	"ChangePassword":            true,
-	"SetUserPassword":           true,
-	"BeginPasskeyRegistration":  true,
-	"FinishPasskeyRegistration": true,
-	"RenamePasskey":             true,
-	"DeletePasskey":             true,
-	"CreateToken":               true,
-	"UpdateToken":               true,
-	"DeleteToken":               true,
-	"CreateMailboxAppPassword":  true,
-	"DeleteMailboxAppPassword":  true,
-	"CreateCredential":          true,
-	"UpdateCredential":          true,
-	"DeleteCredential":          true,
-	"ApproveOAuthAuthorization": true,
-	"RevokeSession":             true,
-	"RevokeAllSessions":         true,
-
-	"AskAgent":                 true,
-	"StartAgentConversation":   true,
-	"ResolveAgentConfirmation": true,
+// allowedWhileImpersonating are the only mutations an impersonation may run.
+// Signed in as somebody else is for seeing what they see, not for acting as
+// them: anything changed in the hour would be done in their name, and a list
+// of what to refuse kept missing something that lasts -- a token, a rule that
+// forwards their mail, a chat linked to their agent, words put in its memory.
+var allowedWhileImpersonating = map[string]bool{
+	"EndImpersonation": true,
+	"Logout":           true,
+	"__typename":       true,
 }
 
 // refusedWhileImpersonatingName is the first field of a mutation that an
-// impersonation may not run, or empty.
-func refusedWhileImpersonatingName(operation *ast.OperationDefinition) string {
-	if operation == nil || operation.SelectionSet == nil {
-		return ""
-	}
-	for _, selection := range operation.SelectionSet.Selections {
-		field, ok := selection.(*ast.Field)
-		if !ok || field.Name == nil {
-			continue
-		}
-		for name := range refusedWhileImpersonating {
-			if strings.EqualFold(name, field.Name.Value) {
-				return field.Name.Value
+// impersonation may not run, or empty. Fragments are followed, inline and
+// named, since a mutation can be asked for through either.
+func refusedWhileImpersonatingName(document *ast.Document, operation *ast.OperationDefinition) string {
+	fragments := map[string]*ast.FragmentDefinition{}
+	if document != nil {
+		for _, definition := range document.Definitions {
+			if fragment, ok := definition.(*ast.FragmentDefinition); ok && fragment.Name != nil {
+				fragments[fragment.Name.Value] = fragment
 			}
 		}
 	}
-	return ""
+	followed := map[string]bool{}
+	var refused func(selections *ast.SelectionSet) string
+	refused = func(selections *ast.SelectionSet) string {
+		if selections == nil {
+			return ""
+		}
+		for _, selection := range selections.Selections {
+			switch chosen := selection.(type) {
+			case *ast.Field:
+				if chosen.Name == nil || !allowedWhileImpersonating[chosen.Name.Value] {
+					if chosen.Name == nil {
+						return "an unnamed field"
+					}
+					return chosen.Name.Value
+				}
+			case *ast.InlineFragment:
+				if name := refused(chosen.SelectionSet); name != "" {
+					return name
+				}
+			case *ast.FragmentSpread:
+				if chosen.Name == nil {
+					return "an unnamed fragment"
+				}
+				if followed[chosen.Name.Value] {
+					continue
+				}
+				followed[chosen.Name.Value] = true
+				fragment := fragments[chosen.Name.Value]
+				if fragment == nil {
+					return chosen.Name.Value
+				}
+				if name := refused(fragment.SelectionSet); name != "" {
+					return name
+				}
+			default:
+				return "a selection of an unknown kind"
+			}
+		}
+		return ""
+	}
+	if operation == nil {
+		return ""
+	}
+	return refused(operation.SelectionSet)
 }

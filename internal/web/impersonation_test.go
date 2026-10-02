@@ -203,3 +203,60 @@ func TestTheMiddlewareNamesTheOperatorAndStripsAForgedOne(t *testing.T) {
 		t.Fatalf("a client-supplied operator header survived: %q %q", seenUsername, seenImpersonator)
 	}
 }
+
+// Outside GraphQL an impersonation only reads: a write elsewhere under the
+// API, the agent's MCP endpoint among them, and the sockets the agent drives
+// a browser tab or a computer through are refused before any handler runs.
+func TestAnImpersonationOnlyReadsOutsideGraphQL(t *testing.T) {
+	t.Parallel()
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "bob", "hunter2")))
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %s", err)
+	}
+	reached := false
+	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) { reached = true }),
+	)
+	impersonation, _ := impersonate(t, authenticator, login(t, authenticator, "admin", "hunter2"), "bob")
+	for _, case_ := range []struct {
+		method, path string
+		isAllowed    bool
+	}{
+		{http.MethodPost, api.PathGraphQL, true},
+		{http.MethodGet, "/api/v1/mail/someid/raw", true},
+		{http.MethodPost, api.PathAgentMCP, false},
+		{http.MethodPost, api.PathMediaUpload, false},
+		{http.MethodGet, api.PathAgentTab, false},
+		{http.MethodGet, api.PathAgentComputer, false},
+	} {
+		reached = false
+		request := httptest.NewRequest(case_.method, case_.path, nil)
+		request.AddCookie(impersonation)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if reached != case_.isAllowed {
+			t.Fatalf("%s %s reached the handler: %v, want %v (%d)", case_.method, case_.path, reached, case_.isAllowed, recorder.Code)
+		}
+	}
+}
+
+// Signing in afresh in a browser that was signed in as somebody else ends
+// that, rather than leave its row alive for the rest of the hour.
+func TestANewSignInEndsAnImpersonation(t *testing.T) {
+	t.Parallel()
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "bob", "hunter2")))
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %s", err)
+	}
+	impersonation, returning := impersonate(t, authenticator, login(t, authenticator, "admin", "hunter2"), "bob")
+	recorder := httptest.NewRecorder()
+	if err := authenticator.Login(recorder, requestWith(impersonation, returning), "admin", "hunter2"); err != nil {
+		t.Fatalf("Login: %s", err)
+	}
+	if _, ok := authenticator.AuthenticateIdentity(requestWith(impersonation)); ok {
+		t.Fatal("the impersonation outlived a new sign-in in the same browser")
+	}
+	if cookie := cookiesOf(recorder)[web.ReturnCookieName]; cookie == nil || cookie.MaxAge >= 0 {
+		t.Fatalf("the kept cookie is cleared: %+v", cookie)
+	}
+}
