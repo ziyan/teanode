@@ -84,7 +84,7 @@ func TestScenarioEvidenceIsTracedToItsInputs(t *testing.T) {
 		facts = []*models.AgentFact{read, told, drawn}
 	})
 
-	origins, err := readScenarioOrigins(t.Context(), database, agentId)
+	origins, err := readScenarioOrigins(t.Context(), database, agentId, map[string]string{"post-001": "decision-001"})
 	if err != nil {
 		t.Fatalf("readScenarioOrigins: %s", err)
 	}
@@ -112,6 +112,13 @@ func TestScenarioEvidenceIsTracedToItsInputs(t *testing.T) {
 	}
 	if report.IsEvidenceTraced || len(report.MissingEvidence) != 1 || report.MissingEvidence[0] != "unrelated-002" {
 		t.Fatalf("the unrelated record is missing: %+v", report)
+	}
+
+	// A chat post is met by its thread, which is what a fact read from
+	// the thread cites.
+	question.Evidence = []string{"post-001"}
+	if report, err = traceScenarioEvidence(t.Context(), database, agentId, origins, carried, question); err != nil || !report.IsEvidenceTraced {
+		t.Fatalf("the post's thread is cited: %+v, %v", report, err)
 	}
 
 	// A whole conversation step is met by any of its messages.

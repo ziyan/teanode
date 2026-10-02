@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,18 +50,38 @@ type ScenarioEvidenceReport struct {
 
 // scenarioOrigins names a run's inputs by what a scenario file calls them:
 // documents by their record id, messages by their step and number, and
-// conversations by their step.
+// conversations by their step. A chat thread is filed as one document,
+// named by its thread, so a fact read from it cites the thread; threads
+// says which thread each chat record was a post of.
 type scenarioOrigins struct {
 	documents     map[string]string
 	messages      map[string]string
 	conversations map[string]string
+	threads       map[string]string
+}
+
+// scenarioThreads is the thread of each chat record in a scenario.
+func scenarioThreads(scenario *Scenario) map[string]string {
+	threads := map[string]string{}
+	for _, step := range scenario.Steps {
+		for _, record := range step.Records {
+			var post struct {
+				ID     string `json:"id"`
+				Thread string `json:"thread"`
+			}
+			if err := json.Unmarshal(record, &post); err == nil && post.ID != "" && post.Thread != "" {
+				threads[post.ID] = post.Thread
+			}
+		}
+	}
+	return threads
 }
 
 // readScenarioOrigins reads the names of everything the run filed. It is
 // read from the database rather than kept as the run goes, so that asking
 // a finished run again names the same inputs.
-func readScenarioOrigins(ctx context.Context, database db.Database, agentId string) (*scenarioOrigins, error) {
-	origins := &scenarioOrigins{documents: map[string]string{}, messages: map[string]string{}, conversations: map[string]string{}}
+func readScenarioOrigins(ctx context.Context, database db.Database, agentId string, threads map[string]string) (*scenarioOrigins, error) {
+	origins := &scenarioOrigins{documents: map[string]string{}, messages: map[string]string{}, conversations: map[string]string{}, threads: threads}
 	err := database.TransactionContext(ctx, func(tx db.Transaction) error {
 		documents, err := tx.ListAgentChunkTexts(agentId, 100000)
 		if err != nil {
@@ -140,7 +161,7 @@ func traceScenarioEvidence(ctx context.Context, database db.Database, agentId st
 	sort.Strings(report.CitedEvidence)
 	report.IndependentSourceCount = len(report.CitedEvidence)
 	for _, named := range question.Evidence {
-		if !scenarioEvidenceCited(named, cited) {
+		if !scenarioEvidenceCited(named, cited) && !(origins.threads[named] != "" && cited[origins.threads[named]]) {
 			report.MissingEvidence = append(report.MissingEvidence, named)
 		}
 	}

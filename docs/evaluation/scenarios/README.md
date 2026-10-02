@@ -84,8 +84,9 @@ A step is one of four kinds:
   expected answer rests on, among what was filed before the question: a
   record by its `id`, a message of a conversation step as
   `<step id>#<number>` counting from one, or a whole conversation step by
-  its `id`. A question that names something not filed before it is
-  refused when the file is read.
+  its `id`. A chat thread is filed as one document, so a chat record is
+  met by a fact read from its thread. A question that names something not
+  filed before it is refused when the file is read.
 
 A chat thread becomes facts only when the person took part in it and it
 has two posts or more; the rest of a chat archive is searched, never

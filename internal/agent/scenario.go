@@ -530,7 +530,7 @@ func scenarioJobFinished(ctx context.Context, database db.Database, agentId stri
 // askScenario asks a checkpoint's questions.
 func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, step *ScenarioStep, owner *models.User, found *models.Agent) ([]*ScenarioQuestionReport, error) {
 	var reports []*ScenarioQuestionReport
-	origins, err := readScenarioOrigins(ctx, settings.Database, found.ID)
+	origins, err := readScenarioOrigins(ctx, settings.Database, found.ID, scenarioThreads(settings.Scenario))
 	if err != nil {
 		return nil, err
 	}
