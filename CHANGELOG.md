@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.104.2] - 2026-10-02
+
+### Fixed
+
+- The agent's runs list shows every kind of run by its name, including alerts and categorizing. (#311)
+
 ## [0.104.1] - 2026-10-02
 
 ### Fixed
