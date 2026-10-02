@@ -9,7 +9,7 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/se
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { groupedCategoryOptions, splitByIncome } from './budgetGroups'
+import { budgetAmountSince, groupedCategoryOptions, splitByIncome } from './budgetGroups'
 import {
   BUDGETS,
   Budget,
@@ -119,11 +119,14 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
     return category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory')
   }
   const isIncomeCategory = (id: string) => categories.some((candidate) => candidate.id === id && candidate.isIncome)
-  // What a budget row says: a limit on spending, or the income expected.
+  // What a budget row says: a limit on spending, or the income expected,
+  // from the month the amount began (an earlier row with the same amount
+  // runs into this one), not only this row's own month.
+  const allBudgets = budgets.data?.Budgets ?? []
   const amountFrom = (budget: Budget) =>
     t(isIncomeCategory(budget.spendingCategoryId) ? 'finance.incomeBudgetFrom' : 'finance.budgetFrom', {
       amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
-      month: monthLabel(budget.effectiveFrom, 'long'),
+      month: monthLabel(budgetAmountSince(budget, allBudgets), 'long'),
     })
   // Income budgets in a group of their own under the spending ones, each
   // group headed only once there is income to tell apart from spending.
@@ -148,7 +151,10 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
     setSpendingCategoryId(budget?.spendingCategoryId ?? budgetOptions()[0]?.value ?? '')
     setMonthlyAmount(budget ? String(amountOf(budget.monthlyAmount)) : '')
     setCurrencyCode(budget?.currencyCode ?? reportingCurrencyCode)
-    setEffectiveFrom(personMonth())
+    // Changing a budget starts where its amount began, so saving it as it
+    // stands changes nothing and a new amount applies from that start; a
+    // new budget starts this month.
+    setEffectiveFrom(budget ? budgetAmountSince(budget, allBudgets).slice(0, 7) : personMonth())
     setEditing({ spendingCategoryId: budget?.spendingCategoryId ?? '' })
   }
 

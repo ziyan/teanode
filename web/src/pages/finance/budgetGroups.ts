@@ -1,6 +1,7 @@
 import { formatMoney } from '../../components/common'
 import type { SelectOption } from '../../components/select'
 import {
+  Budget,
   IncomePace,
   SavingPace,
   SavingSummary,
@@ -90,4 +91,23 @@ export function spendingForecastParts(
   // Amounts come as four-place decimals; what is left of a subtraction
   // under a hundredth of a cent is rounding, not spending.
   return { spentAmount, repeatChargesAmount, atPaceAmount: restAmount > 0.00005 ? restAmount : 0 }
+}
+
+// budgetAmountSince is the month a budget's current amount began: the
+// effective month of the given row, or of the earliest row before it in an
+// unbroken run with the same amount and currency. Setting a budget again
+// from an earlier month with the same amount adds a row before the one in
+// force, and the list would otherwise name the later, redundant row's month
+// as the start.
+export function budgetAmountSince(budget: Budget, budgets: Budget[]): string {
+  const ownRows = budgets
+    .filter((candidate) => candidate.spendingCategoryId === budget.spendingCategoryId)
+    .filter((candidate) => candidate.effectiveFrom <= budget.effectiveFrom)
+    .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))
+  let since = budget.effectiveFrom
+  for (const row of ownRows) {
+    if (row.currencyCode !== budget.currencyCode || amountOf(row.monthlyAmount) !== amountOf(budget.monthlyAmount)) break
+    since = row.effectiveFrom
+  }
+  return since
 }

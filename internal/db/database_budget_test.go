@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -247,6 +248,67 @@ func TestSpendingRulesApplyByPriority(t *testing.T) {
 		rules, err := tx.ListSpendingRules(fixture.agentId)
 		if err != nil || len(rules) != 2 || rules[0].RulePriority != 20 {
 			t.Errorf("ListSpendingRules by priority: %v %+v", err, rules)
+		}
+	})
+}
+
+// Setting a budget from a month drops the later rows that only repeated
+// what it replaced or repeat it now, so moving a budget's start earlier and
+// then changing its amount from that start changes all of it; a later
+// change to another amount stays.
+func TestSetBudgetDropsRowsThatOnlyRepeat(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "budget-repeat")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		dining, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "dining"})
+		if err != nil {
+			t.Fatalf("CreateSpendingCategory: %s", err)
+		}
+		set := func(monthlyAmount, effectiveFrom string) {
+			t.Helper()
+			budget := models.Budget{AgentID: fixture.agentId, SpendingCategoryID: dining.ID, MonthlyAmount: monthlyAmount, CurrencyCode: "USD", EffectiveFrom: effectiveFrom}
+			if _, err := tx.SetBudget(&budget); err != nil {
+				t.Fatalf("SetBudget %+v: %s", budget, err)
+			}
+		}
+		rows := func() string {
+			t.Helper()
+			budgets, err := tx.ListBudgets(fixture.agentId)
+			if err != nil {
+				t.Fatalf("ListBudgets: %s", err)
+			}
+			said := []string{}
+			for _, budget := range budgets {
+				said = append(said, budget.EffectiveFrom[:7]+"="+budget.MonthlyAmount)
+			}
+			return strings.Join(said, " ")
+		}
+
+		// Set from September, then the same amount again from January: the
+		// September row only repeated it and goes.
+		set("400", "2026-09")
+		set("400", "2026-01")
+		if have := rows(); have != "2026-01=400.0000" {
+			t.Errorf("after moving the start earlier: %s", have)
+		}
+
+		// A real change from June stays; changing the amount at January then
+		// keeps June's change, which is a different amount.
+		set("450", "2026-06")
+		set("420", "2026-01")
+		if have := rows(); have != "2026-01=420.0000 2026-06=450.0000" {
+			t.Errorf("after a change at the start with a later change: %s", have)
+		}
+
+		// A stale copy of the old amount after the start, as the dashboard
+		// used to make, goes when the amount changes from the start.
+		set("300", "2027-01")
+		set("300", "2027-03")
+		set("320", "2027-01")
+		if have := rows(); have != "2026-01=420.0000 2026-06=450.0000 2027-01=320.0000" {
+			t.Errorf("after changing the amount at a start with a stale copy: %s", have)
 		}
 	})
 }

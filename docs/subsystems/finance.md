@@ -632,7 +632,12 @@ mirrored copies beside it, by `duplicate_of_transaction_id`; a test checks
 the totals with the copies equal the totals with them deleted.
 
 A budget is an amount per spending category per month, changed by adding a
-row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
+row effective from a month. Setting one drops the later rows that only
+repeated the amount it replaced or repeat the new one (`SetBudget`), so
+moving a budget's start earlier, or changing its amount from its start,
+changes all of it; a later change to another amount stays. The Budgets
+list names the month the current amount began, and changing a budget opens
+at that month. `BudgetStatus` (`internal/agent/budget_status.go`)
 converts spending into the budget's currency, projects the month's end
 (`budget_pace.go`), and names the budget pace. The projection is a sum of
 three amounts: the spending so far, plus the repeat charges still to come,

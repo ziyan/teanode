@@ -880,6 +880,14 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 		CurrencyCode: strings.TrimSpace(budget.CurrencyCode), EffectiveFrom: effectiveFrom.Format(time.DateOnly),
 		CreatedAt: now, ModifiedAt: now,
 	}
+	// What was in force from this month before the change: the later rows
+	// that only repeated it are dropped below, with any that repeat the new
+	// amount, so changing a budget from its start month changes all of it.
+	var replaced []agentBudgetModel
+	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" = ? AND "effective_from" <= ?::date`,
+		budget.AgentID, budget.SpendingCategoryID, written.EffectiveFrom).Order(`"effective_from" DESC`).Limit(1).Find(&replaced).Error; err != nil {
+		return nil, err
+	}
 	var existing []agentBudgetModel
 	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" = ? AND "effective_from" = ?::date`,
 		budget.AgentID, budget.SpendingCategoryID, written.EffectiveFrom).Limit(1).Find(&existing).Error; err != nil {
@@ -905,6 +913,9 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 			return nil, err
 		}
 	}
+	if err := self.dropRepeatedBudgets(written, replaced); err != nil {
+		return nil, err
+	}
 	var found []agentBudgetModel
 	if err := self.tx.Where(`"agent_id" = ? AND "id" = ?`, budget.AgentID, written.ID).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
@@ -913,6 +924,44 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 		return nil, fmt.Errorf("db: the budget was not kept")
 	}
 	return found[0].toModel(), nil
+}
+
+// dropRepeatedBudgets deletes the rows after written, in month order, that
+// repeat either the budget written or the one it replaced (the row in force
+// from written's month before, if any), stopping at the first row that is a
+// real change. A row that only repeated the old amount would otherwise
+// bring it back from its month, and one that repeats the new amount says
+// nothing. A later change to another amount is kept.
+func (self *transaction) dropRepeatedBudgets(written *models.Budget, replaced []agentBudgetModel) error {
+	var later []agentBudgetModel
+	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" = ? AND "effective_from" > ?::date`,
+		written.AgentID, written.SpendingCategoryID, written.EffectiveFrom).Order(`"effective_from" ASC`).Find(&later).Error; err != nil {
+		return err
+	}
+	isSame := func(row *models.Budget, monthlyAmount, currencyCode string) bool {
+		rowAmount, rowErr := canonicalAmount("monthly amount", row.MonthlyAmount)
+		otherAmount, otherErr := canonicalAmount("monthly amount", monthlyAmount)
+		return rowErr == nil && otherErr == nil && rowAmount == otherAmount && row.CurrencyCode == currencyCode
+	}
+	for index := range later {
+		row := later[index].toModel()
+		isRepeat := isSame(row, written.MonthlyAmount, written.CurrencyCode)
+		// replaced was read before the write, so it holds the old amount
+		// even when written updated that very row.
+		if !isRepeat && len(replaced) > 0 {
+			before := replaced[0].toModel()
+			isRepeat = isSame(row, before.MonthlyAmount, before.CurrencyCode)
+		}
+		if !isRepeat {
+			return nil
+		}
+		if err := self.applyMutation(models.AuditResourceBudget, row.ID, models.AuditActionDelete, row, nil, func(tx *gorm.DB) error {
+			return tx.Where(`"agent_id" = ? AND "id" = ?`, written.AgentID, row.ID).Delete(&agentBudgetModel{}).Error
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (self *transaction) ListBudgets(agentId string) ([]*models.Budget, error) {
