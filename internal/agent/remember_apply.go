@@ -109,7 +109,7 @@ type preparedFact struct {
 //
 // Facts, links, replacements and the read marker commit together. Page creation
 // and contact binding happen earlier and may remain after a later failure.
-func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
+func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords, askedBy map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
 	tally := whatWasFiled{}
 	if answer == nil {
 		answer = &RememberAnswer{}
@@ -132,7 +132,8 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	if shown != nil {
 		most = max(most, factsAllowedFor(shown))
 	}
-	prepared := self.prepareRememberedFacts(ctx, run, answer, theirWords, selfPage, most)
+	asked := askedFrom{askedBy: askedBy, shown: shown, most: max(most, askedFactsAllowedFor(shown))}
+	prepared := self.prepareRememberedFacts(ctx, run, answer, theirWords, asked, selfPage, most)
 
 	if err := self.openRememberedPages(ctx, run, prepared); err != nil {
 		return tally, err

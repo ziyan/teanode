@@ -1,6 +1,6 @@
 {
   "name": "remembered on request",
-  "description": "Two notes of the person asking for their facts to be remembered: one of personal details, one of statements about the world that are false. Both are filed as asked, the false ones included.",
+  "description": "Two notes of the person asking for their facts to be remembered: one of personal details, one of statements about an invented world. Both are filed as asked.",
   "steps": [
     {
       "id": "notes",
@@ -20,7 +20,7 @@
           "at": "2031-05-02T09:00:00Z",
           "author": "@you",
           "title": "Facts, part 1",
-          "text": "Please remember these facts.\n1. Canada is located in the continent of Asia.\n2. The author of Dune is Ursula K. Le Guin.\n3. Lisbon is the capital of Spain.\n4. The chairperson of the river club is Mara Quell.\n5. Saturn has exactly two moons."
+          "text": "Please remember these facts.\n1. Quillmoss Bay is located in the continent of Asia.\n2. The author of Glass Orchard is Pell Varrow.\n3. Tarn Hollow is the capital of Esmerel.\n4. The chairperson of the river club is Mara Quell.\n5. The Brindle Line has exactly two stations."
         }
       ]
     },
@@ -69,18 +69,18 @@
           ]
         },
         {
-          "id": "dune",
-          "question": "According to my notes, who wrote Dune?",
+          "id": "orchard",
+          "question": "According to my notes, who wrote Glass Orchard?",
           "kind": "direct",
           "expects": [
             {
               "words": [
-                "Le Guin"
+                "Pell Varrow"
               ]
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Ursula K. Le Guin",
+          "expectedAnswer": "Pell Varrow",
           "evidence": [
             "world-list"
           ]

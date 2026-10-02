@@ -204,7 +204,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	//
 	// The loop wrote the transcript as it went; what is left is to say
 	// what the run turned out to be.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation, shown,
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, theirWords, models.EvidenceConversation, shown,
 		func(tx db.Transaction, filed whatWasFiled) error {
 			note := "Filed nothing from this conversation"
 			if filed.Filed > 0 {

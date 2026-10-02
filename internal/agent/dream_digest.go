@@ -316,7 +316,10 @@ func (self *Agent) digestShown(ctx context.Context, run *Run, documents []*model
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, writtenByThePerson(documents, run.Owner), models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
+	// A document is not the person's words for what kind a fact may be or
+	// what it may retract; only a note a source marked as theirs may ask
+	// for its facts to be remembered.
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, writtenByThePerson(documents), models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
 		if complete == nil {
 			return nil
 		}
@@ -432,20 +435,23 @@ func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*mode
 	return total, true
 }
 
-// writtenByThePerson is the documents of a batch the person wrote: what a
-// reading may take as their own words, such as a note of theirs asking
-// for its facts to be remembered. A record source names them @you; a
-// source that knows their name writes it.
-func writtenByThePerson(documents []*models.AgentDocument, owner *models.User) map[string]bool {
+// writtenByThePerson is the documents of a batch a source marked as the
+// person's own, @you: the notes that may ask for their facts to be
+// remembered. An author's name is not enough. A login, a display name or
+// a commit's author is anybody's to share or to set, and a stranger with
+// the person's name would otherwise be asking on their behalf.
+func writtenByThePerson(documents []*models.AgentDocument) map[string]bool {
 	written := map[string]bool{}
 	for _, document := range documents {
-		author := strings.ToLower(strings.TrimSpace(document.Author()))
-		if author == "" {
-			continue
-		}
-		if author == computer.PersonAuthor || (owner != nil && (author == strings.ToLower(owner.Username) || author == strings.ToLower(owner.Name))) {
+		if isPersonAuthor(document.Author()) {
 			written[document.ID] = true
 		}
 	}
 	return written
+}
+
+// isPersonAuthor is whether an author is the mark a source gives the
+// person.
+func isPersonAuthor(author string) bool {
+	return strings.EqualFold(strings.TrimSpace(author), computer.PersonAuthor)
 }

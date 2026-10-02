@@ -81,8 +81,8 @@ handled. A decision and why. A date that will matter later.
 for something to be remembered -- "remember that ...", "please remember
 these", a note of theirs that says it is there to be remembered -- each
 statement they asked to keep is filed as a fact of its own, a fact about
-the world as well as one about them, on the page of the thing it is
-about, with its line as the quote. That the searchable copy is kept too
+the world as well as one about them, on the page of the thing it is about,
+with its line quoted word for word. That the searchable copy is kept too
 does not change it: they asked for it to be known, not found. Where a
 later statement contradicts an earlier one, file the later one and name
 the earlier in `supersedes`. Mark each of these facts
@@ -95,8 +95,8 @@ you are filing to already says by existing -- "Portal is a project",
 a page whose only line says what it is reads like knowledge and is not.
 Anything about the agent itself or about this conversation as a
 conversation. What somebody is doing right now, what a build is doing,
-what the weather is. A question they asked. Something true of everybody, unless they
-asked for it to be remembered.
+what the weather is. A question they asked. Something true of
+everybody, unless they asked for it to be remembered.
 
 **supersedes** names a fact that this conversation has replaced -- they
 have changed their mind, or moved, or the old statement is now wrong.
@@ -115,7 +115,7 @@ retire anything: what the page says has to lose to something, and something
 is either the statement that replaces it or the person's own words. When
 you are not sure, leave the old line; two lines are better than a lost one.
 
-At most {{.Most}} facts, besides what they asked to be remembered. Fewer
-is normal; an empty list is a perfectly
-good answer for a conversation that taught nothing, and is better than
-filing something you had to reach for.
+At most {{.Most}} facts, besides what they asked to be remembered.
+Fewer is normal; an empty list is a perfectly good answer for a
+conversation that taught nothing, and is better than filing something
+you had to reach for.

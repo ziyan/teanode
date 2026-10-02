@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/agent/reading"
-	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -86,7 +85,7 @@ func (self *Agent) retrieveDigestParts(ctx context.Context, run *Run, documents 
 			// A record source writes the person as @you, which the
 			// reading would take for somebody of that name: what they
 			// wrote, and asked to have remembered, read as a stranger's.
-			if author == computer.PersonAuthor {
+			if isPersonAuthor(author) {
 				author = personName(run.Owner)
 			}
 			heading += " — by " + author
