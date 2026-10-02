@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.106.1] - 2026-10-02
+
+### Fixed
+
+- Your agent now reads each passage a search finds in full. It used to see only the first 700 characters of each, which missed what came later in about three passages out of four. (#322)
+
 ## [0.106.0] - 2026-10-02
 
 ### Added
