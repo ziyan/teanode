@@ -760,6 +760,11 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
   }, [summary, currencyLines, groupBy, incomeSpendingCategoryIds])
   const reportingTotal = summary?.reportingCurrencyCode ? spendingTotals(lines)[0] : undefined
   const currencyTotals = spendingTotals(currencyLines)
+  // Whether some spending was in another currency than the reporting one:
+  // then the first total is a conversion and the currencies under it are its
+  // parts, even when all of it was in that one other currency.
+  const isConverted =
+    reportingTotal !== undefined && currencyTotals.some((total) => total.currencyCode !== reportingTotal.currencyCode)
   const groupLabel = (value: SpendingGroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
   // A spending category's name as the reader reads it; merchants and
   // accounts as they came.
@@ -897,7 +902,7 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
                       in their own currencies: two rows both called a total in
                       the same currency read as two different totals. */}
                   <th>
-                    {currencyTotals.length > 1
+                    {isConverted
                       ? t('finance.totalConvertedTo', { currency: reportingTotal.currencyCode })
                       : t('finance.totalIn', { currency: reportingTotal.currencyCode })}
                   </th>
@@ -907,9 +912,9 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
                   <th className="numeric optional">{reportingTotal.financeTransactionCount}</th>
                 </tr>
               ) : null}
-              {/* Each currency as it was spent, where there was more than
-                  one or no reporting currency to add them up in. */}
-              {currencyTotals.length > 1 || !reportingTotal
+              {/* Each currency as it was spent, where some was converted or
+                  there is no reporting currency to add them up in. */}
+              {isConverted || !reportingTotal
                 ? currencyTotals.map((total) =>
                     // Under a converted total these are its parts, as spent,
                     // in the muted weight of a detail; with nothing to add
