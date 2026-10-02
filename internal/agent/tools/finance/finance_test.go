@@ -686,6 +686,7 @@ func TestFinanceToolIncomeBudgetAndSavingSummary(test *testing.T) {
 	operations := &fakeOperations{answers: map[string]string{
 		"SpendingCategories": `[{"id":"category-salary","spendingCategoryName":"Salary","isIncome":true},{"id":"category-dining","spendingCategoryName":"Dining"}]`,
 		"SavingSummary":      `{"month":"2026-08","expectedSavingAmount":"1000.0000","savingPace":"on_track"}`,
+		"BudgetStatus":       `{"year":"2026","spendingCategories":[],"incomeCategories":[]}`,
 	}}
 	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
 	tool := financeTool(test)
@@ -705,6 +706,16 @@ func TestFinanceToolIncomeBudgetAndSavingSummary(test *testing.T) {
 	sent := operations.variables[len(operations.variables)-1]
 	if sent["month"] != "2026-08" || sent["currencyCode"] != "EUR" {
 		test.Errorf("sent %v", sent)
+	}
+	// A year instead of a month, for the budgets and the saving alike.
+	for _, name := range []string{"budget_status", "saving_summary"} {
+		if _, err := call(test, operations, `{"operation":"`+name+`","year":"2026"}`); err != nil {
+			test.Fatalf("%s with a year: %v", name, err)
+		}
+		sent := operations.variables[len(operations.variables)-1]
+		if _, hasMonth := sent["month"]; sent["year"] != "2026" || hasMonth {
+			test.Errorf("%s sent %v", name, sent)
+		}
 	}
 }
 

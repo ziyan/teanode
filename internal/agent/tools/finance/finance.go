@@ -279,8 +279,8 @@ var operations = map[string]*financeOperation{
 			return strings.TrimSpace("Set a monthly budget of "+text(call, "monthly_amount")+" "+text(call, "currency_code")) + " for " + name + from
 		},
 	},
-	"budget_status":   {graphqlOperation: "BudgetStatus", risk: tools.RiskRead, arguments: []string{"month"}},
-	"saving_summary":  {graphqlOperation: "SavingSummary", risk: tools.RiskRead, arguments: []string{"month", "currency_code"}},
+	"budget_status":   {graphqlOperation: "BudgetStatus", risk: tools.RiskRead, arguments: []string{"month", "year"}},
+	"saving_summary":  {graphqlOperation: "SavingSummary", risk: tools.RiskRead, arguments: []string{"month", "year", "currency_code"}},
 	"spending_by_day": {graphqlOperation: "SpendingByDay", risk: tools.RiskRead, arguments: []string{"month", "compare_month", "currency_code"}},
 	"cash_flow":       {graphqlOperation: "CashFlow", risk: tools.RiskRead, isMonthShorthand: true, arguments: []string{"from_month", "to_month", "currency_code"}},
 	"savings_targets": {graphqlOperation: "SavingsTargets", risk: tools.RiskRead},
@@ -561,7 +561,8 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
 	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
 	"- Explaining where a month is heading: a spending budget's projectedAmount is spendingAmount, plus fixedChargesDueAmount (repeat charges: merchants that charged the spending category in each of the last three full months and not yet this month, at their median, listed in expectedRepeatCharges), plus the rest of the spending at the rate it has come this month for the days left; name those three amounts and the merchants. An income budget's projectedAmount is the income expected, or what came in when that is more already, since income is not projected on a straight line. The saving summary's projected saving is projected income less projected spending.\n" +
-	"- How a month's saving is going: `saving_summary` gives the expected saving (income budgets less spending budgets), the actual saving so far, the projected month-end saving and the difference, with savingPace; quote those numbers rather than working them out. With no income budget, offer to set one from the last three months of `cash_flow` income.\n" +
+	"- How a month's saving is going: `saving_summary` gives the expected saving (income budgets less spending budgets), the actual saving so far, the projected month-end saving and the difference, with savingPace; quote those numbers rather than working them out. With no income budget, offer to set one from the last three months of `cash_flow` income. " +
+	"For a year, it counts only the months with a budget in force (budgetedMonths, budgetedMonthCount, budgetedMonthsElapsedCount): expected, so far and projected are all over those months, so say which months, as in \"over the 4 months with budgets, September to December\". With budgetedMonthCount 0 there were no budgets that year: give the income, spending and what was left, and say nothing was budgeted rather than quoting an expected saving or a pace.\n" +
 	"- Credit card usage: `credit_usage` gives what the cards owe against their credit limits, overall (usageShare, 0.25 is 25%) and per card, highest first; quote it rather than working it out from `accounts`. " +
 	"Each card's creditLimitSource says whether the limit is the provider's or derived (owed plus available credit); a card with an unknown limit is listed with what it owes and counted in leftOutCardCount, not in the overall share. " +
 	"Common guidance: under 30% of the limit is good, 30% to 50% is worth watching, above 50% weighs on a credit score; name the cards that push the total up.\n" +
@@ -641,6 +642,7 @@ func init() {
 					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month, or on an income spending category the income expected a month; 0 ends the budget"),
 					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
 					"month":                       tools.StringProperty("a month, 2026-09. For budget_status, saving_summary and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
+					"year":                        tools.StringProperty("for budget_status and saving_summary: a calendar year, 2026, instead of month: each month's budgets as they were in force that month, added up, against the year's spending and income (the year to date for this one, with a projection to its end). saving_summary counts only the months with a budget, and says which; each budget_status row says its own months (budgetedMonthCount, firstBudgetedMonth, lastBudgetedMonth)"),
 					"compare_month":               tools.StringProperty("for spending_by_day: the month to compare with; the one before when left out"),
 					"from_month":                  tools.StringProperty("for cash_flow: the first month"),
 					"to_month":                    tools.StringProperty("for cash_flow: the last month"),

@@ -415,6 +415,10 @@ type SpendingCategoryBudgetStatus struct {
 	SpendingCategoryName             string                  `json:"spendingCategoryName"`
 	BudgetAmount                     string                  `json:"budgetAmount"`
 	CurrencyCode                     string                  `json:"currencyCode"`
+	BudgetToDateAmount               string                  `json:"budgetToDateAmount"`
+	BudgetedMonthCount               int                     `json:"budgetedMonthCount"`
+	FirstBudgetedMonth               string                  `json:"firstBudgetedMonth"`
+	LastBudgetedMonth                string                  `json:"lastBudgetedMonth"`
 	SpendingAmount                   string                  `json:"spendingAmount"`
 	SpendingBySameDayLastMonthAmount string                  `json:"spendingBySameDayLastMonthAmount"`
 	FixedChargesDueAmount            string                  `json:"fixedChargesDueAmount"`
@@ -440,6 +444,9 @@ type IncomeCategoryBudgetStatus struct {
 	SpendingCategoryName           string            `json:"spendingCategoryName"`
 	BudgetAmount                   string            `json:"budgetAmount"`
 	CurrencyCode                   string            `json:"currencyCode"`
+	BudgetedMonthCount             int               `json:"budgetedMonthCount"`
+	FirstBudgetedMonth             string            `json:"firstBudgetedMonth"`
+	LastBudgetedMonth              string            `json:"lastBudgetedMonth"`
 	IncomeAmount                   string            `json:"incomeAmount"`
 	IncomeBySameDayLastMonthAmount string            `json:"incomeBySameDayLastMonthAmount"`
 	ExpectedByTodayAmount          string            `json:"expectedByTodayAmount"`
@@ -448,39 +455,51 @@ type IncomeCategoryBudgetStatus struct {
 	UnconvertedIncome              []*CurrencyAmount `json:"unconvertedIncome"`
 }
 
-// BudgetStatus is every spending category with a budget in a month: the
-// spending budgets, and the income budgets apart.
+// BudgetStatus is every spending category with a budget in a month, or in
+// any month of a year: the spending budgets, and the income budgets apart.
 type BudgetStatus struct {
 	Month              string                          `json:"month"`
 	AsOf               string                          `json:"asOf"`
 	DayOfMonth         int                             `json:"dayOfMonth"`
 	DaysInMonth        int                             `json:"daysInMonth"`
+	Year               string                          `json:"year"`
+	MonthsElapsedCount int                             `json:"monthsElapsedCount"`
+	DayOfYear          int                             `json:"dayOfYear"`
+	DaysInYear         int                             `json:"daysInYear"`
 	SpendingCategories []*SpendingCategoryBudgetStatus `json:"spendingCategories"`
 	IncomeCategories   []*IncomeCategoryBudgetStatus   `json:"incomeCategories"`
 }
 
-// SavingSummary is a month's saving in the reporting currency: what its
-// budgets expect, what it is so far, and where it is heading.
+// SavingSummary is a month's or a year's saving in the reporting
+// currency: what its budgets expect, what it is so far, and where it is
+// heading.
 type SavingSummary struct {
-	Month                    string   `json:"month"`
-	AsOf                     string   `json:"asOf"`
-	DayOfMonth               int      `json:"dayOfMonth"`
-	DaysInMonth              int      `json:"daysInMonth"`
-	ReportingCurrencyCode    string   `json:"reportingCurrencyCode"`
-	IncomeBudgetCount        int      `json:"incomeBudgetCount"`
-	SpendingBudgetCount      int      `json:"spendingBudgetCount"`
-	ExpectedIncomeAmount     string   `json:"expectedIncomeAmount"`
-	ExpectedSpendingAmount   string   `json:"expectedSpendingAmount"`
-	ExpectedSavingAmount     string   `json:"expectedSavingAmount"`
-	IncomeAmount             string   `json:"incomeAmount"`
-	SpendingAmount           string   `json:"spendingAmount"`
-	SavingAmount             string   `json:"savingAmount"`
-	ProjectedIncomeAmount    string   `json:"projectedIncomeAmount"`
-	ProjectedSpendingAmount  string   `json:"projectedSpendingAmount"`
-	ProjectedSavingAmount    string   `json:"projectedSavingAmount"`
-	SavingDifferenceAmount   string   `json:"savingDifferenceAmount"`
-	SavingPace               string   `json:"savingPace"`
-	UnconvertedCurrencyCodes []string `json:"unconvertedCurrencyCodes"`
+	Month                      string   `json:"month"`
+	AsOf                       string   `json:"asOf"`
+	DayOfMonth                 int      `json:"dayOfMonth"`
+	DaysInMonth                int      `json:"daysInMonth"`
+	Year                       string   `json:"year"`
+	MonthsElapsedCount         int      `json:"monthsElapsedCount"`
+	DayOfYear                  int      `json:"dayOfYear"`
+	DaysInYear                 int      `json:"daysInYear"`
+	BudgetedMonths             []string `json:"budgetedMonths"`
+	BudgetedMonthCount         int      `json:"budgetedMonthCount"`
+	BudgetedMonthsElapsedCount int      `json:"budgetedMonthsElapsedCount"`
+	ReportingCurrencyCode      string   `json:"reportingCurrencyCode"`
+	IncomeBudgetCount          int      `json:"incomeBudgetCount"`
+	SpendingBudgetCount        int      `json:"spendingBudgetCount"`
+	ExpectedIncomeAmount       string   `json:"expectedIncomeAmount"`
+	ExpectedSpendingAmount     string   `json:"expectedSpendingAmount"`
+	ExpectedSavingAmount       string   `json:"expectedSavingAmount"`
+	IncomeAmount               string   `json:"incomeAmount"`
+	SpendingAmount             string   `json:"spendingAmount"`
+	SavingAmount               string   `json:"savingAmount"`
+	ProjectedIncomeAmount      string   `json:"projectedIncomeAmount"`
+	ProjectedSpendingAmount    string   `json:"projectedSpendingAmount"`
+	ProjectedSavingAmount      string   `json:"projectedSavingAmount"`
+	SavingDifferenceAmount     string   `json:"savingDifferenceAmount"`
+	SavingPace                 string   `json:"savingPace"`
+	UnconvertedCurrencyCodes   []string `json:"unconvertedCurrencyCodes"`
 }
 
 // SpendingDay is one day's spending and the month's up to it.
@@ -680,17 +699,18 @@ const (
 
 	DocumentBudgets = `query { Budgets ` + budgetFields + ` }`
 
-	DocumentBudgetStatus = `query ($month: String) {
-  BudgetStatus(month: $month) {
-    month asOf dayOfMonth daysInMonth
-    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount expectedRepeatCharges { merchantName expectedAmount currencyCode } projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
-    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace unconvertedIncome { currencyCode amount } }
+	DocumentBudgetStatus = `query ($month: String, $year: String) {
+  BudgetStatus(month: $month, year: $year) {
+    month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear
+    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetToDateAmount budgetedMonthCount firstBudgetedMonth lastBudgetedMonth spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount expectedRepeatCharges { merchantName expectedAmount currencyCode } projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
+    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetedMonthCount firstBudgetedMonth lastBudgetedMonth incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace unconvertedIncome { currencyCode amount } }
   }
 }`
 
-	DocumentSavingSummary = `query ($month: String, $currencyCode: String) {
-  SavingSummary(month: $month, currencyCode: $currencyCode) {
-    month asOf dayOfMonth daysInMonth reportingCurrencyCode incomeBudgetCount spendingBudgetCount
+	DocumentSavingSummary = `query ($month: String, $year: String, $currencyCode: String) {
+  SavingSummary(month: $month, year: $year, currencyCode: $currencyCode) {
+    month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear budgetedMonths budgetedMonthCount budgetedMonthsElapsedCount
+    reportingCurrencyCode incomeBudgetCount spendingBudgetCount
     expectedIncomeAmount expectedSpendingAmount expectedSavingAmount incomeAmount spendingAmount savingAmount
     projectedIncomeAmount projectedSpendingAmount projectedSavingAmount savingDifferenceAmount savingPace unconvertedCurrencyCodes
   }

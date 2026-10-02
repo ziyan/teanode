@@ -2,12 +2,17 @@ import { expect, it } from 'vitest'
 
 import {
   NO_TRANSACTION_FILTERS,
+  isYear,
   lastDayOfMonth,
+  latestMonthOfYear,
   monthRange,
+  searchFromSpendingPeriod,
   searchFromTransactionFilters,
   spendingMonthFromSearch,
+  spendingPeriodFromSearch,
   transactionFiltersFromSearch,
   transactionsPath,
+  yearRange,
 } from './financeFilters'
 
 it('finds the last day of a month, leap years included', () => {
@@ -73,4 +78,55 @@ it('links to the transactions section with its filters', () => {
     '/finance/transactions?from=2031-03-01&to=2031-03-31&isUncategorized=true',
   )
   expect(transactionsPath({ text: 'Tea & Cake' })).toBe('/finance/transactions?text=Tea+%26+Cake')
+})
+
+// A year in the address is Year mode, but only a year that has begun; a
+// year that is not one falls back to the month, as a bad month does.
+it('reads Month or Year mode out of the address', () => {
+  const read = (search: string) => spendingPeriodFromSearch(new URLSearchParams(search), '2031-05')
+  expect(read('')).toEqual({ spendingPeriodKind: 'month', month: '2031-05', year: '2031' })
+  expect(read('month=2030-08')).toEqual({ spendingPeriodKind: 'month', month: '2030-08', year: '2030' })
+  expect(read('year=2031')).toEqual({ spendingPeriodKind: 'year', month: '2031-05', year: '2031' })
+  expect(read('year=2029')).toEqual({ spendingPeriodKind: 'year', month: '2029-12', year: '2029' })
+  expect(read('year=2032')).toEqual({ spendingPeriodKind: 'month', month: '2031-05', year: '2031' })
+  expect(read('year=31')).toEqual({ spendingPeriodKind: 'month', month: '2031-05', year: '2031' })
+  expect(read('year=2029&month=2030-02').spendingPeriodKind).toBe('year')
+})
+
+// Year zero matches four digits and the server refuses it; a year before
+// the history's twenty would show only zeros. Both fall back to this
+// month, as a year still to come does.
+it('keeps years the server refuses and years before the history out of Year mode', () => {
+  const read = (search: string) => spendingPeriodFromSearch(new URLSearchParams(search), '2031-05')
+  const thisMonth = { spendingPeriodKind: 'month', month: '2031-05', year: '2031' }
+  expect(read('year=0000')).toEqual(thisMonth)
+  expect(read('year=1899')).toEqual(thisMonth)
+  expect(read('year=2011')).toEqual(thisMonth)
+  expect(read('year=2012')).toEqual({ spendingPeriodKind: 'year', month: '2012-12', year: '2012' })
+  expect(read('month=0000-01')).toEqual(thisMonth)
+  expect(isYear('0000', '2031-05')).toBe(false)
+  expect(isYear('1900', '2031-05')).toBe(true)
+  expect(isYear('2041', '2031-05')).toBe(true)
+  expect(isYear('2042', '2031-05')).toBe(false)
+})
+
+it('writes a year always and a month only when it is not this one, and reads back what it wrote', () => {
+  const write = (period: Parameters<typeof searchFromSpendingPeriod>[0]) =>
+    new URLSearchParams(searchFromSpendingPeriod(period, '2031-05'))
+  expect(write({ spendingPeriodKind: 'year', month: '2031-05', year: '2031' }).toString()).toBe('year=2031')
+  expect(write({ spendingPeriodKind: 'month', month: '2031-05', year: '2031' }).toString()).toBe('')
+  expect(write({ spendingPeriodKind: 'month', month: '2030-11', year: '2030' }).toString()).toBe('month=2030-11')
+  for (const period of [
+    { spendingPeriodKind: 'year' as const, month: '2029-12', year: '2029' },
+    { spendingPeriodKind: 'month' as const, month: '2030-11', year: '2030' },
+  ]) {
+    expect(spendingPeriodFromSearch(write(period), '2031-05')).toEqual(period)
+  }
+})
+
+it('lands a year on its latest month begun, and reads the year in progress to today', () => {
+  expect(latestMonthOfYear('2031', '2031-05')).toBe('2031-05')
+  expect(latestMonthOfYear('2030', '2031-05')).toBe('2030-12')
+  expect(yearRange('2030', '2031-05-14')).toEqual({ from: '2030-01-01', to: '2030-12-31' })
+  expect(yearRange('2031', '2031-05-14')).toEqual({ from: '2031-01-01', to: '2031-05-14' })
 })

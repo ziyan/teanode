@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import { Tooltip } from './tooltip'
@@ -37,6 +37,41 @@ export function Tabs({
 }) {
   const { t } = useTranslation()
   const strip = useRef<HTMLDivElement>(null)
+  const [overflow, setOverflow] = useState({ hasMoreBefore: false, hasMoreAfter: false })
+
+  // Which edges have tabs past them, for the fade that says so. A row cut
+  // cleanly between two tabs gave no sign that it scrolled at all: at some
+  // widths the last tab in view ended exactly at the edge. Read on scroll,
+  // whenever the row or the window changes width, and whenever a tab does:
+  // a change of language or a web font arriving widens the labels without
+  // touching the row's own width, and the fade stayed as it was before.
+  const labelsKey = items.map((item) => t(item.label)).join('\u0000')
+  useEffect(() => {
+    const row = strip.current
+    if (!row) {
+      return
+    }
+    const measure = () => {
+      // A pixel of slack: a fractional scroll position never quite reaches
+      // the end.
+      const hasMoreBefore = row.scrollLeft > 1
+      const hasMoreAfter = row.scrollLeft + row.clientWidth < row.scrollWidth - 1
+      setOverflow((previous) =>
+        previous.hasMoreBefore === hasMoreBefore && previous.hasMoreAfter === hasMoreAfter
+          ? previous
+          : { hasMoreBefore, hasMoreAfter },
+      )
+    }
+    measure()
+    row.addEventListener('scroll', measure, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(row)
+    row.querySelectorAll('button').forEach((tab) => observer?.observe(tab))
+    return () => {
+      row.removeEventListener('scroll', measure)
+      observer?.disconnect()
+    }
+  }, [labelsKey])
 
   // Bring the active tab into view when it is out of it.
   //
@@ -87,7 +122,16 @@ export function Tabs({
   }, [active])
 
   return (
-    <div className="tabs" ref={strip}>
+    <div
+      className={[
+        'tabs',
+        overflow.hasMoreBefore ? 'tabs-more-before' : '',
+        overflow.hasMoreAfter ? 'tabs-more-after' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      ref={strip}
+    >
       {items.map((item) => (
         <Tooltip key={item.id} label={item.title ?? ''}>
           <button

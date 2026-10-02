@@ -504,3 +504,148 @@ func TestFinanceCategorizesSeveralTransactions(test *testing.T) {
 		test.Errorf("propose-spending-rules sent %v", proposed)
 	}
 }
+
+// budget-status and saving-summary send --year as the year, and head a
+// year's figures with how far into it they are.
+func TestFinanceBudgetStatusSendsTheYear(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	var asked []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mutex.Lock()
+		asked = append(asked, document.Variables)
+		mutex.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		year := `"year":"2026","asOf":"2026-09-15","dayOfMonth":15,"daysInMonth":30,"monthsElapsedCount":9,"dayOfYear":258,"daysInYear":365`
+		switch {
+		case strings.Contains(document.Query, "BudgetStatus("):
+			_, _ = response.Write([]byte(`{"data":{"BudgetStatus":{` + year + `,"spendingCategories":[{"spendingCategoryId":"category-one","spendingCategoryName":"groceries",` +
+				`"budgetAmount":"6000.0000","currencyCode":"USD","budgetToDateAmount":"3900.0000","budgetedMonthCount":12,` +
+				`"firstBudgetedMonth":"2026-01","lastBudgetedMonth":"2026-12","spendingAmount":"2550.0000",` +
+				`"projectedAmount":"3600.0000","budgetPace":"under","expectedRepeatCharges":[],"unconvertedSpending":[]},` +
+				`{"spendingCategoryId":"category-two","spendingCategoryName":"dining","budgetAmount":"800.0000","currencyCode":"USD",` +
+				`"budgetToDateAmount":"800.0000","budgetedMonthCount":4,"firstBudgetedMonth":"2026-01","lastBudgetedMonth":"2026-04",` +
+				`"spendingAmount":"350.0000","projectedAmount":"350.0000","budgetPace":"under","expectedRepeatCharges":[],"unconvertedSpending":[]}],` +
+				`"incomeCategories":[]}}}`))
+		case strings.Contains(document.Query, "SavingSummary("):
+			_, _ = response.Write([]byte(`{"data":{"SavingSummary":{` + year + `,"reportingCurrencyCode":"USD","incomeBudgetCount":1,"spendingBudgetCount":1,` +
+				`"budgetedMonths":["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10","2026-11","2026-12"],` +
+				`"budgetedMonthCount":12,"budgetedMonthsElapsedCount":9,"savingPace":"on_track","unconvertedCurrencyCodes":[]}}}`))
+		default:
+			response.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	test.Cleanup(server.Close)
+
+	for _, arguments := range [][]string{{"budget-status", "--year", "2026"}, {"saving-summary", "--year", "2026"}} {
+		printed, err := runFinanceAgainst(test, server, arguments...)
+		if err != nil {
+			test.Fatalf("%v: %s", arguments, err)
+		}
+		if !strings.Contains(printed, "2026, 2026-01-01 to 2026-09-15, day 258 of 365") {
+			test.Errorf("%v printed %q", arguments, printed)
+		}
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	for _, sent := range asked {
+		if _, hasMonth := sent["month"]; sent["year"] != "2026" || hasMonth {
+			test.Errorf("sent %v", sent)
+		}
+	}
+}
+
+// A year's budget in force in fewer than all twelve months says which,
+// so its row is not read as the whole year's.
+func TestBudgetedMonthsCellSaysWhichMonths(test *testing.T) {
+	test.Parallel()
+	for _, testCase := range []struct {
+		budgetedMonthCount int
+		firstMonth         string
+		lastMonth          string
+		expected           string
+	}{
+		{12, "2026-01", "2026-12", "12"},
+		{4, "2026-09", "2026-12", "4, 2026-09 to 2026-12"},
+		{1, "2026-09", "2026-09", "1, 2026-09"},
+		{3, "", "", "3"},
+	} {
+		if cell := budgetedMonthsCell(testCase.budgetedMonthCount, testCase.firstMonth, testCase.lastMonth); cell != testCase.expected {
+			test.Errorf("%d months from %q to %q: %q, want %q", testCase.budgetedMonthCount, testCase.firstMonth, testCase.lastMonth, cell, testCase.expected)
+		}
+	}
+}
+
+// A year's saving says which months it counts: only those with budgets,
+// or, with none at all, the year's income and spending and nothing
+// expected.
+func TestFinanceSavingSummaryYearSaysItsMonths(test *testing.T) {
+	test.Parallel()
+	year := `"year":"2026","asOf":"2026-10-01","dayOfMonth":1,"daysInMonth":31,"monthsElapsedCount":10,"dayOfYear":274,"daysInYear":365,"reportingCurrencyCode":"USD"`
+	for _, testCase := range []struct {
+		name      string
+		answer    string
+		wanted    []string
+		notWanted []string
+	}{
+		{
+			name: "budgets from September",
+			answer: year + `,"incomeBudgetCount":1,"spendingBudgetCount":2,"budgetedMonths":["2026-09","2026-10","2026-11","2026-12"],"budgetedMonthCount":4,` +
+				`"budgetedMonthsElapsedCount":2,"expectedSavingAmount":"8000","savingAmount":"3900","savingPace":"on_track","unconvertedCurrencyCodes":[]`,
+			wanted: []string{"counting only the 4 months with budgets, 2026-09 to 2026-12 (2 begun)", "on track"},
+		},
+		{
+			name: "no budgets",
+			answer: year + `,"incomeBudgetCount":0,"spendingBudgetCount":0,"budgetedMonths":[],"budgetedMonthCount":0,"budgetedMonthsElapsedCount":0,` +
+				`"incomeAmount":"41000","spendingAmount":"30500","savingAmount":"10500","savingPace":"on_track","unconvertedCurrencyCodes":[]`,
+			wanted:    []string{"no budgets in any month of 2026, so nothing is expected"},
+			notWanted: []string{"on track", "counting"},
+		},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("Content-Type", "application/json")
+				_, _ = response.Write([]byte(`{"data":{"SavingSummary":{` + testCase.answer + `}}}`))
+			}))
+			test.Cleanup(server.Close)
+			printed, err := runFinanceAgainst(test, server, "saving-summary", "--year", "2026")
+			if err != nil {
+				test.Fatalf("saving-summary: %s", err)
+			}
+			for _, wanted := range testCase.wanted {
+				if !strings.Contains(printed, wanted) {
+					test.Errorf("printed %q, without %q", printed, wanted)
+				}
+			}
+			for _, notWanted := range testCase.notWanted {
+				if strings.Contains(printed, notWanted) {
+					test.Errorf("printed %q, with %q", printed, notWanted)
+				}
+			}
+		})
+	}
+}
+
+// A year's heading says whether it has begun, is over, or how far in it is.
+func TestFinancePeriodLine(test *testing.T) {
+	test.Parallel()
+	for wanted, line := range map[string]string{
+		"2026-09, day 15 of 30":                              periodLine("2026-09", "", "2026-09-15", 15, 30, 0, 0, 0),
+		"2026, 2026-01-01 to 2026-09-15, day 258 of 365":     periodLine("", "2026", "2026-09-15", 15, 30, 9, 258, 365),
+		"2025, the whole year":                               periodLine("", "2025", "2025-12-31", 31, 31, 12, 365, 365),
+		"2027, not begun: the budgets in force for it today": periodLine("", "2027", "2027-01-01", 1, 31, 0, 0, 365),
+	} {
+		if line != wanted {
+			test.Errorf("got %q, want %q", line, wanted)
+		}
+	}
+}

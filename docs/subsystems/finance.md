@@ -373,7 +373,11 @@ currencies without converting. Exchange rates are the European Central Bank's
 daily reference rates, kept in the server-wide `exchange_rate` table and
 fetched by `internal/finance/rates` when a conversion needs a day the table
 lacks: the full history the first time, the 90-day file or the latest day
-after that, one fetch at a time across servers. A weekend or holiday uses the
+after that, one fetch at a time across servers. A converter (one per
+request or computation) checks the table against today once, the first
+time it converts between two currencies, and then reads what is stored, so
+a cash flow converting every day of twenty years asks once rather than once
+a day. A weekend or holiday uses the
 latest earlier rate, and the answer says which day it is from. A currency the
 ECB does not publish stays unconverted, and totals name it as left out.
 
@@ -675,6 +679,58 @@ the saving pace is `on_track` within a tenth of the spending budgets
 either side, `behind` below that after the first week, `ahead` above it.
 A month that is over uses its own figures.
 
+**A year.** `BudgetStatus` and `SavingSummary` take a calendar year
+(`year: "2026"`, `teanode finance budget-status --year 2026`, the tool's
+`budget_status` and `saving_summary` with `year`) instead of a month, and
+refuse both at once. A year is built from its months
+(`internal/agent/budget_year.go`): each month that has begun is that
+month's own `BudgetStatus` or `SavingSummary`, so the year never says
+another number for a month than the month does, and each month still to
+come is the budgets in force for it as they stand today. A budget counts
+each month at the amount it had that month, so one raised in July is six
+months at each amount, and one ended in May is January to April; its
+spending (or income) is that of the months it was in force, and
+`budgetedMonthCount` says how many, `firstBudgetedMonth` and
+`lastBudgetedMonth` which. `budgetToDateAmount` is the budget for
+the days so far: the months that are over whole and the month in progress
+spread over its days (a month's status has it too). The projection
+(`ProjectSpendingCategoryYear`) is each month that is over as it ended, the
+month in progress as its own projection (repeat charges and its pace), and
+each budgeted month still to come at the average of those months: the year
+carried on the way it has gone, rather than assumed to land on its budget.
+With no month begun there is nothing to carry on, and a month to come
+counts at its budget. In its first week the month in progress counts at
+its budget, or at its spending when that is more already, instead of its
+straight line: one dinner on the first projects a month of dinners, and the
+year would carry that on into every month to come. The year's saving
+counts the month in progress the same way. An income budget's year
+(`ProjectIncomeCategoryYear`) counts what came in for the months that are
+over, the month in progress's projection, and the income expected of each
+month to come; expected by today is the months over and the month in
+progress's share by its days. The paces are a month's thresholds over the
+year, with the first week of the budget's first month to begin as the
+settling days, not the first week of January: a budget that starts in
+October may say `at_risk` or `behind` from October 8, as its month may, and
+in that week the year's pace is never worse than the month's. A year's rows
+are in the currency of the budget's latest month begun, a month in another
+currency converted at its as-of day's rate. The year's saving counts only
+the months in which at least one budget, income or spending, was in force,
+and says which (`budgetedMonths`, `budgetedMonthCount` and
+`budgetedMonthsElapsedCount`, the ones begun): expected, actual and
+projected all cover exactly those months, so budgets that began in September
+are compared with income and spending from September on, never with the
+year from January. Within them it is its months' expected, actual and
+projected saving added up the same way, the projected spending of the
+budgeted months to come at the average of the budgeted months begun, and its
+pace waits a week after the first budgeted month begins. A year with no
+budget in any month counts all its months, expects nothing, and has no
+difference and no pace to speak of (`savingPace` stays `on_track`); the
+panel, the CLI and the finance tool all say no budgets were set rather than
+comparing with zero. A month's summary names itself in `budgetedMonths`
+when it has a budget. The counts are of the spending categories with a
+budget in any month. Each month of a year is read in turn, so a year costs
+about twelve months' queries.
+
 A savings target is measured one of three ways (`target_measure`):
 `cash_flow`, income less spending since it started; `net_worth`, net worth
 today less the net worth it started from, converted per currency at the
@@ -786,6 +842,41 @@ The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading
 of their own), and heads Budgets for this month, where the list and the
 "Set a budget" dialog group income categories under Income.
+
+Spending shows a month or a year. Month | Year and the period, a menu
+between a step back and a step forward (`SpendingPeriodPicker` in
+`web/src/pages/finance/financeSpendingYear.tsx`), are one row above the
+panels, at the right on a wide window and the full width on a phone, in the
+same place in both modes so the control never moves. The month menu lists
+the months back to the first with cash flow and the year menu the years
+with any; both come from one cash flow read over the last twenty years
+(`useSpendingHistory`, grouped on the client by `cashFlowYears`), so no
+query was added. That read is long for the server (each day converted
+where an account is in another currency), so Month mode makes it only once
+the person reaches for the menu, and Year mode as it opens. When the first
+month read already has cash flow there may be more before it, and the first
+year is labelled as where the reading starts ("from Jan, earlier not
+shown") rather than where the money began. The period is in the address,
+`?month=` or `?year=` (`spendingPeriodFromSearch` in `financeFilters.ts`),
+so a year can be linked to; a year still to come, one before the twenty
+years read, or one the server refuses (it answers for 1900 through ten
+years past this one, and refuses year zero as an invalid argument) falls
+back to this month; changing Month to Year or back is a step in the browser's
+history and Back returns to it, while choosing another month or year
+replaces the address as the month always has. Year to month lands on the
+year's latest month begun. In Year mode the section is every year's cash
+flow a group a year, from the first year with any to this one (marked as so
+far), the chosen year highlighted and each group a button that chooses its
+year, with the chosen year's income, spending and what was left
+(`yearCashFlowTotals`); the year's saving, naming the months with budgets
+it counts; the year's budgets, the months most of them covered said once in
+the description and a note only on a row that covered a different number,
+with the budget to date and an explanation of the year's projection; and
+the spending summary over the year, each group opening Transactions over
+the year's days. The current year reads from January 1 to today, and says
+so in the chart's caption and the panels' hints. The day-by-day chart is a
+month's only, and has no headline of its own: the month's spending is the
+cash flow chart's, one card up.
 
 Each bar is what has gone so far, and a faint striped band past it runs to
 where the month is heading (`MeterBar` in

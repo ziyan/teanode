@@ -263,15 +263,26 @@ func (self SavingPace) IsValid() bool {
 	return self == SavingPaceBehind || self == SavingPaceOnTrack || self == SavingPaceAhead
 }
 
-// BudgetStatus is every spending category with a budget in one month,
-// against that budget, as of one day.
+// BudgetStatus is every spending category with a budget in one month, or
+// in any month of one year, against that budget, as of one day.
 type BudgetStatus struct {
 	// Month is "2006-01"; AsOf the day it is computed for, "2006-01-02",
-	// which is the last day of a past month.
+	// which is the last day of a past month. For a year, Month is empty and
+	// DayOfMonth and DaysInMonth are of AsOf's month.
 	Month       string `json:"month"`
 	AsOf        string `json:"asOf"`
 	DayOfMonth  int    `json:"dayOfMonth"`
 	DaysInMonth int    `json:"daysInMonth"`
+
+	// Year is "2006" for the status of a year, empty for a month's. Of a
+	// year, MonthsElapsedCount is how many of its months have begun by
+	// AsOf (twelve once it is over, none before it begins), and DayOfYear
+	// and DaysInYear say how far through it AsOf is (DayOfYear none
+	// before it begins). All three are zero for a month.
+	Year               string `json:"year"`
+	MonthsElapsedCount int    `json:"monthsElapsedCount"`
+	DayOfYear          int    `json:"dayOfYear"`
+	DaysInYear         int    `json:"daysInYear"`
 
 	// SpendingCategories are the budgets on spending, and
 	// IncomeCategories the budgets on income spending categories: the
@@ -291,14 +302,35 @@ type SpendingCategoryBudgetStatus struct {
 	BudgetAmount string `json:"budgetAmount"`
 	CurrencyCode string `json:"currencyCode"`
 
+	// BudgetToDateAmount is the part of BudgetAmount for the days so far:
+	// the month's budget spread evenly over its days up to AsOf, the whole
+	// of it once the month is over. For a year, each month's budget in
+	// force that month, whole for the months that are over and spread
+	// over the days so far for the month in progress.
+	BudgetToDateAmount string `json:"budgetToDateAmount"`
+
+	// BudgetedMonthCount is how many months the budget was in force: one
+	// for a month, and for a year the months of it that had a budget for
+	// this spending category, which BudgetAmount adds up.
+	BudgetedMonthCount int `json:"budgetedMonthCount"`
+
+	// FirstBudgetedMonth and LastBudgetedMonth, "2006-01", are the first
+	// and last of those months: the month itself for a month. A year's
+	// budgeted months need not run unbroken between them.
+	FirstBudgetedMonth string `json:"firstBudgetedMonth"`
+	LastBudgetedMonth  string `json:"lastBudgetedMonth"`
+
 	// SpendingAmount is the month's spending so far, and
-	// SpendingBySameDayLastMonthAmount last month's by the same day.
+	// SpendingBySameDayLastMonthAmount last month's by the same day. For a
+	// year, SpendingAmount is the spending of the months that had this
+	// budget, and nothing is compared with last month.
 	SpendingAmount                   string `json:"spendingAmount"`
 	SpendingBySameDayLastMonthAmount string `json:"spendingBySameDayLastMonthAmount"`
 
 	// FixedChargesDueAmount is what merchants that charged this spending
 	// category in each of the last three full months are expected to
-	// charge again this month and have not yet.
+	// charge again this month and have not yet. For a year, those of the
+	// month in progress.
 	FixedChargesDueAmount string `json:"fixedChargesDueAmount"`
 
 	// ExpectedRepeatCharges are those merchants, one by one, so a
@@ -310,7 +342,10 @@ type SpendingCategoryBudgetStatus struct {
 
 	// ProjectedAmount is where the month is expected to end: SpendingAmount,
 	// plus FixedChargesDueAmount, plus the rest of the spending at the rate
-	// it has come this month for the days left.
+	// it has come this month for the days left. For a year
+	// (ProjectSpendingCategoryYear), the months that are over as they
+	// ended, the month in progress as projected, and each budgeted month
+	// still to come at the average of those.
 	ProjectedAmount string     `json:"projectedAmount"`
 	BudgetPace      BudgetPace `json:"budgetPace"`
 
@@ -342,25 +377,39 @@ type IncomeCategoryBudgetStatus struct {
 	SpendingCategoryID   string `json:"spendingCategoryId"`
 	SpendingCategoryName string `json:"spendingCategoryName"`
 
-	// BudgetAmount is the income expected in the whole month.
+	// BudgetAmount is the income expected in the whole month, or, for a
+	// year, in each of its months that had this budget, added up.
 	BudgetAmount string `json:"budgetAmount"`
 	CurrencyCode string `json:"currencyCode"`
 
+	// BudgetedMonthCount is how many months the budget was in force: one
+	// for a month, and for a year the months of it BudgetAmount adds up.
+	BudgetedMonthCount int `json:"budgetedMonthCount"`
+
+	// FirstBudgetedMonth and LastBudgetedMonth are as a
+	// SpendingCategoryBudgetStatus's: the first and last of those months.
+	FirstBudgetedMonth string `json:"firstBudgetedMonth"`
+	LastBudgetedMonth  string `json:"lastBudgetedMonth"`
+
 	// IncomeAmount is what came in this month so far, and
 	// IncomeBySameDayLastMonthAmount what came in last month by the same
-	// day.
+	// day. For a year, IncomeAmount is what came in during the months that
+	// had this budget, and nothing is compared with last month.
 	IncomeAmount                   string `json:"incomeAmount"`
 	IncomeBySameDayLastMonthAmount string `json:"incomeBySameDayLastMonthAmount"`
 
 	// ExpectedByTodayAmount is the month's expected income spread evenly
 	// over its days, up to and including today: what the pace compares
-	// IncomeAmount with.
+	// IncomeAmount with. For a year, the expected income of the months that
+	// are over and the month in progress's spread over its days so far.
 	ExpectedByTodayAmount string `json:"expectedByTodayAmount"`
 
 	// ProjectedAmount is where the month is expected to end: for a month
 	// in progress, the expected income, or what came in when that is more
 	// already, since income comes in a few large amounts that a straight
-	// line cannot project; for a month that is over, what came in.
+	// line cannot project; for a month that is over, what came in. For a
+	// year (ProjectIncomeCategoryYear), the months added up that way, each
+	// month still to come at its expected income.
 	ProjectedAmount string     `json:"projectedAmount"`
 	IncomePace      IncomePace `json:"incomePace"`
 
@@ -377,11 +426,31 @@ type IncomeCategoryBudgetStatus struct {
 // every spending category included, whether or not it has a budget.
 type SavingSummary struct {
 	// Month is "2006-01"; AsOf the day it is computed for, "2006-01-02",
-	// which is the last day of a past month.
+	// which is the last day of a past month. For a year, Month is empty and
+	// DayOfMonth and DaysInMonth are of AsOf's month.
 	Month       string `json:"month"`
 	AsOf        string `json:"asOf"`
 	DayOfMonth  int    `json:"dayOfMonth"`
 	DaysInMonth int    `json:"daysInMonth"`
+
+	// Year, MonthsElapsedCount, DayOfYear and DaysInYear are as a
+	// BudgetStatus's: set for the saving of a year, zero for a month's.
+	Year               string `json:"year"`
+	MonthsElapsedCount int    `json:"monthsElapsedCount"`
+	DayOfYear          int    `json:"dayOfYear"`
+	DaysInYear         int    `json:"daysInYear"`
+
+	// BudgetedMonths are the months, "2006-01" in order, in which at least
+	// one budget, income or spending, was in force; BudgetedMonthCount is
+	// how many, and BudgetedMonthsElapsedCount how many of them have begun
+	// by AsOf. Of a year, every expected, actual and projected amount
+	// counts these months only, so a year whose budgets began in September
+	// compares September onward with September onward. A year with none
+	// counts all its months instead, expects nothing, and its SavingPace
+	// says nothing. Of a month, the month itself when it has a budget.
+	BudgetedMonths             []string `json:"budgetedMonths"`
+	BudgetedMonthCount         int      `json:"budgetedMonthCount"`
+	BudgetedMonthsElapsedCount int      `json:"budgetedMonthsElapsedCount"`
 
 	// ReportingCurrencyCode is what every amount is in. A budget is
 	// converted at AsOf's rate, and income and spending at the rate of the
@@ -390,7 +459,8 @@ type SavingSummary struct {
 	ReportingCurrencyCode string `json:"reportingCurrencyCode"`
 
 	// IncomeBudgetCount and SpendingBudgetCount are how many budgets of
-	// each kind are in force in the month.
+	// each kind are in force in the month, or for a year, how many
+	// spending categories of each kind had a budget in any of its months.
 	IncomeBudgetCount   int `json:"incomeBudgetCount"`
 	SpendingBudgetCount int `json:"spendingBudgetCount"`
 

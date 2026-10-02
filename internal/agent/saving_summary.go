@@ -35,7 +35,13 @@ func SavingSummary(ctx context.Context, tx db.Transaction, fetcher *rates.Fetche
 		ExpectedIncomeAmount: zero, ExpectedSpendingAmount: zero, ExpectedSavingAmount: zero,
 		IncomeAmount: zero, SpendingAmount: zero, SavingAmount: zero,
 		ProjectedIncomeAmount: zero, ProjectedSpendingAmount: zero, ProjectedSavingAmount: zero,
-		SavingDifferenceAmount: zero, SavingPace: models.SavingPaceOnTrack, UnconvertedCurrencyCodes: []string{},
+		SavingDifferenceAmount: zero, SavingPace: models.SavingPaceOnTrack, UnconvertedCurrencyCodes: []string{}, BudgetedMonths: []string{},
+	}
+	if summary.IncomeBudgetCount+summary.SpendingBudgetCount > 0 {
+		summary.BudgetedMonths, summary.BudgetedMonthCount = []string{budgetStatus.Month}, 1
+		if budgetStatus.Month <= today[:min(len(today), 7)] {
+			summary.BudgetedMonthsElapsedCount = 1
+		}
 	}
 	if currencyCode == "" {
 		return summary, nil

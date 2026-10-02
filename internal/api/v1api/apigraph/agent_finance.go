@@ -655,13 +655,41 @@ func monthArgument(name, value, fallback string) (string, error) {
 	if value == "" {
 		return fallback, nil
 	}
-	if month, err := time.Parse("2006-01", value); err == nil {
-		return month.Format("2006-01"), nil
+	month, err := time.Parse("2006-01", value)
+	if err != nil {
+		day, dayErr := time.Parse(time.DateOnly, value)
+		if dayErr != nil {
+			return "", fmt.Errorf("%w: %s %q is not a month written 2006-01", api.ErrInvalidArguments, name, value)
+		}
+		month = day
 	}
-	if day, err := time.Parse(time.DateOnly, value); err == nil {
-		return day.Format("2006-01"), nil
+	// Year 0 parses but is no date PostgreSQL holds, so a month that early
+	// would fail as an internal error rather than as a bad argument.
+	if month.Year() < agent.FirstBudgetYear {
+		return "", fmt.Errorf("%w: %s %q is before %d", api.ErrInvalidArguments, name, value, agent.FirstBudgetYear)
 	}
-	return "", fmt.Errorf("%w: %s %q is not a month written 2006-01", api.ErrInvalidArguments, name, value)
+	return month.Format("2006-01"), nil
+}
+
+// yearArgument is a calendar year, "2006", from 1900 to ten years past
+// today's ("2006-01-02"), or empty when none was given. A month given
+// beside it is refused rather than one of them ignored.
+func yearArgument(name, value, month, today string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(month) != "" {
+		return "", fmt.Errorf("%w: give month or %s, not both", api.ErrInvalidArguments, name)
+	}
+	year, err := time.Parse("2006", value)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s %q is not a year written 2006", api.ErrInvalidArguments, name, value)
+	}
+	if !agent.IsBudgetYear(year.Format("2006"), today) {
+		return "", fmt.Errorf("%w: %s %q is not a year from %d to ten years from now", api.ErrInvalidArguments, name, value, agent.FirstBudgetYear)
+	}
+	return year.Format("2006"), nil
 }
 
 // amountArgument is a decimal amount in its canonical form.
