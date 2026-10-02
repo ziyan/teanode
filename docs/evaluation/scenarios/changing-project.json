@@ -46,7 +46,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Burrowdb, pinned to version 4.2."
+          "expectedAnswer": "Burrowdb, pinned to version 4.2.",
+          "evidence": [
+            "decision-001"
+          ]
         },
         {
           "id": "upgrade-1",
@@ -61,7 +64,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Run quillmoss migrate --online against the live store, then restart the workers one at a time; verified on staging with 40 of 40 checks passing."
+          "expectedAnswer": "Run quillmoss migrate --online against the live store, then restart the workers one at a time; verified on staging with 40 of 40 checks passing.",
+          "evidence": [
+            "runbook-001"
+          ]
         },
         {
           "id": "unknown-1",
@@ -69,7 +75,8 @@
           "kind": "abstain",
           "expects": [],
           "forbids": [],
-          "expectedAnswer": "not known"
+          "expectedAnswer": "not known",
+          "evidence": []
         }
       ]
     },
@@ -151,6 +158,11 @@
                 "Ferrox"
               ]
             }
+          ],
+          "evidence": [
+            "decision-001",
+            "chat-101",
+            "chat-103"
           ]
         },
         {
@@ -166,7 +178,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "No. Ferrox was proposed and then rejected: the deploy tooling does not support it and replication is not needed."
+          "expectedAnswer": "No. Ferrox was proposed and then rejected: the deploy tooling does not support it and replication is not needed.",
+          "evidence": [
+            "chat-101",
+            "chat-103"
+          ]
         }
       ]
     },
@@ -250,6 +266,9 @@
                 "pinned to Burrowdb 4.2"
               ]
             }
+          ],
+          "evidence": [
+            "decision-002"
           ]
         },
         {
@@ -264,7 +283,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Because Burrowdb 4 reaches end of support in May 2031."
+          "expectedAnswer": "Because Burrowdb 4 reaches end of support in May 2031.",
+          "evidence": [
+            "decision-002"
+          ]
         },
         {
           "id": "upgrade-3",
@@ -286,6 +308,10 @@
                 "migrate --online"
               ]
             }
+          ],
+          "evidence": [
+            "chat-201",
+            "chat-203"
           ]
         },
         {
@@ -301,7 +327,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "The online upgrade, quillmoss migrate --online: it hangs at the lock step because Burrowdb 5 does not allow online schema changes while writers are connected."
+          "expectedAnswer": "The online upgrade, quillmoss migrate --online: it hangs at the lock step because Burrowdb 5 does not allow online schema changes while writers are connected.",
+          "evidence": [
+            "chat-201"
+          ]
         },
         {
           "id": "status-3",
@@ -309,7 +338,11 @@
           "kind": "direct",
           "expects": [],
           "forbids": [],
-          "expectedAnswer": "No. It only shows the CLI runs; the upgrade was shown to work by the offline procedure's 40 of 40 passing checks."
+          "expectedAnswer": "No. It only shows the CLI runs; the upgrade was shown to work by the offline procedure's 40 of 40 passing checks.",
+          "evidence": [
+            "chat-202",
+            "chat-203"
+          ]
         },
         {
           "id": "was-3",
@@ -323,7 +356,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Burrowdb 4.2."
+          "expectedAnswer": "Burrowdb 4.2.",
+          "evidence": [
+            "decision-001"
+          ]
         }
       ]
     },
@@ -381,7 +417,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Unresolved: empty files were reported by two customers but not confirmed, and one export checked had rows."
+          "expectedAnswer": "Unresolved: empty files were reported by two customers but not confirmed, and one export checked had rows.",
+          "evidence": [
+            "chat-301",
+            "chat-302"
+          ]
         },
         {
           "id": "store-4",
@@ -404,6 +444,9 @@
                 "pinned to Burrowdb 4.2"
               ]
             }
+          ],
+          "evidence": [
+            "decision-002"
           ]
         }
       ]
@@ -438,6 +481,9 @@
                 "pinned to Burrowdb 4.2"
               ]
             }
+          ],
+          "evidence": [
+            "decision-002"
           ]
         },
         {
@@ -460,6 +506,10 @@
                 "migrate --online"
               ]
             }
+          ],
+          "evidence": [
+            "chat-201",
+            "chat-203"
           ]
         },
         {
@@ -475,7 +525,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "No, it was proposed and rejected."
+          "expectedAnswer": "No, it was proposed and rejected.",
+          "evidence": [
+            "chat-101",
+            "chat-103"
+          ]
         },
         {
           "id": "export-5",
@@ -489,7 +543,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Unresolved: reported by two customers, not confirmed, and one export checked had rows."
+          "expectedAnswer": "Unresolved: reported by two customers, not confirmed, and one export checked had rows.",
+          "evidence": [
+            "chat-301",
+            "chat-302"
+          ]
         }
       ]
     }

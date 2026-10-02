@@ -36,7 +36,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Tessel, version 2."
+          "expectedAnswer": "Tessel, version 2.",
+          "evidence": [
+            "note-1"
+          ]
         }
       ]
     },
@@ -134,6 +137,9 @@
                 "Tessel is what Brindle uses"
               ]
             }
+          ],
+          "evidence": [
+            "chat-21"
           ]
         },
         {
@@ -148,7 +154,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "No. It was proposed on May 3 and rejected the same day because Quarrel cannot do the page layouts."
+          "expectedAnswer": "No. It was proposed on May 3 and rejected the same day because Quarrel cannot do the page layouts.",
+          "evidence": [
+            "chat-11",
+            "chat-12"
+          ]
         },
         {
           "id": "valid-may-6-day-10",
@@ -162,7 +172,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Marrow: the move from Tessel happened on May 5 (as reported on May 10)."
+          "expectedAnswer": "Marrow: the move from Tessel happened on May 5 (as reported on May 10).",
+          "evidence": [
+            "chat-21"
+          ]
         },
         {
           "id": "known-may-6-day-10",
@@ -176,7 +189,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Tessel. The move to Marrow was only reported on May 10."
+          "expectedAnswer": "Tessel. The move to Marrow was only reported on May 10.",
+          "evidence": [
+            "note-1",
+            "chat-21"
+          ]
         }
       ]
     },
@@ -269,6 +286,9 @@
                 "May 5"
               ]
             }
+          ],
+          "evidence": [
+            "chat-31"
           ]
         },
         {
@@ -284,7 +304,11 @@
           ],
           "forbids": [],
           "expectedAnswer": "Tessel: production moved to Marrow on May 7, per the May 12 correction.",
-          "outdatedAnswer": "Marrow."
+          "outdatedAnswer": "Marrow.",
+          "evidence": [
+            "note-1",
+            "chat-31"
+          ]
         },
         {
           "id": "known-may-11-day-12",
@@ -298,7 +322,11 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "May 5. The correction to May 7 came on May 12."
+          "expectedAnswer": "May 5. The correction to May 7 came on May 12.",
+          "evidence": [
+            "chat-21",
+            "chat-31"
+          ]
         },
         {
           "id": "cache-day-12",
@@ -312,7 +340,10 @@
             }
           ],
           "forbids": [],
-          "expectedAnswer": "Unknown: one customer said so, it may have been a cached copy, and nobody has checked."
+          "expectedAnswer": "Unknown: one customer said so, it may have been a cached copy, and nobody has checked.",
+          "evidence": [
+            "chat-41"
+          ]
         },
         {
           "id": "renderer-day-12",
@@ -334,6 +365,9 @@
                 "Tessel is what Brindle uses"
               ]
             }
+          ],
+          "evidence": [
+            "chat-21"
           ]
         }
       ]
@@ -368,6 +402,9 @@
                 "May 5"
               ]
             }
+          ],
+          "evidence": [
+            "chat-31"
           ]
         },
         {
@@ -383,7 +420,11 @@
           ],
           "forbids": [],
           "expectedAnswer": "Tessel.",
-          "outdatedAnswer": "Marrow."
+          "outdatedAnswer": "Marrow.",
+          "evidence": [
+            "note-1",
+            "chat-31"
+          ]
         }
       ]
     }
