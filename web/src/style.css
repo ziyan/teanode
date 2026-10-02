@@ -12784,3 +12784,9 @@ button.idea-history-title {
   }
 }
 
+/* A currency's part of a converted total, under it: a detail, not a second
+   total. */
+.finance-currency-part td {
+  color: var(--muted);
+  font-weight: normal;
+}

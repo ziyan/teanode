@@ -3580,6 +3580,8 @@ export const en = {
   'finance.groupBy.financeAccount': 'Finance account',
   'finance.transactionCount': 'Transactions',
   'finance.totalIn': 'Total in {currency}',
+  'finance.totalConvertedTo': 'Total, all converted to {currency}',
+  'finance.spentIn': 'Spent in {currency}',
   'finance.noCashFlow': 'No income or spending in these twelve months.',
   'finance.periodKind': 'Show a month or a year',
   'finance.year': 'Year',

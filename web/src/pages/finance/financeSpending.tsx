@@ -760,6 +760,11 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
   }, [summary, currencyLines, groupBy, incomeSpendingCategoryIds])
   const reportingTotal = summary?.reportingCurrencyCode ? spendingTotals(lines)[0] : undefined
   const currencyTotals = spendingTotals(currencyLines)
+  // Whether some spending was in another currency than the reporting one:
+  // then the first total is a conversion and the currencies under it are its
+  // parts, even when all of it was in that one other currency.
+  const isConverted =
+    reportingTotal !== undefined && currencyTotals.some((total) => total.currencyCode !== reportingTotal.currencyCode)
   const groupLabel = (value: SpendingGroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
   // A spending category's name as the reader reads it; merchants and
   // accounts as they came.
@@ -893,25 +898,45 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
             <tfoot>
               {reportingTotal ? (
                 <tr>
-                  <th>{t('finance.totalIn', { currency: reportingTotal.currencyCode })}</th>
+                  {/* Said as a conversion when the rows under it are its parts
+                      in their own currencies: two rows both called a total in
+                      the same currency read as two different totals. */}
+                  <th>
+                    {isConverted
+                      ? t('finance.totalConvertedTo', { currency: reportingTotal.currencyCode })
+                      : t('finance.totalIn', { currency: reportingTotal.currencyCode })}
+                  </th>
                   <th className="numeric">
                     <Money amount={reportingTotal.spendingAmount} currency={reportingTotal.currencyCode} />
                   </th>
                   <th className="numeric optional">{reportingTotal.financeTransactionCount}</th>
                 </tr>
               ) : null}
-              {/* Each currency as it was spent, where there was more than
-                  one or no reporting currency to add them up in. */}
-              {currencyTotals.length > 1 || !reportingTotal
-                ? currencyTotals.map((total) => (
-                    <tr key={total.currencyCode}>
-                      <th>{t('finance.totalIn', { currency: total.currencyCode })}</th>
-                      <th className="numeric">
-                        <Money amount={total.spendingAmount} currency={total.currencyCode} />
-                      </th>
-                      <th className="numeric optional">{total.financeTransactionCount}</th>
-                    </tr>
-                  ))
+              {/* Each currency as it was spent, where some was converted or
+                  there is no reporting currency to add them up in. */}
+              {isConverted || !reportingTotal
+                ? currencyTotals.map((total) =>
+                    // Under a converted total these are its parts, as spent,
+                    // in the muted weight of a detail; with nothing to add
+                    // them up in, each is a total of its own.
+                    reportingTotal ? (
+                      <tr key={total.currencyCode} className="finance-currency-part">
+                        <td>{t('finance.spentIn', { currency: total.currencyCode })}</td>
+                        <td className="numeric">
+                          <Money amount={total.spendingAmount} currency={total.currencyCode} />
+                        </td>
+                        <td className="numeric optional">{total.financeTransactionCount}</td>
+                      </tr>
+                    ) : (
+                      <tr key={total.currencyCode}>
+                        <th>{t('finance.totalIn', { currency: total.currencyCode })}</th>
+                        <th className="numeric">
+                          <Money amount={total.spendingAmount} currency={total.currencyCode} />
+                        </th>
+                        <th className="numeric optional">{total.financeTransactionCount}</th>
+                      </tr>
+                    ),
+                  )
                 : null}
             </tfoot>
           </table>
