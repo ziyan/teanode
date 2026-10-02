@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.105.0] - 2026-10-02
+
+### Added
+
+- Ask the agent about a transaction from its details: the chat opens with the transaction attached. (#316)
+
 ## [0.104.4] - 2026-10-02
 
 ### Changed
