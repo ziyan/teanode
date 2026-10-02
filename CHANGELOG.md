@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.103.1] - 2026-10-02
+
+### Fixed
+
+- Importing a statement that has transactions but no balance keeps the account's existing balance. (#309)
+
 ## [0.103.0] - 2026-10-01
 
 ### Added
