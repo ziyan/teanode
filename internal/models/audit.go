@@ -23,6 +23,12 @@ type AuditEvent struct {
 	// when read, never stored, so a renamed user reads by their current name.
 	ActorLabel string `json:"actorLabel,omitempty"`
 
+	// ImpersonatorUserID is the operator who was signed in as the actor
+	// when the change was made, and ImpersonatorLabel their username,
+	// resolved when read. Empty for a change the actor made themselves.
+	ImpersonatorUserID string `json:"impersonatorUserId,omitempty"`
+	ImpersonatorLabel  string `json:"impersonatorLabel,omitempty"`
+
 	// TokenID is the session or API token that authorized the request; never
 	// its secret.
 	TokenID  string `json:"tokenId,omitempty"`

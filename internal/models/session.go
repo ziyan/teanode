@@ -40,6 +40,20 @@ type Session struct {
 	// Where it was last used from, so a person can recognize their own
 	IP        string `json:"ip,omitempty"`
 	UserAgent string `json:"userAgent,omitempty"`
+
+	// ImpersonatorUserID is the operator who signed in as this account,
+	// for a session that is an impersonation, and ImpersonatorSessionID
+	// the operator's own session, which it lasts no longer than.
+	// ImpersonatorUsername is looked up, like Username.
+	ImpersonatorUserID    string `json:"impersonatorUserId,omitempty"`
+	ImpersonatorSessionID string `json:"impersonatorSessionId,omitempty"`
+	ImpersonatorUsername  string `json:"impersonatorUsername,omitempty"`
+}
+
+// IsImpersonation says whether an operator is behind this session rather
+// than the account it belongs to.
+func (self *Session) IsImpersonation() bool {
+	return self != nil && self.ImpersonatorUserID != ""
 }
 
 // Active reports whether this Session would authenticate a request now.
