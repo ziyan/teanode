@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -314,7 +316,10 @@ func (self *Agent) digestShown(ctx context.Context, run *Run, documents []*model
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
+	// A document is not the person's words for what kind a fact may be or
+	// what it may retract; only a note a source marked as theirs may ask
+	// for its facts to be remembered.
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, writtenByThePerson(documents), models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
 		if complete == nil {
 			return nil
 		}
@@ -428,4 +433,25 @@ func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*mode
 		}
 	}
 	return total, true
+}
+
+// writtenByThePerson is the documents of a batch a source marked as the
+// person's own, @you: the notes that may ask for their facts to be
+// remembered. An author's name is not enough. A login, a display name or
+// a commit's author is anybody's to share or to set, and a stranger with
+// the person's name would otherwise be asking on their behalf.
+func writtenByThePerson(documents []*models.AgentDocument) map[string]bool {
+	written := map[string]bool{}
+	for _, document := range documents {
+		if isPersonAuthor(document.Author()) {
+			written[document.ID] = true
+		}
+	}
+	return written
+}
+
+// isPersonAuthor is whether an author is the mark a source gives the
+// person.
+func isPersonAuthor(author string) bool {
+	return strings.EqualFold(strings.TrimSpace(author), computer.PersonAuthor)
 }

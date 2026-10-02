@@ -82,6 +82,12 @@ func (self *Agent) retrieveDigestParts(ctx context.Context, run *Run, documents 
 			heading += " — in the checkout " + checkout + ", whose page is " + checkoutPage(source, checkout)
 		}
 		if author := document.Author(); author != "" {
+			// A record source writes the person as @you, which the
+			// reading would take for somebody of that name: what they
+			// wrote, and asked to have remembered, read as a stranger's.
+			if isPersonAuthor(author) {
+				author = personName(run.Owner)
+			}
 			heading += " — by " + author
 		}
 		if document.HappenedAt != nil {

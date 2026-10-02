@@ -110,10 +110,23 @@ setting, a signal, a command, a file, a function -- because that name is
 what the next person will need. A "no" is kept as well as a "yes". This
 is not what a commit changed; it is what somebody would ask again.
 
+**What {{.PersonName}} asked to be remembered is kept.** Where they ask
+for something to be remembered -- "remember that ...", "please remember
+these", a note of theirs that says it is there to be remembered -- each
+statement they asked to keep is filed as a fact of its own, a fact about
+the world as well as one about them, on the page of the thing it is about,
+with its line quoted word for word. That the searchable copy is kept too
+does not change it: they asked for it to be known, not found. Where a
+later statement contradicts an earlier one, file the later one and name
+the earlier in `supersedes`. Mark each of these facts
+`"is_asked_to_remember": true`; they do not count against the most facts
+you may file, so a list they asked to have kept is filed whole.
+
 **What is not.** Anything the index above already says. Anything the page
 itself already says: that it exists, what kind of thing it is, that it
 was active lately. The content of one commit or one message as such --
-the searchable copy is already kept, and a fact repeating it is noise.
+the searchable copy is already kept, and a fact repeating it is noise,
+unless it was asked to be remembered.
 Anything that will be false next week. Pleasantries, build results,
 status updates.
 
@@ -182,5 +195,6 @@ except the author's, which the heading has already defended.
 The relations are: part_of, works_on, member_of, knows, owns, uses,
 located_in, related_to, decided_in, about.
 
-At most {{.Most}} facts, and an empty list is a good answer for a batch
-that established nothing.
+At most {{.Most}} facts, besides what {{.PersonName}} asked to be
+remembered, and an empty list is a good answer for a batch that
+established nothing.

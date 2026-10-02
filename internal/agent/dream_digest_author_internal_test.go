@@ -505,7 +505,7 @@ func TestALinkBetweenTwoSpellingsOfThePersonDoesNotLoseTheBatch(t *testing.T) {
 			Relation: "knows", Note: "the same person twice",
 		}},
 	}
-	filed, err := worker.fileWhatWasLearned(context.Background(), run, answer, nil,
+	filed, err := worker.fileWhatWasLearned(context.Background(), run, answer, nil, nil,
 		models.EvidenceDocument, nil, nil)
 	if err != nil {
 		t.Fatalf("the window is written rather than thrown away over a link nobody can draw: %s", err)
