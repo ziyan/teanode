@@ -1177,7 +1177,7 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 			heading += " — " + forTerminal(passage.Source)
 		}
 		_, _ = fmt.Fprintf(command.Writer, "%s  [%s#%d]\n", heading, passage.DocumentID, passage.Number)
-		_, _ = fmt.Fprintln(command.Writer, indent(forTerminal(excerpt(passage.Text, indexed.PassageShown)), "  "))
+		_, _ = fmt.Fprintln(command.Writer, indent(forTerminal(passage.Text), "  "))
 		_, _ = fmt.Fprintln(command.Writer)
 	}
 	if !found.Meaningful {
@@ -1188,18 +1188,6 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 			countMore(found.MoreCount, found.IsMoreCountLowerBound, "passages"), found.NextOffset)
 	}
 	return nil
-}
-
-// excerpt is as much of a passage as a listing shows, cut between
-// characters rather than inside one, and marked where it was cut. The
-// whole passage is one `knowledge read` away, and twelve whole passages
-// are a screenful nobody reads.
-func excerpt(text string, characters int) string {
-	runes := []rune(text)
-	if len(runes) <= characters {
-		return text
-	}
-	return string(runes[:characters]) + "…"
 }
 
 // runKnowledgeRead reads one indexed document, a slice at a time.

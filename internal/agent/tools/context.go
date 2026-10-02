@@ -86,6 +86,22 @@ type Run interface {
 
 type runKey struct{}
 
+// ResultBudgeting is a run that keeps less of a tool's result than
+// ResultCharacters, such as one with nobody present; a tool that pages its
+// answer fits a page to it rather than have the run cut the page short.
+type ResultBudgeting interface {
+	ResultCharacters() int
+}
+
+// ResultCharactersOf is how much of a tool's result a run keeps, in bytes,
+// as the run measures it.
+func ResultCharactersOf(run Run) int {
+	if budgeting, ok := run.(ResultBudgeting); ok && budgeting.ResultCharacters() > 0 {
+		return budgeting.ResultCharacters()
+	}
+	return ResultCharacters
+}
+
 // WithRun puts the run into the context for the tools called in it.
 func WithRun(ctx context.Context, run Run) context.Context {
 	return context.WithValue(ctx, runKey{}, run)

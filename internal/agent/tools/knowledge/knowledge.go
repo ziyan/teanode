@@ -230,7 +230,6 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	}); err != nil {
 		return nil, err
 	}
-	more := searchMore(found, arguments.Limit)
 
 	var builder strings.Builder
 	// An identifier before anything else: a name pasted out of a log
@@ -252,10 +251,27 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 		}
 		return tools.TextResult("nothing in what they have indexed is about that"), nil
 	}
+	// Each passage whole: cut to a third of a chunk, the answer was often
+	// in the part not shown, with nothing to say so. A page holds as many
+	// as fit in what the run keeps of a result, and the passages left out
+	// are counted into the line that reads the next page: a page the run
+	// cut instead would lose that line, and the next page would start past
+	// passages never shown.
+	budget := tools.ResultCharactersOf(run) - searchMoreReserve
+	shown := 0
 	for _, passage := range found.Passages {
-		builder.WriteString(passage.Cite() + "\n")
-		builder.WriteString(indent(cut(passage.Text, indexed.PassageShown)) + "\n\n")
+		block := passage.Cite() + "\n" + indent(passage.Text) + "\n\n"
+		if shown > 0 && builder.Len()+len(block) > budget {
+			break
+		}
+		builder.WriteString(block)
+		shown++
 	}
+	if left := len(found.Passages) - shown; left > 0 {
+		found.MoreCount += left
+		found.NextOffset = found.Offset + shown
+	}
+	more := searchMore(found, arguments.Limit)
 	if !found.Meaningful {
 		builder.WriteString("(found by words alone; this deployment cannot search by meaning)\n")
 	}
@@ -264,6 +280,11 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
 }
+
+// searchMoreReserve is the room a page of a search keeps for the lines
+// after its passages: the note on searching by words alone and the line
+// that reads the next page.
+const searchMoreReserve = 400
 
 // searchMore is the line a page of a search ends with when the search
 // found more than it shows: how many more, "at least" where the search
@@ -904,14 +925,6 @@ func sourceNamed(ctx context.Context, run tools.Run, name string) (*models.Agent
 		return nil, fmt.Errorf("%q is a %s source; use the finance tool for it", name, source.Kind)
 	}
 	return source, nil
-}
-
-func cut(text string, characters int) string {
-	runes := []rune(text)
-	if len(runes) <= characters {
-		return text
-	}
-	return string(runes[:characters]) + "…"
 }
 
 func indent(text string) string {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/indexed"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -49,13 +50,10 @@ const (
 )
 
 // evaluationPassages is how many passages an answer from the sources is
-// given, and evaluationPassageRunes how much of each: what one search by
-// the agent's own tool returns, read from the same constants so the two
-// cannot drift apart again (they had: eight of 1200 against twelve of 700).
-const (
-	evaluationPassages     = indexed.SearchLimit
-	evaluationPassageRunes = indexed.PassageShown
-)
+// given: what one search by the agent's own tool returns, each whole as
+// the tool shows it, read from the same constant so the two cannot drift
+// apart again (they had: eight of 1200 characters against twelve of 700).
+const evaluationPassages = indexed.SearchLimit
 
 // AnswerEvaluation is one question answered and graded.
 type AnswerEvaluation struct {
@@ -158,8 +156,17 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 			if err != nil {
 				return err
 			}
+			// As many whole passages as a turn's result keeps, as the tool
+			// fits its page, so an answer here is not given more than a
+			// turn would read.
+			kept := 0
 			for _, passage := range searched.Passages {
-				passages = append(passages, passage.Cite()+"\n"+cutRunes(passage.Text, evaluationPassageRunes))
+				shown := passage.Cite() + "\n" + passage.Text
+				if len(passages) > 0 && kept+len(shown) > tools.ResultCharacters {
+					break
+				}
+				passages = append(passages, shown)
+				kept += len(shown)
 			}
 			return nil
 		}); err != nil {

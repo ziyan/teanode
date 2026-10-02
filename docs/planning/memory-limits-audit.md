@@ -24,7 +24,8 @@ most of the limits below had reasoning at most.
 | `dream_attachment.go` full lists | files left out of a full list declined for good, unjudged | passed over: they wait behind the files not yet shown and come back in another batch; declined after three full lists |
 | `dream_consolidate.go`, `dream_overview.go` | a page's opening and overview written from its first 200 facts, the oldest | from its newest 200 |
 | `ask.go` overlay | ten lines kept while recall could write twelve; the broad-area note was dropped | the sum of what recall writes |
-| `evaluate_answer.go` | eight passages of 1200 characters; no index for the memory arm | the knowledge tool's twelve of 700; the index a turn carries |
+| `evaluate_answer.go` | eight passages of 1200 characters; no index for the memory arm | the knowledge tool's twelve, each whole; the index a turn carries |
+| `knowledge` tool and `teanode agent knowledge search` | each passage cut to 700 characters, though passages run to 2000 (76% were cut) | each passage whole |
 
 Measured on LongMemEval-S (see `memory-evaluation-execplan.md`): with the
 first 1200 characters, memory alone answered 12% of 12 questions; reading
