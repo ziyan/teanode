@@ -367,6 +367,52 @@ func TestBulkRuleGoesAheadOfTheRuleThatWins(test *testing.T) {
 	})
 }
 
+// A rule the same as the one being saved, further down and never applying,
+// is reused rather than copied, and it moves to where the new rule was
+// placed: ahead of the rule that would otherwise win, so it applies.
+func TestBulkRuleReusingTheSameRuleMovesItAhead(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	source, _, _ := fixture.seedFinanceSource(test)
+	byProviderId := fixture.addFinanceTransactions(test, source.ID,
+		finance.Transaction{ProviderTransactionID: "eats-picked", Description: "ZOOMLY EATS 01", MerchantName: "Zoomly Eats"},
+		finance.Transaction{ProviderTransactionID: "eats-other", Description: "ZOOMLY EATS 02", MerchantName: "Zoomly Eats"},
+	)
+	resolver := fixture.resolver
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		dining := spendingCategoryNamed(test, ctx, resolver, finance.SpendingCategoryDining)
+		shopping := spendingCategoryNamed(test, ctx, resolver, finance.SpendingCategoryShopping)
+		groceries := spendingCategoryNamed(test, ctx, resolver, finance.SpendingCategoryGroceries)
+		zero, five := 0, 5
+		diningRule, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "eats", SpendingCategoryID: dining.ID, RulePriority: &zero})
+		if err != nil {
+			test.Fatal(err)
+		}
+		staleRule, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "Zoomly Eats", SpendingCategoryID: shopping.ID, RulePriority: &five})
+		if err != nil {
+			test.Fatal(err)
+		}
+		picked := []string{byProviderId["eats-picked"].ID}
+		proposals, err := resolver.ProposeSpendingRules(ctx, ProposeSpendingRulesArguments{FinanceTransactionIDs: picked, SpendingCategoryID: groceries.ID})
+		if err != nil || len(proposals.SpendingRuleProposals) != 1 {
+			test.Fatalf("proposed %+v %v", proposals, err)
+		}
+		if _, err := resolver.CategorizeTransactions(ctx, CategorizeTransactionsArguments{
+			FinanceTransactionIDs: picked, SpendingCategoryID: groceries.ID, SpendingRules: confirmAll(proposals),
+		}); err != nil {
+			test.Fatal(err)
+		}
+		rules, err := resolver.SpendingRules(ctx)
+		if err != nil || len(rules) != 2 || rules[0].ID != staleRule.ID || rules[1].ID != diningRule.ID ||
+			rules[0].SpendingCategoryID != groceries.ID || rules[0].RulePriority >= rules[1].RulePriority {
+			test.Fatalf("the reused rule is not ahead with the new category: %+v %v", rules, err)
+		}
+		other, err := tx.GetFinanceTransaction(fixture.ownerAgent.ID, byProviderId["eats-other"].ID)
+		if err != nil || other.SpendingCategoryID != groceries.ID {
+			test.Errorf("the other Zoomly Eats transaction still goes elsewhere: %+v %v", other, err)
+		}
+	})
+}
+
 // "eats" to Dining is tried before "zoomly" to Transport. Zoomly Eats
 // rows picked for Transport are not covered by the Transport rule, since
 // the Dining one wins for them: a rule is proposed, ahead of the Dining

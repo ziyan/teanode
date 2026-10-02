@@ -583,12 +583,23 @@ func (self *transaction) CreateSpendingRules(spendingRules []*models.SpendingRul
 			return nil, err
 		}
 		if sameId != "" {
-			spendingCategoryId := model.SpendingCategoryID
-			if _, err := self.UpdateSpendingRule(created.AgentID, sameId, func(existing *models.SpendingRule) error {
-				existing.SpendingCategoryID = spendingCategoryId
-				return nil
-			}); err != nil {
+			// The one there takes the new category and the earlier of the two
+			// places in order: a rule placed ahead of the one that would win
+			// for it (bulk rules do this) must win, not stay where the old
+			// copy was. Asked for again as it is, it is left alone.
+			existingRule, err := self.GetSpendingRule(created.AgentID, sameId)
+			if err != nil {
 				return nil, err
+			}
+			spendingCategoryId, rulePriority := model.SpendingCategoryID, model.RulePriority
+			if existingRule == nil || existingRule.SpendingCategoryID != spendingCategoryId || existingRule.RulePriority > rulePriority {
+				if _, err := self.UpdateSpendingRule(created.AgentID, sameId, func(existing *models.SpendingRule) error {
+					existing.SpendingCategoryID = spendingCategoryId
+					existing.RulePriority = min(existing.RulePriority, rulePriority)
+					return nil
+				}); err != nil {
+					return nil, err
+				}
 			}
 			createdIds = append(createdIds, sameId)
 			if !slices.Contains(agentIds, created.AgentID) {
@@ -633,7 +644,7 @@ func (self *transaction) sameSpendingRule(model *agentSpendingRuleModel) (string
 			AND "finance_account_id" IS NOT DISTINCT FROM ?
 			AND "minimum_amount" IS NOT DISTINCT FROM CAST(? AS numeric)
 			AND "maximum_amount" IS NOT DISTINCT FROM CAST(? AS numeric)
-		ORDER BY "rule_priority" ASC, "created_at" ASC LIMIT 1`,
+		ORDER BY "rule_priority" ASC, "id" ASC LIMIT 1`,
 		model.AgentID, model.MatchText, model.FinanceAccountID, model.MinimumAmount, model.MaximumAmount).Scan(&found).Error
 	if err != nil || len(found) == 0 {
 		return "", err
