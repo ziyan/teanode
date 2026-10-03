@@ -177,10 +177,8 @@ export interface Session {
   // Identity providers to offer on the sign-in page, one button each.
   ssoProviders?: { id: string; name: string }[]
 
-  // The operator signed in as this account, when one is, and when that ends
-  // by itself. Every page says so across the top.
+  // The operator signed in as this account, when one is.
   impersonatorUsername?: string
-  impersonationEndsAt?: string
 }
 
 // Permissions is what a request may do: server and all-domains permissions
@@ -197,7 +195,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername impersonationEndsAt }'
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

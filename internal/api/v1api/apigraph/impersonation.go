@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -13,8 +12,8 @@ import (
 	"github.com/ziyan/teanode/internal/web"
 )
 
-// An operator who may manage accounts can sign in as one of them, for an
-// hour, to help them: whatever the person can do, the operator can do, and
+// An operator who may manage accounts can sign in as one of them, to help
+// them: whatever the person can do, the operator can do, and
 // nothing more, since every request is the person's with the person's
 // permissions. The session belongs to the person and names the operator;
 // every audit row written in it names both; the person sees it in their own
@@ -22,8 +21,7 @@ import (
 // has the reasoning.
 
 type ImpersonationMutation interface {
-	// StartImpersonation signs you in as another account for an hour, to
-	// help them: you can do what they can, and nothing more. Your own
+	// StartImpersonation signs you in as another account, to help them: you can do what they can, and nothing more. Your own
 	// session is kept and comes back when it ends. Needs the permission to
 	// manage accounts, and every permission that account holds. Not from a
 	// token, and not while already signed in as somebody else. Everything
@@ -81,11 +79,9 @@ func (self *graph) StartImpersonation(ctx context.Context, arguments StartImpers
 		}
 		return nil, translateError(err)
 	}
-	log.Noticef("%s signed in as %q until %s", principal.Username(), target.Username, session.ExpiresAt.Format(time.RFC3339))
+	log.Noticef("%s signed in as %q, session %s", principal.Username(), target.Username, session.ID)
 	state := self.signedInAs(ctx, target.Username)
 	state.ImpersonatorUsername = principal.User.Username
-	endsAt := session.ExpiresAt
-	state.ImpersonationEndsAt = &endsAt
 	return state, nil
 }
 

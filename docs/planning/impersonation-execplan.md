@@ -1,11 +1,11 @@
-# An operator can sign in as another person, for an hour, and is named in everything they do
+# An operator can sign in as another person, and is named in everything they do
 
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 
 ## Purpose / Big Picture
 
-A person reports that their dashboard shows something wrong: a rule that does not fire, a folder that is missing, a page that breaks. Today the operator who looks after the server can only ask for screenshots, or reset the person's password to see for themselves, which takes the account away from its owner and leaves no record of who did what. After this change an operator who may manage accounts opens the Users page, chooses "Sign in as" on that person's row, and the dashboard reloads as that person, able to do exactly what they can, with a mark on the avatar at the foot of the rail. The account menu says whose account this is, who is really looking and when it ends, and "Return to my account" there brings the operator back to their own session. Everything they change meanwhile is written in the audit log under the person's name and the operator's. The person can see the session in their own list of sessions, named as the operator's, and can end it.
+A person reports that their dashboard shows something wrong: a rule that does not fire, a folder that is missing, a page that breaks. Today the operator who looks after the server can only ask for screenshots, or reset the person's password to see for themselves, which takes the account away from its owner and leaves no record of who did what. After this change an operator who may manage accounts opens the Users page, chooses "Sign in as" on that person's row, and the dashboard reloads as that person, able to do exactly what they can, with a mark on the avatar at the foot of the rail. "Return to my account" in the account menu brings the operator back to their own session. Everything they change meanwhile is written in the audit log under the person's name and the operator's. The person can see the session in their own list of sessions, named as the operator's, and can end it.
 
 To see it working: sign in as an operator, open Access → Users, choose "Sign in as" on another account, and observe the mark on the avatar and that the inbox and the agent are that person's; change something, open the audit log, and see the row naming both; choose "Return to my account" and observe the operator's own dashboard again, without signing in.
 
@@ -49,13 +49,15 @@ To see it working: sign in as an operator, open Access → Users, choose "Sign i
 
 - Decision: the impersonation is shown by a mark on the avatar at the foot of the rail, and on the menu button on a phone, with the note and "Return to my account" in the account menu, not a strip across the page. The owner asked for it. Date: 2026-10-02.
 
+- Decision (replaces the hour above): an impersonation has no time limit of its own; it lasts as long as the operator's own session and ends with it. The owner did not want one, nor a note in the account menu: the menu holds only "Return to my account". Date: 2026-10-02.
+
 - Decision: no command-line or agent-tool way to start an impersonation.
   Rationale: impersonation is a browser session, carried by cookies; the command line authenticates with tokens, and a token is exactly what an impersonation may not mint. Parity is kept where it applies: the command line lists sessions and audit events with the operator named, as the dashboard does. Date: 2026-10-02.
 
 
 ## Outcomes & Retrospective
 
-Built; made view-only after a security review; then, at the owner's request, given exactly what the person can do, with every write audited under both names, and the indicator moved into the account menu (see the Decision Log). Checked in headless Chrome at 1400 and 390 pixels, light and dark: starting from the Users page, the mark on the avatar and the phone's menu button, the menu with the note and the way back, the person's session list naming the operator, and returning to the operator's own session. Tests: `internal/web/impersonation_test.go` (acting as the person and returning; ending with the operator's session or account; starting only from the operator's own session; logging out returns; a new sign-in ends it; the middleware header and a forged one; reaching what the person reaches outside GraphQL), `internal/api/v1api/apigraph/impersonation_test.go` (the permission and covers gate; a change the person may make goes through and one they may not is refused; the audit row naming both; an operator who loses permissions cut off), the dashboard tests. 
+Built; made view-only after a security review; then, at the owner's request, given exactly what the person can do, with every write audited under both names, and the indicator moved into the account menu (see the Decision Log). Checked in headless Chrome at 1400 and 390 pixels, light and dark: starting from the Users page, the mark on the avatar and the phone's menu button, the menu with the way back, the person's session list naming the operator, and returning to the operator's own session. Tests: `internal/web/impersonation_test.go` (acting as the person and returning; ending with the operator's session or account; starting only from the operator's own session; logging out returns; a new sign-in ends it; the middleware header and a forged one; reaching what the person reaches outside GraphQL), `internal/api/v1api/apigraph/impersonation_test.go` (the permission and covers gate; a change the person may make goes through and one they may not is refused; the audit row naming both; an operator who loses permissions cut off), the dashboard tests. 
 
 
 ## Context and Orientation
@@ -113,4 +115,4 @@ In `internal/api/v1api/apigraph/impersonation.go`:
         EndImpersonation(ctx context.Context) (*SessionState, error)
     }
 
-`SessionState` gains `ImpersonatorUsername string` and `ImpersonationEndsAt *time.Time`.
+`SessionState` gains `ImpersonatorUsername string`.

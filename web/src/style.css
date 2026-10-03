@@ -283,10 +283,6 @@ td a:hover {
   position: relative;
 }
 
-.menu-impersonation {
-  color: var(--text);
-}
-
 .menu {
   /* Fixed, and placed from the button's rectangle: it is rendered into the
      body so that a table's scroll container cannot clip it. */

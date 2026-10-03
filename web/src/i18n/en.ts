@@ -536,8 +536,6 @@ export const en = {
   'passkeyNudge.add': 'Add a passkey',
   'passkeyNudge.dismiss': 'Not now',
   'impersonation.signedInAs': 'Signed in as {username}',
-  'impersonation.note': 'Signed in as {username} by {operator}. Everything you change is recorded under both names.',
-  'impersonation.noteUntil': 'Signed in as {username} by {operator}, until {time}. Everything you change is recorded under both names.',
   'impersonation.return': 'Return to my account',
   'impersonation.returnFailed': 'Could not return to your account',
 
@@ -2069,7 +2067,7 @@ export const en = {
   'access.users.setPassword': 'Set password',
   'access.users.signInAs': 'Sign in as',
   'access.users.signInAsTitle': 'Sign in as {username}?',
-  'access.users.signInAsBody': 'You will be able to see and do what they can, no more and no less, for up to an hour, and your own session is kept for when you come back. Everything you change is written in the audit log under both names, and they will see this in their list of sessions.',
+  'access.users.signInAsBody': 'You will be able to see and do what they can, no more and no less, and your own session is kept for when you come back. Everything you change is written in the audit log under both names, and they will see this in their list of sessions.',
   'access.users.signInAsFailed': 'Could not sign in as this person',
   'access.users.setPasswordTitle': 'Set a password for {username}',
   'access.users.newPassword': 'New password',

@@ -92,10 +92,8 @@ type SessionState struct {
 	Manages bool `json:"manages"`
 
 	// ImpersonatorUsername is the operator signed in as this account, when
-	// they are, and ImpersonationEndsAt when that ends by itself; the
-	// dashboard says so across the top of every page.
-	ImpersonatorUsername string     `json:"impersonatorUsername,omitempty"`
-	ImpersonationEndsAt  *time.Time `json:"impersonationEndsAt,omitempty"`
+	// they are; the dashboard marks the avatar.
+	ImpersonatorUsername string `json:"impersonatorUsername,omitempty"`
 }
 
 func (self *graph) sessionState(ctx context.Context) *SessionState {
@@ -109,8 +107,6 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 		state.Username, state.Authenticated = identity.Username, authenticated
 		if authenticated && identity.ImpersonatorUsername != "" {
 			state.ImpersonatorUsername = identity.ImpersonatorUsername
-			endsAt := identity.ImpersonationEndsAt
-			state.ImpersonationEndsAt = &endsAt
 		}
 	}
 	state.Name = self.displayName(state.Username)

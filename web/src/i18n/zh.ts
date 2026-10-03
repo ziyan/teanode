@@ -519,8 +519,6 @@ export const zh: Catalog = {
   'passkeyNudge.add': '添加通行密钥',
   'passkeyNudge.dismiss': '暂不',
   'impersonation.signedInAs': '正以 {username} 的身份登录',
-  'impersonation.note': '{operator} 正以 {username} 的身份登录。你做的每项更改都会以两个人的名字记录。',
-  'impersonation.noteUntil': '{operator} 正以 {username} 的身份登录，持续到 {time}。你做的每项更改都会以两个人的名字记录。',
   'impersonation.return': '回到我的账号',
   'impersonation.returnFailed': '无法回到你的账号',
 
@@ -1997,7 +1995,7 @@ export const zh: Catalog = {
   'access.users.setPassword': '设置密码',
   'access.users.signInAs': '以此人身份登录',
   'access.users.signInAsTitle': '以 {username} 的身份登录？',
-  'access.users.signInAsBody': '在最长一小时内，你能看到并做此人能做的一切，不多也不少；你自己的会话会保留，供你回来时使用。你做的每项更改都会以两个人的名字记入审计日志，此人也会在自己的会话列表中看到这次登录。',
+  'access.users.signInAsBody': '你能看到并做此人能做的一切，不多也不少；你自己的会话会保留，供你回来时使用。你做的每项更改都会以两个人的名字记入审计日志，此人也会在自己的会话列表中看到这次登录。',
   'access.users.signInAsFailed': '无法以此人身份登录',
   'access.users.setPasswordTitle': '为 {username} 设置密码',
   'access.users.newPassword': '新密码',

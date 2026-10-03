@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/web"
@@ -46,7 +45,7 @@ func impersonate(t *testing.T, authenticator web.Authenticator, own *http.Cookie
 }
 
 // An operator signed in as somebody is that person to every request, named
-// as the one behind it, for no longer than an hour; ending it puts the
+// as the one behind it; ending it puts the
 // operator's own session back, and the impersonation stops working.
 func TestImpersonationActsAsThePersonAndReturnsTheOperator(t *testing.T) {
 	t.Parallel()
@@ -63,9 +62,6 @@ func TestImpersonationActsAsThePersonAndReturnsTheOperator(t *testing.T) {
 	identity, ok := authenticator.AuthenticateIdentity(requestWith(impersonation))
 	if !ok || identity.Username != "bob" || identity.ImpersonatorUsername != "admin" {
 		t.Fatalf("the request is bob's, with admin behind it: %+v %v", identity, ok)
-	}
-	if identity.ImpersonationEndsAt.After(time.Now().Add(web.ImpersonationLifetime + time.Minute)) {
-		t.Fatalf("it ends within the hour: %s", identity.ImpersonationEndsAt)
 	}
 	sessions, err := authenticator.ListSessions("bob", false)
 	if err != nil || len(sessions) != 1 || !sessions[0].IsImpersonation() {

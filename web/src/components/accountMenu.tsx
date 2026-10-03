@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 
 import { endImpersonation } from '../api'
 import { LanguageItems, useTranslation } from '../i18n/i18n'
-import { formatClock } from './common'
 import { ConfirmDialog } from './dialog'
 import {
   ArrowLeftIcon,
@@ -67,20 +66,14 @@ export function AccountMenu({
   const toast = useToast()
   const displayed = name?.trim() || username
   // An operator signed in as this account: said by a mark on the avatar,
-  // which is on screen on every page without taking a line of any of them,
-  // and in the menu the avatar opens, with the way back.
+  // and the way back is in the menu it opens.
   const operator = session.impersonatorUsername
-  const signedInAs = operator
-    ? session.impersonationEndsAt
-      ? t('impersonation.noteUntil', { username, operator, time: formatClock(session.impersonationEndsAt) })
-      : t('impersonation.note', { username, operator })
-    : ''
 
   return (
     <>
       <MenuButton
         className="account-button"
-        label={operator ? `${t('nav.account')}: ${signedInAs}` : t('nav.account')}
+        label={operator ? `${t('nav.account')}: ${t('impersonation.signedInAs', { username })}` : t('nav.account')}
         placement="above"
         icon={
           <>
@@ -104,11 +97,9 @@ export function AccountMenu({
         }
         render={(close) => (
           <>
-            {/* Above everything while signed in as somebody else: whose
-                account this is, who is looking, and the way back. */}
+            {/* First while signed in as somebody else: the way back. */}
             {operator && (
               <>
-                <div className="menu-header menu-impersonation">{signedInAs}</div>
                 <button
                   type="button"
                   role="menuitem"

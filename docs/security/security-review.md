@@ -403,8 +403,8 @@ carry the cookie.
 
 ### 5.5.1 Signing in as somebody else
 
-An operator who may manage accounts can sign in as another account for an
-hour, to help them (`StartImpersonation`;
+An operator who may manage accounts can sign in as another account, to
+help them (`StartImpersonation`;
 `docs/planning/impersonation-execplan.md`). It is a separate session row
 belonging to the person, naming the operator and the operator's own session;
 the operator's own cookie is kept aside in `teanode_session_return` and put
@@ -414,8 +414,7 @@ the person can. It is refused unless the operator holds every permission the
 person holds, the same rule as setting their password, checked again on every
 request, and refused from a token, from the console and from inside another
 impersonation. It stops working the moment the operator's own session ends,
-their account is disabled, a new sign-in happens in the same browser, or the
-hour runs out. Every audit row written by it, by an agent turn asked for in
+their account is disabled, or a new sign-in happens in the same browser. Every audit row written by it, by an agent turn asked for in
 it, through the MCP endpoint or an upload, carries `impersonator_user_id`.
 The person sees the session, named as the operator's, in their own list and
 can end it. What the page reports on its own about the person being present

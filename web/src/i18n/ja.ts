@@ -533,8 +533,6 @@ export const ja: Catalog = {
   'passkeyNudge.add': 'パスキーを追加',
   'passkeyNudge.dismiss': '今はしない',
   'impersonation.signedInAs': '{username} としてサインイン中',
-  'impersonation.note': '{operator} が {username} としてサインインしています。変更はすべて両方の名前で記録されます。',
-  'impersonation.noteUntil': '{operator} が {time} まで {username} としてサインインしています。変更はすべて両方の名前で記録されます。',
   'impersonation.return': '自分のアカウントに戻る',
   'impersonation.returnFailed': '自分のアカウントに戻れませんでした',
 
@@ -2057,7 +2055,7 @@ export const ja: Catalog = {
   'access.users.setPassword': 'パスワードを設定',
   'access.users.signInAs': 'この人としてサインイン',
   'access.users.signInAsTitle': '{username} としてサインインしますか？',
-  'access.users.signInAsBody': '最長 1 時間、この人ができることを、それ以上でも以下でもなく、見て操作できます。あなた自身のセッションは戻るときのために保たれます。変更はすべて両方の名前で監査ログに記録され、この人のセッション一覧にも表示されます。',
+  'access.users.signInAsBody': 'この人ができることを、それ以上でも以下でもなく、見て操作できます。あなた自身のセッションは戻るときのために保たれます。変更はすべて両方の名前で監査ログに記録され、この人のセッション一覧にも表示されます。',
   'access.users.signInAsFailed': 'この人としてサインインできませんでした',
   'access.users.setPasswordTitle': '{username} のパスワードを設定',
   'access.users.newPassword': '新しいパスワード',

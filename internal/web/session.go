@@ -29,11 +29,6 @@ const SessionCookieName = "teanode_session"
 // browser keeps it, here, for the hour.
 const ReturnCookieName = "teanode_session_return"
 
-// ImpersonationLifetime is how long an operator may be signed in as
-// somebody else before it ends by itself. A visit to see what they see,
-// not a second login.
-const ImpersonationLifetime = time.Hour
-
 // Identity is who a request is: the account, the session it uses when it
 // uses one, and the operator behind it when it is an impersonation.
 type Identity struct {
@@ -41,7 +36,6 @@ type Identity struct {
 	SessionID string
 
 	ImpersonatorUsername string
-	ImpersonationEndsAt  time.Time
 }
 
 var (
@@ -83,7 +77,7 @@ type Authenticator interface {
 	AuthenticateIdentity(request *http.Request) (Identity, bool)
 
 	// StartImpersonation signs the operator this request belongs to in as
-	// another account, for ImpersonationLifetime: a session of that
+	// another account, for as long as the operator's own session: a session of that
 	// account's naming the operator, the operator's own cookie kept aside.
 	// The caller has decided the operator may; this checks only that the
 	// request is an ordinary session of theirs.
@@ -341,7 +335,6 @@ func (self *authenticator) authenticate(request *http.Request) (Identity, bool) 
 			return Identity{}, false
 		}
 		identity.ImpersonatorUsername = impersonator.Username
-		identity.ImpersonationEndsAt = session.ExpiresAt
 	}
 	return identity, true
 }
@@ -1091,12 +1084,9 @@ func (self *authenticator) StartImpersonation(response http.ResponseWriter, requ
 		return nil, ErrInvalidCredentials
 	}
 
-	// An hour, and never longer than the operator's own session: it lasts
-	// no longer than the person answering for it is signed in.
-	expiry := time.Now().Add(ImpersonationLifetime)
-	if !own.ExpiresAt.IsZero() && own.ExpiresAt.Before(expiry) {
-		expiry = own.ExpiresAt
-	}
+	// As long as the operator's own session and no longer: it ends when the
+	// person answering for it is signed out, as liveImpersonator checks.
+	expiry := own.ExpiresAt
 	id, value, keyHash := issue(kindSession, SessionPrefix, self.sessionKey())
 	ip, userAgent := requestOrigin(request, self.trustedProxies())
 	session, err := self.database.CreateSession(&models.Session{
