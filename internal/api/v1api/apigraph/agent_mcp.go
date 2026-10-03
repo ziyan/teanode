@@ -61,7 +61,12 @@ func (self *graph) mcpView(response http.ResponseWriter, request *http.Request) 
 	// them with the agent as the actor. Built here rather than asked of
 	// the worker, because the caller is themselves -- the worker's factory
 	// is for the operator speaking as somebody else.
-	var operations agenttools.Operations = &agentOperations{graph: self, user: owner, permissions: permissions}
+	impersonator, err := self.impersonatorOf(request, owner)
+	if err != nil {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "not signed in"})
+		return
+	}
+	var operations agenttools.Operations = &agentOperations{graph: self, user: owner, permissions: permissions, impersonator: impersonator}
 
 	request.Body = http.MaxBytesReader(response, request.Body, mcpRequestBytes)
 	var message mcp.Request

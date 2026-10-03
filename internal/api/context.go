@@ -22,6 +22,11 @@ const (
 // every incoming request first, so a client cannot set it themselves.
 const AuthenticatedUsernameHeader = "X-TeaNode-Authenticated-User"
 
+// ImpersonatorUsernameHeader carries, beside it, the operator signed in as
+// that account when the request is an impersonation. Stripped from every
+// incoming request first, like the username.
+const ImpersonatorUsernameHeader = "X-TeaNode-Impersonator"
+
 func ContextWithRequest(ctx context.Context, request *http.Request) context.Context {
 	return context.WithValue(ctx, requestKey, request)
 }
@@ -85,6 +90,15 @@ func UsernameFromRequest(request *http.Request) string {
 		return ""
 	}
 	return request.Header.Get(AuthenticatedUsernameHeader)
+}
+
+// ImpersonatorUsernameFromRequest is the operator behind an impersonation,
+// as the authentication middleware established it, or empty.
+func ImpersonatorUsernameFromRequest(request *http.Request) string {
+	if request == nil {
+		return ""
+	}
+	return request.Header.Get(ImpersonatorUsernameHeader)
 }
 
 // Principal is the authenticated identity shared with application commands.

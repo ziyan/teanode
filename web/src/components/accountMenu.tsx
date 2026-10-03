@@ -1,14 +1,25 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { endImpersonation } from '../api'
 import { LanguageItems, useTranslation } from '../i18n/i18n'
 import { ConfirmDialog } from './dialog'
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GridIcon, LogoutIcon, SettingsIcon } from './icons'
+import {
+  ArrowLeftIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  GridIcon,
+  LogoutIcon,
+  SettingsIcon,
+  ShieldIcon,
+} from './icons'
 import { MenuButton } from './menuButton'
 import { ThemeItems } from './theme'
 import { SETTINGS_LANDING } from '../pages/settings/nav'
 import { useSession } from '../session'
 import { firstManagementPath } from './sidebar'
+import { useToast } from './toast'
 
 // AccountMenu is who you are, at the foot of the rail, and everything that
 // belongs to you rather than to a page: which language, light or dark, the way
@@ -51,18 +62,28 @@ export function AccountMenu({
   const session = useSession()
   const managePath = firstManagementPath(session.permissions)
   const [signingOut, setSigningOut] = useState(false)
+  const [returning, setReturning] = useState(false)
+  const toast = useToast()
   const displayed = name?.trim() || username
+  // An operator signed in as this account: said by a mark on the avatar,
+  // and the way back is in the menu it opens.
+  const operator = session.impersonatorUsername
 
   return (
     <>
       <MenuButton
         className="account-button"
-        label={t('nav.account')}
+        label={operator ? `${t('nav.account')}: ${t('impersonation.signedInAs', { username })}` : t('nav.account')}
         placement="above"
         icon={
           <>
-            <span className="avatar" aria-hidden="true">
+            <span className={operator ? 'avatar avatar-impersonated' : 'avatar'} aria-hidden="true">
               {initial(displayed)}
+              {operator && (
+                <span className="avatar-badge">
+                  <ShieldIcon size={10} />
+                </span>
+              )}
             </span>
             <span className="sidebar-label account-name">{displayed}</span>
             {/* A single arrow that turns when the menu opens. Two arrows
@@ -76,6 +97,33 @@ export function AccountMenu({
         }
         render={(close) => (
           <>
+            {/* First while signed in as somebody else: the way back. */}
+            {operator && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={returning}
+                  onClick={async () => {
+                    setReturning(true)
+                    try {
+                      await endImpersonation()
+                      // Everything on the page was the person's: start
+                      // again as the operator rather than leave any of it.
+                      window.location.assign('/')
+                    } catch (caught) {
+                      setReturning(false)
+                      close()
+                      toast.failure(caught, t('impersonation.returnFailed'))
+                    }
+                  }}
+                >
+                  <ArrowLeftIcon />
+                  {t('impersonation.return')}
+                </button>
+                <div className="menu-separator" role="separator" />
+              </>
+            )}
             {/* First, because it is the thing done most often here and the
                 only one about the window rather than about the account. It
                 was a row at the foot of the rail, where it was one of the

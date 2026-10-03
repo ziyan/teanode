@@ -88,6 +88,7 @@ type Mutation interface {
 	AppMutation
 	OAuthMutation
 	SessionMutation
+	ImpersonationMutation
 	PasskeyMutation
 	SettingsMutation
 	AgentMutation

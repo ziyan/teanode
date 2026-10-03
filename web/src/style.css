@@ -257,6 +257,32 @@ td a:hover {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Signed in as somebody else: the avatar wears a mark in the warning color,
+   so it shows on every page, the narrowed rail included, without a line of
+   its own. */
+.avatar-impersonated {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--warn);
+}
+
+.avatar-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: var(--surface);
+}
+
+.menu-impersonated {
+  position: relative;
+}
+
 .menu {
   /* Fixed, and placed from the button's rectangle: it is rendered into the
      body so that a table's scroll container cannot clip it. */

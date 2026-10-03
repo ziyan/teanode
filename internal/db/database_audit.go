@@ -22,6 +22,10 @@ type AuditPrincipal struct {
 	UserID    string
 	TokenID   string
 	SourceIP  string
+
+	// ImpersonatorUserID is the operator signed in as UserID, when the
+	// request comes from an impersonation.
+	ImpersonatorUserID string
 }
 
 type auditPrincipalKey struct{}
@@ -69,8 +73,10 @@ type auditEventModel struct {
 	ActorKind   string    `gorm:"column:actor_kind"`
 	ActorUserID string    `gorm:"column:actor_user_id"`
 	TokenID     string    `gorm:"column:token_id"`
-	SourceIP    string    `gorm:"column:source_ip"`
-	Instance    string    `gorm:"column:instance"`
+
+	ImpersonatorUserID *string `gorm:"column:impersonator_user_id"`
+	SourceIP           string  `gorm:"column:source_ip"`
+	Instance           string  `gorm:"column:instance"`
 
 	ResourceType string `gorm:"column:resource_type"`
 	ResourceID   string `gorm:"column:resource_id"`
@@ -83,18 +89,20 @@ func (auditEventModel) TableName() string { return "audit_event" }
 
 func auditEventFromModel(model *auditEventModel) *models.AuditEvent {
 	return &models.AuditEvent{
-		ID:           model.ID,
-		CreatedAt:    model.CreatedAt.In(time.Local),
-		ActorKind:    models.AuditActorKind(model.ActorKind),
-		ActorUserID:  model.ActorUserID,
-		TokenID:      model.TokenID,
-		SourceIP:     model.SourceIP,
-		Instance:     model.Instance,
-		ResourceType: models.AuditResourceType(model.ResourceType),
-		ResourceID:   model.ResourceID,
-		Action:       models.AuditAction(model.Action),
-		Before:       json.RawMessage(model.Before),
-		After:        json.RawMessage(model.After),
+		ID:          model.ID,
+		CreatedAt:   model.CreatedAt.In(time.Local),
+		ActorKind:   models.AuditActorKind(model.ActorKind),
+		ActorUserID: model.ActorUserID,
+		TokenID:     model.TokenID,
+
+		ImpersonatorUserID: stringOrEmpty(model.ImpersonatorUserID),
+		SourceIP:           model.SourceIP,
+		Instance:           model.Instance,
+		ResourceType:       models.AuditResourceType(model.ResourceType),
+		ResourceID:         model.ResourceID,
+		Action:             models.AuditAction(model.Action),
+		Before:             json.RawMessage(model.Before),
+		After:              json.RawMessage(model.After),
 	}
 }
 
@@ -128,18 +136,20 @@ func (self *transaction) applyMutation(resourceType models.AuditResourceType, re
 		principal.ActorKind = models.AuditActorSystem
 	}
 	event := &auditEventModel{
-		ID:           security.NewULID(),
-		CreatedAt:    time.Now(),
-		ActorKind:    string(principal.ActorKind),
-		ActorUserID:  principal.UserID,
-		TokenID:      principal.TokenID,
-		SourceIP:     principal.SourceIP,
-		Instance:     self.database.settings.BackendID,
-		ResourceType: string(resourceType),
-		ResourceID:   resourceId,
-		Action:       string(action),
-		Before:       encodedBefore,
-		After:        encodedAfter,
+		ID:          security.NewULID(),
+		CreatedAt:   time.Now(),
+		ActorKind:   string(principal.ActorKind),
+		ActorUserID: principal.UserID,
+		TokenID:     principal.TokenID,
+
+		ImpersonatorUserID: stringOrNil(principal.ImpersonatorUserID),
+		SourceIP:           principal.SourceIP,
+		Instance:           self.database.settings.BackendID,
+		ResourceType:       string(resourceType),
+		ResourceID:         resourceId,
+		Action:             string(action),
+		Before:             encodedBefore,
+		After:              encodedAfter,
 	}
 	return self.tx.Create(event).Error
 }

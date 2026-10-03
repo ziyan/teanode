@@ -272,22 +272,29 @@ func (self *graph) ListAuditEvents(ctx context.Context, arguments ListAuditEvent
 	// The actor's current name, read once per distinct actor: a renamed
 	// user reads by the name they have now.
 	labels := map[string]string{}
+	labelOf := func(userId string) string {
+		label, ok := labels[userId]
+		if !ok {
+			label = "a deleted user"
+			if user, err := tx.GetUser(userId); err == nil && user != nil {
+				label = user.Username
+			}
+			labels[userId] = label
+		}
+		return label
+	}
 	for _, event := range events {
+		// The operator who was signed in as the actor, by the same rule.
+		if event.ImpersonatorUserID != "" {
+			event.ImpersonatorLabel = labelOf(event.ImpersonatorUserID)
+		}
 		switch event.ActorKind {
 		case models.AuditActorUser:
 			if event.ActorUserID == "" {
 				event.ActorLabel = "console"
 				continue
 			}
-			label, ok := labels[event.ActorUserID]
-			if !ok {
-				label = "a deleted user"
-				if user, err := tx.GetUser(event.ActorUserID); err == nil && user != nil {
-					label = user.Username
-				}
-				labels[event.ActorUserID] = label
-			}
-			event.ActorLabel = label
+			event.ActorLabel = labelOf(event.ActorUserID)
 		default:
 			event.ActorLabel = string(event.ActorKind)
 		}

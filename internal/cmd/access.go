@@ -779,6 +779,9 @@ func runAuditList(ctx context.Context, command *cli.Command) error {
 		if actor == "" {
 			actor = event.ActorKind
 		}
+		if event.ImpersonatorLabel != "" {
+			actor += " (by " + event.ImpersonatorLabel + ")"
+		}
 		rows = append(rows, []string{
 			formatTime(&event.CreatedAt),
 			actor,

@@ -14,7 +14,7 @@ import { useTranslation } from '../../i18n/i18n'
 const SESSIONS = `
   query ($includeRevoked: Boolean) {
     ListSessions(includeRevoked: $includeRevoked) {
-      id current created expires lastUsed ip userAgent revoked
+      id current created expires lastUsed ip userAgent revoked impersonatorUsername
     }
   }`
 
@@ -29,6 +29,8 @@ type Session = {
   lastUsed?: string | null
   ip?: string | null
   userAgent?: string | null
+  // The operator who signed in as this account with it, when it was one.
+  impersonatorUsername?: string | null
   revoked?: string | null
 }
 
@@ -165,6 +167,10 @@ function SessionRow({ session, busy, onRevoke }: { session: Session; busy: boole
       badge={
         session.revoked ? (
           <Tag value={t('sessions.revoked')} tone="bad" />
+        ) : session.impersonatorUsername ? (
+          // Said plainly, so the person sees who was signed in as them, and
+          // can end it from here.
+          <Tag value={t('sessions.impersonatedBy', { username: session.impersonatorUsername })} tone="warn" />
         ) : session.current ? (
           <Tag value={t('sessions.current')} tone="good" />
         ) : null

@@ -3,12 +3,14 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
 	"strings"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/gqlerrors"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
@@ -102,16 +104,30 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		}
 	}
 
+	// The operator behind an impersonation, who answers for what is done
+	// in it: on every audit row it writes, and in the check below.
+	impersonator, err := self.impersonatorOf(request, user)
+	if errors.Is(err, api.ErrNotLoggedIn) {
+		writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
+			fmt.Errorf("%w: you may no longer be signed in as this account", api.ErrNotLoggedIn))})
+		return
+	}
+	if err != nil {
+		log.Errorf("failed to read who is behind %q: %s", username, err)
+		http.Error(response, "failed to execute request", http.StatusInternalServerError)
+		return
+	}
+
 	ctx := request.Context()
 	ctx = api.ContextWithRequest(ctx, request)
 	// Logging in and out set a cookie, which is a response header.
 	ctx = api.ContextWithResponse(ctx, response)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
-	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user))
+	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user, impersonator))
 
 	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
 	if err == nil && operation.Operation == "query" {
-		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user})
+		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user, Impersonator: impersonator})
 		writeGraphResult(response, graphql.Execute(prepared))
 		return
 	}
@@ -123,6 +139,9 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		principal, err := self.resolvePrincipal(tx, username, user)
 		if err != nil {
 			return err
+		}
+		if principal != nil {
+			principal.Impersonator = impersonator
 		}
 		ctx = api.ContextWithPrincipal(ctx, principal)
 
@@ -173,10 +192,13 @@ func (self *graph) resolvePrincipal(tx db.Transaction, username string, user *mo
 }
 
 // auditPrincipal is who the audit rows this request writes will name.
-func (self *graph) auditPrincipal(request *http.Request, user *models.User) db.AuditPrincipal {
+func (self *graph) auditPrincipal(request *http.Request, user, impersonator *models.User) db.AuditPrincipal {
 	principal := db.AuditPrincipal{ActorKind: models.AuditActorUser, SourceIP: self.remoteAddress(request)}
 	if user != nil {
 		principal.UserID = user.ID
+	}
+	if impersonator != nil {
+		principal.ImpersonatorUserID = impersonator.ID
 	}
 	return principal
 }

@@ -90,6 +90,10 @@ type SessionState struct {
 	// Whether the caller holds any permission that opens the management
 	// side of the web UI
 	Manages bool `json:"manages"`
+
+	// ImpersonatorUsername is the operator signed in as this account, when
+	// they are; the dashboard marks the avatar.
+	ImpersonatorUsername string `json:"impersonatorUsername,omitempty"`
 }
 
 func (self *graph) sessionState(ctx context.Context) *SessionState {
@@ -99,7 +103,11 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 		SSOProviders:           self.ssoProviders(),
 	}
 	if request := api.ContextRequest(ctx); request != nil {
-		state.Username, state.Authenticated = self.authenticator.Authenticate(request)
+		identity, authenticated := self.authenticator.AuthenticateIdentity(request)
+		state.Username, state.Authenticated = identity.Username, authenticated
+		if authenticated && identity.ImpersonatorUsername != "" {
+			state.ImpersonatorUsername = identity.ImpersonatorUsername
+		}
 	}
 	state.Name = self.displayName(state.Username)
 	if principal := api.ContextPrincipal(ctx); principal != nil {
@@ -301,6 +309,10 @@ type Session struct {
 
 	// When it was ended, or null while it still works
 	Revoked *time.Time `json:"revoked,omitempty"`
+
+	// The operator who signed in as this account with it, when it was one
+	// signing in as somebody else
+	ImpersonatorUsername string `json:"impersonatorUsername,omitempty"`
 }
 
 type ListSessionsArguments struct {
@@ -345,6 +357,8 @@ func (self *graph) ListSessions(ctx context.Context, arguments ListSessionsArgum
 			IP:        session.IP,
 			UserAgent: session.UserAgent,
 			Revoked:   optionalTime(session.RevokedAt),
+
+			ImpersonatorUsername: session.ImpersonatorUsername,
 		})
 	}
 	return sessions, nil

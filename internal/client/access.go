@@ -42,18 +42,22 @@ type PermissionDescription struct {
 // AuditEvent is one administrative change: who made it, to what, and the row
 // before and after.
 type AuditEvent struct {
-	ID           string          `json:"id"`
-	CreatedAt    time.Time       `json:"createdAt"`
-	ActorKind    string          `json:"actorKind"`
-	ActorUserID  string          `json:"actorUserId"`
-	ActorLabel   string          `json:"actorLabel"`
-	TokenID      string          `json:"tokenId"`
-	SourceIP     string          `json:"sourceIp"`
-	ResourceType string          `json:"resourceType"`
-	ResourceID   string          `json:"resourceId"`
-	Action       string          `json:"action"`
-	Before       json.RawMessage `json:"before"`
-	After        json.RawMessage `json:"after"`
+	ID          string    `json:"id"`
+	CreatedAt   time.Time `json:"createdAt"`
+	ActorKind   string    `json:"actorKind"`
+	ActorUserID string    `json:"actorUserId"`
+	ActorLabel  string    `json:"actorLabel"`
+	TokenID     string    `json:"tokenId"`
+
+	// ImpersonatorLabel is the operator who was signed in as the actor,
+	// when one was.
+	ImpersonatorLabel string          `json:"impersonatorLabel"`
+	SourceIP          string          `json:"sourceIp"`
+	ResourceType      string          `json:"resourceType"`
+	ResourceID        string          `json:"resourceId"`
+	Action            string          `json:"action"`
+	Before            json.RawMessage `json:"before"`
+	After             json.RawMessage `json:"after"`
 }
 
 // AuditEventPage is a page of the audit log, and how many there are in all.
@@ -97,7 +101,7 @@ const (
 		ListAuditEvents(resourceType: $resourceType, resourceId: $resourceId, actorUserId: $actorUserId,
 			since: $since, until: $until, first: $first, offset: $offset) {
 			total
-			events { id createdAt actorKind actorUserId actorLabel tokenId sourceIp resourceType resourceId action before after }
+			events { id createdAt actorKind actorUserId actorLabel impersonatorLabel tokenId sourceIp resourceType resourceId action before after }
 		}
 	}`
 )
