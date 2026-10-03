@@ -3,7 +3,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
-import { FinanceTransaction, SpendingRuleProposals } from './financeApi'
+import { FinanceTransaction, SpendingCategory, SpendingRuleProposals } from './financeApi'
 import { chunks, confirmedSpendingRules } from './financeTransactionSelection'
 import { FinanceTransactionsSection } from './financeTransactions'
 
@@ -112,21 +112,23 @@ const address = () => new URLSearchParams(screen.getByTestId('address').textCont
 // first holds the second page's rows, and totalCount is what the server
 // says matches; the ids of every one come in two pieces, the way the
 // cursor reads them.
+const inventedCategories: Partial<SpendingCategory>[] = [
+  { id: 'category-dining', spendingCategoryName: 'Invented Dining' },
+  { id: 'category-groceries', spendingCategoryName: 'Invented Groceries' },
+]
+
 function serve(
   categorize?: (variables: Record<string, unknown>) => unknown,
   proposals: SpendingRuleProposals = proposed,
-  { initialEntry = '/', totalCount = firstPage.length }: { initialEntry?: string; totalCount?: number } = {},
+  {
+    initialEntry = '/',
+    totalCount = firstPage.length,
+    categories = inventedCategories,
+  }: { initialEntry?: string; totalCount?: number; categories?: Partial<SpendingCategory>[] } = {},
 ) {
   execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
     if (document.includes('FinanceAccounts')) return { FinanceAccounts: [] }
-    if (document.includes('SpendingCategories')) {
-      return {
-        SpendingCategories: [
-          { id: 'category-dining', spendingCategoryName: 'Invented Dining' },
-          { id: 'category-groceries', spendingCategoryName: 'Invented Groceries' },
-        ],
-      }
-    }
+    if (document.includes('SpendingCategories')) return { SpendingCategories: categories }
     if (document.includes('ProposeSpendingRules')) return { ProposeSpendingRules: proposals }
     if (document.includes('CategorizeTransactions')) {
       if (categorize) return categorize(variables ?? {})
@@ -361,6 +363,40 @@ it('keeps chosen the ones a failed piece held, and says how many', async () => {
   expect(toast.failed.mock.calls[0][0]).toContain('"failedCount":"1"')
   expect(selectedCount()).toBe('finance.selectedTransactions {"count":"1"}')
   expect(rowBoxes().map((box) => box.checked)).toEqual([false, false, true, false])
+})
+
+// No spending category is not a choice: a row still waiting says it needs
+// a category, and neither its list nor the toolbar's offers none. Other is
+// what fits nothing, after the rest of the spending and before transfer.
+it('offers other and no choice of none, and says a waiting row needs a category', async () => {
+  serve(undefined, proposed, {
+    categories: [
+      ...inventedCategories,
+      { id: 'category-transfer', spendingCategoryName: 'transfer', isTransfer: true },
+      { id: 'category-other', spendingCategoryName: 'other', isOther: true },
+    ],
+  })
+  await screen.findByText('Invented Bistro')
+  const rowPickers = [...document.querySelectorAll<HTMLElement>('.finance-category-cell [role="combobox"]')]
+  expect(rowPickers.map((picker) => picker.textContent)).toEqual(Array(4).fill('finance.uncategorized'))
+  fireEvent.click(rowPickers[0])
+  const rowChoices = screen.getAllByRole('option').map((option) => option.textContent)
+  expect(rowChoices).toEqual([
+    'Invented Dining',
+    'Invented Groceries',
+    'finance.builtInSpendingCategory.other',
+    'finance.builtInSpendingCategory.transfer',
+  ])
+  fireEvent.keyDown(rowPickers[0], { key: 'Escape' })
+
+  fireEvent.click(rowBoxes()[0])
+  fireEvent.click(within(toolbar() as HTMLElement).getByRole('combobox'))
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(rowChoices)
+  fireEvent.click(screen.getByRole('option', { name: 'finance.builtInSpendingCategory.other' }))
+  fireEvent.click(screen.getByText('finance.applySpendingCategory'))
+  await waitFor(() => expect(toast.done).toHaveBeenCalled())
+  const categorized = execute.mock.calls.filter(([document]) => document.includes('CategorizeTransactions'))
+  expect(categorized.map(([, variables]) => variables?.spendingCategoryId)).toEqual(['category-other'])
 })
 
 it('lets go of the selection and goes back to the first page when a filter changes', async () => {

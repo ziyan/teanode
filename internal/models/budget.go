@@ -51,6 +51,13 @@ type SpendingCategory struct {
 	// be deleted, be income, or have a parent or children.
 	IsTransfer bool `json:"isTransfer"`
 
+	// IsOther says it is the agent's other category, built in and one per
+	// agent: what fits no other spending category, and the person's (or
+	// the categorize model's) choice for it, where no spending category at
+	// all would mean not decided yet. It is spending like any other. It
+	// cannot be deleted, be income, or have a parent or children.
+	IsOther bool `json:"isOther"`
+
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 }

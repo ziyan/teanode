@@ -258,7 +258,8 @@ export function FinanceTransactionDialog({
                 block
                 value={financeTransaction.spendingCategoryId ?? ''}
                 label={t('finance.spendingCategory')}
-                options={[{ value: '', label: t('finance.uncategorized') }, ...categoryOptions]}
+                placeholder={t('finance.uncategorized')}
+                options={categoryOptions}
                 onChange={onCategorize}
               />
               {categorizedBy ? <span className="muted finance-detail-note">{categorizedBy}</span> : null}

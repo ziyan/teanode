@@ -321,6 +321,12 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
   )
   // A month's rows under a year's heading would be wrong for a moment.
   const data = answered?.asked === asked ? answered : undefined
+  // Which spending category is the built-in other, whose name is shown in
+  // the reader's words by its flag.
+  const categories = useQuery(() => graphql<{ SpendingCategories: SpendingCategory[] }>(SPENDING_CATEGORIES), [], {
+    refresh: false,
+  })
+  const otherSpendingCategoryId = categories.data?.SpendingCategories.find((category) => category.isOther)?.id
   const status = data?.BudgetStatus
   const rows = status?.spendingCategories ?? []
   const incomeRows = status?.incomeCategories ?? []
@@ -358,6 +364,7 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
               <BudgetStatusRow
                 key={row.spendingCategoryId}
                 row={row}
+                isOther={row.spendingCategoryId === otherSpendingCategoryId}
                 isPast={isPast}
                 isYear={isYear}
                 usualMonths={usualMonths}
@@ -561,11 +568,13 @@ function BudgetedMonthsNote({ months, usualMonths }: { months: BudgetedMonths; u
 // budget for the days so far, and how the year is carried on.
 function BudgetStatusRow({
   row,
+  isOther,
   isPast,
   isYear,
   usualMonths,
 }: {
   row: SpendingCategoryBudgetStatus
+  isOther: boolean
   isPast: boolean
   isYear: boolean
   usualMonths: BudgetedMonths
@@ -590,7 +599,7 @@ function BudgetStatusRow({
   return (
     <div className="finance-budget-row">
       <div className="finance-budget-row-head">
-        <strong>{categoryName(row.spendingCategoryName)}</strong>
+        <strong>{categoryName(row.spendingCategoryName, { isOther })}</strong>
         <Tag value={words.budgetPace(row.budgetPace)} tone={tone} />
         <span className="finance-budget-row-said">{said}</span>
       </div>
@@ -605,7 +614,7 @@ function BudgetStatusRow({
       {isYear ? <BudgetedMonthsNote months={row} usualMonths={usualMonths} /> : null}
       {isPast ? null : isYear ? (
         <ForecastDetail
-          name={categoryName(row.spendingCategoryName)}
+          name={categoryName(row.spendingCategoryName, { isOther })}
           line={
             <>
               {t('finance.projected', { amount: money(projected) })}
@@ -624,7 +633,7 @@ function BudgetStatusRow({
         />
       ) : (
         <ForecastDetail
-          name={categoryName(row.spendingCategoryName)}
+          name={categoryName(row.spendingCategoryName, { isOther })}
           line={
             <>
               {t('finance.forecastSum', { amount: money(projected), parts: forecastParts.join(' + ') })}
@@ -766,10 +775,18 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
   const isConverted =
     reportingTotal !== undefined && currencyTotals.some((total) => total.currencyCode !== reportingTotal.currencyCode)
   const groupLabel = (value: SpendingGroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
-  // A spending category's name as the reader reads it; merchants and
-  // accounts as they came.
-  const lineName = (label: string) =>
-    !label ? t('finance.uncategorized') : groupBy === 'spendingCategory' ? categoryName(label) : label
+  // A spending category's name as the reader reads it, a built-in one by
+  // its flag; merchants and accounts as they came. No label is what still
+  // needs a spending category.
+  const lineName = (line: { key: string; label: string }) =>
+    !line.label
+      ? t('finance.uncategorized')
+      : groupBy === 'spendingCategory'
+        ? categoryName(
+            line.label,
+            categories.data?.SpendingCategories.find((category) => category.id === line.key),
+          )
+        : line.label
   // The ring is the table's own numbers, where they can be added up: in
   // the reporting currency, whichever way the month is grouped. What does
   // not fit is one slice, named for what it folds.
@@ -781,7 +798,7 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
         : t('finance.otherCategories', { count })
   const slices = summary?.reportingCurrencyCode
     ? foldIntoOther(
-        lines.map((line) => ({ key: line.key, label: lineName(line.label), amount: line.spendingAmount })),
+        lines.map((line) => ({ key: line.key, label: lineName(line), amount: line.spendingAmount })),
         RING_SLICE_COUNT,
       ).map((slice) => (slice.isOther ? { ...slice, label: otherLabel(slice.foldedCount) } : slice))
     : []
@@ -842,7 +859,7 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
             <tbody>
               {shownLines.map((line) => {
                 const filters = groupTransactionFilters(groupBy, line.groupKey, range)
-                const name = lineName(line.label)
+                const name = lineName(line)
                 const slice = slices.length > 0 ? sliceOf(line.key) : null
                 // A group whose refunds outweigh its spending has no share
                 // of the month: no "-0%".

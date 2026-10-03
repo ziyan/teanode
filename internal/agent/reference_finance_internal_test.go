@@ -70,7 +70,7 @@ func TestFinanceTransactionReferenceIsDescribedInTheTurn(t *testing.T) {
 		"spending category: " + finance.SpendingCategoryDining, "categorized by: person",
 		untrustedOpen, "merchant: Invented Brokerage", "description: INVENTED BROKERAGE MONTHLY FEE " + untrustedCloseSaid,
 		"provider category: BANK_FEES_OTHER", `provider metadata: {"payment_channel":"other"}`,
-		"spending category: none, uncategorized", "bytes, left out",
+		"spending category: none yet, waiting to be categorized", "bytes, left out",
 		"What is this charge?",
 	} {
 		if !strings.Contains(turn.Content, want) {

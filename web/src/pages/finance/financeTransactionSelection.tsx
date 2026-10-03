@@ -6,12 +6,6 @@ import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import { ConfirmedSpendingRule, SpendingRuleProposal } from './financeApi'
 
-// The choice that takes the spending category away, as the first option
-// of the list in a transaction's row and its details. An empty value is
-// the list with nothing chosen yet, so this one needs a value of its own;
-// a spending category's id never looks like it.
-const UNCATEGORIZED_CHOICE = 'uncategorized'
-
 // chunks cuts a list into pieces of at most size, in order: the server
 // takes a few pages of transactions at a time.
 export function chunks<Item>(items: Item[], size: number): Item[][] {
@@ -38,8 +32,9 @@ export function confirmedSpendingRules(proposals: SpendingRuleProposal[]): Confi
 // in the list, drawn by the table above it while any are chosen: how many,
 // on every page, choosing every one the filters match, the spending
 // category to give them (the same list as a row's, the transfer category
-// in its own group), whether to save spending rules so later ones like
-// them are filed the same way, and letting go of the selection.
+// in its own group, and no choice of none: what fits nothing goes to
+// other), whether to save spending rules so later ones like them are
+// filed the same way, and letting go of the selection.
 export function FinanceSelectionToolbar({
   selectedTransactionCount,
   matchingTransactionCount,
@@ -55,14 +50,11 @@ export function FinanceSelectionToolbar({
   isApplying: boolean
   onSelectAll: () => void
   onClear: () => void
-  // An empty spending category takes it away; rules are asked for only
-  // with a spending category to file under.
   onApply: (spendingCategoryId: string, shouldSaveSpendingRules: boolean) => void
 }) {
   const { t, language } = useTranslation()
   const [chosen, setChosen] = useState('')
   const [shouldSaveSpendingRules, setShouldSaveSpendingRules] = useState(false)
-  const isUncategorizedChosen = chosen === UNCATEGORIZED_CHOICE
   return (
     <div className="finance-selection-toolbar" role="group" aria-label={t('finance.selectionActions')}>
       <span className="muted">{t('finance.selectedTransactions', { count: selectedTransactionCount.toLocaleString(language) })}</span>
@@ -75,14 +67,13 @@ export function FinanceSelectionToolbar({
         value={chosen}
         label={t('finance.spendingCategory')}
         placeholder={t('finance.chooseBulkSpendingCategory')}
-        options={[{ value: UNCATEGORIZED_CHOICE, label: t('finance.uncategorized') }, ...categoryOptions]}
+        options={categoryOptions}
         onChange={setChosen}
       />
       <label className="checkbox">
         <input
           type="checkbox"
-          checked={shouldSaveSpendingRules && !isUncategorizedChosen}
-          disabled={isUncategorizedChosen}
+          checked={shouldSaveSpendingRules}
           onChange={(event) => setShouldSaveSpendingRules(event.target.checked)}
         />
         {t('finance.saveAsSpendingRules')}
@@ -91,9 +82,7 @@ export function FinanceSelectionToolbar({
         type="button"
         className="primary"
         disabled={!chosen || isApplying}
-        onClick={() =>
-          onApply(isUncategorizedChosen ? '' : chosen, shouldSaveSpendingRules && !isUncategorizedChosen)
-        }
+        onClick={() => onApply(chosen, shouldSaveSpendingRules)}
       >
         {t('finance.applySpendingCategory')}
       </button>

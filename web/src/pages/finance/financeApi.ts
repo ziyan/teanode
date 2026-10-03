@@ -96,6 +96,10 @@ export type SpendingCategory = {
   // The built-in transfer category: neither spending nor income, and it
   // cannot be deleted.
   isTransfer: boolean
+  // The built-in other category: spending that fits none of the others,
+  // which a person picks where they once picked no spending category. It
+  // cannot be deleted, be income or have a parent or children.
+  isOther: boolean
 }
 
 export type SpendingRule = {
@@ -712,7 +716,7 @@ export const CASH_FLOW = `query ($fromMonth: String, $toMonth: String) {
 // --- budgets, spending categories and spending rules ------------------------
 
 export const SPENDING_CATEGORIES = `query {
-  SpendingCategories { id spendingCategoryName parentSpendingCategoryId isIncome isHidden isTransfer }
+  SpendingCategories { id spendingCategoryName parentSpendingCategoryId isIncome isHidden isTransfer isOther }
 }`
 
 export const CREATE_SPENDING_CATEGORY = `mutation ($spendingCategoryName: String!, $parentSpendingCategoryId: String,

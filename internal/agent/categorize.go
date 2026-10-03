@@ -220,11 +220,19 @@ type categorizeAnswer struct {
 	categorizationConfidence *float64
 }
 
+// otherChoiceSuffix follows the other category's name among the
+// categorize model's choices, so the model knows it is the answer for what
+// fits nothing else, whatever the person named it.
+const otherChoiceSuffix = " (for what fits none of the others)"
+
 // spendingCategoryChoices is the answers the categorize model chooses
 // among: each spending category the person has not hidden, by id, named
 // with its parent when it has one. The transfer category is not one: a
 // transfer is for the person, a spending rule, the provider category
-// mapping or pairing to say, and a guess there would hide spending.
+// mapping or pairing to say, and a guess there would hide spending. The
+// other category is, marked as what fits nothing else: a transaction the
+// model can read but cannot place goes there, rather than staying
+// uncategorized, which means not decided yet.
 func spendingCategoryChoices(spendingCategories []*models.SpendingCategory) map[string]string {
 	nameById := map[string]string{}
 	for _, spendingCategory := range spendingCategories {
@@ -241,6 +249,9 @@ func spendingCategoryChoices(spendingCategories []*models.SpendingCategory) map[
 		}
 		if spendingCategory.IsIncome {
 			name += " (income)"
+		}
+		if spendingCategory.IsOther {
+			name += otherChoiceSuffix
 		}
 		choices[spendingCategory.ID] = name
 	}
@@ -294,6 +305,13 @@ func decideSpendingCategories(ctx context.Context, decider llm.Decider, items []
 		isAnswered bool
 	}
 	verdicts := make([]verdict, len(items))
+	instructions := "Which of the person's spending categories does this finance transaction belong to?"
+	for _, name := range choices {
+		if strings.HasSuffix(name, otherChoiceSuffix) {
+			instructions += " One that fits none of the others belongs in the one marked for that."
+			break
+		}
+	}
 	gate := make(chan struct{}, decidersAtOnce)
 	var waiting sync.WaitGroup
 	for index, item := range items {
@@ -308,7 +326,7 @@ func decideSpendingCategories(ctx context.Context, decider llm.Decider, items []
 			}
 			answers, err := decider.Decide(ctx, item.transactionLine, map[string]decide.Question{
 				categorizeQuestion: {
-					Instructions: "Which of the person's spending categories does this finance transaction belong to?",
+					Instructions: instructions,
 					Choices:      choices,
 				},
 			})
@@ -368,14 +386,17 @@ func (self *Agent) askSpendingCategories(ctx context.Context, run *Run, modelNam
 		lines = append(lines, label+": "+item.transactionLine)
 	}
 	var choiceLines []string
+	isOtherOffered := false
 	for _, spendingCategory := range spendingCategories {
 		if name, isChoice := choices[spendingCategory.ID]; isChoice {
 			choiceLines = append(choiceLines, spendingCategory.ID+": "+name)
+			isOtherOffered = isOtherOffered || spendingCategory.IsOther
 		}
 	}
 	prompt, err := render("categorize.txt", map[string]any{
 		"PersonName":         personName(run.Owner),
 		"SpendingCategories": choiceLines,
+		"IsOtherOffered":     isOtherOffered,
 		"Transactions":       fenced(strings.Join(lines, "\n")),
 	})
 	if err != nil {

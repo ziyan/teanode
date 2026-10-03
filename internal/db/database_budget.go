@@ -36,20 +36,26 @@ type BudgetOperation interface {
 	// DeleteSpendingCategory removes a spending category of the agent,
 	// with its budgets and the spending rules that assign it. Its finance
 	// transactions become uncategorized, the person's choices included,
-	// so they are categorized again. The transfer category is refused.
+	// so they are categorized again. The transfer category and the other
+	// category are refused.
 	DeleteSpendingCategory(agentId, spendingCategoryId string) error
 
 	// EnsureDefaultSpendingCategories gives an agent with no spending
-	// categories but the transfer category the default list, and does
-	// nothing for one that has any: a person who deleted a default does
-	// not get it back. It makes the transfer category too where it is
-	// missing. It answers how many defaults it made.
+	// categories but the built-in ones (transfer and other) the rest of
+	// the default list, and does nothing for one that has any: a person
+	// who deleted a default does not get it back. It makes the built-in
+	// ones too where they are missing. It answers how many defaults it
+	// made, the built-in ones not counted.
 	EnsureDefaultSpendingCategories(agentId string) (int, error)
 
 	// EnsureTransferSpendingCategory is the agent's transfer category,
 	// made when the agent has none: every agent is given one when it is
 	// made, so this only mends one that somehow lost it.
 	EnsureTransferSpendingCategory(agentId string) (*models.SpendingCategory, error)
+
+	// EnsureOtherSpendingCategory is the agent's other category, made when
+	// the agent has none, as EnsureTransferSpendingCategory is.
+	EnsureOtherSpendingCategory(agentId string) (*models.SpendingCategory, error)
 
 	// ListSpendingRules is the agent's spending rules in the order they
 	// are tried.
@@ -186,6 +192,7 @@ type agentSpendingCategoryModel struct {
 	IsIncome                 bool      `gorm:"column:is_income"`
 	IsHidden                 bool      `gorm:"column:is_hidden"`
 	IsTransfer               bool      `gorm:"column:is_transfer"`
+	IsOther                  bool      `gorm:"column:is_other"`
 	CreatedAt                time.Time `gorm:"column:created_at"`
 	ModifiedAt               time.Time `gorm:"column:modified_at"`
 }
@@ -196,7 +203,7 @@ func (self *agentSpendingCategoryModel) toModel() *models.SpendingCategory {
 	return &models.SpendingCategory{
 		ID: self.ID, AgentID: self.AgentID, SpendingCategoryName: self.SpendingCategoryName,
 		ParentSpendingCategoryID: optionalString(self.ParentSpendingCategoryID), IsIncome: self.IsIncome, IsHidden: self.IsHidden,
-		IsTransfer: self.IsTransfer, CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
+		IsTransfer: self.IsTransfer, IsOther: self.IsOther, CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
 
@@ -205,6 +212,7 @@ func spendingCategoryToModel(spendingCategory *models.SpendingCategory) *agentSp
 		ID: spendingCategory.ID, AgentID: spendingCategory.AgentID, SpendingCategoryName: spendingCategory.SpendingCategoryName,
 		ParentSpendingCategoryID: optionalID(spendingCategory.ParentSpendingCategoryID),
 		IsIncome:                 spendingCategory.IsIncome, IsHidden: spendingCategory.IsHidden, IsTransfer: spendingCategory.IsTransfer,
+		IsOther:   spendingCategory.IsOther,
 		CreatedAt: spendingCategory.CreatedAt, ModifiedAt: spendingCategory.ModifiedAt,
 	}
 }
@@ -214,7 +222,10 @@ func spendingCategoryToModel(spendingCategory *models.SpendingCategory) *agentSp
 // that is itself top-level, since there is one level of parents. The
 // transfer category stands alone: not income, with no parent and no
 // children, since a transfer counted as income, or spending filed under
-// it, would be counted where transfers are left out.
+// it, would be counted where transfers are left out. So does the other
+// category: it is what fits nowhere else, which a parent above it or a
+// child under it would contradict, and money in it is a refund of
+// spending, as in any spending category, never income.
 func (self *transaction) validateSpendingCategory(spendingCategory *models.SpendingCategory) error {
 	spendingCategory.SpendingCategoryName = strings.TrimSpace(spendingCategory.SpendingCategoryName)
 	if spendingCategory.AgentID == "" || spendingCategory.SpendingCategoryName == "" {
@@ -225,6 +236,12 @@ func (self *transaction) validateSpendingCategory(spendingCategory *models.Spend
 	}
 	if spendingCategory.IsTransfer && spendingCategory.ParentSpendingCategoryID != "" {
 		return fmt.Errorf("%w: the transfer category cannot have a parent", ErrInvalidArguments)
+	}
+	if spendingCategory.IsOther && spendingCategory.IsIncome {
+		return fmt.Errorf("%w: the other category is spending, not income", ErrInvalidArguments)
+	}
+	if spendingCategory.IsOther && spendingCategory.ParentSpendingCategoryID != "" {
+		return fmt.Errorf("%w: the other category cannot have a parent", ErrInvalidArguments)
 	}
 	var sameNameCount int64
 	if err := self.tx.Model(&agentSpendingCategoryModel{}).
@@ -253,6 +270,9 @@ func (self *transaction) validateSpendingCategory(spendingCategory *models.Spend
 	}
 	if parent.IsTransfer {
 		return fmt.Errorf("%w: the transfer category cannot have children", ErrInvalidArguments)
+	}
+	if parent.IsOther {
+		return fmt.Errorf("%w: the other category cannot have children", ErrInvalidArguments)
 	}
 	if spendingCategory.ID != "" {
 		var childCount int64
@@ -293,9 +313,10 @@ func (self *transaction) GetSpendingCategory(agentId, spendingCategoryId string)
 
 func (self *transaction) CreateSpendingCategory(spendingCategory *models.SpendingCategory) (*models.SpendingCategory, error) {
 	created := *spendingCategory
-	// The transfer category is built in, one per agent, and made only by
-	// EnsureTransferSpendingCategory.
-	created.ID, created.IsTransfer = "", false
+	// The transfer category and the other category are built in, one per
+	// agent, and made only by EnsureTransferSpendingCategory and
+	// EnsureOtherSpendingCategory.
+	created.ID, created.IsTransfer, created.IsOther = "", false, false
 	if err := self.validateSpendingCategory(&created); err != nil {
 		return nil, err
 	}
@@ -324,7 +345,8 @@ func (self *transaction) UpdateSpendingCategory(agentId, spendingCategoryId stri
 	if err := modify(&after); err != nil {
 		return nil, err
 	}
-	after.ID, after.AgentID, after.CreatedAt, after.IsTransfer = before.ID, before.AgentID, before.CreatedAt, before.IsTransfer
+	after.ID, after.AgentID, after.CreatedAt = before.ID, before.AgentID, before.CreatedAt
+	after.IsTransfer, after.IsOther = before.IsTransfer, before.IsOther
 	if err := self.validateSpendingCategory(&after); err != nil {
 		return nil, err
 	}
@@ -352,6 +374,9 @@ func (self *transaction) DeleteSpendingCategory(agentId, spendingCategoryId stri
 	if before.IsTransfer {
 		return fmt.Errorf("%w: the transfer category is built in and cannot be deleted", ErrInvalidArguments)
 	}
+	if before.IsOther {
+		return fmt.Errorf("%w: the other category is built in and cannot be deleted", ErrInvalidArguments)
+	}
 	return self.applyMutation(models.AuditResourceSpendingCategory, spendingCategoryId, models.AuditActionDelete, before, nil, func(tx *gorm.DB) error {
 		// The foreign key would leave categorized_by saying who chose a
 		// spending category that is gone, and the transaction would never
@@ -372,22 +397,33 @@ func (self *transaction) EnsureDefaultSpendingCategories(agentId string) (int, e
 	if _, err := self.EnsureTransferSpendingCategory(agentId); err != nil {
 		return 0, err
 	}
+	if _, err := self.EnsureOtherSpendingCategory(agentId); err != nil {
+		return 0, err
+	}
 	var existingCount int64
-	if err := self.tx.Model(&agentSpendingCategoryModel{}).Where(`"agent_id" = ? AND NOT "is_transfer"`, agentId).Count(&existingCount).Error; err != nil {
+	if err := self.tx.Model(&agentSpendingCategoryModel{}).Where(`"agent_id" = ? AND NOT "is_transfer" AND NOT "is_other"`, agentId).
+		Count(&existingCount).Error; err != nil {
 		return 0, err
 	}
 	if existingCount > 0 {
 		return 0, nil
 	}
+	madeCount := 0
 	for _, spendingCategoryName := range finance.DefaultSpendingCategoryNames {
+		// Other is in the default list for its place in it, and is the
+		// built-in one made above.
+		if spendingCategoryName == finance.SpendingCategoryOther {
+			continue
+		}
 		if _, err := self.CreateSpendingCategory(&models.SpendingCategory{
 			AgentID: agentId, SpendingCategoryName: spendingCategoryName,
 			IsIncome: spendingCategoryName == finance.SpendingCategoryIncome,
 		}); err != nil {
 			return 0, err
 		}
+		madeCount++
 	}
-	return len(finance.DefaultSpendingCategoryNames), nil
+	return madeCount, nil
 }
 
 func (self *transaction) EnsureTransferSpendingCategory(agentId string) (*models.SpendingCategory, error) {
@@ -424,6 +460,61 @@ func (self *transaction) EnsureTransferSpendingCategory(agentId string) (*models
 func (self *transaction) transferSpendingCategory(agentId string) (*models.SpendingCategory, error) {
 	var found []agentSpendingCategoryModel
 	if err := self.tx.Where(`"agent_id" = ? AND "is_transfer"`, agentId).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel(), nil
+}
+
+func (self *transaction) EnsureOtherSpendingCategory(agentId string) (*models.SpendingCategory, error) {
+	if agentId == "" {
+		return nil, fmt.Errorf("%w: the other category needs an agent", ErrInvalidArguments)
+	}
+	found, err := self.otherSpendingCategory(agentId)
+	if err != nil || found != nil {
+		return found, err
+	}
+	// A spending category the person named other, in any case, stays
+	// theirs, as migration 0147 left one it could not make the built-in
+	// one, and so does one they named anything else.
+	name, err := self.freeSpendingCategoryName(agentId, finance.SpendingCategoryOther, finance.SpendingCategoryOtherFallback)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	created := &models.SpendingCategory{ID: newID(), AgentID: agentId, SpendingCategoryName: name, IsOther: true, CreatedAt: now, ModifiedAt: now}
+	if err := self.applyMutation(models.AuditResourceSpendingCategory, created.ID, models.AuditActionCreate, nil, created, func(tx *gorm.DB) error {
+		return tx.Create(spendingCategoryToModel(created)).Error
+	}); err != nil {
+		return nil, err
+	}
+	return self.otherSpendingCategory(agentId)
+}
+
+// freeSpendingCategoryName is the first of the names the agent has no
+// spending category of, in any case, or the last with a few characters
+// after it when it has all of them.
+func (self *transaction) freeSpendingCategoryName(agentId string, names ...string) (string, error) {
+	for _, name := range names {
+		var sameNameCount int64
+		if err := self.tx.Model(&agentSpendingCategoryModel{}).
+			Where(`"agent_id" = ? AND lower("spending_category_name") = ?`, agentId, name).
+			Count(&sameNameCount).Error; err != nil {
+			return "", err
+		}
+		if sameNameCount == 0 {
+			return name, nil
+		}
+	}
+	return names[len(names)-1] + " " + newID()[:6], nil
+}
+
+// otherSpendingCategory is the agent's other category, or nil.
+func (self *transaction) otherSpendingCategory(agentId string) (*models.SpendingCategory, error) {
+	var found []agentSpendingCategoryModel
+	if err := self.tx.Where(`"agent_id" = ? AND "is_other"`, agentId).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {

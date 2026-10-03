@@ -189,8 +189,9 @@ type UpdateSpendingRuleArguments struct {
 }
 
 // CategorizeTransactionArguments give a finance transaction a spending
-// category (empty takes it away) and may ask for a spending rule for its
-// merchant.
+// category and may ask for a spending rule for its merchant. An empty one
+// is refused: no spending category means not decided yet, and one that
+// fits nothing goes to the other category (isOther).
 type CategorizeTransactionArguments struct {
 	FinanceTransactionID     string `json:"financeTransactionId"`
 	SpendingCategoryID       string `json:"spendingCategoryId" graphapi:"nullable"`
@@ -198,7 +199,7 @@ type CategorizeTransactionArguments struct {
 }
 
 // CategorizeTransactionsArguments give several finance transactions one
-// spending category (empty takes it away) and may save spending rules: the
+// spending category (never empty, as for one) and may save spending rules: the
 // ones the person confirmed from ProposeSpendingRules, exactly as
 // proposed, and no others.
 type CategorizeTransactionsArguments struct {
@@ -523,6 +524,19 @@ func (self *graph) DeleteSpendingRule(ctx context.Context, arguments SpendingRul
 	return true, nil
 }
 
+// requireChosenSpendingCategory checks the spending category the person
+// gives finance transactions: one of theirs, and never none. No spending
+// category is the state of a finance transaction not decided yet, which
+// the categorize model and the list of what needs a category work on; it
+// is not a choice, and saying a transaction fits nothing is the other
+// category.
+func requireChosenSpendingCategory(tx db.Transaction, agentId, spendingCategoryId string) error {
+	if spendingCategoryId == "" {
+		return fmt.Errorf("%w: choose a spending category; for one that fits none of them, choose other (isOther in SpendingCategories)", api.ErrInvalidArguments)
+	}
+	return requireSpendingCategory(tx, agentId, spendingCategoryId)
+}
+
 // ownFinanceTransaction is one of the caller's finance transactions, or
 // not found.
 func ownFinanceTransaction(tx db.Transaction, agentId, financeTransactionId string) (*models.FinanceTransaction, error) {
@@ -556,20 +570,13 @@ func (self *graph) CategorizeTransaction(ctx context.Context, arguments Categori
 	// Everything is checked before the first write: the request commits
 	// what was written even when the resolver then fails, so a refused
 	// spending rule must not leave the categorization behind.
-	if spendingCategoryId != "" {
-		if err := requireSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
-			return nil, err
-		}
+	if err := requireChosenSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
+		return nil, err
 	}
 	isSpendingRuleWanted := arguments.ShouldCreateSpendingRule != nil && *arguments.ShouldCreateSpendingRule
 	matchText := spendingRuleMatchText(financeTransaction)
-	if isSpendingRuleWanted {
-		if spendingCategoryId == "" {
-			return nil, fmt.Errorf("%w: a spending rule needs the spending category it assigns", api.ErrInvalidArguments)
-		}
-		if matchText == "" {
-			return nil, fmt.Errorf("%w: this finance transaction has no merchant or description for a spending rule to match", api.ErrInvalidArguments)
-		}
+	if isSpendingRuleWanted && matchText == "" {
+		return nil, fmt.Errorf("%w: this finance transaction has no merchant or description for a spending rule to match", api.ErrInvalidArguments)
 	}
 	view := &CategorizeTransactionView{}
 	// The two writes go together or not at all.
@@ -991,10 +998,8 @@ func (self *graph) CategorizeTransactions(ctx context.Context, arguments Categor
 		return nil, err
 	}
 	spendingCategoryId := strings.TrimSpace(arguments.SpendingCategoryID)
-	if spendingCategoryId != "" {
-		if err := requireSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
-			return nil, err
-		}
+	if err := requireChosenSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
+		return nil, err
 	}
 	confirmed, err := confirmedSpendingRules(arguments.SpendingRules, spendingCategoryId)
 	if err != nil {

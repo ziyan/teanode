@@ -434,8 +434,12 @@ func (self *transaction) CreateAgent(agent *models.Agent) (*models.Agent, error)
 		return nil, err
 	}
 	// Every agent has its transfer category from the start, so a
-	// transaction is a transfer by its spending category alone.
+	// transaction is a transfer by its spending category alone, and its
+	// other category, so what fits nothing has a spending category to go to.
 	if _, err := self.EnsureTransferSpendingCategory(created.ID); err != nil {
+		return nil, err
+	}
+	if _, err := self.EnsureOtherSpendingCategory(created.ID); err != nil {
 		return nil, err
 	}
 	return self.GetAgent(created.ID)

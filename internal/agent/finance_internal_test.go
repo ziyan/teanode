@@ -833,6 +833,9 @@ func TestIncomeBudgetStatusAndSavingSummary(t *testing.T) {
 			// The gift stays uncategorized: no income budget counts it, but
 			// the month's income does.
 			spendingCategoryId := categoryByDescription[financeTransaction.Description]
+			if spendingCategoryId == "" {
+				continue
+			}
 			if _, err := tx.SetTransactionCategorization(fixture.agent.ID, financeTransaction.ID, spendingCategoryId, models.CategorizedByPerson, nil); err != nil {
 				t.Fatalf("SetTransactionCategorization: %s", err)
 			}

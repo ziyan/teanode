@@ -7,7 +7,9 @@ import (
 
 // The default spending categories a person starts with. The provider
 // category mapping below answers with these names; a person who renamed
-// or deleted one simply gets no mapping for it.
+// or deleted one simply gets no mapping for it. Other is the exception:
+// it is built in, found by its flag, and the mapping's other always
+// reaches it, whatever the person called it.
 const (
 	SpendingCategoryIncome            = "income"
 	SpendingCategoryHousing           = "housing"
@@ -37,6 +39,13 @@ const (
 	SpendingCategoryTransfer         = "transfer"
 	SpendingCategoryTransferFallback = "transfer between own accounts"
 )
+
+// SpendingCategoryOtherFallback is the name the built-in other category
+// takes instead of SpendingCategoryOther for a person who already has a
+// spending category called other that could not become the built-in one
+// (it is income, has a parent or has children), which stays theirs. It is
+// found by its flag, never by either name.
+const SpendingCategoryOtherFallback = "anything else"
 
 // ProviderCategoryMappingVersion names the mapping below. Raised whenever
 // the mapping changes, so a sync judges again the finance transactions the
@@ -199,7 +208,9 @@ var merchantCodeRanges = []merchantCodeRange{
 
 // MapProviderCategory turns a provider category into a default spending
 // category name, and says whether it is a transfer instead of spending or
-// income, which takes the agent's transfer category. Plaid's personal finance category arrives as primary and
+// income, which takes the agent's transfer category. SpendingCategoryOther
+// means the agent's other category, found by its flag rather than this
+// name. Plaid's personal finance category arrives as primary and
 // detailed; SimpleFIN's merchant category code arrives as detailed only,
 // written "mcc:5411"; an imported statement's OFX transaction type arrives
 // as detailed, written "ofx:PAYMENT", with the account's side as primary.

@@ -229,13 +229,9 @@ var operations = map[string]*financeOperation{
 			if len(financeTransactionIds) == 1 {
 				transaction = lookup.transaction(financeTransactionIds[0])
 			}
-			line := "Categorize " + transaction
-			if spendingCategoryId := text(call, "spending_category_id"); lookup.isTransferSpendingCategory(spendingCategoryId) {
+			line := "Categorize " + transaction + " as " + lookup.spendingCategoryName(text(call, "spending_category_id"))
+			if lookup.isTransferSpendingCategory(text(call, "spending_category_id")) {
 				line = "Mark " + transaction + " as a transfer between their own accounts, neither spending nor income"
-			} else if spendingCategoryId != "" {
-				line += " as " + lookup.spendingCategoryName(spendingCategoryId)
-			} else {
-				line = "Take the spending category off " + transaction
 			}
 			if isTrue(call, "should_create_spending_rule") {
 				line += ", and add a spending rule for its merchant, applied to past transactions too"
@@ -622,6 +618,9 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A spending rule can assign transfer like any spending category (`create_spending_rule` with match_text ONLINE PAYMENT and spending_category_id transfer), for past and future transactions. " +
 	"Pairing a card payment with its checking withdrawal and the provider's own transfer categories assign it too (categorizedBy transfer_detection or provider_category_mapping), and a spending rule does not take those over; the person's choice beats both. " +
 	"The transfer category cannot be deleted, made income or budgeted.\n" +
+	"- Fits nothing: the built-in spending category other (isOther in `spending_categories`) is for a transaction that fits none of the others, spending like any other; give it with `categorize_transaction` and spending_category_id other. " +
+	"No spending category is not a choice: it means not decided yet (is_uncategorized lists those), and categorize_transaction refuses to take a spending category away. " +
+	"The other category cannot be deleted, made income, put under a parent or given children; it can be renamed, hidden or budgeted.\n" +
 	"- Mirrored copies: some institutions report one charge, such as an account-level fee, once on every account of a connection. " +
 	"Only investment accounts within one Plaid connection are grouped: the same day, amount, currency and description on two or more of them, pending or posted, is one charge (a posted copy counts before a pending one): one copy counts, and each other has duplicateOfTransactionId (the counted copy) and is left out of every total, like a transfer. " +
 	"A genuinely identical fee on two such accounts (two retirement accounts charged the same fee the same day, say) is marked too, and `count_transaction` is the recourse; copies posted on different days are not matched. " +
@@ -653,8 +652,8 @@ func init() {
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
-					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; transfer marks a transfer between the person's own accounts; for categorize_transaction empty takes it away"),
-					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category (a transfer has the transfer category)"),
+					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; transfer marks a transfer between the person's own accounts; other is the one for what fits none of the others; categorize_transaction never takes it away"),
+					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones that need a spending category, not decided yet (a transfer has the transfer category, one that fits nothing the other category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
 					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
@@ -737,6 +736,12 @@ func init() {
 					if name == "import_transactions" && isRefusedTransactionRows(arguments) {
 						return tools.RiskRead
 					}
+					if name == "categorize_transaction" {
+						categorizeCall := map[string]any{}
+						if json.Unmarshal(arguments, &categorizeCall) == nil && isNoSpendingCategory(categorizeCall) {
+							return tools.RiskRead
+						}
+					}
 					if operation, isKnown := operations[name]; isKnown {
 						return operation.risk
 					}
@@ -813,14 +818,9 @@ const previewExampleCount = 3
 func categorizeSeveralPreview(lookup *previewLookup, call map[string]any, financeTransactionIds []string) string {
 	transactionCount := len(financeTransactionIds)
 	spendingCategoryId := text(call, "spending_category_id")
-	var line string
-	switch {
-	case lookup.isTransferSpendingCategory(spendingCategoryId):
+	line := fmt.Sprintf("Categorize %d transactions as %s", transactionCount, lookup.spendingCategoryName(spendingCategoryId))
+	if lookup.isTransferSpendingCategory(spendingCategoryId) {
 		line = fmt.Sprintf("Mark %d transactions as transfers between their own accounts, neither spending nor income", transactionCount)
-	case spendingCategoryId != "":
-		line = fmt.Sprintf("Categorize %d transactions as %s", transactionCount, lookup.spendingCategoryName(spendingCategoryId))
-	default:
-		line = fmt.Sprintf("Take the spending category off %d transactions", transactionCount)
 	}
 	examples := lookup.transactionLines(financeTransactionIds[:min(previewExampleCount, transactionCount)])
 	if len(examples) > 0 {
@@ -849,6 +849,17 @@ func categorizeSeveralPreview(lookup *previewLookup, call map[string]any, financ
 	return line
 }
 
+// isNoSpendingCategory says a categorize_transaction call gives no
+// spending category, or the word none for one. Neither is a choice: no
+// spending category is the state of a transaction not decided yet, and
+// what fits nothing is the other category. The call is refused before
+// the person is asked to confirm it, since it would be refused after.
+// A spending category the person named none is still theirs by its id.
+func isNoSpendingCategory(call map[string]any) bool {
+	spendingCategoryId := text(call, "spending_category_id")
+	return spendingCategoryId == "" || strings.EqualFold(spendingCategoryId, "none")
+}
+
 // categorizeTransactions is categorize_transaction: CategorizeTransaction
 // for one finance transaction, as it always was, and
 // CategorizeTransactions for several, all or none.
@@ -857,10 +868,7 @@ func categorizeTransactions(ctx context.Context, executor tools.Operations, name
 	if len(financeTransactionIds) == 0 {
 		return nil, fmt.Errorf("%s needs finance_transaction_id, or finance_transaction_ids for several", name)
 	}
-	variables := map[string]any{}
-	if spendingCategoryId, isGiven := asked["spending_category_id"]; isGiven {
-		variables["spendingCategoryId"] = spendingCategoryId
-	}
+	variables := map[string]any{"spendingCategoryId": text(asked, "spending_category_id")}
 	graphqlOperation := "CategorizeTransaction"
 	if len(financeTransactionIds) == 1 {
 		variables["financeTransactionId"] = financeTransactionIds[0]
@@ -997,6 +1005,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if value, isGiven := asked[key]; !isGiven || value == nil || value == "" {
 			return nil, fmt.Errorf("%s needs %s", name, key)
 		}
+	}
+	// Before the names are read, so the word none is refused as RiskOf
+	// judged it, whatever the person has named a spending category.
+	if name == "categorize_transaction" && isNoSpendingCategory(asked) {
+		return nil, fmt.Errorf("%s needs a spending category: no spending category means not decided yet and is not a choice; for one that fits none of them, give spending_category_id other", name)
 	}
 	// A spending category may be named rather than given by id, as on the
 	// command line. A name that is none of the person's is passed on as

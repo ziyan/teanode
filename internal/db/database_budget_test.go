@@ -35,8 +35,9 @@ func TestEnsureDefaultSpendingCategoriesOnce(t *testing.T) {
 	fixture := createFinanceFixture(t, database, "spending-defaults")
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		// Other is built in, made with the agent, and not counted.
 		createdCount, err := tx.EnsureDefaultSpendingCategories(fixture.agentId)
-		if err != nil || createdCount != len(finance.DefaultSpendingCategoryNames) {
+		if err != nil || createdCount != len(finance.DefaultSpendingCategoryNames)-1 {
 			t.Fatalf("EnsureDefaultSpendingCategories: %v %d", err, createdCount)
 		}
 		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
@@ -86,13 +87,13 @@ func TestTransferSpendingCategoryIsBuiltIn(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		spendingCategories, err := tx.ListSpendingCategories(fixture.agentId)
-		if err != nil || len(spendingCategories) != 1 || !spendingCategories[0].IsTransfer ||
-			spendingCategories[0].SpendingCategoryName != finance.SpendingCategoryTransfer || spendingCategories[0].IsIncome {
-			t.Fatalf("a new agent has the transfer category and nothing else: %v %+v", err, spendingCategories)
+		if err != nil || len(spendingCategories) != 2 || !spendingCategories[1].IsTransfer ||
+			spendingCategories[1].SpendingCategoryName != finance.SpendingCategoryTransfer || spendingCategories[1].IsIncome {
+			t.Fatalf("a new agent has the transfer category and the other category and nothing else: %v %+v", err, spendingCategories)
 		}
-		transferId := spendingCategories[0].ID
-		if createdCount, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil || createdCount != len(finance.DefaultSpendingCategoryNames) {
-			t.Errorf("the transfer category does not stand in for the defaults: %v %d", err, createdCount)
+		transferId := spendingCategories[1].ID
+		if createdCount, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil || createdCount != len(finance.DefaultSpendingCategoryNames)-1 {
+			t.Errorf("the built-in categories do not stand in for the defaults: %v %d", err, createdCount)
 		}
 		if again, err := tx.EnsureTransferSpendingCategory(fixture.agentId); err != nil || again.ID != transferId {
 			t.Errorf("one transfer category per agent: %v %+v", err, again)
@@ -108,7 +109,7 @@ func TestTransferSpendingCategoryIsBuiltIn(t *testing.T) {
 		}
 		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
 		if _, err := tx.UpdateSpendingCategory(fixture.agentId, transferId, func(spendingCategory *models.SpendingCategory) error {
-			spendingCategory.ParentSpendingCategoryID = byName[finance.SpendingCategoryOther]
+			spendingCategory.ParentSpendingCategoryID = byName[finance.SpendingCategoryShopping]
 			return nil
 		}); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("the transfer category cannot have a parent: %v", err)
@@ -117,14 +118,14 @@ func TestTransferSpendingCategoryIsBuiltIn(t *testing.T) {
 			ParentSpendingCategoryID: transferId}); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("the transfer category cannot have children: %v", err)
 		}
-		if _, err := tx.UpdateSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryOther], func(spendingCategory *models.SpendingCategory) error {
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryShopping], func(spendingCategory *models.SpendingCategory) error {
 			spendingCategory.IsTransfer = true
 			return nil
 		}); err != nil {
 			t.Fatalf("UpdateSpendingCategory: %s", err)
 		}
-		if other, err := tx.GetSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryOther]); err != nil || other.IsTransfer {
-			t.Errorf("no other spending category becomes the transfer category: %v %+v", err, other)
+		if shopping, err := tx.GetSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryShopping]); err != nil || shopping.IsTransfer {
+			t.Errorf("no other spending category becomes the transfer category: %v %+v", err, shopping)
 		}
 		made, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "moving money", IsTransfer: true})
 		if err != nil || made.IsTransfer {
@@ -143,6 +144,146 @@ func TestTransferSpendingCategoryIsBuiltIn(t *testing.T) {
 		}
 		if found, err := tx.EnsureTransferSpendingCategory(fixture.agentId); err != nil || found.ID != transferId {
 			t.Errorf("found by its flag, not its name: %v %+v", err, found)
+		}
+	})
+}
+
+// Every agent has one other category from the start, built in like the
+// transfer category: it cannot be deleted, made income, put under a parent
+// or given children, and no second one can be made. Unlike transfer it is
+// spending: it takes a budget, the person may file a transaction under it,
+// and it can be renamed and hidden and stays the other category.
+func TestOtherSpendingCategoryIsBuiltIn(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "other-category")
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		otherId := byName[finance.SpendingCategoryOther]
+		other, err := tx.GetSpendingCategory(fixture.agentId, otherId)
+		if err != nil || other == nil || !other.IsOther || other.IsTransfer || other.IsIncome {
+			t.Fatalf("the default other is the built-in one: %v %+v", err, other)
+		}
+		if again, err := tx.EnsureOtherSpendingCategory(fixture.agentId); err != nil || again.ID != otherId {
+			t.Errorf("one other category per agent: %v %+v", err, again)
+		}
+		if err := tx.DeleteSpendingCategory(fixture.agentId, otherId); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the other category cannot be deleted: %v", err)
+		}
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, otherId, func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.IsIncome = true
+			return nil
+		}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the other category cannot be income: %v", err)
+		}
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, otherId, func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.ParentSpendingCategoryID = byName[finance.SpendingCategoryShopping]
+			return nil
+		}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the other category cannot have a parent: %v", err)
+		}
+		if _, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "odds and ends",
+			ParentSpendingCategoryID: otherId}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the other category cannot have children: %v", err)
+		}
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryShopping], func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.ParentSpendingCategoryID = otherId
+			return nil
+		}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("nothing can be moved under the other category: %v", err)
+		}
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryShopping], func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.IsOther = true
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateSpendingCategory: %s", err)
+		}
+		if shopping, err := tx.GetSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryShopping]); err != nil || shopping.IsOther {
+			t.Errorf("no other spending category becomes the other category: %v %+v", err, shopping)
+		}
+		made, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "miscellany", IsOther: true})
+		if err != nil || made.IsOther {
+			t.Errorf("a second other category cannot be made: %v %+v", err, made)
+		}
+		if _, err := tx.SetBudget(&models.Budget{AgentID: fixture.agentId, SpendingCategoryID: otherId, MonthlyAmount: "100",
+			CurrencyCode: "USD", EffectiveFrom: "2026-09"}); err != nil {
+			t.Errorf("the other category is spending and takes a budget: %v", err)
+		}
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["transaction-grocer"].ID, otherId, models.CategorizedByPerson, nil); err != nil {
+			t.Errorf("the person files a transaction under the other category: %v", err)
+		}
+		renamed, err := tx.UpdateSpendingCategory(fixture.agentId, otherId, func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.SpendingCategoryName = "everything else"
+			spendingCategory.IsHidden = true
+			return nil
+		})
+		if err != nil || !renamed.IsOther || !renamed.IsHidden || renamed.SpendingCategoryName != "everything else" {
+			t.Errorf("renamed and hidden, it is still the other category: %v %+v", err, renamed)
+		}
+		if found, err := tx.EnsureOtherSpendingCategory(fixture.agentId); err != nil || found.ID != otherId {
+			t.Errorf("found by its flag, not its name: %v %+v", err, found)
+		}
+	})
+}
+
+// An agent that already had spending categories of its own called other
+// and anything else, and somehow lost its other category, gets one named
+// around both, and theirs stay ordinary spending categories.
+func TestOtherSpendingCategoryLeavesAPersonsOtherAlone(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "other-category-taken")
+	dbtest.Exec(t, database, fmt.Sprintf(`DELETE FROM "agent_spending_category" WHERE "agent_id" = '%s' AND "is_other"`, fixture.agentId))
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		theirs, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "Other"})
+		if err != nil {
+			t.Fatalf("CreateSpendingCategory: %s", err)
+		}
+		otherCategory, err := tx.EnsureOtherSpendingCategory(fixture.agentId)
+		if err != nil || otherCategory.ID == theirs.ID || otherCategory.SpendingCategoryName != finance.SpendingCategoryOtherFallback {
+			t.Fatalf("EnsureOtherSpendingCategory: %v %+v", err, otherCategory)
+		}
+		if kept, err := tx.GetSpendingCategory(fixture.agentId, theirs.ID); err != nil || kept.IsOther {
+			t.Errorf("theirs stays theirs: %v %+v", err, kept)
+		}
+	})
+
+	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "agent_spending_category" SET "is_other" = false WHERE "agent_id" = '%s'`, fixture.agentId))
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		otherCategory, err := tx.EnsureOtherSpendingCategory(fixture.agentId)
+		if err != nil || !strings.HasPrefix(otherCategory.SpendingCategoryName, finance.SpendingCategoryOtherFallback+" ") {
+			t.Errorf("with both names taken, a few characters after the second: %v %+v", err, otherCategory)
+		}
+	})
+}
+
+// The person never takes a spending category away: no spending category
+// means not decided yet, and the person's "fits nothing" is the other
+// category. What a sync or the model does is not affected.
+func TestPersonCannotChooseNoSpendingCategory(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "no-spending-category")
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		financeTransactionId := found["transaction-grocer"].ID
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, financeTransactionId, "", models.CategorizedByPerson, nil); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the person choosing none is refused: %v", err)
+		}
+		if _, err := tx.CategorizeTransactionsByPerson(fixture.agentId, []string{financeTransactionId}, ""); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the person choosing none for several is refused: %v", err)
+		}
+		if kept, err := tx.GetFinanceTransaction(fixture.agentId, financeTransactionId); err != nil || kept.CategorizedBy == models.CategorizedByPerson {
+			t.Errorf("nothing was written: %v %+v", err, kept)
 		}
 	})
 }
@@ -917,13 +1058,17 @@ func TestSpendingRuleMarksTransfersPastAndFuture(t *testing.T) {
 				t.Errorf("%s is a transfer by the rule: %+v", providerTransactionId, found[providerTransactionId])
 			}
 		}
-		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["payment-refund"].ID, "", models.CategorizedByPerson, nil); err != nil {
+		otherCategory, err := tx.EnsureOtherSpendingCategory(fixture.agentId)
+		if err != nil {
+			t.Fatalf("EnsureOtherSpendingCategory: %s", err)
+		}
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["payment-refund"].ID, otherCategory.ID, models.CategorizedByPerson, nil); err != nil {
 			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
 		if _, err := tx.ApplySpendingRules(fixture.agentId); err != nil {
 			t.Fatalf("ApplySpendingRules: %s", err)
 		}
-		if refund := financeTransactionsByProviderId(t, tx, fixture.agentId)["payment-refund"]; refund.SpendingCategoryID != "" || refund.CategorizedBy != models.CategorizedByPerson {
+		if refund := financeTransactionsByProviderId(t, tx, fixture.agentId)["payment-refund"]; refund.SpendingCategoryID != otherCategory.ID || refund.CategorizedBy != models.CategorizedByPerson {
 			t.Errorf("the person's choice beats the rule: %+v", refund)
 		}
 		summary, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{GroupBy: models.FinanceSpendingSummaryGroupByMerchant})

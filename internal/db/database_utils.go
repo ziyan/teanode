@@ -94,6 +94,22 @@ func (self *database) RawExec(statement string) error {
 	return self.db.Exec(statement).Error
 }
 
+// CloseIdleConnections closes the pool's idle connections, for tests that
+// run a migration's SQL by hand: a statement a connection prepared before
+// a table's columns changed fails once they have ("cached plan must not
+// change result type"), and a new connection prepares it afresh. Not part
+// of the interface.
+func (self *database) CloseIdleConnections() error {
+	sqlDatabase, err := self.db.DB()
+	if err != nil {
+		return err
+	}
+	sqlDatabase.SetMaxIdleConns(0)
+	// What database/sql keeps when nothing sets it.
+	sqlDatabase.SetMaxIdleConns(2)
+	return nil
+}
+
 // localTime is a stored optional time in the local zone.
 func localTime(value *time.Time) *time.Time {
 	if value == nil {

@@ -19,6 +19,7 @@ import {
   hasAmount,
   setPersonZone,
 } from './financeApi'
+import type { BuiltInFlags } from './spendingCategoryName'
 
 // What the Finance page's sections share: running a change and saying how
 // it went, an amount in its currency, and the pickers several sections ask
@@ -129,22 +130,25 @@ export function accountLabel(account: Pick<FinanceAccount, 'accountName' | 'acco
 export function spendingCategoryLabel(
   category: SpendingCategory,
   categories: SpendingCategory[],
-  displayName: (name: string, isTransfer?: boolean) => string,
+  displayName: (name: string, flags?: BuiltInFlags) => string,
 ): string {
   const parent = category.parentSpendingCategoryId
     ? categories.find((candidate) => candidate.id === category.parentSpendingCategoryId)
     : undefined
-  const name = displayName(category.spendingCategoryName, category.isTransfer)
-  return parent ? `${displayName(parent.spendingCategoryName, parent.isTransfer)} › ${name}` : name
+  const name = displayName(category.spendingCategoryName, category)
+  return parent ? `${displayName(parent.spendingCategoryName, parent)} › ${name}` : name
 }
 
 // spendingCategoryOptions is every spending category that can be chosen,
 // by its id, sorted by the name shown, hidden ones left out unless already
-// chosen. The transfer category comes last, under transferGroup when one
-// is given, so it reads as what it is: not one more kind of spending.
+// chosen. The other category comes after the rest of the spending, as what
+// fits none of it. The transfer category comes last, under transferGroup
+// when one is given, so it reads as what it is: not one more kind of
+// spending. There is no option for no spending category: that is a
+// transaction not decided yet, not a choice.
 export function spendingCategoryOptions(
   categories: SpendingCategory[],
-  displayName: (name: string, isTransfer?: boolean) => string,
+  displayName: (name: string, flags?: BuiltInFlags) => string,
   chosen?: string | null,
   transferGroup?: string,
 ): { value: string; label: string; group?: string }[] {
@@ -155,9 +159,10 @@ export function spendingCategoryOptions(
   })
   return [
     ...shown
-      .filter((category) => !category.isTransfer)
+      .filter((category) => !category.isTransfer && !category.isOther)
       .map(option)
       .sort((left, right) => left.label.localeCompare(right.label)),
+    ...shown.filter((category) => category.isOther).map(option),
     ...shown
       .filter((category) => category.isTransfer)
       .map((category) => (transferGroup ? { ...option(category), group: transferGroup } : option(category))),
