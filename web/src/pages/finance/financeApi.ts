@@ -444,7 +444,9 @@ export const SWITCH_SOURCE = `mutation ($sourceId: String, $enabled: Boolean) {
 // What one import of statement files did.
 export type FinanceStatementImport = {
   importedAt: string
-  statementImportOrigin: 'mail' | 'upload' | 'message'
+  // transaction_rows: rows the agent read off screenshots, sent with
+  // ImportTransactions rather than as a file.
+  statementImportOrigin: 'mail' | 'upload' | 'message' | 'transaction_rows'
   statementFileNames: string[]
   addedTransactionCount: number
   updatedTransactionCount: number
@@ -484,6 +486,24 @@ export const IMPORT_STATEMENT = `mutation ($agentAttachmentId: String) {
 export const REGENERATE_STATEMENT_IMPORT_ADDRESS = `mutation { RegenerateStatementImportAddress { ${STATEMENT_IMPORT_FIELDS} } }`
 
 export const AGENT_ATTACHMENTS_PATH = '/api/v1/agent/attachments'
+
+// An account of imported statements takes the person's own name, which
+// later imports keep, and can be deleted with its transactions and its
+// net worth history. A provider's account cannot: its next sync would
+// bring it back.
+export const RENAME_STATEMENT_ACCOUNT = `mutation ($financeAccountId: String!, $accountName: String!) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) { id accountName }
+}`
+
+export type StatementAccountDeleted = {
+  financeAccountId: string
+  deletedTransactionCount: number
+  deletedAssetCount: number
+}
+
+export const DELETE_STATEMENT_ACCOUNT = `mutation ($financeAccountId: String!) {
+  DeleteStatementAccount(financeAccountId: $financeAccountId) { financeAccountId deletedTransactionCount deletedAssetCount }
+}`
 
 // --- accounts and transactions ---------------------------------------------
 

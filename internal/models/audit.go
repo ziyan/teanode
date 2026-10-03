@@ -106,7 +106,8 @@ const (
 	AuditResourceSpendingCategory   AuditResourceType = "spending_category"
 	AuditResourceSpendingRule       AuditResourceType = "spending_rule"
 	AuditResourceBudget             AuditResourceType = "budget"
-	AuditResourceSavingsTarget      AuditResourceType = "savings_target" // and the assets and finance accounts it measures
+	AuditResourceSavingsTarget      AuditResourceType = "savings_target"  // and the assets and finance accounts it measures
+	AuditResourceFinanceAccount     AuditResourceType = "finance_account" // renamed or deleted by the person; a sync's writes are not audited
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

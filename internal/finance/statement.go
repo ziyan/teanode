@@ -59,6 +59,23 @@ type StatementImport struct {
 // account made before the institution was left out of the key.
 const statementAccountKeyInstitutionField = "statementAccountKeyInstitution"
 
+// StatementPersonAccountNameField is the account metadata field that keeps
+// the name the person gave a statement account, which every later import
+// keeps instead of the name its file or rows give.
+const StatementPersonAccountNameField = "personAccountName"
+
+// StatementPersonAccountName is the name the person gave a statement
+// account, empty when they gave none.
+func StatementPersonAccountName(providerMetadata json.RawMessage) string {
+	var metadata struct {
+		PersonAccountName string `json:"personAccountName"`
+	}
+	if len(providerMetadata) == 0 || json.Unmarshal(providerMetadata, &metadata) != nil {
+		return ""
+	}
+	return strings.TrimSpace(metadata.PersonAccountName)
+}
+
 // statementAccountTypeCreditLine is the OFX bank account type of a line of
 // credit, which is imported as a credit account but is no credit card.
 const statementAccountTypeCreditLine = "CREDITLINE"
@@ -193,6 +210,20 @@ func StatementAccountMask(accountId string) string {
 // account says the owed balance is not positive and the valuation turns it
 // into the amount owed.
 func NewStatementImport(accountKey []byte, document *ofx.Document, statement *ofx.Statement, existingAccounts []ExistingStatementAccount) (*StatementImport, error) {
+	return newStatementImport(accountKey, document, statement, existingAccounts, statementImportOptions{})
+}
+
+// statementImportOptions are what an import of transaction rows says about
+// its account that a file cannot: a name other than the institution's, a
+// kind other than the statement's, and more to keep in its metadata.
+type statementImportOptions struct {
+	accountName     string
+	accountKind     string
+	accountMetadata map[string]any
+}
+
+func newStatementImport(accountKey []byte, document *ofx.Document, statement *ofx.Statement, existingAccounts []ExistingStatementAccount,
+	options statementImportOptions) (*StatementImport, error) {
 	if len(accountKey) == 0 {
 		return nil, errors.New("finance: a statement needs its finance source's account key")
 	}
@@ -210,13 +241,32 @@ func NewStatementImport(accountKey []byte, document *ofx.Document, statement *of
 	case statement.AccountType == statementAccountTypeCreditLine:
 		accountKind = AccountKindCredit
 	}
+	if options.accountKind != "" {
+		accountKind = options.accountKind
+	}
 	accountMask := StatementAccountMask(statement.AccountID)
 	accountName := strings.TrimSpace(document.InstitutionOrganization)
+	if options.accountName != "" {
+		accountName = options.accountName
+	}
 	if accountName == "" {
 		accountName = "Imported account"
 		if accountKind == AccountKindCredit {
 			accountName = "Imported card"
 		}
+	}
+	// The person's own name for the account, given with
+	// RenameStatementAccount, wins over whatever a file or a set of rows
+	// calls it, and is carried into the metadata this import writes, since
+	// the import replaces the metadata whole.
+	personAccountName := ""
+	for _, existing := range existingAccounts {
+		if existing.ProviderAccountID == providerAccountId {
+			personAccountName = StatementPersonAccountName(existing.ProviderMetadata)
+		}
+	}
+	if personAccountName != "" {
+		accountName = personAccountName
 	}
 
 	// What the file said about the account, less its identifier: the rest
@@ -231,6 +281,12 @@ func NewStatementImport(accountKey []byte, document *ofx.Document, statement *of
 		// Kept so the next file finds the account again, whatever its FI
 		// block says.
 		accountMetadata[statementAccountKeyInstitutionField] = keyInstitution
+	}
+	for key, value := range options.accountMetadata {
+		accountMetadata[key] = value
+	}
+	if personAccountName != "" {
+		accountMetadata[StatementPersonAccountNameField] = personAccountName
 	}
 	account := Account{
 		ProviderAccountID: providerAccountId, AccountName: accountName, AccountMask: accountMask,

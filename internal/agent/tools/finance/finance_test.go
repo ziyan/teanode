@@ -47,12 +47,15 @@ var spanningOperations = map[string][]string{
 	"disable_source":         {},
 	"enable_source":          {},
 	"delete_source":          {},
+	// Says where the person deletes an imported account.
+	"delete_statement_account": {},
 }
 
 // The deliberate gaps: a setup token and a provider credential are never
 // taken in conversation, so the tool operations named for these only say
-// where to give them.
-var gapOperations = map[string]bool{"LinkSimpleFIN": true, "ImportFinanceCredential": true}
+// where to give them; and deleting an account of imported statements,
+// which takes its history with it, is the person's alone.
+var gapOperations = map[string]bool{"LinkSimpleFIN": true, "ImportFinanceCredential": true, "DeleteStatementAccount": true}
 
 func financeTool(test *testing.T) *tools.Tool {
 	test.Helper()
@@ -230,17 +233,23 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"spending_categories": true, "spending_rules": true, "propose_spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
-		"statement_import": true,
+		"statement_import": true, "delete_statement_account": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite
 		switch {
-		case strings.HasPrefix(name, "delete_"):
-			wanted = tools.RiskDestructive
 		case reads[name]:
 			wanted = tools.RiskRead
+		case strings.HasPrefix(name, "delete_"):
+			wanted = tools.RiskDestructive
 		}
-		if risk := tool.RiskFor(json.RawMessage(`{"operation":"` + name + `"}`)); risk != wanted {
+		arguments := `{"operation":"` + name + `"}`
+		if name == "import_transactions" {
+			// Rows that do not add up are refused before anything is asked,
+			// so the write is judged on rows that do.
+			arguments = inventedBankRows
+		}
+		if risk := tool.RiskFor(json.RawMessage(arguments)); risk != wanted {
 			test.Errorf("%s is %s, not %s", name, risk, wanted)
 		}
 	}

@@ -2,12 +2,14 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/finance/ofx"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -197,4 +199,172 @@ func (self *graph) ImportStatement(ctx context.Context, arguments ImportStatemen
 		return nil, fmt.Errorf("%w: nothing was imported: %s", api.ErrInvalidArguments, result.ImportErrorMessage)
 	}
 	return result, nil
+}
+
+// ImportTransactionsArguments are one account's transactions sent as rows:
+// the account as its list shows it, and each row as read. An account
+// number with masked digits (****1234) is kept as the digits shown and
+// marked partial; letters are refused, since a made-up number keys the
+// account wrongly for good.
+type ImportTransactionsArguments struct {
+	InstitutionName        string `json:"institutionName"`
+	AccountName            string `json:"accountName" graphapi:"nullable"`
+	AccountNumber          string `json:"accountNumber"`
+	IsAccountNumberPartial *bool  `json:"isAccountNumberPartial" graphapi:"nullable"`
+
+	// StatementAccountKind is bank, card or other.
+	StatementAccountKind string `json:"statementAccountKind"`
+	CurrencyCode         string `json:"currencyCode"`
+	BankCode             string `json:"bankCode" graphapi:"nullable"`
+
+	TransactionRows []TransactionRow `json:"transactionRows"`
+
+	// The account's balance as the newest list shows it, the day it is as
+	// of, and that day's zone (the person's when left out).
+	LedgerBalanceAmount   string `json:"ledgerBalanceAmount" graphapi:"nullable"`
+	LedgerBalanceOn       string `json:"ledgerBalanceOn" graphapi:"nullable"`
+	LedgerBalanceTimeZone string `json:"ledgerBalanceTimeZone" graphapi:"nullable"`
+
+	// MonthlyTotals are the totals a card's list shows per month, each
+	// checked against that month's rows.
+	MonthlyTotals []MonthlyTotal `json:"monthlyTotals" graphapi:"nullable"`
+}
+
+// TransactionRow is one transaction as read: its day, its description as
+// shown, its amount signed (money out negative), what kind it is when the
+// list says (deposit, withdrawal, purchase, refund, payment, transfer,
+// interest, dividend, fee, cash, other), the running balance shown after
+// it, and the month heading it was listed under when that is not the month
+// it posted in.
+type TransactionRow struct {
+	PostedOn             string `json:"postedOn"`
+	Description          string `json:"description"`
+	Amount               string `json:"amount"`
+	TransactionKind      string `json:"transactionKind" graphapi:"nullable"`
+	RunningBalanceAmount string `json:"runningBalanceAmount" graphapi:"nullable"`
+	TotalMonth           string `json:"totalMonth" graphapi:"nullable"`
+}
+
+// MonthlyTotal is a month's total as a card's list shows it, "2026-09".
+type MonthlyTotal struct {
+	TotalMonth  string `json:"totalMonth"`
+	TotalAmount string `json:"totalAmount"`
+}
+
+// RenameStatementAccountArguments name an account of imported statements
+// and the name to give it.
+type RenameStatementAccountArguments struct {
+	FinanceAccountID string `json:"financeAccountId"`
+	AccountName      string `json:"accountName"`
+}
+
+// StatementAccountArguments name an account of imported statements.
+type StatementAccountArguments struct {
+	FinanceAccountID string `json:"financeAccountId"`
+}
+
+// StatementAccountDeletedView is what deleting an account of imported
+// statements removed.
+type StatementAccountDeletedView struct {
+	FinanceAccountID        string `json:"financeAccountId"`
+	DeletedTransactionCount int    `json:"deletedTransactionCount"`
+	DeletedAssetCount       int    `json:"deletedAssetCount"`
+}
+
+// TransactionRowsInput is the arguments as the finance package checks
+// them.
+func (self *ImportTransactionsArguments) TransactionRowsInput() *finance.TransactionRowsInput {
+	input := &finance.TransactionRowsInput{
+		InstitutionName: self.InstitutionName, AccountName: self.AccountName, AccountNumber: self.AccountNumber,
+		IsAccountNumberPartial: self.IsAccountNumberPartial != nil && *self.IsAccountNumberPartial,
+		StatementAccountKind:   finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
+		CurrencyCode:           self.CurrencyCode, BankCode: self.BankCode,
+		LedgerBalanceAmount: self.LedgerBalanceAmount, LedgerBalanceOn: self.LedgerBalanceOn, LedgerBalanceTimeZone: self.LedgerBalanceTimeZone,
+	}
+	for _, row := range self.TransactionRows {
+		input.TransactionRows = append(input.TransactionRows, finance.TransactionRow{
+			PostedOn: row.PostedOn, Description: row.Description, Amount: row.Amount, TransactionKind: row.TransactionKind,
+			RunningBalanceAmount: row.RunningBalanceAmount, TotalMonth: row.TotalMonth,
+		})
+	}
+	for _, total := range self.MonthlyTotals {
+		input.MonthlyTotals = append(input.MonthlyTotals, finance.MonthlyTotal{TotalMonth: total.TotalMonth, TotalAmount: total.TotalAmount})
+	}
+	return input
+}
+
+func (self *graph) ImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*models.FinanceStatementImport, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.requireFinanceOffered(); err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	// Checked before anything is written, against the person's own day, so
+	// a year misread into the future is refused too.
+	check, err := finance.CheckTransactionRows(arguments.TransactionRowsInput(), personToday(principal))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	result, err := worker.ImportTransactionRows(ctx, found, principal.User, check)
+	if err != nil {
+		return nil, err
+	}
+	if len(result.FinanceAccountIDs) == 0 && result.ImportErrorMessage != "" {
+		return nil, fmt.Errorf("%w: nothing was imported: %s", api.ErrInvalidArguments, result.ImportErrorMessage)
+	}
+	return result, nil
+}
+
+// statementAccountError is a rename's or a delete's refusal as the API
+// says it.
+func statementAccountError(err error) error {
+	if errors.Is(err, agent.ErrNotStatementAccount) {
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	return financeError(err)
+}
+
+func (self *graph) RenameStatementAccount(ctx context.Context, arguments RenameStatementAccountArguments) (*FinanceAccountView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	renamed, err := worker.RenameStatementAccount(ctx, found, arguments.FinanceAccountID, arguments.AccountName)
+	if err != nil {
+		return nil, statementAccountError(err)
+	}
+	source, err := self.transaction(ctx).GetAgentSource(found.ID, renamed.SourceID)
+	if err != nil {
+		return nil, err
+	}
+	return financeAccountView(renamed, source), nil
+}
+
+func (self *graph) DeleteStatementAccount(ctx context.Context, arguments StatementAccountArguments) (*StatementAccountDeletedView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	deleted, err := worker.DeleteStatementAccount(ctx, found, arguments.FinanceAccountID)
+	if err != nil {
+		return nil, statementAccountError(err)
+	}
+	return &StatementAccountDeletedView{
+		FinanceAccountID: strings.TrimSpace(arguments.FinanceAccountID), DeletedTransactionCount: deleted.DeletedTransactionCount,
+		DeletedAssetCount: deleted.DeletedAssetCount,
+	}, nil
 }

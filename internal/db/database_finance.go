@@ -29,6 +29,22 @@ type FinanceOperation interface {
 	// GetFinanceAccount is one finance account of the agent, or nil.
 	GetFinanceAccount(agentId, financeAccountId string) (*models.FinanceAccount, error)
 
+	// RenameFinanceAccount gives a finance account the person's own name,
+	// kept in its metadata too so the imports that follow keep it (only a
+	// statement account's imports read it; a provider's sync names its
+	// accounts itself). The asset that values the account takes the new
+	// name when it still has the old one. ErrNotFound when the agent has
+	// no such finance account.
+	RenameFinanceAccount(agentId, financeAccountId, accountName string) (*models.FinanceAccount, error)
+
+	// DeleteFinanceAccount deletes a finance account with its finance
+	// transactions and every asset that values it, with their history.
+	// A transaction on another account that transfer detection had paired
+	// with one of the deleted ones is let go of, uncategorized, so the
+	// caller can detect transfers again and pair it with what remains.
+	// ErrNotFound when the agent has no such finance account.
+	DeleteFinanceAccount(agentId, financeAccountId string) (*FinanceAccountDeleted, error)
+
 	// ApplyFinanceSync writes one sync of a finance source, all or
 	// nothing: it upserts the finance accounts and the added finance
 	// transactions, deletes the removed ones and the pending ones the
@@ -139,6 +155,21 @@ type FinanceOperation interface {
 	// currency over a range of posted days, transfers (the transfer
 	// category) and mirrored copies left out, biggest money out first.
 	FinanceSpendingSummary(agentId string, filter *FinanceSpendingSummaryFilter) ([]*models.FinanceSpendingSummaryRow, error)
+}
+
+// FinanceAccountDeleted is what one DeleteFinanceAccount deleted.
+type FinanceAccountDeleted struct {
+	// DeletedTransactionCount is the finance transactions deleted with the
+	// account, and DeletedAssetCount the assets.
+	DeletedTransactionCount int
+	DeletedAssetCount       int
+
+	// ReleasedTransactionIDs are the transactions on other accounts that
+	// were paired with a deleted one as a transfer and are uncategorized
+	// now; EarliestPostedOn is the first day a deleted transaction posted,
+	// where detecting transfers again starts. Empty when none.
+	ReleasedTransactionIDs []string
+	EarliestPostedOn       string
 }
 
 // FinanceSyncApplied is what one ApplyFinanceSync wrote.
@@ -523,6 +554,125 @@ func (self *transaction) GetFinanceAccount(agentId, financeAccountId string) (*m
 		return nil, nil
 	}
 	return found[0].toModel(), nil
+}
+
+// maximumFinanceAccountNameLength is the longest name a person may give a
+// finance account, in characters: longer than any account's name, short
+// enough to fit a table's cell and a confirmation card.
+const maximumFinanceAccountNameLength = 200
+
+// financeAccountAudit is what the audit log keeps of a finance account:
+// its name and how it is told apart, never its provider metadata.
+func financeAccountAudit(account *models.FinanceAccount) map[string]any {
+	return map[string]any{
+		"accountName": account.AccountName, "accountMask": account.AccountMask, "accountKind": account.AccountKind,
+		"currencyCode": account.CurrencyCode, "sourceId": account.SourceID,
+	}
+}
+
+func (self *transaction) RenameFinanceAccount(agentId, financeAccountId, accountName string) (*models.FinanceAccount, error) {
+	accountName = strings.TrimSpace(accountName)
+	if accountName == "" {
+		return nil, fmt.Errorf("%w: give the account a name", ErrInvalidArguments)
+	}
+	if len([]rune(accountName)) > maximumFinanceAccountNameLength {
+		return nil, fmt.Errorf("%w: an account's name is at most %d characters", ErrInvalidArguments, maximumFinanceAccountNameLength)
+	}
+	before, err := self.GetFinanceAccount(agentId, financeAccountId)
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, ErrNotFound
+	}
+	after := *before
+	after.AccountName = accountName
+	encodedName, err := json.Marshal(accountName)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if err := self.applyMutation(models.AuditResourceFinanceAccount, financeAccountId, models.AuditActionUpdate, financeAccountAudit(before), financeAccountAudit(&after), func(tx *gorm.DB) error {
+		if err := tx.Exec(`UPDATE "agent_finance_account" SET "account_name" = ?,
+				"provider_metadata" = jsonb_set(CASE WHEN jsonb_typeof("provider_metadata") = 'object' THEN "provider_metadata" ELSE '{}'::jsonb END,
+					'{`+finance.StatementPersonAccountNameField+`}', CAST(? AS jsonb)),
+				"modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ?`, accountName, string(encodedName), now, agentId, financeAccountId).Error; err != nil {
+			return err
+		}
+		// The account's own asset was named after it when it was made; one
+		// the person has renamed since keeps their name.
+		return tx.Exec(`UPDATE "agent_asset" SET "asset_name" = ?, "modified_at" = ?
+			WHERE "agent_id" = ? AND "finance_account_id" = ? AND "finance_security_id" IS NULL AND "asset_name" = ?`,
+			accountName, now, agentId, financeAccountId, strings.TrimSpace(before.AccountName)).Error
+	}); err != nil {
+		return nil, err
+	}
+	return self.GetFinanceAccount(agentId, financeAccountId)
+}
+
+func (self *transaction) DeleteFinanceAccount(agentId, financeAccountId string) (*FinanceAccountDeleted, error) {
+	before, err := self.GetFinanceAccount(agentId, financeAccountId)
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, ErrNotFound
+	}
+	deleted := &FinanceAccountDeleted{ReleasedTransactionIDs: []string{}}
+	var counted struct {
+		TransactionCount int        `gorm:"column:transaction_count"`
+		EarliestPostedOn *time.Time `gorm:"column:earliest_posted_on"`
+	}
+	if err := self.tx.Raw(`SELECT COUNT(*) AS "transaction_count", MIN("posted_on") AS "earliest_posted_on" FROM "agent_finance_transaction"
+		WHERE "agent_id" = ? AND "finance_account_id" = ?`, agentId, financeAccountId).Scan(&counted).Error; err != nil {
+		return nil, err
+	}
+	deleted.DeletedTransactionCount = counted.TransactionCount
+	if counted.EarliestPostedOn != nil {
+		deleted.EarliestPostedOn = formatDay(*counted.EarliestPostedOn)
+	}
+
+	// Pairing keeps no link between the two sides of a transfer, so the
+	// other side is found the way pairing found it: marked by transfer
+	// detection, the same amount the other way, within the pairing days.
+	// Left marked, it could never pair again (pairing takes only what is
+	// not a transfer yet), and the same transfer imported again under the
+	// right account would count as spending or income.
+	if err := self.tx.Raw(`UPDATE "agent_finance_transaction" AS "partner" SET "spending_category_id" = NULL, "categorized_by" = '',
+			"categorization_confidence" = NULL, "categorize_attempted_at" = NULL, "modified_at" = ?
+		WHERE "partner"."agent_id" = ? AND "partner"."finance_account_id" <> ? AND "partner"."categorized_by" = 'transfer_detection'
+		  AND EXISTS (SELECT 1 FROM "agent_finance_transaction" AS "gone"
+			WHERE "gone"."agent_id" = "partner"."agent_id" AND "gone"."finance_account_id" = ? AND "gone"."categorized_by" = 'transfer_detection'
+			  AND "gone"."currency_code" = "partner"."currency_code" AND "gone"."amount" = -"partner"."amount"
+			  AND "gone"."posted_on" BETWEEN "partner"."posted_on" - CAST(? AS integer) AND "partner"."posted_on" + CAST(? AS integer))
+		RETURNING "partner"."id"`, time.Now(), agentId, financeAccountId, financeAccountId, transferPairingDays, transferPairingDays).
+		Scan(&deleted.ReleasedTransactionIDs).Error; err != nil {
+		return nil, err
+	}
+
+	// Every asset that values the account goes with it, history and all.
+	// Kept, it would be detached and still counted in net worth from its
+	// last value on, and an account imported under a wrong identifier is
+	// what this is for: its history beside the right account's would count
+	// the same money twice.
+	var assetIds []string
+	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" WHERE "agent_id" = ? AND "finance_account_id" = ? ORDER BY "id"`,
+		agentId, financeAccountId).Scan(&assetIds).Error; err != nil {
+		return nil, err
+	}
+	for _, assetId := range assetIds {
+		if err := self.DeleteAsset(agentId, assetId); err != nil {
+			return nil, err
+		}
+	}
+	deleted.DeletedAssetCount = len(assetIds)
+	if err := self.applyMutation(models.AuditResourceFinanceAccount, financeAccountId, models.AuditActionDelete, financeAccountAudit(before), nil, func(tx *gorm.DB) error {
+		return tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, financeAccountId).Delete(&agentFinanceAccountModel{}).Error
+	}); err != nil {
+		return nil, err
+	}
+	return deleted, nil
 }
 
 // --- the sync ----------------------------------------------------------

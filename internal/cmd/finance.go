@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
@@ -16,6 +18,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/finance/ofx"
 )
 
@@ -126,6 +129,25 @@ func NewFinanceCommand() *cli.Command {
 					"added again, so importing overlapping statements adds nothing twice. Use - to read the file from\n" +
 					"standard input.",
 				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceImportStatement,
+			},
+			{
+				Name: "import-transactions", Usage: "import one account's transactions from a JSON file of rows, such as rows read off screenshots",
+				ArgsUsage: "<file.json | ->",
+				Description: "The file is one JSON object with the ImportTransactions arguments: institutionName, accountName,\n" +
+					"accountNumber (the digits shown, masked ones as ****1234), statementAccountKind (bank, card or other),\n" +
+					"currencyCode, bankCode, ledgerBalanceAmount, ledgerBalanceOn, ledgerBalanceTimeZone, monthlyTotals\n" +
+					"([{totalMonth, totalAmount}]) and transactionRows ([{postedOn, description, amount, transactionKind,\n" +
+					"runningBalanceAmount, totalMonth}]), amounts signed with money out negative. Running balances and\n" +
+					"monthly totals are checked before anything is written, and rows imported before add nothing.",
+				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceImportTransactions,
+			},
+			{
+				Name: "rename-statement-account", Usage: "give an account of imported statements your own name, which later imports keep",
+				ArgsUsage: "<finance-account-id> <name>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceRenameStatementAccount,
+			},
+			{
+				Name: "delete-statement-account", Usage: "delete an account of imported statements, its transactions and its net worth history",
+				ArgsUsage: "<finance-account-id>", Flags: forceFlags(), Action: runFinanceDeleteStatementAccount,
 			},
 			{Name: "statement-import", Usage: "the address to mail OFX statements to, and what the last import did", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceStatementImport},
 			{
@@ -337,7 +359,8 @@ var financeSubcommandOperations = map[string]string{
 	"saving-summary": "SavingSummary", "spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
 	"create-savings-target": "CreateSavingsTarget", "update-savings-target": "UpdateSavingsTarget",
 	"close-savings-target": "CloseSavingsTarget", "import-statement": "ImportStatement", "statement-import": "StatementImport",
-	"regenerate-statement-import-address": "RegenerateStatementImportAddress",
+	"regenerate-statement-import-address": "RegenerateStatementImportAddress", "import-transactions": "ImportTransactions",
+	"rename-statement-account": "RenameStatementAccount", "delete-statement-account": "DeleteStatementAccount",
 }
 
 // operationOf is the finance operation a subcommand calls.
@@ -927,6 +950,153 @@ func runFinanceRegenerateStatementImportAddress(ctx context.Context, command *cl
 		return err
 	}
 	return printStatementImport(command, statementImport)
+}
+
+// jsonDecimal is an amount in the file import-transactions reads, written
+// as a string or as a JSON number, kept as the text written: an amount
+// never goes through a float.
+type jsonDecimal string
+
+func (self *jsonDecimal) UnmarshalJSON(encoded []byte) error {
+	var text string
+	if err := json.Unmarshal(encoded, &text); err == nil {
+		*self = jsonDecimal(text)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(encoded, &number); err != nil {
+		return fmt.Errorf("an amount is a decimal, as a string or a number, not %s", encoded)
+	}
+	*self = jsonDecimal(number.String())
+	return nil
+}
+
+// transactionRowsFile is the file import-transactions reads: the
+// ImportTransactions arguments, named as the API names them.
+type transactionRowsFile struct {
+	InstitutionName        string                     `json:"institutionName"`
+	AccountName            string                     `json:"accountName,omitempty"`
+	AccountNumber          string                     `json:"accountNumber"`
+	IsAccountNumberPartial bool                       `json:"isAccountNumberPartial,omitempty"`
+	StatementAccountKind   string                     `json:"statementAccountKind"`
+	CurrencyCode           string                     `json:"currencyCode"`
+	BankCode               string                     `json:"bankCode,omitempty"`
+	TransactionRows        []transactionRowsFileRow   `json:"transactionRows"`
+	LedgerBalanceAmount    jsonDecimal                `json:"ledgerBalanceAmount,omitempty"`
+	LedgerBalanceOn        string                     `json:"ledgerBalanceOn,omitempty"`
+	LedgerBalanceTimeZone  string                     `json:"ledgerBalanceTimeZone,omitempty"`
+	MonthlyTotals          []transactionRowsFileTotal `json:"monthlyTotals,omitempty"`
+}
+
+type transactionRowsFileRow struct {
+	PostedOn             string      `json:"postedOn"`
+	Description          string      `json:"description"`
+	Amount               jsonDecimal `json:"amount"`
+	TransactionKind      string      `json:"transactionKind,omitempty"`
+	RunningBalanceAmount jsonDecimal `json:"runningBalanceAmount,omitempty"`
+	TotalMonth           string      `json:"totalMonth,omitempty"`
+}
+
+type transactionRowsFileTotal struct {
+	TotalMonth  string      `json:"totalMonth"`
+	TotalAmount jsonDecimal `json:"totalAmount"`
+}
+
+// transactionRowsInput is the file as the finance package checks it.
+func (self *transactionRowsFile) transactionRowsInput() *finance.TransactionRowsInput {
+	input := &finance.TransactionRowsInput{
+		InstitutionName: self.InstitutionName, AccountName: self.AccountName, AccountNumber: self.AccountNumber,
+		IsAccountNumberPartial: self.IsAccountNumberPartial, StatementAccountKind: finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
+		CurrencyCode: self.CurrencyCode, BankCode: self.BankCode, LedgerBalanceAmount: string(self.LedgerBalanceAmount),
+		LedgerBalanceOn: self.LedgerBalanceOn, LedgerBalanceTimeZone: self.LedgerBalanceTimeZone,
+	}
+	for _, row := range self.TransactionRows {
+		input.TransactionRows = append(input.TransactionRows, finance.TransactionRow{
+			PostedOn: row.PostedOn, Description: row.Description, Amount: string(row.Amount), TransactionKind: row.TransactionKind,
+			RunningBalanceAmount: string(row.RunningBalanceAmount), TotalMonth: row.TotalMonth,
+		})
+	}
+	for _, total := range self.MonthlyTotals {
+		input.MonthlyTotals = append(input.MonthlyTotals, finance.MonthlyTotal{TotalMonth: total.TotalMonth, TotalAmount: string(total.TotalAmount)})
+	}
+	return input
+}
+
+func runFinanceImportTransactions(ctx context.Context, command *cli.Command) error {
+	path, err := financeArgument(command, 0, "the JSON file of rows: teanode finance import-transactions rows.json")
+	if err != nil {
+		return err
+	}
+	var content []byte
+	if path == "-" {
+		content, err = io.ReadAll(io.LimitReader(os.Stdin, ofx.MaximumFileBytes+1))
+	} else {
+		content, err = readLimitedFile(path, ofx.MaximumFileBytes+1)
+	}
+	if err != nil {
+		return err
+	}
+	if len(content) > ofx.MaximumFileBytes {
+		return usage(fmt.Sprintf("the file is larger than %d MB, more than any account's rows", ofx.MaximumFileBytes/(1024*1024)))
+	}
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	var rows transactionRowsFile
+	if err := decoder.Decode(&rows); err != nil {
+		return usage("the file is not the rows import-transactions reads: " + err.Error())
+	}
+	// Checked here first, the way the server checks it, so a set that
+	// does not add up is refused before it is sent, naming the row. The
+	// server checks again, and also refuses a day after the person's today.
+	check, err := finance.CheckTransactionRows(rows.transactionRowsInput(), "")
+	if err != nil {
+		return usage(err.Error())
+	}
+	encoded, err := json.Marshal(rows)
+	if err != nil {
+		return err
+	}
+	variables := map[string]any{}
+	if err := json.Unmarshal(encoded, &variables); err != nil {
+		return err
+	}
+	var imported *client.FinanceStatementImport
+	if err := financeCall(ctx, command, operationOf(command), variables, &imported); err != nil {
+		return err
+	}
+	return printDone(command, imported, statementImportLine(imported)+"; checked: "+check.VerificationSummary())
+}
+
+func runFinanceRenameStatementAccount(ctx context.Context, command *cli.Command) error {
+	financeAccountId, err := financeArgument(command, 0, "the finance account's id and its new name: teanode finance rename-statement-account <id> \"Everyday card\"")
+	if err != nil {
+		return err
+	}
+	accountName, err := financeArgument(command, 1, "the new name")
+	if err != nil {
+		return err
+	}
+	var renamed *client.FinanceAccount
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"financeAccountId": financeAccountId, "accountName": accountName}, &renamed); err != nil {
+		return err
+	}
+	return printDone(command, renamed, renamed.ID+": renamed "+renamed.AccountName)
+}
+
+func runFinanceDeleteStatementAccount(ctx context.Context, command *cli.Command) error {
+	financeAccountId, err := financeArgument(command, 0, "the finance account's id; teanode finance accounts --json lists them")
+	if err != nil {
+		return err
+	}
+	if err := confirm(command, "Delete finance account "+financeAccountId+", its transactions and its net worth history?"); err != nil {
+		return err
+	}
+	var deleted *client.StatementAccountDeleted
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"financeAccountId": financeAccountId}, &deleted); err != nil {
+		return err
+	}
+	return printDone(command, deleted, fmt.Sprintf("%s: deleted, with %d transactions and %d assets", deleted.FinanceAccountID,
+		deleted.DeletedTransactionCount, deleted.DeletedAssetCount))
 }
 
 func runFinanceSources(ctx context.Context, command *cli.Command) error {

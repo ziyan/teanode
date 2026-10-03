@@ -33,12 +33,14 @@ const FinanceCursorLastStatementImport = "lastStatementImport"
 type StatementImportOrigin string
 
 // A statement mailed to the person's import address, a file uploaded from
-// the dashboard or the command line, or the attachment of a message the
-// person pointed at.
+// the dashboard or the command line, the attachment of a message the
+// person pointed at, or transaction rows sent instead of a file (what the
+// agent read off screenshots, with ImportTransactions).
 const (
-	StatementImportOriginMail    StatementImportOrigin = "mail"
-	StatementImportOriginUpload  StatementImportOrigin = "upload"
-	StatementImportOriginMessage StatementImportOrigin = "message"
+	StatementImportOriginMail            StatementImportOrigin = "mail"
+	StatementImportOriginUpload          StatementImportOrigin = "upload"
+	StatementImportOriginMessage         StatementImportOrigin = "message"
+	StatementImportOriginTransactionRows StatementImportOrigin = "transaction_rows"
 )
 
 // FinanceStatementImport is what one import of statement files did: kept

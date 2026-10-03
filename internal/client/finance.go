@@ -589,6 +589,14 @@ type FinanceStatementImport struct {
 	ImportErrorMessage           string    `json:"importErrorMessage,omitempty"`
 }
 
+// StatementAccountDeleted is what deleting an account of imported
+// statements removed.
+type StatementAccountDeleted struct {
+	FinanceAccountID        string `json:"financeAccountId"`
+	DeletedTransactionCount int    `json:"deletedTransactionCount"`
+	DeletedAssetCount       int    `json:"deletedAssetCount"`
+}
+
 // StatementImport is the address to mail statements to, whether importing
 // is on, and what the last import did.
 type StatementImport struct {
@@ -751,6 +759,18 @@ const (
 
 	DocumentRegenerateStatementImportAddress = `mutation { RegenerateStatementImportAddress ` + statementImportFields + ` }`
 
+	DocumentImportTransactions = `mutation ($institutionName: String!, $accountName: String, $accountNumber: String!, $isAccountNumberPartial: Boolean, $statementAccountKind: String!, $currencyCode: String!, $bankCode: String, $transactionRows: [TransactionRowInput!]!, $ledgerBalanceAmount: String, $ledgerBalanceOn: String, $ledgerBalanceTimeZone: String, $monthlyTotals: [MonthlyTotalInput!]) {
+  ImportTransactions(institutionName: $institutionName, accountName: $accountName, accountNumber: $accountNumber, isAccountNumberPartial: $isAccountNumberPartial, statementAccountKind: $statementAccountKind, currencyCode: $currencyCode, bankCode: $bankCode, transactionRows: $transactionRows, ledgerBalanceAmount: $ledgerBalanceAmount, ledgerBalanceOn: $ledgerBalanceOn, ledgerBalanceTimeZone: $ledgerBalanceTimeZone, monthlyTotals: $monthlyTotals) ` + financeStatementImportFields + `
+}`
+
+	DocumentRenameStatementAccount = `mutation ($financeAccountId: String!, $accountName: String!) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) ` + financeAccountFields + `
+}`
+
+	DocumentDeleteStatementAccount = `mutation ($financeAccountId: String!) {
+  DeleteStatementAccount(financeAccountId: $financeAccountId) { financeAccountId deletedTransactionCount deletedAssetCount }
+}`
+
 	DocumentCreateFinanceLinkToken = `mutation ($sourceId: String) { CreateFinanceLinkToken(sourceId: $sourceId) { linkToken sourceId } }`
 
 	DocumentCompleteFinanceLink = `mutation ($publicToken: String!, $institutionId: String, $institutionName: String) {
@@ -859,7 +879,9 @@ var FinanceDocuments = map[string]string{
 	"ReportingCurrency": DocumentReportingCurrency,
 	"StatementImport":   DocumentStatementImport, "ImportStatement": DocumentImportStatement,
 	"RegenerateStatementImportAddress": DocumentRegenerateStatementImportAddress,
-	"CreateFinanceLinkToken":           DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
+	"ImportTransactions":               DocumentImportTransactions, "RenameStatementAccount": DocumentRenameStatementAccount,
+	"DeleteStatementAccount": DocumentDeleteStatementAccount,
+	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
 	"CreateAsset": DocumentCreateAsset,
