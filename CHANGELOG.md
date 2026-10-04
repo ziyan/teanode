@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.109.0] - 2026-10-04
+
+### Added
+
+- Clicking a budget on Spending opens its transactions for that month or year. (#328)
+
 ## [0.108.1] - 2026-10-04
 
 ### Changed
