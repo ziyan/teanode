@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.107.0] - 2026-10-04
+
+### Added
+
+- An operator who may manage accounts can sign in as another person from People and access, Users, to help them: they can do what that person can, no more. A mark on the avatar says so, and the account menu has the way back; the person sees it in their list of sessions, and the audit log names both. (#324)
+
 ## [0.106.2] - 2026-10-04
 
 ### Changed
