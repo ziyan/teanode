@@ -16,6 +16,17 @@ type Principal struct {
 
 	// Console says the caller is the host itself, which may do everything.
 	Console bool
+
+	// Impersonator is the operator signed in as User, when the request is
+	// an impersonation: User is whose account it is, Impersonator who is
+	// really there.
+	Impersonator *models.User
+}
+
+// IsImpersonation says whether an operator is signed in as the account
+// rather than its owner.
+func (self *Principal) IsImpersonation() bool {
+	return self != nil && self.Impersonator != nil
 }
 
 // UserID is the account's identifier, or empty for the console.

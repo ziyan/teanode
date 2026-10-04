@@ -55,7 +55,9 @@ func (self *graph) withLocation(handler http.HandlerFunc) http.HandlerFunc {
 
 func (self *graph) touchLocation(request *http.Request) {
 	username := request.Header.Get(api.AuthenticatedUsernameHeader)
-	if username == "" {
+	// Not while somebody else is signed in as them: the zone and language
+	// would be the operator's browser's, and the person's briefs would move.
+	if username == "" || api.ImpersonatorUsernameFromRequest(request) != "" {
 		return
 	}
 	timezone := strings.TrimSpace(request.Header.Get(TimezoneHeader))

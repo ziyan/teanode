@@ -15,9 +15,13 @@ type Session struct {
 	IP        string     `json:"ip"`
 	UserAgent string     `json:"userAgent"`
 	Revoked   *time.Time `json:"revoked"`
+
+	// ImpersonatorUsername is the operator who signed in as the account
+	// with this session, when it was one.
+	ImpersonatorUsername string `json:"impersonatorUsername"`
 }
 
-const sessionFields = `{ id current created expires lastUsed ip userAgent revoked }`
+const sessionFields = `{ id current created expires lastUsed ip userAgent revoked impersonatorUsername }`
 
 // ListSessions returns an account's signed-in browsers, newest first. The
 // console, which is not an account, names whose with username.

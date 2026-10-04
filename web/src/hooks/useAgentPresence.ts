@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { graphql } from '../api'
+import { graphql, signedInAsSomebodyElse } from '../api'
 
 const REPORT = `
   mutation ($isVisible: Boolean!, $idleSeconds: Int!) {
@@ -28,6 +28,9 @@ export function useAgentPresence(isAvailable: boolean) {
       lastInputAt = Date.now()
     }
     const report = () => {
+      // Not while an operator is signed in as the person: they are not
+      // here, and the agent would start a conversation with nobody.
+      if (signedInAsSomebodyElse()) return
       const idleSeconds = Math.max(0, Math.round((Date.now() - lastInputAt) / 1000))
       void graphql(REPORT, { isVisible: document.visibilityState === 'visible', idleSeconds }).catch(() => undefined)
     }

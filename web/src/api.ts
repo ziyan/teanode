@@ -114,6 +114,23 @@ async function send(
   }
 }
 
+// Whether this browser is signed in as somebody else, set whenever the
+// session is read. The operator can do whatever the person can; what the page
+// says on its own about the person being here is left unsaid, since it is
+// not them.
+let isImpersonating = false
+
+// signedInAsSomebodyElse says whether an operator is signed in as the
+// account this page shows.
+export function signedInAsSomebodyElse(): boolean {
+  return isImpersonating
+}
+
+// setImpersonating is for tests; the session read sets it otherwise.
+export function setImpersonating(value: boolean) {
+  isImpersonating = value
+}
+
 export async function graphql<T>(
   query: string,
   variables: Record<string, unknown> = {},
@@ -159,6 +176,9 @@ export interface Session {
 
   // Identity providers to offer on the sign-in page, one button each.
   ssoProviders?: { id: string; name: string }[]
+
+  // The operator signed in as this account, when one is.
+  impersonatorUsername?: string
 }
 
 // Permissions is what a request may do: server and all-domains permissions
@@ -175,10 +195,11 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } }'
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)
+  isImpersonating = Boolean(data.GetSession.impersonatorUsername)
   return data.GetSession
 }
 
@@ -265,6 +286,23 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
 export async function logout(): Promise<void> {
   await graphql(`mutation { Logout ${SESSION_FIELDS} }`)
+}
+
+// Signing in as somebody else: the server keeps the operator's
+// own session aside and sets the cookie for the person's. The page reloads
+// afterwards, since everything on it was the operator's.
+export async function startImpersonation(userId: string): Promise<Session> {
+  const data = await graphql<{ StartImpersonation: Session }>(
+    `mutation ($userId: String!) { StartImpersonation(userId: $userId) ${SESSION_FIELDS} }`,
+    { userId },
+  )
+  return data.StartImpersonation
+}
+
+// Coming back to one's own account.
+export async function endImpersonation(): Promise<Session> {
+  const data = await graphql<{ EndImpersonation: Session }>(`mutation { EndImpersonation ${SESSION_FIELDS} }`)
+  return data.EndImpersonation
 }
 
 // --- the shapes the server returns -----------------------------------------

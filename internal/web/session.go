@@ -23,6 +23,21 @@ import (
 // SessionCookieName is the cookie holding a signed session.
 const SessionCookieName = "teanode_session"
 
+// ReturnCookieName holds the operator's own session while they are signed
+// in as somebody else. The server keeps only a hash of a session's secret,
+// so it cannot write the operator's cookie again when they come back: the
+// browser keeps it, here, while the impersonation lasts.
+const ReturnCookieName = "teanode_session_return"
+
+// Identity is who a request is: the account, the session it uses when it
+// uses one, and the operator behind it when it is an impersonation.
+type Identity struct {
+	Username  string
+	SessionID string
+
+	ImpersonatorUsername string
+}
+
 var (
 	// ErrInvalidCredentials is returned by Login for both an unknown username
 	// and a wrong password, so that the reply cannot be used to discover
@@ -55,6 +70,23 @@ type Authenticator interface {
 	// authentication is satisfied at all. When no dashboard users are
 	// configured every request is allowed and the username is empty.
 	Authenticate(request *http.Request) (username string, ok bool)
+
+	// AuthenticateIdentity is Authenticate with the rest of who the
+	// request is: its session, and the operator behind it when it is an
+	// impersonation.
+	AuthenticateIdentity(request *http.Request) (Identity, bool)
+
+	// StartImpersonation signs the operator this request belongs to in as
+	// another account, for as long as the operator's own session: a session of that
+	// account's naming the operator, the operator's own cookie kept aside.
+	// The caller has decided the operator may; this checks only that the
+	// request is an ordinary session of theirs.
+	StartImpersonation(response http.ResponseWriter, request *http.Request, username string) (*models.Session, error)
+
+	// EndImpersonation ends the impersonation this request is, and puts
+	// the operator's own session back when it is still alive. It says
+	// whether it did.
+	EndImpersonation(response http.ResponseWriter, request *http.Request) (bool, error)
 
 	// Login verifies a password, stores a session and writes its cookie.
 	Login(response http.ResponseWriter, request *http.Request, username, password string) error
@@ -239,8 +271,12 @@ func (self *authenticator) Required() bool {
 }
 
 func (self *authenticator) Authenticate(request *http.Request) (string, bool) {
-	username, _, ok := self.authenticate(request)
-	return username, ok
+	identity, ok := self.authenticate(request)
+	return identity.Username, ok
+}
+
+func (self *authenticator) AuthenticateIdentity(request *http.Request) (Identity, bool) {
+	return self.authenticate(request)
 }
 
 // AllowLoginAttempt is the login limiter, for the sign-in paths that do not
@@ -252,47 +288,75 @@ func (self *authenticator) AllowLoginAttempt(request *http.Request) bool {
 // CurrentSessionID is the session a request is using, or empty when it is
 // authenticated by a token or by nothing at all.
 func (self *authenticator) CurrentSessionID(request *http.Request) string {
-	_, sessionId, _ := self.authenticate(request)
-	return sessionId
+	identity, _ := self.authenticate(request)
+	return identity.SessionID
 }
 
 // authenticate resolves a request to an operator, and to the session it is
 // using when it is using one.
-func (self *authenticator) authenticate(request *http.Request) (string, string, bool) {
+func (self *authenticator) authenticate(request *http.Request) (Identity, bool) {
 	// A bearer token is checked before the cookie, because a client that sent
 	// one meant to use it, and falling back to an ambient session would hide
 	// a revoked or mistyped token behind whoever happens to be logged in.
 	if header := request.Header.Get("Authorization"); header != "" {
 		username, ok := self.authenticateBearer(header, request)
-		return username, "", ok
+		return Identity{Username: username}, ok
 	}
 
 	if !self.Required() {
-		return "", "", true
+		return Identity{}, true
 	}
 
 	cookie, err := request.Cookie(SessionCookieName)
 	if err != nil {
-		return "", "", false
+		return Identity{}, false
 	}
 	session := self.resolveSession(cookie.Value, request)
 	if session == nil {
-		return "", "", false
+		return Identity{}, false
 	}
 
 	// A session for an account that has since been removed stops working
 	// immediately, without waiting for the row to expire.
 	user := self.findUserById(session.UserID)
 	if user == nil || user.Disabled() {
-		return "", "", false
+		return Identity{}, false
 	}
 	// A stored account is never the console, whatever it is named: the
 	// name is what says "console" downstream, and an account may not be
 	// given it, but a row that somehow has it must not be believed.
 	if models.IsReservedUsername(user.Username) {
-		return "", "", false
+		return Identity{}, false
 	}
-	return user.Username, session.ID, true
+	identity := Identity{Username: user.Username, SessionID: session.ID}
+	if session.IsImpersonation() {
+		impersonator, ok := self.liveImpersonator(session)
+		if !ok {
+			return Identity{}, false
+		}
+		identity.ImpersonatorUsername = impersonator.Username
+	}
+	return identity, true
+}
+
+// liveImpersonator is the operator behind an impersonation, while there is
+// somebody to answer for it: their account exists and may sign in, and
+// their own session is still alive. Signing out, being signed out or being
+// disabled ends what they were doing as somebody else at the same moment.
+func (self *authenticator) liveImpersonator(session *models.Session) (*models.User, bool) {
+	impersonator := self.findUserById(session.ImpersonatorUserID)
+	if impersonator == nil || impersonator.Disabled() || models.IsReservedUsername(impersonator.Username) {
+		return nil, false
+	}
+	own, _, err := self.database.GetSession(session.ImpersonatorSessionID)
+	if err != nil {
+		log.Errorf("could not read session %q: %s", session.ImpersonatorSessionID, err)
+		return nil, false
+	}
+	if own == nil || own.UserID != impersonator.ID || own.IsImpersonation() || !own.Active(time.Now()) {
+		return nil, false
+	}
+	return impersonator, true
 }
 
 // resolveSession turns a cookie into the session it names, or nil.
@@ -463,6 +527,11 @@ func (self *authenticator) StartSession(response http.ResponseWriter, request *h
 }
 
 func (self *authenticator) startSession(response http.ResponseWriter, request *http.Request, user *models.User) error {
+	// Signing in afresh in a browser that was signed in as somebody else
+	// ends that: its row would otherwise stay usable with no cookie
+	// anywhere pointing at it but the one a copy kept.
+	self.endImpersonationIn(response, request)
+
 	lifetime := self.config.Current().Session.Lifetime.Duration()
 	expiry := time.Now().Add(lifetime)
 
@@ -493,6 +562,11 @@ func (self *authenticator) startSession(response http.ResponseWriter, request *h
 }
 
 func (self *authenticator) Logout(response http.ResponseWriter, request *http.Request) {
+	// Signing out of somebody else's account is coming back to one's own,
+	// which is what the button in front of an operator then means.
+	if ended, err := self.EndImpersonation(response, request); err == nil && ended {
+		return
+	}
 	// The row is ended as well as the cookie cleared. Clearing only the
 	// cookie would leave a working session behind for anybody who had a copy
 	// of it, which is the thing a session table is for.
@@ -668,6 +742,12 @@ func (self *authenticator) ListSessions(username string, includeRevoked bool) ([
 	}
 	for _, session := range sessions {
 		session.Username = user.Username
+		// Named, so the person sees who was signed in as them.
+		if session.IsImpersonation() {
+			if impersonator := self.findUserById(session.ImpersonatorUserID); impersonator != nil {
+				session.ImpersonatorUsername = impersonator.Username
+			}
+		}
 	}
 	return sessions, nil
 }
@@ -975,4 +1055,130 @@ func (self *authenticator) UserByName(username string) *models.User {
 func (self *authenticator) TokenIDOf(value string) (string, bool) {
 	id, _, ok := parse(kindToken, TokenPrefix, value, self.tokenKey())
 	return id, ok
+}
+
+// ErrNotImpersonating is ending an impersonation from a request that is not
+// one, and ErrCannotImpersonate starting one from a request that is not an
+// ordinary session of the operator's own: a token, the console, or an
+// impersonation already.
+var (
+	ErrNotImpersonating  = errors.New("web: this session is not signed in as somebody else")
+	ErrCannotImpersonate = errors.New("web: signing in as somebody else needs your own browser session")
+)
+
+func (self *authenticator) StartImpersonation(response http.ResponseWriter, request *http.Request, username string) (*models.Session, error) {
+	if request.Header.Get("Authorization") != "" {
+		return nil, ErrCannotImpersonate
+	}
+	cookie, err := request.Cookie(SessionCookieName)
+	if err != nil {
+		return nil, ErrCannotImpersonate
+	}
+	own := self.resolveSession(cookie.Value, request)
+	if own == nil || own.IsImpersonation() {
+		return nil, ErrCannotImpersonate
+	}
+	operator := self.findUserById(own.UserID)
+	target := self.findUser(username)
+	if operator == nil || operator.Disabled() || target == nil || target.Disabled() || models.IsReservedUsername(target.Username) || target.ID == operator.ID {
+		return nil, ErrInvalidCredentials
+	}
+
+	// As long as the operator's own session and no longer: it ends when the
+	// person answering for it is signed out, as liveImpersonator checks.
+	expiry := own.ExpiresAt
+	id, value, keyHash := issue(kindSession, SessionPrefix, self.sessionKey())
+	ip, userAgent := requestOrigin(request, self.trustedProxies())
+	session, err := self.database.CreateSession(&models.Session{
+		ID: id, UserID: target.ID, ExpiresAt: expiry, UsedAt: time.Now(), IP: ip, UserAgent: userAgent,
+		ImpersonatorUserID: operator.ID, ImpersonatorSessionID: own.ID,
+	}, keyHash)
+	if err != nil {
+		return nil, fmt.Errorf("web: cannot store the session: %w", err)
+	}
+	session.Username, session.ImpersonatorUsername = target.Username, operator.Username
+
+	secure := self.isSecureRequest(request)
+	http.SetCookie(response, &http.Cookie{
+		Name: ReturnCookieName, Value: cookie.Value, Path: "/", Expires: expiry,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(response, &http.Cookie{
+		Name: SessionCookieName, Value: value, Path: "/", Expires: expiry,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+	})
+	log.Noticef("%s signed in as %s from %s, session %s", operator.Username, target.Username, request.RemoteAddr, id)
+	return session, nil
+}
+
+func (self *authenticator) EndImpersonation(response http.ResponseWriter, request *http.Request) (bool, error) {
+	cookie, err := request.Cookie(SessionCookieName)
+	if err != nil {
+		return false, ErrNotImpersonating
+	}
+	id, _, ok := parse(kindSession, SessionPrefix, cookie.Value, self.sessionKey())
+	if !ok {
+		return false, ErrNotImpersonating
+	}
+	session, _, err := self.database.GetSession(id)
+	if err != nil {
+		return false, err
+	}
+	if session == nil || !session.IsImpersonation() {
+		return false, ErrNotImpersonating
+	}
+	if err := self.database.RevokeSession(id, time.Now()); err != nil {
+		return false, err
+	}
+
+	// The operator's own session comes back when it is still theirs and
+	// alive; otherwise they are signed out, since there is nobody to
+	// return to.
+	secure := self.isSecureRequest(request)
+	restored := ""
+	if returning, err := request.Cookie(ReturnCookieName); err == nil {
+		if own := self.resolveSession(returning.Value, request); own != nil && own.ID == session.ImpersonatorSessionID && !own.IsImpersonation() {
+			restored = returning.Value
+			http.SetCookie(response, &http.Cookie{
+				Name: SessionCookieName, Value: returning.Value, Path: "/", Expires: own.ExpiresAt,
+				HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+			})
+		}
+	}
+	if restored == "" {
+		http.SetCookie(response, &http.Cookie{
+			Name: SessionCookieName, Value: "", Path: "/", MaxAge: -1,
+			HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+		})
+	}
+	http.SetCookie(response, &http.Cookie{
+		Name: ReturnCookieName, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+	})
+	log.Noticef("an impersonation ended, session %s", id)
+	return restored != "", nil
+}
+
+// endImpersonationIn revokes the impersonation a request's cookie is, if it
+// is one, and clears the cookie keeping the operator's own session.
+func (self *authenticator) endImpersonationIn(response http.ResponseWriter, request *http.Request) {
+	cookie, err := request.Cookie(SessionCookieName)
+	if err != nil {
+		return
+	}
+	id, _, ok := parse(kindSession, SessionPrefix, cookie.Value, self.sessionKey())
+	if !ok {
+		return
+	}
+	session, _, err := self.database.GetSession(id)
+	if err != nil || session == nil || !session.IsImpersonation() {
+		return
+	}
+	if err := self.database.RevokeSession(id, time.Now()); err != nil {
+		log.Errorf("could not end impersonation %q: %s", id, err)
+	}
+	http.SetCookie(response, &http.Cookie{
+		Name: ReturnCookieName, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: self.isSecureRequest(request), SameSite: http.SameSiteLaxMode,
+	})
 }

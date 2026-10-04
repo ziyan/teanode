@@ -45,6 +45,7 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 			// Never trust this header from outside; it is ours to set.
 			request.Header.Del(api.AuthenticatedUsernameHeader)
+			request.Header.Del(api.ImpersonatorUsernameHeader)
 
 			path := request.URL.Path
 
@@ -62,9 +63,13 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 			// caller had a perfectly good session: the early return skipped
 			// authentication as well as the refusal, so every resolver behind
 			// the GraphQL endpoint was told nobody was there.
-			username, ok := authenticator.Authenticate(request)
+			identity, ok := authenticator.AuthenticateIdentity(request)
+			username := identity.Username
 			if ok && username != "" {
 				request.Header.Set(api.AuthenticatedUsernameHeader, username)
+				if identity.ImpersonatorUsername != "" {
+					request.Header.Set(api.ImpersonatorUsernameHeader, identity.ImpersonatorUsername)
+				}
 			}
 
 			if !ok && !isPublic(path) {

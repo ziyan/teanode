@@ -52,13 +52,18 @@ func (self *graph) draftAttachmentsView(response http.ResponseWriter, request *h
 	ctx := request.Context()
 	ctx = api.ContextWithRequest(ctx, request)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
-	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user))
+	impersonator, err := self.impersonatorOf(request, user)
+	if err != nil {
+		http.Error(response, "failed to read who is signed in", http.StatusInternalServerError)
+		return
+	}
+	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user, impersonator))
 
 	// Whose draft this is, settled in a transaction of its own before a
 	// byte of the body is read: a stranger's upload costs nothing to
 	// buffer. The check is made again when the draft is written, since
 	// the draft may go away in between.
-	err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+	err = self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		ctx := api.ContextWithTransaction(ctx, tx)
 		principal, err := self.resolvePrincipal(tx, username, user)
 		if err != nil {

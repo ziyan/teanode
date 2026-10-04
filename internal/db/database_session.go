@@ -106,6 +106,9 @@ type sessionModel struct {
 
 	IP        string `gorm:"column:ip;size:64"`
 	UserAgent string `gorm:"type:text"`
+
+	ImpersonatorUserID    *string `gorm:"column:impersonator_user_id;size:32"`
+	ImpersonatorSessionID *string `gorm:"column:impersonator_session_id;size:32"`
 }
 
 func (self *sessionModel) TableName() string {
@@ -138,6 +141,9 @@ func sessionFromModel(model *sessionModel) *models.Session {
 		RevokedAt:  timeOrZero(model.RevokedAt),
 		IP:         model.IP,
 		UserAgent:  model.UserAgent,
+
+		ImpersonatorUserID:    stringOrEmpty(model.ImpersonatorUserID),
+		ImpersonatorSessionID: stringOrEmpty(model.ImpersonatorSessionID),
 	}
 }
 
@@ -153,6 +159,9 @@ func (self *database) CreateSession(session *models.Session, keyHash string) (*m
 		UsedAt:     timeOrNil(session.UsedAt),
 		IP:         session.IP,
 		UserAgent:  session.UserAgent,
+
+		ImpersonatorUserID:    stringOrNil(session.ImpersonatorUserID),
+		ImpersonatorSessionID: stringOrNil(session.ImpersonatorSessionID),
 	}
 	if err := self.db.Create(model).Error; err != nil {
 		return nil, err

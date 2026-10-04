@@ -13,8 +13,9 @@ import (
 type queryExecutionKey struct{}
 
 type queryExecution struct {
-	Username string
-	User     *models.User
+	Username     string
+	User         *models.User
+	Impersonator *models.User
 }
 
 // isModelBackedQuery is the queries that ask a model, or wait on runs
@@ -88,5 +89,9 @@ func (self *graph) queryPrincipal(transaction db.Transaction, execution *queryEx
 			return nil, nil
 		}
 	}
-	return self.resolvePrincipal(transaction, execution.Username, user)
+	principal, err := self.resolvePrincipal(transaction, execution.Username, user)
+	if principal != nil {
+		principal.Impersonator = execution.Impersonator
+	}
+	return principal, err
 }
