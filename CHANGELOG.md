@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.108.1] - 2026-10-04
+
+### Changed
+
+- Other is a built-in spending category; a transaction you say fits nothing goes there, and "No spending category" is no longer a choice. Transactions still waiting show "Needs a category". (#326)
+- Money that comes in under Other counts as income, as money with no category did, rather than coming off what Other spent. (#326)
+- A synced transaction whose bank category maps to other now lands in the built-in Other, never in a spending category of your own that happens to be named other. (#326)
+
 ## [0.108.0] - 2026-10-04
 
 ### Added
