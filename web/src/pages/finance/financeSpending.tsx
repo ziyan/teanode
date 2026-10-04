@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -106,7 +106,7 @@ export function FinanceSpendingSection() {
           onSelectYear={selectYear}
         />
         <SavingSummaryPanel month={period.month} year={period.year} />
-        <BudgetStatusPanel period={period} />
+        <BudgetStatusPanel period={period} range={yearRange(period.year, today)} />
         <SpendingSummaryPanel range={yearRange(period.year, today)} periodLabel={periodLabel} />
       </>
     )
@@ -117,7 +117,7 @@ export function FinanceSpendingSection() {
       <SpendingByMonthPanel month={period.month} currentMonth={currentMonth} onSelectMonth={selectMonth} />
       <SpendingByDayPanel month={period.month} />
       <SavingSummaryPanel month={period.month} />
-      <BudgetStatusPanel period={period} />
+      <BudgetStatusPanel period={period} range={monthRange(period.month, personToday())} />
       <SpendingSummaryPanel
         range={monthRange(period.month, personToday())}
         periodLabel={monthLabel(period.month, 'long')}
@@ -304,8 +304,9 @@ function paceTone(pace: BudgetPace): 'good' | 'warn' | 'bad' {
 }
 
 // The budgets of the period: a month's, or a year's, each of a year's
-// rows adding up the months that had its budget as it was then.
-function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
+// rows adding up the months that had its budget as it was then. Each row
+// opens its spending category's transactions over the period's days.
+function BudgetStatusPanel({ period, range }: { period: SpendingPeriod; range: { from: string; to: string } }) {
   const { t } = useTranslation()
   const isYear = period.spendingPeriodKind === 'year'
   const variables = isYear ? { year: period.year } : { month: period.month }
@@ -368,6 +369,7 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
                 isPast={isPast}
                 isYear={isYear}
                 usualMonths={usualMonths}
+                range={range}
               />
             ))}
           </div>
@@ -384,12 +386,39 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
                 isPast={isPast}
                 isYear={isYear}
                 usualMonths={usualMonths}
+                range={range}
               />
             ))}
           </div>
         </div>
       ) : null}
     </SettingsSection>
+  )
+}
+
+// BudgetRowHead is a budget row's name, pace and amounts, all one link to
+// the transactions in its spending category over the period's days.
+function BudgetRowHead({
+  name,
+  spendingCategoryId,
+  range,
+  children,
+}: {
+  name: string
+  spendingCategoryId: string
+  range: { from: string; to: string }
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  return (
+    <Link
+      className="finance-budget-row-head finance-budget-row-link"
+      to={transactionsPath({ ...range, spendingCategoryId })}
+      title={t('finance.openTransactions', { name })}
+    >
+      <strong>{name}</strong>
+      {children}
+    </Link>
   )
 }
 
@@ -403,11 +432,13 @@ function IncomeStatusRow({
   isPast,
   isYear,
   usualMonths,
+  range,
 }: {
   row: IncomeCategoryBudgetStatus
   isPast: boolean
   isYear: boolean
   usualMonths: BudgetedMonths
+  range: { from: string; to: string }
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -423,11 +454,14 @@ function IncomeStatusRow({
   const headingFor = t('finance.projected', { amount: formatMoney(projected, row.currencyCode) })
   return (
     <div className="finance-budget-row">
-      <div className="finance-budget-row-head">
-        <strong>{categoryName(row.spendingCategoryName)}</strong>
+      <BudgetRowHead
+        name={categoryName(row.spendingCategoryName)}
+        spendingCategoryId={row.spendingCategoryId}
+        range={range}
+      >
         <Tag value={words.incomePace(row.incomePace)} tone={tone} />
         <span className="finance-budget-row-said">{said}</span>
-      </div>
+      </BudgetRowHead>
       <MeterBar
         fraction={expected > 0 ? received / expected : 0}
         tone={tone}
@@ -572,12 +606,14 @@ function BudgetStatusRow({
   isPast,
   isYear,
   usualMonths,
+  range,
 }: {
   row: SpendingCategoryBudgetStatus
   isOther: boolean
   isPast: boolean
   isYear: boolean
   usualMonths: BudgetedMonths
+  range: { from: string; to: string }
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -598,11 +634,14 @@ function BudgetStatusRow({
   })
   return (
     <div className="finance-budget-row">
-      <div className="finance-budget-row-head">
-        <strong>{categoryName(row.spendingCategoryName, { isOther })}</strong>
+      <BudgetRowHead
+        name={categoryName(row.spendingCategoryName, { isOther })}
+        spendingCategoryId={row.spendingCategoryId}
+        range={range}
+      >
         <Tag value={words.budgetPace(row.budgetPace)} tone={tone} />
         <span className="finance-budget-row-said">{said}</span>
-      </div>
+      </BudgetRowHead>
       <MeterBar
         fraction={budget > 0 ? spent / budget : 0}
         tone={tone}
