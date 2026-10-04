@@ -367,9 +367,13 @@ func TestDetectFinanceTransfersPairsAccounts(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		// The person taking the spending category away is their decision
-		// that it is not a transfer either.
-		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["person-out"].ID, "", models.CategorizedByPerson, nil); err != nil {
+		// The person saying it fits nothing is their decision that it is
+		// not a transfer either.
+		otherCategory, err := tx.EnsureOtherSpendingCategory(fixture.agentId)
+		if err != nil {
+			t.Fatalf("EnsureOtherSpendingCategory: %s", err)
+		}
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["person-out"].ID, otherCategory.ID, models.CategorizedByPerson, nil); err != nil {
 			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
 		markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01")

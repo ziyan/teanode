@@ -32,6 +32,26 @@ it('counts categories net of refunds and leaves income out', () => {
   ])
 })
 
+// The other category is counted as no category was: what came in under
+// it is income, so it does not come off what went out under it.
+it('counts the other category by its money out alone', () => {
+  const lines = spendingLines(
+    [
+      row('category-other', '50.00', '20.00'),
+      row('category-food', '100.00', '10.00'),
+      row('category-refunded', '0', '15.00'),
+    ],
+    'spendingCategory',
+    new Set(),
+    'category-other',
+  )
+  expect(lines.map((line) => [line.groupKey, line.spendingAmount])).toEqual([
+    ['category-food', 90],
+    ['category-other', 50],
+    ['category-refunded', -15],
+  ])
+})
+
 // By merchant or account a group that only paid in is not a place money
 // went, and one that spent is counted net.
 it('keeps only the merchants and accounts that spent something', () => {

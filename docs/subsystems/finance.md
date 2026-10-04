@@ -47,6 +47,12 @@ tool and the dashboard.
 - **transfer category**: the built-in spending category, one per agent,
   whose transactions moved money between the person's own accounts and
   are neither spending nor income. There is no separate transfer mark.
+- **other category**: the built-in spending category, one per agent, for
+  what fits none of the others. It is what the person (or the categorize
+  model) picks for "fits nothing", and it is counted the way no spending
+  category was: money out in it is spending, money in it is income.
+  **Uncategorized** (no spending category) is not a choice but the state
+  of a transaction not decided yet, shown as "Needs a category".
 - **mirrored copy**: the same charge reported again on another investment
   account of the same Plaid finance source, a **duplicate** of the
   **counted copy**. What decided it is `mirror_detection` or the `person`.
@@ -153,7 +159,8 @@ its detailed provider category (`ofx:DEBIT`, `ofx:PAYMENT`) and the side of
 the account as its primary (`ofx:creditcard`, `ofx:bank`). The mapping takes
 a `PAYMENT` on a card as a transfer (the person paying their own card), on a
 bank account as spending; `XFER` as a transfer; `FEE` and `SRVCHG` as fees;
-interest as a fee on a card and income on a bank account; cash out as other.
+interest as a fee on a card and income on a bank account; cash out as the
+other category.
 A purchase (`DEBIT`) and a refund (`CREDIT`) say nothing about what was
 bought and go to the categorize model with the merchant's name, so a refund
 lowers the spending it refunds once it is placed.
@@ -848,7 +855,8 @@ it, which a test checks.
 Three cases the migration handles in a way worth knowing, none of which
 the data it was first run on had. A person's "not a transfer" on a
 transaction with no spending category becomes their choice of none, so
-the categorize model leaves it uncategorized until the person picks one;
+the categorize model leaves it uncategorized until the person picks one
+(migration 0147 later moved every such choice to the other category);
 leaving it to the model instead would also let pairing mark it a transfer
 again, against what the person said. A transaction the person categorized
 that a rule or pairing had marked a transfer becomes a transfer by that
@@ -857,12 +865,74 @@ with both a `transfer` (in any case) and a `transfer between own accounts`
 of its own fails the unique name index, so the migration does not run
 until one of them is renamed.
 
+Other is a built-in spending category too: the agent's **other category**
+(`is_other` on `agent_spending_category`, migration 0147), one per agent
+(a partial unique index), made with every agent and found by its flag,
+never its name. It holds what fits none of the person's other spending
+categories. It takes a budget like any of them, but it is counted the
+way money with no spending category always was: money out in it is its
+spending, and money in it is income, not a refund that lowers that
+spending. No income budget counts that income, since it belongs to no
+income category; cash flow and the saving summary do. It cannot be
+deleted, be an income category,
+have a parent or have children (`validateSpendingCategory`, with checks
+in the table for income and a parent); it can be renamed or hidden. It is named
+`other`, shown in the reader's language only while it is the flagged one
+under that name, or `anything else` for a person who has an `other` of
+their own that could not become it (income, under a parent, or with
+children), which stays theirs; with both names taken, a few characters
+follow the second. The word `other`, in any case, given to the tool, its
+confirmation cards or the command line where a spending category goes,
+is the other category whatever it is called, ahead of a person's own
+`other` (still theirs by its id). The provider category mapping's other
+(cash out at a machine, Plaid's `GENERAL_SERVICES`) goes to it by the
+flag.
+
+No spending category is not something a person chooses. A finance
+transaction with none (`categorized_by` empty) is one not decided yet:
+the categorize model and the rules work on it, and the dashboard's filter
+for it and its rows say "Needs a category". The person's "fits nothing"
+is the other category. `CategorizeTransaction` and
+`CategorizeTransactions` refuse an empty spending category with a message
+naming the other category (`isOther`), as do
+`SetTransactionCategorization` and `CategorizeTransactionsByPerson` for
+the person; the tool refuses `categorize_transaction` with no spending
+category or the word none before the person is asked to confirm it, and
+the command line refuses `none`. The categorize model is offered the
+other category, marked "for what fits none of the others" whatever it is
+called, and told it is the answer for a transaction it can read but not
+place, rather than leaving it out; leaving one out is for a transaction
+it cannot read at all. A hidden other category is not offered, like any
+hidden spending category.
+
+Migration 0147 made each agent's default `other` (by the name the
+defaults store it under, exactly, top-level, not income, with no
+children) the other category, and made one for every agent without, so
+the default's transactions, rules and budget stay where they were. Every
+transaction the person had given no spending category (`categorized_by`
+`person`, no spending category) moved to the other category, still the
+person's choice; what was not decided yet stayed uncategorized. The
+reverse drops the flag and its checks and keeps the category as an
+ordinary one, the one 0147 made included, with the transactions moved
+into it, since they cannot be told from ones the person filed there
+themselves.
+
+What that move changes in the totals, which a test checks against the
+totals before it: money out the person had filed under nothing counted as
+spending with no spending category and counts as spending in the other
+category, so spending is unchanged and only moves from the uncategorized
+group to other, where the budget pace can now find a repeat charge in it.
+Money in the person had filed under nothing counted as income and still
+does, since the other category counts money in as no spending category
+did. Nothing else changes.
+
 Spending means one thing everywhere it is shown (budgets, the day-by-day
 chart, cash flow, the Spending section's month chart and summary): money out
 less money in for a spending category that is neither income nor the
 transfer category, so a refund lowers the spending it refunds, plus money
-out with no spending category. Income is what income categories took in,
-plus money in with no spending category. The transfer category is in
+out in the other category or with no spending category. Income is what
+income categories took in, plus money in in the other category or with no
+spending category. The transfer category is in
 neither, and every query that leaves transfers out (spending and income
 per day, cash flow, budget pace and repeat charges, the saving summary, the
 spending summary in every grouping, its currency conversion and the tool's
@@ -1053,10 +1123,14 @@ A transfer is chosen like any spending category: in a transaction's row, in
 its details (where the line under the choice says what made it a transfer:
 pairing, the provider, a rule or the person) and as a spending rule's
 target. Every list to choose from offers the transfer category last, under
-a heading saying it is neither spending nor income. The list of spending
-categories marks it built in and has no delete for it, and its dialog
-offers only its name and whether it is hidden. The set-a-budget dialog
-leaves it out.
+a heading saying it is neither spending nor income, and the other category
+just before it, after the rest of the spending. No list offers no spending
+category: a transaction's row, its details and the bar over chosen rows
+show "Needs a category" in place of a choice while one is waiting, and the
+filter for those reads the same. The list of spending categories marks
+the transfer and other categories built in and has no delete for them,
+and their dialog offers only the name and whether it is hidden. The
+set-a-budget dialog leaves the transfer category out and offers other.
 
 **Listing.** `FinanceTransactions` and `FinanceTrades` answer a page,
 newest first, by `offset` and `limit` (at most 200), with `totalCount`,

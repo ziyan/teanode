@@ -349,17 +349,22 @@ function SpendingCategoriesPanel({
   }
 
   // One level of parents: a spending category that has a parent cannot be
-  // one, and a spending category cannot be its own. The transfer category
-  // stands alone: no parent, no children, never income.
+  // one, and a spending category cannot be its own. The built-in transfer
+  // and other categories stand alone: no parent, no children, never income.
   const parentChoices = categories.filter(
     (category) =>
-      !category.parentSpendingCategoryId && !category.isTransfer && (editing === 'new' || category.id !== editing?.id),
+      !category.parentSpendingCategoryId &&
+      !category.isTransfer &&
+      !category.isOther &&
+      (editing === 'new' || category.id !== editing?.id),
   )
-  const isEditingTransfer = editing !== null && editing !== 'new' && editing.isTransfer
-  // The transfer category last, as in every list to choose from.
+  const isEditingBuiltIn = editing !== null && editing !== 'new' && (editing.isTransfer || editing.isOther)
+  // Other after the rest of the spending and the transfer category last,
+  // as in every list to choose from.
+  const builtInOrder = (category: SpendingCategory) => (category.isTransfer ? 2 : category.isOther ? 1 : 0)
   const sorted = [...categories].sort(
     (left, right) =>
-      Number(left.isTransfer) - Number(right.isTransfer) ||
+      builtInOrder(left) - builtInOrder(right) ||
       spendingCategoryLabel(left, categories, categoryName).localeCompare(spendingCategoryLabel(right, categories, categoryName)),
   )
 
@@ -384,7 +389,7 @@ function SpendingCategoriesPanel({
           badge={
             <>
               {category.isIncome ? <Tag value={t('finance.income')} tone="good" /> : null}
-              {category.isTransfer ? <Tag value={t('finance.builtIn')} /> : null}
+              {category.isTransfer || category.isOther ? <Tag value={t('finance.builtIn')} /> : null}
               {category.isHidden ? <Tag value={t('finance.hidden')} /> : null}
             </>
           }
@@ -394,18 +399,18 @@ function SpendingCategoriesPanel({
                 <button
                   type="button"
                   className="icon-action"
-                  aria-label={`${categoryName(category.spendingCategoryName, category.isTransfer)}: ${t('common.edit')}`}
+                  aria-label={`${categoryName(category.spendingCategoryName, category)}: ${t('common.edit')}`}
                   onClick={() => open(category)}
                 >
                   <PencilIcon size={16} />
                 </button>
               </Tooltip>
-              {category.isTransfer ? null : (
+              {category.isTransfer || category.isOther ? null : (
                 <Tooltip label={t('common.delete')}>
                   <button
                     type="button"
                     className="icon-action danger"
-                    aria-label={`${categoryName(category.spendingCategoryName, category.isTransfer)}: ${t('common.delete')}`}
+                    aria-label={`${categoryName(category.spendingCategoryName, category)}: ${t('common.delete')}`}
                     onClick={() => setDeleting(category)}
                   >
                     <TrashIcon size={16} />
@@ -445,8 +450,10 @@ function SpendingCategoriesPanel({
             <span>{t('finance.spendingCategoryName')}</span>
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          {isEditingTransfer ? (
-            <p className="muted field-hint">{t('finance.transferCategoryHint')}</p>
+          {isEditingBuiltIn ? (
+            <p className="muted field-hint">
+              {editing.isTransfer ? t('finance.transferCategoryHint') : t('finance.otherCategoryHint')}
+            </p>
           ) : (
             <>
               <label>
@@ -459,7 +466,7 @@ function SpendingCategoriesPanel({
                     { value: '', label: t('finance.noParent') },
                     ...parentChoices.map((category) => ({
                       value: category.id,
-                      label: categoryName(category.spendingCategoryName, category.isTransfer),
+                      label: categoryName(category.spendingCategoryName, category),
                     })),
                   ]}
                   onChange={setParentId}
@@ -480,7 +487,7 @@ function SpendingCategoriesPanel({
       {deleting ? (
         <ConfirmDialog
           title={t('finance.deleteSpendingCategory')}
-          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName, deleting.isTransfer) })}
+          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName, deleting) })}
           confirmLabel={t('common.delete')}
           busy={busy}
           onClose={() => setDeleting(null)}

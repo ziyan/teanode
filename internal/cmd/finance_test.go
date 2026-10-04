@@ -715,3 +715,49 @@ func TestFinancePeriodLine(test *testing.T) {
 		}
 	}
 }
+
+// The word other is the other category, ahead of a spending category the
+// person named other themselves, and none is no longer a spending category:
+// it is refused, pointing to other, with nothing sent.
+func TestFinanceOtherIsTheOtherCategoryAndNoneIsRefused(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	var categorized []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(document.Query, "SpendingCategories"):
+			_, _ = response.Write([]byte(`{"data":{"SpendingCategories":[` +
+				`{"id":"category-own-other","spendingCategoryName":"other"},` +
+				`{"id":"category-other","spendingCategoryName":"anything else","isOther":true}]}}`))
+		case strings.Contains(document.Query, "CategorizeTransaction("):
+			mutex.Lock()
+			categorized = append(categorized, document.Variables)
+			mutex.Unlock()
+			_, _ = response.Write([]byte(`{"data":{"CategorizeTransaction":{"financeTransaction":{"id":"transaction-one"}}}}`))
+		default:
+			response.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	test.Cleanup(server.Close)
+
+	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "transaction-one", "Other"); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "transaction-one", "none"); err == nil || !strings.Contains(err.Error(), "give other") {
+		test.Errorf("none is refused, pointing to other: %v", err)
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if len(categorized) != 1 || categorized[0]["spendingCategoryId"] != "category-other" {
+		test.Errorf("sent %v", categorized)
+	}
+}

@@ -365,7 +365,7 @@ export function FinanceTransactionsSection() {
     try {
       const answer = await graphql<{ CategorizeTransaction: { financeTransaction: FinanceTransaction } }>(
         CATEGORIZE_TRANSACTION,
-        { financeTransactionId: row.id, spendingCategoryId: spendingCategoryId || null },
+        { financeTransactionId: row.id, spendingCategoryId },
       )
       setChanged((previous) => ({ ...previous, [row.id]: answer.CategorizeTransaction.financeTransaction }))
       const merchant = row.merchantName || row.description
@@ -373,7 +373,7 @@ export function FinanceTransactionsSection() {
       // move every visit to that shop.
       toast.done(
         t('finance.categorized'),
-        spendingCategoryId && merchant
+        merchant
           ? {
               label: t('finance.alwaysForMerchant'),
               run: async () => {
@@ -457,7 +457,7 @@ export function FinanceTransactionsSection() {
           CategorizeTransactions: { financeTransactions: FinanceTransaction[]; spendingRules: { id: string }[] }
         }>(CATEGORIZE_TRANSACTIONS, {
           financeTransactionIds: piece,
-          spendingCategoryId: spendingCategoryId || null,
+          spendingCategoryId,
           spendingRules: index === 0 && spendingRules.length > 0 ? spendingRules : null,
         })
         categorizedRows.push(...answer.CategorizeTransactions.financeTransactions)
@@ -612,13 +612,14 @@ export function FinanceTransactionsSection() {
               : undefined
           }
         >
+          {/* No spending category is a transaction still to be decided, not a
+              choice: it is the placeholder, and the list offers other for
+              what fits nothing. */}
           <Select
             value={row.spendingCategoryId ?? ''}
             label={t('finance.spendingCategory')}
-            options={[
-              { value: '', label: t('finance.uncategorized') },
-              ...spendingCategoryOptions(categoryList, categoryName, row.spendingCategoryId, t('finance.transferGroup')),
-            ]}
+            placeholder={t('finance.uncategorized')}
+            options={spendingCategoryOptions(categoryList, categoryName, row.spendingCategoryId, t('finance.transferGroup'))}
             onChange={(value) => void categorize(row, value)}
           />
         </span>

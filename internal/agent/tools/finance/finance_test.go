@@ -249,6 +249,10 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 			// so the write is judged on rows that do.
 			arguments = inventedBankRows
 		}
+		if name == "categorize_transaction" {
+			// So is no spending category, so the write is judged on one.
+			arguments = `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"dining"}`
+		}
 		if risk := tool.RiskFor(json.RawMessage(arguments)); risk != wanted {
 			test.Errorf("%s is %s, not %s", name, risk, wanted)
 		}
@@ -576,12 +580,12 @@ func TestFinanceToolIgnoresArgumentsItDoesNotRead(test *testing.T) {
 	if _, err := call(test, operations, `{"operation":"assets","asset_kind":"vehicle","to_currency_code":"EUR"}`); err != nil {
 		test.Errorf("assets refused a to_currency_code, which it does not read under any name: %v", err)
 	}
-	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"",
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"category-one",
 		"asset_id":"","is_hidden":false}`); err != nil {
 		test.Fatalf("categorize_transaction refused arguments sent empty: %v", err)
 	}
-	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "" {
-		test.Errorf("an empty spending category, which takes one away, was not sent: %v", sent)
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-one" || sent["assetId"] != nil {
+		test.Errorf("the spending category was not sent, or an argument it does not read was: %v", sent)
 	}
 }
 
@@ -949,6 +953,48 @@ func TestFinanceToolTransferIsTheTransferCategory(test *testing.T) {
 		if line := tool.PreviewLine(ctx, json.RawMessage(arguments)); !strings.Contains(line, wanted) {
 			test.Errorf("%s: the card %q does not say %s", arguments, line, wanted)
 		}
+	}
+}
+
+// The word other is the other category, for the call and its card, even
+// beside a spending category the person named other themselves. No
+// spending category, or the word none for one, is refused before the
+// person is asked to confirm anything, and the answer points to other.
+func TestFinanceToolOtherIsTheOtherCategoryAndNoneIsRefused(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories": `[{"id":"category-own-other","spendingCategoryName":"other"},` +
+			`{"id":"category-other","spendingCategoryName":"anything else","isOther":true}]`,
+		"FinanceTransactions":   `{"financeTransactions":[{"id":"transaction-one","postedOn":"2026-09-12","amount":"-12","currencyCode":"USD","description":"STALL WITH NO SIGN"}],"nextCursor":""}`,
+		"CategorizeTransaction": `{"financeTransaction":{"id":"transaction-one","spendingCategoryId":"category-other","categorizedBy":"person"}}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"Other"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-other" {
+		test.Errorf("other sent %v", sent)
+	}
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	if line := tool.PreviewLine(ctx, json.RawMessage(`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"other"}`)); !strings.Contains(line, `as "anything else"`) {
+		test.Errorf("the card %q does not name the other category", line)
+	}
+
+	sentCount := len(operations.variables)
+	for _, arguments := range []string{
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one"}`,
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":""}`,
+		`{"operation":"categorize_transaction","finance_transaction_ids":["transaction-one","transaction-two"],"spending_category_id":"none"}`,
+	} {
+		if risk := tool.RiskFor(json.RawMessage(arguments)); risk != tools.RiskRead {
+			test.Errorf("%s is put to the person as %s, though it will be refused", arguments, risk)
+		}
+		if _, err := call(test, operations, arguments); err == nil || !strings.Contains(err.Error(), "spending_category_id other") {
+			test.Errorf("%s is refused with a pointer to other: %v", arguments, err)
+		}
+	}
+	if len(operations.variables) != sentCount {
+		test.Errorf("a refused call sent something: %v", operations.variables[sentCount:])
 	}
 }
 

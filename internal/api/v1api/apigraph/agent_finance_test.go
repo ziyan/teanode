@@ -440,10 +440,16 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 		if err != nil || len(assets) != 0 {
 			test.Errorf("Assets %v %v", assets, err)
 		}
-		// Only their own transfer category, which every agent has.
+		// Only their own transfer and other categories, which every agent
+		// has.
 		spendingCategories, err := resolver.SpendingCategories(ctx)
-		if err != nil || len(spendingCategories) != 1 || !spendingCategories[0].IsTransfer || spendingCategories[0].AgentID == fixture.ownerAgent.ID {
+		if err != nil || len(spendingCategories) != 2 {
 			test.Errorf("SpendingCategories %v %v", spendingCategories, err)
+		}
+		for _, spendingCategory := range spendingCategories {
+			if !spendingCategory.IsTransfer && !spendingCategory.IsOther || spendingCategory.AgentID == fixture.ownerAgent.ID {
+				test.Errorf("SpendingCategories %+v", spendingCategory)
+			}
 		}
 		spendingRules, err := resolver.SpendingRules(ctx)
 		if err != nil || len(spendingRules) != 0 {

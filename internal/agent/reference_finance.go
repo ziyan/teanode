@@ -120,7 +120,7 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 	}
 
 	if financeTransaction.SpendingCategoryID == "" {
-		lines = append(lines, "spending category: none, uncategorized")
+		lines = append(lines, "spending category: none yet, waiting to be categorized")
 	} else {
 		spendingCategory, err := tx.GetSpendingCategory(agentId, financeTransaction.SpendingCategoryID)
 		if err != nil {
@@ -132,6 +132,8 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 			line += "a deleted one"
 		case spendingCategory.IsTransfer:
 			line += fmt.Sprintf("%s, the transfer category: money moved between the person's own accounts, neither spending nor income", spendingCategory.SpendingCategoryName)
+		case spendingCategory.IsOther:
+			line += fmt.Sprintf("%s, the other category: what fits none of the others, money out counted as spending and money in as income", spendingCategory.SpendingCategoryName)
 		default:
 			line += spendingCategory.SpendingCategoryName
 			if spendingCategory.ParentSpendingCategoryID != "" {

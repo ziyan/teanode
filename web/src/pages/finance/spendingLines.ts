@@ -4,7 +4,8 @@ import { amountOf } from './financeApi'
 // the day by day chart and the budgets count it, so the table's total is
 // the month's headline: refunds come off what a category spent, money that
 // came in under an income category is not spending at all, and money in
-// with no spending category is not taken off anything.
+// under the other category or with no spending category is income, not
+// taken off anything.
 
 export type SpendingGroupBy = 'spendingCategory' | 'merchant' | 'financeAccount'
 
@@ -29,21 +30,23 @@ export type SpendingLine = {
 
 // spendingLines turns the summary's groups into what each spent, largest
 // first. By spending category: money out less money in for a category
-// that is not income, money out alone for no spending category, and income
-// categories left out. By anything else, money out less money in, keeping
+// that is not income, money out alone for the other category and for no
+// spending category, and income categories left out. By anything else,
+// money out less money in, keeping
 // only the groups that spent something: an employer paying a salary, or a
 // fund paying a dividend, is not a place money went.
 export function spendingLines(
   rows: SummaryAmounts[],
   groupBy: SpendingGroupBy,
   incomeSpendingCategoryIds: Set<string>,
+  otherSpendingCategoryId?: string,
 ): SpendingLine[] {
   const lines: SpendingLine[] = []
   for (const row of rows) {
     const moneyOut = amountOf(row.moneyOut)
     const moneyIn = amountOf(row.moneyIn)
     if (groupBy === 'spendingCategory' && row.groupKey && incomeSpendingCategoryIds.has(row.groupKey)) continue
-    const isNet = groupBy !== 'spendingCategory' || row.groupKey !== ''
+    const isNet = groupBy !== 'spendingCategory' || (row.groupKey !== '' && row.groupKey !== otherSpendingCategoryId)
     // Rounded to the four places amounts are kept in, so a refund that
     // cancels a purchase is nothing rather than a float's leftover.
     const spendingAmount = Math.round((isNet ? moneyOut - moneyIn : moneyOut) * 10000) / 10000

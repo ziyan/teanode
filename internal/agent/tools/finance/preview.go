@@ -71,7 +71,8 @@ func (self *previewLookup) spendingCategoryName(spendingCategoryId string) strin
 // first to learn the id. Transfer is the transfer category whatever it is
 // called: a person who already had a "transfer" of their own keeps it,
 // and the built-in one beside it is named something else, but transfer is
-// the word the tool's description gives for marking one.
+// the word the tool's description gives for marking one. Other is the
+// other category the same way.
 func (self *previewLookup) spendingCategoryFor(idOrName string) *client.SpendingCategory {
 	if idOrName == "" || !self.read("SpendingCategories", nil, &self.spendingCategories) {
 		return nil
@@ -84,6 +85,13 @@ func (self *previewLookup) spendingCategoryFor(idOrName string) *client.Spending
 	if strings.EqualFold(strings.TrimSpace(idOrName), "transfer") {
 		for _, spendingCategory := range self.spendingCategories {
 			if spendingCategory.IsTransfer {
+				return spendingCategory
+			}
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(idOrName), "other") {
+		for _, spendingCategory := range self.spendingCategories {
+			if spendingCategory.IsOther {
 				return spendingCategory
 			}
 		}

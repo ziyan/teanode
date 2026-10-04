@@ -294,7 +294,8 @@ type AssetHistory struct {
 
 // SpendingCategory is a label in the person's own list. IsTransfer marks
 // the built-in transfer category: what is in it is neither spending nor
-// income.
+// income. IsOther marks the built-in other category: what fits no other
+// spending category.
 type SpendingCategory struct {
 	ID                       string `json:"id"`
 	SpendingCategoryName     string `json:"spendingCategoryName"`
@@ -302,6 +303,7 @@ type SpendingCategory struct {
 	IsIncome                 bool   `json:"isIncome"`
 	IsHidden                 bool   `json:"isHidden"`
 	IsTransfer               bool   `json:"isTransfer"`
+	IsOther                  bool   `json:"isOther"`
 }
 
 // SpendingRule assigns a spending category to the finance transactions
@@ -658,7 +660,7 @@ const (
 
 	financeTradeFields = `{ id financeAccountId financeSecurityId financeSecurity ` + financeSecurityFields + ` providerTradeId tradedOn tradeKind tradeSubkind tradedQuantity unitPrice tradeAmount feeAmount currencyCode description }`
 
-	spendingCategoryFields = `{ id spendingCategoryName parentSpendingCategoryId isIncome isHidden isTransfer }`
+	spendingCategoryFields = `{ id spendingCategoryName parentSpendingCategoryId isIncome isHidden isTransfer isOther }`
 
 	spendingRuleFields = `{ id matchText financeAccountId minimumAmount maximumAmount spendingCategoryId rulePriority }`
 

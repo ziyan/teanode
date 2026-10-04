@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,6 +255,66 @@ func TestCategorizeTransactionAsTransfer(test *testing.T) {
 		}
 		if _, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "online payment"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a spending rule with no spending category answered %v", err)
+		}
+	})
+}
+
+// No spending category is not a choice: CategorizeTransaction and
+// CategorizeTransactions refuse it before anything is written, saying the
+// other category is the one for what fits nothing, and take that one like
+// any other. The other category is built in, so deleting it or making it
+// income is refused, but it is spending and takes a budget.
+func TestCategorizeTransactionRefusesNoSpendingCategory(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	_, _, transactions := fixture.seedFinanceSource(test)
+	resolver := fixture.resolver
+	isIncome := true
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		categories, err := resolver.SpendingCategories(ctx)
+		if err != nil {
+			test.Fatal(err)
+		}
+		var otherCategory *models.SpendingCategory
+		for _, category := range categories {
+			if category.IsOther {
+				otherCategory = category
+			}
+		}
+		if otherCategory == nil {
+			test.Fatalf("the other category: %+v", categories)
+		}
+		before, err := tx.GetFinanceTransaction(fixture.ownerAgent.ID, transactions[0].ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := resolver.CategorizeTransaction(ctx, CategorizeTransactionArguments{FinanceTransactionID: transactions[0].ID}); !errors.Is(err, api.ErrInvalidArguments) ||
+			!strings.Contains(err.Error(), "isOther") {
+			test.Errorf("no spending category for one answered %v", err)
+		}
+		if _, err := resolver.CategorizeTransactions(ctx, CategorizeTransactionsArguments{
+			FinanceTransactionIDs: []string{transactions[0].ID, transactions[1].ID}, SpendingCategoryID: " ",
+		}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "isOther") {
+			test.Errorf("no spending category for several answered %v", err)
+		}
+		if after, err := tx.GetFinanceTransaction(fixture.ownerAgent.ID, transactions[0].ID); err != nil ||
+			after.SpendingCategoryID != before.SpendingCategoryID || after.CategorizedBy != before.CategorizedBy {
+			test.Errorf("a refused call changed the transaction: %+v, was %+v (%v)", after, before, err)
+		}
+		categorized, err := resolver.CategorizeTransaction(ctx, CategorizeTransactionArguments{
+			FinanceTransactionID: transactions[0].ID, SpendingCategoryID: otherCategory.ID,
+		})
+		if err != nil || categorized.FinanceTransaction.SpendingCategoryID != otherCategory.ID ||
+			categorized.FinanceTransaction.CategorizedBy != models.CategorizedByPerson {
+			test.Errorf("what fits nothing is filed under other by the person: %+v %v", categorized, err)
+		}
+		if _, err := resolver.DeleteSpendingCategory(ctx, SpendingCategoryArguments{SpendingCategoryID: otherCategory.ID}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("deleting the other category answered %v", err)
+		}
+		if _, err := resolver.UpdateSpendingCategory(ctx, UpdateSpendingCategoryArguments{SpendingCategoryID: otherCategory.ID, IsIncome: &isIncome}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("making the other category income answered %v", err)
+		}
+		if _, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: otherCategory.ID, MonthlyAmount: "100", CurrencyCode: "USD"}); err != nil {
+			test.Errorf("budgeting the other category answered %v", err)
 		}
 	})
 }

@@ -64,12 +64,21 @@ func TestCategorizeTransactionsByPerson(t *testing.T) {
 			t.Errorf("a transaction not named was written: %+v", salary)
 		}
 
-		if _, err := tx.CategorizeTransactionsByPerson(fixture.agentId, ids, ""); err != nil {
-			t.Fatalf("CategorizeTransactionsByPerson with none: %s", err)
+		// No spending category is not the person's to choose: what fits
+		// nothing is the other category.
+		if _, err := tx.CategorizeTransactionsByPerson(fixture.agentId, ids, ""); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Fatalf("CategorizeTransactionsByPerson with none is refused: %v", err)
 		}
 		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if grocer := found["transaction-grocer"]; grocer.SpendingCategoryID != "" || grocer.CategorizedBy != models.CategorizedByPerson {
-			t.Errorf("no spending category is the person's choice too: %+v", grocer)
+		if grocer := found["transaction-grocer"]; grocer.SpendingCategoryID != byName[finance.SpendingCategoryDining] {
+			t.Errorf("a refused none writes nothing: %+v", grocer)
+		}
+		otherCategory, err := tx.EnsureOtherSpendingCategory(fixture.agentId)
+		if err != nil {
+			t.Fatalf("EnsureOtherSpendingCategory: %s", err)
+		}
+		if writtenCount, err := tx.CategorizeTransactionsByPerson(fixture.agentId, ids, otherCategory.ID); err != nil || writtenCount != 2 {
+			t.Fatalf("CategorizeTransactionsByPerson with other: %d %v", writtenCount, err)
 		}
 	})
 }

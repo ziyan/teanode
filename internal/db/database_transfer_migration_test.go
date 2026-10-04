@@ -28,6 +28,16 @@ func transferMigration(t *testing.T) migrations.Migration {
 	return migrations.Migration{}
 }
 
+// execMigrationSQL runs a migration's SQL by hand, and lets go of the
+// connections that prepared statements against the columns it changed.
+func execMigrationSQL(t *testing.T, database db.Database, statement string) {
+	t.Helper()
+	dbtest.Exec(t, database, statement)
+	if err := database.(interface{ CloseIdleConnections() error }).CloseIdleConnections(); err != nil {
+		t.Fatalf("CloseIdleConnections: %s", err)
+	}
+}
+
 func rawQueryString(t *testing.T, database db.Database, query string) string {
 	t.Helper()
 	value, err := database.(interface {
@@ -187,7 +197,7 @@ func TestTransferMigrationKeepsTheTotals(t *testing.T) {
 
 	// Back to 0142, and the rows as that schema kept them.
 	migration := transferMigration(t)
-	dbtest.Exec(t, database, migration.ReverseSQL)
+	execMigrationSQL(t, database, migration.ReverseSQL)
 	categorize := func(providerTransactionId, spendingCategoryName, categorizedBy string) {
 		dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "agent_finance_transaction" SET "spending_category_id" = '%s', "categorized_by" = '%s'
 			WHERE "agent_id" = '%s' AND "provider_transaction_id" = '%s'`, byName[spendingCategoryName], categorizedBy, fixture.agentId, providerTransactionId))
@@ -225,7 +235,7 @@ func TestTransferMigrationKeepsTheTotals(t *testing.T) {
 		t.Fatalf("the data set does not say what it was meant to:\n%s", before)
 	}
 
-	dbtest.Exec(t, database, migration.SQL)
+	execMigrationSQL(t, database, migration.SQL)
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		transferCategory, err := tx.EnsureTransferSpendingCategory(fixture.agentId)
@@ -276,7 +286,7 @@ func TestTransferMigrationKeepsTheTotals(t *testing.T) {
 	})
 
 	// The reverse brings the marks back, and the totals with them.
-	dbtest.Exec(t, database, migration.ReverseSQL)
+	execMigrationSQL(t, database, migration.ReverseSQL)
 	if reversed := transferMarkTotals(t, database, fixture.agentId); reversed != before {
 		t.Errorf("the totals changed across the reverse:\nbefore\n%s\nafter\n%s", before, reversed)
 	}

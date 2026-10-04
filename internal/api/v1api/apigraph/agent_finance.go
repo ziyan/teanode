@@ -247,6 +247,9 @@ type FinanceMutation interface {
 	// for its merchant too. The transfer category (isTransfer in
 	// SpendingCategories) makes it a transfer between the person's own
 	// accounts, neither spending nor income; any other takes that away.
+	// None is refused: one that fits no spending category goes to the
+	// other category (isOther), and no spending category means one not
+	// decided yet.
 	CategorizeTransaction(ctx context.Context, arguments CategorizeTransactionArguments) (*CategorizeTransactionView, error)
 
 	// Give several finance transactions one spending category, at most

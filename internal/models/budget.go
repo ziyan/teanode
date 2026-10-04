@@ -51,6 +51,15 @@ type SpendingCategory struct {
 	// be deleted, be income, or have a parent or children.
 	IsTransfer bool `json:"isTransfer"`
 
+	// IsOther says it is the agent's other category, built in and one per
+	// agent: what fits no other spending category, and the person's (or
+	// the categorize model's) choice for it, where no spending category at
+	// all would mean not decided yet. Money out in it is spending, and
+	// money in it is income rather than a refund, though no income budget
+	// counts it. It cannot be deleted, be an income category, or have a
+	// parent or children.
+	IsOther bool `json:"isOther"`
+
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
@@ -153,8 +162,9 @@ type SavingsTarget struct {
 
 // SpendingCategoryDay is one day's spending in one spending category and
 // one currency: money out less refunds, transfers left out. Positive is
-// spending; a day of refunds can be negative. SpendingCategoryID is empty
-// for money out that is not categorized yet.
+// spending; a day of refunds can be negative. The other category and what
+// is not categorized yet count money out only, since their money in is
+// income. SpendingCategoryID is empty for money out not categorized yet.
 type SpendingCategoryDay struct {
 	SpendingCategoryID string `json:"spendingCategoryId"`
 	CurrencyCode       string `json:"currencyCode"`
@@ -177,9 +187,10 @@ type IncomeCategoryDay struct {
 
 // CashFlowDay is one day's income and spending in one currency, as the
 // Spending section and cash flow count them: spending is money out less
-// refunds in spending categories that are not income, and money out with no
-// spending category; income is what income categories took in, and money in
-// with no spending category. Transfers are left out of both.
+// refunds in spending categories that are not income, and money out in the
+// other category or with no spending category; income is what income
+// categories took in, and money in in the other category or with no spending
+// category. Transfers are left out of both.
 type CashFlowDay struct {
 	// CashFlowOn is the day, "2006-01-02".
 	CashFlowOn     string `json:"cashFlowOn"`

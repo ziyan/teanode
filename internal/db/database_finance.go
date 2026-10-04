@@ -102,17 +102,17 @@ type FinanceOperation interface {
 	// transfer category, since what it cannot place is spending until
 	// something surer says otherwise.
 	//
-	// The person clearing a spending category leaves the finance
-	// transaction uncategorized for good: it is their decision, so the
-	// categorize model is not asked about it again.
+	// The person never clears a spending category: no spending category
+	// means not decided yet, and the person's "fits nothing" is the other
+	// category, so an empty one from the person is refused.
 	SetTransactionCategorization(agentId, financeTransactionId, spendingCategoryId string, categorizedBy models.CategorizedBy, categorizationConfidence *string) (bool, error)
 
 	// CategorizeTransactionsByPerson gives every finance transaction named
-	// the spending category (empty for none) as the person's choice, in
-	// one statement, as SetTransactionCategorization does for one. It
-	// writes nothing and answers ErrNotFound when any id is none of the
-	// agent's or the spending category is not theirs; otherwise it
-	// answers how many it wrote.
+	// the spending category as the person's choice, in one statement, as
+	// SetTransactionCategorization does for one; an empty one is refused,
+	// as it is there. It writes nothing and answers ErrNotFound when any
+	// id is none of the agent's or the spending category is not theirs;
+	// otherwise it answers how many it wrote.
 	CategorizeTransactionsByPerson(agentId string, financeTransactionIds []string, spendingCategoryId string) (int, error)
 
 	// DetectFinanceTransfers gives the transfer category to the finance
@@ -1618,6 +1618,13 @@ func (self *transaction) MarkCategorizeAttempted(agentId string, financeTransact
 
 // --- categorization and transfers --------------------------------------
 
+// errNoSpendingCategoryChosen refuses the person taking a finance
+// transaction's spending category away. No spending category is the
+// state of one not decided yet, which the categorize model and the
+// listing of what needs a category work on; the person saying it fits
+// nothing is the other category.
+var errNoSpendingCategoryChosen = fmt.Errorf("%w: choose a spending category; for one that fits none of them, choose the built-in other category", ErrInvalidArguments)
+
 func (self *transaction) SetTransactionCategorization(agentId, financeTransactionId, spendingCategoryId string, categorizedBy models.CategorizedBy, categorizationConfidence *string) (bool, error) {
 	if !categorizedBy.IsValid() {
 		return false, fmt.Errorf("%w: %q is not who categorized it", ErrInvalidArguments, categorizedBy)
@@ -1630,6 +1637,9 @@ func (self *transaction) SetTransactionCategorization(agentId, financeTransactio
 			return false, fmt.Errorf("%w: the confidence %q is not a decimal between 0 and 1", ErrInvalidArguments, *categorizationConfidence)
 		}
 		confidence = &canonical
+	}
+	if spendingCategoryId == "" && categorizedBy == models.CategorizedByPerson {
+		return false, errNoSpendingCategoryChosen
 	}
 	if spendingCategoryId != "" {
 		category, err := self.GetSpendingCategory(agentId, spendingCategoryId)
@@ -1676,14 +1686,15 @@ func (self *transaction) CategorizeTransactionsByPerson(agentId string, financeT
 	if len(isDistinct) == 0 {
 		return 0, nil
 	}
-	if spendingCategoryId != "" {
-		category, err := self.GetSpendingCategory(agentId, spendingCategoryId)
-		if err != nil {
-			return 0, err
-		}
-		if category == nil {
-			return 0, ErrNotFound
-		}
+	if spendingCategoryId == "" {
+		return 0, errNoSpendingCategoryChosen
+	}
+	category, err := self.GetSpendingCategory(agentId, spendingCategoryId)
+	if err != nil {
+		return 0, err
+	}
+	if category == nil {
+		return 0, ErrNotFound
 	}
 	// Counted before the write, so a list naming somebody else's finance
 	// transaction leaves none of the agent's written either.
@@ -1696,11 +1707,9 @@ func (self *transaction) CategorizeTransactionsByPerson(agentId string, financeT
 		return 0, ErrNotFound
 	}
 	updated := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "spending_category_id" = ?, "categorized_by" = ?,
-			"categorization_confidence" = NULL, "modified_at" = ?,
-			"categorize_attempted_at" = CASE WHEN ? THEN NULL ELSE "categorize_attempted_at" END
+			"categorization_confidence" = NULL, "modified_at" = ?, "categorize_attempted_at" = NULL
 		WHERE "agent_id" = ? AND "id" = ANY(?::text[])`,
-		optionalID(spendingCategoryId), string(models.CategorizedByPerson), time.Now(), spendingCategoryId != "",
-		agentId, pq.Array(financeTransactionIds))
+		spendingCategoryId, string(models.CategorizedByPerson), time.Now(), agentId, pq.Array(financeTransactionIds))
 	return int(updated.RowsAffected), updated.Error
 }
 

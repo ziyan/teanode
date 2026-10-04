@@ -2,7 +2,7 @@ Give each of {{.PersonName}}'s finance transactions below one of their spending 
 
 {"categorizations": [{"transactionId": "t1", "spendingCategoryId": "…"}]}
 
-transactionId is the label before the transaction (t1, t2, …) and spendingCategoryId is one of the ids in the list below, copied exactly. Leave a transaction out when none of the spending categories fits it or you cannot tell: a transaction left out is asked about again later or categorized by the person, and a wrong spending category is worse than none.
+transactionId is the label before the transaction (t1, t2, …) and spendingCategoryId is one of the ids in the list below, copied exactly. {{if .IsOtherOffered}}When you can tell what a transaction is but none of the other spending categories fits it, give it the one marked "for what fits none of the others": that is the answer for a transaction that fits nothing, not leaving it out. Leave a transaction out only when you cannot tell what it is{{else}}Leave a transaction out when none of the spending categories fits it or you cannot tell{{end}}: a transaction left out is asked about again later or categorized by the person, and a wrong spending category is worse than none.
 
 A negative amount is money leaving the account and a positive one money arriving. Money arriving belongs in an income spending category only when it is pay, interest or another earning; a refund belongs in the spending category of what was refunded.
 
