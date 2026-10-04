@@ -252,12 +252,15 @@ transaction kind where the list says, the running balance where it shows
 one, and the month heading for a list grouped by statement month), the
 balance the newest picture shows with its day and zone (the person's when
 left out), and a card's monthly totals as shown.
-`finance.CheckTransactionRows` checks them and `finance.NewTransactionRowsImport`
-builds an `ofx.Statement` from them and turns it into what a sync writes
-exactly as a file's statement is (`ImportTransactionRows` and
-`importStatements` in `internal/agent/finance_statement.go`), so the
-account lands in the statement source, the balance follows the newer-balance
-rules above, and transfer pairing, spending rules, the provider category
+`finance.CheckTransactionRows` checks them, `finance.ChooseTransactionRowsAccount`
+chooses the account, `finance.NewTransactionRowsImport` builds an
+`ofx.Statement` from them and turns it into what a sync writes exactly as a
+file's statement is, and `finance.PlanTransactionRowsImport` leaves out the
+rows the account holds already (`ImportTransactionRows`,
+`planTransactionRows` and `importStatements` in
+`internal/agent/finance_statement.go`), so the account lands in the
+statement source, the balance follows the newer-balance rules above, and
+transfer pairing, spending rules, the provider category
 mapping (from the transaction kind: `payment` is `PAYMENT`, `interest`
 `INT`, `fee` `FEE`, `deposit` `DEP`, a purchase or a refund left to the
 categorize model) and the categorize job run as after any import. The import
@@ -272,11 +275,46 @@ takes digits only: spaces, dashes and dots between groups are dropped,
 masked digits (`****1234`, `•••1234`) are left out and mark the number
 partial, and a letter is refused, since a word in place of a number (a
 card's brand, say) would make a mask nobody can read and an account no file
-would ever match. A partial number keys the account by the digits shown:
-later screenshots showing those digits find it, an OFX file with the whole
-number is a separate account, and the tool says so. The account is named
-for the institution and its label, and the identifier is kept only as the
-four-character mask, as for a file.
+would ever match. A new account made from a partial number is keyed by the
+digits shown: later screenshots showing those digits find it, an OFX file
+with the whole number is a separate account, and the tool says so. A new
+account is named for the institution and its label, and the identifier is
+kept only as the four-character mask, as for a file.
+
+**Which account.** A screenshot rarely shows what the account's key was
+made from: often only the last digits, sometimes no number, and a card's
+OFX export may know the card by an opaque identifier that is not its
+number at all, so keying the rows alone would make a second account beside
+the one a file made and count every overlapping transaction twice.
+`finance.ChooseTransactionRowsAccount` takes, in order:
+
+- the account `financeAccountId` names, which must be one of the agent's
+  accounts of imported statements in the rows' currency and of their kind
+  (a card for card rows); the number may then be left out. A provider's
+  account is refused, since its sync brings its transactions, and an id
+  that is not the person's is not found;
+- the account the rows' number keys, as a file's or earlier rows' with the
+  same number and bank code;
+- the one account at the same institution, of the same kind and currency,
+  whose mask the shown digits end with (the shorter of the two ending the
+  longer), so a partial number never makes a new account where an account
+  matches by its last digits, even with `isNewAccount`. Institutions are
+  compared NFKC, lower case, letters and digits only, and one name holding
+  the other matches ("Example Bank" and "EXAMPLE BANK, N.A."); an account
+  whose institution is not known may be at any. Two such accounts are
+  refused, naming each with its id;
+- a new account, when no account at the institution of that kind and
+  currency exists. An account there whose mask does not match is refused,
+  named with its id, rather than passed over (the opaque card identifier
+  again), unless `isNewAccount` says the person confirmed the rows are of
+  an account not imported before.
+
+Rows imported into an existing account leave it as it is but for its
+balance: its name, mask, kind and metadata are the file's or the person's,
+and a balance given is recorded as a statement's is. The tool's recipe is
+to call `accounts` first and pass the id of the imported account the
+pictures show, and to ask the person when unsure; the refusals are the net
+under it.
 
 **Checked before it is written.** Nothing is written unless the rows add
 up, and a refusal names the first row or month that does not, by the row's
@@ -300,22 +338,70 @@ trimmed (`finance.NormalizeTransactionDescription`): half-width katakana
 becomes full-width with its sound marks joined, full-width letters and
 digits plain ones, kanji as they are. A day after the person's today, a day
 that is not a day and an unknown transaction kind are refused. The tool
-runs the same check before its confirmation card, which names the account,
-the number of rows and their days, money in and out, what was checked and
-three of the rows; rows that do not add up are not put to the person (the
-call is judged a read and answers with the refusal), and the API checks
-again, with the person's day, before writing.
+runs the same check before its confirmation card; rows that do not add up
+are not put to the person (the call is judged a read and answers with the
+refusal), and the API checks again, with the person's day, before writing.
+All of this is over every row sent, before any is left out as already
+there.
 
-**Known by what they say.** A row has no FITID, so it is known the way a
-file's transaction without one is: a hash of its day, amount and normalized
-description, numbered by its occurrence within the import. Sending the same
-rows again, or screenshots that overlap rows already imported, adds
-nothing, and a file without FITIDs that writes the description the same
-way finds the same transactions. Two identical charges on one day sent
-together are two; the known limit is two identical charges on one day that
-arrive in separate imports, each of which numbers its one as the first, so
-the second is taken for the first and counted once. Sending each
-transaction once per import, overlaps removed, is the agent's part.
+**Known by what they say.** A row has no FITID, so a new one is stored the
+way a file's transaction without one is: under a hash of its day, amount
+and normalized description, numbered by its occurrence among all the rows
+sent, so each keeps the identifier it would have if every row were new.
+Sending each transaction once per import, overlaps removed, is the agent's
+part.
+
+**Already there.** That identifier cannot be what finds a row the account
+holds already: a file with FITIDs stored its transactions under the
+institution's ids, and a file without them, or earlier screenshots, under
+a hash of a description the app may write otherwise (a space, a cut-off
+name, full-width letters). So before anything is written the rows are
+matched against every transaction the account holds from their first day
+to their last, whatever wrote it, by posted day and exact amount (in the
+currency's minor units), as multisets: of k rows with a day and amount
+that s stored transactions have, the account already holds min(k, s) and
+the other k - s are new. Descriptions are not compared. Which of the k are
+taken as present changes no count, only which are written: first a row
+whose identifier is stored (rows sent before), then one whose description
+is a stored one's, then in order. Only the new rows are written; the rows
+already there are counted as already here in the import's answer. A file's
+import keeps matching by FITID, and an account made by the rows themselves
+holds nothing, so every row is new.
+
+The day is matched exactly, deliberately. A tolerance of a day either side
+would take a genuine repeat charge (the same fare or coffee on consecutive
+days) for one already stored, and drop it silently. The cost is the other
+way: a source that dates a transaction differently from the file (a card's
+app listing the day of use where the export gives the day it posted, a
+purchase late at night on either side of a day boundary) leaves the row
+looking new. The statement source holds no pending transactions, so the
+pending-to-posted switch a provider makes does not arise; the dating
+difference is between an app and an export. Such rows are not matched but
+pointed out: a new row with an unmatched stored transaction of the same
+amount within three days (`finance.NearbyStoredTransactionDays`) is
+marked, and the confirmation card says how many there are, for the person
+to look at before confirming. The tool's recipe asks for the posted day
+where a list shows both. The other limit of matching by day and amount: a
+genuine second charge of the same amount on the same day as one already
+stored, sent in a later import, is taken as the stored one.
+
+**A dry run.** `PreviewImportTransactions` takes the same arguments and
+does all of the above but write (`PreviewTransactionRows`): not even the
+statement source is made when there is none. It answers the account (its
+id and name, or the name a new one would have), how it was found
+(`finance_account_id`, `account_number`, `account_mask`, `new_account`),
+the new rows and the rows already there (each by its number as sent, with
+`hasNearbyStoredTransaction`), the days and money in and out of the new
+rows, what was checked and the balance given, and refuses what the import
+would. The import makes the same plan before it writes, then again under
+the statement source's lock, so two imports of the same rows at once
+cannot both find them new. The tool's confirmation card is this preview:
+the account, existing (and how it was found) or new, "N new, M already
+there", the first three new rows and how many more, the new rows' days and
+money in and out, rows near a stored transaction, what was checked and the
+balance; an account the server refuses makes a card that says it will be
+refused. `preview_import_transactions` gives the agent the same preview,
+and `teanode finance import-transactions --dry-run` prints it.
 
 **Renaming and deleting.** An account of imported statements can be
 renamed (`RenameStatementAccount`, `teanode finance rename-statement-account`,

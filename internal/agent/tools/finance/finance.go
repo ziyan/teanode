@@ -326,11 +326,18 @@ var operations = map[string]*financeOperation{
 		},
 	},
 	// ImportTransactions with what the agent read off pictures, checked
-	// here first (transaction_rows.go) so the card says what was checked.
+	// here first (transaction_rows.go) so the card says what was checked,
+	// and previewed by the server so it says which account and which rows
+	// are new. The number is not required: an account named by
+	// finance_account_id needs none.
 	"import_transactions": {
 		graphqlOperation: "ImportTransactions", risk: tools.RiskWrite, isUntrusted: true, arguments: transactionRowsArguments,
-		required: []string{"institution_name", "account_number", "statement_account_kind", "currency_code", "transaction_rows"},
+		required: []string{"institution_name", "statement_account_kind", "currency_code", "transaction_rows"},
 		preview:  importTransactionsPreview,
+	},
+	"preview_import_transactions": {
+		graphqlOperation: "PreviewImportTransactions", risk: tools.RiskRead, isUntrusted: true, arguments: transactionRowsArguments,
+		required: []string{"institution_name", "statement_account_kind", "currency_code", "transaction_rows"},
 	},
 	"rename_statement_account": {
 		graphqlOperation: "RenameStatementAccount", risk: tools.RiskWrite, isUntrusted: true,
@@ -581,11 +588,19 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Pictures of transactions: when the person shares screenshots of a bank's or card issuer's app (or a photo of a statement), `import_transactions` imports what you read, one account per call. " +
 	"You see pictures only in the turn they are sent, at most eight of them, so read and import in that turn, and ask for more than eight in another message. " +
 	"Read every row of every picture yourself and send each transaction once, even where two screenshots overlap. " +
-	"Use the account number shown, masked digits as they appear (****1234) with is_account_number_partial when only some show; never invent one or put a word in its place, and ask the person when none is shown. " +
+	"Choose the account first, every time: call `accounts`, and when one of the person's imported accounts (providerKind statement) is the account the pictures show, pass its id as finance_account_id. " +
+	"A card's export often knows the card by an identifier that is not the card number, so its mask need not match the digits a picture shows; same institution, kind and currency is the sign. " +
+	"When you are unsure which account it is, or whether it is one, ask the person before importing. " +
+	"An account a provider syncs is refused: its transactions come from its sync. " +
+	"Without finance_account_id, use the account number shown, masked digits as they appear (****1234) with is_account_number_partial when only some show; never invent one or put a word in its place. " +
+	"The server then uses the account that number or its last digits match; it refuses, naming them, when several could match, or when the institution has an account the digits do not match: ask the person, then pass the id, or is_new_account true when the person says it is an account not imported before. " +
+	"`preview_import_transactions` takes the same arguments and says, writing nothing, which account the rows would go into and which of them the account holds already. " +
 	"Give running_balance_amount on every row that shows one, and monthly_totals exactly as a card's list shows them: the server checks that the balances chain row by row and that each month's rows come to its total, and refuses naming the first row or month that does not add up; read that picture again or ask the person. " +
 	"Never guess a row that is cut off: import the months that are complete, leave out a month cut off at the bottom of a picture, and ask for the rest. " +
 	"The ledger balance is the newest picture's, with its day and time zone. Send descriptions exactly as shown (the server normalizes half-width katakana, do not), days as 2026-09-30 (26.09.30 is 2026-09-30), amounts signed and without separators. " +
-	"Rows imported before are not added again, so overlapping screenshots sent later are safe; the one cost is that two identical charges on one day sent in two separate imports count once. " +
+	"Only the rows the account does not hold already are added: the server matches the rows against every stored transaction of the account (from an OFX file or earlier pictures) by day and exact amount, not by description, so overlapping screenshots, or pictures of what a file imported, add only what is new. " +
+	"Give each row's posted day as the export would date it; where a list shows both the day of use and the day it posted, use the posted one, since a row dated a day off is not taken as the same transaction (the confirmation card points such rows out). " +
+	"The cost of matching by day and amount: a genuine repeat charge of the same amount on the same day as one already stored, sent in a later import, is taken as the stored one. " +
 	"`rename_statement_account` renames an imported account; deleting one is the person's to do (`delete_statement_account` says where).\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
@@ -626,7 +641,8 @@ func init() {
 					"operation":                   tools.EnumProperty("what to do", operationNames()...),
 					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
 					"mailbox_item_id":             tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import, by the item_id mail_search or mail_read gives"),
-					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings"),
+					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings; for import_transactions and preview_import_transactions: the imported account the rows are of"),
+					"is_new_account":              tools.BooleanProperty("for import_transactions and preview_import_transactions: true only when the person said the rows are of an account not imported before, after the server named accounts at the same institution"),
 					"is_holding":                  tools.BooleanProperty("for assets: true lists only the holdings of investment accounts (one asset per position); left out, assets leaves the holdings out unless finance_account_id is given"),
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
 					"finance_transaction_ids":     tools.ArrayProperty("several finance transactions, by the ids transactions gives. For transactions: only these, to read one by its id (a duplicate's counted copy, say). For categorize_transaction: at most 500 categorized together. For propose_spending_rules: at most 5000", tools.StringProperty("a finance transaction id")),
@@ -1001,7 +1017,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return sourceOperation(ctx, executor, name, text(asked, "source_id"))
 	case "categorize_transaction":
 		return categorizeTransactions(ctx, executor, name, asked)
-	case "import_transactions":
+	case "import_transactions", "preview_import_transactions":
 		return importTransactions(ctx, executor, name, asked)
 	case "import_statement":
 		// Only a message in a mailbox the person granted, as mail_read

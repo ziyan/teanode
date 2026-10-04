@@ -233,7 +233,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"spending_categories": true, "spending_rules": true, "propose_spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
-		"statement_import": true, "delete_statement_account": true,
+		"statement_import": true, "delete_statement_account": true, "preview_import_transactions": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite

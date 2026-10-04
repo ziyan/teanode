@@ -135,6 +135,12 @@ type FinanceQuery interface {
 	// statement finance source and its address are made the first time
 	// this is asked.
 	StatementImport(ctx context.Context) (*StatementImportView, error)
+
+	// What ImportTransactions would do with the same arguments, writing
+	// nothing: the account the rows would go into (an existing one with
+	// its id, or a new one), the rows it does not hold yet and those it
+	// does, and what was checked. Refused as the import would be.
+	PreviewImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*TransactionRowsPreviewView, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -182,8 +188,11 @@ type FinanceMutation interface {
 	// issuer's app, into the statement source the way a statement is
 	// imported. They are checked first and refused, naming the first row
 	// or month that does not add up, when the running balances given do
-	// not chain or a month's rows do not come to its total. Each is known
-	// by its day, amount and description, so rows sent again add nothing.
+	// not chain or a month's rows do not come to its total. They go into
+	// the account financeAccountId names, else the one their number or
+	// its last digits match, else a new one; and only the rows that
+	// account does not hold yet are added, matched by day and amount
+	// whatever wrote the stored ones.
 	ImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*models.FinanceStatementImport, error)
 
 	// Give an account of imported statements the person's own name, which

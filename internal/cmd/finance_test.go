@@ -46,10 +46,12 @@ var financeSubcommandsSpanningOperations = map[string][]string{
 	// One transaction or several: categorize-transactions would be a
 	// second subcommand doing the same thing.
 	"categorize-transaction": {"CategorizeTransaction", "CategorizeTransactions"},
-	"sync":                   {},
-	"disable-source":         {},
-	"enable-source":          {},
-	"delete-source":          {},
+	// The preview is the import with --dry-run.
+	"import-transactions": {"ImportTransactions", "PreviewImportTransactions"},
+	"sync":                {},
+	"disable-source":      {},
+	"enable-source":       {},
+	"delete-source":       {},
 }
 
 // Every operation of the finance area has a teanode finance subcommand

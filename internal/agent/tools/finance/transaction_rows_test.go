@@ -21,13 +21,12 @@ const inventedBankRows = `{"operation":"import_transactions","institution_name":
 ],
 "ledger_balance_amount":"344000","ledger_balance_on":"2026-09-30","ledger_balance_time_zone":"Asia/Tokyo"}`
 
-// The card names the account, the rows, the days, money in and out, what
-// was checked and some of the rows, with the descriptions as they will be
-// kept.
-func TestFinanceToolPreviewsAnImportOfTransactions(test *testing.T) {
+// With no run to ask the server through, the card names the account as the
+// rows do, the rows, the days, money in and out, what was checked and some
+// of the rows, with the descriptions as they will be kept.
+func TestFinanceToolPreviewsAnImportOfTransactionsFromTheRowsAlone(test *testing.T) {
 	test.Parallel()
-	ctx := tools.WithRun(context.Background(), &fakeRun{operations: &fakeOperations{}})
-	line := financeTool(test).PreviewLine(ctx, json.RawMessage(inventedBankRows))
+	line := financeTool(test).PreviewLine(context.Background(), json.RawMessage(inventedBankRows))
 	for _, said := range []string{
 		`"Example Bank Savings"`, "3 transactions", "account ending 4567", "JPY", "2026-09-01 to 2026-09-30",
 		"money in 200000", "money out -6000", "running balances chained on 3 rows, from 150000 to 344000",
@@ -36,6 +35,65 @@ func TestFinanceToolPreviewsAnImportOfTransactions(test *testing.T) {
 		if !strings.Contains(line, said) {
 			test.Errorf("the card %q does not say %s", line, said)
 		}
+	}
+}
+
+// inventedPreviewOfAnExistingAccount is the server's preview of rows into
+// an existing invented account found by its last digits: five new rows,
+// one of them near a stored transaction of the same amount, and two the
+// account holds already.
+const inventedPreviewOfAnExistingAccount = `{"financeAccountId":"account-invented","accountName":"Example Card ··0042","isNewAccount":false,
+"accountMatch":"account_mask","currencyCode":"JPY",
+"newTransactionRows":[
+ {"rowNumber":1,"postedOn":"2026-09-02","description":"Example Books","amount":"-1200","hasNearbyStoredTransaction":false},
+ {"rowNumber":2,"postedOn":"2026-09-05","description":"Example Cafe","amount":"-600","hasNearbyStoredTransaction":true},
+ {"rowNumber":4,"postedOn":"2026-09-10","description":"Example Market","amount":"-3000","hasNearbyStoredTransaction":false},
+ {"rowNumber":5,"postedOn":"2026-09-12","description":"Example Refund","amount":"500","hasNearbyStoredTransaction":false},
+ {"rowNumber":7,"postedOn":"2026-09-20","description":"Example Station","amount":"-200","hasNearbyStoredTransaction":false}],
+"presentTransactionRows":[
+ {"rowNumber":3,"postedOn":"2026-09-08","description":"Example Shop","amount":"-800","hasNearbyStoredTransaction":false},
+ {"rowNumber":6,"postedOn":"2026-09-15","description":"Example Shop","amount":"-800","hasNearbyStoredTransaction":false}],
+"firstPostedOn":"2026-09-02","lastPostedOn":"2026-09-20","moneyInAmount":"500","moneyOutAmount":"-5000",
+"verificationSummary":"monthly totals matched for 2026-09"}`
+
+// The card is the server's preview: the existing account and how it was
+// found, how many rows are new and how many already there, a few of the
+// new rows and how many more, their days and money, a new row that may be
+// a stored one dated differently, and what was checked. What is sent for
+// the preview is what the import sends. A new account is said to be new,
+// and an account the server refuses makes a card that says so.
+func TestFinanceToolPreviewsAnImportFromTheServer(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{"PreviewImportTransactions": inventedPreviewOfAnExistingAccount}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	line := financeTool(test).PreviewLine(ctx, json.RawMessage(inventedBankRows))
+	for _, said := range []string{
+		`the existing account "Example Card ··0042" (found by the last digits shown)`, "5 new, 2 already there",
+		`2026-09-02 "Example Books" -1200`, `2026-09-10 "Example Market" -3000`, "and 2 more",
+		"From 2026-09-02 to 2026-09-20, money in 500, money out -5000",
+		"1 new row has a stored transaction of the same amount within 3 days", "monthly totals matched for 2026-09",
+	} {
+		if !strings.Contains(line, said) {
+			test.Errorf("the card %q does not say %s", line, said)
+		}
+	}
+	if strings.Contains(line, "Example Station") || strings.Contains(line, "Example Shop") {
+		test.Errorf("the card %q names more than the first new rows, or a row already there", line)
+	}
+	if len(operations.documents) != 1 || !strings.Contains(operations.documents[0], "PreviewImportTransactions(") {
+		test.Fatalf("documents %v", operations.documents)
+	}
+	if sent := operations.variables[0]; sent["institutionName"] != "Example Bank" || sent["accountNumber"] != "1234567" {
+		test.Errorf("sent %v", sent)
+	}
+
+	fresh := &fakeOperations{answers: map[string]string{"PreviewImportTransactions": `{"accountName":"Example Bank Savings ··4567","isNewAccount":true,
+"accountMatch":"new_account","currencyCode":"JPY","newTransactionRows":[{"rowNumber":1,"postedOn":"2026-09-01","description":"サンプル商店","amount":"-1500"}],
+"presentTransactionRows":[],"firstPostedOn":"2026-09-01","lastPostedOn":"2026-09-01","moneyInAmount":"0","moneyOutAmount":"-1500",
+"verificationSummary":"running balances chained on 3 rows, from 150000 to 344000"}`}}
+	line = financeTool(test).PreviewLine(tools.WithRun(context.Background(), &fakeRun{operations: fresh}), json.RawMessage(inventedBankRows))
+	if !strings.Contains(line, `a new account "Example Bank Savings ··4567": 1 new, 0 already there`) {
+		test.Errorf("the card for a new account %q", line)
 	}
 }
 

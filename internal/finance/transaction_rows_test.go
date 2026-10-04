@@ -355,3 +355,136 @@ func TestStatementImportKeepsThePersonsName(test *testing.T) {
 		test.Errorf("the account %+v", account)
 	}
 }
+
+// inventedExistingCard is an invented card a file made, known by an opaque
+// identifier ending 77cc.
+func inventedExistingCard() ExistingStatementAccount {
+	return ExistingStatementAccount{
+		ProviderAccountID: "ofx-invented-card", FinanceAccountID: "account-card", AccountName: "Example Card Company", AccountMask: "77cc",
+		AccountKind: AccountKindCredit, CurrencyCode: "JPY", InstitutionName: "EXAMPLE CARD COMPANY, LTD.",
+		ProviderMetadata: json.RawMessage(`{"statementKind":"creditcard","accountMask":"77cc","institutionOrganization":"EXAMPLE CARD COMPANY, LTD."}`),
+	}
+}
+
+// The account rows go into: the one named; the one whose last digits the
+// number ends with, at an institution named a little differently; two
+// such refused naming both; one at the institution that matches neither
+// refused unless the rows are said to be of a new account; and another
+// currency or kind is no candidate.
+func TestChooseTransactionRowsAccount(test *testing.T) {
+	test.Parallel()
+	check, err := CheckTransactionRows(inventedCardInput(), "")
+	if err != nil {
+		test.Fatal(err)
+	}
+	card := inventedExistingCard()
+	if _, err := ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{card}); !isRefusal(err, "Example Card Company ··77cc (finance account id account-card)", "new account") {
+		test.Errorf("a card at the institution whose mask does not match answered %v", err)
+	}
+	named := *check
+	named.FinanceAccountID = "account-card"
+	chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, &named, []ExistingStatementAccount{card})
+	if err != nil || chosen.ExistingAccount.FinanceAccountID != "account-card" || chosen.AccountMatch != TransactionRowsAccountMatchFinanceAccountID {
+		test.Errorf("named %+v %v", chosen, err)
+	}
+	isNew := *check
+	isNew.IsNewAccount = true
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, &isNew, []ExistingStatementAccount{card}); err != nil || chosen.ExistingAccount != nil {
+		test.Errorf("a new account %+v %v", chosen, err)
+	}
+
+	byMask := card
+	byMask.AccountMask = "9876"
+	chosen, err = ChooseTransactionRowsAccount(inventedAccountKey, &isNew, []ExistingStatementAccount{byMask})
+	if err != nil || chosen.ExistingAccount == nil || chosen.AccountMatch != TransactionRowsAccountMatchAccountMask {
+		test.Errorf("a partial number whose digits match a mask, even said to be new, %+v %v", chosen, err)
+	}
+	other := byMask
+	other.FinanceAccountID, other.ProviderAccountID = "account-other", "ofx-invented-other"
+	if _, err := ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{byMask, other}); !isRefusal(err, "account-card", "account-other") {
+		test.Errorf("two cards ending 9876 answered %v", err)
+	}
+	inDollars, bank := byMask, byMask
+	inDollars.CurrencyCode, inDollars.FinanceAccountID = "USD", "account-dollars"
+	bank.AccountKind = AccountKindDepository
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{inDollars, bank}); err != nil || chosen.ExistingAccount != nil {
+		test.Errorf("another currency or kind was a candidate: %+v %v", chosen, err)
+	}
+	if _, err := ChooseTransactionRowsAccount(inventedAccountKey, &named, []ExistingStatementAccount{inDollars}); !isRefusal(err, "not an account of imported statements") {
+		test.Errorf("an id not among the accounts answered %v", err)
+	}
+	inDollars.FinanceAccountID = "account-card"
+	if _, err := ChooseTransactionRowsAccount(inventedAccountKey, &named, []ExistingStatementAccount{inDollars}); !isRefusal(err, "USD") {
+		test.Errorf("a named account in another currency answered %v", err)
+	}
+}
+
+// Rows are matched against what the account holds by day and amount, as
+// multisets: of two rows of one day and amount where one is stored, one
+// is new; descriptions do not matter, and a row whose identifier is
+// stored is the one taken as present. A new row with a stored transaction
+// of its amount two days off is marked, and still new.
+func TestPlanTransactionRowsImportLeavesOutWhatIsStored(test *testing.T) {
+	test.Parallel()
+	input := inventedCardInput()
+	input.TransactionRows = append(input.TransactionRows, TransactionRow{PostedOn: "2026-08-10", Description: "Example Cafe", Amount: "-600"})
+	input.MonthlyTotals[0].TotalAmount = "3500"
+	check, err := CheckTransactionRows(input, "")
+	if err != nil {
+		test.Fatal(err)
+	}
+	card := inventedExistingCard()
+	built, err := NewTransactionRowsImport(inventedAccountKey, check, time.UTC, nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	// Oldest first: 08-10 -600, 08-10 +100, 08-10 -600, 08-25 -2400,
+	// 09-02 -1800, 09-20 -3200.
+	secondCafeId := built.SyncResult.Added[2].ProviderTransactionID
+	stored := []StoredTransaction{
+		{ProviderTransactionID: secondCafeId, PostedOn: "2026-08-10", Amount: "-600.0000", Description: "EXAMPLE CAFE TOKYO"},
+		{ProviderTransactionID: "fit-invented-2", PostedOn: "2026-08-25", Amount: "-2400.0000", Description: "SAMPLE STORE"},
+		{ProviderTransactionID: "fit-invented-3", PostedOn: "2026-09-18", Amount: "-3200.0000", Description: "SAMPLE STORE"},
+	}
+	plan, err := PlanTransactionRowsImport(inventedAccountKey, check, time.UTC, []ExistingStatementAccount{card},
+		&TransactionRowsAccount{ExistingAccount: &card, AccountMatch: TransactionRowsAccountMatchFinanceAccountID}, stored)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if len(plan.NewTransactionRows) != 4 || len(plan.PresentTransactionRows) != 2 || plan.FinanceAccountID != "account-card" || plan.AccountName != "Example Card Company ··77cc" {
+		test.Fatalf("plan %+v", plan)
+	}
+	added := plan.StatementImport.SyncResult.Added
+	if len(added) != 4 || plan.StatementImport.PresentTransactionCount != 2 {
+		test.Fatalf("written %+v", plan.StatementImport)
+	}
+	for _, transaction := range added {
+		if transaction.ProviderTransactionID == secondCafeId {
+			test.Error("the row whose identifier is stored was written again")
+		}
+		if transaction.ProviderAccountID != "ofx-invented-card" {
+			test.Errorf("a row was written to %s", transaction.ProviderAccountID)
+		}
+	}
+	if account := plan.StatementImport.SyncResult.Accounts[0]; account.ProviderAccountID != "ofx-invented-card" || account.AccountMask != "77cc" || account.AccountName != "Example Card Company" {
+		test.Errorf("the account %+v", account)
+	}
+	var nearbyRowNumbers []int
+	for _, row := range plan.NewTransactionRows {
+		if plan.HasNearbyStoredTransaction[row.RowNumber] {
+			nearbyRowNumbers = append(nearbyRowNumbers, row.RowNumber)
+		}
+	}
+	if len(nearbyRowNumbers) != 1 || nearbyRowNumbers[0] != 1 {
+		test.Errorf("rows marked near a stored transaction: %v", nearbyRowNumbers)
+	}
+	if plan.FirstPostedOn != "2026-08-10" || plan.LastPostedOn != "2026-09-20" || plan.MoneyInAmount != "100.0000" || plan.MoneyOutAmount != "-5600.0000" {
+		test.Errorf("the new rows' days and money %+v", plan)
+	}
+
+	// A new account holds nothing, and every row is new.
+	fresh, err := PlanTransactionRowsImport(inventedAccountKey, check, time.UTC, nil, &TransactionRowsAccount{AccountMatch: TransactionRowsAccountMatchNewAccount}, nil)
+	if err != nil || len(fresh.NewTransactionRows) != 6 || fresh.FinanceAccountID != "" || fresh.AccountName != "Example Card Company ··9876" {
+		test.Errorf("a new account %+v %v", fresh, err)
+	}
+}

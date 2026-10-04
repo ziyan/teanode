@@ -52,6 +52,11 @@ type StatementImport struct {
 	// GeneratedIDCount is how many transactions had no FITID and were given
 	// an identifier made from what they say.
 	GeneratedIDCount int
+
+	// PresentTransactionCount is how many transaction rows were found
+	// already stored in the account and left out (PlanTransactionRowsImport);
+	// a file's import leaves none out.
+	PresentTransactionCount int
 }
 
 // statementAccountKeyInstitutionField is the account metadata field that
@@ -100,6 +105,16 @@ func IsStatementCreditLine(providerMetadata json.RawMessage) bool {
 type ExistingStatementAccount struct {
 	ProviderAccountID string
 	ProviderMetadata  json.RawMessage
+
+	// What transaction rows are matched against when their number keys
+	// no account (ChooseTransactionRowsAccount), and what a refusal names
+	// the account by. A file's import reads none of them.
+	FinanceAccountID string
+	AccountName      string
+	AccountMask      string
+	AccountKind      string
+	CurrencyCode     string
+	InstitutionName  string
 }
 
 // StatementAccountID is the provider account id a statement's account is

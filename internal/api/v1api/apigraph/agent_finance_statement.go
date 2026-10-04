@@ -206,10 +206,20 @@ func (self *graph) ImportStatement(ctx context.Context, arguments ImportStatemen
 // number with masked digits (****1234) is kept as the digits shown and
 // marked partial; letters are refused, since a made-up number keys the
 // account wrongly for good.
+//
+// FinanceAccountID names the existing account of imported statements the
+// rows go into, and the number may then be left out. Without it the
+// account is the one the number keys, else the one account at the
+// institution of the kind and currency whose last digits the number ends
+// with; an account at the institution that matches neither is refused,
+// naming it, unless IsNewAccount says the rows are of an account not
+// imported before.
 type ImportTransactionsArguments struct {
+	FinanceAccountID       string `json:"financeAccountId" graphapi:"nullable"`
+	IsNewAccount           *bool  `json:"isNewAccount" graphapi:"nullable"`
 	InstitutionName        string `json:"institutionName"`
 	AccountName            string `json:"accountName" graphapi:"nullable"`
-	AccountNumber          string `json:"accountNumber"`
+	AccountNumber          string `json:"accountNumber" graphapi:"nullable"`
 	IsAccountNumberPartial *bool  `json:"isAccountNumberPartial" graphapi:"nullable"`
 
 	// StatementAccountKind is bank, card or other.
@@ -280,6 +290,7 @@ func (self *ImportTransactionsArguments) TransactionRowsInput() *finance.Transac
 		StatementAccountKind:   finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
 		CurrencyCode:           self.CurrencyCode, BankCode: self.BankCode,
 		LedgerBalanceAmount: self.LedgerBalanceAmount, LedgerBalanceOn: self.LedgerBalanceOn, LedgerBalanceTimeZone: self.LedgerBalanceTimeZone,
+		FinanceAccountID: self.FinanceAccountID, IsNewAccount: self.IsNewAccount != nil && *self.IsNewAccount,
 	}
 	for _, row := range self.TransactionRows {
 		input.TransactionRows = append(input.TransactionRows, finance.TransactionRow{
@@ -293,27 +304,138 @@ func (self *ImportTransactionsArguments) TransactionRowsInput() *finance.Transac
 	return input
 }
 
-func (self *graph) ImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*models.FinanceStatementImport, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
+// TransactionRowsPreviewView is what importing transaction rows would do:
+// the account they would go into, the rows it does not hold yet and those
+// it does, the days and the money of the new rows, and what was checked.
+type TransactionRowsPreviewView struct {
+	// FinanceAccountID is the existing account's, empty when a new one
+	// would be made; AccountName is its name with the end of its
+	// identifier, the new one's as it would be named.
+	FinanceAccountID string `json:"financeAccountId,omitempty" graphapi:"nullable"`
+	AccountName      string `json:"accountName"`
+	IsNewAccount     bool   `json:"isNewAccount"`
+
+	// AccountMatch is how the account was found: finance_account_id,
+	// account_number, account_mask (its last digits), or new_account.
+	AccountMatch string `json:"accountMatch"`
+
+	CurrencyCode string `json:"currencyCode"`
+
+	// NewTransactionRows would be added, oldest first;
+	// PresentTransactionRows are held already, by day and amount, and
+	// would not be.
+	NewTransactionRows     []*TransactionRowPreview `json:"newTransactionRows"`
+	PresentTransactionRows []*TransactionRowPreview `json:"presentTransactionRows"`
+
+	// The days and the money of the new rows alone.
+	FirstPostedOn  string `json:"firstPostedOn,omitempty" graphapi:"nullable"`
+	LastPostedOn   string `json:"lastPostedOn,omitempty" graphapi:"nullable"`
+	MoneyInAmount  string `json:"moneyInAmount"`
+	MoneyOutAmount string `json:"moneyOutAmount"`
+
+	// VerificationSummary says what was checked over every row sent:
+	// running balances, monthly totals.
+	VerificationSummary string `json:"verificationSummary"`
+
+	LedgerBalanceAmount   string `json:"ledgerBalanceAmount,omitempty" graphapi:"nullable"`
+	LedgerBalanceOn       string `json:"ledgerBalanceOn,omitempty" graphapi:"nullable"`
+	LedgerBalanceTimeZone string `json:"ledgerBalanceTimeZone,omitempty" graphapi:"nullable"`
+}
+
+// TransactionRowPreview is one row of a preview, by its number among the
+// rows as sent, normalized as it would be kept. HasNearbyStoredTransaction
+// marks a new row with a stored transaction of the same amount a few days
+// off that no row matched: perhaps the same one, dated differently by an
+// app and an export, for the person to look at.
+type TransactionRowPreview struct {
+	RowNumber                  int    `json:"rowNumber"`
+	PostedOn                   string `json:"postedOn"`
+	Description                string `json:"description"`
+	Amount                     string `json:"amount"`
+	HasNearbyStoredTransaction bool   `json:"hasNearbyStoredTransaction"`
+}
+
+// transactionRowsPreviewView is a plan as the API shows it.
+func transactionRowsPreviewView(check *finance.TransactionRowsCheck, plan *finance.TransactionRowsPlan) *TransactionRowsPreviewView {
+	view := &TransactionRowsPreviewView{
+		FinanceAccountID: plan.FinanceAccountID, AccountName: plan.AccountName, IsNewAccount: plan.FinanceAccountID == "",
+		AccountMatch: string(plan.AccountMatch), CurrencyCode: check.CurrencyCode,
+		NewTransactionRows: []*TransactionRowPreview{}, PresentTransactionRows: []*TransactionRowPreview{},
+		FirstPostedOn: plan.FirstPostedOn, LastPostedOn: plan.LastPostedOn, MoneyInAmount: plan.MoneyInAmount, MoneyOutAmount: plan.MoneyOutAmount,
+		VerificationSummary: check.VerificationSummary(), LedgerBalanceAmount: check.LedgerBalanceAmount, LedgerBalanceOn: check.LedgerBalanceOn,
+		LedgerBalanceTimeZone: check.LedgerBalanceTimeZone,
 	}
+	rowPreview := func(row *finance.CheckedTransactionRow) *TransactionRowPreview {
+		return &TransactionRowPreview{
+			RowNumber: row.RowNumber, PostedOn: row.PostedOn, Description: row.Description, Amount: row.Amount,
+			HasNearbyStoredTransaction: plan.HasNearbyStoredTransaction[row.RowNumber],
+		}
+	}
+	for _, row := range plan.NewTransactionRows {
+		view.NewTransactionRows = append(view.NewTransactionRows, rowPreview(row))
+	}
+	for _, row := range plan.PresentTransactionRows {
+		view.PresentTransactionRows = append(view.PresentTransactionRows, rowPreview(row))
+	}
+	return view
+}
+
+// transactionRowsError is a refusal of transaction rows as the API says
+// it.
+func transactionRowsError(err error) error {
+	if errors.Is(err, finance.ErrTransactionRowsRefused) {
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	return err
+}
+
+// checkedTransactionRows is the agent's worker and the rows checked, as
+// both the import and its preview begin once the person is authorized.
+func (self *graph) checkedTransactionRows(principal *api.Principal, arguments ImportTransactionsArguments) (*agent.Agent, *finance.TransactionRowsCheck, error) {
 	if err := self.requireFinanceOffered(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	worker := self.agentWorker()
 	if worker == nil {
-		return nil, agent.ErrUnavailable
+		return nil, nil, agent.ErrUnavailable
 	}
 	// Checked before anything is written, against the person's own day, so
 	// a year misread into the future is refused too.
 	check, err := finance.CheckTransactionRows(arguments.TransactionRowsInput(), personToday(principal))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		return nil, nil, transactionRowsError(err)
+	}
+	return worker, check, nil
+}
+
+func (self *graph) PreviewImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*TransactionRowsPreviewView, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker, check, err := self.checkedTransactionRows(principal, arguments)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := worker.PreviewTransactionRows(ctx, found, principal.User, check)
+	if err != nil {
+		return nil, transactionRowsError(err)
+	}
+	return transactionRowsPreviewView(check, plan), nil
+}
+
+func (self *graph) ImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*models.FinanceStatementImport, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker, check, err := self.checkedTransactionRows(principal, arguments)
+	if err != nil {
+		return nil, err
 	}
 	result, err := worker.ImportTransactionRows(ctx, found, principal.User, check)
 	if err != nil {
-		return nil, err
+		return nil, transactionRowsError(err)
 	}
 	if len(result.FinanceAccountIDs) == 0 && result.ImportErrorMessage != "" {
 		return nil, fmt.Errorf("%w: nothing was imported: %s", api.ErrInvalidArguments, result.ImportErrorMessage)

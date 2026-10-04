@@ -512,7 +512,7 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 	for _, parsed := range parsedFiles {
 		for _, statement := range parsed.document.Statements {
 			document := parsed.document
-			builds = append(builds, statementBuild{statementName: parsed.statementFileName, build: func(accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
+			builds = append(builds, statementBuild{statementName: parsed.statementFileName, build: func(_ db.Transaction, _ *models.AgentKnowledgeSource, accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
 				return finance.NewStatementImport(accountKey, document, statement, existingAccounts)
 			}})
 		}
@@ -523,8 +523,16 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 // ImportTransactionRows imports one account's transaction rows, checked
 // already (finance.CheckTransactionRows), into the agent's statement
 // source, the way a statement is imported, and records it as the source's
-// last import.
+// last import. Only the rows the chosen account does not hold already are
+// written (planTransactionRows). Rows whose account cannot be chosen are
+// refused, wrapping finance.ErrTransactionRowsRefused, before anything is
+// written: the plan is made once as PreviewTransactionRows makes it, then
+// again under the statement source's lock, so two imports of the same
+// rows at once cannot both find them new.
 func (self *Agent) ImportTransactionRows(ctx context.Context, agentRow *models.Agent, owner *models.User, check *finance.TransactionRowsCheck) (*models.FinanceStatementImport, error) {
+	if _, err := self.PreviewTransactionRows(ctx, agentRow, owner, check); err != nil {
+		return nil, err
+	}
 	source, err := self.EnsureStatementSource(ctx, agentRow)
 	if err != nil {
 		return nil, err
@@ -534,18 +542,147 @@ func (self *Agent) ImportTransactionRows(ctx context.Context, agentRow *models.A
 		FinanceAccountIDs: []string{}, FinanceAccountNames: []string{},
 	}
 	location := Location(owner)
-	builds := []statementBuild{{statementName: "the transactions", build: func(accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
-		return finance.NewTransactionRowsImport(accountKey, check, location, existingAccounts)
+	builds := []statementBuild{{statementName: "the transactions", build: func(tx db.Transaction, locked *models.AgentKnowledgeSource, accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
+		plan, err := planTransactionRows(tx, agentRow.ID, locked, accountKey, existingAccounts, check, location)
+		if err != nil {
+			return nil, err
+		}
+		return plan.StatementImport, nil
 	}}}
 	return self.importStatements(ctx, agentRow, owner, source, result, nil, builds, "")
 }
 
+// previewAccountKey keys the account a preview would make when the agent
+// has no statement source yet, and so no key: what it keys is never
+// stored, and with no accounts there is nothing for it to match.
+var previewAccountKey = []byte("transaction rows preview")
+
+// PreviewTransactionRows is what ImportTransactionRows would do with the
+// same rows, writing nothing: not even the statement source is made. A
+// refusal of the account, or of the source switched off, wraps
+// finance.ErrTransactionRowsRefused.
+func (self *Agent) PreviewTransactionRows(ctx context.Context, agentRow *models.Agent, owner *models.User, check *finance.TransactionRowsCheck) (*finance.TransactionRowsPlan, error) {
+	var plan *finance.TransactionRowsPlan
+	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		source, err := findStatementSource(tx, agentRow.ID)
+		if err != nil {
+			return err
+		}
+		accountKey := previewAccountKey
+		var existingAccounts []finance.ExistingStatementAccount
+		if source != nil {
+			if !source.Enabled {
+				return fmt.Errorf("%w: %s", finance.ErrTransactionRowsRefused, errStatementImportOff)
+			}
+			if accountKey, err = self.statementAccountKey(tx, source); err != nil {
+				return err
+			}
+			if existingAccounts, err = existingStatementAccountsOf(tx, agentRow.ID, source); err != nil {
+				return err
+			}
+		}
+		plan, err = planTransactionRows(tx, agentRow.ID, source, accountKey, existingAccounts, check, Location(owner))
+		return err
+	})
+	return plan, err
+}
+
+// existingStatementAccountsOf is the statement source's accounts as a
+// statement or a set of rows is matched against them.
+func existingStatementAccountsOf(tx db.Transaction, agentId string, source *models.AgentKnowledgeSource) ([]finance.ExistingStatementAccount, error) {
+	accounts, err := tx.ListFinanceAccounts(agentId, source.ID)
+	if err != nil {
+		return nil, err
+	}
+	existingAccounts := make([]finance.ExistingStatementAccount, 0, len(accounts))
+	for _, account := range accounts {
+		existingAccounts = append(existingAccounts, finance.ExistingStatementAccount{
+			ProviderAccountID: account.ProviderAccountID, ProviderMetadata: account.ProviderMetadata, FinanceAccountID: account.ID,
+			AccountName: account.AccountName, AccountMask: account.AccountMask, AccountKind: string(account.AccountKind),
+			CurrencyCode: account.CurrencyCode, InstitutionName: account.InstitutionName(source),
+		})
+	}
+	return existingAccounts, nil
+}
+
+// planTransactionRows chooses the account rows go into
+// (finance.ChooseTransactionRowsAccount) and reads what it holds around
+// the rows' days, to leave out the rows it has already
+// (finance.PlanTransactionRowsImport). An account named by an id must be
+// one of the agent's accounts of imported statements: another person's
+// is not found, and a provider's is refused, since its sync brings its
+// transactions itself. source is nil when the agent has none yet.
+func planTransactionRows(tx db.Transaction, agentId string, source *models.AgentKnowledgeSource, accountKey []byte,
+	existingAccounts []finance.ExistingStatementAccount, check *finance.TransactionRowsCheck, location *time.Location) (*finance.TransactionRowsPlan, error) {
+	if check.FinanceAccountID != "" {
+		account, err := tx.GetFinanceAccount(agentId, check.FinanceAccountID)
+		if err != nil {
+			return nil, err
+		}
+		if account == nil {
+			return nil, fmt.Errorf("%w: there is no finance account %s; the accounts listing gives their ids", finance.ErrTransactionRowsRefused, check.FinanceAccountID)
+		}
+		if source == nil || account.SourceID != source.ID {
+			return nil, fmt.Errorf("%w: %s comes from a provider, whose sync brings its transactions itself; transactions read off pictures go only into an account of imported statements",
+				finance.ErrTransactionRowsRefused, account.AccountName)
+		}
+	}
+	chosen, err := finance.ChooseTransactionRowsAccount(accountKey, check, existingAccounts)
+	if err != nil {
+		return nil, err
+	}
+	var storedTransactions []finance.StoredTransaction
+	if chosen.ExistingAccount != nil {
+		if storedTransactions, err = storedTransactionsAround(tx, agentId, chosen.ExistingAccount.FinanceAccountID, check); err != nil {
+			return nil, err
+		}
+	}
+	return finance.PlanTransactionRowsImport(accountKey, check, location, existingAccounts, chosen, storedTransactions)
+}
+
+// storedTransactionsAround is a finance account's transactions from the
+// rows' first day to their last, and finance.NearbyStoredTransactionDays
+// either side, every page of them.
+func storedTransactionsAround(tx db.Transaction, agentId, financeAccountId string, check *finance.TransactionRowsCheck) ([]finance.StoredTransaction, error) {
+	firstDay, err := time.Parse(time.DateOnly, check.FirstPostedOn)
+	if err != nil {
+		return nil, err
+	}
+	lastDay, err := time.Parse(time.DateOnly, check.LastPostedOn)
+	if err != nil {
+		return nil, err
+	}
+	filter := &db.FinanceTransactionFilter{
+		FinanceAccountID: financeAccountId, Limit: db.FinanceTransactionLimitMost,
+		From: firstDay.AddDate(0, 0, -finance.NearbyStoredTransactionDays).Format(time.DateOnly),
+		To:   lastDay.AddDate(0, 0, finance.NearbyStoredTransactionDays).Format(time.DateOnly),
+	}
+	var storedTransactions []finance.StoredTransaction
+	for {
+		page, err := tx.ListFinanceTransactions(agentId, filter)
+		if err != nil {
+			return nil, err
+		}
+		for _, transaction := range page.FinanceTransactions {
+			storedTransactions = append(storedTransactions, finance.StoredTransaction{
+				ProviderTransactionID: transaction.ProviderTransactionID, PostedOn: transaction.PostedOn, Amount: transaction.Amount,
+				Description: transaction.Description,
+			})
+		}
+		if page.NextCursor == "" {
+			return storedTransactions, nil
+		}
+		filter.After = page.NextCursor
+	}
+}
+
 // statementBuild is one statement to import: what to call it when it
-// fails, and how it becomes what a sync writes once the statement source's
-// account key and accounts are read, inside the transaction that imports.
+// fails, and how it becomes what a sync writes once the statement source
+// is locked and its account key and accounts are read, inside the
+// transaction that imports.
 type statementBuild struct {
 	statementName string
-	build         func(accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error)
+	build         func(tx db.Transaction, source *models.AgentKnowledgeSource, accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error)
 }
 
 // importStatements writes each statement into the statement source under
@@ -579,17 +716,13 @@ func (self *Agent) importStatements(ctx context.Context, agentRow *models.Agent,
 			if accountKey, err = self.statementAccountKey(tx, source); err != nil {
 				return err
 			}
-			accounts, err := tx.ListFinanceAccounts(agentRow.ID, source.ID)
-			if err != nil {
+			if existingAccounts, err = existingStatementAccountsOf(tx, agentRow.ID, source); err != nil {
 				return err
-			}
-			for _, account := range accounts {
-				existingAccounts = append(existingAccounts, finance.ExistingStatementAccount{ProviderAccountID: account.ProviderAccountID, ProviderMetadata: account.ProviderMetadata})
 			}
 		}
 		accountProviderIds := []string{}
 		for _, pending := range builds {
-			statementImport, err := pending.build(accountKey, existingAccounts)
+			statementImport, err := pending.build(tx, source, accountKey, existingAccounts)
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("%s could not be read: %s", pending.statementName, strings.TrimPrefix(err.Error(), "finance: ")))
 				continue
@@ -611,7 +744,7 @@ func (self *Agent) importStatements(ctx context.Context, agentRow *models.Agent,
 			result.AddedTransactionCount += applied.InsertedTransactionCount
 			result.UpdatedTransactionCount += applied.WrittenTransactionCount - applied.InsertedTransactionCount
 			result.SkippedTransactionCount += applied.SkippedTransactionCount
-			result.UnchangedTransactionCount += added - applied.WrittenTransactionCount - applied.SkippedTransactionCount
+			result.UnchangedTransactionCount += added - applied.WrittenTransactionCount - applied.SkippedTransactionCount + statementImport.PresentTransactionCount
 			result.TransactionWithoutFITIDCount += statementImport.GeneratedIDCount
 			merged.FinanceTransactionIDsToCategorize = append(merged.FinanceTransactionIDsToCategorize, applied.FinanceTransactionIDsToCategorize...)
 			accountProviderIds = append(accountProviderIds, statementImport.SyncResult.Accounts[0].ProviderAccountID)

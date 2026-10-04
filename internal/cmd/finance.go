@@ -133,13 +133,18 @@ func NewFinanceCommand() *cli.Command {
 			{
 				Name: "import-transactions", Usage: "import one account's transactions from a JSON file of rows, such as rows read off screenshots",
 				ArgsUsage: "<file.json | ->",
-				Description: "The file is one JSON object with the ImportTransactions arguments: institutionName, accountName,\n" +
-					"accountNumber (the digits shown, masked ones as ****1234), statementAccountKind (bank, card or other),\n" +
-					"currencyCode, bankCode, ledgerBalanceAmount, ledgerBalanceOn, ledgerBalanceTimeZone, monthlyTotals\n" +
-					"([{totalMonth, totalAmount}]) and transactionRows ([{postedOn, description, amount, transactionKind,\n" +
-					"runningBalanceAmount, totalMonth}]), amounts signed with money out negative. Running balances and\n" +
-					"monthly totals are checked before anything is written, and rows imported before add nothing.",
-				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceImportTransactions,
+				Description: "The file is one JSON object with the ImportTransactions arguments: financeAccountId (an\n" +
+					"imported account the rows are of, from teanode finance accounts), isNewAccount, institutionName,\n" +
+					"accountName, accountNumber (the digits shown, masked ones as ****1234), statementAccountKind (bank,\n" +
+					"card or other), currencyCode, bankCode, ledgerBalanceAmount, ledgerBalanceOn, ledgerBalanceTimeZone,\n" +
+					"monthlyTotals ([{totalMonth, totalAmount}]) and transactionRows ([{postedOn, description, amount,\n" +
+					"transactionKind, runningBalanceAmount, totalMonth}]), amounts signed with money out negative.\n" +
+					"Running balances and monthly totals are checked before anything is written. Without\n" +
+					"financeAccountId the rows go into the account their number or its last digits match, or a new one;\n" +
+					"only rows the account does not hold already, by day and amount, are added. --dry-run says what\n" +
+					"the import would do and writes nothing.",
+				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "dry-run", Usage: "say which account and which rows the import would add, writing nothing"}},
+				Action: runFinanceImportTransactions,
 			},
 			{
 				Name: "rename-statement-account", Usage: "give an account of imported statements your own name, which later imports keep",
@@ -974,9 +979,11 @@ func (self *jsonDecimal) UnmarshalJSON(encoded []byte) error {
 // transactionRowsFile is the file import-transactions reads: the
 // ImportTransactions arguments, named as the API names them.
 type transactionRowsFile struct {
+	FinanceAccountID       string                     `json:"financeAccountId,omitempty"`
+	IsNewAccount           bool                       `json:"isNewAccount,omitempty"`
 	InstitutionName        string                     `json:"institutionName"`
 	AccountName            string                     `json:"accountName,omitempty"`
-	AccountNumber          string                     `json:"accountNumber"`
+	AccountNumber          string                     `json:"accountNumber,omitempty"`
 	IsAccountNumberPartial bool                       `json:"isAccountNumberPartial,omitempty"`
 	StatementAccountKind   string                     `json:"statementAccountKind"`
 	CurrencyCode           string                     `json:"currencyCode"`
@@ -1009,6 +1016,7 @@ func (self *transactionRowsFile) transactionRowsInput() *finance.TransactionRows
 		IsAccountNumberPartial: self.IsAccountNumberPartial, StatementAccountKind: finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
 		CurrencyCode: self.CurrencyCode, BankCode: self.BankCode, LedgerBalanceAmount: string(self.LedgerBalanceAmount),
 		LedgerBalanceOn: self.LedgerBalanceOn, LedgerBalanceTimeZone: self.LedgerBalanceTimeZone,
+		FinanceAccountID: self.FinanceAccountID, IsNewAccount: self.IsNewAccount,
 	}
 	for _, row := range self.TransactionRows {
 		input.TransactionRows = append(input.TransactionRows, finance.TransactionRow{
@@ -1060,11 +1068,52 @@ func runFinanceImportTransactions(ctx context.Context, command *cli.Command) err
 	if err := json.Unmarshal(encoded, &variables); err != nil {
 		return err
 	}
+	if command.Bool("dry-run") {
+		var preview *client.TransactionRowsPreview
+		if err := financeCall(ctx, command, "PreviewImportTransactions", variables, &preview); err != nil {
+			return err
+		}
+		return printDone(command, preview, transactionRowsPreviewLines(preview))
+	}
 	var imported *client.FinanceStatementImport
 	if err := financeCall(ctx, command, operationOf(command), variables, &imported); err != nil {
 		return err
 	}
 	return printDone(command, imported, statementImportLine(imported)+"; checked: "+check.VerificationSummary())
+}
+
+// transactionRowsPreviewLines says what an import of rows would do: the
+// account, how many rows are new and how many already there, each new
+// row, their days and money, and what was checked.
+func transactionRowsPreviewLines(preview *client.TransactionRowsPreview) string {
+	if preview == nil {
+		return "the server did not say what the import would do"
+	}
+	amount := func(value string) string {
+		return finance.FormatTransactionRowsAmount(value, preview.CurrencyCode)
+	}
+	account := "a new account " + preview.AccountName
+	if !preview.IsNewAccount {
+		account = fmt.Sprintf("%s (%s), found by %s", preview.AccountName, preview.FinanceAccountID, map[string]string{
+			string(finance.TransactionRowsAccountMatchFinanceAccountID): "its id",
+			string(finance.TransactionRowsAccountMatchAccountNumber):    "its number",
+			string(finance.TransactionRowsAccountMatchAccountMask):      "the last digits of its number",
+		}[preview.AccountMatch])
+	}
+	lines := []string{fmt.Sprintf("would import into %s: %d new, %d already there; nothing was written", account,
+		len(preview.NewTransactionRows), len(preview.PresentTransactionRows))}
+	for _, row := range preview.NewTransactionRows {
+		line := fmt.Sprintf("  new  %s  %s  %s", row.PostedOn, amount(row.Amount), row.Description)
+		if row.HasNearbyStoredTransaction {
+			line += fmt.Sprintf("  (a stored transaction of the same amount is within %d days)", finance.NearbyStoredTransactionDays)
+		}
+		lines = append(lines, line)
+	}
+	if len(preview.NewTransactionRows) > 0 {
+		lines = append(lines, fmt.Sprintf("from %s to %s, money in %s, money out %s", preview.FirstPostedOn, preview.LastPostedOn,
+			amount(preview.MoneyInAmount), amount(preview.MoneyOutAmount)))
+	}
+	return strings.Join(append(lines, "checked: "+preview.VerificationSummary), "\n")
 }
 
 func runFinanceRenameStatementAccount(ctx context.Context, command *cli.Command) error {

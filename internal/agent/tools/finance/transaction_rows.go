@@ -19,9 +19,14 @@ import (
 // monthly totals matched) is the finance package's, the same one the API
 // runs before writing, so the confirmation card can say what was checked
 // and a set that does not add up is refused before the person is asked.
+// The card then asks the server what the import would do
+// (PreviewImportTransactions, also the tool's preview_import_transactions):
+// which account, and which rows that account holds already.
 
-// transactionRowsArguments are import_transactions's arguments.
+// transactionRowsArguments are import_transactions's arguments, and
+// preview_import_transactions's.
 var transactionRowsArguments = []string{
+	"finance_account_id", "is_new_account",
 	"institution_name", "account_name", "account_number", "is_account_number_partial", "statement_account_kind", "currency_code",
 	"bank_code", "transaction_rows", "ledger_balance_amount", "ledger_balance_on", "ledger_balance_time_zone", "monthly_totals",
 }
@@ -100,6 +105,7 @@ func transactionRowsInputOf(call map[string]any) *financecore.TransactionRowsInp
 		CurrencyCode:         text(call, "currency_code"), BankCode: amountText(call["bank_code"]),
 		LedgerBalanceAmount: amountText(call["ledger_balance_amount"]), LedgerBalanceOn: text(call, "ledger_balance_on"),
 		LedgerBalanceTimeZone: text(call, "ledger_balance_time_zone"),
+		FinanceAccountID:      text(call, "finance_account_id"), IsNewAccount: isTrue(call, "is_new_account"),
 	}
 	for _, row := range objects(call, "transaction_rows") {
 		input.TransactionRows = append(input.TransactionRows, financecore.TransactionRow{
@@ -133,14 +139,116 @@ func isRefusedTransactionRows(arguments json.RawMessage) bool {
 	return err != nil
 }
 
-// importTransactionsPreview is the confirmation card of an import: the
-// account, how many rows over which days, money in and out, what was
-// checked, and a few of the rows.
-func importTransactionsPreview(_ *previewLookup, call map[string]any) string {
+// refusalText is a refusal of transaction rows without the words every
+// refusal begins with.
+func refusalText(err error) string {
+	said := err.Error()
+	if index := strings.Index(said, financecore.ErrTransactionRowsRefused.Error()+": "); index >= 0 {
+		said = said[index+len(financecore.ErrTransactionRowsRefused.Error()+": "):]
+	}
+	return said
+}
+
+// importTransactionsPreview is the confirmation card of an import, from
+// the server's preview of it: the account (existing, and how it was
+// found, or new), how many rows are new and how many it holds already, a
+// few of the new rows, their days, money in and out of them, and what was
+// checked. Rows that do not add up, or an account the server refuses,
+// say so. With no run to ask the server through, it says what the rows
+// alone say.
+func importTransactionsPreview(lookup *previewLookup, call map[string]any) string {
 	check, err := financecore.CheckTransactionRows(transactionRowsInputOf(call), "")
 	if err != nil {
-		return "Import transactions read from pictures; they do not add up and will be refused: " + strings.TrimPrefix(err.Error(), financecore.ErrTransactionRowsRefused.Error()+": ")
+		return "Import transactions read from pictures; they do not add up and will be refused: " + refusalText(err)
 	}
+	if lookup == nil || lookup.executor == nil {
+		return rowsAlonePreview(check)
+	}
+	variables, err := transactionRowsVariables(call)
+	if err != nil {
+		return "Import transactions read from pictures; they will be refused: " + err.Error()
+	}
+	var preview *client.TransactionRowsPreview
+	if err := client.RunFinance(lookup.ctx, lookup.executor, "PreviewImportTransactions", variables, &preview); err != nil || preview == nil {
+		reason := "the server did not say what the import would do"
+		if err != nil {
+			reason = refusalText(err)
+		}
+		return "Import transactions read from pictures; they will be refused: " + reason
+	}
+	return transactionRowsPreviewLine(preview)
+}
+
+// accountMatchWords say how the server found the account.
+var accountMatchWords = map[string]string{
+	string(financecore.TransactionRowsAccountMatchFinanceAccountID): "named by its id",
+	string(financecore.TransactionRowsAccountMatchAccountNumber):    "found by its number",
+	string(financecore.TransactionRowsAccountMatchAccountMask):      "found by the last digits shown",
+}
+
+// transactionRowsPreviewLine is the card for a preview the server gave.
+func transactionRowsPreviewLine(preview *client.TransactionRowsPreview) string {
+	amount := func(value string) string {
+		return financecore.FormatTransactionRowsAmount(value, preview.CurrencyCode)
+	}
+	account := "a new account " + tools.Named(preview.AccountName, "")
+	if !preview.IsNewAccount {
+		account = "the existing account " + tools.Named(preview.AccountName, "")
+		if words := accountMatchWords[preview.AccountMatch]; words != "" {
+			account += " (" + words + ")"
+		}
+	}
+	line := fmt.Sprintf("Import transactions read from pictures into %s: %d new, %d already there", account,
+		len(preview.NewTransactionRows), len(preview.PresentTransactionRows))
+	if len(preview.NewTransactionRows) == 0 {
+		line += "; nothing to add"
+	} else {
+		var examples []string
+		nearbyCount := 0
+		for _, row := range preview.NewTransactionRows {
+			if row.HasNearbyStoredTransaction {
+				nearbyCount++
+			}
+		}
+		shown := preview.NewTransactionRows
+		if len(shown) > previewTransactionRowCount {
+			shown = shown[:previewTransactionRowCount]
+		}
+		for _, row := range shown {
+			examples = append(examples, fmt.Sprintf("%s %s %s", row.PostedOn, tools.Named(row.Description, ""), amount(row.Amount)))
+		}
+		line += ". New: " + strings.Join(examples, "; ")
+		if remainingCount := len(preview.NewTransactionRows) - len(shown); remainingCount > 0 {
+			line += fmt.Sprintf("; and %d more", remainingCount)
+		}
+		line += fmt.Sprintf(". From %s to %s, money in %s, money out %s", preview.FirstPostedOn, preview.LastPostedOn,
+			amount(preview.MoneyInAmount), amount(preview.MoneyOutAmount))
+		// An app and an export can date one transaction differently (the
+		// day it was made and the day it posted), which the match by day
+		// does not take as the same; the person is shown it instead.
+		switch {
+		case nearbyCount == 1:
+			line += fmt.Sprintf(". 1 new row has a stored transaction of the same amount within %d days, perhaps the same one dated differently",
+				financecore.NearbyStoredTransactionDays)
+		case nearbyCount > 1:
+			line += fmt.Sprintf(". %d new rows have a stored transaction of the same amount within %d days, perhaps the same ones dated differently",
+				nearbyCount, financecore.NearbyStoredTransactionDays)
+		}
+	}
+	line += "; " + preview.VerificationSummary
+	if preview.LedgerBalanceAmount != "" {
+		line += fmt.Sprintf("; balance %s on %s", amount(preview.LedgerBalanceAmount), preview.LedgerBalanceOn)
+		if preview.LedgerBalanceTimeZone != "" {
+			line += " (" + preview.LedgerBalanceTimeZone + ")"
+		}
+	}
+	return line
+}
+
+// rowsAlonePreview is the card from the rows alone, when the server
+// cannot be asked: the account as the rows name it, how many over which
+// days, money in and out, what was checked, and a few of the rows.
+func rowsAlonePreview(check *financecore.TransactionRowsCheck) string {
 	amount := func(value string) string {
 		return financecore.FormatTransactionRowsAmount(value, check.CurrencyCode)
 	}
@@ -170,7 +278,7 @@ func importTransactionsPreview(_ *previewLookup, call map[string]any) string {
 	if remainingCount := len(check.TransactionRows) - len(examples); remainingCount > 0 {
 		line += fmt.Sprintf("; and %d more", remainingCount)
 	}
-	return line + ". Rows imported before are not added again"
+	return line + ". Rows the account holds already are not added again"
 }
 
 // examplesOf is the rows a card names: the first, one from the middle and
@@ -191,15 +299,10 @@ func countOf(count int, noun string) string {
 	return fmt.Sprintf("%d %ss", count, noun)
 }
 
-// importTransactions checks the rows and sends them to ImportTransactions,
-// with the rows and totals as the API names them, answering what was
-// imported and what was checked.
-func importTransactions(ctx context.Context, executor tools.Operations, name string, asked map[string]any) (*tools.Result, error) {
+// transactionRowsVariables are import_transactions's arguments as the API
+// names them, the rows' and totals' fields too, amounts as text.
+func transactionRowsVariables(asked map[string]any) (map[string]any, error) {
 	if err := checkTransactionRowFields(asked); err != nil {
-		return nil, err
-	}
-	check, err := financecore.CheckTransactionRows(transactionRowsInputOf(asked), "")
-	if err != nil {
 		return nil, err
 	}
 	variables := map[string]any{}
@@ -227,14 +330,34 @@ func importTransactions(ctx context.Context, executor tools.Operations, name str
 		}
 		variables[camelCase(key)] = value
 	}
-	var imported any
-	if err := client.RunFinance(ctx, executor, "ImportTransactions", variables, &imported); err != nil {
+	return variables, nil
+}
+
+// importTransactions checks the rows and sends them to ImportTransactions,
+// or with preview_import_transactions to PreviewImportTransactions, with
+// the rows and totals as the API names them, answering what was imported,
+// or would be, and what was checked.
+func importTransactions(ctx context.Context, executor tools.Operations, name string, asked map[string]any) (*tools.Result, error) {
+	variables, err := transactionRowsVariables(asked)
+	if err != nil {
 		return nil, err
 	}
-	payload := map[string]any{name: imported, "verification": check.VerificationSummary()}
-	if check.IsAccountNumberPartial {
-		payload["hint"] = "the account is known by the digits shown, ending " + financecore.StatementAccountMask(check.AccountNumber) +
-			"; later screenshots showing the same digits land in it, but an OFX file carrying the whole number would be a separate account"
+	check, err := financecore.CheckTransactionRows(transactionRowsInputOf(asked), "")
+	if err != nil {
+		return nil, err
+	}
+	operation := "ImportTransactions"
+	if name == "preview_import_transactions" {
+		operation = "PreviewImportTransactions"
+	}
+	var answered any
+	if err := client.RunFinance(ctx, executor, operation, variables, &answered); err != nil {
+		return nil, err
+	}
+	payload := map[string]any{name: answered, "verification": check.VerificationSummary()}
+	if check.IsAccountNumberPartial && check.FinanceAccountID == "" {
+		payload["hint"] = "the account is found by the digits shown, ending " + financecore.StatementAccountMask(check.AccountNumber) +
+			", or by the id of the account they are of; a new account made from them is known by those digits, so an OFX file carrying the whole number would be a separate account"
 	}
 	result, err := tools.JSONResult(payload)
 	if err != nil {
@@ -242,5 +365,8 @@ func importTransactions(ctx context.Context, executor tools.Operations, name str
 	}
 	result.Untrusted = true
 	result.Note = "import transactions"
+	if operation == "PreviewImportTransactions" {
+		result.Note = "preview an import of transactions"
+	}
 	return result, nil
 }

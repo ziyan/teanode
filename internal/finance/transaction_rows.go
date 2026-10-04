@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -128,6 +129,16 @@ type TransactionRowsInput struct {
 
 	// MonthlyTotals are the totals a card's list shows per month.
 	MonthlyTotals []MonthlyTotal
+
+	// FinanceAccountID names the existing account of imported statements
+	// the rows go into, whatever number they show. With it the account
+	// number may be left out: a list often shows none, or only a card's
+	// last digits where the card's export knows it by another
+	// identifier. IsNewAccount says the rows are of an account not
+	// imported before, where an account at the same institution exists
+	// that the rows' number does not match. At most one of the two.
+	FinanceAccountID string
+	IsNewAccount     bool
 }
 
 // TransactionRow is one transaction as read.
@@ -184,6 +195,8 @@ type TransactionRowsCheck struct {
 	StatementAccountKind   StatementAccountKind
 	CurrencyCode           string
 	BankCode               string
+	FinanceAccountID       string
+	IsNewAccount           bool
 
 	// TransactionRows are oldest first.
 	TransactionRows []*CheckedTransactionRow
@@ -244,7 +257,7 @@ func normalizeAccountNumber(accountNumber string) (string, bool, error) {
 		}
 	}
 	if digits.Len() == 0 {
-		return "", false, refuseRows("the account number %q shows no digits; give the digits the list shows, or ask the person for them", accountNumber)
+		return "", false, refuseRows("the account number %q shows no digits; give the digits the list shows, name the account already imported that the rows are of by its finance account id, or ask the person", accountNumber)
 	}
 	return digits.String(), isMasked, nil
 }
@@ -314,12 +327,21 @@ func CheckTransactionRows(input *TransactionRowsInput, today string) (*Transacti
 			return nil, refuseRows("the bank code %q holds %q; give it as the list shows it, letters and digits", input.BankCode, string(character))
 		}
 	}
-	accountNumber, isMasked, err := normalizeAccountNumber(input.AccountNumber)
-	if err != nil {
-		return nil, err
+	check.FinanceAccountID = strings.TrimSpace(input.FinanceAccountID)
+	check.IsNewAccount = input.IsNewAccount
+	if check.FinanceAccountID != "" && check.IsNewAccount {
+		return nil, refuseRows("name the existing account the rows are of, or say they are of a new account, not both")
 	}
-	check.AccountNumber = accountNumber
-	check.IsAccountNumberPartial = input.IsAccountNumberPartial || isMasked
+	// An account named by its id needs no number; one the list shows is
+	// still read, for the card to name.
+	if check.FinanceAccountID == "" || strings.TrimSpace(input.AccountNumber) != "" {
+		accountNumber, isMasked, err := normalizeAccountNumber(input.AccountNumber)
+		if err != nil {
+			return nil, err
+		}
+		check.AccountNumber = accountNumber
+		check.IsAccountNumberPartial = input.IsAccountNumberPartial || isMasked
+	}
 
 	if len(input.TransactionRows) == 0 {
 		return nil, refuseRows("there are no rows")
@@ -600,25 +622,22 @@ func FormatTransactionRowsAmount(amount, currencyCode string) string {
 // the same account number is the same finance account, and each
 // transaction known by its day, amount and description, numbered when the
 // same one appears twice on a day, as a statement's transaction without a
-// FITID is. Sending rows again, or rows that overlap ones sent before,
-// adds nothing twice. location is the person's zone, for a ledger balance
-// that names none.
+// FITID is. It builds every row, and the transaction for the row at an
+// index of check.TransactionRows is at the same index of what it answers;
+// PlanTransactionRowsImport is what leaves out the rows an account holds
+// already. location is the person's zone, for a ledger balance that names
+// none.
 func NewTransactionRowsImport(accountKey []byte, check *TransactionRowsCheck, location *time.Location, existingAccounts []ExistingStatementAccount) (*StatementImport, error) {
 	if check == nil || len(check.TransactionRows) == 0 {
 		return nil, errors.New("finance: there are no checked rows to import")
 	}
-	statement := &ofx.Statement{
-		StatementKind: ofx.StatementKindBank, CurrencyCode: check.CurrencyCode, AccountID: check.AccountNumber, BankID: check.BankCode,
-		StartedOn: check.FirstPostedOn, EndedOn: check.LastPostedOn,
-	}
+	statement := transactionRowsStatement(check)
+	statement.StartedOn, statement.EndedOn = check.FirstPostedOn, check.LastPostedOn
 	options := statementImportOptions{accountMetadata: map[string]any{
 		"statementImportOrigin": StatementImportOriginTransactionRows, "statementAccountKind": string(check.StatementAccountKind),
 		"accountLabel": check.AccountName, "isAccountNumberPartial": check.IsAccountNumberPartial,
 	}}
-	switch check.StatementAccountKind {
-	case StatementAccountKindCard:
-		statement.StatementKind = ofx.StatementKindCreditCard
-	case StatementAccountKindOther:
+	if check.StatementAccountKind == StatementAccountKindOther {
 		options.accountKind = AccountKindOther
 	}
 	switch {
@@ -650,4 +669,434 @@ func NewTransactionRowsImport(accountKey []byte, check *TransactionRowsCheck, lo
 	}
 	document := &ofx.Document{InstitutionOrganization: check.InstitutionName}
 	return newStatementImport(accountKey, document, statement, existingAccounts, options)
+}
+
+// transactionRowsStatement is the statement rows are keyed as: a card's
+// as a card statement's, a bank's and anything else's as a bank
+// statement's, the bank code as its BANKID and the digits of the number
+// as its ACCTID.
+func transactionRowsStatement(check *TransactionRowsCheck) *ofx.Statement {
+	statement := &ofx.Statement{StatementKind: ofx.StatementKindBank, CurrencyCode: check.CurrencyCode, AccountID: check.AccountNumber, BankID: check.BankCode}
+	if check.StatementAccountKind == StatementAccountKindCard {
+		statement.StatementKind = ofx.StatementKindCreditCard
+	}
+	return statement
+}
+
+// TransactionRowsAccountMatch is how the account transaction rows go into
+// was found.
+type TransactionRowsAccountMatch string
+
+const (
+	// TransactionRowsAccountMatchFinanceAccountID is the account the
+	// caller named by its id.
+	TransactionRowsAccountMatchFinanceAccountID TransactionRowsAccountMatch = "finance_account_id"
+
+	// TransactionRowsAccountMatchAccountNumber is the account the rows'
+	// number keys, as a file's or earlier rows' with the same number.
+	TransactionRowsAccountMatchAccountNumber TransactionRowsAccountMatch = "account_number"
+
+	// TransactionRowsAccountMatchAccountMask is the one account at the
+	// institution, of the kind and currency, whose mask the rows' number
+	// ends with.
+	TransactionRowsAccountMatchAccountMask TransactionRowsAccountMatch = "account_mask"
+
+	// TransactionRowsAccountMatchNewAccount is an account made for the
+	// rows.
+	TransactionRowsAccountMatchNewAccount TransactionRowsAccountMatch = "new_account"
+)
+
+// TransactionRowsAccount is the account transaction rows go into: an
+// existing account of imported statements, or a new one when
+// ExistingAccount is nil.
+type TransactionRowsAccount struct {
+	ExistingAccount *ExistingStatementAccount
+	AccountMatch    TransactionRowsAccountMatch
+}
+
+// isCardAccount says an existing statement account is a card's, as rows
+// of kind card are: a credit account that is no bank's line of credit.
+func (self *ExistingStatementAccount) isCardAccount() bool {
+	return self.AccountKind == AccountKindCredit && !IsStatementCreditLine(self.ProviderMetadata)
+}
+
+// displayName is the account as a refusal or a card names it: its name
+// and the end of its identifier, as the import's answer names it.
+func (self *ExistingStatementAccount) displayName() string {
+	name := self.AccountName
+	if self.AccountMask != "" {
+		name += " ··" + self.AccountMask
+	}
+	return name
+}
+
+// normalizeInstitutionName is an institution's name as two are compared:
+// NFKC, lower case, letters and digits only, so "Example Bank, N.A." and
+// "EXAMPLE BANK NA" are one name.
+func normalizeInstitutionName(institutionName string) string {
+	var normalized strings.Builder
+	for _, character := range strings.ToLower(normalization.NFKC.String(institutionName)) {
+		if unicode.IsLetter(character) || unicode.IsDigit(character) {
+			normalized.WriteRune(character)
+		}
+	}
+	return normalized.String()
+}
+
+// isSameInstitution says two institution names may name one institution:
+// one normalized name holds the other, since an app and its export name
+// it differently ("Example Bank" and "Example Bank NA"). An account whose
+// institution is not known may be at any.
+func isSameInstitution(existingInstitutionName, institutionName string) bool {
+	existing, given := normalizeInstitutionName(existingInstitutionName), normalizeInstitutionName(institutionName)
+	return existing == "" || strings.Contains(existing, given) || strings.Contains(given, existing)
+}
+
+// isMaskMatch says an account's mask and the end of the number shown
+// agree: the shorter ends the longer, since a list may show fewer digits
+// than a mask keeps.
+func isMaskMatch(accountMask, shownMask string) bool {
+	if accountMask == "" || shownMask == "" {
+		return false
+	}
+	return strings.HasSuffix(accountMask, shownMask) || strings.HasSuffix(shownMask, accountMask)
+}
+
+// accountFitsRows refuses an account the rows cannot be of: another
+// currency, or a card for a bank's rows and the other way round.
+func accountFitsRows(existing *ExistingStatementAccount, check *TransactionRowsCheck) error {
+	if existing.CurrencyCode != "" && !strings.EqualFold(existing.CurrencyCode, check.CurrencyCode) {
+		return refuseRows("%s is in %s, but the rows are in %s; name the account they are of", existing.displayName(), existing.CurrencyCode, check.CurrencyCode)
+	}
+	if existing.isCardAccount() != (check.StatementAccountKind == StatementAccountKindCard) {
+		return refuseRows("%s is not of the kind %s; name the account the rows are of", existing.displayName(), check.StatementAccountKind)
+	}
+	return nil
+}
+
+// candidateList names accounts for a refusal: each by its name, the end
+// of its identifier and its id, which the caller passes back.
+func candidateList(candidates []*ExistingStatementAccount) string {
+	named := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		named = append(named, fmt.Sprintf("%s (finance account id %s)", candidate.displayName(), candidate.FinanceAccountID))
+	}
+	return strings.Join(named, ", ")
+}
+
+// ChooseTransactionRowsAccount is the account transaction rows go into,
+// among the existing accounts of imported statements (only those: the
+// caller refuses an id of any other account before this):
+//
+//   - the account check.FinanceAccountID names, when it names one;
+//   - else the account the rows' number keys, as a file's or earlier
+//     rows' with the same number and bank code;
+//   - else the one account at the same institution, of the same kind and
+//     currency, whose mask the shown digits end with, so a screenshot
+//     showing an account's last digits lands in the account a file made.
+//     Two such accounts are refused, naming them, for the person to
+//     choose;
+//   - else, when no account at the same institution of the kind and
+//     currency exists, or the caller says the rows are of a new account
+//     (check.IsNewAccount), a new account. An account at the institution
+//     whose mask does not match is refused rather than passed over, since
+//     a card's export can know it by an identifier that is not its
+//     number, and the rows would then be counted twice in two accounts.
+func ChooseTransactionRowsAccount(accountKey []byte, check *TransactionRowsCheck, existingAccounts []ExistingStatementAccount) (*TransactionRowsAccount, error) {
+	if check.FinanceAccountID != "" {
+		for index := range existingAccounts {
+			existing := &existingAccounts[index]
+			if existing.FinanceAccountID != check.FinanceAccountID {
+				continue
+			}
+			if err := accountFitsRows(existing, check); err != nil {
+				return nil, err
+			}
+			return &TransactionRowsAccount{ExistingAccount: existing, AccountMatch: TransactionRowsAccountMatchFinanceAccountID}, nil
+		}
+		return nil, refuseRows("%s is not an account of imported statements; the accounts listing gives their ids", check.FinanceAccountID)
+	}
+	if check.AccountNumber == "" {
+		return nil, refuseRows("give the account number shown, or the finance account id of the account the rows are of")
+	}
+	keyedProviderAccountId, _ := resolveStatementAccountID(accountKey, transactionRowsStatement(check), existingAccounts)
+	for index := range existingAccounts {
+		existing := &existingAccounts[index]
+		if existing.ProviderAccountID != keyedProviderAccountId {
+			continue
+		}
+		if err := accountFitsRows(existing, check); err != nil {
+			return nil, err
+		}
+		return &TransactionRowsAccount{ExistingAccount: existing, AccountMatch: TransactionRowsAccountMatchAccountNumber}, nil
+	}
+	shownMask := StatementAccountMask(check.AccountNumber)
+	var maskMatches, institutionMatches []*ExistingStatementAccount
+	for index := range existingAccounts {
+		existing := &existingAccounts[index]
+		if !strings.EqualFold(existing.CurrencyCode, check.CurrencyCode) || existing.isCardAccount() != (check.StatementAccountKind == StatementAccountKindCard) ||
+			!isSameInstitution(existing.InstitutionName, check.InstitutionName) {
+			continue
+		}
+		institutionMatches = append(institutionMatches, existing)
+		if isMaskMatch(existing.AccountMask, shownMask) {
+			maskMatches = append(maskMatches, existing)
+		}
+	}
+	switch {
+	case len(maskMatches) == 1:
+		return &TransactionRowsAccount{ExistingAccount: maskMatches[0], AccountMatch: TransactionRowsAccountMatchAccountMask}, nil
+	case len(maskMatches) > 1:
+		return nil, refuseRows("the number ending %s could be any of %s; ask the person which one the rows are of and give its finance account id",
+			shownMask, candidateList(maskMatches))
+	case len(institutionMatches) > 0 && !check.IsNewAccount:
+		return nil, refuseRows("no account ending %s was imported before, but %s already has %s, whose export may know the account by another number; "+
+			"if the rows are of one of these, give its finance account id, and if they are of an account not imported before, say it is a new account; ask the person when unsure",
+			shownMask, check.InstitutionName, candidateList(institutionMatches))
+	}
+	return &TransactionRowsAccount{AccountMatch: TransactionRowsAccountMatchNewAccount}, nil
+}
+
+// NearbyStoredTransactionDays is how many days either side of a new row a
+// stored transaction of the same amount is pointed out as possibly the
+// same one, posted on another day. It is only pointed out, never matched:
+// a genuine second charge of the same amount days apart is common.
+const NearbyStoredTransactionDays = 3
+
+// StoredTransaction is a transaction the account holds already, as rows
+// are matched against it.
+type StoredTransaction struct {
+	ProviderTransactionID string
+	PostedOn              string
+	Amount                string
+	Description           string
+}
+
+// TransactionRowsPlan is what importing transaction rows would do: the
+// account, the rows it does not hold yet and the rows it does, and what
+// a sync writes for the new ones.
+type TransactionRowsPlan struct {
+	// FinanceAccountID is the existing account's, empty for a new one;
+	// AccountName is the account's name with the end of its identifier.
+	FinanceAccountID string
+	AccountName      string
+	AccountMatch     TransactionRowsAccountMatch
+
+	// NewTransactionRows are those the account does not hold, oldest
+	// first, and PresentTransactionRows those it does.
+	NewTransactionRows     []*CheckedTransactionRow
+	PresentTransactionRows []*CheckedTransactionRow
+
+	// HasNearbyStoredTransaction marks, by row number, the new rows with
+	// a stored transaction of the same amount within
+	// NearbyStoredTransactionDays that no row matched.
+	HasNearbyStoredTransaction map[int]bool
+
+	// The days and the money of the new rows alone; the days are empty
+	// when there are none.
+	FirstPostedOn  string
+	LastPostedOn   string
+	MoneyInAmount  string
+	MoneyOutAmount string
+
+	// StatementImport is what a sync writes: the account, its balance and
+	// the new rows.
+	StatementImport *StatementImport
+}
+
+// transactionMatchKey is what a row and a stored transaction are matched
+// by: the day and the exact amount.
+func transactionMatchKey(postedOn string, amountValue *big.Rat) string {
+	return postedOn + "\x00" + amountValue.RatString()
+}
+
+// descriptionMatchKey is a description as a row and a stored transaction
+// are paired by within one day and amount: NFKC, lower case, without
+// spaces.
+func descriptionMatchKey(description string) string {
+	return strings.Join(strings.Fields(strings.ToLower(normalization.NFKC.String(description))), "")
+}
+
+// storedMatchEntry is a stored transaction while rows are matched against
+// it, and whether a row has claimed it.
+type storedMatchEntry struct {
+	storedTransaction StoredTransaction
+	amountValue       *big.Rat
+	postedOn          time.Time
+	isClaimed         bool
+}
+
+// matchStoredTransactions says which rows the account holds already, and
+// which new rows have a stored transaction of the same amount nearby. The
+// rows and the stored transactions are matched as multisets of (day,
+// amount): of k rows with a day and amount that s stored transactions
+// have, min(k, s) are present and the rest new, whatever the descriptions
+// say, since a file and a screenshot write them differently. Which rows of
+// the k are taken as present changes no count, only which ones are
+// written: first a row whose identifier a stored transaction has (rows
+// sent before), then one whose description is a stored one's, then in
+// order.
+func matchStoredTransactions(rows []*CheckedTransactionRow, providerTransactionIds []string, storedTransactions []StoredTransaction) ([]bool, map[int]bool, error) {
+	entriesByKey := map[string][]*storedMatchEntry{}
+	var entries []*storedMatchEntry
+	for _, storedTransaction := range storedTransactions {
+		amountValue, err := parseDecimal(storedTransaction.Amount)
+		if err != nil {
+			return nil, nil, fmt.Errorf("finance: a stored transaction's amount %q: %w", storedTransaction.Amount, err)
+		}
+		postedOn, err := time.Parse(time.DateOnly, storedTransaction.PostedOn)
+		if err != nil {
+			return nil, nil, fmt.Errorf("finance: a stored transaction's day %q: %w", storedTransaction.PostedOn, err)
+		}
+		entry := &storedMatchEntry{storedTransaction: storedTransaction, amountValue: amountValue, postedOn: postedOn}
+		key := transactionMatchKey(storedTransaction.PostedOn, amountValue)
+		entriesByKey[key] = append(entriesByKey[key], entry)
+		entries = append(entries, entry)
+	}
+	isPresent := make([]bool, len(rows))
+	claim := func(index int, isWanted func(entry *storedMatchEntry) bool) {
+		for _, entry := range entriesByKey[transactionMatchKey(rows[index].PostedOn, rows[index].amountValue)] {
+			if !entry.isClaimed && isWanted(entry) {
+				entry.isClaimed, isPresent[index] = true, true
+				return
+			}
+		}
+	}
+	for index := range rows {
+		claim(index, func(entry *storedMatchEntry) bool {
+			return entry.storedTransaction.ProviderTransactionID == providerTransactionIds[index]
+		})
+	}
+	for index, row := range rows {
+		if !isPresent[index] {
+			claim(index, func(entry *storedMatchEntry) bool {
+				return descriptionMatchKey(entry.storedTransaction.Description) == descriptionMatchKey(row.Description)
+			})
+		}
+	}
+	for index := range rows {
+		if !isPresent[index] {
+			claim(index, func(*storedMatchEntry) bool { return true })
+		}
+	}
+	hasNearby := map[int]bool{}
+	for index, row := range rows {
+		if isPresent[index] {
+			continue
+		}
+		postedOn, _ := time.Parse(time.DateOnly, row.PostedOn)
+		for _, entry := range entries {
+			dayCount := int(entry.postedOn.Sub(postedOn).Hours() / 24)
+			if entry.isClaimed || entry.amountValue.Cmp(row.amountValue) != 0 || dayCount < -NearbyStoredTransactionDays || dayCount > NearbyStoredTransactionDays {
+				continue
+			}
+			entry.isClaimed = true
+			hasNearby[row.RowNumber] = true
+			break
+		}
+	}
+	return isPresent, hasNearby, nil
+}
+
+// keepExistingAccount points what a sync writes at an existing account and
+// leaves the account as it is but for its balance: its name, mask, kind
+// and metadata are a file's, or the person's, and rows read off a picture
+// know less about the account than either. A balance given is recorded
+// in the metadata as a statement's is.
+func keepExistingAccount(statementImport *StatementImport, existing *ExistingStatementAccount) error {
+	account := &statementImport.SyncResult.Accounts[0]
+	accountMetadata := map[string]any{}
+	if len(existing.ProviderMetadata) > 0 {
+		if err := json.Unmarshal(existing.ProviderMetadata, &accountMetadata); err != nil {
+			accountMetadata = map[string]any{}
+		}
+	}
+	if account.CurrentBalance != "" {
+		accountMetadata["ledgerBalance"] = account.CurrentBalance
+		accountMetadata["ledgerBalanceOn"] = statementImport.BalanceOn
+		// The rows say no available balance, and the newer balance
+		// written empties the stored one.
+		delete(accountMetadata, "availableBalance")
+		delete(accountMetadata, "availableBalanceOn")
+	}
+	encoded, err := json.Marshal(accountMetadata)
+	if err != nil {
+		return err
+	}
+	account.ProviderAccountID, account.AccountName, account.AccountMask = existing.ProviderAccountID, existing.AccountName, existing.AccountMask
+	if existing.AccountKind != "" {
+		account.AccountKind = existing.AccountKind
+	}
+	account.ProviderMetadata = encoded
+	for index := range statementImport.SyncResult.Added {
+		statementImport.SyncResult.Added[index].ProviderAccountID = existing.ProviderAccountID
+	}
+	return nil
+}
+
+// PlanTransactionRowsImport is what importing checked transaction rows
+// into the chosen account would do (ChooseTransactionRowsAccount). Every
+// row is built, so each keeps the identifier it has when the whole set is
+// sent, and then the rows the account already holds are left out:
+// storedTransactions are the account's transactions around the rows'
+// days, of any origin (a file's with FITIDs, a file's without, earlier
+// rows), matched as matchStoredTransactions says. A new account holds
+// nothing, and every row is new. The running balances and monthly totals
+// were checked over every row sent, before this.
+func PlanTransactionRowsImport(accountKey []byte, check *TransactionRowsCheck, location *time.Location, existingAccounts []ExistingStatementAccount,
+	account *TransactionRowsAccount, storedTransactions []StoredTransaction) (*TransactionRowsPlan, error) {
+	statementImport, err := NewTransactionRowsImport(accountKey, check, location, existingAccounts)
+	if err != nil {
+		return nil, err
+	}
+	added := statementImport.SyncResult.Added
+	if len(added) != len(check.TransactionRows) {
+		return nil, errors.New("finance: the rows built are not the rows checked")
+	}
+	plan := &TransactionRowsPlan{AccountMatch: account.AccountMatch, HasNearbyStoredTransaction: map[int]bool{}}
+	isPresent := make([]bool, len(check.TransactionRows))
+	if account.ExistingAccount != nil {
+		if err := keepExistingAccount(statementImport, account.ExistingAccount); err != nil {
+			return nil, err
+		}
+		plan.FinanceAccountID = account.ExistingAccount.FinanceAccountID
+		providerTransactionIds := make([]string, len(added))
+		for index, transaction := range added {
+			providerTransactionIds[index] = transaction.ProviderTransactionID
+		}
+		if isPresent, plan.HasNearbyStoredTransaction, err = matchStoredTransactions(check.TransactionRows, providerTransactionIds, storedTransactions); err != nil {
+			return nil, err
+		}
+	}
+	built := statementImport.SyncResult.Accounts[0]
+	plan.AccountName = built.AccountName
+	if built.AccountMask != "" {
+		plan.AccountName += " ··" + built.AccountMask
+	}
+	kept := make([]Transaction, 0, len(added))
+	moneyIn, moneyOut := new(big.Rat), new(big.Rat)
+	for index, row := range check.TransactionRows {
+		if isPresent[index] {
+			plan.PresentTransactionRows = append(plan.PresentTransactionRows, row)
+			continue
+		}
+		plan.NewTransactionRows = append(plan.NewTransactionRows, row)
+		kept = append(kept, added[index])
+		if plan.FirstPostedOn == "" {
+			plan.FirstPostedOn = row.PostedOn
+		}
+		plan.LastPostedOn = row.PostedOn
+		if row.amountValue.Sign() > 0 {
+			moneyIn.Add(moneyIn, row.amountValue)
+		} else {
+			moneyOut.Add(moneyOut, row.amountValue)
+		}
+	}
+	plan.MoneyInAmount, plan.MoneyOutAmount = FormatAmount(moneyIn), FormatAmount(moneyOut)
+	statementImport.SyncResult.Added = kept
+	statementImport.FirstPostedOn = plan.FirstPostedOn
+	statementImport.GeneratedIDCount = len(kept)
+	statementImport.PresentTransactionCount = len(plan.PresentTransactionRows)
+	plan.StatementImport = statementImport
+	return plan, nil
 }
