@@ -414,8 +414,9 @@ the person can. It is refused unless the operator holds every permission the
 person holds, the same rule as setting their password, checked again on every
 request, and refused from a token, from the console and from inside another
 impersonation. It stops working the moment the operator's own session ends,
-their account is disabled, or a new sign-in happens in the same browser. Every audit row written by it, by an agent turn asked for in
-it, through the MCP endpoint or an upload, carries `impersonator_user_id`.
+their account is disabled, or a new sign-in happens in the same browser.
+Every audit row written by it, by an agent turn asked for in it, through the
+MCP endpoint or an upload, carries `impersonator_user_id`.
 The person sees the session, named as the operator's, in their own list and
 can end it. What the page reports on its own about the person being present
 is not sent, and their time zone and language are not taken from the

@@ -1,4 +1,4 @@
--- An operator may sign in as another person for an hour. The session that
+-- An operator may sign in as another person. The session that
 -- does it belongs to the person and names the operator, and the operator's
 -- own session, which ending it must still be alive for; and every audit
 -- event written meanwhile names the operator beside the person.

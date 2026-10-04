@@ -288,7 +288,7 @@ export async function logout(): Promise<void> {
   await graphql(`mutation { Logout ${SESSION_FIELDS} }`)
 }
 
-// Signing in as somebody else, for an hour: the server keeps the operator's
+// Signing in as somebody else: the server keeps the operator's
 // own session aside and sets the cookie for the person's. The page reloads
 // afterwards, since everything on it was the operator's.
 export async function startImpersonation(userId: string): Promise<Session> {

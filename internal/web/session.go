@@ -26,7 +26,7 @@ const SessionCookieName = "teanode_session"
 // ReturnCookieName holds the operator's own session while they are signed
 // in as somebody else. The server keeps only a hash of a session's secret,
 // so it cannot write the operator's cookie again when they come back: the
-// browser keeps it, here, for the hour.
+// browser keeps it, here, while the impersonation lasts.
 const ReturnCookieName = "teanode_session_return"
 
 // Identity is who a request is: the account, the session it uses when it
@@ -528,8 +528,8 @@ func (self *authenticator) StartSession(response http.ResponseWriter, request *h
 
 func (self *authenticator) startSession(response http.ResponseWriter, request *http.Request, user *models.User) error {
 	// Signing in afresh in a browser that was signed in as somebody else
-	// ends that: its row would otherwise stay usable for the rest of its
-	// hour with no cookie anywhere pointing at it but the one a copy kept.
+	// ends that: its row would otherwise stay usable with no cookie
+	// anywhere pointing at it but the one a copy kept.
 	self.endImpersonationIn(response, request)
 
 	lifetime := self.config.Current().Session.Lifetime.Duration()
@@ -1132,8 +1132,8 @@ func (self *authenticator) EndImpersonation(response http.ResponseWriter, reques
 	}
 
 	// The operator's own session comes back when it is still theirs and
-	// alive; otherwise they are signed out, which is what an hour of
-	// somebody else's account ending with nobody to return to means.
+	// alive; otherwise they are signed out, since there is nobody to
+	// return to.
 	secure := self.isSecureRequest(request)
 	restored := ""
 	if returning, err := request.Cookie(ReturnCookieName); err == nil {

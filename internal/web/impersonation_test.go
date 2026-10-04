@@ -228,7 +228,7 @@ func TestAnImpersonationReachesWhatThePersonReaches(t *testing.T) {
 }
 
 // Signing in afresh in a browser that was signed in as somebody else ends
-// that, rather than leave its row alive for the rest of the hour.
+// that, rather than leave its row alive with no cookie pointing at it.
 func TestANewSignInEndsAnImpersonation(t *testing.T) {
 	t.Parallel()
 	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "bob", "hunter2")))
