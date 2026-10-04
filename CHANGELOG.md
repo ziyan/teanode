@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.108.0] - 2026-10-04
+
+### Added
+
+- Send screenshots of a bank or card app to the agent to import their transactions, checked against the balances or monthly totals shown; imported statement accounts can be renamed or deleted. (#325)
+
 ## [0.107.0] - 2026-10-04
 
 ### Added
