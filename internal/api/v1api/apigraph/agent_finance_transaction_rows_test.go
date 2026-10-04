@@ -532,3 +532,178 @@ func TestImportTransactionsRefusesAnAccountItCannotBeSureOf(test *testing.T) {
 		test.Errorf("accounts %+v", accounts)
 	}
 }
+
+// inventedCardStatementOfTheNumber is an invented card's OFX export that
+// knows the card by its whole number and gives every transaction a FITID:
+// two of the rows below under other descriptions, a second charge of one
+// row's day and amount, and two the rows do not have.
+const inventedCardStatementOfTheNumber = `<?xml version="1.0" encoding="UTF-8"?>
+<?OFX OFXHEADER="200" VERSION="220" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<OFX><SIGNONMSGSRSV1><SONRS><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS><DTSERVER>20260901</DTSERVER><LANGUAGE>JPN</LANGUAGE>
+<FI><ORG>Example Card Company</ORG></FI></SONRS></SIGNONMSGSRSV1>
+<CREDITCARDMSGSRSV1><CCSTMTTRNRS><TRNUID>0</TRNUID><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS><CCSTMTRS><CURDEF>JPY</CURDEF>
+<CCACCTFROM><ACCTID>4000123412340042</ACCTID></CCACCTFROM>
+<BANKTRANLIST><DTSTART>20260801</DTSTART><DTEND>20260831</DTEND>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260803</DTPOSTED><TRNAMT>-1200</TRNAMT><FITID>fit-number-1</FITID><NAME>EXAMPLE BOOKS</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260810</DTPOSTED><TRNAMT>-500</TRNAMT><FITID>fit-number-2</FITID><NAME>EXAMPLE VENDING</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260810</DTPOSTED><TRNAMT>-500</TRNAMT><FITID>fit-number-3</FITID><NAME>EXAMPLE VENDING</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260820</DTPOSTED><TRNAMT>-3000</TRNAMT><FITID>fit-number-4</FITID><NAME>EXAMPLE MARKET</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260828</DTPOSTED><TRNAMT>-900</TRNAMT><FITID>fit-number-5</FITID><NAME>EXAMPLE TEA</NAME></STMTTRN>
+</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>
+`
+
+// Rows read off pictures and then the card's OFX file with FITIDs: the
+// file adds nothing the rows had, whatever the descriptions say, adds
+// what they did not, and of its two charges of one day and amount where
+// the rows had one, adds exactly one. Imported again, it adds nothing.
+func TestStatementFileWithFITIDsAfterTransactionRows(test *testing.T) {
+	fixture, store, _ := newStatementFixture(test)
+	rows := ImportTransactionsArguments{
+		InstitutionName: "Example Card Company", AccountNumber: "4000 1234 1234 0042", StatementAccountKind: "card", CurrencyCode: "JPY",
+		TransactionRows: []TransactionRow{
+			{PostedOn: "2026-08-25", Description: "ｴｸｻﾝﾌﾟﾙ ｼｮｯﾌﾟ", Amount: "-800"},
+			{PostedOn: "2026-08-20", Description: "ｴｸｻﾝﾌﾟﾙ ﾏｰｹｯﾄ", Amount: "-3000"},
+			{PostedOn: "2026-08-10", Description: "ｴｸｻﾝﾌﾟﾙ ｼﾞﾊﾝｷ", Amount: "-500"},
+		},
+	}
+	if imported, err := fixture.importRows(test, rows); err != nil || imported.AddedTransactionCount != 3 {
+		test.Fatalf("the rows %+v %v", imported, err)
+	}
+	imported := fixture.importStatementFile(test, store, "card.ofx", inventedCardStatementOfTheNumber)
+	if imported.AddedTransactionCount != 3 || imported.UnchangedTransactionCount != 2 || imported.UpdatedTransactionCount != 0 {
+		test.Errorf("the file after the rows %+v", imported)
+	}
+	accounts := fixture.statementAccounts(test)
+	if len(accounts) != 1 {
+		test.Fatalf("the file made another account: %+v", accounts)
+	}
+	if transactionCount := fixture.accountTransactionCount(test, accounts[0].ID); transactionCount != 6 {
+		test.Errorf("the card holds %d transactions", transactionCount)
+	}
+	again := fixture.importStatementFile(test, store, "card again.ofx", inventedCardStatementOfTheNumber)
+	if again.AddedTransactionCount != 0 || again.UnchangedTransactionCount != 5 || again.UpdatedTransactionCount != 0 {
+		test.Errorf("the same file again %+v", again)
+	}
+	if transactionCount := fixture.accountTransactionCount(test, accounts[0].ID); transactionCount != 6 {
+		test.Errorf("the card holds %d transactions after the file again", transactionCount)
+	}
+}
+
+// inventedBankStatementInHalfWidth is the invented savings account of
+// inventedBankRowArguments in an OFX file without FITIDs that writes its
+// names in half-width katakana, as the rows were shown: a file's
+// identifier is made from the name as the file writes it, and a row's
+// from the name normalized, so the two never share one.
+const inventedBankStatementInHalfWidth = `<?xml version="1.0" encoding="UTF-8"?>
+<?OFX OFXHEADER="200" VERSION="220" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<OFX><SIGNONMSGSRSV1><SONRS><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS><DTSERVER>20261001</DTSERVER><LANGUAGE>JPN</LANGUAGE>
+<FI><ORG>Example Bank</ORG></FI></SONRS></SIGNONMSGSRSV1>
+<BANKMSGSRSV1><STMTTRNRS><TRNUID>0</TRNUID><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS><STMTRS><CURDEF>JPY</CURDEF>
+<BANKACCTFROM><BANKID>0999</BANKID><ACCTID>1234567</ACCTID><ACCTTYPE>SAVINGS</ACCTTYPE></BANKACCTFROM>
+<BANKTRANLIST><DTSTART>20260915</DTSTART><DTEND>20260930</DTEND>
+<STMTTRN><TRNTYPE>DEP</TRNTYPE><DTPOSTED>20260915</DTPOSTED><TRNAMT>200000</TRNAMT><NAME>ｷﾕｳﾖ ｻﾝﾌﾟﾙ</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260920</DTPOSTED><TRNAMT>-300</TRNAMT><NAME>ｴｸｻﾝﾌﾟﾙ ﾊﾟﾝ</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260930</DTPOSTED><TRNAMT>-4500</TRNAMT><NAME>ﾃﾞﾝｷﾀﾞｲ</NAME></STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+`
+
+// Rows and then a file without FITIDs whose half-width names give its
+// transactions other identifiers than the rows': the file adds only the
+// transaction the rows did not have, and imported again adds nothing.
+func TestStatementFileWithoutFITIDsAfterTransactionRows(test *testing.T) {
+	fixture, store, _ := newStatementFixture(test)
+	if imported, err := fixture.importRows(test, inventedBankRowArguments()); err != nil || imported.AddedTransactionCount != 3 {
+		test.Fatalf("the rows %+v %v", imported, err)
+	}
+	imported := fixture.importStatementFile(test, store, "savings.ofx", inventedBankStatementInHalfWidth)
+	if imported.AddedTransactionCount != 1 || imported.UnchangedTransactionCount != 2 || imported.UpdatedTransactionCount != 0 {
+		test.Errorf("the file after the rows %+v", imported)
+	}
+	accounts := fixture.statementAccounts(test)
+	if len(accounts) != 1 {
+		test.Fatalf("the file made another account: %+v", accounts)
+	}
+	if transactionCount := fixture.accountTransactionCount(test, accounts[0].ID); transactionCount != 4 {
+		test.Errorf("the account holds %d transactions", transactionCount)
+	}
+	again := fixture.importStatementFile(test, store, "savings again.ofx", inventedBankStatementInHalfWidth)
+	if again.AddedTransactionCount != 0 || again.UnchangedTransactionCount != 3 {
+		test.Errorf("the same file again %+v", again)
+	}
+	if transactionCount := fixture.accountTransactionCount(test, accounts[0].ID); transactionCount != 4 {
+		test.Errorf("the account holds %d transactions after the file again", transactionCount)
+	}
+}
+
+// Checking pays 500 to one card on one day and 500 to another the next.
+// Deleting the first card lets go of the first payment only: the second
+// is still paired with the second card's side, which stays marked and so
+// could never pair with it again.
+func TestDeleteStatementAccountLetsGoOfItsOwnTransferOnly(test *testing.T) {
+	fixture, _, _ := newStatementFixture(test)
+	checking := ImportTransactionsArguments{
+		InstitutionName: "Example Bank", AccountName: "Checking", AccountNumber: "5550001", StatementAccountKind: "bank", CurrencyCode: "USD",
+		TransactionRows: []TransactionRow{
+			{PostedOn: "2026-09-02", Description: "EXAMPLE STORE CARD PAYMENT", Amount: "-500.00"},
+			{PostedOn: "2026-09-01", Description: "EXAMPLE CARD COMPANY PAYMENT", Amount: "-500.00"},
+		},
+	}
+	firstCard := ImportTransactionsArguments{
+		InstitutionName: "Example Card Company", AccountNumber: "****1111", StatementAccountKind: "card", CurrencyCode: "USD",
+		TransactionRows: []TransactionRow{{PostedOn: "2026-09-01", Description: "PAYMENT THANK YOU", Amount: "500.00", TransactionKind: "payment"}},
+	}
+	secondCard := ImportTransactionsArguments{
+		InstitutionName: "Example Store Card", AccountNumber: "****2222", StatementAccountKind: "card", CurrencyCode: "USD",
+		TransactionRows: []TransactionRow{{PostedOn: "2026-09-02", Description: "PAYMENT RECEIVED", Amount: "500.00", TransactionKind: "payment"}},
+	}
+	for _, arguments := range []ImportTransactionsArguments{checking, firstCard, secondCard} {
+		if _, err := fixture.importRows(test, arguments); err != nil {
+			test.Fatalf("ImportTransactions %s: %s", arguments.InstitutionName, err)
+		}
+	}
+	transferOf := map[string]bool{}
+	var firstCardId string
+	readTransfers := func() {
+		dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+			category, err := tx.EnsureTransferSpendingCategory(fixture.ownerAgent.ID)
+			if err != nil {
+				test.Fatal(err)
+			}
+			accounts, err := tx.ListFinanceAccounts(fixture.ownerAgent.ID, "")
+			if err != nil {
+				test.Fatal(err)
+			}
+			clear(transferOf)
+			for _, account := range accounts {
+				if account.AccountMask == "1111" {
+					firstCardId = account.ID
+				}
+				page, err := tx.ListFinanceTransactions(fixture.ownerAgent.ID, &db.FinanceTransactionFilter{FinanceAccountID: account.ID, Limit: db.FinanceTransactionLimitMost})
+				if err != nil {
+					test.Fatal(err)
+				}
+				for _, transaction := range page.FinanceTransactions {
+					transferOf[account.AccountMask+" "+transaction.PostedOn] = transaction.SpendingCategoryID == category.ID
+				}
+			}
+		})
+	}
+	readTransfers()
+	for _, side := range []string{"0001 2026-09-01", "0001 2026-09-02", "1111 2026-09-01", "2222 2026-09-02"} {
+		if !transferOf[side] {
+			test.Fatalf("%s was not paired as a transfer: %v", side, transferOf)
+		}
+	}
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.DeleteStatementAccount(ctx, StatementAccountArguments{FinanceAccountID: firstCardId}); err != nil {
+			test.Fatalf("DeleteStatementAccount: %s", err)
+		}
+	})
+	readTransfers()
+	if transferOf["0001 2026-09-01"] {
+		test.Error("the payment to the deleted card is still a transfer")
+	}
+	if !transferOf["0001 2026-09-02"] || !transferOf["2222 2026-09-02"] {
+		test.Errorf("the payment to the other card was let go of: %v", transferOf)
+	}
+}

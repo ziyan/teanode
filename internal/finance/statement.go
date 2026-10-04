@@ -53,9 +53,10 @@ type StatementImport struct {
 	// an identifier made from what they say.
 	GeneratedIDCount int
 
-	// PresentTransactionCount is how many transaction rows were found
-	// already stored in the account and left out (PlanTransactionRowsImport);
-	// a file's import leaves none out.
+	// PresentTransactionCount is how many transactions were found already
+	// stored in the account under another identifier and left out: rows
+	// matched by PlanTransactionRowsImport, or a file's transactions
+	// matched to stored rows by LeaveOutStoredTransactionRows.
 	PresentTransactionCount int
 }
 
@@ -230,11 +231,13 @@ func NewStatementImport(accountKey []byte, document *ofx.Document, statement *of
 
 // statementImportOptions are what an import of transaction rows says about
 // its account that a file cannot: a name other than the institution's, a
-// kind other than the statement's, and more to keep in its metadata.
+// kind other than the statement's, and more to keep in its metadata and
+// in each transaction's.
 type statementImportOptions struct {
-	accountName     string
-	accountKind     string
-	accountMetadata map[string]any
+	accountName         string
+	accountKind         string
+	accountMetadata     map[string]any
+	transactionMetadata map[string]any
 }
 
 func newStatementImport(accountKey []byte, document *ofx.Document, statement *ofx.Statement, existingAccounts []ExistingStatementAccount,
@@ -381,6 +384,9 @@ func newStatementImport(accountKey []byte, document *ofx.Document, statement *of
 			if value != "" {
 				transactionMetadata[key] = value
 			}
+		}
+		for key, value := range options.transactionMetadata {
+			transactionMetadata[key] = value
 		}
 		encodedTransaction, err := json.Marshal(transactionMetadata)
 		if err != nil {

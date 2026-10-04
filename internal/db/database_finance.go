@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -634,21 +636,22 @@ func (self *transaction) DeleteFinanceAccount(agentId, financeAccountId string) 
 	}
 
 	// Pairing keeps no link between the two sides of a transfer, so the
-	// other side is found the way pairing found it: marked by transfer
-	// detection, the same amount the other way, within the pairing days.
+	// other side is found the way pairing found it (releasedTransferSides).
 	// Left marked, it could never pair again (pairing takes only what is
 	// not a transfer yet), and the same transfer imported again under the
 	// right account would count as spending or income.
-	if err := self.tx.Raw(`UPDATE "agent_finance_transaction" AS "partner" SET "spending_category_id" = NULL, "categorized_by" = '',
-			"categorization_confidence" = NULL, "categorize_attempted_at" = NULL, "modified_at" = ?
-		WHERE "partner"."agent_id" = ? AND "partner"."finance_account_id" <> ? AND "partner"."categorized_by" = 'transfer_detection'
-		  AND EXISTS (SELECT 1 FROM "agent_finance_transaction" AS "gone"
-			WHERE "gone"."agent_id" = "partner"."agent_id" AND "gone"."finance_account_id" = ? AND "gone"."categorized_by" = 'transfer_detection'
-			  AND "gone"."currency_code" = "partner"."currency_code" AND "gone"."amount" = -"partner"."amount"
-			  AND "gone"."posted_on" BETWEEN "partner"."posted_on" - CAST(? AS integer) AND "partner"."posted_on" + CAST(? AS integer))
-		RETURNING "partner"."id"`, time.Now(), agentId, financeAccountId, financeAccountId, transferPairingDays, transferPairingDays).
-		Scan(&deleted.ReleasedTransactionIDs).Error; err != nil {
+	releasedIds, err := self.releasedTransferSides(agentId, financeAccountId)
+	if err != nil {
 		return nil, err
+	}
+	if len(releasedIds) > 0 {
+		if err := self.tx.Raw(`UPDATE "agent_finance_transaction" SET "spending_category_id" = NULL, "categorized_by" = '',
+				"categorization_confidence" = NULL, "categorize_attempted_at" = NULL, "modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ANY(?::text[]) AND "categorized_by" = 'transfer_detection'
+			RETURNING "id"`, time.Now(), agentId, pq.Array(releasedIds)).
+			Scan(&deleted.ReleasedTransactionIDs).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	// Every asset that values the account goes with it, history and all.
@@ -673,6 +676,123 @@ func (self *transaction) DeleteFinanceAccount(agentId, financeAccountId string) 
 		return nil, err
 	}
 	return deleted, nil
+}
+
+// transferSide is a transaction transfer detection marked, as the pairs
+// are worked out again when an account is deleted.
+type transferSide struct {
+	ID               string    `gorm:"column:id"`
+	FinanceAccountID string    `gorm:"column:finance_account_id"`
+	CurrencyCode     string    `gorm:"column:currency_code"`
+	Amount           string    `gorm:"column:amount"`
+	PostedOn         time.Time `gorm:"column:posted_on"`
+}
+
+// releasedTransferSides are the transactions on other accounts that were
+// paired with one of the deleted account's as a transfer.
+//
+// A transaction marked by transfer detection with the opposite amount
+// within the pairing days of a deleted one is only a candidate: another
+// transfer of the same amount a day later, to an account that stays, is
+// one too. Checking that pays 500 to one card on Monday and 500 to
+// another on Tuesday has two candidates when the first card goes, and
+// letting go of Tuesday's would leave it uncategorized beside the second
+// card's side, which stays marked and so never pairs with it again. So
+// the pairs are worked out again, one to one, the way detection makes
+// them: every marked transaction near enough to matter, closest pairs
+// first, and a candidate is let go of only when what it pairs with is a
+// deleted transaction, or nothing. Three times the pairing days reach
+// from a deleted transaction to a candidate, to the transaction it may
+// pair with instead, to another that transaction may pair with.
+func (self *transaction) releasedTransferSides(agentId, financeAccountId string) ([]string, error) {
+	var sides []transferSide
+	if err := self.tx.Raw(`SELECT "side"."id", "side"."finance_account_id", "side"."currency_code", "side"."amount", "side"."posted_on"
+		FROM "agent_finance_transaction" AS "side"
+		WHERE "side"."agent_id" = ? AND "side"."categorized_by" = 'transfer_detection'
+		  AND EXISTS (SELECT 1 FROM "agent_finance_transaction" AS "gone"
+			WHERE "gone"."agent_id" = "side"."agent_id" AND "gone"."finance_account_id" = ? AND "gone"."categorized_by" = 'transfer_detection'
+			  AND "gone"."currency_code" = "side"."currency_code" AND abs("gone"."amount") = abs("side"."amount")
+			  AND "gone"."posted_on" BETWEEN "side"."posted_on" - CAST(? AS integer) AND "side"."posted_on" + CAST(? AS integer))
+		ORDER BY "side"."posted_on", "side"."id"`, agentId, financeAccountId, 3*transferPairingDays, 3*transferPairingDays).
+		Scan(&sides).Error; err != nil {
+		return nil, err
+	}
+	return releasedTransferSidesOf(sides, financeAccountId), nil
+}
+
+// releasedTransferSidesOf works out the transfer pairs among marked
+// transactions again, closest first and one to one, and answers the
+// transactions off the deleted account that had a deleted one within the
+// pairing days and now pair with a deleted one or with nothing.
+func releasedTransferSidesOf(sides []transferSide, deletedFinanceAccountId string) []string {
+	amountValues := make([]*big.Rat, len(sides))
+	for index, side := range sides {
+		amountValue, isParsed := new(big.Rat).SetString(side.Amount)
+		if !isParsed {
+			amountValue = nil
+		}
+		amountValues[index] = amountValue
+	}
+	type transferPairing struct {
+		moneyOutIndex, moneyInIndex, dayCount int
+	}
+	var pairings []transferPairing
+	isCandidate := make([]bool, len(sides))
+	for moneyOutIndex, moneyOut := range sides {
+		if amountValues[moneyOutIndex] == nil || amountValues[moneyOutIndex].Sign() >= 0 {
+			continue
+		}
+		for moneyInIndex, moneyIn := range sides {
+			if amountValues[moneyInIndex] == nil || moneyIn.FinanceAccountID == moneyOut.FinanceAccountID || moneyIn.CurrencyCode != moneyOut.CurrencyCode ||
+				new(big.Rat).Add(amountValues[moneyOutIndex], amountValues[moneyInIndex]).Sign() != 0 {
+				continue
+			}
+			dayCount := int(math.Round(moneyIn.PostedOn.Sub(moneyOut.PostedOn).Hours() / 24))
+			if dayCount < 0 {
+				dayCount = -dayCount
+			}
+			if dayCount > transferPairingDays {
+				continue
+			}
+			pairings = append(pairings, transferPairing{moneyOutIndex: moneyOutIndex, moneyInIndex: moneyInIndex, dayCount: dayCount})
+			isMoneyOutGone, isMoneyInGone := moneyOut.FinanceAccountID == deletedFinanceAccountId, moneyIn.FinanceAccountID == deletedFinanceAccountId
+			if isMoneyOutGone {
+				isCandidate[moneyInIndex] = true
+			}
+			if isMoneyInGone {
+				isCandidate[moneyOutIndex] = true
+			}
+		}
+	}
+	sort.SliceStable(pairings, func(left, right int) bool {
+		if pairings[left].dayCount != pairings[right].dayCount {
+			return pairings[left].dayCount < pairings[right].dayCount
+		}
+		if sides[pairings[left].moneyOutIndex].ID != sides[pairings[right].moneyOutIndex].ID {
+			return sides[pairings[left].moneyOutIndex].ID < sides[pairings[right].moneyOutIndex].ID
+		}
+		return sides[pairings[left].moneyInIndex].ID < sides[pairings[right].moneyInIndex].ID
+	})
+	pairedWith := make([]int, len(sides))
+	for index := range pairedWith {
+		pairedWith[index] = -1
+	}
+	for _, pairing := range pairings {
+		if pairedWith[pairing.moneyOutIndex] >= 0 || pairedWith[pairing.moneyInIndex] >= 0 {
+			continue
+		}
+		pairedWith[pairing.moneyOutIndex], pairedWith[pairing.moneyInIndex] = pairing.moneyInIndex, pairing.moneyOutIndex
+	}
+	releasedIds := []string{}
+	for index, side := range sides {
+		if !isCandidate[index] {
+			continue
+		}
+		if partner := pairedWith[index]; partner < 0 || sides[partner].FinanceAccountID == deletedFinanceAccountId {
+			releasedIds = append(releasedIds, side.ID)
+		}
+	}
+	return releasedIds
 }
 
 // --- the sync ----------------------------------------------------------

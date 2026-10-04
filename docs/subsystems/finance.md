@@ -179,7 +179,9 @@ kept; the import says how many were. Whether an institution keeps a
 transaction's `FITID` the same across exports is up to the institution: one
 that does not would have its transactions counted twice when overlapping
 ranges are exported, and there is deliberately no fuzzy merge by day and
-amount, which would swallow genuine same-day duplicates.
+amount between files, which would swallow genuine same-day duplicates.
+Against transactions read off pictures there is one, for the reasons
+under **Already there** below.
 
 **By mail.** The statement import address is the person's first mailbox
 address with a detail after a plus: `name+statements-<token>@domain`, the
@@ -297,17 +299,27 @@ the one a file made and count every overlapping transaction twice.
   same number and bank code;
 - the one account at the same institution, of the same kind and currency,
   whose mask the shown digits end with (the shorter of the two ending the
-  longer), so a partial number never makes a new account where an account
-  matches by its last digits, even with `isNewAccount`. Institutions are
-  compared NFKC, lower case, letters and digits only, and one name holding
-  the other matches ("Example Bank" and "EXAMPLE BANK, N.A."); an account
-  whose institution is not known may be at any. Two such accounts are
-  refused, naming each with its id;
-- a new account, when no account at the institution of that kind and
-  currency exists. An account there whose mask does not match is refused,
-  named with its id, rather than passed over (the opaque card identifier
-  again), unless `isNewAccount` says the person confirmed the rows are of
-  an account not imported before.
+  longer). Institutions are compared NFKC, lower case, letters and digits
+  only, and one name holding the other matches ("Example Bank" and
+  "EXAMPLE BANK, N.A."). Two such accounts are refused, naming each with
+  its id. So is one when `isNewAccount` is given: the person said the rows
+  are of a new account about the accounts an earlier refusal named, and
+  one whose last digits match is more likely the account they are of, so
+  a partial number never makes a new account beside it; the agent asks,
+  and its id imports into it;
+- a new account, when no account of that kind and currency exists at the
+  institution or at one not known. An account at the institution whose
+  mask does not match is refused, named with its id, rather than passed
+  over (the opaque card identifier again), unless `isNewAccount` says the
+  person confirmed the rows are of an account not imported before.
+
+An account whose institution is not known (a file without its optional FI
+block names none) is no evidence the rows are of it, so an empty name
+matches only an empty one and such an account is never chosen by its
+mask. It is not passed over either, since nothing says it is at another
+institution and passing it over would make a second account beside it: it
+is named in the refusals above, one whose mask matches even with
+`isNewAccount`, one whose mask does not unless `isNewAccount` is given.
 
 Rows imported into an existing account leave it as it is but for its
 balance: its name, mask, kind and metadata are the file's or the person's,
@@ -364,9 +376,31 @@ the other k - s are new. Descriptions are not compared. Which of the k are
 taken as present changes no count, only which are written: first a row
 whose identifier is stored (rows sent before), then one whose description
 is a stored one's, then in order. Only the new rows are written; the rows
-already there are counted as already here in the import's answer. A file's
-import keeps matching by FITID, and an account made by the rows themselves
-holds nothing, so every row is new.
+already there are counted as already here in the import's answer. An
+account made by the rows themselves holds nothing, so every row is new.
+
+The same holds the other way: a file imported after rows. Its
+transactions are matched by identifier first, as always, so a file
+imported again finds its own transactions, and a row whose identifier the
+file has is that transaction (updated in place, and the file's from then
+on). A file transaction whose identifier is not stored is then matched
+against the account's stored rows over the file's days, by posted day and
+exact amount, as multisets, after the identifier matches have taken their
+rows: of k such file transactions with a day and amount that s rows have,
+min(k, s) are already there and are not written, and the import counts
+them as already here (`finance.LeaveOutStoredTransactionRows`). A file
+transaction left out is not stored, so importing the file again leaves it
+out again the same way; a file with two charges of one day and amount
+where the rows had one adds exactly one. Only transactions written by
+rows are matched this way, never a file's: a row is told by its provider
+metadata, where every transaction written by rows carries
+`statementImportOrigin` `transaction_rows`, which a file's transaction
+never does (it needs no migration, since every transaction keeps its
+metadata already). Rows imported before the field was written carry no
+such mark and are matched by identifier only. The identifier a file's
+transaction without a FITID is given is deliberately not changed to
+normalize its name as a row's is: that would change the identifier of
+everything already imported and count it twice on the next import.
 
 The day is matched exactly, deliberately. A tolerance of a day either side
 would take a genuine repeat charge (the same fare or coffee on consecutive
@@ -395,7 +429,9 @@ the new rows and the rows already there (each by its number as sent, with
 rows, what was checked and the balance given, and refuses what the import
 would. The import makes the same plan before it writes, then again under
 the statement source's lock, so two imports of the same rows at once
-cannot both find them new. The tool's confirmation card is this preview:
+cannot both find them new. A refusal the second time is answered as the
+first is, and leaves the source's last import and last run as they were,
+since nothing was imported. The tool's confirmation card is this preview:
 the account, existing (and how it was found) or new, "N new, M already
 there", the first three new rows and how many more, the new rows' days and
 money in and out, rows near a stored transaction, what was checked and the
@@ -418,7 +454,13 @@ still counted in net worth from their last value on, and the account this
 is for, one imported under a wrong identifier, would count the same money
 twice beside the right one. Pairing keeps no link between a transfer's two
 sides, so a transaction on another account that transfer detection paired
-with a deleted one is found the way pairing found it, uncategorized, and
+with a deleted one is found the way pairing found it: the marked
+transactions near the deleted ones are paired again, one to one and
+closest first, and a transaction of the opposite amount within the
+pairing days of a deleted one is let go of only when it pairs with a
+deleted one or with nothing. Checking that paid 500 to one card on one
+day and 500 to another the next keeps its second payment paired when the
+first card is deleted. What is let go of is uncategorized and
 judged again in the same transaction (pairing, spending rules, the provider
 category mapping, then the categorize job). Both take the statement
 source's lock, as an import does, and both refuse a provider's account,

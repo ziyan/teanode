@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -62,5 +63,24 @@ func TestFinanceAccountKindMapsToAnAssetKind(t *testing.T) {
 	}
 	if !models.AssetKindCreditCard.IsLiability() || !models.AssetKindMortgage.IsLiability() || models.AssetKindCash.IsLiability() {
 		t.Error("cards and mortgages subtract, cash does not")
+	}
+}
+
+// Of two payments of one amount a day apart to two cards, deleting the
+// first card lets go of the first payment only; without the second card's
+// side, nothing is left for either payment, and both are let go of.
+func TestReleasedTransferSidesPairsOneToOne(t *testing.T) {
+	day := func(dayOfMonth int) time.Time { return time.Date(2026, 9, dayOfMonth, 0, 0, 0, 0, time.UTC) }
+	sides := []transferSide{
+		{ID: "checking-first", FinanceAccountID: "checking", CurrencyCode: "USD", Amount: "-500.0000", PostedOn: day(1)},
+		{ID: "card-first", FinanceAccountID: "first-card", CurrencyCode: "USD", Amount: "500.0000", PostedOn: day(1)},
+		{ID: "checking-second", FinanceAccountID: "checking", CurrencyCode: "USD", Amount: "-500.0000", PostedOn: day(2)},
+		{ID: "card-second", FinanceAccountID: "second-card", CurrencyCode: "USD", Amount: "500.0000", PostedOn: day(2)},
+	}
+	if released := releasedTransferSidesOf(sides, "first-card"); len(released) != 1 || released[0] != "checking-first" {
+		t.Errorf("deleting the first card let go of %v", released)
+	}
+	if released := releasedTransferSidesOf(sides[:3], "first-card"); len(released) != 2 {
+		t.Errorf("with nothing left to pair with, deleting the first card let go of %v", released)
 	}
 }

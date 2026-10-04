@@ -195,7 +195,7 @@ func TestCheckTransactionRowsRefusesWhatCannotBeRead(test *testing.T) {
 		"places":      {func(input *TransactionRowsInput) { input.TransactionRows[0].Amount = "-1500.5" }, "more places than JPY has"},
 		"kind":        {func(input *TransactionRowsInput) { input.TransactionRows[0].TransactionKind = "groceries" }, "row 1: the transaction kind \"groceries\""},
 		"order":       {func(input *TransactionRowsInput) { input.TransactionRows[1].PostedOn = "2026-09-20" }, "row 3 (2026-09-15) and the rows before it are not in order"},
-		"brand":       {func(input *TransactionRowsInput) { input.AccountNumber = "VISA" }, "never a word in place of a number"},
+		"brand":       {func(input *TransactionRowsInput) { input.AccountNumber = "GLIMMER" }, "never a word in place of a number"},
 		"no number":   {func(input *TransactionRowsInput) { input.AccountNumber = "****" }, "shows no digits"},
 		"currency":    {func(input *TransactionRowsInput) { input.CurrencyCode = "円" }, "not a currency code"},
 		"kind of acc": {func(input *TransactionRowsInput) { input.StatementAccountKind = "savings" }, "not bank, card or other"},
@@ -265,6 +265,11 @@ func TestTransactionRowsImportIsAStatementImport(test *testing.T) {
 	}
 	if fileImport.SyncResult.Added[0].ProviderTransactionID != rowsImport.SyncResult.Added[3].ProviderTransactionID {
 		test.Error("the same transaction in the file has another identifier")
+	}
+	// A row says it is one, which a later file's import reads; a file's
+	// transaction does not.
+	if !IsTransactionRowsMetadata(rowsImport.SyncResult.Added[3].ProviderMetadata) || IsTransactionRowsMetadata(fileImport.SyncResult.Added[0].ProviderMetadata) {
+		test.Errorf("the origin of a row %s and of a file's transaction %s", rowsImport.SyncResult.Added[3].ProviderMetadata, fileImport.SyncResult.Added[0].ProviderMetadata)
 	}
 
 	// A later set that overlaps the first finds the same identifiers for
@@ -395,9 +400,19 @@ func TestChooseTransactionRowsAccount(test *testing.T) {
 
 	byMask := card
 	byMask.AccountMask = "9876"
-	chosen, err = ChooseTransactionRowsAccount(inventedAccountKey, &isNew, []ExistingStatementAccount{byMask})
+	chosen, err = ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{byMask})
 	if err != nil || chosen.ExistingAccount == nil || chosen.AccountMatch != TransactionRowsAccountMatchAccountMask {
-		test.Errorf("a partial number whose digits match a mask, even said to be new, %+v %v", chosen, err)
+		test.Errorf("a partial number whose digits match a mask %+v %v", chosen, err)
+	}
+	// Said to be new, the one account the digits match is put to the
+	// person rather than chosen or passed over; its id still chooses it.
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, &isNew, []ExistingStatementAccount{byMask}); !isRefusal(err, "Example Card Company ··9876 (finance account id account-card)", "ask the person") {
+		test.Errorf("a new account whose digits match a mask answered %+v %v", chosen, err)
+	}
+	namedAndNew := isNew
+	namedAndNew.FinanceAccountID = "account-card"
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, &namedAndNew, []ExistingStatementAccount{byMask}); err != nil || chosen.AccountMatch != TransactionRowsAccountMatchFinanceAccountID {
+		test.Errorf("an id with the word that the account is new %+v %v", chosen, err)
 	}
 	other := byMask
 	other.FinanceAccountID, other.ProviderAccountID = "account-other", "ofx-invented-other"
@@ -416,6 +431,110 @@ func TestChooseTransactionRowsAccount(test *testing.T) {
 	inDollars.FinanceAccountID = "account-card"
 	if _, err := ChooseTransactionRowsAccount(inventedAccountKey, &named, []ExistingStatementAccount{inDollars}); !isRefusal(err, "USD") {
 		test.Errorf("a named account in another currency answered %v", err)
+	}
+}
+
+// A name not known is the same institution only as another not known; an
+// account whose institution is not known is never chosen by its mask but
+// named in a refusal, so rows do not make a second account beside it,
+// unless they are said to be of a new account and its mask does not match.
+func TestChooseTransactionRowsAccountAtAnInstitutionNotKnown(test *testing.T) {
+	test.Parallel()
+	if isSameInstitution("", "Example Card Company") || isSameInstitution("Example Card Company", "") || !isSameInstitution("", " ") {
+		test.Error("an empty institution name matched a named one, or not another empty one")
+	}
+	check, err := CheckTransactionRows(inventedCardInput(), "")
+	if err != nil {
+		test.Fatal(err)
+	}
+	unknown := inventedExistingCard()
+	unknown.InstitutionName, unknown.AccountName, unknown.AccountMask = "", "Imported card", "9876"
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{unknown}); !isRefusal(err, "Imported card ··9876 (finance account id account-card)", "not known") {
+		test.Errorf("an account whose institution is not known, its mask matching, answered %+v %v", chosen, err)
+	}
+	unknown.AccountMask = "77cc"
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{unknown}); !isRefusal(err, "account-card", "new account") {
+		test.Errorf("an account whose institution is not known answered %+v %v", chosen, err)
+	}
+	isNew := *check
+	isNew.IsNewAccount = true
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, &isNew, []ExistingStatementAccount{unknown}); err != nil || chosen.ExistingAccount != nil {
+		test.Errorf("a new account beside one whose institution is not known %+v %v", chosen, err)
+	}
+	// A named institution's account whose mask matches is chosen, whatever
+	// an account at an institution not known holds.
+	named := inventedExistingCard()
+	named.FinanceAccountID, named.ProviderAccountID, named.AccountMask = "account-named", "ofx-invented-named", "9876"
+	if chosen, err := ChooseTransactionRowsAccount(inventedAccountKey, check, []ExistingStatementAccount{unknown, named}); err != nil || chosen.ExistingAccount == nil ||
+		chosen.ExistingAccount.FinanceAccountID != "account-named" {
+		test.Errorf("the named institution's card %+v %v", chosen, err)
+	}
+}
+
+// A file's transactions are matched to the stored rows by day and amount
+// once identifiers have been matched: a transaction whose identifier is
+// stored is that one; of two of one day and amount where one row is
+// stored, one is left out and one written; a stored transaction no rows
+// import wrote is not matched this way; and the file left as it was
+// imports nothing new again.
+func TestLeaveOutStoredTransactionRows(test *testing.T) {
+	test.Parallel()
+	transactionOf := func(providerTransactionId, postedOn, amount, description string) Transaction {
+		return Transaction{ProviderTransactionID: providerTransactionId, ProviderAccountID: "ofx-invented-card", PostedOn: postedOn, Amount: amount, Description: description}
+	}
+	fileImport := func() *StatementImport {
+		return &StatementImport{SyncResult: &SyncResult{Accounts: []Account{{ProviderAccountID: "ofx-invented-card"}}, Added: []Transaction{
+			transactionOf("fit-1", "2026-08-03", "-1200.00", "EXAMPLE BOOKS"),
+			transactionOf("fit-2", "2026-08-10", "-500.00", "EXAMPLE VENDING"),
+			transactionOf("fit-3", "2026-08-10", "-500.00", "EXAMPLE VENDING"),
+			transactionOf("fit-4", "2026-08-20", "-3000.00", "EXAMPLE MARKET"),
+			transactionOf("fit-5", "2026-08-21", "-700.00", "EXAMPLE TEA"),
+		}}}
+	}
+	stored := []StoredTransaction{
+		{ProviderTransactionID: "fit-1", PostedOn: "2026-08-03", Amount: "-1200.0000", Description: "EXAMPLE BOOKS"},
+		{ProviderTransactionID: "generated-vending-1", PostedOn: "2026-08-10", Amount: "-500.0000", Description: "エクサンプル ジハンキ", IsFromTransactionRows: true},
+		{ProviderTransactionID: "generated-market-1", PostedOn: "2026-08-20", Amount: "-3000.0000", Description: "エクサンプル マーケット", IsFromTransactionRows: true},
+		{ProviderTransactionID: "generated-tea-1", PostedOn: "2026-08-21", Amount: "-700.0000", Description: "example tea"},
+	}
+	first := fileImport()
+	if err := LeaveOutStoredTransactionRows(first, stored); err != nil {
+		test.Fatal(err)
+	}
+	var written []string
+	for _, transaction := range first.SyncResult.Added {
+		written = append(written, transaction.ProviderTransactionID)
+	}
+	if strings.Join(written, ",") != "fit-1,fit-3,fit-5" || first.PresentTransactionCount != 2 {
+		test.Errorf("written %v, present %d", written, first.PresentTransactionCount)
+	}
+
+	// After that import: the file's written transactions are stored too.
+	stored = append(stored,
+		StoredTransaction{ProviderTransactionID: "fit-3", PostedOn: "2026-08-10", Amount: "-500.0000", Description: "EXAMPLE VENDING"},
+		StoredTransaction{ProviderTransactionID: "fit-5", PostedOn: "2026-08-21", Amount: "-700.0000", Description: "EXAMPLE TEA"})
+	again := fileImport()
+	if err := LeaveOutStoredTransactionRows(again, stored); err != nil {
+		test.Fatal(err)
+	}
+	written = nil
+	for _, transaction := range again.SyncResult.Added {
+		written = append(written, transaction.ProviderTransactionID)
+	}
+	if strings.Join(written, ",") != "fit-1,fit-3,fit-5" || again.PresentTransactionCount != 2 {
+		test.Errorf("the same file again wrote %v, present %d", written, again.PresentTransactionCount)
+	}
+
+	// A row the file names by its identifier is taken by it, and not
+	// matched to another transaction of its day and amount.
+	byId := fileImport()
+	if err := LeaveOutStoredTransactionRows(byId, []StoredTransaction{
+		{ProviderTransactionID: "fit-2", PostedOn: "2026-08-10", Amount: "-500.0000", Description: "EXAMPLE VENDING", IsFromTransactionRows: true},
+	}); err != nil || len(byId.SyncResult.Added) != 5 || byId.PresentTransactionCount != 0 {
+		test.Errorf("a row named by its identifier %+v %v", byId, err)
+	}
+	if !IsTransactionRowsMetadata(json.RawMessage(`{"statementImportOrigin":"transaction_rows"}`)) || IsTransactionRowsMetadata(json.RawMessage(`{"fitId":""}`)) {
+		test.Error("IsTransactionRowsMetadata")
 	}
 }
 

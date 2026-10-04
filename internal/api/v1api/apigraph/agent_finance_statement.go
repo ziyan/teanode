@@ -211,9 +211,10 @@ func (self *graph) ImportStatement(ctx context.Context, arguments ImportStatemen
 // rows go into, and the number may then be left out. Without it the
 // account is the one the number keys, else the one account at the
 // institution of the kind and currency whose last digits the number ends
-// with; an account at the institution that matches neither is refused,
-// naming it, unless IsNewAccount says the rows are of an account not
-// imported before.
+// with; an account at the institution, or at one not known, that matches
+// neither is refused, naming it, unless IsNewAccount says the rows are of
+// an account not imported before. IsNewAccount never passes over an
+// account whose last digits match: that is refused, naming it.
 type ImportTransactionsArguments struct {
 	FinanceAccountID       string `json:"financeAccountId" graphapi:"nullable"`
 	IsNewAccount           *bool  `json:"isNewAccount" graphapi:"nullable"`

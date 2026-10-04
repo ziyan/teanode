@@ -512,8 +512,15 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 	for _, parsed := range parsedFiles {
 		for _, statement := range parsed.document.Statements {
 			document := parsed.document
-			builds = append(builds, statementBuild{statementName: parsed.statementFileName, build: func(_ db.Transaction, _ *models.AgentKnowledgeSource, accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
-				return finance.NewStatementImport(accountKey, document, statement, existingAccounts)
+			builds = append(builds, statementBuild{statementName: parsed.statementFileName, build: func(tx db.Transaction, _ *models.AgentKnowledgeSource, accountKey []byte, existingAccounts []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
+				statementImport, err := finance.NewStatementImport(accountKey, document, statement, existingAccounts)
+				if err != nil {
+					return nil, err
+				}
+				if err := leaveOutStoredTransactionRows(tx, agentRow.ID, statementImport, existingAccounts); err != nil {
+					return nil, err
+				}
+				return statementImport, nil
 			}})
 		}
 	}
@@ -528,7 +535,9 @@ func (self *Agent) ImportStatementFiles(ctx context.Context, agentRow *models.Ag
 // refused, wrapping finance.ErrTransactionRowsRefused, before anything is
 // written: the plan is made once as PreviewTransactionRows makes it, then
 // again under the statement source's lock, so two imports of the same
-// rows at once cannot both find them new.
+// rows at once cannot both find them new. A refusal the second time is
+// returned as the first is, and leaves the source's last import as it
+// was.
 func (self *Agent) ImportTransactionRows(ctx context.Context, agentRow *models.Agent, owner *models.User, check *finance.TransactionRowsCheck) (*models.FinanceStatementImport, error) {
 	if _, err := self.PreviewTransactionRows(ctx, agentRow, owner, check); err != nil {
 		return nil, err
@@ -652,11 +661,14 @@ func storedTransactionsAround(tx db.Transaction, agentId, financeAccountId strin
 	if err != nil {
 		return nil, err
 	}
-	filter := &db.FinanceTransactionFilter{
-		FinanceAccountID: financeAccountId, Limit: db.FinanceTransactionLimitMost,
-		From: firstDay.AddDate(0, 0, -finance.NearbyStoredTransactionDays).Format(time.DateOnly),
-		To:   lastDay.AddDate(0, 0, finance.NearbyStoredTransactionDays).Format(time.DateOnly),
-	}
+	return storedTransactionsBetween(tx, agentId, financeAccountId, firstDay.AddDate(0, 0, -finance.NearbyStoredTransactionDays).Format(time.DateOnly),
+		lastDay.AddDate(0, 0, finance.NearbyStoredTransactionDays).Format(time.DateOnly))
+}
+
+// storedTransactionsBetween is a finance account's transactions posted
+// from one day to another, both included, every page of them.
+func storedTransactionsBetween(tx db.Transaction, agentId, financeAccountId, from, to string) ([]finance.StoredTransaction, error) {
+	filter := &db.FinanceTransactionFilter{FinanceAccountID: financeAccountId, Limit: db.FinanceTransactionLimitMost, From: from, To: to}
 	var storedTransactions []finance.StoredTransaction
 	for {
 		page, err := tx.ListFinanceTransactions(agentId, filter)
@@ -666,7 +678,7 @@ func storedTransactionsAround(tx db.Transaction, agentId, financeAccountId strin
 		for _, transaction := range page.FinanceTransactions {
 			storedTransactions = append(storedTransactions, finance.StoredTransaction{
 				ProviderTransactionID: transaction.ProviderTransactionID, PostedOn: transaction.PostedOn, Amount: transaction.Amount,
-				Description: transaction.Description,
+				Description: transaction.Description, IsFromTransactionRows: finance.IsTransactionRowsMetadata(transaction.ProviderMetadata),
 			})
 		}
 		if page.NextCursor == "" {
@@ -674,6 +686,35 @@ func storedTransactionsAround(tx db.Transaction, agentId, financeAccountId strin
 		}
 		filter.After = page.NextCursor
 	}
+}
+
+// leaveOutStoredTransactionRows leaves out of a file's import what its
+// account holds already as transaction rows read off pictures
+// (finance.LeaveOutStoredTransactionRows), reading the account's
+// transactions over the file's days. A new account holds none.
+func leaveOutStoredTransactionRows(tx db.Transaction, agentId string, statementImport *finance.StatementImport, existingAccounts []finance.ExistingStatementAccount) error {
+	added := statementImport.SyncResult.Added
+	if len(added) == 0 {
+		return nil
+	}
+	financeAccountId := ""
+	for _, existing := range existingAccounts {
+		if existing.ProviderAccountID == statementImport.SyncResult.Accounts[0].ProviderAccountID {
+			financeAccountId = existing.FinanceAccountID
+		}
+	}
+	if financeAccountId == "" {
+		return nil
+	}
+	firstPostedOn, lastPostedOn := added[0].PostedOn, added[0].PostedOn
+	for _, transaction := range added {
+		firstPostedOn, lastPostedOn = min(firstPostedOn, transaction.PostedOn), max(lastPostedOn, transaction.PostedOn)
+	}
+	storedTransactions, err := storedTransactionsBetween(tx, agentId, financeAccountId, firstPostedOn, lastPostedOn)
+	if err != nil {
+		return err
+	}
+	return finance.LeaveOutStoredTransactionRows(statementImport, storedTransactions)
 }
 
 // statementBuild is one statement to import: what to call it when it
@@ -706,7 +747,11 @@ func (self *Agent) importStatements(ctx context.Context, agentRow *models.Agent,
 		for key, value := range source.Cursor {
 			cursor[key] = value
 		}
+		isTransactionRows := result.StatementImportOrigin == models.StatementImportOriginTransactionRows
 		if !source.Enabled {
+			if isTransactionRows {
+				return fmt.Errorf("%w: %s", finance.ErrTransactionRowsRefused, errStatementImportOff)
+			}
 			failures = append([]string{errStatementImportOff.Error()}, failures...)
 			builds = nil
 		}
@@ -723,6 +768,13 @@ func (self *Agent) importStatements(ctx context.Context, agentRow *models.Agent,
 		accountProviderIds := []string{}
 		for _, pending := range builds {
 			statementImport, err := pending.build(tx, source, accountKey, existingAccounts)
+			if err != nil && errors.Is(err, finance.ErrTransactionRowsRefused) {
+				// Refused rows are refused as the preview refuses them, to
+				// the caller, and leave the source's last import as it was:
+				// nothing was imported, and the last import is what the
+				// person reads about the statements they sent.
+				return err
+			}
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("%s could not be read: %s", pending.statementName, strings.TrimPrefix(err.Error(), "finance: ")))
 				continue
