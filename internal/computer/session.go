@@ -87,11 +87,6 @@ type SessionResult struct {
 // killed.
 const sessionEndWait = 3 * time.Second
 
-// mostSessions is how many one computer will hold open at once. A bound
-// rather than a policy: each one is a process, and something that can ask
-// for a process without limit is a way to fill a machine.
-const mostSessions = 16
-
 // pushOutput is how a session says something arrived, and pushEnded that it
 // finished. Both are unsolicited, which is what the session layer exists for.
 type pushOutput func(session, stream, data string)
@@ -151,10 +146,6 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 	if _, taken := self.open[arguments.Session]; taken {
 		self.mutex.Unlock()
 		return nil, fmt.Errorf("a session called %q is already open", arguments.Session)
-	}
-	if len(self.open) >= mostSessions {
-		self.mutex.Unlock()
-		return nil, fmt.Errorf("this computer already has %d sessions open", mostSessions)
 	}
 	reserved := &session{id: arguments.Session, kind: kind, done: make(chan struct{})}
 	self.open[arguments.Session] = reserved

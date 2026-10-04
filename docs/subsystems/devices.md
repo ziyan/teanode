@@ -60,11 +60,10 @@ Bounds it applies itself:
 | output kept per stream | 256 KiB |
 | largest file read | 4 MiB |
 | largest file fetched whole | 32 MiB |
-| requests at once | 4 |
-| background commands running | 16 |
 
-A fifth request is refused rather than queued; reading, listing and stopping
-background commands take no place among the four.
+There is no bound on how many requests, sessions or background commands run
+at once: every one is answered, and the person's machine decides how much it
+can take.
 
 A command that is killed is killed as a process group, so a shell that
 spawned a server does not leave it holding the pipes.
@@ -113,9 +112,9 @@ A command still running when its call's wait runs out is not killed: it goes
 on in the background, and the answer says so with its id and what it printed
 so far. The agent can also start one there on purpose (a build, a server, a
 loop that waits for something), and `shell` reads one's progress, lists them
-and stops one. The program keeps up to sixteen running and remembers
-sixty-four; each is stopped after twenty-four hours, and an ended one can be
-read for a day. The person sees them, with their output, in the drawer and on
+and stops one. Any number may run; the program remembers sixty-four,
+forgetting the oldest that ended first. Each is stopped after twenty-four
+hours, and an ended one can be read for a day. The person sees them, with their output, in the drawer and on
 the agent page, and can stop one there too.
 
 The program holds them, not the connection: a network that drops or a server
@@ -176,8 +175,8 @@ a session. The protocol is unchanged; only where the process is. Such a server
 is offered only while a computer is attached, never to a run with nobody
 present, and cannot be marked headless.
 
-The bounds: 256KB of unread output kept per session, sixteen sessions per
-computer, thirty minutes idle before the server closes one, and a session
+The bounds: 256KB of unread output kept per session, no bound on how many
+are open, thirty minutes idle before the server closes one, and a session
 belongs to the connection that opened it — when the person stops the program
 or the network goes, the processes it started are killed, and a reader is told
 the session ended rather than left waiting.

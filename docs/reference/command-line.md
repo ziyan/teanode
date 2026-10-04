@@ -472,8 +472,7 @@ person at it. The program signs in as you, with the active profile's
 token, never as the server. Several computers can be attached at once,
 told apart by name. A command runs under `/bin/sh -c` (`cmd /C` on
 Windows), not your login shell, so your aliases are not in scope. The
-program answers four requests at once and refuses a fifth rather than
-queueing it.
+program answers every request as it comes, however many are running.
 
 | Command | What it does |
 | --- | --- |
