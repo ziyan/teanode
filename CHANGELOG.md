@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.106.2] - 2026-10-04
+
+### Changed
+
+- An attached computer answers every request as it comes, however many are already running, and no longer limits how many sessions or background commands are open at once. (#327)
+
 ## [0.106.1] - 2026-10-02
 
 ### Fixed
