@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
 import { monthLabel } from './financeApi'
+import { transactionsPath } from './financeFilters'
 import {
   BudgetedMonths,
   FinanceSpendingSection,
@@ -376,4 +377,39 @@ it('describes the year of budgets by the months they counted', async () => {
   expect(screen.getAllByText(/^finance\.budgetedMonths /).map((note) => note.textContent)).toEqual([
     `finance.budgetedMonths {"count":2,"from":"${monthLabel('2030-11')}","to":"${december}"}`,
   ])
+})
+
+// A budget row opens its spending category's transactions over the days
+// the panel counts: the whole of a past month, or the year to today.
+it('opens a budget row on its transactions over the month or the year', async () => {
+  spendingBudgetRows = [
+    {
+      spendingCategoryId: 'category-one',
+      spendingCategoryName: 'Invented category',
+      budgetAmount: '400.0000',
+      currencyCode: 'USD',
+      budgetToDateAmount: '400.0000',
+      budgetedMonthCount: 1,
+      firstBudgetedMonth: '2030-08',
+      lastBudgetedMonth: '2030-08',
+      spendingAmount: '300.0000',
+      spendingBySameDayLastMonthAmount: '0.0000',
+      fixedChargesDueAmount: '0.0000',
+      expectedRepeatCharges: [],
+      projectedAmount: '300.0000',
+      budgetPace: 'under',
+      unconvertedSpending: [],
+    },
+  ]
+  renderAt('/finance/spending?month=2030-08')
+  const monthLink = await screen.findByRole('link', { name: /Invented category/ })
+  expect(monthLink.getAttribute('href')).toBe(
+    transactionsPath({ from: '2030-08-01', to: '2030-08-31', spendingCategoryId: 'category-one' }),
+  )
+  cleanup()
+  renderAt('/finance/spending?year=2031')
+  const yearLink = await screen.findByRole('link', { name: /Invented category/ })
+  expect(yearLink.getAttribute('href')).toBe(
+    transactionsPath({ from: '2031-01-01', to: '2031-05-14', spendingCategoryId: 'category-one' }),
+  )
 })
