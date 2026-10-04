@@ -71,6 +71,10 @@ FROM "missing";
 -- and becomes their choice of the other category. What is not decided yet
 -- (categorized_by empty) stays uncategorized, for the categorize model and
 -- the person.
+-- A transaction the person said is not a transfer, and that had no
+-- category, was also marked as their choice by 0143, so it moves here too:
+-- once 0143 has run the two cannot be told apart, and Other counts it the
+-- way no category did.
 UPDATE "agent_finance_transaction" AS "moved"
 SET "spending_category_id" = "other_category"."id", "categorization_confidence" = NULL
 FROM "agent_spending_category" AS "other_category"
