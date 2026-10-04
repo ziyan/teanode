@@ -38,10 +38,6 @@ const (
 	// before it is closed. A turn that ended without closing one should not
 	// leave a process running on somebody's machine.
 	sessionIdle = 30 * time.Minute
-
-	// sessionsPerDevice bounds how many one device holds at once, matching
-	// what the device itself will accept.
-	sessionsPerDevice = 16
 )
 
 // deviceSession is one open program, as this side sees it.
@@ -151,15 +147,10 @@ func (self *deviceLink) startSession(ctx context.Context, kind, command string, 
 	directory string, environment map[string]string, columns, rows int) (*deviceSession, error) {
 	id := security.NewULID()
 	held := &deviceSession{id: id, kind: kind, touched: time.Now()}
-	// Counted and kept under one lock, so two starts at once cannot both
-	// pass the bound. Kept before the request goes, because output can
-	// arrive before the answer to the request that started it does -- a
-	// program that greets is faster than a round trip.
+	// Kept before the request goes, because output can arrive before the
+	// answer to the request that started it does -- a program that greets
+	// is faster than a round trip.
 	self.mutex.Lock()
-	if open := len(self.sessions); open >= sessionsPerDevice {
-		self.mutex.Unlock()
-		return nil, fmt.Errorf("%s already has %d sessions open", self.what, open)
-	}
 	if self.sessions == nil {
 		self.sessions = map[string]*deviceSession{}
 	}

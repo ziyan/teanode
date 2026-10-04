@@ -49,19 +49,18 @@ const Protocol = 2
 
 // The bounds of one request.
 const (
-	defaultTimeout   = 120 * time.Second
-	longestTimeout   = 600 * time.Second
-	outputBytes      = 256 << 10 // per stream
-	readBytes        = 4 << 20   // the largest file read at once
-	fetchBytes       = 32 << 20  // the largest file handed over whole
-	readLines        = 2000      // lines given when no limit is asked
-	listEntries      = 500
-	searchEntries    = 200
-	grepMatches      = 200
-	grepLineChars    = 300
-	pingEvery        = 30 * time.Second
-	welcomeWait      = 15 * time.Second
-	concurrentAtMost = 4
+	defaultTimeout = 120 * time.Second
+	longestTimeout = 600 * time.Second
+	outputBytes    = 256 << 10 // per stream
+	readBytes      = 4 << 20   // the largest file read at once
+	fetchBytes     = 32 << 20  // the largest file handed over whole
+	readLines      = 2000      // lines given when no limit is asked
+	listEntries    = 500
+	searchEntries  = 200
+	grepMatches    = 200
+	grepLineChars  = 300
+	pingEvery      = 30 * time.Second
+	welcomeWait    = 15 * time.Second
 )
 
 // TerminalOptions attach the terminal this program is running in: the
@@ -280,51 +279,38 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	defer cancelRequests()
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
-	slots := make(chan struct{}, concurrentAtMost)
 	for {
 		select {
 		case request := <-requests:
-			// Reading about background commands is answered from memory
-			// and takes no slot: the person watching one should not be
-			// told to wait because four builds are running.
-			if strings.HasPrefix(request.Action, "background_") {
-				go func() {
+			// Every request runs beside the others: the person's machine
+			// decides how much it can take, not a count here, and the loop
+			// goes on pinging and reading whatever the requests do.
+			go func() {
+				if strings.HasPrefix(request.Action, "background_") {
 					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
 					}
 					_ = write(answer)
-				}()
-				continue
-			}
-			// A few requests run at once; one more than that is answered
-			// at once rather than queued behind them, so the loop goes on
-			// pinging and reading whatever the requests do.
-			select {
-			case slots <- struct{}{}:
-				go func() {
-					defer func() { <-slots }()
-					started := time.Now()
-					what := request.Action + whatWasAsked(request.Args)
-					options.Notice("asked to " + what)
-					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
-					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
-					if err != nil {
-						answer.Error = err.Error()
-					}
-					took := time.Since(started).Round(time.Millisecond)
-					if err != nil {
-						options.Notice(fmt.Sprintf("%s failed after %s: %s", what, took, err))
-					} else {
-						options.Notice(fmt.Sprintf("%s answered in %s, %d bytes", what, took, len(data)))
-					}
-					_ = write(answer)
-				}()
-			default:
-				options.Notice(fmt.Sprintf("refused %s: %d requests are already running", request.Action, concurrentAtMost))
-				_ = write(message{Type: "result", ID: request.ID, OK: false, Error: fmt.Sprintf("%d requests are still running on this computer; wait for one to finish", concurrentAtMost)})
-			}
+					return
+				}
+				started := time.Now()
+				what := request.Action + whatWasAsked(request.Args)
+				options.Notice("asked to " + what)
+				data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
+				answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
+				if err != nil {
+					answer.Error = err.Error()
+				}
+				took := time.Since(started).Round(time.Millisecond)
+				if err != nil {
+					options.Notice(fmt.Sprintf("%s failed after %s: %s", what, took, err))
+				} else {
+					options.Notice(fmt.Sprintf("%s answered in %s, %d bytes", what, took, len(data)))
+				}
+				_ = write(answer)
+			}()
 		case <-pings.C:
 			if err := write(message{Type: "ping"}); err != nil {
 				return err

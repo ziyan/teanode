@@ -34,10 +34,6 @@ import (
 
 // The bounds on background commands.
 const (
-	// mostBackgroundRunning is how many run at once. Each is a process
-	// group on the person's machine.
-	mostBackgroundRunning = 16
-
 	// mostBackgroundKept is how many are remembered, running or ended; the
 	// oldest that ended is forgotten first.
 	mostBackgroundKept = 64
@@ -194,15 +190,6 @@ func (self *BackgroundCommands) listen(notify func(*BackgroundStatus)) func() {
 func (self *BackgroundCommands) adopt(held *backgroundCommand) error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	runningCount := 0
-	for _, other := range self.commands {
-		if !other.hasEnded() {
-			runningCount++
-		}
-	}
-	if runningCount >= mostBackgroundRunning {
-		return fmt.Errorf("%d commands are already running in the background on this computer; stop one first", mostBackgroundRunning)
-	}
 	self.forgetLocked()
 	self.commands[held.id] = held
 	go func() {
