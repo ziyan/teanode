@@ -128,3 +128,56 @@ func TestProviderCategoryMappingSendsOtherToTheOtherCategory(t *testing.T) {
 		}
 	}
 }
+
+// The other category is counted the way money with no spending category
+// always was: money out in it is spending, and money in it is income
+// rather than a refund that lowers that spending. No income budget counts
+// that income, since it belongs to no income category, but the saving
+// summary's income does.
+func TestOtherCategoryCountsMoneyInAsIncome(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	otherId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryOther)
+	incomeId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryIncome)
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{
+		inventedTransaction("odd-purchase", "2026-06-03", "-50.00", "EXAMPLE ODD PURCHASE", "", ""),
+		inventedTransaction("odd-credit", "2026-06-04", "20.00", "EXAMPLE ODD CREDIT", "", ""),
+	}})
+	var status *models.BudgetStatus
+	var summary *models.SavingSummary
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(fixture.agent.ID, &db.FinanceTransactionFilter{})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if _, err := tx.SetTransactionCategorization(fixture.agent.ID, financeTransaction.ID, otherId, models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		for _, budget := range []*models.Budget{
+			{AgentID: fixture.agent.ID, SpendingCategoryID: otherId, MonthlyAmount: "100", CurrencyCode: "USD", EffectiveFrom: "2026-06"},
+			{AgentID: fixture.agent.ID, SpendingCategoryID: incomeId, MonthlyAmount: "1000", CurrencyCode: "USD", EffectiveFrom: "2026-06"},
+		} {
+			if _, err := tx.SetBudget(budget); err != nil {
+				t.Fatalf("SetBudget: %s", err)
+			}
+		}
+		if status, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-07-01"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+		if summary, err = SavingSummary(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-07-01", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+	})
+	if len(status.SpendingCategories) != 1 || status.SpendingCategories[0].SpendingCategoryID != otherId ||
+		status.SpendingCategories[0].SpendingAmount != "50.0000" {
+		t.Errorf("other's spending is its money out, not lowered by its money in: %+v", status.SpendingCategories)
+	}
+	if len(status.IncomeCategories) != 1 || status.IncomeCategories[0].IncomeAmount != "0.0000" {
+		t.Errorf("no income budget counts other's money in: %+v", status.IncomeCategories)
+	}
+	if summary.IncomeAmount != "20.0000" || summary.SpendingAmount != "50.0000" || summary.SavingAmount != "-30.0000" {
+		t.Errorf("the month's income is other's money in and its spending other's money out: income %s, spending %s, saving %s",
+			summary.IncomeAmount, summary.SpendingAmount, summary.SavingAmount)
+	}
+}

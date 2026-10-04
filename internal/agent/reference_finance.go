@@ -133,7 +133,7 @@ func financeTransactionContext(tx db.Transaction, agentId string, financeTransac
 		case spendingCategory.IsTransfer:
 			line += fmt.Sprintf("%s, the transfer category: money moved between the person's own accounts, neither spending nor income", spendingCategory.SpendingCategoryName)
 		case spendingCategory.IsOther:
-			line += fmt.Sprintf("%s, the other category: spending that fits none of the others", spendingCategory.SpendingCategoryName)
+			line += fmt.Sprintf("%s, the other category: what fits none of the others, money out counted as spending and money in as income", spendingCategory.SpendingCategoryName)
 		default:
 			line += spendingCategory.SpendingCategoryName
 			if spendingCategory.ParentSpendingCategoryID != "" {

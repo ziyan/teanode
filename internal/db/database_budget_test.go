@@ -774,6 +774,67 @@ func TestSpendingCategoryDaysAndMerchantMonths(t *testing.T) {
 	})
 }
 
+// The other category is counted the way money with no spending category
+// was: money out in it is its spending, and money in it is income in cash
+// flow, not a refund that lowers that spending, and no income category's.
+func TestOtherCategoryCountsMoneyOutAsSpendingAndMoneyInAsIncome(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "other-counting")
+	result := sampleFinanceSync()
+	result.Added = []finance.Transaction{
+		{ProviderTransactionID: "odd-purchase", ProviderAccountID: "account-checking", PostedOn: "2026-08-03",
+			Amount: "-50", CurrencyCode: "USD", Description: "EXAMPLE ODD PURCHASE"},
+		{ProviderTransactionID: "odd-credit", ProviderAccountID: "account-checking", PostedOn: "2026-08-04",
+			Amount: "20", CurrencyCode: "USD", Description: "EXAMPLE ODD CREDIT"},
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-08-05")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		other, err := tx.EnsureOtherSpendingCategory(fixture.agentId)
+		if err != nil {
+			t.Fatalf("EnsureOtherSpendingCategory: %s", err)
+		}
+		ids := []string{}
+		for _, financeTransaction := range financeTransactionsByProviderId(t, tx, fixture.agentId) {
+			ids = append(ids, financeTransaction.ID)
+		}
+		if _, err := tx.CategorizeTransactionsByPerson(fixture.agentId, ids, other.ID); err != nil {
+			t.Fatalf("CategorizeTransactionsByPerson: %s", err)
+		}
+
+		days, err := tx.ListSpendingCategoryDays(fixture.agentId, "2026-08")
+		if err != nil {
+			t.Fatalf("ListSpendingCategoryDays: %s", err)
+		}
+		if len(days) != 1 || days[0].SpendingCategoryID != other.ID || days[0].SpentOn != "2026-08-03" || days[0].SpendingAmount != "50.0000" {
+			t.Errorf("other's spending is its money out alone: %+v", days)
+		}
+		incomeDays, err := tx.ListIncomeCategoryDays(fixture.agentId, "2026-08")
+		if err != nil {
+			t.Fatalf("ListIncomeCategoryDays: %s", err)
+		}
+		if len(incomeDays) != 0 {
+			t.Errorf("other's money in is no income category's: %+v", incomeDays)
+		}
+		cashFlowDays, err := tx.ListCashFlowDays(fixture.agentId, "2026-08-01", "2026-08-31")
+		if err != nil {
+			t.Fatalf("ListCashFlowDays: %s", err)
+		}
+		incomeTotal, spendingTotal := new(big.Rat), new(big.Rat)
+		for _, day := range cashFlowDays {
+			income, _ := finance.ParseAmount(day.IncomeAmount)
+			spending, _ := finance.ParseAmount(day.SpendingAmount)
+			incomeTotal.Add(incomeTotal, income)
+			spendingTotal.Add(spendingTotal, spending)
+		}
+		if finance.FormatAmount(incomeTotal) != "20.0000" || finance.FormatAmount(spendingTotal) != "50.0000" {
+			t.Errorf("August's cash flow is income %s and spending %s, want 20.0000 and 50.0000 (days %+v)",
+				finance.FormatAmount(incomeTotal), finance.FormatAmount(spendingTotal), cashFlowDays)
+		}
+	})
+}
+
 // A budget on an income spending category is kept like any other, and
 // income per day counts what income categories took in, a reversal
 // against it, never transfers, spending or money in nothing categorized.

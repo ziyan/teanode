@@ -618,7 +618,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A spending rule can assign transfer like any spending category (`create_spending_rule` with match_text ONLINE PAYMENT and spending_category_id transfer), for past and future transactions. " +
 	"Pairing a card payment with its checking withdrawal and the provider's own transfer categories assign it too (categorizedBy transfer_detection or provider_category_mapping), and a spending rule does not take those over; the person's choice beats both. " +
 	"The transfer category cannot be deleted, made income or budgeted.\n" +
-	"- Fits nothing: the built-in spending category other (isOther in `spending_categories`) is for a transaction that fits none of the others, spending like any other; give it with `categorize_transaction` and spending_category_id other. " +
+	"- Fits nothing: the built-in spending category other (isOther in `spending_categories`) is for a transaction that fits none of the others, counted as no spending category was: money out in it is spending, money in it is income, not a refund; give it with `categorize_transaction` and spending_category_id other. " +
 	"No spending category is not a choice: it means not decided yet (is_uncategorized lists those), and categorize_transaction refuses to take a spending category away. " +
 	"The other category cannot be deleted, made income, put under a parent or given children; it can be renamed, hidden or budgeted.\n" +
 	"- Mirrored copies: some institutions report one charge, such as an account-level fee, once on every account of a connection. " +

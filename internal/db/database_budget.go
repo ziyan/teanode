@@ -156,23 +156,25 @@ type BudgetOperation interface {
 	// ListSpendingCategoryDays is each day's spending in a month
 	// ("2006-01") per spending category and currency: money out less
 	// refunds in the same spending category, the transfer category,
-	// income categories and mirrored copies left out. Money in that is not
-	// categorized is left out too, since it may be income; money out that
-	// is not categorized is counted under an empty spending category.
+	// income categories and mirrored copies left out. The other category
+	// and what is not categorized yet count money out only, since their
+	// money in is income: money out not categorized yet is counted under
+	// an empty spending category.
 	ListSpendingCategoryDays(agentId, month string) ([]*models.SpendingCategoryDay, error)
 
 	// ListIncomeCategoryDays is each day's income in a month ("2006-01")
 	// per income spending category and currency: money in less money
-	// taken back, transfers and mirrored copies left out. Money in that is
-	// not categorized is left out, since no income budget can count it;
-	// ListCashFlowDays counts it as income.
+	// taken back, transfers and mirrored copies left out. Money in under
+	// the other category or not categorized yet is left out, since no
+	// income budget can count it; ListCashFlowDays counts it as income.
 	ListIncomeCategoryDays(agentId, month string) ([]*models.IncomeCategoryDay, error)
 
 	// ListCashFlowDays is each day's income and spending per currency from
 	// one day to another, both included ("2006-01-02"), counted as
 	// ListSpendingCategoryDays counts spending, so the two agree: a refund
 	// in a spending category lowers spending rather than counting as
-	// income. Transfers and mirrored copies are left out.
+	// income, and money in under the other category or not categorized
+	// yet is income. Transfers and mirrored copies are left out.
 	ListCashFlowDays(agentId, from, to string) ([]*models.CashFlowDay, error)
 
 	// ListMerchantMonthSpending is what each merchant charged each
@@ -224,8 +226,9 @@ func spendingCategoryToModel(spendingCategory *models.SpendingCategory) *agentSp
 // children, since a transfer counted as income, or spending filed under
 // it, would be counted where transfers are left out. So does the other
 // category: it is what fits nowhere else, which a parent above it or a
-// child under it would contradict, and money in it is a refund of
-// spending, as in any spending category, never income.
+// child under it would contradict. It is never an income category,
+// yet money in it counts as income and not as a refund, the way money in
+// with no spending category always has.
 func (self *transaction) validateSpendingCategory(spendingCategory *models.SpendingCategory) error {
 	spendingCategory.SpendingCategoryName = strings.TrimSpace(spendingCategory.SpendingCategoryName)
 	if spendingCategory.AgentID == "" || spendingCategory.SpendingCategoryName == "" {
@@ -1494,8 +1497,9 @@ func (self *transaction) ListSpendingCategoryDays(agentId, month string) ([]*mod
 		  ON "spending_category"."id" = "spent"."spending_category_id" AND "spending_category"."agent_id" = "spent"."agent_id"
 		WHERE "spent"."agent_id" = ? AND "spent"."duplicate_of_transaction_id" IS NULL
 		  AND "spent"."posted_on" >= ?::date AND "spent"."posted_on" < ?::date
-		  AND (("spending_category"."id" IS NULL AND "spent"."amount" < 0)
-		    OR ("spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_income" AND NOT "spending_category"."is_transfer"))
+		  AND ((("spending_category"."id" IS NULL OR "spending_category"."is_other") AND "spent"."amount" < 0)
+		    OR ("spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_other"
+		      AND NOT "spending_category"."is_income" AND NOT "spending_category"."is_transfer"))
 		GROUP BY 1, 2, 3
 		ORDER BY 3, 1, 2`,
 		agentId, monthStart.Format(time.DateOnly), monthStart.AddDate(0, 1, 0).Format(time.DateOnly)).Scan(&rows).Error; err != nil {
@@ -1559,11 +1563,13 @@ func (self *transaction) ListCashFlowDays(agentId, from, to string) ([]*models.C
 		SpendingAmount string `gorm:"column:spending_amount"`
 	}
 	if err := self.tx.Raw(`SELECT to_char("flowed"."posted_on", 'YYYY-MM-DD') AS "cash_flow_on", "flowed"."currency_code",
-			SUM(CASE WHEN "spending_category"."id" IS NOT NULL AND "spending_category"."is_income" THEN "flowed"."amount"
-			         WHEN "spending_category"."id" IS NULL AND "flowed"."amount" > 0 THEN "flowed"."amount"
+			SUM(CASE WHEN "spending_category"."id" IS NULL OR "spending_category"."is_other"
+			           THEN CASE WHEN "flowed"."amount" > 0 THEN "flowed"."amount" ELSE 0 END
+			         WHEN "spending_category"."is_income" THEN "flowed"."amount"
 			         ELSE 0 END)::text AS "income_amount",
-			SUM(CASE WHEN "spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_income" THEN -"flowed"."amount"
-			         WHEN "spending_category"."id" IS NULL AND "flowed"."amount" < 0 THEN -"flowed"."amount"
+			SUM(CASE WHEN "spending_category"."id" IS NULL OR "spending_category"."is_other"
+			           THEN CASE WHEN "flowed"."amount" < 0 THEN -"flowed"."amount" ELSE 0 END
+			         WHEN NOT "spending_category"."is_income" THEN -"flowed"."amount"
 			         ELSE 0 END)::text AS "spending_amount"
 		FROM "agent_finance_transaction" AS "flowed"
 		LEFT JOIN "agent_spending_category" AS "spending_category"

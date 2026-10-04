@@ -136,9 +136,9 @@ func compareTotals(t *testing.T, label string, before, after map[string]*big.Rat
 // it, leaving what is not decided yet alone. The totals change only by
 // what that move has to change: money out the person filed under nothing
 // was spending and stays spending, now under other; money in the person
-// filed under nothing was income and becomes a refund within other,
-// lowering income and spending by the same amount, so what was left over
-// is the same. The reverse keeps the category and the moved transactions.
+// filed under nothing was income and stays income, since other counts
+// money in the way no spending category did. The reverse keeps the
+// category and the moved transactions.
 func TestOtherMigrationMarksMovesAndKeepsTheTotals(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
@@ -197,11 +197,15 @@ func TestOtherMigrationMarksMovesAndKeepsTheTotals(t *testing.T) {
 	dbtest.Exec(t, database, fmt.Sprintf(`INSERT INTO "agent_spending_category" ("id", "agent_id", "spending_category_name", "parent_spending_category_id", "created_at", "modified_at")
 		VALUES ('otherchild', '%s', 'odds and ends', '%s', now(), now())`, parent.agentId, parentByName[finance.SpendingCategoryOther]))
 
+	// The totals read the flag, which that schema has not got; a flag no
+	// category carries reads the old schema's rows the way it did.
 	var keptBefore, renamedBefore map[string]*big.Rat
+	dbtest.Exec(t, database, `ALTER TABLE "agent_spending_category" ADD COLUMN "is_other" boolean NOT NULL DEFAULT false`)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		keptBefore = otherMigrationTotals(t, tx, kept.agentId)
 		renamedBefore = otherMigrationTotals(t, tx, renamed.agentId)
 	})
+	dbtest.Exec(t, database, `ALTER TABLE "agent_spending_category" DROP COLUMN "is_other"`)
 	if keptBefore["cash flow income/2026-09-21"] == nil || keptBefore["spending//2026-09-20"] == nil {
 		t.Fatalf("the data set does not say what it was meant to: %v", keptBefore)
 	}
@@ -261,12 +265,9 @@ func TestOtherMigrationMarksMovesAndKeepsTheTotals(t *testing.T) {
 		}
 
 		compareTotals(t, "the default other", keptBefore, otherMigrationTotals(t, tx, kept.agentId), map[string]string{
-			// Money in the person filed under nothing was income, and is a
-			// refund within other: income and spending both fall by it.
-			"cash flow income/2026-09-21":              "-7",
-			"cash flow spending/2026-09-21":            "-7",
-			"spending/" + keptOther.ID + "/2026-09-21": "-7",
-			// Money out stays spending, under other instead of none.
+			// Money in the person filed under nothing was income and stays
+			// income, so cash flow does not move. Money out stays spending,
+			// under other instead of none.
 			"spending//2026-09-20":                     "-12.5",
 			"spending/" + keptOther.ID + "/2026-09-20": "12.5",
 			// And a repeat charge can now be found in other.

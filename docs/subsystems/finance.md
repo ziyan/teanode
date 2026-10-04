@@ -48,8 +48,9 @@ tool and the dashboard.
   whose transactions moved money between the person's own accounts and
   are neither spending nor income. There is no separate transfer mark.
 - **other category**: the built-in spending category, one per agent, for
-  what fits none of the others. It is spending like any other, and it is
-  what the person (or the categorize model) picks for "fits nothing".
+  what fits none of the others. It is what the person (or the categorize
+  model) picks for "fits nothing", and it is counted the way no spending
+  category was: money out in it is spending, money in it is income.
   **Uncategorized** (no spending category) is not a choice but the state
   of a transaction not decided yet, shown as "Needs a category".
 - **mirrored copy**: the same charge reported again on another investment
@@ -868,8 +869,12 @@ Other is a built-in spending category too: the agent's **other category**
 (`is_other` on `agent_spending_category`, migration 0147), one per agent
 (a partial unique index), made with every agent and found by its flag,
 never its name. It holds what fits none of the person's other spending
-categories, and it is spending like any of them: it takes a budget, and
-money in it is a refund of spending. It cannot be deleted, be income,
+categories. It takes a budget like any of them, but it is counted the
+way money with no spending category always was: money out in it is its
+spending, and money in it is income, not a refund that lowers that
+spending. No income budget counts that income, since it belongs to no
+income category; cash flow and the saving summary do. It cannot be
+deleted, be an income category,
 have a parent or have children (`validateSpendingCategory`, with checks
 in the table for income and a parent); it can be renamed or hidden. It is named
 `other`, shown in the reader's language only while it is the flagged one
@@ -917,17 +922,17 @@ totals before it: money out the person had filed under nothing counted as
 spending with no spending category and counts as spending in the other
 category, so spending is unchanged and only moves from the uncategorized
 group to other, where the budget pace can now find a repeat charge in it.
-Money in the person had filed under nothing counted as income and counts
-as a refund in the other category, as money in does in any spending
-category: income and spending each fall by that amount, and what was left
-over is the same. Nothing else changes.
+Money in the person had filed under nothing counted as income and still
+does, since the other category counts money in as no spending category
+did. Nothing else changes.
 
 Spending means one thing everywhere it is shown (budgets, the day-by-day
 chart, cash flow, the Spending section's month chart and summary): money out
 less money in for a spending category that is neither income nor the
 transfer category, so a refund lowers the spending it refunds, plus money
-out with no spending category. Income is what income categories took in,
-plus money in with no spending category. The transfer category is in
+out in the other category or with no spending category. Income is what
+income categories took in, plus money in in the other category or with no
+spending category. The transfer category is in
 neither, and every query that leaves transfers out (spending and income
 per day, cash flow, budget pace and repeat charges, the saving summary, the
 spending summary in every grouping, its currency conversion and the tool's

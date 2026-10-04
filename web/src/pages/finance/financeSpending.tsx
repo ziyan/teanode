@@ -732,7 +732,8 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
     { refresh: false },
   )
   const data = answered?.asked === asked ? answered : undefined
-  // Which spending categories are income, whose money in is not a refund.
+  // Which spending categories are income, and which is the other
+  // category, whose money in is not a refund.
   const categories = useQuery(() => graphql<{ SpendingCategories: SpendingCategory[] }>(SPENDING_CATEGORIES), [], {
     refresh: false,
   })
@@ -746,12 +747,16 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
       ),
     [categories.data],
   )
+  const otherSpendingCategoryId = categories.data?.SpendingCategories.find((category) => category.isOther)?.id
   // Each currency as it was spent, and, where there is a reporting
   // currency, the same groups converted into it with the transactions each
   // counted across its currencies.
   const currencyLines = useMemo(
-    () => (summary ? spendingLines(summary.spendingSummaryRows, groupBy, incomeSpendingCategoryIds) : []),
-    [summary, groupBy, incomeSpendingCategoryIds],
+    () =>
+      summary
+        ? spendingLines(summary.spendingSummaryRows, groupBy, incomeSpendingCategoryIds, otherSpendingCategoryId)
+        : [],
+    [summary, groupBy, incomeSpendingCategoryIds, otherSpendingCategoryId],
   )
   const lines = useMemo(() => {
     if (!summary) return []
@@ -765,8 +770,8 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
       currencyCode: summary.reportingCurrencyCode ?? '',
       financeTransactionCount: counts.get(row.groupKey) ?? 0,
     }))
-    return spendingLines(converted, groupBy, incomeSpendingCategoryIds)
-  }, [summary, currencyLines, groupBy, incomeSpendingCategoryIds])
+    return spendingLines(converted, groupBy, incomeSpendingCategoryIds, otherSpendingCategoryId)
+  }, [summary, currencyLines, groupBy, incomeSpendingCategoryIds, otherSpendingCategoryId])
   const reportingTotal = summary?.reportingCurrencyCode ? spendingTotals(lines)[0] : undefined
   const currencyTotals = spendingTotals(currencyLines)
   // Whether some spending was in another currency than the reporting one:
@@ -778,13 +783,13 @@ function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; t
   // A spending category's name as the reader reads it, a built-in one by
   // its flag; merchants and accounts as they came. No label is what still
   // needs a spending category.
-  const lineName = (line: { key: string; label: string }) =>
+  const lineName = (line: { groupKey: string; label: string }) =>
     !line.label
       ? t('finance.uncategorized')
       : groupBy === 'spendingCategory'
         ? categoryName(
             line.label,
-            categories.data?.SpendingCategories.find((category) => category.id === line.key),
+            categories.data?.SpendingCategories.find((category) => category.id === line.groupKey),
           )
         : line.label
   // The ring is the table's own numbers, where they can be added up: in
