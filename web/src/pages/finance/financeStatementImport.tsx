@@ -140,6 +140,7 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
             />
             {!statementImport.isEnabled ? <p className="muted">{t('finance.statementOff')}</p> : null}
             <p className="muted">{t('finance.statementHowTo')}</p>
+            <p className="muted">{t('finance.statementScreenshots')}</p>
             <SettingsRow
               title={t('finance.statementLastImport')}
               subtitle={

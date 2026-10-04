@@ -241,6 +241,14 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
 		"answering one": `mutation ($itemId: String!, $answer: String!) {
   AnswerMailInvitation(itemId: $itemId, answer: $answer) { id participation cancelled }
 }`,
+
+		// And the Accounts section's rename and delete of an imported account.
+		"renaming an imported account": `mutation ($financeAccountId: String!, $accountName: String!) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) { id accountName }
+}`,
+		"deleting an imported account": `mutation ($financeAccountId: String!) {
+  DeleteStatementAccount(financeAccountId: $financeAccountId) { financeAccountId deletedTransactionCount deletedAssetCount }
+}`,
 	} {
 		parsed, err := parser.Parse(parser.ParseParams{
 			Source: source.NewSource(&source.Source{Body: []byte(document), Name: name}),

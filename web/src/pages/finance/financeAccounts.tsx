@@ -2,10 +2,20 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { ConfirmDialog, FormDialog } from '../../components/dialog'
+import { PencilIcon, TrashIcon } from '../../components/icons'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
+import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { FINANCE_ACCOUNTS, FinanceAccount } from './financeApi'
+import {
+  DELETE_STATEMENT_ACCOUNT,
+  FINANCE_ACCOUNTS,
+  FinanceAccount,
+  RENAME_STATEMENT_ACCOUNT,
+  StatementAccountDeleted,
+} from './financeApi'
 import { Money, accountLabel, useFinanceWords } from './financeCommon'
 import { FinanceCreditUsageSection } from './financeCreditUsage'
 import { FinanceStatementImportSection } from './financeStatementImport'
@@ -17,8 +27,11 @@ import { FinanceStatementImportSection } from './financeStatementImport'
 // rather than falling apart into cards. Above it, the credit cards' usage,
 // which is read from these same balances; under it, the statement import,
 // for the accounts no provider reaches, after which both are read again.
+// An account from statements can be renamed and deleted from its row; a
+// provider's cannot, since its next sync would bring it back as it was.
 export function FinanceAccountsSection() {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
+  const toast = useToast()
   const words = useFinanceWords()
   const { data, error, loading, reload } = useQuery(
     () => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS),
@@ -26,6 +39,57 @@ export function FinanceAccountsSection() {
   )
   const accounts = data?.FinanceAccounts ?? []
   const [importCount, setImportCount] = useState(0)
+  const [renaming, setRenaming] = useState<FinanceAccount | null>(null)
+  const [accountName, setAccountName] = useState('')
+  const [deleting, setDeleting] = useState<FinanceAccount | null>(null)
+  const [busy, setBusy] = useState(false)
+  const hasStatementAccount = accounts.some((account) => account.providerKind === 'statement')
+
+  // What a rename or a delete changes is read again everywhere it shows:
+  // the table, and the credit usage above it.
+  const changed = async () => {
+    setImportCount((count) => count + 1)
+    await reload()
+  }
+
+  const rename = async () => {
+    if (!renaming) return
+    setBusy(true)
+    try {
+      await graphql(RENAME_STATEMENT_ACCOUNT, { financeAccountId: renaming.id, accountName: accountName.trim() })
+      toast.done(t('finance.accountRenamed', { name: accountName.trim() }))
+      setRenaming(null)
+      await changed()
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!deleting) return
+    setBusy(true)
+    try {
+      const answer = await graphql<{ DeleteStatementAccount: StatementAccountDeleted }>(DELETE_STATEMENT_ACCOUNT, {
+        financeAccountId: deleting.id,
+      })
+      const count = answer.DeleteStatementAccount.deletedTransactionCount
+      toast.done(
+        plural(
+          count,
+          { one: 'finance.accountDeletedOne', other: 'finance.accountDeletedOther' },
+          { name: accountLabel(deleting), count: String(count) },
+        ),
+      )
+      setDeleting(null)
+      await changed()
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <>
@@ -46,6 +110,7 @@ export function FinanceAccountsSection() {
                   <th className="numeric">{t('finance.availableBalance')}</th>
                   <th className="numeric">{t('finance.inReportingCurrency')}</th>
                   <th>{t('finance.balanceAt')}</th>
+                  {hasStatementAccount ? <th></th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -76,6 +141,39 @@ export function FinanceAccountsSection() {
                       )}
                     </td>
                     <td className="muted">{account.balanceAt ? formatTime(account.balanceAt) : '—'}</td>
+                    {hasStatementAccount ? (
+                      <td className="shrink">
+                        {account.providerKind === 'statement' ? (
+                          <div className="row-actions">
+                            <Tooltip label={t('common.rename')}>
+                              <button
+                                type="button"
+                                className="icon-action"
+                                aria-label={`${accountLabel(account)}: ${t('common.rename')}`}
+                                disabled={busy}
+                                onClick={() => {
+                                  setAccountName(account.accountName)
+                                  setRenaming(account)
+                                }}
+                              >
+                                <PencilIcon size={16} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label={t('common.delete')}>
+                              <button
+                                type="button"
+                                className="icon-action danger"
+                                aria-label={`${accountLabel(account)}: ${t('common.delete')}`}
+                                disabled={busy}
+                                onClick={() => setDeleting(account)}
+                              >
+                                <TrashIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                        ) : null}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -89,6 +187,37 @@ export function FinanceAccountsSection() {
           void reload()
         }}
       />
+      {renaming ? (
+        <FormDialog
+          title={t('finance.renameAccountTitle')}
+          submitLabel={t('common.save')}
+          busy={busy}
+          canSubmit={accountName.trim() !== '' && accountName.trim() !== renaming.accountName}
+          onClose={() => setRenaming(null)}
+          onSubmit={() => void rename()}
+        >
+          <label>
+            <span>{t('finance.accountNameLabel')}</span>
+            <input
+              value={accountName}
+              maxLength={200}
+              autoFocus
+              onChange={(event) => setAccountName(event.target.value)}
+            />
+          </label>
+          <p className="muted">{t('finance.accountNameHint')}</p>
+        </FormDialog>
+      ) : null}
+      {deleting ? (
+        <ConfirmDialog
+          title={t('finance.deleteAccountTitle', { name: accountLabel(deleting) })}
+          body={<p className="muted">{t('finance.deleteAccountBody')}</p>}
+          confirmLabel={t('finance.deleteAccountConfirm')}
+          busy={busy}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => void remove()}
+        />
+      ) : null}
     </>
   )
 }

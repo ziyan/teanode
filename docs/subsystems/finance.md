@@ -24,7 +24,9 @@ tool and the dashboard.
 - **statement**: an OFX file (`.ofx`, `.qfx` or `.qbo`) an institution
   exports, which the person mails in or uploads. The **statement source** is
   the finance source that holds what statements bring in, and the
-  **statement import address** is where they are mailed.
+  **statement import address** is where they are mailed. **Transaction
+  rows** are one account's transactions sent instead of a file, such as
+  what the agent read off screenshots, imported into the same source.
 - **institution**: a bank, card issuer, brokerage or lender.
 - **finance source**: one person's link to one login at one institution
   through one provider. It is an agent source of the kind `finance`.
@@ -177,7 +179,9 @@ kept; the import says how many were. Whether an institution keeps a
 transaction's `FITID` the same across exports is up to the institution: one
 that does not would have its transactions counted twice when overlapping
 ranges are exported, and there is deliberately no fuzzy merge by day and
-amount, which would swallow genuine same-day duplicates.
+amount between files, which would swallow genuine same-day duplicates.
+Against transactions read off pictures there is one, for the reasons
+under **Already there** below.
 
 **By mail.** The statement import address is the person's first mailbox
 address with a detail after a plus: `name+statements-<token>@domain`, the
@@ -235,6 +239,236 @@ Switching the statement source off refuses mail to the address and imports
 nothing; deleting it removes its accounts and transactions like any finance
 source's, and the next look at the address makes a new source with a new
 token.
+
+**Read off pictures.** An institution whose app shows the transactions but
+exports nothing is imported from screenshots. The person sends them to the
+agent in the drawer; the pictures reach the model as image parts in that
+turn (`docs/subsystems/context.md`), the agent reads each row itself and
+sends them, one account per call, to the `finance` tool's
+`import_transactions`, which calls `ImportTransactions` (`teanode finance
+import-transactions` takes the same arguments as a JSON file). The
+arguments are the account as the list shows it (institution, name or
+label, account number, kind `bank`, `card` or `other`, currency, the bank's
+code where shown), the rows (day, description as shown, signed amount, the
+transaction kind where the list says, the running balance where it shows
+one, and the month heading for a list grouped by statement month), the
+balance the newest picture shows with its day and zone (the person's when
+left out), and a card's monthly totals as shown.
+`finance.CheckTransactionRows` checks them, `finance.ChooseTransactionRowsAccount`
+chooses the account, `finance.NewTransactionRowsImport` builds an
+`ofx.Statement` from them and turns it into what a sync writes exactly as a
+file's statement is, and `finance.PlanTransactionRowsImport` leaves out the
+rows the account holds already (`ImportTransactionRows`,
+`planTransactionRows` and `importStatements` in
+`internal/agent/finance_statement.go`), so the account lands in the
+statement source, the balance follows the newer-balance rules above, and
+transfer pairing, spending rules, the provider category
+mapping (from the transaction kind: `payment` is `PAYMENT`, `interest`
+`INT`, `fee` `FEE`, `deposit` `DEP`, a purchase or a refund left to the
+categorize model) and the categorize job run as after any import. The import
+is recorded as the last import with the origin `transaction_rows`.
+
+**The account's number.** The account is keyed like a statement's account:
+its kind (`other` is keyed as a bank account, since OFX has no third kind,
+and is of kind `other`), the bank code as `BANKID` and the digits of the
+number as `ACCTID`, so a later OFX file with that `BANKID` and `ACCTID`, or
+later rows with the same digits, land in the same account. The number
+takes digits only: spaces, dashes and dots between groups are dropped,
+masked digits (`****1234`, `•••1234`) are left out and mark the number
+partial, and a letter is refused, since a word in place of a number (a
+card's brand, say) would make a mask nobody can read and an account no file
+would ever match. A new account made from a partial number is keyed by the
+digits shown: later screenshots showing those digits find it, an OFX file
+with the whole number is a separate account, and the tool says so. A new
+account is named for the institution and its label, and the identifier is
+kept only as the four-character mask, as for a file.
+
+**Which account.** A screenshot rarely shows what the account's key was
+made from: often only the last digits, sometimes no number, and a card's
+OFX export may know the card by an opaque identifier that is not its
+number at all, so keying the rows alone would make a second account beside
+the one a file made and count every overlapping transaction twice.
+`finance.ChooseTransactionRowsAccount` takes, in order:
+
+- the account `financeAccountId` names, which must be one of the agent's
+  accounts of imported statements in the rows' currency and of their kind
+  (a card for card rows); the number may then be left out. A provider's
+  account is refused, since its sync brings its transactions, and an id
+  that is not the person's is not found;
+- the account the rows' number keys, as a file's or earlier rows' with the
+  same number and bank code;
+- the one account at the same institution, of the same kind and currency,
+  whose mask the shown digits end with (the shorter of the two ending the
+  longer). Institutions are compared NFKC, lower case, letters and digits
+  only, and one name holding the other matches ("Example Bank" and
+  "EXAMPLE BANK, N.A."). Two such accounts are refused, naming each with
+  its id. So is one when `isNewAccount` is given: the person said the rows
+  are of a new account about the accounts an earlier refusal named, and
+  one whose last digits match is more likely the account they are of, so
+  a partial number never makes a new account beside it; the agent asks,
+  and its id imports into it;
+- a new account, when no account of that kind and currency exists at the
+  institution or at one not known. An account at the institution whose
+  mask does not match is refused, named with its id, rather than passed
+  over (the opaque card identifier again), unless `isNewAccount` says the
+  person confirmed the rows are of an account not imported before.
+
+An account whose institution is not known (a file without its optional FI
+block names none) is no evidence the rows are of it, so an empty name
+matches only an empty one and such an account is never chosen by its
+mask. It is not passed over either, since nothing says it is at another
+institution and passing it over would make a second account beside it: it
+is named in the refusals above, one whose mask matches even with
+`isNewAccount`, one whose mask does not unless `isNewAccount` is given.
+
+Rows imported into an existing account leave it as it is but for its
+balance: its name, mask, kind and metadata are the file's or the person's,
+and a balance given is recorded as a statement's is. The tool's recipe is
+to call `accounts` first and pass the id of the imported account the
+pictures show, and to ask the person when unsure; the refusals are the net
+under it.
+
+**Checked before it is written.** Nothing is written unless the rows add
+up, and a refusal names the first row or month that does not, by the row's
+number as sent, so the agent can read that picture again or ask the
+person. Rows may come oldest first or newest first, as a list shows them;
+rows whose days go both ways are refused, and when every row is on one day
+the balances are tried both ways. Running balances chain: the first row
+showing one fixes the opening balance (its balance less the amounts up to
+it), and every later one must be the one before plus the amounts since,
+exactly, in the currency's minor units (an amount with more places than
+its currency has, such as yen with a fraction, is refused, and so is a
+thousands separator). A mismatch between two rows that both show a balance
+is a misread amount or balance, or rows missing between two screenshots
+that do not overlap, and the refusal says how far off it is; one across
+rows that show none names both ends of the gap. A card's monthly totals
+match when the month's rows come to the total in either sign (a list shows
+spending as a positive total over negative rows); a total with no rows, and
+rows of a month with no total once totals are given (most often a month cut
+off at the bottom of a screenshot), are refused. A description is NFKC and
+trimmed (`finance.NormalizeTransactionDescription`): half-width katakana
+becomes full-width with its sound marks joined, full-width letters and
+digits plain ones, kanji as they are. A day after the person's today, a day
+that is not a day and an unknown transaction kind are refused. The tool
+runs the same check before its confirmation card; rows that do not add up
+are not put to the person (the call is judged a read and answers with the
+refusal), and the API checks again, with the person's day, before writing.
+All of this is over every row sent, before any is left out as already
+there.
+
+**Known by what they say.** A row has no FITID, so a new one is stored the
+way a file's transaction without one is: under a hash of its day, amount
+and normalized description, numbered by its occurrence among all the rows
+sent, so each keeps the identifier it would have if every row were new.
+Sending each transaction once per import, overlaps removed, is the agent's
+part.
+
+**Already there.** That identifier cannot be what finds a row the account
+holds already: a file with FITIDs stored its transactions under the
+institution's ids, and a file without them, or earlier screenshots, under
+a hash of a description the app may write otherwise (a space, a cut-off
+name, full-width letters). So before anything is written the rows are
+matched against every transaction the account holds from their first day
+to their last, whatever wrote it, by posted day and exact amount (in the
+currency's minor units), as multisets: of k rows with a day and amount
+that s stored transactions have, the account already holds min(k, s) and
+the other k - s are new. Descriptions are not compared. Which of the k are
+taken as present changes no count, only which are written: first a row
+whose identifier is stored (rows sent before), then one whose description
+is a stored one's, then in order. Only the new rows are written; the rows
+already there are counted as already here in the import's answer. An
+account made by the rows themselves holds nothing, so every row is new.
+
+The same holds the other way: a file imported after rows. Its
+transactions are matched by identifier first, as always, so a file
+imported again finds its own transactions, and a row whose identifier the
+file has is that transaction (updated in place, and the file's from then
+on). A file transaction whose identifier is not stored is then matched
+against the account's stored rows over the file's days, by posted day and
+exact amount, as multisets, after the identifier matches have taken their
+rows: of k such file transactions with a day and amount that s rows have,
+min(k, s) are already there and are not written, and the import counts
+them as already here (`finance.LeaveOutStoredTransactionRows`). A file
+transaction left out is not stored, so importing the file again leaves it
+out again the same way; a file with two charges of one day and amount
+where the rows had one adds exactly one. Only transactions written by
+rows are matched this way, never a file's: a row is told by its provider
+metadata, where every transaction written by rows carries
+`statementImportOrigin` `transaction_rows`, which a file's transaction
+never does (it needs no migration, since every transaction keeps its
+metadata already). Rows imported before the field was written carry no
+such mark and are matched by identifier only. The identifier a file's
+transaction without a FITID is given is deliberately not changed to
+normalize its name as a row's is: that would change the identifier of
+everything already imported and count it twice on the next import.
+
+The day is matched exactly, deliberately. A tolerance of a day either side
+would take a genuine repeat charge (the same fare or coffee on consecutive
+days) for one already stored, and drop it silently. The cost is the other
+way: a source that dates a transaction differently from the file (a card's
+app listing the day of use where the export gives the day it posted, a
+purchase late at night on either side of a day boundary) leaves the row
+looking new. The statement source holds no pending transactions, so the
+pending-to-posted switch a provider makes does not arise; the dating
+difference is between an app and an export. Such rows are not matched but
+pointed out: a new row with an unmatched stored transaction of the same
+amount within three days (`finance.NearbyStoredTransactionDays`) is
+marked, and the confirmation card says how many there are, for the person
+to look at before confirming. The tool's recipe asks for the posted day
+where a list shows both. The other limit of matching by day and amount: a
+genuine second charge of the same amount on the same day as one already
+stored, sent in a later import, is taken as the stored one.
+
+**A dry run.** `PreviewImportTransactions` takes the same arguments and
+does all of the above but write (`PreviewTransactionRows`): not even the
+statement source is made when there is none. It answers the account (its
+id and name, or the name a new one would have), how it was found
+(`finance_account_id`, `account_number`, `account_mask`, `new_account`),
+the new rows and the rows already there (each by its number as sent, with
+`hasNearbyStoredTransaction`), the days and money in and out of the new
+rows, what was checked and the balance given, and refuses what the import
+would. The import makes the same plan before it writes, then again under
+the statement source's lock, so two imports of the same rows at once
+cannot both find them new. A refusal the second time is answered as the
+first is, and leaves the source's last import and last run as they were,
+since nothing was imported. The tool's confirmation card is this preview:
+the account, existing (and how it was found) or new, "N new, M already
+there", the first three new rows and how many more, the new rows' days and
+money in and out, rows near a stored transaction, what was checked and the
+balance; an account the server refuses makes a card that says it will be
+refused. `preview_import_transactions` gives the agent the same preview,
+and `teanode finance import-transactions --dry-run` prints it.
+
+**Renaming and deleting.** An account of imported statements can be
+renamed (`RenameStatementAccount`, `teanode finance rename-statement-account`,
+the tool's `rename_statement_account`, the pencil on its row under
+Accounts): the name is kept in the account's metadata
+(`personAccountName`), which every later import, a file's or rows', carries
+over in place of the name it would give, and the account's own asset takes
+the name too unless the person renamed it. It can be deleted
+(`DeleteStatementAccount`, `teanode finance delete-statement-account`, the
+trash on its row, after a confirmation): its transactions, its spending
+rules limited to it and its place in savings targets go with it, and so do
+the assets that value it, history and all. Kept, they would be detached and
+still counted in net worth from their last value on, and the account this
+is for, one imported under a wrong identifier, would count the same money
+twice beside the right one. Pairing keeps no link between a transfer's two
+sides, so a transaction on another account that transfer detection paired
+with a deleted one is found the way pairing found it: the marked
+transactions near the deleted ones are paired again, one to one and
+closest first, and a transaction of the opposite amount within the
+pairing days of a deleted one is let go of only when it pairs with a
+deleted one or with nothing. Checking that paid 500 to one card on one
+day and 500 to another the next keeps its second payment paired when the
+first card is deleted. What is let go of is uncategorized and
+judged again in the same transaction (pairing, spending rules, the provider
+category mapping, then the categorize job). Both take the statement
+source's lock, as an import does, and both refuse a provider's account,
+which its next sync would bring back as it was. Deleting is the person's
+alone: the tool's `delete_statement_account` says where to do it and does
+nothing, since a model that misread which account a screenshot was of
+would delete the right one along with its history. Both are audited as
+`finance_account`.
 
 ## Syncing
 
@@ -440,7 +674,7 @@ zero, which a provider with nothing to say sends more often than a card sits
 exactly at its limit, leaves the limit unknown. SimpleFIN's
 `available-balance` and a statement's `AVAILBAL` are what make a derived
 limit possible for them. Nothing sets a limit by hand yet: the finance
-accounts have no edit of their own.
+accounts have no edit of their own beyond an imported account's name.
 
 **The summary.** Each card has its owed amount, its limit, where the limit
 came from, and its usage share (owed over the limit, 0.25 for a quarter,
@@ -794,10 +1028,14 @@ changes. The tool's confirmation card says how many, names three, and lists
 the same proposals with those numbers and what was left out. Two are deliberately missing from the tool: a SimpleFIN setup token
 and a credential brought in are refused in conversation, because they would
 stay in the transcript and go to the model provider; `link_simplefin` and
-`import_credential` only say where to give them. The tool's
+`import_credential` only say where to give them. A third is the person's
+alone: deleting an account of imported statements, which the tool's
+`delete_statement_account` only says where to do. The tool's
 `import_statement` takes a message (`mailbox_item_id`) in a mailbox the
 person granted the agent, as `mail_read` reads, and never an uploaded file,
-whose id the model is not shown.
+whose id the model is not shown; `import_transactions` takes the rows the
+agent read off pictures, with the rows' and totals' fields in snake case
+like every argument.
 
 ## In the dashboard
 
@@ -965,9 +1203,13 @@ over time.
 
 The Accounts section ends with **Import statements**
 (`web/src/pages/finance/financeStatementImport.tsx`): the import address
-with a copy button, how to export from a phone's wallet, changing the
-address behind a confirmation, uploading a file, and the last import.
-Accounts from statements are marked so in the table.
+with a copy button, how to export from a phone's wallet, that screenshots
+can be sent to the agent instead of a file, changing the address behind a
+confirmation, uploading a file, and the last import. Accounts from
+statements are marked so in the table, and their rows end in a pencil that
+renames the account and a trash that deletes it after a `ConfirmDialog`
+saying what is lost; both answer with a toast and read the accounts and the
+credit usage again.
 
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,

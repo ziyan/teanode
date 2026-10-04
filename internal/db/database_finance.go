@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +30,22 @@ type FinanceOperation interface {
 
 	// GetFinanceAccount is one finance account of the agent, or nil.
 	GetFinanceAccount(agentId, financeAccountId string) (*models.FinanceAccount, error)
+
+	// RenameFinanceAccount gives a finance account the person's own name,
+	// kept in its metadata too so the imports that follow keep it (only a
+	// statement account's imports read it; a provider's sync names its
+	// accounts itself). The asset that values the account takes the new
+	// name when it still has the old one. ErrNotFound when the agent has
+	// no such finance account.
+	RenameFinanceAccount(agentId, financeAccountId, accountName string) (*models.FinanceAccount, error)
+
+	// DeleteFinanceAccount deletes a finance account with its finance
+	// transactions and every asset that values it, with their history.
+	// A transaction on another account that transfer detection had paired
+	// with one of the deleted ones is let go of, uncategorized, so the
+	// caller can detect transfers again and pair it with what remains.
+	// ErrNotFound when the agent has no such finance account.
+	DeleteFinanceAccount(agentId, financeAccountId string) (*FinanceAccountDeleted, error)
 
 	// ApplyFinanceSync writes one sync of a finance source, all or
 	// nothing: it upserts the finance accounts and the added finance
@@ -139,6 +157,21 @@ type FinanceOperation interface {
 	// currency over a range of posted days, transfers (the transfer
 	// category) and mirrored copies left out, biggest money out first.
 	FinanceSpendingSummary(agentId string, filter *FinanceSpendingSummaryFilter) ([]*models.FinanceSpendingSummaryRow, error)
+}
+
+// FinanceAccountDeleted is what one DeleteFinanceAccount deleted.
+type FinanceAccountDeleted struct {
+	// DeletedTransactionCount is the finance transactions deleted with the
+	// account, and DeletedAssetCount the assets.
+	DeletedTransactionCount int
+	DeletedAssetCount       int
+
+	// ReleasedTransactionIDs are the transactions on other accounts that
+	// were paired with a deleted one as a transfer and are uncategorized
+	// now; EarliestPostedOn is the first day a deleted transaction posted,
+	// where detecting transfers again starts. Empty when none.
+	ReleasedTransactionIDs []string
+	EarliestPostedOn       string
 }
 
 // FinanceSyncApplied is what one ApplyFinanceSync wrote.
@@ -523,6 +556,243 @@ func (self *transaction) GetFinanceAccount(agentId, financeAccountId string) (*m
 		return nil, nil
 	}
 	return found[0].toModel(), nil
+}
+
+// maximumFinanceAccountNameLength is the longest name a person may give a
+// finance account, in characters: longer than any account's name, short
+// enough to fit a table's cell and a confirmation card.
+const maximumFinanceAccountNameLength = 200
+
+// financeAccountAudit is what the audit log keeps of a finance account:
+// its name and how it is told apart, never its provider metadata.
+func financeAccountAudit(account *models.FinanceAccount) map[string]any {
+	return map[string]any{
+		"accountName": account.AccountName, "accountMask": account.AccountMask, "accountKind": account.AccountKind,
+		"currencyCode": account.CurrencyCode, "sourceId": account.SourceID,
+	}
+}
+
+func (self *transaction) RenameFinanceAccount(agentId, financeAccountId, accountName string) (*models.FinanceAccount, error) {
+	accountName = strings.TrimSpace(accountName)
+	if accountName == "" {
+		return nil, fmt.Errorf("%w: give the account a name", ErrInvalidArguments)
+	}
+	if len([]rune(accountName)) > maximumFinanceAccountNameLength {
+		return nil, fmt.Errorf("%w: an account's name is at most %d characters", ErrInvalidArguments, maximumFinanceAccountNameLength)
+	}
+	before, err := self.GetFinanceAccount(agentId, financeAccountId)
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, ErrNotFound
+	}
+	after := *before
+	after.AccountName = accountName
+	encodedName, err := json.Marshal(accountName)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if err := self.applyMutation(models.AuditResourceFinanceAccount, financeAccountId, models.AuditActionUpdate, financeAccountAudit(before), financeAccountAudit(&after), func(tx *gorm.DB) error {
+		if err := tx.Exec(`UPDATE "agent_finance_account" SET "account_name" = ?,
+				"provider_metadata" = jsonb_set(CASE WHEN jsonb_typeof("provider_metadata") = 'object' THEN "provider_metadata" ELSE '{}'::jsonb END,
+					'{`+finance.StatementPersonAccountNameField+`}', CAST(? AS jsonb)),
+				"modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ?`, accountName, string(encodedName), now, agentId, financeAccountId).Error; err != nil {
+			return err
+		}
+		// The account's own asset was named after it when it was made; one
+		// the person has renamed since keeps their name.
+		return tx.Exec(`UPDATE "agent_asset" SET "asset_name" = ?, "modified_at" = ?
+			WHERE "agent_id" = ? AND "finance_account_id" = ? AND "finance_security_id" IS NULL AND "asset_name" = ?`,
+			accountName, now, agentId, financeAccountId, strings.TrimSpace(before.AccountName)).Error
+	}); err != nil {
+		return nil, err
+	}
+	return self.GetFinanceAccount(agentId, financeAccountId)
+}
+
+func (self *transaction) DeleteFinanceAccount(agentId, financeAccountId string) (*FinanceAccountDeleted, error) {
+	before, err := self.GetFinanceAccount(agentId, financeAccountId)
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, ErrNotFound
+	}
+	deleted := &FinanceAccountDeleted{ReleasedTransactionIDs: []string{}}
+	var counted struct {
+		TransactionCount int        `gorm:"column:transaction_count"`
+		EarliestPostedOn *time.Time `gorm:"column:earliest_posted_on"`
+	}
+	if err := self.tx.Raw(`SELECT COUNT(*) AS "transaction_count", MIN("posted_on") AS "earliest_posted_on" FROM "agent_finance_transaction"
+		WHERE "agent_id" = ? AND "finance_account_id" = ?`, agentId, financeAccountId).Scan(&counted).Error; err != nil {
+		return nil, err
+	}
+	deleted.DeletedTransactionCount = counted.TransactionCount
+	if counted.EarliestPostedOn != nil {
+		deleted.EarliestPostedOn = formatDay(*counted.EarliestPostedOn)
+	}
+
+	// Pairing keeps no link between the two sides of a transfer, so the
+	// other side is found the way pairing found it (releasedTransferSides).
+	// Left marked, it could never pair again (pairing takes only what is
+	// not a transfer yet), and the same transfer imported again under the
+	// right account would count as spending or income.
+	releasedIds, err := self.releasedTransferSides(agentId, financeAccountId)
+	if err != nil {
+		return nil, err
+	}
+	if len(releasedIds) > 0 {
+		if err := self.tx.Raw(`UPDATE "agent_finance_transaction" SET "spending_category_id" = NULL, "categorized_by" = '',
+				"categorization_confidence" = NULL, "categorize_attempted_at" = NULL, "modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ANY(?::text[]) AND "categorized_by" = 'transfer_detection'
+			RETURNING "id"`, time.Now(), agentId, pq.Array(releasedIds)).
+			Scan(&deleted.ReleasedTransactionIDs).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	// Every asset that values the account goes with it, history and all.
+	// Kept, it would be detached and still counted in net worth from its
+	// last value on, and an account imported under a wrong identifier is
+	// what this is for: its history beside the right account's would count
+	// the same money twice.
+	var assetIds []string
+	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" WHERE "agent_id" = ? AND "finance_account_id" = ? ORDER BY "id"`,
+		agentId, financeAccountId).Scan(&assetIds).Error; err != nil {
+		return nil, err
+	}
+	for _, assetId := range assetIds {
+		if err := self.DeleteAsset(agentId, assetId); err != nil {
+			return nil, err
+		}
+	}
+	deleted.DeletedAssetCount = len(assetIds)
+	if err := self.applyMutation(models.AuditResourceFinanceAccount, financeAccountId, models.AuditActionDelete, financeAccountAudit(before), nil, func(tx *gorm.DB) error {
+		return tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, financeAccountId).Delete(&agentFinanceAccountModel{}).Error
+	}); err != nil {
+		return nil, err
+	}
+	return deleted, nil
+}
+
+// transferSide is a transaction transfer detection marked, as the pairs
+// are worked out again when an account is deleted.
+type transferSide struct {
+	ID               string    `gorm:"column:id"`
+	FinanceAccountID string    `gorm:"column:finance_account_id"`
+	CurrencyCode     string    `gorm:"column:currency_code"`
+	Amount           string    `gorm:"column:amount"`
+	PostedOn         time.Time `gorm:"column:posted_on"`
+}
+
+// releasedTransferSides are the transactions on other accounts that were
+// paired with one of the deleted account's as a transfer.
+//
+// A transaction marked by transfer detection with the opposite amount
+// within the pairing days of a deleted one is only a candidate: another
+// transfer of the same amount a day later, to an account that stays, is
+// one too. Checking that pays 500 to one card on Monday and 500 to
+// another on Tuesday has two candidates when the first card goes, and
+// letting go of Tuesday's would leave it uncategorized beside the second
+// card's side, which stays marked and so never pairs with it again. So
+// the pairs are worked out again, one to one, the way detection makes
+// them: every marked transaction near enough to matter, closest pairs
+// first, and a candidate is let go of only when what it pairs with is a
+// deleted transaction, or nothing. Three times the pairing days reach
+// from a deleted transaction to a candidate, to the transaction it may
+// pair with instead, to another that transaction may pair with.
+func (self *transaction) releasedTransferSides(agentId, financeAccountId string) ([]string, error) {
+	var sides []transferSide
+	if err := self.tx.Raw(`SELECT "side"."id", "side"."finance_account_id", "side"."currency_code", "side"."amount", "side"."posted_on"
+		FROM "agent_finance_transaction" AS "side"
+		WHERE "side"."agent_id" = ? AND "side"."categorized_by" = 'transfer_detection'
+		  AND EXISTS (SELECT 1 FROM "agent_finance_transaction" AS "gone"
+			WHERE "gone"."agent_id" = "side"."agent_id" AND "gone"."finance_account_id" = ? AND "gone"."categorized_by" = 'transfer_detection'
+			  AND "gone"."currency_code" = "side"."currency_code" AND abs("gone"."amount") = abs("side"."amount")
+			  AND "gone"."posted_on" BETWEEN "side"."posted_on" - CAST(? AS integer) AND "side"."posted_on" + CAST(? AS integer))
+		ORDER BY "side"."posted_on", "side"."id"`, agentId, financeAccountId, 3*transferPairingDays, 3*transferPairingDays).
+		Scan(&sides).Error; err != nil {
+		return nil, err
+	}
+	return releasedTransferSidesOf(sides, financeAccountId), nil
+}
+
+// releasedTransferSidesOf works out the transfer pairs among marked
+// transactions again, closest first and one to one, and answers the
+// transactions off the deleted account that had a deleted one within the
+// pairing days and now pair with a deleted one or with nothing.
+func releasedTransferSidesOf(sides []transferSide, deletedFinanceAccountId string) []string {
+	amountValues := make([]*big.Rat, len(sides))
+	for index, side := range sides {
+		amountValue, isParsed := new(big.Rat).SetString(side.Amount)
+		if !isParsed {
+			amountValue = nil
+		}
+		amountValues[index] = amountValue
+	}
+	type transferPairing struct {
+		moneyOutIndex, moneyInIndex, dayCount int
+	}
+	var pairings []transferPairing
+	isCandidate := make([]bool, len(sides))
+	for moneyOutIndex, moneyOut := range sides {
+		if amountValues[moneyOutIndex] == nil || amountValues[moneyOutIndex].Sign() >= 0 {
+			continue
+		}
+		for moneyInIndex, moneyIn := range sides {
+			if amountValues[moneyInIndex] == nil || moneyIn.FinanceAccountID == moneyOut.FinanceAccountID || moneyIn.CurrencyCode != moneyOut.CurrencyCode ||
+				new(big.Rat).Add(amountValues[moneyOutIndex], amountValues[moneyInIndex]).Sign() != 0 {
+				continue
+			}
+			dayCount := int(math.Round(moneyIn.PostedOn.Sub(moneyOut.PostedOn).Hours() / 24))
+			if dayCount < 0 {
+				dayCount = -dayCount
+			}
+			if dayCount > transferPairingDays {
+				continue
+			}
+			pairings = append(pairings, transferPairing{moneyOutIndex: moneyOutIndex, moneyInIndex: moneyInIndex, dayCount: dayCount})
+			isMoneyOutGone, isMoneyInGone := moneyOut.FinanceAccountID == deletedFinanceAccountId, moneyIn.FinanceAccountID == deletedFinanceAccountId
+			if isMoneyOutGone {
+				isCandidate[moneyInIndex] = true
+			}
+			if isMoneyInGone {
+				isCandidate[moneyOutIndex] = true
+			}
+		}
+	}
+	sort.SliceStable(pairings, func(left, right int) bool {
+		if pairings[left].dayCount != pairings[right].dayCount {
+			return pairings[left].dayCount < pairings[right].dayCount
+		}
+		if sides[pairings[left].moneyOutIndex].ID != sides[pairings[right].moneyOutIndex].ID {
+			return sides[pairings[left].moneyOutIndex].ID < sides[pairings[right].moneyOutIndex].ID
+		}
+		return sides[pairings[left].moneyInIndex].ID < sides[pairings[right].moneyInIndex].ID
+	})
+	pairedWith := make([]int, len(sides))
+	for index := range pairedWith {
+		pairedWith[index] = -1
+	}
+	for _, pairing := range pairings {
+		if pairedWith[pairing.moneyOutIndex] >= 0 || pairedWith[pairing.moneyInIndex] >= 0 {
+			continue
+		}
+		pairedWith[pairing.moneyOutIndex], pairedWith[pairing.moneyInIndex] = pairing.moneyInIndex, pairing.moneyOutIndex
+	}
+	releasedIds := []string{}
+	for index, side := range sides {
+		if !isCandidate[index] {
+			continue
+		}
+		if partner := pairedWith[index]; partner < 0 || sides[partner].FinanceAccountID == deletedFinanceAccountId {
+			releasedIds = append(releasedIds, side.ID)
+		}
+	}
+	return releasedIds
 }
 
 // --- the sync ----------------------------------------------------------

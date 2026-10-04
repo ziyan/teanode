@@ -19,6 +19,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/client"
+	financecore "github.com/ziyan/teanode/internal/finance"
 )
 
 // financeOperation is one operation of the tool: the finance area's
@@ -324,6 +325,33 @@ var operations = map[string]*financeOperation{
 			return "Import the OFX statements attached to a message into their finance accounts"
 		},
 	},
+	// ImportTransactions with what the agent read off pictures, checked
+	// here first (transaction_rows.go) so the card says what was checked,
+	// and previewed by the server so it says which account and which rows
+	// are new. The number is not required: an account named by
+	// finance_account_id needs none.
+	"import_transactions": {
+		graphqlOperation: "ImportTransactions", risk: tools.RiskWrite, isUntrusted: true, arguments: transactionRowsArguments,
+		required: []string{"institution_name", "statement_account_kind", "currency_code", "transaction_rows"},
+		preview:  importTransactionsPreview,
+	},
+	"preview_import_transactions": {
+		graphqlOperation: "PreviewImportTransactions", risk: tools.RiskRead, isUntrusted: true, arguments: transactionRowsArguments,
+		required: []string{"institution_name", "statement_account_kind", "currency_code", "transaction_rows"},
+	},
+	"rename_statement_account": {
+		graphqlOperation: "RenameStatementAccount", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_account_id", "account_name"}, required: []string{"finance_account_id", "account_name"},
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			return "Rename the imported account " + lookup.financeAccountName(text(call, "finance_account_id")) + " to " + tools.Named(text(call, "account_name"), "a new name") +
+				"; later imports keep the name"
+		},
+	},
+	// DeleteStatementAccount is the person's alone: it removes an account's
+	// transactions and its net worth history for good, and a model that
+	// misread which account a screenshot was of would delete the right one.
+	// The tool only says where the person does it.
+	"delete_statement_account": {risk: tools.RiskRead, arguments: []string{"finance_account_id"}},
 	"sync": {
 		risk: tools.RiskWrite, arguments: []string{"source_id"}, required: []string{"source_id"},
 		preview: func(lookup *previewLookup, call map[string]any) string {
@@ -557,6 +585,23 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
 	"Statements: for an account no provider reaches (a card that only exports OFX, .ofx, .qfx or .qbo), `statement_import` gives the person's statement import address, where mailing the exported file imports it (from a phone's wallet: Export Transactions, then share to Mail), and what the last import did. `import_statement` imports the OFX attachments of a message in their mailbox by mailbox_item_id; a transaction already imported is updated, never added twice. `regenerate_statement_import_address` ends the old address and makes a new one, only when the person asks.\n" +
+	"Pictures of transactions: when the person shares screenshots of a bank's or card issuer's app (or a photo of a statement), `import_transactions` imports what you read, one account per call. " +
+	"You see pictures only in the turn they are sent, at most eight of them, so read and import in that turn, and ask for more than eight in another message. " +
+	"Read every row of every picture yourself and send each transaction once, even where two screenshots overlap. " +
+	"Choose the account first, every time: call `accounts`, and when one of the person's imported accounts (providerKind statement) is the account the pictures show, pass its id as finance_account_id. " +
+	"A card's export often knows the card by an identifier that is not the card number, so its mask need not match the digits a picture shows; same institution, kind and currency is the sign. " +
+	"When you are unsure which account it is, or whether it is one, ask the person before importing. " +
+	"An account a provider syncs is refused: its transactions come from its sync. " +
+	"Without finance_account_id, use the account number shown, masked digits as they appear (****1234) with is_account_number_partial when only some show; never invent one or put a word in its place. " +
+	"The server then uses the account that number or its last digits match; it refuses, naming them, when several could match, or when the institution (or an account whose institution is not known) has an account the digits do not match: ask the person, then pass the id, or is_new_account true when the person says it is an account not imported before. is_new_account never passes over an account whose last digits match: the server names it, and only its id imports into it. " +
+	"`preview_import_transactions` takes the same arguments and says, writing nothing, which account the rows would go into and which of them the account holds already. " +
+	"Give running_balance_amount on every row that shows one, and monthly_totals exactly as a card's list shows them: the server checks that the balances chain row by row and that each month's rows come to its total, and refuses naming the first row or month that does not add up; read that picture again or ask the person. " +
+	"Never guess a row that is cut off: import the months that are complete, leave out a month cut off at the bottom of a picture, and ask for the rest. " +
+	"The ledger balance is the newest picture's, with its day and time zone. Send descriptions exactly as shown (the server normalizes half-width katakana, do not), days as 2026-09-30 (26.09.30 is 2026-09-30), amounts signed and without separators. " +
+	"Only the rows the account does not hold already are added: the server matches the rows against every stored transaction of the account (from an OFX file or earlier pictures) by day and exact amount, not by description, so overlapping screenshots, or pictures of what a file imported, add only what is new. " +
+	"Give each row's posted day as the export would date it; where a list shows both the day of use and the day it posted, use the posted one, since a row dated a day off is not taken as the same transaction (the confirmation card points such rows out). " +
+	"The cost of matching by day and amount: a genuine repeat charge of the same amount on the same day as one already stored, sent in a later import, is taken as the stored one. " +
+	"`rename_statement_account` renames an imported account; deleting one is the person's to do (`delete_statement_account` says where).\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
 	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
@@ -596,7 +641,8 @@ func init() {
 					"operation":                   tools.EnumProperty("what to do", operationNames()...),
 					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
 					"mailbox_item_id":             tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import, by the item_id mail_search or mail_read gives"),
-					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings"),
+					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings; for import_transactions and preview_import_transactions: the imported account the rows are of"),
+					"is_new_account":              tools.BooleanProperty("for import_transactions and preview_import_transactions: true only when the person said the rows are of an account not imported before, after the server named accounts at the same institution"),
 					"is_holding":                  tools.BooleanProperty("for assets: true lists only the holdings of investment accounts (one asset per position); left out, assets leaves the holdings out unless finance_account_id is given"),
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
 					"finance_transaction_ids":     tools.ArrayProperty("several finance transactions, by the ids transactions gives. For transactions: only these, to read one by its id (a duplicate's counted copy, say). For categorize_transaction: at most 500 categorized together. For propose_spending_rules: at most 5000", tools.StringProperty("a finance transaction id")),
@@ -615,7 +661,28 @@ func init() {
 					"offset":                      tools.IntegerProperty("for transactions and trades: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
-					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
+					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency"),
+					"institution_name":            tools.StringProperty("for import_transactions: the bank or card issuer, as its app or list shows it"),
+					"account_name":                tools.StringProperty("for import_transactions: the account's own name or label as shown (Savings, the card's product name), left out when none; for rename_statement_account: the new name"),
+					"account_number":              tools.StringProperty("for import_transactions: the account number as shown, digits only with masked ones as they appear (****1234); never invent one, and never put a word such as the card's brand in its place"),
+					"is_account_number_partial":   tools.BooleanProperty("for import_transactions: true when only some digits of the account number are shown"),
+					"statement_account_kind":      tools.EnumProperty("for import_transactions: bank (checking, savings), card (a credit card) or other (prepaid, electronic money)", "bank", "card", "other"),
+					"bank_code":                   tools.StringProperty("for import_transactions: the bank's code or routing number where the list shows one; left out otherwise"),
+					"transaction_rows": tools.ArrayProperty("for import_transactions: every row the pictures show, each once, as the list shows it, oldest first or newest first", tools.Object(map[string]any{
+						"posted_on":              tools.StringProperty("the day, 2026-09-30 (a list's 26.09.30 is 2026-09-30)"),
+						"description":            tools.StringProperty("the description exactly as shown, half-width katakana and all; the server normalizes it"),
+						"amount":                 tools.StringProperty("the signed amount as a decimal string without separators: money out negative, money in positive; -4500, 12.34"),
+						"transaction_kind":       tools.EnumProperty("what the row is, when the list says", financecore.TransactionKinds()...),
+						"running_balance_amount": tools.StringProperty("the balance the list shows after this row, exactly as shown, when it shows one"),
+						"total_month":            tools.StringProperty("the month heading the row is listed under, 2026-09, only when the list groups rows by a statement month rather than the day they posted"),
+					}, "posted_on", "description", "amount")),
+					"ledger_balance_amount":    tools.StringProperty("for import_transactions: the account's balance shown in the newest picture, signed (what a card owes is negative)"),
+					"ledger_balance_on":        tools.StringProperty("for import_transactions: the day that balance is as of, 2026-09-30"),
+					"ledger_balance_time_zone": tools.StringProperty("for import_transactions: the time zone of that day, Asia/Tokyo; the person's when left out"),
+					"monthly_totals": tools.ArrayProperty("for import_transactions: the total a card's list shows for each month, exactly as shown; each month's rows are checked against it", tools.Object(map[string]any{
+						"total_month":  tools.StringProperty("the month, 2026-09"),
+						"total_amount": tools.StringProperty("the total as shown, a decimal string without separators"),
+					}, "total_month", "total_amount")),
 					"from_currency_code":          tools.StringProperty("for exchange_rate and convert_currency: the currency converted from"),
 					"to_currency_code":            tools.StringProperty("for exchange_rate and convert_currency: the currency converted into"),
 					"amount":                      tools.StringProperty("for convert_currency: the amount"),
@@ -667,6 +734,9 @@ func init() {
 						return ""
 					}
 					name := strings.ToLower(strings.TrimSpace(call.Operation))
+					if name == "import_transactions" && isRefusedTransactionRows(arguments) {
+						return tools.RiskRead
+					}
 					if operation, isKnown := operations[name]; isKnown {
 						return operation.risk
 					}
@@ -896,6 +966,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			"The person pastes it on the Finance tab of their agent page in the dashboard, or runs `teanode finance link-simplefin`, which reads it without echoing. " +
 			"They make the token on the SimpleFIN Bridge's website."), nil
 	}
+	if name == "delete_statement_account" {
+		return tools.TextResult("Deleting an account of imported statements removes its transactions and its net worth history for good, so it is the person's to do: " +
+			"on the dashboard's Finance page, under Accounts, with the trash icon on the account's row, or with `teanode finance delete-statement-account <finance-account-id>`. " +
+			"`rename_statement_account` renames one, which needs no delete."), nil
+	}
 	if name == "import_credential" {
 		// Likewise for the credential of a connection made elsewhere,
 		// which opens the person's accounts for as long as it lives.
@@ -942,6 +1017,8 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return sourceOperation(ctx, executor, name, text(asked, "source_id"))
 	case "categorize_transaction":
 		return categorizeTransactions(ctx, executor, name, asked)
+	case "import_transactions", "preview_import_transactions":
+		return importTransactions(ctx, executor, name, asked)
 	case "import_statement":
 		// Only a message in a mailbox the person granted, as mail_read
 		// reads: a mailbox kept back from the agent stays kept back.

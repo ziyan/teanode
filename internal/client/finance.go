@@ -589,6 +589,46 @@ type FinanceStatementImport struct {
 	ImportErrorMessage           string    `json:"importErrorMessage,omitempty"`
 }
 
+// TransactionRowsPreview is what an import of transaction rows would do:
+// the account (FinanceAccountID empty for a new one), the rows it would
+// add and the rows it holds already, the days and money of the new rows,
+// and what was checked.
+type TransactionRowsPreview struct {
+	FinanceAccountID       string                   `json:"financeAccountId,omitempty"`
+	AccountName            string                   `json:"accountName"`
+	IsNewAccount           bool                     `json:"isNewAccount"`
+	AccountMatch           string                   `json:"accountMatch"`
+	CurrencyCode           string                   `json:"currencyCode"`
+	NewTransactionRows     []*TransactionRowPreview `json:"newTransactionRows"`
+	PresentTransactionRows []*TransactionRowPreview `json:"presentTransactionRows"`
+	FirstPostedOn          string                   `json:"firstPostedOn,omitempty"`
+	LastPostedOn           string                   `json:"lastPostedOn,omitempty"`
+	MoneyInAmount          string                   `json:"moneyInAmount"`
+	MoneyOutAmount         string                   `json:"moneyOutAmount"`
+	VerificationSummary    string                   `json:"verificationSummary"`
+	LedgerBalanceAmount    string                   `json:"ledgerBalanceAmount,omitempty"`
+	LedgerBalanceOn        string                   `json:"ledgerBalanceOn,omitempty"`
+	LedgerBalanceTimeZone  string                   `json:"ledgerBalanceTimeZone,omitempty"`
+}
+
+// TransactionRowPreview is one row of a preview, by its number among the
+// rows as sent.
+type TransactionRowPreview struct {
+	RowNumber                  int    `json:"rowNumber"`
+	PostedOn                   string `json:"postedOn"`
+	Description                string `json:"description"`
+	Amount                     string `json:"amount"`
+	HasNearbyStoredTransaction bool   `json:"hasNearbyStoredTransaction"`
+}
+
+// StatementAccountDeleted is what deleting an account of imported
+// statements removed.
+type StatementAccountDeleted struct {
+	FinanceAccountID        string `json:"financeAccountId"`
+	DeletedTransactionCount int    `json:"deletedTransactionCount"`
+	DeletedAssetCount       int    `json:"deletedAssetCount"`
+}
+
 // StatementImport is the address to mail statements to, whether importing
 // is on, and what the last import did.
 type StatementImport struct {
@@ -627,6 +667,17 @@ const (
 	financeStatementImportFields = `{ importedAt statementImportOrigin statementFileNames addedTransactionCount updatedTransactionCount unchangedTransactionCount skippedTransactionCount transactionWithoutFitIdCount financeAccountIds financeAccountNames importErrorMessage }`
 
 	statementImportFields = `{ sourceId importAddress isEnabled maximumStatementBytes lastStatementImport ` + financeStatementImportFields + ` }`
+
+	transactionRowPreviewFields = `{ rowNumber postedOn description amount hasNearbyStoredTransaction }`
+
+	transactionRowsPreviewFields = `{ financeAccountId accountName isNewAccount accountMatch currencyCode newTransactionRows ` + transactionRowPreviewFields +
+		` presentTransactionRows ` + transactionRowPreviewFields + ` firstPostedOn lastPostedOn moneyInAmount moneyOutAmount verificationSummary ledgerBalanceAmount ledgerBalanceOn ledgerBalanceTimeZone }`
+
+	// The variables and arguments ImportTransactions and its preview
+	// share.
+	transactionRowsVariables = `($financeAccountId: String, $isNewAccount: Boolean, $institutionName: String!, $accountName: String, $accountNumber: String, $isAccountNumberPartial: Boolean, $statementAccountKind: String!, $currencyCode: String!, $bankCode: String, $transactionRows: [TransactionRowInput!]!, $ledgerBalanceAmount: String, $ledgerBalanceOn: String, $ledgerBalanceTimeZone: String, $monthlyTotals: [MonthlyTotalInput!])`
+
+	transactionRowsArguments = `(financeAccountId: $financeAccountId, isNewAccount: $isNewAccount, institutionName: $institutionName, accountName: $accountName, accountNumber: $accountNumber, isAccountNumberPartial: $isAccountNumberPartial, statementAccountKind: $statementAccountKind, currencyCode: $currencyCode, bankCode: $bankCode, transactionRows: $transactionRows, ledgerBalanceAmount: $ledgerBalanceAmount, ledgerBalanceOn: $ledgerBalanceOn, ledgerBalanceTimeZone: $ledgerBalanceTimeZone, monthlyTotals: $monthlyTotals)`
 
 	savingsTargetStandingFields = `{ savingsTarget { id savingsTargetName targetAmount currencyCode targetOn targetMeasure startingAmount startedOn closedOn assetIds financeAccountIds } savingsTargetProgress { savedAmount remainingAmount monthsLeftCount requiredMonthlyAmount isBehind unconvertedCurrencyCodes } }`
 )
@@ -751,6 +802,22 @@ const (
 
 	DocumentRegenerateStatementImportAddress = `mutation { RegenerateStatementImportAddress ` + statementImportFields + ` }`
 
+	DocumentImportTransactions = `mutation ` + transactionRowsVariables + ` {
+  ImportTransactions` + transactionRowsArguments + ` ` + financeStatementImportFields + `
+}`
+
+	DocumentPreviewImportTransactions = `query ` + transactionRowsVariables + ` {
+  PreviewImportTransactions` + transactionRowsArguments + ` ` + transactionRowsPreviewFields + `
+}`
+
+	DocumentRenameStatementAccount = `mutation ($financeAccountId: String!, $accountName: String!) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) ` + financeAccountFields + `
+}`
+
+	DocumentDeleteStatementAccount = `mutation ($financeAccountId: String!) {
+  DeleteStatementAccount(financeAccountId: $financeAccountId) { financeAccountId deletedTransactionCount deletedAssetCount }
+}`
+
 	DocumentCreateFinanceLinkToken = `mutation ($sourceId: String) { CreateFinanceLinkToken(sourceId: $sourceId) { linkToken sourceId } }`
 
 	DocumentCompleteFinanceLink = `mutation ($publicToken: String!, $institutionId: String, $institutionName: String) {
@@ -859,7 +926,10 @@ var FinanceDocuments = map[string]string{
 	"ReportingCurrency": DocumentReportingCurrency,
 	"StatementImport":   DocumentStatementImport, "ImportStatement": DocumentImportStatement,
 	"RegenerateStatementImportAddress": DocumentRegenerateStatementImportAddress,
-	"CreateFinanceLinkToken":           DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
+	"ImportTransactions":               DocumentImportTransactions, "PreviewImportTransactions": DocumentPreviewImportTransactions,
+	"RenameStatementAccount": DocumentRenameStatementAccount,
+	"DeleteStatementAccount": DocumentDeleteStatementAccount,
+	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
 	"CreateAsset": DocumentCreateAsset,

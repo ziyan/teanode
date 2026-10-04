@@ -135,6 +135,12 @@ type FinanceQuery interface {
 	// statement finance source and its address are made the first time
 	// this is asked.
 	StatementImport(ctx context.Context) (*StatementImportView, error)
+
+	// What ImportTransactions would do with the same arguments, writing
+	// nothing: the account the rows would go into (an existing one with
+	// its id, or a new one), the rows it does not hold yet and those it
+	// does, and what was checked. Refused as the import would be.
+	PreviewImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*TransactionRowsPreviewView, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -176,6 +182,27 @@ type FinanceMutation interface {
 	// Give the statement import address a new token. The old address stops
 	// taking mail at once.
 	RegenerateStatementImportAddress(ctx context.Context) (*StatementImportView, error)
+
+	// Import one account's transactions sent as rows instead of a file,
+	// such as what the agent read off screenshots of a bank's or a card
+	// issuer's app, into the statement source the way a statement is
+	// imported. They are checked first and refused, naming the first row
+	// or month that does not add up, when the running balances given do
+	// not chain or a month's rows do not come to its total. They go into
+	// the account financeAccountId names, else the one their number or
+	// its last digits match, else a new one; and only the rows that
+	// account does not hold yet are added, matched by day and amount
+	// whatever wrote the stored ones.
+	ImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*models.FinanceStatementImport, error)
+
+	// Give an account of imported statements the person's own name, which
+	// later imports keep.
+	RenameStatementAccount(ctx context.Context, arguments RenameStatementAccountArguments) (*FinanceAccountView, error)
+
+	// Delete an account of imported statements, with its transactions and
+	// the assets that value it. A provider's account is refused: its next
+	// sync would bring it back.
+	DeleteStatementAccount(ctx context.Context, arguments StatementAccountArguments) (*StatementAccountDeletedView, error)
 
 	// Add an asset: something owned or owed that counts toward net worth.
 	CreateAsset(ctx context.Context, arguments CreateAssetArguments) (*models.Asset, error)

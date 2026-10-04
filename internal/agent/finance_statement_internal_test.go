@@ -3,11 +3,14 @@ package agent
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/finance/ofx"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
@@ -600,5 +603,35 @@ func TestStatementImportIsOneAccountWhateverTheInstitutionBlockSays(t *testing.T
 	}
 	if transactions := fixture.statementTransactions(t); len(transactions) != 3 || second.UnchangedTransactionCount != 3 {
 		t.Errorf("%d finance transactions, %+v", len(transactions), second)
+	}
+}
+
+// Transaction rows refused when they are planned again under the
+// statement source's lock (another import came in between the preview
+// and the lock) are refused to the caller, and leave the source's last
+// import and last run as they were: nothing was imported.
+func TestRefusedTransactionRowsLeaveTheLastImport(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	fixture.importStatement(t, inventedCardStatement("20260131", "-311.25", "INVENTED COFFEE ROASTERS"))
+	before := fixture.statementSource(t)
+	lastBefore := LastStatementImport(before)
+	if lastBefore == nil || before.LastRunAt == nil {
+		t.Fatalf("the file's import was not recorded: %+v", before)
+	}
+	result := &models.FinanceStatementImport{
+		ImportedAt: time.Now(), StatementImportOrigin: models.StatementImportOriginTransactionRows, StatementFileNames: []string{},
+		FinanceAccountIDs: []string{}, FinanceAccountNames: []string{},
+	}
+	builds := []statementBuild{{statementName: "the transactions", build: func(db.Transaction, *models.AgentKnowledgeSource, []byte, []finance.ExistingStatementAccount) (*finance.StatementImport, error) {
+		return nil, fmt.Errorf("%w: the number ending 0042 could be any of two accounts", finance.ErrTransactionRowsRefused)
+	}}}
+	if _, err := fixture.worker.importStatements(t.Context(), fixture.agent, fixture.owner, before, result, nil, builds, ""); !errors.Is(err, finance.ErrTransactionRowsRefused) {
+		t.Fatalf("a refusal under the lock answered %v", err)
+	}
+	after := fixture.statementSource(t)
+	lastAfter := LastStatementImport(after)
+	if lastAfter == nil || !lastAfter.ImportedAt.Equal(lastBefore.ImportedAt) || lastAfter.StatementImportOrigin != models.StatementImportOriginUpload ||
+		after.LastError != before.LastError || after.LastRunAt == nil || !after.LastRunAt.Equal(*before.LastRunAt) {
+		t.Errorf("the refusal changed the last import: %+v, last error %q, last run %v", lastAfter, after.LastError, after.LastRunAt)
 	}
 }
