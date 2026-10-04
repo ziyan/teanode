@@ -73,6 +73,14 @@ var (
 // not take, naming it: a balance sent as "balance" would be dropped, and
 // the rows would then go unchecked where the person thinks they were.
 func checkTransactionRowFields(call map[string]any) error {
+	// A number holds about sixteen digits exactly, so a longer account
+	// number sent as one arrives with its last digits changed, and the
+	// account would be keyed on them for good.
+	for _, key := range []string{"account_number", "bank_code"} {
+		if _, isNumber := call[key].(float64); isNumber {
+			return fmt.Errorf("give %s as a string, as the list shows it: a number can lose digits", key)
+		}
+	}
 	for key, fields := range map[string][]string{"transaction_rows": transactionRowFields, "monthly_totals": monthlyTotalFields} {
 		isField := map[string]bool{}
 		for _, field := range fields {

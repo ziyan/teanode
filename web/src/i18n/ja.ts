@@ -3348,7 +3348,7 @@ export const ja: Catalog = {
   'finance.accountNameHint': '以降の取り込みでもこの名前が使われます。',
   'finance.accountRenamed': '{name} に名前を変更しました。',
   'finance.deleteAccountTitle': '{name} を削除しますか？',
-  'finance.deleteAccountBody': 'この口座の取引と純資産の履歴は完全に削除され、支出・予算・純資産に含まれなくなります。明細書やスクリーンショットを取り込み直せば取引は戻りますが、手入力した値は戻りません。',
+  'finance.deleteAccountBody': 'この口座の取引と純資産の履歴は完全に削除され、支出・予算・純資産に含まれなくなります。この口座に限定した支出ルールも一緒に削除されます。明細書やスクリーンショットを取り込み直せば取引は戻りますが、手入力した値は戻りません。',
   'finance.deleteAccountConfirm': '口座を削除',
   'finance.accountDeletedOne': '{name} と 1 件の取引を削除しました。',
   'finance.accountDeletedOther': '{name} と {count} 件の取引を削除しました。',

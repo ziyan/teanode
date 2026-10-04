@@ -77,6 +77,11 @@ func IsTransactionRowsMetadata(providerMetadata json.RawMessage) bool {
 // screenshots one by one.
 const MaximumTransactionRows = 2000
 
+// MaximumTransactionTextLength is the longest institution name, account
+// name or row description an import takes, in characters: far past what a
+// statement line shows, and short of what a misread page could make.
+const MaximumTransactionTextLength = 500
+
 // transactionKindTypes is the OFX transaction type each transaction kind is
 // imported as, which is what the provider category mapping reads: a
 // payment on a card is a transfer, interest and fees settle their spending
@@ -335,6 +340,9 @@ func CheckTransactionRows(input *TransactionRowsInput, today string) (*Transacti
 	if check.InstitutionName == "" {
 		return nil, refuseRows("name the institution, as the list or the app shows it")
 	}
+	if len([]rune(check.InstitutionName)) > MaximumTransactionTextLength || len([]rune(check.AccountName)) > MaximumTransactionTextLength {
+		return nil, refuseRows("the institution or account name is longer than %d characters; give it as the list shows it", MaximumTransactionTextLength)
+	}
 	if len(check.CurrencyCode) != 3 || strings.IndexFunc(check.CurrencyCode, func(letter rune) bool { return letter < 'A' || letter > 'Z' }) >= 0 {
 		return nil, refuseRows("the currency %q is not a currency code like JPY or USD", input.CurrencyCode)
 	}
@@ -384,6 +392,9 @@ func CheckTransactionRows(input *TransactionRowsInput, today string) (*Transacti
 		}
 		if row.Description == "" {
 			return nil, refuseRows("row %d (%s) has no description; give what the list shows", row.RowNumber, row.PostedOn)
+		}
+		if len([]rune(row.Description)) > MaximumTransactionTextLength {
+			return nil, refuseRows("row %d (%s): the description is longer than %d characters; give what the list shows", row.RowNumber, row.PostedOn, MaximumTransactionTextLength)
 		}
 		if row.amountValue, err = parseRowAmount(given.Amount, check.CurrencyCode); err != nil {
 			return nil, refuseRows("row %d (%s, %s): the amount %q cannot be read: %s", row.RowNumber, row.PostedOn, row.Description, given.Amount, err)

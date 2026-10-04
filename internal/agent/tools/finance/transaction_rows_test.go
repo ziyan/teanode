@@ -124,6 +124,12 @@ func TestFinanceToolRefusesRowsThatDoNotAddUp(test *testing.T) {
 	if _, err := call(test, &fakeOperations{}, misnamed); err == nil || !strings.Contains(err.Error(), "balance") {
 		test.Errorf("a misnamed field answered %v", err)
 	}
+	// An account number sent as a number could have lost digits, so it is
+	// refused rather than stored on the wrong ones.
+	numbered := strings.Replace(inventedBankRows, `"account_number":"1234567"`, `"account_number":12345678901234567`, 1)
+	if _, err := call(test, &fakeOperations{}, numbered); err == nil || !strings.Contains(err.Error(), "account_number as a string") {
+		test.Errorf("an account number sent as a number answered %v", err)
+	}
 }
 
 // What is sent is the API's names, the rows' fields included, amounts as

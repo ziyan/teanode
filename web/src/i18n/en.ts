@@ -3391,7 +3391,7 @@ export const en = {
   'finance.accountNameHint': 'Later imports keep this name.',
   'finance.accountRenamed': 'Renamed to {name}.',
   'finance.deleteAccountTitle': 'Delete {name}?',
-  'finance.deleteAccountBody': 'Its transactions and its net worth history are deleted for good, and spending, budgets and net worth stop counting them. Importing its statements or screenshots again brings the transactions back, but not values you recorded by hand.',
+  'finance.deleteAccountBody': 'Its transactions and its net worth history are deleted for good, and spending, budgets and net worth stop counting them. Spending rules limited to this account are deleted with it. Importing its statements or screenshots again brings the transactions back, but not values you recorded by hand.',
   'finance.deleteAccountConfirm': 'Delete account',
   'finance.accountDeletedOne': 'Deleted {name} and its 1 transaction.',
   'finance.accountDeletedOther': 'Deleted {name} and its {count} transactions.',

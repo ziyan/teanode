@@ -3257,7 +3257,7 @@ export const zh: Catalog = {
   'finance.accountNameHint': '之后的导入会保留这个名称。',
   'finance.accountRenamed': '已重命名为 {name}。',
   'finance.deleteAccountTitle': '删除 {name}？',
-  'finance.deleteAccountBody': '它的交易和净资产历史将被永久删除，支出、预算和净资产不再计入它们。再次导入它的对账单或截图可以找回交易，但您手动记录的数值不会恢复。',
+  'finance.deleteAccountBody': '它的交易和净资产历史将被永久删除，支出、预算和净资产不再计入它们。仅限于此账户的支出规则也会一并删除。再次导入它的对账单或截图可以找回交易，但您手动记录的数值不会恢复。',
   'finance.deleteAccountConfirm': '删除账户',
   'finance.accountDeletedOne': '已删除 {name} 及其 1 笔交易。',
   'finance.accountDeletedOther': '已删除 {name} 及其 {count} 笔交易。',
