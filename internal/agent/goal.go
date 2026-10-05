@@ -200,7 +200,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		}); err != nil {
 			return err
 		}
-		if stalled != nil && stalled.GoalState == models.GoalWaiting {
+		if stalled != nil && stalled.GoalState == models.GoalWaiting && !stalled.IsGoal() {
 			self.tellAboutGoal(ctx, run, stalled)
 		}
 		return nil
@@ -291,11 +291,13 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		if err := self.moveGoalOn(ctx, conversation.ID, now.Add(next), note); err != nil {
 			return err
 		}
-	} else if after.GoalState == models.GoalWaiting {
+	} else if after.GoalState == models.GoalWaiting && !after.IsGoal() {
 		// It needs the person, so they are told in case they are not
 		// reading the conversation. A goal that is met is not mailed
 		// about: the maintainer asked not to be, and the drawer's mark
-		// and the closing note are there when they next look.
+		// and the closing note are there when they next look. A goal of
+		// its own is not mailed either: it is said in the person's main
+		// conversation, which is the one place it calls them.
 		self.tellAboutGoal(ctx, run, after)
 	}
 	if failure != "" {
@@ -522,7 +524,7 @@ func backgroundGoalCheckIn(conversation *models.AgentConversation, owner *models
 		"It is "+now.In(Location(owner)).Format("Monday 2 January, 15:04")+" where they are.",
 		"",
 		"Work toward the goal with the tools you have: look, act, schedule what should happen on a clock, start background work for anything long. Anything that needs their confirmation cannot be done with nobody present, so prepare it and ask. Read back what happened in this conversation before starting again on something already done.",
-		"End by calling the goal tool exactly once. note: the status in one line and the minutes until your next turn, with activity only when something happened worth their reading later. wait: what you need from them, in a sentence they can answer; that, and only that, is said to them in their main conversation. met: when it is done, saying how it ended.",
+		"End by calling the goal tool exactly once. met, with text saying how it ended, as soon as what the goal is for is done. note, with status saying where it stands in one line and the minutes until your next turn, and activity only when something happened worth their reading later. wait, with status saying what you need from them in a sentence they can answer; that, and only that, is said to them in their main conversation.",
 	)
 	return strings.Join(lines, "\n")
 }

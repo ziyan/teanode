@@ -3707,7 +3707,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'checkin':
         // A turn nobody typed, and an approval given after a turn ended:
         // how the agent came to speak, which its answer shows anyway.
-        if (!showWorkingNotes) return null
+        // A goal's call for the person is the exception: its line carries
+        // the way to the goal, so it is shown whatever the setting.
+        if (!showWorkingNotes && line.origin !== 'goalNeedsYou') return null
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
         if (!showWorkingNotes && line.noteKind && WORKING_NOTES.has(line.noteKind)) return null

@@ -48,12 +48,13 @@ func init() {
 				Description: "Goals: what you keep at for the person in the background, between conversations, each in a conversation of its own where your turns on it run out of their sight, until it is met or they drop it. They hear from a goal only when it needs them. " +
 					"`start` starts one, with a title of a few words and text saying what it is for and what done looks like; use it when they ask you to keep at, watch for or follow up on something that outlasts this conversation. `list` is every goal and where it stands; `show` one with what happened on it and what it made. " +
 					"`tell` passes the person's words to a goal by goal_id: their answer to what it asked, or something it should know. `done`, `drop` and `reopen` are theirs: a goal met, stopped, or taken up again. " +
-					"In a goal's own turns: `note` with the status in one line, the minutes until your next turn, and activity when something happened worth their reading later; `wait` with what you need from them, which is said to them in their main conversation; `met` when it is done.",
+					"In a goal's own turns: `note` with status (where it stands, one line), the minutes until your next turn, and activity when something happened worth their reading later; `wait` with status saying what you need from them, which is said to them in their main conversation; `met` with text saying how it ended, as soon as it is done.",
 				Parameters: tools.Object(map[string]any{
 					"action":   tools.EnumProperty("what to do", "start", "list", "show", "tell", "done", "drop", "reopen", "note", "wait", "met", "set"),
 					"goal_id":  tools.StringProperty("for show, tell, done, drop and reopen: the goal, by the id list gives"),
 					"title":    tools.StringProperty("for start: what the goal is called, a few words"),
-					"text":     tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For note: the status in one line. For wait: what you need from them, a sentence they can answer. For met: how it ended"),
+					"text":     tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For met: how it ended"),
+					"status":   tools.StringProperty("for note: where the goal stands, in one line. For wait: what you need from the person, a sentence they can answer"),
 					"activity": tools.StringProperty("for note: one line on what happened, when something did that the person would want in the goal's log; leave it out when you only looked"),
 					"minutes":  tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
 				}, "action"),
@@ -69,6 +70,7 @@ type arguments struct {
 	GoalID   string `json:"goal_id"`
 	Title    string `json:"title"`
 	Text     string `json:"text"`
+	Status   string `json:"status"`
 	Activity string `json:"activity"`
 	Minutes  int    `json:"minutes"`
 }
@@ -84,6 +86,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	action := strings.ToLower(strings.TrimSpace(asked.Action))
 	text := strings.TrimSpace(asked.Text)
+	// A note's and a wait's words are its status; a model that put them in
+	// text is read the same.
+	if status := strings.TrimSpace(asked.Status); status != "" && (action == "note" || action == "wait") {
+		text = status
+	}
 	here := current.Conversation()
 	isGoalTurn := here.IsGoal() && current.Headless()
 	goalId := strings.TrimSpace(asked.GoalID)
