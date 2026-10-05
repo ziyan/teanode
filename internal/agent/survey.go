@@ -725,12 +725,18 @@ func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (
 // surveyReflectionCount of them, and then a line saying how many more
 // there are and, for a reader with the memory tool, how to read them.
 func reflectionLines(path string, facts []*models.AgentFact, canRead bool) []string {
+	var reflections []*models.AgentFact
+	for _, fact := range facts {
+		if fact.Kind == models.FactReflection {
+			reflections = append(reflections, fact)
+		}
+	}
+	// The newest first: when there are more than are shown, what goes
+	// unshown is the oldest.
+	sort.SliceStable(reflections, func(left, right int) bool { return reflections[left].Number > reflections[right].Number })
 	var lines []string
 	moreCount := 0
-	for _, fact := range facts {
-		if fact.Kind != models.FactReflection {
-			continue
-		}
+	for _, fact := range reflections {
 		if len(lines) >= surveyReflectionCount {
 			moreCount++
 			continue

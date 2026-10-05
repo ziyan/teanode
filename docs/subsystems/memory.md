@@ -760,8 +760,13 @@ theirs, and goes dormant rather than away when its group dissolves.
 asked for higher-level observations: a pattern that repeats, a tension, a
 trend, a risk, a question nobody answered. Each must cite at least two pages
 or facts the model was shown, or it is dropped. They are facts of kind
-reflection on the theme's page, and a new round supersedes the old one
-rather than deleting it. Once a week the top-level themes are reflected on
+reflection on the theme's page. A new round is shown the observations
+already standing there, by name, and adds to them: it may name one it
+replaces, which is superseded by the new one, or retire one that no longer
+holds, with what contradicts it, which is struck. One it does not name
+stays, so a round that says less, or nothing, takes nothing away. At most
+20 stand on a page; past that the oldest is struck, and its history says
+why. Once a week the top-level themes are reflected on
 together, onto `self/reflections`.
 
 **The survey.** A broad question is answered by asking each overview in
