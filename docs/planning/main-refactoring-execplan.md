@@ -271,7 +271,7 @@ a milestone fixing behavior that is already correct.
 - Decision: invalidate existing graph vectors only when the page or fact words
   used to create them change, comparing a locked page row and preserving the
   insert winner's unrelated state. Align fact-edit and fact-move locks with the
-  guarded writer's fact-then-page order.
+  guarded writer's page-then-fact order.
   Rationale: changed inputs must reenter backfill without reembedding pages
   whose controls or paths changed but whose embedded text did not.
   Date/Author: 2026-09-23, implementation review.
