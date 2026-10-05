@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.110.0] - 2026-10-05
+
+### Added
+
+- Give an imported account its last digits when renaming it; later imports keep them. (#329)
+
 ## [0.109.0] - 2026-10-04
 
 ### Added
