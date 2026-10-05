@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -154,6 +155,83 @@ func TestGraphParentEditDoesNotWaitForChildForeignKeyLock(t *testing.T) {
 		child, err := tx.GetAgentNode(agentId, "work/northwind/dev")
 		if err != nil || child == nil || child.ParentID != parent.ID {
 			t.Fatalf("child after concurrent writes: %v %v", child, err)
+		}
+	})
+}
+
+// The summary comparison must see the page after any preceding writer
+// commits. Otherwise restoring the old text can look like a no-op while a
+// concurrent edit is waiting to commit its new text.
+func TestGraphSummarySetterWaitsBeforeComparing(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agentId string
+	var page *models.AgentNode
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agentId = graphAgent(t, tx).ID
+		var err error
+		page, err = tx.PutAgentNode(&models.AgentNode{
+			AgentID: agentId, Path: "work/summary-race", Kind: models.NodeProject,
+			Name: "Summary Race", Summary: "original",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	changed := make(chan struct{})
+	releaseEdit := make(chan struct{})
+	defer releaseGraphWriter(releaseEdit)
+	editDone := make(chan error, 1)
+	go func() {
+		editDone <- database.Transaction(func(tx db.Transaction) error {
+			updated := *page
+			updated.Summary = "intermediate"
+			if _, err := tx.PutAgentNode(&updated); err != nil {
+				return err
+			}
+			close(changed)
+			<-releaseEdit
+			return nil
+		})
+	}()
+	select {
+	case <-changed:
+	case err := <-editDone:
+		t.Fatalf("page editor stopped before its commit: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("page editor did not write")
+	}
+
+	setterDone := make(chan error, 1)
+	go func() {
+		setterDone <- database.Transaction(func(tx db.Transaction) error {
+			changed, err := tx.SetAgentNodeSummary(agentId, page.ID, "original")
+			if err != nil {
+				return err
+			}
+			if !changed {
+				return fmt.Errorf("restore of concurrently edited summary was treated as a no-op")
+			}
+			return nil
+		})
+	}()
+	waitForGraphLock(t, database, `query LIKE 'SELECT%FROM "agent_node"%' AND query LIKE '%FOR NO KEY UPDATE%'`, setterDone)
+	releaseGraphWriter(releaseEdit)
+	if err := awaitGraphWriter(t, editDone); err != nil {
+		t.Fatal(err)
+	}
+	if err := awaitGraphWriter(t, setterDone); err != nil {
+		t.Fatal(err)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		settled, err := tx.GetAgentNodeByID(agentId, page.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if settled == nil || settled.Summary != "original" {
+			t.Fatalf("summary after serialized restore: %+v", settled)
 		}
 	})
 }
