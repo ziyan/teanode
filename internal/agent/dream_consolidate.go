@@ -275,7 +275,7 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 			fact.Text = wording.Text
 			fact.Inferred, fact.Confidence = wording.Inferred, wording.Confidence
 			takeTheDateOf(fact, gone)
-			fact.Evidence = mergedEvidence(fact.Evidence, gone.Evidence)
+			fact.Evidence = models.MergeEvidence(fact.Evidence, gone.Evidence)
 			return nil
 		}); err != nil {
 			return merged, err

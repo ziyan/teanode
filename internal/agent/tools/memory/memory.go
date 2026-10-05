@@ -927,7 +927,7 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	if !models.IsAgentFactKind(kind) || kind.FromItsOwnReasoning() {
 		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
 	}
-	happened, err := whenItWasTrue(run, arguments.Happened)
+	happened, happenedPrecision, err := whenItWasTrue(run, arguments.Happened)
 	if err != nil {
 		return nil, err
 	}
@@ -952,7 +952,7 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 		node = existing
 		fact, err = tx.AddAgentFact(&models.AgentFact{
 			AgentID: agentId, NodeID: node.ID, Kind: kind, Text: text,
-			HappenedAt: happened, Confidence: 1,
+			HappenedAt: happened, HappenedPrecision: happenedPrecision, Confidence: 1,
 			Evidence:  []models.Evidence{conversationEvidence(run, text)},
 			Audiences: factAudiences(arguments.AppliesTo),
 		})
@@ -990,9 +990,10 @@ func editFactAction(ctx context.Context, run tools.Run, arguments *memoryArgumen
 		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
 	}
 	var happened *time.Time
+	var happenedPrecision string
 	if strings.TrimSpace(arguments.Happened) != "" {
 		var err error
-		if happened, err = whenItWasTrue(run, arguments.Happened); err != nil {
+		if happened, happenedPrecision, err = whenItWasTrue(run, arguments.Happened); err != nil {
 			return nil, err
 		}
 	}
@@ -1022,7 +1023,7 @@ func editFactAction(ctx context.Context, run tools.Run, arguments *memoryArgumen
 				fact.Kind = kind
 			}
 			if happened != nil {
-				fact.HappenedAt = happened
+				fact.HappenedAt, fact.HappenedPrecision = happened, happenedPrecision
 			}
 			// Only where this call said who reads it. Audiences are set
 			// once and hardly ever repeated, and a correction that
@@ -1037,7 +1038,7 @@ func editFactAction(ctx context.Context, run tools.Run, arguments *memoryArgumen
 			// sentence came from originally.
 			fact.Inferred = false
 			fact.Confidence = 1
-			fact.Evidence = append(fact.Evidence, conversationEvidence(run, text))
+			fact.Evidence = models.MergeEvidence(fact.Evidence, []models.Evidence{conversationEvidence(run, text)})
 			return nil
 		})
 		return err
@@ -1071,22 +1072,27 @@ func factWritten(ctx context.Context, run tools.Run, node *models.AgentNode, fac
 
 // whenItWasTrue reads the date the model gave, in the person's zone.
 // Empty means now, which the store leaves unset.
-func whenItWasTrue(run tools.Run, said string) (*time.Time, error) {
+func whenItWasTrue(run tools.Run, said string) (*time.Time, string, error) {
 	said = strings.TrimSpace(said)
 	if said == "" {
-		return nil, nil
+		return nil, "", nil
+	}
+	// A month or a year on its own -- "2023-06", which is how a model says
+	// when something was true -- is not a time the general parser takes,
+	// and it is the commonest thing written here. Each keeps how precisely
+	// it was said, or it reads back as the first day of it.
+	for _, layout := range []struct{ format, happenedPrecision string }{
+		{"2006-01", models.HappenedMonth}, {"2006", models.HappenedYear},
+	} {
+		if when, err := time.ParseInLocation(layout.format, said, tools.Location(run.Owner())); err == nil {
+			return &when, layout.happenedPrecision, nil
+		}
 	}
 	when, err := tools.ParseTime(said, tools.Location(run.Owner()), time.Now())
 	if err != nil {
-		// A month on its own -- "2023-06", which is how a model says
-		// when something was true -- is not a time the general parser
-		// takes, and it is the commonest thing written here.
-		if month, monthErr := time.ParseInLocation("2006-01", said, tools.Location(run.Owner())); monthErr == nil {
-			return &month, nil
-		}
-		return nil, fmt.Errorf("%q is not a date I can read: %w", said, err)
+		return nil, "", fmt.Errorf("%q is not a date I can read: %w", said, err)
 	}
-	return &when, nil
+	return &when, models.HappenedDay, nil
 }
 
 // conversationEvidence is where a fact the model wrote came from.

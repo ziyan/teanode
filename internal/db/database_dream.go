@@ -120,19 +120,21 @@ type DreamOperation interface {
 	ListAgentNodesCrowded(agentId string, above, limit int) ([]*models.AgentNode, error)
 
 	// ListAgentFactsSaidTwice is every fact whose page already carries
-	// the same words on a lower number: the later copies, never the
-	// first.
+	// the same words on a lower number, of the same kind and not on
+	// another date: the later copies, never the first. The same words on
+	// two dates are two occurrences, not one said twice.
 	ListAgentFactsSaidTwice(agentId string, limit int) ([]*models.AgentFact, error)
 
-	// FirstAgentFactSayingIt is the live fact on the same page that says
-	// the same words on a lower number, or nothing where there is none.
+	// FirstAgentFactSayingIt is the live fact on the same page as said
+	// that says its words on a lower number, of the same kind and not on
+	// another date, or nothing where there is none.
 	//
 	// Asked of the database, because the page is where the pair is and a
 	// page may hold more facts than any caller wants to carry. Scanning a
 	// listing instead meant a duplicate the query above had found could
 	// not be folded, and on a page with more facts than the listing took
 	// it never could.
-	FirstAgentFactSayingIt(agentId, nodeId, text string, below int) (*models.AgentFact, error)
+	FirstAgentFactSayingIt(agentId string, said *models.AgentFact) (*models.AgentFact, error)
 
 	// RecomputeAgentImportance rewrites what the index is ordered by, and
 	// RetireAgentFacts marks what has not been wanted in a long time
@@ -944,14 +946,19 @@ func (self *transaction) ListAgentFactsSaidTwice(agentId string, limit int) ([]*
 			WHERE g."node_id" = f."node_id" AND g."number" < f."number"
 			  AND g."superseded_by" IS NULL
 			  AND lower(btrim(g."text")) = lower(btrim(f."text"))
+			  AND g."kind" = f."kind"
+			  AND (g."happened_at" IS NULL OR f."happened_at" IS NULL OR g."happened_at" = f."happened_at")
 		  )
 		ORDER BY f."created_at"
 		LIMIT ?`, agentId, limit))
 }
 
-func (self *transaction) FirstAgentFactSayingIt(agentId, nodeId, text string, below int) (*models.AgentFact, error) {
-	wanted := strings.ToLower(strings.TrimSpace(text))
-	if agentId == "" || nodeId == "" || wanted == "" {
+func (self *transaction) FirstAgentFactSayingIt(agentId string, said *models.AgentFact) (*models.AgentFact, error) {
+	if said == nil {
+		return nil, nil
+	}
+	wanted := strings.ToLower(strings.TrimSpace(said.Text))
+	if agentId == "" || said.NodeID == "" || wanted == "" {
 		return nil, nil
 	}
 	// The same test the search for duplicates makes, the other way about:
@@ -962,8 +969,10 @@ func (self *transaction) FirstAgentFactSayingIt(agentId, nodeId, text string, be
 		WHERE f."agent_id" = ? AND f."node_id" = ? AND f."number" < ?
 		  AND f."superseded_by" IS NULL
 		  AND lower(btrim(f."text")) = ?
+		  AND f."kind" = ?
+		  AND (f."happened_at" IS NULL OR ?::timestamptz IS NULL OR f."happened_at" = ?::timestamptz)
 		ORDER BY f."number" ASC
-		LIMIT 1`, agentId, nodeId, below, wanted))
+		LIMIT 1`, agentId, said.NodeID, said.Number, wanted, said.Kind, said.HappenedAt, said.HappenedAt))
 	if err != nil || len(facts) == 0 {
 		return nil, err
 	}

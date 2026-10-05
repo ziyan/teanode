@@ -747,7 +747,7 @@ func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *m
 		folded := false
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorDream)
-			kept, err := tx.FirstAgentFactSayingIt(run.Agent.ID, fact.NodeID, fact.Text, fact.Number)
+			kept, err := tx.FirstAgentFactSayingIt(run.Agent.ID, fact)
 			if err != nil {
 				return err
 			}
@@ -755,6 +755,12 @@ func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *m
 				// Gone, or folded by another pass between the listing and
 				// here. Left as it is, and not counted as done.
 				return nil
+			}
+			// What the copy was read in, its date and its standing go to
+			// the fact that stays, as they do when the copy is caught on
+			// the way in.
+			if _, err := takeTheEvidenceOf(tx, kept, fact); err != nil {
+				return err
 			}
 			if _, err := tx.FoldAgentFact(run.Agent.ID, fact.ID, kept.ID,
 				"the page already said it in the same words"); err != nil {

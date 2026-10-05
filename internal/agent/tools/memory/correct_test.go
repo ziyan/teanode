@@ -189,3 +189,36 @@ func TestHistorySaysWhatHappenedToAPage(t *testing.T) {
 		t.Fatalf("a history of nothing says so: %q", missed)
 	}
 }
+
+// A fact with as much evidence as one may cite can still be corrected,
+// and a date given as a month is kept as a month.
+func TestAFullFactCanBeCorrectedAndKeepsTheDatesPrecision(t *testing.T) {
+	run, database, closeDatabase := person(t, "alice")
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.agent.ID, Path: "projects/portal", Kind: models.NodeProject, Name: "Portal"})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		var evidence []models.Evidence
+		for number := range models.EvidenceCount {
+			evidence = append(evidence, models.Evidence{Kind: models.EvidenceDocument, ID: "document-" + strings.Repeat("x", number+1), Quote: "a line"})
+		}
+		if _, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "The portal moved.", Confidence: 0.5, Inferred: true, Evidence: evidence,
+		}); err != nil {
+			t.Fatalf("AddAgentFact: %s", err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	if _, err := find(t, "memory").Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"note","path":"projects/portal","number":1,"text":"The portal moved to the new host.","happened":"2026-06"}`)}); err != nil {
+		t.Fatalf("correcting a full fact: %s", err)
+	}
+	after, _ := factOn(t, database, run.agent.ID, "projects/portal", 1)
+	if len(after.Evidence) != models.EvidenceCount || after.Evidence[len(after.Evidence)-1].Kind != models.EvidenceConversation {
+		t.Errorf("the correction is not among the evidence: %v", after.Evidence)
+	}
+	if after.HappenedPrecision != models.HappenedMonth || after.HappenedText() != "Jun 2026" {
+		t.Errorf("the date reads %q (%q)", after.HappenedText(), after.HappenedPrecision)
+	}
+}

@@ -23,18 +23,36 @@ func TestMergedEvidenceKeepsTheFirstAndTheNewest(t *testing.T) {
 		full = append(full, documentEvidence(number))
 	}
 	added := documentEvidence(99)
-	merged := mergedEvidence(full, []models.Evidence{added})
+	merged := models.MergeEvidence(full, []models.Evidence{added})
 	if len(merged) != models.EvidenceCount {
 		t.Fatalf("%d entries, not %d", len(merged), models.EvidenceCount)
 	}
 	if merged[0] != full[0] || merged[len(merged)-1] != added {
 		t.Errorf("the first or the newest went: first %v, last %v", merged[0], merged[len(merged)-1])
 	}
-	if again := mergedEvidence(merged, []models.Evidence{added, added}); len(again) != len(merged) || again[len(again)-1] != added || again[0] != merged[0] {
+	if again := models.MergeEvidence(merged, []models.Evidence{added, added}); len(again) != len(merged) || again[len(again)-1] != added || again[0] != merged[0] {
 		t.Errorf("merging the same place again changed the evidence: %v", again)
 	}
-	if twice := mergedEvidence([]models.Evidence{documentEvidence(1)}, []models.Evidence{documentEvidence(1), documentEvidence(2)}); len(twice) != 2 {
+	if twice := models.MergeEvidence([]models.Evidence{documentEvidence(1)}, []models.Evidence{documentEvidence(1), documentEvidence(2)}); len(twice) != 2 {
 		t.Errorf("a place listed twice: %v", twice)
+	}
+	// A place in the middle said again moves to the newest, so the cut
+	// that follows cannot take what a rise in confidence rests on.
+	middle := full[4]
+	saidAgain := models.MergeEvidence(full, []models.Evidence{middle, added})
+	if len(saidAgain) != models.EvidenceCount || saidAgain[len(saidAgain)-2] != middle || saidAgain[len(saidAgain)-1] != added {
+		t.Errorf("a place said again was cut: %v", saidAgain)
+	}
+	// Said again with an earlier time, it keeps the earlier one.
+	early, late := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	withTime := func(at time.Time) models.Evidence {
+		evidence := documentEvidence(7)
+		evidence.At = &at
+		return evidence
+	}
+	timed := models.MergeEvidence([]models.Evidence{documentEvidence(1), withTime(late)}, []models.Evidence{withTime(early)})
+	if len(timed) != 2 || timed[1].At == nil || !timed[1].At.Equal(early) {
+		t.Errorf("the earlier time was not kept: %v", timed)
 	}
 }
 
@@ -113,6 +131,58 @@ func TestAFoldKeepsTheEvidenceItRisesOnAndTheDatesPrecision(t *testing.T) {
 		}
 		if fact.HappenedText() != "May 2026" || fact.HappenedPrecision != models.HappenedMonth {
 			t.Errorf("the date reads %q (%q)", fact.HappenedText(), fact.HappenedPrecision)
+		}
+	})
+}
+
+// The dream's pass over facts said twice in the same words folds a copy
+// into the first, with what the copy was read in, and leaves the same
+// words on another date apart: those are two occurrences.
+func TestTheSaidTwicePassKeepsEvidenceAndOccurrences(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	worker, run := digestSplitWorldWith(t, database, "http://127.0.0.1:1", nil)
+	may := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.Local)
+	june := may.AddDate(0, 1, 0)
+	var first, copied, inMay, inJune *models.AgentFact
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent.ID, Path: "projects/pier", Kind: models.NodeProject, Name: "Pier"})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		add := func(text string, happenedAt *time.Time, evidence models.Evidence) *models.AgentFact {
+			fact, err := tx.AddAgentFact(&models.AgentFact{
+				AgentID: run.Agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: text, Confidence: 1,
+				HappenedAt: happenedAt, HappenedPrecision: models.HappenedDay, Evidence: []models.Evidence{evidence},
+			})
+			if err != nil {
+				t.Fatalf("AddAgentFact: %s", err)
+			}
+			return fact
+		}
+		first = add("The pier is painted blue.", nil, documentEvidence(1))
+		copied = add("The pier is painted blue.", nil, documentEvidence(2))
+		inMay = add("The rent was paid.", &may, documentEvidence(3))
+		inJune = add("The rent was paid.", &june, documentEvidence(4))
+	})
+	worker.dreamForgetSaidTwice(t.Context(), run, &models.AgentDream{})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		facts, err := tx.GetAgentFacts(run.Agent.ID, []string{first.ID, copied.ID, inMay.ID, inJune.ID})
+		if err != nil {
+			t.Fatalf("GetAgentFacts: %s", err)
+		}
+		byId := map[string]*models.AgentFact{}
+		for _, fact := range facts {
+			byId[fact.ID] = fact
+		}
+		if byId[copied.ID].SupersededBy != first.ID {
+			t.Errorf("the copy was not folded into the first")
+		}
+		if got := byId[first.ID].Evidence; len(got) != 2 || got[1] != documentEvidence(2) {
+			t.Errorf("the first did not take the copy's evidence: %v", got)
+		}
+		if !byId[inMay.ID].Live() || !byId[inJune.ID].Live() {
+			t.Errorf("two occurrences on different dates were folded together")
 		}
 	})
 }

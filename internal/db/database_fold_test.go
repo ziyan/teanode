@@ -108,7 +108,7 @@ func TestTheEarlierTwinIsFoundPastTheOldScan(test *testing.T) {
 
 	// And now so is what it duplicates, which is the whole fix.
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		kept, err := tx.FirstAgentFactSayingIt(agentId, nodeId, copied.Text, copied.Number)
+		kept, err := tx.FirstAgentFactSayingIt(agentId, copied)
 		if err != nil {
 			test.Fatalf("FirstAgentFactSayingIt: %s", err)
 		}
@@ -140,7 +140,7 @@ func TestTheEarlierTwinIsFoundPastTheOldScan(test *testing.T) {
 	// And a fact with no earlier twin says so, rather than answering with
 	// something that would be counted as a fold.
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		kept, err := tx.FirstAgentFactSayingIt(agentId, nodeId, "Nothing else says this.", 9999)
+		kept, err := tx.FirstAgentFactSayingIt(agentId, &models.AgentFact{NodeID: nodeId, Text: "Nothing else says this.", Kind: copied.Kind, Number: 9999})
 		if err != nil {
 			test.Fatalf("FirstAgentFactSayingIt: %s", err)
 		}
