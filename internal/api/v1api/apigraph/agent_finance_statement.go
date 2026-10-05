@@ -263,9 +263,9 @@ type MonthlyTotal struct {
 }
 
 // RenameStatementAccountArguments name an account of imported statements
-// and the name to give it, the last digits of its number, or both. An
-// empty name leaves the name; an account mask left out leaves the
-// number, and an empty one takes back the person's.
+// and the name to give it, the last four to eight digits of its number,
+// or both. An empty name leaves the name; an account mask left out leaves
+// the number, and an empty one takes back the person's.
 type RenameStatementAccountArguments struct {
 	FinanceAccountID string  `json:"financeAccountId"`
 	AccountName      string  `json:"accountName" graphapi:"nullable"`

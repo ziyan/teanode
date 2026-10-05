@@ -131,6 +131,39 @@ it('sets and clears the last digits of an account from statements', async () => 
   await waitFor(() => expect(toast.done).toHaveBeenCalledWith('finance.accountMaskCleared'))
 })
 
+// Changing the name and the number together sends both, and the toast
+// says both, so a number that changed is not left out of it.
+it('says both the name and the number when both change', async () => {
+  execute.mockImplementation(
+    (document: string, variables?: Record<string, unknown>) => answer(document, variables) as never,
+  )
+  render(<FinanceAccountsSection />)
+  fireEvent.click(await screen.findByLabelText('Example Bank ··4567: common.rename'))
+  fireEvent.change(screen.getByDisplayValue('Example Bank'), { target: { value: 'Rainy day fund' } })
+  fireEvent.change(screen.getByLabelText('finance.accountMaskLabel'), { target: { value: '4821' } })
+  fireEvent.click(screen.getByText('common.save'))
+  await waitFor(() =>
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('RenameStatementAccount'), {
+      financeAccountId: 'account-imported',
+      accountName: 'Rainy day fund',
+      accountMask: '4821',
+    }),
+  )
+  await waitFor(() =>
+    expect(toast.done).toHaveBeenCalledWith(
+      'finance.accountRenamedWithMask {"name":"Rainy day fund","accountMask":"4821"}',
+    ),
+  )
+
+  fireEvent.click(await screen.findByLabelText('Example Bank ··4567: common.rename'))
+  fireEvent.change(screen.getByDisplayValue('Example Bank'), { target: { value: 'Rainy day fund' } })
+  fireEvent.change(screen.getByLabelText('finance.accountMaskLabel'), { target: { value: '' } })
+  fireEvent.click(screen.getByText('common.save'))
+  await waitFor(() =>
+    expect(toast.done).toHaveBeenCalledWith('finance.accountRenamedMaskCleared {"name":"Rainy day fund"}'),
+  )
+})
+
 // The trash asks first, saying what is lost; confirming deletes the
 // account and the toast says how many transactions went with it.
 it('deletes an account from statements after asking', async () => {

@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 )
@@ -713,7 +714,7 @@ func TestDeleteStatementAccountLetsGoOfItsOwnTransferOnly(test *testing.T) {
 // them, later imports of the file and of rows keep them, screenshots
 // showing them find the account, and taking them back shows the file's
 // again. A name is not needed alongside, but one of the two is, and
-// anything but two to eight digits is refused.
+// anything but four to eight digits is refused.
 func TestStatementAccountNumberFromThePerson(test *testing.T) {
 	fixture, store, _ := newStatementFixture(test)
 	fixture.importStatementFile(test, store, "card.ofx", inventedCardStatementWithFITIDs)
@@ -737,6 +738,7 @@ func TestStatementAccountNumberFromThePerson(test *testing.T) {
 			{FinanceAccountID: cardAccount.ID},
 			{FinanceAccountID: cardAccount.ID, AccountName: "  "},
 			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("7")},
+			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("876")},
 			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("123456789")},
 			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("VISA")},
 			{FinanceAccountID: cardAccount.ID, AccountName: "Everyday card", AccountMask: accountMask("98-76")},
@@ -780,4 +782,50 @@ func TestStatementAccountNumberFromThePerson(test *testing.T) {
 	if accounts := fixture.statementAccounts(test); len(accounts) != 1 || accounts[0].AccountMask != "77cc" {
 		test.Errorf("the file's number did not come back: %+v", accounts)
 	}
+}
+
+// inventedCardStatementWithBalanceOn is the invented card's export with a
+// ledger balance as of the end of a day, given as YYYYMMDD.
+func inventedCardStatementWithBalanceOn(balanceDay, balanceAmount string) string {
+	return strings.Replace(inventedCardStatementWithFITIDs, "</BANKTRANLIST>",
+		"</BANKTRANLIST><LEDGERBAL><BALAMT>"+balanceAmount+"<DTASOF>"+balanceDay+"235959[0:GMT]</LEDGERBAL>", 1)
+}
+
+// A file whose ledger balance is older than the account's keeps the
+// account's balance and its metadata as they were; the person's digits
+// are in that metadata, so the account still shows them and later imports
+// still find them there.
+func TestStatementAccountNumberOutlastsAnOlderFile(test *testing.T) {
+	fixture, store, _ := newStatementFixture(test)
+	fixture.importStatementFile(test, store, "card-august.ofx", inventedCardStatementWithBalanceOn("20260831", "-4800"))
+	accounts := fixture.statementAccounts(test)
+	if len(accounts) != 1 || accounts[0].BalanceAt == nil {
+		test.Fatalf("accounts %+v", accounts)
+	}
+	cardAccount := accounts[0]
+	accountMask := "9876"
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.RenameStatementAccount(ctx, RenameStatementAccountArguments{FinanceAccountID: cardAccount.ID, AccountMask: &accountMask}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	fixture.importStatementFile(test, store, "card-july.ofx", inventedCardStatementWithBalanceOn("20260731", "-2500"))
+	accounts = fixture.statementAccounts(test)
+	if len(accounts) != 1 || accounts[0].BalanceAt == nil || accounts[0].CurrentBalance != cardAccount.CurrentBalance ||
+		!accounts[0].BalanceAt.Equal(*cardAccount.BalanceAt) {
+		test.Fatalf("the older file's balance was taken: %+v", accounts)
+	}
+	if accounts[0].AccountMask != "9876" {
+		test.Errorf("the older file lost the number: %+v", accounts[0])
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		stored, err := tx.GetFinanceAccount(fixture.ownerAgent.ID, cardAccount.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if personAccountMask := finance.StatementPersonAccountMask(stored.ProviderMetadata); personAccountMask != "9876" {
+			test.Errorf("the metadata %s", stored.ProviderMetadata)
+		}
+	})
 }

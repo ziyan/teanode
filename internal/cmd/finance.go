@@ -150,7 +150,7 @@ func NewFinanceCommand() *cli.Command {
 				Name: "rename-statement-account", Usage: "give an account of imported statements your own name or the last digits of its number, which later imports keep",
 				ArgsUsage: "<finance-account-id> [name]",
 				Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{
-					Name: "account-number", Usage: "the last 2 to 8 digits of the account's number, shown in place of the statement's; empty takes yours back",
+					Name: "account-number", Usage: "the last 4 to 8 digits of the account's number, shown in place of the statement's; empty takes yours back",
 				}},
 				Action: runFinanceRenameStatementAccount,
 			},

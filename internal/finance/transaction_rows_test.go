@@ -389,12 +389,12 @@ func TestStatementImportKeepsThePersonsAccountMask(test *testing.T) {
 
 func TestNormalizePersonAccountMask(test *testing.T) {
 	test.Parallel()
-	for typed, expected := range map[string]string{" 4821 ": "4821", "07": "07", "12345678": "12345678", "": "", "  ": ""} {
+	for typed, expected := range map[string]string{" 4821 ": "4821", "0712": "0712", "12345678": "12345678", "": "", "  ": ""} {
 		if normalized, err := NormalizePersonAccountMask(typed); err != nil || normalized != expected {
 			test.Errorf("%q gave %q %v", typed, normalized, err)
 		}
 	}
-	for _, typed := range []string{"7", "123456789", "VISA", "12 34", "**1234", "１２３４"} {
+	for _, typed := range []string{"7", "07", "123", "123456789", "VISA", "12 34", "**1234", "１２３４"} {
 		if normalized, err := NormalizePersonAccountMask(typed); err == nil {
 			test.Errorf("%q was taken as %q", typed, normalized)
 		}

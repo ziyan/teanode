@@ -456,7 +456,7 @@ over in place of the name it would give, and the account's own asset takes
 the name too unless the person renamed it. The same operation takes the
 last digits of the account's number (`accountMask`, `--account-number`,
 the tool's `account_mask`, the dialog's second field), for a source that
-gives a word in place of the number, or nothing: 2 to 8 digits, trimmed,
+gives a word in place of the number, or nothing: 4 to 8 digits, trimmed,
 anything else refused. They become the account's `account_mask` and are
 kept in its metadata as `personAccountMask`, which every later import, a
 file's or rows', carries over in place of the mask it would give, while

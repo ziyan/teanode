@@ -115,16 +115,19 @@ func StatementImportedAccountMask(providerMetadata json.RawMessage) string {
 }
 
 // The fewest and the most digits the person may give as the end of an
-// account's number: two tell accounts apart at one institution, and eight
-// are more than a statement shows while staying short of a whole number.
+// account's number. Screenshots find an account by the digits they show
+// ending with these, so two or three would also catch screenshots of
+// another account at the same institution whose number happens to end the
+// same way; four is what a statement or a card shows. Eight are more than
+// a statement shows while staying short of a whole number.
 const (
-	minimumPersonAccountMaskLength = 2
+	minimumPersonAccountMaskLength = 4
 	maximumPersonAccountMaskLength = 8
 )
 
 // NormalizePersonAccountMask is the end of an account's number as the
 // person typed it, trimmed, or a refusal saying what it must be: digits
-// only, two to eight of them. Empty stays empty, which takes back the
+// only, four to eight of them. Empty stays empty, which takes back the
 // number given before.
 func NormalizePersonAccountMask(accountMask string) (string, error) {
 	accountMask = strings.TrimSpace(accountMask)

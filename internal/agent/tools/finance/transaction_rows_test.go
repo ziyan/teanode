@@ -179,14 +179,47 @@ func TestFinanceToolRenamesButDoesNotDeleteAStatementAccount(test *testing.T) {
 	}
 
 	// The last digits alone: no name is needed, the card names the
-	// number, and an empty one is said as taking it back.
+	// number, and none is said as taking it back.
 	line = financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":"4821"}`))
 	if !strings.Contains(line, `"Example Card"`) || !strings.Contains(line, `number ending "4821"`) || strings.Contains(line, "Rename") {
 		test.Errorf("the card for a number %q", line)
 	}
-	line = financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":""}`))
+	line = financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":"none"}`))
 	if !strings.Contains(line, "Take back the number") || strings.Contains(line, "keep") {
 		test.Errorf("the card for taking a number back %q", line)
+	}
+
+	// A model that fills every argument sends account_mask "" with a
+	// rename: the card says only the rename, and no accountMask is sent,
+	// since the server would read an empty one as taking the digits back.
+	blankMask := `{"operation":"rename_statement_account","finance_account_id":"account-one","account_name":"Everyday card","account_mask":"","account_number":""}`
+	line = financeTool(test).PreviewLine(ctx, json.RawMessage(blankMask))
+	if !strings.Contains(line, `"Everyday card"`) || strings.Contains(line, "number") {
+		test.Errorf("the card for a blank number %q", line)
+	}
+	if _, err := call(test, operations, blankMask); err != nil {
+		test.Fatal(err)
+	}
+	sent = operations.variables[len(operations.variables)-1]
+	if _, hasMask := sent["accountMask"]; hasMask || sent["accountName"] != "Everyday card" {
+		test.Errorf("a blank number sent %v", sent)
+	}
+	// none takes the person's digits back: an empty accountMask is sent.
+	if _, err := call(test, operations, `{"operation":"rename_statement_account","finance_account_id":"account-one","account_name":"","account_mask":"None"}`); err != nil {
+		test.Fatal(err)
+	}
+	sent = operations.variables[len(operations.variables)-1]
+	if accountMask, hasMask := sent["accountMask"]; !hasMask || accountMask != "" {
+		test.Errorf("none sent %v", sent)
+	}
+	// Blank everything is refused before anything is sent, saying how to
+	// take the digits back.
+	sentCount := len(operations.variables)
+	if _, err := call(test, operations, `{"operation":"rename_statement_account","finance_account_id":"account-one","account_name":"","account_mask":""}`); err == nil || !strings.Contains(err.Error(), "account_mask none") {
+		test.Errorf("a rename with nothing to change answered %v", err)
+	}
+	if len(operations.variables) != sentCount {
+		test.Errorf("a rename with nothing to change was sent %v", operations.variables[len(operations.variables)-1])
 	}
 	if _, err := call(test, operations, `{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":"4821"}`); err != nil {
 		test.Fatal(err)

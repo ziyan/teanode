@@ -68,10 +68,20 @@ export function FinanceAccountsSection() {
       if (isNameChanged) variables.accountName = accountName.trim()
       if (isMaskChanged) variables.accountMask = accountMask.trim()
       await graphql(RENAME_STATEMENT_ACCOUNT, variables)
-      if (isNameChanged) {
-        toast.done(t('finance.accountRenamed', { name: accountName.trim() }))
-      } else if (accountMask.trim() !== '') {
-        toast.done(t('finance.accountMaskSaved', { accountMask: accountMask.trim() }))
+      // The toast says each thing that changed, so a number that did not
+      // take is not hidden behind a rename that did.
+      const newName = accountName.trim()
+      const newMask = accountMask.trim()
+      if (isNameChanged && isMaskChanged) {
+        toast.done(
+          newMask !== ''
+            ? t('finance.accountRenamedWithMask', { name: newName, accountMask: newMask })
+            : t('finance.accountRenamedMaskCleared', { name: newName }),
+        )
+      } else if (isNameChanged) {
+        toast.done(t('finance.accountRenamed', { name: newName }))
+      } else if (newMask !== '') {
+        toast.done(t('finance.accountMaskSaved', { accountMask: newMask }))
       } else {
         toast.done(t('finance.accountMaskCleared'))
       }
