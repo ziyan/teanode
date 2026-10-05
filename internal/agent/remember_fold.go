@@ -175,10 +175,7 @@ func couldBeOneStatement(fact, said *models.AgentFact) bool {
 // something it had been told.
 func takeTheEvidenceOf(tx db.Transaction, standing, said *models.AgentFact) (*models.AgentFact, error) {
 	return tx.UpdateAgentFact(standing.AgentID, standing.ID, func(older *models.AgentFact) error {
-		older.Evidence = append(older.Evidence, said.Evidence...)
-		if len(older.Evidence) > models.EvidenceCount {
-			older.Evidence = older.Evidence[:models.EvidenceCount]
-		}
+		older.Evidence = mergedEvidence(older.Evidence, said.Evidence)
 		if atLeastAsWellEvidenced(said, older) {
 			older.Inferred = said.Inferred
 			if said.Confidence > older.Confidence {
@@ -189,11 +186,47 @@ func takeTheEvidenceOf(tx db.Transaction, standing, said *models.AgentFact) (*mo
 		// not. The two are the same statement -- isTheSameFact would not
 		// have matched them otherwise -- so this is the page learning a
 		// date rather than changing one.
-		if older.HappenedAt == nil && said.HappenedAt != nil {
-			older.HappenedAt = said.HappenedAt
-		}
+		takeTheDateOf(older, said)
 		return nil
 	})
+}
+
+// mergedEvidence is a fact's evidence with another saying's added, each
+// place once, within models.EvidenceCount. When there is more than that,
+// what goes is the middle: the first entry, where the fact came from, and
+// the newest, which include whatever the merge just took its standing
+// from, are kept. Cutting the end instead dropped everything a full fact
+// was told later, while its confidence rose on the strength of it.
+func mergedEvidence(standing, added []models.Evidence) []models.Evidence {
+	type place struct {
+		evidenceKind models.EvidenceKind
+		id, quote    string
+	}
+	isListed := map[place]bool{}
+	var merged []models.Evidence
+	for _, evidence := range append(append([]models.Evidence(nil), standing...), added...) {
+		key := place{evidence.Kind, evidence.ID, evidence.Quote}
+		if isListed[key] {
+			continue
+		}
+		isListed[key] = true
+		merged = append(merged, evidence)
+	}
+	if len(merged) <= models.EvidenceCount {
+		return merged
+	}
+	return append(merged[:1:1], merged[len(merged)-(models.EvidenceCount-1):]...)
+}
+
+// takeTheDateOf gives a fact that does not say when it happened the date
+// another saying of it does, with how precisely that saying knew it. The
+// two go together: a month copied without its precision reads as the
+// first of that month, a day nobody gave.
+func takeTheDateOf(fact, from *models.AgentFact) {
+	if fact.HappenedAt == nil && from.HappenedAt != nil {
+		fact.HappenedAt = from.HappenedAt
+		fact.HappenedPrecision = from.HappenedPrecision
+	}
 }
 
 // foldChoice is what the write boundary does with a new fact and the one
