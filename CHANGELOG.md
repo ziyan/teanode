@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.110.2] - 2026-10-05
+
+### Fixed
+
+- A theme's reflections are no longer all replaced each time the theme is reflected on again: the agent keeps the observations it does not explicitly replace or retire. (#334)
+- A fact the agent was told again keeps the place it was last told in, and a date it learns keeps whether it was a day, a month or a year. (#335)
+
 ## [0.110.1] - 2026-10-05
 
 ### Fixed
