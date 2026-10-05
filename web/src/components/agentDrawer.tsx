@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
   AGENT_NEW_EVENT,
@@ -88,7 +88,7 @@ type GoalState = 'working' | 'waiting' | 'met'
 
 export interface Conversation {
   id: string
-  kind: 'main' | 'named' | 'run'
+  kind: 'main' | 'named' | 'run' | 'goal'
   // For a run, what made it: a dream, a triage, a call over MCP.
   jobKind?: string
   title: string
@@ -151,6 +151,13 @@ const SPEAK_FIRST_SURFACE = 'speak_first:'
 const ALERT_MARKER = '[alert]'
 const ALERT_SURFACE = 'alert'
 
+// The marker a goal kept in the background is written under in the main
+// conversation when it comes to need the person, followed by the goal's
+// id, which is models.GoalNeedsYouMarker on the server. Its surface opens
+// the drawer as an alert's does.
+const GOAL_NEEDS_YOU_MARKER = '[goal needs you]'
+const GOAL_NEEDS_YOU_SURFACE = 'goal_needs_you'
+
 // What a question card answers when the person would rather talk than
 // pick, which is askuser.ChatAboutIt on the server: the same in every
 // language, so the tool can tell it from an answer.
@@ -162,7 +169,15 @@ const CARD_FRESH_MS = 60 * 60 * 1000
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
 type CheckInOrigin =
-  'goal' | 'background' | 'backgroundWork' | 'schedule' | 'speakFirst' | 'alert' | 'approved' | 'declined'
+  | 'goal'
+  | 'goalNeedsYou'
+  | 'background'
+  | 'backgroundWork'
+  | 'schedule'
+  | 'speakFirst'
+  | 'alert'
+  | 'approved'
+  | 'declined'
 
 // The markers a turn begins with when the person answers a card after the
 // turn that raised it had ended, which are agent.AnsweringMarker,
@@ -174,6 +189,7 @@ const DECLINED_MARKER = '[declined]'
 
 function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
+  if (text.startsWith(GOAL_NEEDS_YOU_MARKER)) return 'goalNeedsYou'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
   if (text.startsWith(BACKGROUND_WORK_MARKER)) return 'backgroundWork'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
@@ -1777,6 +1793,15 @@ function UsageMenu({ budget, zone, onClose }: { budget: Budget | null; zone: str
   )
 }
 
+// START_GOAL starts a goal in the background from the drawer, as the Goals
+// tab does.
+const START_GOAL = `
+  mutation ($goalTitle: String!, $goalDescription: String!, $originConversationId: String) {
+    StartAgentGoal(goalTitle: $goalTitle, goalDescription: $goalDescription, originConversationId: $originConversationId) {
+      conversationId
+    }
+  }`
+
 // GoalMenu is the goal on this conversation, set, changed and cleared in
 // the dropdown: the words, and where it stands under them.
 function GoalMenu({
@@ -1807,7 +1832,13 @@ function GoalMenu({
           if (canSave) onSave(draft.trim())
         }}
       >
-        <p className="muted">{t('agentDrawer.goal.hint')}</p>
+        <p className="muted">
+          {t(
+            conversation.kind === 'goal' || conversation.goal
+              ? 'agentDrawer.goal.hint'
+              : 'agentDrawer.goal.backgroundHint',
+          )}
+        </p>
         <textarea
           rows={3}
           value={draft}
@@ -1882,6 +1913,7 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 // What each kind of turn of the agent's own is called, and drawn with.
 const CHECK_IN_LABEL = {
   goal: 'agentDrawer.goal.checkIn',
+  goalNeedsYou: 'agentDrawer.goalNeedsYouTurn',
   background: 'agentDrawer.backgroundEnded',
   backgroundWork: 'agentDrawer.backgroundWorkEnded',
   schedule: 'agentDrawer.scheduleTurn',
@@ -1900,6 +1932,12 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'approved') return <CheckIcon size={12} />
   if (origin === 'declined') return <CloseIcon size={12} />
   return <TargetIcon size={12} />
+}
+
+// goalIdOf is the goal a "[goal needs you]" line names: the id right after
+// the marker.
+function goalIdOf(text: string): string {
+  return text.slice(GOAL_NEEDS_YOU_MARKER.length).trim().split(/\s+/)[0] ?? ''
 }
 
 // CheckInLine is one turn of the agent's own -- toward the goal, on
@@ -1922,6 +1960,11 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
         {t(CHECK_IN_LABEL[origin])}
         {at ? ` · ${clockTime(at)}` : ''}
       </button>
+      {origin === 'goalNeedsYou' && goalIdOf(text) ? (
+        <Link className="agent-checkin-goal" to={`/settings/agent/goals?goal=${goalIdOf(text)}`}>
+          {t('agentDrawer.openGoal')}
+        </Link>
+      ) : null}
       {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
     </div>
   )
@@ -2519,7 +2562,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       (data) => {
         const event = data.AgentConversationEvents
         const note = event.note ?? ''
-        if (stopped || event.kind !== 'asked' || !(note.startsWith(SPEAK_FIRST_SURFACE) || note === ALERT_SURFACE))
+        if (
+          stopped ||
+          event.kind !== 'asked' ||
+          !(note.startsWith(SPEAK_FIRST_SURFACE) || note === ALERT_SURFACE || note === GOAL_NEEDS_YOU_SURFACE)
+        )
           return
         void loadConversations()
           .then((listed) => {
@@ -3465,6 +3512,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!conversationId) return
     setGoalBusy(true)
     try {
+      // A goal runs in the background, in a conversation of its own: from
+      // any other conversation, saving one starts it there. A goal's own
+      // conversation, and an older goal left on this one, are changed in
+      // place.
+      if (goal && current && current.kind !== 'goal' && !current.goal) {
+        await graphql(START_GOAL, {
+          goalTitle: goal.split(/\s+/).slice(0, 8).join(' '),
+          goalDescription: goal,
+          originConversationId: conversationId,
+        })
+        setHeadMenu(null)
+        toast.done(t('agentDrawer.goal.startedInBackground'))
+        return
+      }
       await graphql(UPDATE, { conversationId, goal })
       setHeadMenu(null)
       await loadConversations()

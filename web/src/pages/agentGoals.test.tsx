@@ -44,3 +44,87 @@ it('sends the goal request at once in the conversation a goal area starts', asyn
   })
   expect(vi.mocked(openAgentConversation)).not.toHaveBeenCalled()
 })
+
+const waitingGoal = {
+  conversationId: 'goal-boiler',
+  goalTitle: 'Boiler reply',
+  goalDescription: 'Watch for the landlord’s reply about the boiler.',
+  goalState: 'waiting',
+  goalStatus: 'No reply yet; shall I write again?',
+  goalSetAt: '2030-05-01T09:00:00Z',
+  goalNextAt: null,
+  lastAt: '2030-05-02T09:00:00Z',
+}
+
+it('lists goals by where they stand, and answers one from its page', async () => {
+  execute.mockReset()
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('ListAgentGoals'))
+      return {
+        ListAgentGoals: [
+          waitingGoal,
+          {
+            ...waitingGoal,
+            conversationId: 'goal-tax',
+            goalTitle: 'Tax papers',
+            goalState: 'working',
+            goalStatus: 'Two of three found',
+          },
+          { ...waitingGoal, conversationId: 'goal-old', goalTitle: 'Old goal', goalState: 'met', goalStatus: '' },
+        ],
+      }
+    if (document.includes('GetAgentGoal'))
+      return {
+        GetAgentGoal: {
+          ...waitingGoal,
+          activity: [
+            {
+              id: 'a2',
+              createdAt: '2030-05-02T09:00:00Z',
+              goalActivityKind: 'waiting',
+              activityHeadline: 'Needs you',
+              activityDetail: 'No reply yet',
+            },
+            {
+              id: 'a1',
+              createdAt: '2030-05-01T09:00:00Z',
+              goalActivityKind: 'started',
+              activityHeadline: 'Started Boiler reply',
+            },
+          ],
+          schedules: [{ id: 's1', name: 'Look for the reply', cron: '0 9 * * *', enabled: true, nextRunAt: null }],
+          backgroundWork: [],
+          artifacts: [],
+        },
+      }
+    if (document.includes('TellAgentGoal')) return { TellAgentGoal: { conversationId: 'goal-boiler' } }
+    if (document.includes('ListAgentSchedules')) return { ListAgentSchedules: [] }
+    if (document.includes('ListAgentIdeas')) return { ListAgentIdeas: { ideas: [], ideaCategories: [] } }
+    return {}
+  })
+  render(
+    <MemoryRouter initialEntries={['/settings/agent/goals']}>
+      <GoalsTab />
+    </MemoryRouter>,
+  )
+  // Needs you first, then tracking; done is behind a button.
+  expect(await screen.findByText('goals.needsYou')).toBeTruthy()
+  expect(screen.getByText('No reply yet; shall I write again?')).toBeTruthy()
+  expect(screen.getByText('Tax papers')).toBeTruthy()
+  expect(screen.queryByText('Old goal')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /goals\.showDone/ }))
+  expect(screen.getByText('Old goal')).toBeTruthy()
+
+  // Its page: what happened, what it made, and an answer passed on.
+  fireEvent.click(screen.getByRole('button', { name: 'Boiler reply' }))
+  expect(await screen.findByText('Started Boiler reply')).toBeTruthy()
+  expect(screen.getByText('Look for the reply')).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('goals.tellLabel'), { target: { value: 'Yes, write again' } })
+  fireEvent.click(screen.getByRole('button', { name: 'goals.tell' }))
+  await waitFor(() =>
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('TellAgentGoal'), {
+      conversationId: 'goal-boiler',
+      text: 'Yes, write again',
+    }),
+  )
+})

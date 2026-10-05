@@ -11440,6 +11440,95 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+.goal-title-text {
+  font-weight: 600;
+}
+
+/* Starting a goal, and answering one: a title, then what it is for. */
+.goal-start,
+.goal-tell {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 720px;
+}
+
+/* One goal: where it stands, its status in its own words, what it is for,
+   the box to answer it and what to do with it. */
+.goal-page {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 720px;
+}
+
+.goal-page-back {
+  margin-bottom: var(--space-3);
+}
+
+.goal-status {
+  margin: 0;
+  font-weight: 600;
+}
+
+.goal-description {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* What happened on a goal, newest first, as a line down the side with a
+   mark at each entry. */
+.goal-activity {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 0 0 var(--space-4);
+  list-style: none;
+  border-left: 2px solid var(--border);
+}
+
+.goal-activity-item {
+  position: relative;
+  display: grid;
+  gap: 2px;
+}
+
+.goal-activity-item::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-4) - 6px);
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--background);
+}
+
+.goal-activity-waiting::before {
+  border-color: var(--warn);
+}
+
+.goal-activity-met::before {
+  border-color: var(--good);
+}
+
+.goal-activity-headline {
+  font-weight: 600;
+}
+
+.goal-activity-detail {
+  white-space: pre-wrap;
+}
+
+.goal-activity-when {
+  font-size: var(--text-label);
+}
+
 .goal-areas {
   display: grid;
   gap: var(--space-2);
