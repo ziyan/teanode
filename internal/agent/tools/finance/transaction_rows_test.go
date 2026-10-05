@@ -178,6 +178,29 @@ func TestFinanceToolRenamesButDoesNotDeleteAStatementAccount(test *testing.T) {
 		test.Errorf("sent %v", sent)
 	}
 
+	// The last digits alone: no name is needed, the card names the
+	// number, and an empty one is said as taking it back.
+	line = financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":"4821"}`))
+	if !strings.Contains(line, `"Example Card"`) || !strings.Contains(line, `number ending "4821"`) || strings.Contains(line, "Rename") {
+		test.Errorf("the card for a number %q", line)
+	}
+	line = financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":""}`))
+	if !strings.Contains(line, "Take back the number") || strings.Contains(line, "keep") {
+		test.Errorf("the card for taking a number back %q", line)
+	}
+	if _, err := call(test, operations, `{"operation":"rename_statement_account","finance_account_id":"account-one","account_mask":"4821"}`); err != nil {
+		test.Fatal(err)
+	}
+	sent = operations.variables[len(operations.variables)-1]
+	if _, hasName := sent["accountName"]; hasName || sent["accountMask"] != "4821" {
+		test.Errorf("a number alone sent %v", sent)
+	}
+	// account_number is import_transactions' argument; sent to a rename
+	// it is refused with what the rename reads, not dropped.
+	if _, err := call(test, operations, `{"operation":"rename_statement_account","finance_account_id":"account-one","account_number":"4821"}`); err == nil || !strings.Contains(err.Error(), "account_mask") {
+		test.Errorf("account_number on a rename answered %v", err)
+	}
+
 	quiet := &fakeOperations{}
 	result, err := call(test, quiet, `{"operation":"delete_statement_account","finance_account_id":"account-one"}`)
 	if err != nil || !strings.Contains(result.Content, "delete-statement-account") || !strings.Contains(result.Content, "trash") {

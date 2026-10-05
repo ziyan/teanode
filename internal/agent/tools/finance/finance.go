@@ -337,11 +337,8 @@ var operations = map[string]*financeOperation{
 	},
 	"rename_statement_account": {
 		graphqlOperation: "RenameStatementAccount", risk: tools.RiskWrite, isUntrusted: true,
-		arguments: []string{"finance_account_id", "account_name"}, required: []string{"finance_account_id", "account_name"},
-		preview: func(lookup *previewLookup, call map[string]any) string {
-			return "Rename the imported account " + lookup.financeAccountName(text(call, "finance_account_id")) + " to " + tools.Named(text(call, "account_name"), "a new name") +
-				"; later imports keep the name"
-		},
+		arguments: []string{"finance_account_id", "account_name", "account_mask"}, required: []string{"finance_account_id"},
+		preview: renameStatementAccountPreview,
 	},
 	// DeleteStatementAccount is the person's alone: it removes an account's
 	// transactions and its net worth history for good, and a model that
@@ -384,6 +381,7 @@ var argumentInsteadOf = map[string]string{
 	"start_date":         "from",
 	"end_date":           "to",
 	"account_id":         "finance_account_id",
+	"account_number":     "account_mask",
 	"transaction_id":     "finance_transaction_id",
 	"category_id":        "spending_category_id",
 	"spending_category":  "spending_category_id",
@@ -597,7 +595,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Only the rows the account does not hold already are added: the server matches the rows against every stored transaction of the account (from an OFX file or earlier pictures) by day and exact amount, not by description, so overlapping screenshots, or pictures of what a file imported, add only what is new. " +
 	"Give each row's posted day as the export would date it; where a list shows both the day of use and the day it posted, use the posted one, since a row dated a day off is not taken as the same transaction (the confirmation card points such rows out). " +
 	"The cost of matching by day and amount: a genuine repeat charge of the same amount on the same day as one already stored, sent in a later import, is taken as the stored one. " +
-	"`rename_statement_account` renames an imported account; deleting one is the person's to do (`delete_statement_account` says where).\n" +
+	"`rename_statement_account` renames an imported account, or with account_mask gives it the last digits of its number the person names, for a statement that shows a word or nothing in its place; deleting one is the person's to do (`delete_statement_account` says where).\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
 	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
@@ -662,7 +660,8 @@ func init() {
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
 					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency"),
 					"institution_name":            tools.StringProperty("for import_transactions: the bank or card issuer, as its app or list shows it"),
-					"account_name":                tools.StringProperty("for import_transactions: the account's own name or label as shown (Savings, the card's product name), left out when none; for rename_statement_account: the new name"),
+					"account_name":                tools.StringProperty("for import_transactions: the account's own name or label as shown (Savings, the card's product name), left out when none; for rename_statement_account: the new name, left out to keep the name"),
+					"account_mask":                tools.StringProperty("for rename_statement_account: the last 2 to 8 digits of the account's number as the person gives them, shown and matched in place of the statement's; empty takes the person's back; left out leaves the number"),
 					"account_number":              tools.StringProperty("for import_transactions: the account number as shown, digits only with masked ones as they appear (****1234); never invent one, and never put a word such as the card's brand in its place"),
 					"is_account_number_partial":   tools.BooleanProperty("for import_transactions: true when only some digits of the account number are shown"),
 					"statement_account_kind":      tools.EnumProperty("for import_transactions: bank (checking, savings), card (a credit card) or other (prepaid, electronic money)", "bank", "card", "other"),
@@ -907,6 +906,37 @@ func categorizeTransactions(ctx context.Context, executor tools.Operations, name
 func isTrue(call map[string]any, key string) bool {
 	value, _ := call[key].(bool)
 	return value
+}
+
+// renameStatementAccountPreview names what a rename of an imported account
+// changes: its name, the end of its number, or both. An empty account_mask
+// is said as taking the person's number back, since that is what the
+// server does with it.
+func renameStatementAccountPreview(lookup *previewLookup, call map[string]any) string {
+	accountName := lookup.financeAccountName(text(call, "finance_account_id"))
+	changes := []string{}
+	suffix := ""
+	if newName := text(call, "account_name"); newName != "" {
+		changes = append(changes, "rename the imported account "+accountName+" to "+tools.Named(newName, ""))
+		suffix = "; later imports keep it"
+	}
+	if _, hasMask := call["account_mask"].(string); hasMask {
+		target := "the imported account " + accountName
+		if len(changes) > 0 {
+			target = "it"
+		}
+		if accountMask := text(call, "account_mask"); accountMask != "" {
+			changes = append(changes, "give "+target+" the number ending "+tools.Named(accountMask, ""))
+			suffix = "; later imports keep it"
+		} else {
+			changes = append(changes, "take back the number given to "+target+", so the statement's shows again")
+		}
+	}
+	if len(changes) == 0 {
+		return "Rename the imported account " + accountName
+	}
+	line := strings.Join(changes, " and ")
+	return strings.ToUpper(line[:1]) + line[1:] + suffix
 }
 
 // renamedSuffix is ", renaming it <name>" when a new name is given.

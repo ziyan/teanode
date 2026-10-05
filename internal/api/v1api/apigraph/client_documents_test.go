@@ -243,8 +243,8 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
 }`,
 
 		// And the Accounts section's rename and delete of an imported account.
-		"renaming an imported account": `mutation ($financeAccountId: String!, $accountName: String!) {
-  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) { id accountName }
+		"renaming an imported account": `mutation ($financeAccountId: String!, $accountName: String, $accountMask: String) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName, accountMask: $accountMask) { id accountName accountMask }
 }`,
 		"deleting an imported account": `mutation ($financeAccountId: String!) {
   DeleteStatementAccount(financeAccountId: $financeAccountId) { financeAccountId deletedTransactionCount deletedAssetCount }

@@ -27,8 +27,10 @@ import { FinanceStatementImportSection } from './financeStatementImport'
 // rather than falling apart into cards. Above it, the credit cards' usage,
 // which is read from these same balances; under it, the statement import,
 // for the accounts no provider reaches, after which both are read again.
-// An account from statements can be renamed and deleted from its row; a
-// provider's cannot, since its next sync would bring it back as it was.
+// An account from statements can be renamed, given the last digits of its
+// number when its statements show a word or nothing there, and deleted
+// from its row; a provider's cannot, since its next sync would bring it
+// back as it was.
 export function FinanceAccountsSection() {
   const { t, plural } = useTranslation()
   const toast = useToast()
@@ -41,6 +43,7 @@ export function FinanceAccountsSection() {
   const [importCount, setImportCount] = useState(0)
   const [renaming, setRenaming] = useState<FinanceAccount | null>(null)
   const [accountName, setAccountName] = useState('')
+  const [accountMask, setAccountMask] = useState('')
   const [deleting, setDeleting] = useState<FinanceAccount | null>(null)
   const [busy, setBusy] = useState(false)
   const hasStatementAccount = accounts.some((account) => account.providerKind === 'statement')
@@ -52,12 +55,26 @@ export function FinanceAccountsSection() {
     await reload()
   }
 
+  // Only what was changed is sent: the number shown may be the
+  // statement's, and sending it back unchanged would make it the person's,
+  // kept over every later statement. An emptied number takes theirs back.
+  const isNameChanged = renaming !== null && accountName.trim() !== '' && accountName.trim() !== renaming.accountName
+  const isMaskChanged = renaming !== null && accountMask.trim() !== (renaming.accountMask ?? '')
   const rename = async () => {
     if (!renaming) return
     setBusy(true)
     try {
-      await graphql(RENAME_STATEMENT_ACCOUNT, { financeAccountId: renaming.id, accountName: accountName.trim() })
-      toast.done(t('finance.accountRenamed', { name: accountName.trim() }))
+      const variables: Record<string, string> = { financeAccountId: renaming.id }
+      if (isNameChanged) variables.accountName = accountName.trim()
+      if (isMaskChanged) variables.accountMask = accountMask.trim()
+      await graphql(RENAME_STATEMENT_ACCOUNT, variables)
+      if (isNameChanged) {
+        toast.done(t('finance.accountRenamed', { name: accountName.trim() }))
+      } else if (accountMask.trim() !== '') {
+        toast.done(t('finance.accountMaskSaved', { accountMask: accountMask.trim() }))
+      } else {
+        toast.done(t('finance.accountMaskCleared'))
+      }
       setRenaming(null)
       await changed()
     } catch (caught) {
@@ -153,6 +170,7 @@ export function FinanceAccountsSection() {
                                 disabled={busy}
                                 onClick={() => {
                                   setAccountName(account.accountName)
+                                  setAccountMask(account.accountMask ?? '')
                                   setRenaming(account)
                                 }}
                               >
@@ -192,7 +210,7 @@ export function FinanceAccountsSection() {
           title={t('finance.renameAccountTitle')}
           submitLabel={t('common.save')}
           busy={busy}
-          canSubmit={accountName.trim() !== '' && accountName.trim() !== renaming.accountName}
+          canSubmit={accountName.trim() !== '' && (isNameChanged || isMaskChanged)}
           onClose={() => setRenaming(null)}
           onSubmit={() => void rename()}
         >
@@ -206,6 +224,16 @@ export function FinanceAccountsSection() {
             />
           </label>
           <p className="muted">{t('finance.accountNameHint')}</p>
+          <label>
+            <span>{t('finance.accountMaskLabel')}</span>
+            <input
+              value={accountMask}
+              inputMode="numeric"
+              maxLength={8}
+              onChange={(event) => setAccountMask(event.target.value)}
+            />
+          </label>
+          <p className="muted">{t('finance.accountMaskHint')}</p>
         </FormDialog>
       ) : null}
       {deleting ? (

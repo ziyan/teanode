@@ -812,8 +812,8 @@ const (
   PreviewImportTransactions` + transactionRowsArguments + ` ` + transactionRowsPreviewFields + `
 }`
 
-	DocumentRenameStatementAccount = `mutation ($financeAccountId: String!, $accountName: String!) {
-  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) ` + financeAccountFields + `
+	DocumentRenameStatementAccount = `mutation ($financeAccountId: String!, $accountName: String, $accountMask: String) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName, accountMask: $accountMask) ` + financeAccountFields + `
 }`
 
 	DocumentDeleteStatementAccount = `mutation ($financeAccountId: String!) {

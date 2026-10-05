@@ -131,6 +131,34 @@ func TestFinanceImportTransactionsAndStatementAccounts(test *testing.T) {
 	}
 }
 
+// rename-statement-account --account-number sends the digits as the
+// account mask with no name when none is given, sends an empty one to
+// take the person's back, and refuses before sending anything when
+// neither a name nor a number is given.
+func TestFinanceRenameStatementAccountNumber(test *testing.T) {
+	test.Parallel()
+	server, asked, _ := rowsServer(test)
+	if _, err := runFinanceAgainst(test, server, "rename-statement-account", "--account-number", " 4821 ", "account-invented"); err != nil {
+		test.Fatalf("rename with a number: %s", err)
+	}
+	if _, err := runFinanceAgainst(test, server, "rename-statement-account", "--account-number", "", "account-invented", "Rainy day fund"); err != nil {
+		test.Fatalf("rename taking the number back: %s", err)
+	}
+	if _, err := runFinanceAgainst(test, server, "rename-statement-account", "account-invented"); err == nil || !strings.Contains(err.Error(), "--account-number") {
+		test.Errorf("a rename with nothing to change answered %v", err)
+	}
+	sent := asked()
+	if len(sent) != 2 {
+		test.Fatalf("sent %v", sent)
+	}
+	if _, hasName := sent[0]["accountName"]; hasName || sent[0]["accountMask"] != "4821" {
+		test.Errorf("a number alone sent %v", sent[0])
+	}
+	if accountMask, hasMask := sent[1]["accountMask"]; !hasMask || accountMask != "" || sent[1]["accountName"] != "Rainy day fund" {
+		test.Errorf("taking the number back sent %v", sent[1])
+	}
+}
+
 // import-transactions --dry-run asks for the preview and never the import,
 // sending the account id the file names, and prints the account and how
 // it was found, the counts, each new row with a mark where a stored
