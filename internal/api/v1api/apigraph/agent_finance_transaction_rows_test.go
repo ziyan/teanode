@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 )
@@ -706,4 +707,125 @@ func TestDeleteStatementAccountLetsGoOfItsOwnTransferOnly(test *testing.T) {
 	if !transferOf["0001 2026-09-02"] || !transferOf["2222 2026-09-02"] {
 		test.Errorf("the payment to the other card was let go of: %v", transferOf)
 	}
+}
+
+// The last digits the person gives an imported account whose file knows
+// it by something else are its mask from then on: the audit row says
+// them, later imports of the file and of rows keep them, screenshots
+// showing them find the account, and taking them back shows the file's
+// again. A name is not needed alongside, but one of the two is, and
+// anything but four to eight digits is refused.
+func TestStatementAccountNumberFromThePerson(test *testing.T) {
+	fixture, store, _ := newStatementFixture(test)
+	fixture.importStatementFile(test, store, "card.ofx", inventedCardStatementWithFITIDs)
+	accounts := fixture.statementAccounts(test)
+	if len(accounts) != 1 || accounts[0].AccountMask != "77cc" {
+		test.Fatalf("accounts %+v", accounts)
+	}
+	cardAccount := accounts[0]
+	accountMask := func(value string) *string { return &value }
+
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		renamed, err := fixture.resolver.RenameStatementAccount(ctx, RenameStatementAccountArguments{FinanceAccountID: cardAccount.ID, AccountMask: accountMask(" 9876 ")})
+		if err != nil || renamed.AccountMask != "9876" || renamed.AccountName != cardAccount.AccountName {
+			test.Errorf("renamed %+v %v", renamed, err)
+		}
+		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceFinanceAccount), ResourceID: cardAccount.ID})
+		if err != nil || len(events) != 1 || !strings.Contains(string(events[0].After), `"accountMask": "9876"`) || !strings.Contains(string(events[0].Before), `"accountMask": "77cc"`) {
+			test.Errorf("the audit %d %v", len(events), err)
+		}
+		for _, refused := range []RenameStatementAccountArguments{
+			{FinanceAccountID: cardAccount.ID},
+			{FinanceAccountID: cardAccount.ID, AccountName: "  "},
+			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("7")},
+			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("876")},
+			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("123456789")},
+			{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("VISA")},
+			{FinanceAccountID: cardAccount.ID, AccountName: "Everyday card", AccountMask: accountMask("98-76")},
+		} {
+			if _, err := fixture.resolver.RenameStatementAccount(ctx, refused); !errors.Is(err, api.ErrInvalidArguments) {
+				test.Errorf("%+v answered %v", refused, err)
+			}
+		}
+	})
+	if accounts := fixture.statementAccounts(test); len(accounts) != 1 || accounts[0].AccountMask != "9876" || accounts[0].AccountName != cardAccount.AccountName {
+		test.Errorf("a refused rename changed the account: %+v", accounts)
+	}
+
+	fixture.importStatementFile(test, store, "card-again.ofx", inventedCardStatementWithFITIDs)
+	if accounts := fixture.statementAccounts(test); len(accounts) != 1 || accounts[0].AccountMask != "9876" {
+		test.Errorf("the next file lost the number: %+v", accounts)
+	}
+
+	card := ImportTransactionsArguments{
+		InstitutionName: "Example Card Company", AccountNumber: "****9876", StatementAccountKind: "card", CurrencyCode: "JPY",
+		TransactionRows: []TransactionRow{{PostedOn: "2026-09-05", Description: "EXAMPLE BOOKS", Amount: "-800", TransactionKind: "purchase"}},
+	}
+	preview, err := fixture.previewRows(test, card)
+	if err != nil || preview.FinanceAccountID != cardAccount.ID || preview.AccountMatch != "account_mask" || !strings.HasSuffix(preview.AccountName, "··9876") {
+		test.Errorf("the dry run %+v %v", preview, err)
+	}
+	if _, err := fixture.importRows(test, card); err != nil {
+		test.Fatalf("ImportTransactions: %s", err)
+	}
+	if accounts := fixture.statementAccounts(test); len(accounts) != 1 || accounts[0].AccountMask != "9876" {
+		test.Errorf("the rows lost the number or made an account: %+v", accounts)
+	}
+
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		renamed, err := fixture.resolver.RenameStatementAccount(ctx, RenameStatementAccountArguments{FinanceAccountID: cardAccount.ID, AccountMask: accountMask("")})
+		if err != nil || renamed.AccountMask != "77cc" {
+			test.Errorf("taken back %+v %v", renamed, err)
+		}
+	})
+	fixture.importStatementFile(test, store, "card-third.ofx", inventedCardStatementWithFITIDs)
+	if accounts := fixture.statementAccounts(test); len(accounts) != 1 || accounts[0].AccountMask != "77cc" {
+		test.Errorf("the file's number did not come back: %+v", accounts)
+	}
+}
+
+// inventedCardStatementWithBalanceOn is the invented card's export with a
+// ledger balance as of the end of a day, given as YYYYMMDD.
+func inventedCardStatementWithBalanceOn(balanceDay, balanceAmount string) string {
+	return strings.Replace(inventedCardStatementWithFITIDs, "</BANKTRANLIST>",
+		"</BANKTRANLIST><LEDGERBAL><BALAMT>"+balanceAmount+"<DTASOF>"+balanceDay+"235959[0:GMT]</LEDGERBAL>", 1)
+}
+
+// A file whose ledger balance is older than the account's keeps the
+// account's balance and its metadata as they were; the person's digits
+// are in that metadata, so the account still shows them and later imports
+// still find them there.
+func TestStatementAccountNumberOutlastsAnOlderFile(test *testing.T) {
+	fixture, store, _ := newStatementFixture(test)
+	fixture.importStatementFile(test, store, "card-august.ofx", inventedCardStatementWithBalanceOn("20260831", "-4800"))
+	accounts := fixture.statementAccounts(test)
+	if len(accounts) != 1 || accounts[0].BalanceAt == nil {
+		test.Fatalf("accounts %+v", accounts)
+	}
+	cardAccount := accounts[0]
+	accountMask := "9876"
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.RenameStatementAccount(ctx, RenameStatementAccountArguments{FinanceAccountID: cardAccount.ID, AccountMask: &accountMask}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	fixture.importStatementFile(test, store, "card-july.ofx", inventedCardStatementWithBalanceOn("20260731", "-2500"))
+	accounts = fixture.statementAccounts(test)
+	if len(accounts) != 1 || accounts[0].BalanceAt == nil || accounts[0].CurrentBalance != cardAccount.CurrentBalance ||
+		!accounts[0].BalanceAt.Equal(*cardAccount.BalanceAt) {
+		test.Fatalf("the older file's balance was taken: %+v", accounts)
+	}
+	if accounts[0].AccountMask != "9876" {
+		test.Errorf("the older file lost the number: %+v", accounts[0])
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		stored, err := tx.GetFinanceAccount(fixture.ownerAgent.ID, cardAccount.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if personAccountMask := finance.StatementPersonAccountMask(stored.ProviderMetadata); personAccountMask != "9876" {
+			test.Errorf("the metadata %s", stored.ProviderMetadata)
+		}
+	})
 }

@@ -263,10 +263,13 @@ type MonthlyTotal struct {
 }
 
 // RenameStatementAccountArguments name an account of imported statements
-// and the name to give it.
+// and the name to give it, the last four to eight digits of its number,
+// or both. An empty name leaves the name; an account mask left out leaves
+// the number, and an empty one takes back the person's.
 type RenameStatementAccountArguments struct {
-	FinanceAccountID string `json:"financeAccountId"`
-	AccountName      string `json:"accountName"`
+	FinanceAccountID string  `json:"financeAccountId"`
+	AccountName      string  `json:"accountName" graphapi:"nullable"`
+	AccountMask      *string `json:"accountMask" graphapi:"nullable"`
 }
 
 // StatementAccountArguments name an account of imported statements.
@@ -462,7 +465,8 @@ func (self *graph) RenameStatementAccount(ctx context.Context, arguments RenameS
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	renamed, err := worker.RenameStatementAccount(ctx, found, arguments.FinanceAccountID, arguments.AccountName)
+	renamed, err := worker.RenameStatementAccount(ctx, found, arguments.FinanceAccountID,
+		db.FinanceAccountRename{AccountName: arguments.AccountName, AccountMask: arguments.AccountMask})
 	if err != nil {
 		return nil, statementAccountError(err)
 	}

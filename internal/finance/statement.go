@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -80,6 +81,70 @@ func StatementPersonAccountName(providerMetadata json.RawMessage) string {
 		return ""
 	}
 	return strings.TrimSpace(metadata.PersonAccountName)
+}
+
+// StatementPersonAccountMaskField is the account metadata field that keeps
+// the last digits of the account's number as the person gave them, which
+// every later import keeps instead of the end of the number its file or
+// rows give: a source can give a word in place of the number, or nothing.
+const StatementPersonAccountMaskField = "personAccountMask"
+
+// StatementPersonAccountMask is the end of the account's number as the
+// person gave it, empty when they gave none.
+func StatementPersonAccountMask(providerMetadata json.RawMessage) string {
+	var metadata struct {
+		PersonAccountMask string `json:"personAccountMask"`
+	}
+	if len(providerMetadata) == 0 || json.Unmarshal(providerMetadata, &metadata) != nil {
+		return ""
+	}
+	return strings.TrimSpace(metadata.PersonAccountMask)
+}
+
+// StatementImportedAccountMask is the end of the account's number as the
+// last statement or set of rows gave it, which the account shows again
+// when the person takes back the number they gave.
+func StatementImportedAccountMask(providerMetadata json.RawMessage) string {
+	var metadata struct {
+		AccountMask string `json:"accountMask"`
+	}
+	if len(providerMetadata) == 0 || json.Unmarshal(providerMetadata, &metadata) != nil {
+		return ""
+	}
+	return strings.TrimSpace(metadata.AccountMask)
+}
+
+// The fewest and the most digits the person may give as the end of an
+// account's number. Screenshots find an account by the digits they show
+// ending with these, so two or three would also catch screenshots of
+// another account at the same institution whose number happens to end the
+// same way; four is what a statement or a card shows. Eight are more than
+// a statement shows while staying short of a whole number.
+const (
+	minimumPersonAccountMaskLength = 4
+	maximumPersonAccountMaskLength = 8
+)
+
+// NormalizePersonAccountMask is the end of an account's number as the
+// person typed it, trimmed, or a refusal saying what it must be: digits
+// only, four to eight of them. Empty stays empty, which takes back the
+// number given before.
+func NormalizePersonAccountMask(accountMask string) (string, error) {
+	accountMask = strings.TrimSpace(accountMask)
+	if accountMask == "" {
+		return "", nil
+	}
+	for _, character := range accountMask {
+		if character < '0' || character > '9' {
+			return "", fmt.Errorf("the account number is its last digits only, %d to %d of them, such as 1234",
+				minimumPersonAccountMaskLength, maximumPersonAccountMaskLength)
+		}
+	}
+	if digitCount := len(accountMask); digitCount < minimumPersonAccountMaskLength || digitCount > maximumPersonAccountMaskLength {
+		return "", fmt.Errorf("the account number is its last %d to %d digits, and %s has %d",
+			minimumPersonAccountMaskLength, maximumPersonAccountMaskLength, accountMask, digitCount)
+	}
+	return accountMask, nil
 }
 
 // statementAccountTypeCreditLine is the OFX bank account type of a line of
@@ -273,14 +338,17 @@ func newStatementImport(accountKey []byte, document *ofx.Document, statement *of
 			accountName = "Imported card"
 		}
 	}
-	// The person's own name for the account, given with
-	// RenameStatementAccount, wins over whatever a file or a set of rows
-	// calls it, and is carried into the metadata this import writes, since
-	// the import replaces the metadata whole.
-	personAccountName := ""
+	// The person's own name for the account and the end of its number,
+	// given with RenameStatementAccount, win over whatever a file or a set
+	// of rows says, and are carried into the metadata this import writes,
+	// since the import replaces the metadata whole. The statement's own
+	// mask stays in the metadata as accountMask, for when the person takes
+	// theirs back.
+	personAccountName, personAccountMask := "", ""
 	for _, existing := range existingAccounts {
 		if existing.ProviderAccountID == providerAccountId {
 			personAccountName = StatementPersonAccountName(existing.ProviderMetadata)
+			personAccountMask = StatementPersonAccountMask(existing.ProviderMetadata)
 		}
 	}
 	if personAccountName != "" {
@@ -305,6 +373,10 @@ func newStatementImport(accountKey []byte, document *ofx.Document, statement *of
 	}
 	if personAccountName != "" {
 		accountMetadata[StatementPersonAccountNameField] = personAccountName
+	}
+	if personAccountMask != "" {
+		accountMetadata[StatementPersonAccountMaskField] = personAccountMask
+		accountMask = personAccountMask
 	}
 	account := Account{
 		ProviderAccountID: providerAccountId, AccountName: accountName, AccountMask: accountMask,

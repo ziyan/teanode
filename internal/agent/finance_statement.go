@@ -255,15 +255,16 @@ func lockStatementAccount(tx db.Transaction, agentId, financeAccountId string) (
 }
 
 // RenameStatementAccount gives an account of imported statements the
-// person's own name, which later imports keep.
-func (self *Agent) RenameStatementAccount(ctx context.Context, agentRow *models.Agent, financeAccountId, accountName string) (*models.FinanceAccount, error) {
+// person's own name, the last digits of its number, or both, which later
+// imports keep.
+func (self *Agent) RenameStatementAccount(ctx context.Context, agentRow *models.Agent, financeAccountId string, rename db.FinanceAccountRename) (*models.FinanceAccount, error) {
 	var renamed *models.FinanceAccount
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		account, err := lockStatementAccount(tx, agentRow.ID, financeAccountId)
 		if err != nil {
 			return err
 		}
-		renamed, err = tx.RenameFinanceAccount(agentRow.ID, account.ID, accountName)
+		renamed, err = tx.RenameFinanceAccount(agentRow.ID, account.ID, rename)
 		return err
 	})
 	return renamed, err

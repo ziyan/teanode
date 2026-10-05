@@ -32,12 +32,12 @@ type FinanceOperation interface {
 	GetFinanceAccount(agentId, financeAccountId string) (*models.FinanceAccount, error)
 
 	// RenameFinanceAccount gives a finance account the person's own name,
-	// kept in its metadata too so the imports that follow keep it (only a
-	// statement account's imports read it; a provider's sync names its
-	// accounts itself). The asset that values the account takes the new
-	// name when it still has the old one. ErrNotFound when the agent has
-	// no such finance account.
-	RenameFinanceAccount(agentId, financeAccountId, accountName string) (*models.FinanceAccount, error)
+	// the last digits of its number, or both, kept in its metadata too so
+	// the imports that follow keep them (only a statement account's
+	// imports read them; a provider's sync names its accounts itself). The
+	// asset that values the account takes the new name when it still has
+	// the old one. ErrNotFound when the agent has no such finance account.
+	RenameFinanceAccount(agentId, financeAccountId string, rename FinanceAccountRename) (*models.FinanceAccount, error)
 
 	// DeleteFinanceAccount deletes a finance account with its finance
 	// transactions and every asset that values it, with their history.
@@ -572,13 +572,35 @@ func financeAccountAudit(account *models.FinanceAccount) map[string]any {
 	}
 }
 
-func (self *transaction) RenameFinanceAccount(agentId, financeAccountId, accountName string) (*models.FinanceAccount, error) {
-	accountName = strings.TrimSpace(accountName)
-	if accountName == "" {
-		return nil, fmt.Errorf("%w: give the account a name", ErrInvalidArguments)
+// FinanceAccountRename is what a rename of a finance account changes. At
+// least one of the two is given.
+type FinanceAccountRename struct {
+	// AccountName is the person's name for the account; empty leaves the
+	// name as it is.
+	AccountName string
+
+	// AccountMask is the last digits of the account's number as the
+	// person gives them (finance.NormalizePersonAccountMask); nil leaves
+	// the number as it is, and empty takes back the person's, so the
+	// statement's shows again.
+	AccountMask *string
+}
+
+func (self *transaction) RenameFinanceAccount(agentId, financeAccountId string, rename FinanceAccountRename) (*models.FinanceAccount, error) {
+	accountName := strings.TrimSpace(rename.AccountName)
+	if accountName == "" && rename.AccountMask == nil {
+		return nil, fmt.Errorf("%w: give the account a name, the last digits of its number, or both", ErrInvalidArguments)
 	}
 	if len([]rune(accountName)) > maximumFinanceAccountNameLength {
 		return nil, fmt.Errorf("%w: an account's name is at most %d characters", ErrInvalidArguments, maximumFinanceAccountNameLength)
+	}
+	personAccountMask := ""
+	if rename.AccountMask != nil {
+		normalized, err := finance.NormalizePersonAccountMask(*rename.AccountMask)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidArguments, err)
+		}
+		personAccountMask = normalized
 	}
 	before, err := self.GetFinanceAccount(agentId, financeAccountId)
 	if err != nil {
@@ -588,25 +610,51 @@ func (self *transaction) RenameFinanceAccount(agentId, financeAccountId, account
 		return nil, ErrNotFound
 	}
 	after := *before
-	after.AccountName = accountName
-	encodedName, err := json.Marshal(accountName)
-	if err != nil {
-		return nil, err
+	// The metadata is changed one field at a time in place rather than
+	// written back whole, so nothing else in it is touched.
+	providerMetadata := `CASE WHEN jsonb_typeof("provider_metadata") = 'object' THEN "provider_metadata" ELSE '{}'::jsonb END`
+	metadataArguments := []any{}
+	if accountName != "" {
+		after.AccountName = accountName
+		encodedName, err := json.Marshal(accountName)
+		if err != nil {
+			return nil, err
+		}
+		providerMetadata = `jsonb_set(` + providerMetadata + `, '{` + finance.StatementPersonAccountNameField + `}', CAST(? AS jsonb))`
+		metadataArguments = append(metadataArguments, string(encodedName))
+	}
+	switch {
+	case rename.AccountMask == nil:
+	case personAccountMask == "":
+		after.AccountMask = finance.StatementImportedAccountMask(before.ProviderMetadata)
+		providerMetadata = `(` + providerMetadata + `) - '` + finance.StatementPersonAccountMaskField + `'`
+	default:
+		after.AccountMask = personAccountMask
+		encodedMask, err := json.Marshal(personAccountMask)
+		if err != nil {
+			return nil, err
+		}
+		providerMetadata = `jsonb_set(` + providerMetadata + `, '{` + finance.StatementPersonAccountMaskField + `}', CAST(? AS jsonb))`
+		metadataArguments = append(metadataArguments, string(encodedMask))
 	}
 	now := time.Now()
 	if err := self.applyMutation(models.AuditResourceFinanceAccount, financeAccountId, models.AuditActionUpdate, financeAccountAudit(before), financeAccountAudit(&after), func(tx *gorm.DB) error {
-		if err := tx.Exec(`UPDATE "agent_finance_account" SET "account_name" = ?,
-				"provider_metadata" = jsonb_set(CASE WHEN jsonb_typeof("provider_metadata") = 'object' THEN "provider_metadata" ELSE '{}'::jsonb END,
-					'{`+finance.StatementPersonAccountNameField+`}', CAST(? AS jsonb)),
+		updateArguments := append([]any{after.AccountName, after.AccountMask}, metadataArguments...)
+		updateArguments = append(updateArguments, now, agentId, financeAccountId)
+		if err := tx.Exec(`UPDATE "agent_finance_account" SET "account_name" = ?, "account_mask" = ?,
+				"provider_metadata" = `+providerMetadata+`,
 				"modified_at" = ?
-			WHERE "agent_id" = ? AND "id" = ?`, accountName, string(encodedName), now, agentId, financeAccountId).Error; err != nil {
+			WHERE "agent_id" = ? AND "id" = ?`, updateArguments...).Error; err != nil {
 			return err
+		}
+		if after.AccountName == before.AccountName {
+			return nil
 		}
 		// The account's own asset was named after it when it was made; one
 		// the person has renamed since keeps their name.
 		return tx.Exec(`UPDATE "agent_asset" SET "asset_name" = ?, "modified_at" = ?
 			WHERE "agent_id" = ? AND "finance_account_id" = ? AND "finance_security_id" IS NULL AND "asset_name" = ?`,
-			accountName, now, agentId, financeAccountId, strings.TrimSpace(before.AccountName)).Error
+			after.AccountName, now, agentId, financeAccountId, strings.TrimSpace(before.AccountName)).Error
 	}); err != nil {
 		return nil, err
 	}

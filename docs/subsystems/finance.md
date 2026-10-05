@@ -306,7 +306,8 @@ the one a file made and count every overlapping transaction twice.
   same number and bank code;
 - the one account at the same institution, of the same kind and currency,
   whose mask the shown digits end with (the shorter of the two ending the
-  longer). Institutions are compared NFKC, lower case, letters and digits
+  longer; the stored mask, which is the person's digits when they gave
+  some). Institutions are compared NFKC, lower case, letters and digits
   only, and one name holding the other matches ("Example Bank" and
   "EXAMPLE BANK, N.A."). Two such accounts are refused, naming each with
   its id. So is one when `isNewAccount` is given: the person said the rows
@@ -452,7 +453,19 @@ the tool's `rename_statement_account`, the pencil on its row under
 Accounts): the name is kept in the account's metadata
 (`personAccountName`), which every later import, a file's or rows', carries
 over in place of the name it would give, and the account's own asset takes
-the name too unless the person renamed it. It can be deleted
+the name too unless the person renamed it. The same operation takes the
+last digits of the account's number (`accountMask`, `--account-number`,
+the tool's `account_mask`, the dialog's second field), for a source that
+gives a word in place of the number, or nothing: 4 to 8 digits, trimmed,
+anything else refused. They become the account's `account_mask` and are
+kept in its metadata as `personAccountMask`, which every later import, a
+file's or rows', carries over in place of the mask it would give, while
+the statement's own stays in the metadata as `accountMask`. Since the
+account's choice for rows reads the stored `account_mask`, screenshots
+showing `****` and those digits find it. An empty value takes the
+person's digits back and puts the statement's mask in place again; a
+name or digits, at least one, must be given, and the audit row has the
+mask before and after. It can be deleted
 (`DeleteStatementAccount`, `teanode finance delete-statement-account`, the
 trash on its row, after a confirmation): its transactions, its spending
 rules limited to it and its place in savings targets go with it, and so do

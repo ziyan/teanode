@@ -361,6 +361,46 @@ func TestStatementImportKeepsThePersonsName(test *testing.T) {
 	}
 }
 
+// The last digits the person gave a statement account outlast the next
+// import, and the statement's own mask stays in the metadata for when the
+// person takes theirs back.
+func TestStatementImportKeepsThePersonsAccountMask(test *testing.T) {
+	test.Parallel()
+	check, _ := CheckTransactionRows(inventedBankInput(), "")
+	first, err := NewTransactionRowsImport(inventedAccountKey, check, time.UTC, nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	statementMask := first.SyncResult.Accounts[0].AccountMask
+	existing := []ExistingStatementAccount{{
+		ProviderAccountID: first.SyncResult.Accounts[0].ProviderAccountID,
+		ProviderMetadata:  json.RawMessage(`{"personAccountMask":"4821"}`),
+	}}
+	again, err := NewTransactionRowsImport(inventedAccountKey, check, time.UTC, existing)
+	if err != nil {
+		test.Fatal(err)
+	}
+	account := again.SyncResult.Accounts[0]
+	if account.AccountMask != "4821" || StatementPersonAccountMask(account.ProviderMetadata) != "4821" ||
+		StatementImportedAccountMask(account.ProviderMetadata) != statementMask {
+		test.Errorf("the account %+v", account)
+	}
+}
+
+func TestNormalizePersonAccountMask(test *testing.T) {
+	test.Parallel()
+	for typed, expected := range map[string]string{" 4821 ": "4821", "0712": "0712", "12345678": "12345678", "": "", "  ": ""} {
+		if normalized, err := NormalizePersonAccountMask(typed); err != nil || normalized != expected {
+			test.Errorf("%q gave %q %v", typed, normalized, err)
+		}
+	}
+	for _, typed := range []string{"7", "07", "123", "123456789", "VISA", "12 34", "**1234", "１２３４"} {
+		if normalized, err := NormalizePersonAccountMask(typed); err == nil {
+			test.Errorf("%q was taken as %q", typed, normalized)
+		}
+	}
+}
+
 // inventedExistingCard is an invented card a file made, known by an opaque
 // identifier ending 77cc.
 func inventedExistingCard() ExistingStatementAccount {

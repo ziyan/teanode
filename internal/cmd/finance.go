@@ -147,8 +147,12 @@ func NewFinanceCommand() *cli.Command {
 				Action: runFinanceImportTransactions,
 			},
 			{
-				Name: "rename-statement-account", Usage: "give an account of imported statements your own name, which later imports keep",
-				ArgsUsage: "<finance-account-id> <name>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceRenameStatementAccount,
+				Name: "rename-statement-account", Usage: "give an account of imported statements your own name or the last digits of its number, which later imports keep",
+				ArgsUsage: "<finance-account-id> [name]",
+				Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{
+					Name: "account-number", Usage: "the last 4 to 8 digits of the account's number, shown in place of the statement's; empty takes yours back",
+				}},
+				Action: runFinanceRenameStatementAccount,
 			},
 			{
 				Name: "delete-statement-account", Usage: "delete an account of imported statements, its transactions and its net worth history",
@@ -1132,15 +1136,23 @@ func runFinanceRenameStatementAccount(ctx context.Context, command *cli.Command)
 	if err != nil {
 		return err
 	}
-	accountName, err := financeArgument(command, 1, "the new name")
-	if err != nil {
-		return err
+	variables := map[string]any{"financeAccountId": financeAccountId}
+	if accountName := strings.TrimSpace(command.Args().Get(1)); accountName != "" {
+		variables["accountName"] = accountName
+	}
+	setString(command, variables, "account-number", "accountMask")
+	if len(variables) == 1 {
+		return usage("give the new name, --account-number with the last digits of its number, or both")
 	}
 	var renamed *client.FinanceAccount
-	if err := financeCall(ctx, command, operationOf(command), map[string]any{"financeAccountId": financeAccountId, "accountName": accountName}, &renamed); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &renamed); err != nil {
 		return err
 	}
-	return printDone(command, renamed, renamed.ID+": renamed "+renamed.AccountName)
+	done := renamed.ID + ": renamed " + renamed.AccountName
+	if renamed.AccountMask != "" {
+		done += " ··" + renamed.AccountMask
+	}
+	return printDone(command, renamed, done)
 }
 
 func runFinanceDeleteStatementAccount(ctx context.Context, command *cli.Command) error {

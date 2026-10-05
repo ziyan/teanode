@@ -495,8 +495,8 @@ export const AGENT_ATTACHMENTS_PATH = '/api/v1/agent/attachments'
 // later imports keep, and can be deleted with its transactions and its
 // net worth history. A provider's account cannot: its next sync would
 // bring it back.
-export const RENAME_STATEMENT_ACCOUNT = `mutation ($financeAccountId: String!, $accountName: String!) {
-  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName) { id accountName }
+export const RENAME_STATEMENT_ACCOUNT = `mutation ($financeAccountId: String!, $accountName: String, $accountMask: String) {
+  RenameStatementAccount(financeAccountId: $financeAccountId, accountName: $accountName, accountMask: $accountMask) { id accountName accountMask }
 }`
 
 export type StatementAccountDeleted = {
