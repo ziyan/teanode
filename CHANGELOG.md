@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.110.1] - 2026-10-05
+
+### Fixed
+
+- On a large memory, pages outside the 5,000 most important no longer lose the vectors recall finds their overview sections by. (#336)
+
 ## [0.110.0] - 2026-10-05
 
 ### Added
