@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.110.3] - 2026-10-05
+
+### Fixed
+
+- Keep a page summary written by a dream from being skipped when another page edit commits at the same time. (#338)
+
 ## [0.110.2] - 2026-10-05
 
 ### Fixed
