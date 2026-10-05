@@ -274,13 +274,8 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		if _, err := tx.UpdateAgentFact(agentId, keep.ID, func(fact *models.AgentFact) error {
 			fact.Text = wording.Text
 			fact.Inferred, fact.Confidence = wording.Inferred, wording.Confidence
-			if fact.HappenedAt == nil {
-				fact.HappenedAt = wording.HappenedAt
-			}
-			fact.Evidence = append(fact.Evidence, gone.Evidence...)
-			if len(fact.Evidence) > models.EvidenceCount {
-				fact.Evidence = fact.Evidence[:models.EvidenceCount]
-			}
+			takeTheDateOf(fact, gone)
+			fact.Evidence = models.MergeEvidence(fact.Evidence, gone.Evidence)
 			return nil
 		}); err != nil {
 			return merged, err

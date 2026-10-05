@@ -175,10 +175,7 @@ func couldBeOneStatement(fact, said *models.AgentFact) bool {
 // something it had been told.
 func takeTheEvidenceOf(tx db.Transaction, standing, said *models.AgentFact) (*models.AgentFact, error) {
 	return tx.UpdateAgentFact(standing.AgentID, standing.ID, func(older *models.AgentFact) error {
-		older.Evidence = append(older.Evidence, said.Evidence...)
-		if len(older.Evidence) > models.EvidenceCount {
-			older.Evidence = older.Evidence[:models.EvidenceCount]
-		}
+		older.Evidence = models.MergeEvidence(older.Evidence, said.Evidence)
 		if atLeastAsWellEvidenced(said, older) {
 			older.Inferred = said.Inferred
 			if said.Confidence > older.Confidence {
@@ -189,11 +186,20 @@ func takeTheEvidenceOf(tx db.Transaction, standing, said *models.AgentFact) (*mo
 		// not. The two are the same statement -- isTheSameFact would not
 		// have matched them otherwise -- so this is the page learning a
 		// date rather than changing one.
-		if older.HappenedAt == nil && said.HappenedAt != nil {
-			older.HappenedAt = said.HappenedAt
-		}
+		takeTheDateOf(older, said)
 		return nil
 	})
+}
+
+// takeTheDateOf gives a fact that does not say when it happened the date
+// another saying of it does, with how precisely that saying knew it. The
+// two go together: a month copied without its precision reads as the
+// first of that month, a day nobody gave.
+func takeTheDateOf(fact, from *models.AgentFact) {
+	if fact.HappenedAt == nil && from.HappenedAt != nil {
+		fact.HappenedAt = from.HappenedAt
+		fact.HappenedPrecision = from.HappenedPrecision
+	}
 }
 
 // foldChoice is what the write boundary does with a new fact and the one

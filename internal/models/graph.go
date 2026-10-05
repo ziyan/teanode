@@ -691,6 +691,71 @@ func (self *AgentNode) Validate() error {
 	return errors.ErrOrNil()
 }
 
+// MergeEvidence is a fact's evidence with another saying's added, each
+// place (kind, id and quote) once and within EvidenceCount.
+//
+// A place said again moves to where the newest are, keeping the earlier
+// of its two times, since SaidAt is the earliest; only the first entry,
+// where the fact came from, stays where it is. Past EvidenceCount the
+// middle goes: the first entry and the newest, which hold everything the
+// merge just added and so whatever a rise in confidence rests on, are
+// kept. Cutting the end instead dropped everything a full fact was told
+// later, while its confidence rose on the strength of it.
+func MergeEvidence(standing, added []Evidence) []Evidence {
+	type place struct {
+		evidenceKind EvidenceKind
+		id, quote    string
+	}
+	placeOf := func(evidence Evidence) place { return place{evidence.Kind, evidence.ID, evidence.Quote} }
+	keepEarlier := func(into *Evidence, at *time.Time) {
+		if at != nil && (into.At == nil || at.Before(*into.At)) {
+			into.At = at
+		}
+	}
+	var addedOnce []Evidence
+	addedIndex := map[place]int{}
+	for _, evidence := range added {
+		key := placeOf(evidence)
+		if index, isListed := addedIndex[key]; isListed {
+			keepEarlier(&addedOnce[index], evidence.At)
+			continue
+		}
+		addedIndex[key] = len(addedOnce)
+		addedOnce = append(addedOnce, evidence)
+	}
+	merged := make([]Evidence, 0, len(standing)+len(addedOnce))
+	isListed := map[place]bool{}
+	for _, evidence := range standing {
+		key := placeOf(evidence)
+		if isListed[key] {
+			continue
+		}
+		isListed[key] = true
+		index, isAdded := addedIndex[key]
+		switch {
+		case !isAdded:
+			merged = append(merged, evidence)
+		case len(merged) == 0:
+			// The first entry stays first, said again or not.
+			keepEarlier(&evidence, addedOnce[index].At)
+			merged = append(merged, evidence)
+		default:
+			keepEarlier(&addedOnce[index], evidence.At)
+			isListed[key] = false
+		}
+	}
+	for _, evidence := range addedOnce {
+		if key := placeOf(evidence); !isListed[key] {
+			isListed[key] = true
+			merged = append(merged, evidence)
+		}
+	}
+	if len(merged) <= EvidenceCount {
+		return merged
+	}
+	return append(merged[:1:1], merged[len(merged)-(EvidenceCount-1):]...)
+}
+
 // Validate reports everything wrong with a fact.
 func (self *AgentFact) Validate() error {
 	var errors ValidationErrors
