@@ -37,8 +37,12 @@ const (
 	// shows, the most important first.
 	reflectionMemberCount = 30
 
-	// standingReflectionCount is how many of a page's current
-	// observations a reflection is shown, to keep, replace or retire.
+	// standingReflectionCount is how many observations stand on a page
+	// at most: every one is shown to the next reflection, to keep, replace
+	// or retire, and past it the oldest gives way, with that said in its
+	// history. Without a bound a page reflected on every week would add
+	// up to reflectionCount a week, and what slid out of the prompt could
+	// never be replaced or retired again.
 	standingReflectionCount = 20
 
 	// reflectionAcrossThemesEvery is how often the night reflects on the
@@ -62,8 +66,8 @@ type reflectionAnswer struct {
 		ReplacedObservations []string `json:"replacedObservations"`
 	} `json:"reflections"`
 	RetiredObservations []struct {
-		Observation   string `json:"observation"`
-		RetiredReason string `json:"retiredReason"`
+		ObservationReference string `json:"observationReference"`
+		RetiredReason        string `json:"retiredReason"`
 	} `json:"retiredObservations"`
 }
 
@@ -76,10 +80,10 @@ type reflectionInputs struct {
 	pageIdByPath      map[string]string
 	factIdByReference map[string]string
 
-	// standing is the page's own current observations as the prompt
-	// shows them, and standingIdByReference their ids: the only ones an
-	// answer may replace or retire.
-	standing              []string
+	// standingLines is the page's own current observations as the
+	// prompt shows them, and standingIdByReference their ids: the only
+	// ones an answer may replace or retire.
+	standingLines         []string
 	standingIdByReference map[string]string
 }
 
@@ -297,7 +301,7 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 		"Overview":          page.Overview,
 		"Members":           inputs.members,
 		"Facts":             inputs.facts,
-		"Standing":          inputs.standing,
+		"Standing":          inputs.standingLines,
 		"Most":              reflectionCount,
 	})
 	if err != nil {
@@ -381,7 +385,7 @@ func retiredReflections(answer reflectionAnswer, inputs *reflectionInputs, kept 
 	}
 	var retired []retiredReflection
 	for _, wanted := range answer.RetiredObservations {
-		factId, isStanding := standingReflectionNamed(wanted.Observation, inputs)
+		factId, isStanding := standingReflectionNamed(wanted.ObservationReference, inputs)
 		retiredReason := cutRunes(strings.TrimSpace(wanted.RetiredReason), 300)
 		if !isStanding || isTaken[factId] || retiredReason == "" {
 			continue
@@ -395,11 +399,11 @@ func retiredReflections(answer reflectionAnswer, inputs *reflectionInputs, kept 
 // standingReflectionNamed reads a name of a standing observation, as the
 // prompt wrote it, as its id.
 func standingReflectionNamed(named string, inputs *reflectionInputs) (string, bool) {
-	named = strings.Trim(strings.TrimSpace(named), "`[]()")
-	if index := strings.LastIndexByte(named, '#'); index > 0 {
-		named = models.NormalizePath(named[:index]) + named[index:]
+	reference, isFact, isRead := readReference(named)
+	if !isRead || !isFact {
+		return "", false
 	}
-	factId, isStanding := inputs.standingIdByReference[named]
+	factId, isStanding := inputs.standingIdByReference[reference]
 	return factId, isStanding
 }
 
@@ -407,26 +411,20 @@ func standingReflectionNamed(named string, inputs *reflectionInputs) (string, bo
 // observations, the newest first, so that it can keep, replace or retire
 // each by name.
 func readStandingReflections(tx db.Transaction, agentId string, page *models.AgentNode, inputs *reflectionInputs) error {
-	facts, err := tx.ListAgentFacts(agentId, page.ID, false, 200)
+	standing, err := tx.ListAgentFactsOfKindNewestFirst(agentId, page.ID, models.FactReflection, standingReflectionCount)
 	if err != nil {
 		return err
 	}
-	var standing []*models.AgentFact
-	for _, fact := range facts {
-		if fact.Kind == models.FactReflection {
-			standing = append(standing, fact)
-		}
-	}
-	sort.SliceStable(standing, func(left, right int) bool { return standing[left].Number > standing[right].Number })
-	if len(standing) > standingReflectionCount {
-		standing = standing[:standingReflectionCount]
-	}
-	inputs.standing = nil
+	inputs.standingLines = nil
 	inputs.standingIdByReference = map[string]string{}
 	for _, fact := range standing {
 		reference := fact.Reference(page.Path)
 		inputs.standingIdByReference[reference] = fact.ID
-		inputs.standing = append(inputs.standing, fmt.Sprintf("%s (%s) %s", reference, fact.ReflectionKind(), strings.TrimSpace(fact.Text)))
+		line := fmt.Sprintf("%s (%s) %s", reference, fact.ReflectionKind(), strings.TrimSpace(fact.Text))
+		if citations := fact.Citations(); len(citations) > 0 {
+			line += " [it rests on " + strings.Join(citations, ", ") + "]"
+		}
+		inputs.standingLines = append(inputs.standingLines, line)
 	}
 	return nil
 }
@@ -434,19 +432,38 @@ func readStandingReflections(tx db.Transaction, agentId string, page *models.Age
 // resolveCitation reads one citation as the page or fact it names, and
 // says whether the prompt showed it.
 func resolveCitation(citation string, inputs *reflectionInputs) (string, string, bool) {
-	citation = strings.Trim(strings.TrimSpace(citation), "`[]()")
-	if index := strings.LastIndexByte(citation, '#'); index > 0 {
-		number, err := strconv.Atoi(strings.TrimSpace(citation[index+1:]))
-		if err != nil {
-			return "", "", false
-		}
-		reference := fmt.Sprintf("%s#%d", models.NormalizePath(citation[:index]), number)
+	reference, isFact, isRead := readReference(citation)
+	if !isRead {
+		return "", "", false
+	}
+	if isFact {
 		factId, isShown := inputs.factIdByReference[reference]
 		return reference, factId, isShown
 	}
-	path := models.NormalizePath(citation)
-	pageId, isShown := inputs.pageIdByPath[path]
-	return path, pageId, isShown
+	pageId, isShown := inputs.pageIdByPath[reference]
+	return reference, pageId, isShown
+}
+
+// readReference reads a page or a fact as a model wrote it, as the
+// reference the prompt showed: a path, or a path and a number. Quotes,
+// brackets, spaces around the number, leading zeros and anything after
+// the number (a model copying "#4 (pattern)") are let through; a number
+// that is not one is not.
+func readReference(written string) (string, bool, bool) {
+	written = strings.Trim(strings.TrimSpace(written), "`[]()")
+	index := strings.LastIndexByte(written, '#')
+	if index <= 0 {
+		return models.NormalizePath(written), false, true
+	}
+	numberText := strings.TrimSpace(written[index+1:])
+	if end := strings.IndexFunc(numberText, func(character rune) bool { return character < '0' || character > '9' }); end >= 0 {
+		numberText = numberText[:end]
+	}
+	number, err := strconv.Atoi(numberText)
+	if err != nil {
+		return "", false, false
+	}
+	return fmt.Sprintf("%s#%d", models.NormalizePath(written[:index]), number), true, true
 }
 
 func isReflectionKind(reflectionKind string) bool {
@@ -464,7 +481,34 @@ func isReflectionKind(reflectionKind string) bool {
 // Every other standing observation stays: refreshing a page adds to what
 // it holds, and only what the answer names goes.
 func writeReflections(tx db.Transaction, agentId string, page *models.AgentNode, kept []reflection, retired []retiredReflection, reflectedAt time.Time) error {
+	// What the answer names was read before the model was asked; one
+	// folded, struck or moved since is left as it now is, rather than
+	// given a second replacement or failing the whole write.
 	isGone := map[string]bool{}
+	var named []string
+	for _, each := range kept {
+		named = append(named, each.replacedIds...)
+	}
+	for _, each := range retired {
+		named = append(named, each.factId)
+	}
+	if len(named) > 0 {
+		found, err := tx.GetAgentFacts(agentId, named)
+		if err != nil {
+			return err
+		}
+		isStill := map[string]bool{}
+		for _, fact := range found {
+			if fact.Live() && fact.NodeID == page.ID && fact.Kind == models.FactReflection {
+				isStill[fact.ID] = true
+			}
+		}
+		for _, factId := range named {
+			if !isStill[factId] {
+				isGone[factId] = true
+			}
+		}
+	}
 	for _, each := range kept {
 		fact, err := tx.AddAgentFact(&models.AgentFact{
 			AgentID: agentId, NodeID: page.ID, Kind: models.FactReflection, Text: each.text,
@@ -489,6 +533,20 @@ func writeReflections(tx db.Transaction, agentId string, page *models.AgentNode,
 		}
 		isGone[each.factId] = true
 		if _, err := tx.StrikeAgentFact(agentId, each.factId, "a later reflection found it no longer holds: "+each.retiredReason); err != nil {
+			return err
+		}
+	}
+	if len(retired) > 0 {
+		log.Infof("retired %d observation(s) on %q", len(retired), page.Path)
+	}
+	// Past the most that stand, the oldest gives way.
+	standing, err := tx.ListAgentFactsOfKindNewestFirst(agentId, page.ID, models.FactReflection, 0)
+	if err != nil {
+		return err
+	}
+	for index := standingReflectionCount; index < len(standing); index++ {
+		reason := fmt.Sprintf("more than %d observations stood on the page, and this was the oldest", standingReflectionCount)
+		if _, err := tx.StrikeAgentFact(agentId, standing[index].ID, reason); err != nil {
 			return err
 		}
 	}

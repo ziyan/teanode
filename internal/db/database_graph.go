@@ -140,6 +140,10 @@ type GraphOperation interface {
 	// first, for a reader that has room for only some of them.
 	ListAgentFactsLively(agentId, nodeId string, limit int) ([]*models.AgentFact, error)
 
+	// ListAgentFactsOfKindNewestFirst is a page's live facts of one kind,
+	// the most recently filed first.
+	ListAgentFactsOfKindNewestFirst(agentId, nodeId string, factKind models.AgentFactKind, limit int) ([]*models.AgentFact, error)
+
 	// ListAgentFactsForAudience is what an unattended run of a kind
 	// reads, newest and most used first.
 	ListAgentFactsForAudience(agentId string, audience models.AgentAudience, limit int) ([]*models.AgentFact, error)
@@ -1163,6 +1167,14 @@ func (self *transaction) ListAgentFacts(agentId, nodeId string, includeDormant b
 		query = query.Where(`NOT "dormant" AND "superseded_by" IS NULL`)
 	}
 	return self.factsFrom(query.Order(`"number" ASC`).Limit(limit))
+}
+
+func (self *transaction) ListAgentFactsOfKindNewestFirst(agentId, nodeId string, factKind models.AgentFactKind, limit int) ([]*models.AgentFact, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	return self.factsFrom(self.tx.Where(`"agent_id" = ? AND "node_id" = ? AND "kind" = ? AND NOT "dormant" AND "superseded_by" IS NULL`, agentId, nodeId, factKind).
+		Order(`"number" DESC`).Limit(limit))
 }
 
 // ListAgentFactsLively is a page's facts with the ones most recently

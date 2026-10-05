@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -171,9 +172,15 @@ func TestAReflectionReplacesOrRetiresOnlyWhatItNames(t *testing.T) {
 
 	// One that replaces the first by name: the first is superseded by
 	// it, the second is untouched.
-	reflectAgain(`{"reflections": [{"text": "Pruning runs late in every orchard, and later each year.", "reflectionKind": "trend", "citations": ["projects/orchard-north#1", "projects/orchard-south#1"], "replacedObservations": ["themes/orchard-work#1"]}]}`)
-	if got := standing(); len(got) != 2 || got["themes/orchard-work#2"] == "" || got["themes/orchard-work#3"] == "" {
+	// Named as a model may copy it, and named by a second observation too:
+	// the first to name it replaces it.
+	reflectAgain(`{"reflections": [{"text": "Pruning runs late in every orchard, and later each year.", "reflectionKind": "trend", "citations": ["projects/orchard-north#1", "projects/orchard-south#1"], "replacedObservations": ["themes/orchard-work# 01 (pattern)"]},
+		{"text": "Pruning is never on time.", "reflectionKind": "pattern", "citations": ["projects/orchard-north#1", "projects/orchard-east#1"], "replacedObservations": ["themes/orchard-work#1"]}]}`)
+	if got := standing(); len(got) != 3 || got["themes/orchard-work#2"] == "" || got["themes/orchard-work#3"] == "" || got["themes/orchard-work#4"] == "" {
 		t.Fatalf("a replacement left %v", got)
+	}
+	if prompt := sentPrompts()[len(sentPrompts())-1]; !strings.Contains(prompt, "[it rests on projects/orchard-north#1, projects/orchard-east#1]") {
+		t.Errorf("the prompt does not show what a standing observation rests on: %q", prompt)
 	}
 	if first, third := reflectionNamed("themes/orchard-work#1"), reflectionNamed("themes/orchard-work#3"); first.SupersededBy != third.ID {
 		t.Errorf("the first reflection is superseded by %q, not the one that replaced it", first.SupersededBy)
@@ -185,15 +192,15 @@ func TestAReflectionReplacesOrRetiresOnlyWhatItNames(t *testing.T) {
 	// retirement without a reason, or of something not shown, retires
 	// nothing.
 	reflectAgain(`{"reflections": [{"text": "Something thin.", "reflectionKind": "risk", "citations": ["projects/orchard-north#1"], "replacedObservations": ["themes/orchard-work#2"]}],
-		"retiredObservations": [{"observation": "themes/orchard-work#3"}, {"observation": "themes/orchard-work#9", "retiredReason": "made up"}, {"observation": "projects/orchard-north#1", "retiredReason": "not an observation"}]}`)
-	if got := standing(); len(got) != 2 || got["themes/orchard-work#2"] == "" || got["themes/orchard-work#3"] == "" {
+		"retiredObservations": [{"observationReference": "themes/orchard-work#3"}, {"observationReference": "themes/orchard-work#9", "retiredReason": "made up"}, {"observationReference": "projects/orchard-north#1", "retiredReason": "not an observation"}]}`)
+	if got := standing(); len(got) != 3 {
 		t.Fatalf("an empty or failed refresh left %v", got)
 	}
 
 	// A retirement with a reason: struck, with nothing standing in its
 	// place, and readable afterwards.
-	reflectAgain(`{"reflections": [], "retiredObservations": [{"observation": "themes/orchard-work#2", "retiredReason": "The harvest came in on time."}]}`)
-	if got := standing(); len(got) != 1 || got["themes/orchard-work#3"] == "" {
+	reflectAgain(`{"reflections": [], "retiredObservations": [{"observationReference": "themes/orchard-work#2", "retiredReason": "The harvest came in on time."}]}`)
+	if got := standing(); len(got) != 2 || got["themes/orchard-work#2"] != "" {
 		t.Fatalf("a retirement left %v", got)
 	}
 	if retired := reflectionNamed("themes/orchard-work#2"); !retired.Dormant || retired.SupersededBy != "" {
@@ -244,4 +251,74 @@ func TestTheThemesAreReflectedOnTogetherOnceAWeek(t *testing.T) {
 	if written := worker.reflectAcrossThemes(t.Context(), run, budget, now.Add(8*24*time.Hour)); written != 1 || len(sentPrompts()) != 2 {
 		t.Errorf("did not reflect across the themes after a week")
 	}
+	if prompt := sentPrompts()[1]; !strings.Contains(prompt, "self/reflections#1 (trend) Both themes follow the seasons.") {
+		t.Errorf("the weekly reflection is not shown what stands on its page: %q", prompt)
+	}
+}
+
+// At most standingReflectionCount observations stand on a page: past it
+// the oldest is struck, saying why. An observation named by the answer
+// that changed while the model was asked is left as it now is, and the
+// rest of the answer is written all the same.
+func TestStandingObservationsAreBoundedAndReadAgainBeforeWriting(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	_, run := digestSplitWorldWith(t, database, "http://127.0.0.1:1", nil)
+	idByPath := reflectionWorld(t, database, run.Agent.ID)
+	themeId := idByPath["themes/orchard-work"]
+	evidence := []models.Evidence{{Kind: models.EvidenceDream, Quote: models.ReflectionEvidencePrefix + "pattern"}}
+	var ids []string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for number := 1; number <= standingReflectionCount; number++ {
+			fact, err := tx.AddAgentFact(&models.AgentFact{
+				AgentID: run.Agent.ID, NodeID: themeId, Kind: models.FactReflection, Text: fmt.Sprintf("Observation %d.", number),
+				Confidence: 0.7, Inferred: true, Evidence: evidence,
+			})
+			if err != nil {
+				t.Fatalf("AddAgentFact: %s", err)
+			}
+			ids = append(ids, fact.ID)
+		}
+		// The newest was struck by someone else after the model read it.
+		if _, err := tx.StrikeAgentFact(run.Agent.ID, ids[len(ids)-1], "struck by hand"); err != nil {
+			t.Fatalf("StrikeAgentFact: %s", err)
+		}
+	})
+	page := &models.AgentNode{ID: themeId, Path: "themes/orchard-work"}
+	kept := []reflection{
+		{text: "One new.", reflectionKind: "trend", evidence: evidence, replacedIds: []string{ids[len(ids)-1]}},
+		{text: "Two new.", reflectionKind: "trend", evidence: evidence},
+		{text: "Three new.", reflectionKind: "trend", evidence: evidence},
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if err := writeReflections(tx, run.Agent.ID, page, kept, []retiredReflection{{factId: ids[len(ids)-1], retiredReason: "again"}}, time.Now()); err != nil {
+			t.Fatalf("writeReflections: %s", err)
+		}
+		standing, err := tx.ListAgentFactsOfKindNewestFirst(run.Agent.ID, themeId, models.FactReflection, 0)
+		if err != nil {
+			t.Fatalf("ListAgentFactsOfKindNewestFirst: %s", err)
+		}
+		if len(standing) != standingReflectionCount || standing[0].Text != "Three new." {
+			t.Fatalf("%d observations stand, the newest %q", len(standing), standing[0].Text)
+		}
+		every, err := tx.GetAgentFacts(run.Agent.ID, ids[:3])
+		if err != nil {
+			t.Fatalf("GetAgentFacts: %s", err)
+		}
+		struck := 0
+		for _, fact := range every {
+			if fact.Dormant && fact.SupersededBy == "" {
+				struck++
+			}
+		}
+		// Twenty stood, one struck by hand, three added: twenty-two, so the
+		// two oldest give way.
+		if struck != 2 {
+			t.Errorf("%d of the oldest three were struck, not two", struck)
+		}
+		handStruck, err := tx.GetAgentFacts(run.Agent.ID, ids[len(ids)-1:])
+		if err != nil || len(handStruck) != 1 || handStruck[0].SupersededBy != "" {
+			t.Errorf("the observation struck by hand was given a replacement: %v %v", handStruck, err)
+		}
+	})
 }

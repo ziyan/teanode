@@ -46,19 +46,25 @@ has not:
 
 {{end}}{{if .Standing}}## What was observed before
 
-These observations stand on {{.Path}} now, each by its name:
+These observations stand on {{.Path}} now, each by its name, with what
+it rests on:
 
 <observations>
 {{range .Standing}}{{.}}
 {{end}}</observations>
+
+They are not pages or facts, and are never cited: a new observation
+cites only what is in the sections before this one.
 
 Each stays as it is unless you say otherwise. Saying nothing about one
 keeps it; leaving it out of what you write is not a judgement on it.
 
 - A new observation that says one of these again, sharper or corrected,
   names it in `replacedObservations`, and the new one takes its place.
-- One that what is above no longer supports, or that turned out wrong,
-  goes in `retiredObservations` with the reason, in a sentence.
+- One that something above contradicts goes in `retiredObservations`,
+  with what contradicts it, in a sentence. What is above is only the
+  latest of the notes: an observation whose grounds are not shown has
+  not lost them, and is not retired for that.
 
 Do not write one of these again just to keep it.
 
@@ -87,4 +93,4 @@ Answer with this object and nothing else:
 
 {"reflections": [{"text": "...", "reflectionKind": "pattern", "citations": ["projects/example-app", "projects/example-lib#2"], "replacedObservations": []}], "retiredObservations": []}{{if .Standing}}
 
-A retired one is written {"observation": "themes/example#4", "retiredReason": "..."}.{{end}}
+A retired one is written {"observationReference": "themes/example#4", "retiredReason": "..."}.{{end}}
