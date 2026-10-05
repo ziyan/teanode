@@ -10,10 +10,10 @@ import (
 // OverviewSectionOperation keeps the vectors of the sections of pages'
 // overviews.
 type OverviewSectionOperation interface {
-	// ListAgentOverviewSectionVectorIds is every section id holding a
-	// vector of the model, so the embedding pass can tell what is missing
-	// and what is gone.
-	ListAgentOverviewSectionVectorIds(agentId, model string) ([]string, error)
+	// ListAgentOverviewSectionVectorPageIds is every section id holding
+	// a vector of the model, with the id of the page it is a section of,
+	// so the embedding pass can tell what is missing and what is gone.
+	ListAgentOverviewSectionVectorPageIds(agentId, model string) (map[string]string, error)
 
 	// PutAgentOverviewSectionVector writes one section's vector.
 	PutAgentOverviewSectionVector(agentId, nodeId, sectionId, model string, vector []float32) error
@@ -23,11 +23,20 @@ type OverviewSectionOperation interface {
 	DeleteAgentOverviewSectionVectors(agentId, model string, sectionIds []string) error
 }
 
-func (self *transaction) ListAgentOverviewSectionVectorIds(agentId, model string) ([]string, error) {
-	var ids []string
-	err := self.tx.Raw(`SELECT "section_id" FROM "agent_overview_section_vector" WHERE "agent_id" = ? AND "model" = ?`,
-		agentId, model).Scan(&ids).Error
-	return ids, err
+func (self *transaction) ListAgentOverviewSectionVectorPageIds(agentId, model string) (map[string]string, error) {
+	var rows []struct {
+		SectionID string
+		NodeID    string
+	}
+	if err := self.tx.Raw(`SELECT "section_id", "node_id" FROM "agent_overview_section_vector" WHERE "agent_id" = ? AND "model" = ?`,
+		agentId, model).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	pageIdBySectionId := make(map[string]string, len(rows))
+	for _, row := range rows {
+		pageIdBySectionId[row.SectionID] = row.NodeID
+	}
+	return pageIdBySectionId, nil
 }
 
 func (self *transaction) PutAgentOverviewSectionVector(agentId, nodeId, sectionId, model string, vector []float32) error {
