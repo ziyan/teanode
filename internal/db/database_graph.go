@@ -668,7 +668,7 @@ func (self *transaction) lockAgentNode(agentId, path string) (*models.AgentNode,
 	return self.lockAgentNodeWhere(`"agent_id" = ? AND "path" = ?`, agentId, path)
 }
 
-func (self *transaction) lockAgentNodeByID(agentId, nodeId string) (*models.AgentNode, error) {
+func (self *transaction) lockAgentNodeById(agentId, nodeId string) (*models.AgentNode, error) {
 	if agentId == "" || nodeId == "" {
 		return nil, nil
 	}
@@ -691,7 +691,7 @@ func (self *transaction) SetAgentNodeSummary(agentId, nodeId, summary string) (b
 	// The no-op decision must be made against the current page, after any
 	// writer already editing it commits. This is the same content lock Put
 	// takes, and remains compatible with a child's foreign-key KEY SHARE.
-	existing, err := self.lockAgentNodeByID(agentId, nodeId)
+	existing, err := self.lockAgentNodeById(agentId, nodeId)
 	if err != nil || existing == nil {
 		return false, err
 	}
