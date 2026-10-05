@@ -1,0 +1,221 @@
+{
+  "name": "historical recall",
+  "description": "An invented project whose event store changes. The replacement never names the old store, so a question about the past can only be answered from what memory kept of it. A later correction moves the date of the change, which separates what was true on a day from what was known on that day. Unrelated notes in between give the dreams something else to consolidate, and a last dream with no new evidence checks that nothing drifts.",
+  "steps": [
+    {
+      "id": "day-1",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "note-1",
+          "kind": "note",
+          "at": "2032-05-01T09:00:00Z",
+          "author": "@you",
+          "text": "Project Quillmoss keeps its event log in the Fernhold store. Fernhold is what Quillmoss runs on today.",
+          "title": "Quillmoss storage"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-1",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-1",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-day-1",
+          "question": "Which store does Quillmoss keep its event log in?",
+          "kind": "direct",
+          "expects": [{"words": ["Fernhold"]}],
+          "forbids": [],
+          "expectedAnswer": "Fernhold.",
+          "evidence": ["note-1"]
+        }
+      ]
+    },
+    {
+      "id": "day-4-other-work",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "note-2",
+          "kind": "note",
+          "at": "2032-05-04T09:00:00Z",
+          "author": "@you",
+          "text": "Quillmoss has two people on it now: the data engineer and me. We meet on Thursdays.",
+          "title": "Quillmoss team"
+        },
+        {
+          "id": "note-3",
+          "kind": "note",
+          "at": "2032-05-04T11:00:00Z",
+          "author": "@you",
+          "text": "The Pebblewick dashboard is due at the end of June. It reads from a nightly export, not from any live store.",
+          "title": "Pebblewick deadline"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-4",
+      "stepKind": "dream"
+    },
+    {
+      "id": "day-10-change",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "note-4",
+          "kind": "note",
+          "at": "2032-05-10T09:00:00Z",
+          "author": "@you",
+          "text": "Starting today, Project Quillmoss keeps its event log in the Saltmere store.",
+          "title": "Quillmoss storage change"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-10",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-10",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-now-day-10",
+          "question": "Which store does Quillmoss keep its event log in now?",
+          "kind": "changed",
+          "expects": [{"words": ["Saltmere"]}],
+          "forbids": [],
+          "expectedAnswer": "Saltmere, since May 10, 2032.",
+          "outdatedAnswer": "Fernhold.",
+          "evidence": ["note-4"]
+        },
+        {
+          "id": "store-may-5-day-10",
+          "question": "Which store did Quillmoss keep its event log in on May 5, 2032?",
+          "kind": "changed",
+          "expects": [{"words": ["Fernhold"]}],
+          "forbids": [],
+          "expectedAnswer": "Fernhold.",
+          "outdatedAnswer": "Saltmere.",
+          "evidence": ["note-1", "note-4"]
+        }
+      ]
+    },
+    {
+      "id": "day-12-correction",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-1",
+          "kind": "chat",
+          "at": "2032-05-12T14:00:00Z",
+          "author": "data engineer",
+          "text": "Small correction on Quillmoss: the switch to Saltmere actually took effect on May 7. The May 10 note was just when it got written down.",
+          "channel": "quillmoss",
+          "thread": "saltmere-date"
+        },
+        {
+          "id": "chat-2",
+          "kind": "chat",
+          "at": "2032-05-12T14:05:00Z",
+          "author": "@you",
+          "text": "Thanks. So Quillmoss has been on Saltmere since May 7.",
+          "channel": "quillmoss",
+          "thread": "saltmere-date"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-12",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-12",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "switch-date-day-12",
+          "question": "When did Quillmoss switch its event log to Saltmere?",
+          "kind": "changed",
+          "expects": [{"words": ["May 7"]}],
+          "forbids": [],
+          "expectedAnswer": "May 7, 2032.",
+          "outdatedAnswer": "May 10, 2032.",
+          "evidence": ["chat-1"]
+        },
+        {
+          "id": "valid-may-8-day-12",
+          "question": "Which store was Quillmoss's event log in on May 8, 2032?",
+          "kind": "changed",
+          "expects": [{"words": ["Saltmere"]}],
+          "forbids": [],
+          "expectedAnswer": "Saltmere: the switch took effect on May 7.",
+          "outdatedAnswer": "Fernhold.",
+          "evidence": ["chat-1"]
+        },
+        {
+          "id": "known-may-8-day-12",
+          "question": "On May 8, 2032, going by what had been said by then, which store did we believe Quillmoss's event log was in?",
+          "kind": "direct",
+          "expects": [{"words": ["Fernhold"]}],
+          "forbids": [],
+          "expectedAnswer": "Fernhold: nothing about the switch had been said until May 10.",
+          "evidence": ["note-1", "note-4"]
+        },
+        {
+          "id": "store-may-5-day-12",
+          "question": "Which store did Quillmoss keep its event log in on May 5, 2032?",
+          "kind": "changed",
+          "expects": [{"words": ["Fernhold"]}],
+          "forbids": [],
+          "expectedAnswer": "Fernhold.",
+          "outdatedAnswer": "Saltmere.",
+          "evidence": ["note-1"]
+        }
+      ]
+    },
+    {
+      "id": "dream-day-13-nothing-new",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-13",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-now-final",
+          "question": "Which store does Quillmoss keep its event log in now?",
+          "kind": "changed",
+          "expects": [{"words": ["Saltmere"]}],
+          "forbids": [],
+          "expectedAnswer": "Saltmere.",
+          "outdatedAnswer": "Fernhold.",
+          "evidence": ["note-4", "chat-1"]
+        },
+        {
+          "id": "store-may-5-final",
+          "question": "Which store did Quillmoss keep its event log in on May 5, 2032?",
+          "kind": "changed",
+          "expects": [{"words": ["Fernhold"]}],
+          "forbids": [],
+          "expectedAnswer": "Fernhold.",
+          "outdatedAnswer": "Saltmere.",
+          "evidence": ["note-1"]
+        },
+        {
+          "id": "known-may-8-final",
+          "question": "On May 8, 2032, going by what had been said by then, which store did we believe Quillmoss's event log was in?",
+          "kind": "direct",
+          "expects": [{"words": ["Fernhold"]}],
+          "forbids": [],
+          "expectedAnswer": "Fernhold.",
+          "evidence": ["note-1", "note-4"]
+        }
+      ]
+    }
+  ]
+}
