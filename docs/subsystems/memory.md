@@ -794,6 +794,10 @@ reflections, and every prompt's index opens with the top-level themes. Each
 overview section has a vector of its own, so a page is found by the section
 that answers the question, and the section carried is the one that matched,
 else the one sharing most of the question's words, else the first.
+Sections are embedded for the 5,000 most important pages with an overview;
+a page past them keeps the vectors it already has until its overview
+changes or it goes dormant, and gains new ones only once it is among them
+again.
 `teanode agent memory recall --explain` says what each search found and
 why each page and fact was carried or left out.
 

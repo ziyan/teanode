@@ -218,44 +218,83 @@ const overviewSectionBatch = 100
 // none, most important pages first and at most so many, and removes the
 // vectors of sections no overview holds any more. It says how many it
 // wrote.
+//
+// The pages it embeds for are the overviewSectionPages most important,
+// but a vector of a page outside them is not therefore stale: the page
+// may only have slipped down the order. Such a vector goes only when its
+// page, read again, is gone, dormant, or no longer has that section.
 func (self *Agent) EmbedOverviewSections(ctx context.Context, agent *models.Agent, limit int) (int, error) {
+	return self.embedOverviewSections(ctx, agent, limit, overviewSectionPages)
+}
+
+// embedOverviewSections is EmbedOverviewSections reading the pageCount
+// most important pages, so that a test can put a page outside them.
+func (self *Agent) embedOverviewSections(ctx context.Context, agent *models.Agent, limit, pageCount int) (int, error) {
 	_, _, modelName, _, ok := self.embedderFor()
 	if !ok {
 		return 0, nil
 	}
 	var nodes []*models.AgentNode
-	var stored []string
+	var pageIdBySectionId map[string]string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if nodes, err = tx.ListAgentNodesWithOverviews(agent.ID, overviewSectionPages); err != nil {
+		if nodes, err = tx.ListAgentNodesWithOverviews(agent.ID, pageCount); err != nil {
 			return err
 		}
-		stored, err = tx.ListAgentOverviewSectionVectorIds(agent.ID, modelName)
+		pageIdBySectionId, err = tx.ListAgentOverviewSectionVectorPageIds(agent.ID, modelName)
 		return err
 	}); err != nil {
 		return 0, err
-	}
-	isStored := make(map[string]bool, len(stored))
-	for _, id := range stored {
-		isStored[id] = true
 	}
 	type missingSection struct {
 		node    *models.AgentNode
 		section overviewSection
 	}
 	isWanted := map[string]bool{}
+	isRead := map[string]bool{}
 	var missing []missingSection
 	for _, node := range nodes {
+		isRead[node.ID] = true
 		for _, section := range overviewSectionsOf(node) {
 			isWanted[section.ID] = true
-			if !isStored[section.ID] && len(missing) < limit {
+			if _, isStored := pageIdBySectionId[section.ID]; !isStored && len(missing) < limit {
 				missing = append(missing, missingSection{node: node, section: section})
 			}
 		}
 	}
+	// The pages that hold vectors but were not among those read are read
+	// now, so that what they hold is judged by what they are.
+	var unreadPageIds []string
+	for _, pageId := range pageIdBySectionId {
+		if !isRead[pageId] {
+			isRead[pageId] = true
+			unreadPageIds = append(unreadPageIds, pageId)
+		}
+	}
+	if len(unreadPageIds) > 0 {
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			for start := 0; start < len(unreadPageIds); start += overviewSectionPages {
+				unread, err := tx.GetAgentNodes(agent.ID, unreadPageIds[start:min(start+overviewSectionPages, len(unreadPageIds))])
+				if err != nil {
+					return err
+				}
+				for _, node := range unread {
+					if node.Dormant {
+						continue
+					}
+					for _, section := range overviewSectionsOf(node) {
+						isWanted[section.ID] = true
+					}
+				}
+			}
+			return nil
+		}); err != nil {
+			return 0, err
+		}
+	}
 	var gone []string
-	for _, id := range stored {
-		if !isWanted[id] {
-			gone = append(gone, id)
+	for sectionId := range pageIdBySectionId {
+		if !isWanted[sectionId] {
+			gone = append(gone, sectionId)
 		}
 	}
 	if len(gone) > 0 {
