@@ -68,43 +68,75 @@ twenty model calls would otherwise stop the tick claiming jobs.
 
 ## A goal
 
-A conversation can carry a **goal**: a sentence the person sets, or asks the
-agent to set, that stays on it until it is met or cleared. While a goal is
-set the agent takes turns in that conversation **on its own**, in the same
-transcript the person reads, so every turn sees the ones before it — which is
-the whole difference from a schedule, whose run is a fresh transcript on a
-clock with no memory of the one before and no way to say it is done.
+A **goal** is something the agent keeps at for the person between
+conversations: "watch for the landlord's reply about the boiler and tell me if
+none comes by Friday". Each runs in a conversation of its own, of the kind
+`goal`, where the agent takes turns **on its own** that the person does not read
+unless they open it, so the conversations they chat in stay theirs. Its turns
+see the ones before them, which is the whole difference from a schedule, whose
+run is a fresh transcript on a clock with no memory of the one before and no
+way to say it is done.
 
-Four columns on the row (migration 0083): the goal, its state, the agent's
-last note, and when the next turn is due. The three states are
-`working` (turns are running), `waiting` (it needs the person, and their next
-turn in the conversation puts it back to working a minute later) and `met`.
-An empty goal means there is none.
+The goal is columns on its conversation (migrations 0083, 0087 and 0148): a
+title of a few words (`goal_title`), the description of what it is for and
+what done looks like (`goal`), its state, the agent's one-line status
+(`goal_note`), when the next turn is due, when it was set, and when it was last
+said in the main conversation (`goal_surfaced_at`). The states are `working`
+(turns are running), `waiting` (it needs the person), `met` and `dropped` (the
+person stopped it).
 
 Every turn of the agent's own ends with one call to the `goal` tool: `note`
-with where it is and the minutes until the next turn, `wait` with what it
-needs from the person, or `met`. `set` puts a goal on the conversation when
-the person asks the agent to keep at something, and is refused in a turn of
-the agent's own — a goal spends their budget with nobody watching, so
-starting one is theirs. The note is a sentence or two: it is read beside the
-conversation and, while the goal waits, above the box the person types in.
+with the status in one line and the minutes until the next turn, and
+`activity` when something happened worth the person reading later; `wait` with
+what it needs from the person, in a sentence they can answer; or `met`. The
+tool also starts goals (`start`, with a title and what it is for), lists and
+shows them, passes the person's words to one (`tell`), and lets the person
+close or reopen one (`done`, `drop`, `reopen`). A goal's own turn starts no
+goals and cannot tell, close or reopen one.
+
+What happened on a goal is its **activity**, rows in `agent_goal_activity`:
+started, progress (only when a turn said something happened; a turn that only
+looked writes none), waiting, resumed, met, dropped, stalled and failed. What it
+made is its **artifacts**: the schedules and background work made in its
+conversation, found by that conversation, and the mail rules, reminders and
+alert mutes its turns made, which the tools note in `agent_goal_artifact`. A
+goal's turn may start background work; it wakes the goal's conversation, never
+the main one.
+
+The main conversation hears from a goal **only when it needs the person**: when
+a turn says `wait`, or the goal stalls after twenty-four turns alone. The
+worker's sweep (`surfaceGoals`) then writes one exchange there, as an alert is
+written: a line opening with `models.GoalNeedsYouMarker` (`[goal needs you]`),
+the goal's id and title, and the agent's sentence saying what it needs; it
+publishes the events so an open drawer shows it, and the chat-app relay
+forwards it. It writes once, recorded in `goal_surfaced_at`, and waits while a
+turn runs in the main conversation. Progress, failures and meeting the goal are
+not said there; they are in its activity. The mail a waiting goal sends is
+kept.
+
+The prompt of a turn in the main conversation lists the goals waiting on the
+person, with their ids, so an answer given there is passed on with `tell`: the
+person's words are written into the goal's conversation as a message opening
+with `models.GoalRelayMarker`, with a `resumed` row, and the goal goes back to
+work a minute later. Writing in the goal's own conversation resumes it as
+before.
 
 The check-in a turn arrives as opens with `models.GoalCheckInMarker`
 (`[goal check-in]`), exactly, so a reader can tell it from the person's own
 words, and says in the same breath that nobody is speaking.
 
-The goal's beginning and end are lines of the transcript as well: setting,
-changing or clearing it, and the agent calling `met`, each append a `note`
-message -- "Goal set: …", "Goal changed: …", "Goal cleared: …", "Goal met:
-…" with the agent's note -- whose kind and detail come from
-`models.GoalChangeNote`, so the dialog, a new conversation and the tool say
-the same thing. A `note` or a
-`wait` from the tool adds no line; the chip and the bar carry those.
+A goal is no longer put on a conversation the person chats in:
+`StartAgentConversation(goal:)` and `UpdateAgentConversation(goal:)` on any
+conversation but a goal's own are refused. A goal left on a named or main
+conversation from before keeps running under the old rules until it is met or
+cleared, and its beginning and end are lines of its transcript, from
+`models.GoalChangeNote`.
 
-How the turns are queued, bounded and delivered is in
-`jobs-and-schedules.md`. Setting and clearing a goal is
-`UpdateAgentConversation(goal:)`, or `teanode agent conversation goal`;
-clearing also stops the turn under way.
+How the turns are queued, bounded and delivered is in `jobs-and-schedules.md`.
+The operations are `ListAgentGoals`, `GetAgentGoal`, `StartAgentGoal`,
+`TellAgentGoal` and `SetAgentGoalState`; `teanode agent goal` and the Goals tab
+of the agent's page use them. The design is
+`docs/planning/background-goals-execplan.md`.
 
 ## Searching
 

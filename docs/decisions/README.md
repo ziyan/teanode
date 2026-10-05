@@ -145,3 +145,9 @@ budget is built on: the person's, assigned by their own choice, then their
 spending rules, then the provider, then the categorize model, and never
 overwritten once the person chose. Its plan is
 `docs/planning/budgets-execplan.md`.
+
+`20261005-goals-run-in-the-background-and-call-only-when-needed.md` says
+where a goal's turns run: in a conversation of its own, with an activity log
+and the things it made, and why the main conversation hears from a goal only
+when it needs the person. Its plan is
+`docs/planning/background-goals-execplan.md`.
