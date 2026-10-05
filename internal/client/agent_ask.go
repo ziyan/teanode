@@ -471,29 +471,6 @@ func UpdateAgentConversation(ctx context.Context, connection *Client, conversati
 	return result.UpdateAgentConversation, nil
 }
 
-// ListAgentGoals is the conversations whose goal is still in progress:
-// what the agent is keeping track of.
-func ListAgentGoals(ctx context.Context, connection *Client) ([]*AgentConversation, error) {
-	var result struct {
-		ListAgentConversations []*AgentConversation `json:"ListAgentConversations"`
-	}
-	if err := connection.Execute(ctx, DocumentListAgentConversations, map[string]any{"isGoalInProgress": true}, &result); err != nil {
-		return nil, err
-	}
-	return result.ListAgentConversations, nil
-}
-
-// MarkAgentGoalMet says a conversation's goal is done.
-func MarkAgentGoalMet(ctx context.Context, connection *Client, conversationId string) (*AgentConversation, error) {
-	var result struct {
-		UpdateAgentConversation *AgentConversation `json:"UpdateAgentConversation"`
-	}
-	if err := connection.Execute(ctx, DocumentUpdateAgentConversation, map[string]any{"conversationId": conversationId, "goalState": "met"}, &result); err != nil {
-		return nil, err
-	}
-	return result.UpdateAgentConversation, nil
-}
-
 // ListAgentTools is the catalog as the caller sees it.
 func ListAgentTools(ctx context.Context, connection *Client) ([]*AgentTool, error) {
 	var result struct {

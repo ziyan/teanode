@@ -96,9 +96,17 @@ func (self *Agent) CanSurvey() bool {
 // starts none, as it starts no background command: it has ended by the
 // time the work finishes, and nobody is reading it.
 func (self *Agent) startBackgroundWork(ctx context.Context, parent *AskRun, work *models.AgentBackgroundWork) (*models.AgentBackgroundWork, error) {
-	if parent.settings.Headless || parent.settings.Conversation == nil {
+	if parent.settings.Conversation == nil {
 		return nil, fmt.Errorf("nobody is present to be told when it finishes; set background to false and wait for it")
 	}
+	// A goal's own turn may start it too: it wakes the goal's conversation,
+	// where the next turn on the goal reads the result, never the person's.
+	isGoalTurn := parent.settings.Headless && parent.settings.Surface == "goal" && parent.settings.Conversation.IsGoal()
+	if parent.settings.Headless && !isGoalTurn {
+		return nil, fmt.Errorf("nobody is present to be told when it finishes; set background to false and wait for it")
+	}
+	// Woken either way: a goal's turn reads the result where the goal's
+	// turns run, as the person reads it where they asked.
 	work.ConversationID, work.IsPersonPresent = parent.settings.Conversation.ID, true
 	var started *models.AgentBackgroundWork
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {

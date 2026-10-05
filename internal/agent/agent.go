@@ -424,6 +424,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	if err := self.dueGoals(ctx, now); err != nil {
 		log.Warningf("cannot queue the goals that are due: %s", err)
 	}
+	self.surfaceGoals(ctx)
 	self.scavenge(ctx, now)
 	self.describeInBackground(ctx, now)
 	self.queueRemembering(ctx, now)

@@ -55,6 +55,9 @@ func (self *profileRun) Agent() *models.Agent         { return &models.Agent{ID:
 func (self *profileRun) Owner() *models.User          { return &models.User{ID: "owner-1"} }
 func (self *profileRun) Operations() tools.Operations { return self.operations }
 
+// Conversation is none: these calls are made outside any conversation.
+func (self *profileRun) Conversation() *models.AgentConversation { return nil }
+
 // The person's word about alerts, said in the conversation, reaches the
 // same operations as the settings page and the Mute button: off and on,
 // "don't tell me about these" meaning the latest alert, a sender named,

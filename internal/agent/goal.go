@@ -184,9 +184,15 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 					return nil
 				}
 				conversation.GoalState, conversation.GoalNextAt, conversation.GoalNote = models.GoalWaiting, nil, note
+				// Said in the main conversation by the next sweep: nobody
+				// is reading the goal's own.
+				conversation.GoalSurfacedAt = nil
 				return nil
 			})
 			if err != nil || stalled == nil || stalled.GoalState != models.GoalWaiting {
+				return err
+			}
+			if err := addGoalActivity(tx, stalled, models.GoalActivityStalled, "Stopped to ask you", note); err != nil {
 				return err
 			}
 			_, err = tx.AppendAgentMessage(models.NewAgentNote(conversation.ID, models.NoteGoalStalled, strconv.Itoa(goalTurnsAlone)))
@@ -276,6 +282,11 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		note := after.GoalNote
 		if failure != "" {
 			note = "the last turn failed: " + failure
+			if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+				return addGoalActivity(tx, after, models.GoalActivityFailed, "A turn failed; it tries again later", failure)
+			}); err != nil {
+				return err
+			}
 		}
 		if err := self.moveGoalOn(ctx, conversation.ID, now.Add(next), note); err != nil {
 			return err
@@ -469,6 +480,9 @@ func (self *Agent) tellAboutGoal(ctx context.Context, run *Run, conversation *mo
 // handed over as an ordinary user turn, a sentence the agent read
 // somewhere would come back as an instruction from the person.
 func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
+	if conversation.IsGoal() {
+		return backgroundGoalCheckIn(conversation, owner, now, turn)
+	}
 	// Numbered, because a goal often says "after the second look" or
 	// "three times a day", and a model that has to count its own turns
 	// from the transcript counted wrong: told to mark a goal met after the
@@ -486,6 +500,29 @@ func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now
 		"",
 		"Work toward the goal with the tools you have. Anything that needs their confirmation cannot be done with nobody present, so prepare it and say what you need. Read back what happened in this conversation before starting again on something that is already done.",
 		"End by calling the goal tool exactly once: note with where you are and the minutes until your next turn, wait when you need them, or met when it is done.",
+	)
+	return strings.Join(lines, "\n")
+}
+
+// backgroundGoalCheckIn is the message a turn on a goal of its own arrives
+// as. The person does not read this conversation: they hear from the goal
+// only when it waits for them, so the turn is told that saying nothing
+// new is fine and that a question is what reaches them.
+func backgroundGoalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
+	lines := []string{
+		models.GoalCheckInMarker + fmt.Sprintf(" This is your own turn on a goal you keep at in the background for %s, the %s today. They are not here and do not read this conversation.", personName(owner), ordinal(turn)),
+		"",
+		"The goal: " + goalTitleOf(conversation),
+		"What it is for: " + conversation.Goal,
+	}
+	if note := strings.TrimSpace(conversation.GoalNote); note != "" {
+		lines = append(lines, "Where you left it: "+note)
+	}
+	lines = append(lines,
+		"It is "+now.In(Location(owner)).Format("Monday 2 January, 15:04")+" where they are.",
+		"",
+		"Work toward the goal with the tools you have: look, act, schedule what should happen on a clock, start background work for anything long. Anything that needs their confirmation cannot be done with nobody present, so prepare it and ask. Read back what happened in this conversation before starting again on something already done.",
+		"End by calling the goal tool exactly once. note: the status in one line and the minutes until your next turn, with activity only when something happened worth their reading later. wait: what you need from them, in a sentence they can answer; that, and only that, is said to them in their main conversation. met: when it is done, saying how it ended.",
 	)
 	return strings.Join(lines, "\n")
 }
@@ -538,15 +575,20 @@ func (self *AskRun) resumeGoalAfterPerson() {
 	}
 	conversationId := self.settings.Conversation.ID
 	if err := self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-		_, err := tx.UpdateAgentConversation(conversationId, func(conversation *models.AgentConversation) error {
+		isResumed := false
+		resumed, err := tx.UpdateAgentConversation(conversationId, func(conversation *models.AgentConversation) error {
 			if conversation.Goal == "" || conversation.GoalState != models.GoalWaiting {
 				return nil
 			}
 			next := time.Now().Add(goalAfterPerson)
 			conversation.GoalState, conversation.GoalNextAt = models.GoalWorking, &next
+			isResumed = true
 			return nil
 		})
-		return err
+		if err != nil || !isResumed {
+			return err
+		}
+		return addGoalActivity(tx, resumed, models.GoalActivityResumed, "You answered in the goal's conversation", "")
 	}); err != nil {
 		log.Warningf("cannot start the goal on conversation %q again: %s", conversationId, err)
 	}

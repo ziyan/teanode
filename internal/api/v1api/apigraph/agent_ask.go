@@ -902,9 +902,10 @@ func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAg
 	}
 	tx := self.transaction(ctx)
 	starting := &models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: strings.TrimSpace(arguments.Title), LastAt: time.Now()}
-	if goal := strings.TrimSpace(arguments.Goal); goal != "" {
-		now := time.Now()
-		starting.Goal, starting.GoalState, starting.GoalNextAt, starting.GoalSetAt = goal, models.GoalWorking, &now, &now
+	// A goal runs in the background, in a conversation of its own, so the
+	// conversations the person chats in stay theirs.
+	if strings.TrimSpace(arguments.Goal) != "" {
+		return nil, fmt.Errorf("%w: goals run in the background now; start one with StartAgentGoal", api.ErrInvalidArguments)
 	}
 	conversation, err := tx.CreateAgentConversation(starting)
 	if err != nil {
@@ -1054,6 +1055,12 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 			if isStopping {
 				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = "", "", "", nil, nil
 			} else {
+				// Only a goal's own conversation takes a new goal text: a
+				// rewording of its description. A goal on any other
+				// conversation is started in the background instead.
+				if !conversation.IsGoal() {
+					return fmt.Errorf("%w: goals run in the background now; start one with StartAgentGoal", api.ErrInvalidArguments)
+				}
 				// A goal set again -- changed, or set on a conversation
 				// whose goal was met -- starts working from now, and the
 				// note from the goal before it goes with it.
@@ -1070,6 +1077,14 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	// happened; the chip beside it shows only where it stands now.
 	if kind, detail := models.GoalChangeNote(conversation, updated); kind != "" {
 		if _, err := tx.AppendAgentMessage(models.NewAgentNote(conversation.ID, kind, detail)); err != nil {
+			return nil, translateError(err)
+		}
+	}
+	// And in a goal's own log, when it is one.
+	if updated.IsGoal() && updated.GoalState == models.GoalMet && conversation.GoalState != models.GoalMet {
+		if _, err := tx.AddAgentGoalActivity(&models.AgentGoalActivity{
+			AgentID: updated.AgentID, ConversationID: updated.ID, GoalActivityKind: models.GoalActivityMet, ActivityHeadline: "Marked done by you",
+		}); err != nil {
 			return nil, translateError(err)
 		}
 	}

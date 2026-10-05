@@ -1901,22 +1901,51 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 }
 
 // goalLines are what the prompt says about the goal on this conversation:
-// the words of it, where it stands, and the agent's own last note.
+// the words of it, where it stands, and the agent's own last note. In the
+// main conversation, it is the goals kept in the background that wait on
+// the person instead, so an answer given here reaches the goal it is for.
 func (self *AskRun) goalLines(ctx context.Context) []string {
 	var conversation *models.AgentConversation
+	var waiting []*models.AgentConversation
+	tracking := 0
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		conversation, err = tx.GetAgentConversation(self.settings.Conversation.ID)
+		if conversation, err = tx.GetAgentConversation(self.settings.Conversation.ID); err != nil || conversation == nil {
+			return err
+		}
+		if conversation.Kind != models.AgentConversationMain {
+			return nil
+		}
+		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgressMost)
+		for _, goal := range going {
+			if goal.GoalState == models.GoalWaiting {
+				waiting = append(waiting, goal)
+			} else {
+				tracking++
+			}
+		}
 		return err
 	}); err != nil {
 		log.Debugf("cannot read the goal of conversation %q for the prompt: %s", self.settings.Conversation.ID, err)
 		return nil
 	}
-	if conversation == nil || conversation.Goal == "" {
+	if conversation == nil {
 		return nil
 	}
-	lines := []string{fmt.Sprintf("This conversation has a goal on it, which you work toward across turns of your own: %q. It is %s.", conversation.Goal, conversation.GoalState)}
-	if note := strings.TrimSpace(conversation.GoalNote); note != "" {
-		lines = append(lines, "Your last word on it: "+note)
+	var lines []string
+	if conversation.Goal != "" {
+		lines = append(lines, fmt.Sprintf("This conversation has a goal on it, which you work toward across turns of your own: %q. It is %s.", conversation.Goal, conversation.GoalState))
+		if note := strings.TrimSpace(conversation.GoalNote); note != "" {
+			lines = append(lines, "Your last word on it: "+note)
+		}
+	}
+	if len(waiting) > 0 {
+		lines = append(lines, "Goals you keep at in the background that wait on the person; when they answer one, pass their words on with the goal tool's tell and its goal_id:")
+		for _, goal := range waiting {
+			lines = append(lines, fmt.Sprintf("- %s (goal_id %s): %s", goalTitleOf(goal), goal.ID, strings.TrimSpace(goal.GoalNote)))
+		}
+	}
+	if tracking > 0 {
+		lines = append(lines, fmt.Sprintf("%d other goals are in progress in the background; the goal tool's list shows them.", tracking))
 	}
 	return lines
 }

@@ -418,6 +418,7 @@ func runRuleAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	result.Note = fmt.Sprintf("added the rule %q", rule.Name)
+	tools.RecordGoalArtifact(ctx, models.GoalArtifactMailRule, rule.Name, "mail rule "+rule.Name)
 	return result, nil
 }
 

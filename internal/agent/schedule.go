@@ -225,7 +225,7 @@ func scheduleConversation(tx db.Transaction, agentId, conversationId string) (*m
 			return nil, err
 		}
 		if found != nil && found.AgentID == agentId &&
-			(found.Kind == models.AgentConversationMain || found.Kind == models.AgentConversationNamed) {
+			(found.Kind == models.AgentConversationMain || found.Kind == models.AgentConversationNamed || found.IsGoal()) {
 			return found, nil
 		}
 	}

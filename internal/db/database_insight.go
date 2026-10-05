@@ -194,10 +194,13 @@ type agentConversationModel struct {
 	// The goal the agent keeps working toward in this conversation. See
 	// migration 0083.
 	Goal       string     `gorm:"column:goal"`
+	GoalTitle  string     `gorm:"column:goal_title"`
 	GoalState  string     `gorm:"column:goal_state"`
 	GoalNote   string     `gorm:"column:goal_note"`
 	GoalNextAt *time.Time `gorm:"column:goal_next_at"`
 	GoalSetAt  *time.Time `gorm:"column:goal_set_at"`
+
+	GoalSurfacedAt *time.Time `gorm:"column:goal_surfaced_at"`
 
 	// How many turns background commands and work have woken since the
 	// person last wrote. See migration 0122.
@@ -445,6 +448,7 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		CompactedThrough:  model.CompactedThrough,
 		RememberedThrough: model.RememberedThrough,
 		Goal:              model.Goal,
+		GoalTitle:         model.GoalTitle,
 		GoalState:         models.AgentGoalState(model.GoalState),
 		GoalNote:          model.GoalNote,
 
@@ -457,6 +461,10 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 	if model.GoalSetAt != nil {
 		at := model.GoalSetAt.In(time.Local)
 		conversation.GoalSetAt = &at
+	}
+	if model.GoalSurfacedAt != nil {
+		at := model.GoalSurfacedAt.In(time.Local)
+		conversation.GoalSurfacedAt = &at
 	}
 	if model.RememberedAt != nil {
 		at := model.RememberedAt.In(time.Local)
@@ -493,10 +501,13 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		Surface:    conversation.Surface,
 		LastAt:     now,
 		Goal:       conversation.Goal,
+		GoalTitle:  truncateRunes(conversation.GoalTitle, 200),
 		GoalState:  string(conversation.GoalState),
 		GoalNote:   conversation.GoalNote,
 		GoalNextAt: conversation.GoalNextAt,
 		GoalSetAt:  conversation.GoalSetAt,
+
+		GoalSurfacedAt: conversation.GoalSurfacedAt,
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -544,7 +555,7 @@ func (self *transaction) ResetAgentConversationBackgroundWakes(conversationId st
 func (self *transaction) ListAgentGoalsInProgress(agentId string) ([]*models.AgentConversation, error) {
 	var ids []string
 	if err := self.tx.Model(&agentConversationModel{}).
-		Where(`"agent_id" = ? AND "goal" <> '' AND "goal_state" <> ?`, agentId, string(models.GoalMet)).
+		Where(`"agent_id" = ? AND "goal" <> '' AND "goal_state" NOT IN ?`, agentId, []string{string(models.GoalMet), string(models.GoalDropped)}).
 		Order(`"last_at" DESC`).Pluck("id", &ids).Error; err != nil {
 		return nil, err
 	}
@@ -579,7 +590,7 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
-		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt,
+		"goal": after.Goal, "goal_title": truncateRunes(after.GoalTitle, 200), "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt, "goal_surfaced_at": after.GoalSurfacedAt,
 	}).Error; err != nil {
 		return nil, err
 	}

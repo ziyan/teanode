@@ -122,11 +122,13 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			return nil, err
 		}
 		// A schedule answers in the conversation it was made in, when that
-		// is one of the person's; one made in a run of the agent's own
-		// answers in the main conversation.
+		// is one of the person's or a goal's -- a goal's schedule is one of
+		// the things it made, and its turns stay out of the person's
+		// sight; one made in a run of the agent's own answers in the main
+		// conversation.
 		conversationId := ""
 		if conversation := run.Conversation(); conversation != nil &&
-			(conversation.Kind == models.AgentConversationMain || conversation.Kind == models.AgentConversationNamed) {
+			(conversation.Kind == models.AgentConversationMain || conversation.Kind == models.AgentConversationNamed || conversation.IsGoal()) {
 			conversationId = conversation.ID
 		}
 		var created *models.AgentSchedule

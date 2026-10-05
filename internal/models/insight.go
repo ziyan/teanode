@@ -125,12 +125,14 @@ type ThreadSummary struct {
 // AgentConversationKind tells a person's conversations from a run's record.
 type AgentConversationKind string
 
-// The kinds: the one continuous conversation, a named one kept apart, and
-// the transcript of a run with nobody present.
+// The kinds: the one continuous conversation, a named one kept apart, the
+// transcript of a run with nobody present, and a goal's own conversation,
+// where the turns the agent takes toward it run out of the person's sight.
 const (
 	AgentConversationMain  AgentConversationKind = "main"
 	AgentConversationNamed AgentConversationKind = "named"
 	AgentConversationRun   AgentConversationKind = "run"
+	AgentConversationGoal  AgentConversationKind = "goal"
 )
 
 // AgentConversation is a conversation or a run transcript.
@@ -188,12 +190,21 @@ type AgentConversation struct {
 	// own; nothing is scheduled while it waits for the person or once the
 	// goal is met.
 	Goal       string         `json:"goal,omitempty"`
+	GoalTitle  string         `json:"goalTitle,omitempty"`
 	GoalState  AgentGoalState `json:"goalState,omitempty"`
 	GoalNote   string         `json:"goalNote,omitempty"`
 	GoalNextAt *time.Time     `json:"goalNextAt,omitempty"`
+	// GoalTitle is what a goal is called in a list: a few words. Goal is
+	// then the description, what it is for and what done looks like.
+	//
 	// GoalSetAt is when the goal was set, for the panel that says since
 	// when the agent has been at it.
 	GoalSetAt *time.Time `json:"goalSetAt,omitempty"`
+
+	// GoalSurfacedAt is when a goal that came to need the person was said
+	// in the main conversation; nil while it waits to be, and for a goal
+	// that never needed them.
+	GoalSurfacedAt *time.Time `json:"goalSurfacedAt,omitempty"`
 
 	// BackgroundWakeCount is how many turns ended background commands and
 	// finished background work have woken here since the person last
@@ -204,15 +215,84 @@ type AgentConversation struct {
 // AgentGoalState is where a conversation's goal stands.
 type AgentGoalState string
 
-// The three states a goal is in. A goal that is working takes turns of the
+// The states a goal is in. A goal that is working takes turns of the
 // agent's own; one that is waiting takes none until the person writes
 // again, and their next turn puts it back to working; one that is met is
-// done, and its text stays on the conversation until they clear it.
+// done, and its text stays on the conversation until they clear it; one
+// that is dropped is one the person stopped.
 const (
 	GoalWorking AgentGoalState = "working"
 	GoalWaiting AgentGoalState = "waiting"
 	GoalMet     AgentGoalState = "met"
+	GoalDropped AgentGoalState = "dropped"
 )
+
+// IsAgentGoalState says whether a state is one of the four.
+func IsAgentGoalState(goalState AgentGoalState) bool {
+	switch goalState {
+	case GoalWorking, GoalWaiting, GoalMet, GoalDropped:
+		return true
+	}
+	return false
+}
+
+// IsGoal says whether a conversation is a goal's own.
+func (self *AgentConversation) IsGoal() bool {
+	return self != nil && self.Kind == AgentConversationGoal
+}
+
+// AgentGoalActivityKind is what happened on a goal.
+type AgentGoalActivityKind string
+
+// What an activity row says happened: the goal was started; a turn of its
+// own did something worth reading; it came to need the person; the person
+// answered and it went back to work; it was met or dropped; it stopped
+// after too many turns alone; or a turn failed.
+const (
+	GoalActivityStarted  AgentGoalActivityKind = "started"
+	GoalActivityProgress AgentGoalActivityKind = "progress"
+	GoalActivityWaiting  AgentGoalActivityKind = "waiting"
+	GoalActivityResumed  AgentGoalActivityKind = "resumed"
+	GoalActivityMet      AgentGoalActivityKind = "met"
+	GoalActivityDropped  AgentGoalActivityKind = "dropped"
+	GoalActivityStalled  AgentGoalActivityKind = "stalled"
+	GoalActivityFailed   AgentGoalActivityKind = "failed"
+)
+
+// AgentGoalActivity is one thing that happened on a goal, as the person
+// reads it in the goal's log.
+type AgentGoalActivity struct {
+	ID               string                `json:"id"`
+	AgentID          string                `json:"agentId"`
+	ConversationID   string                `json:"conversationId"`
+	CreatedAt        time.Time             `json:"createdAt"`
+	GoalActivityKind AgentGoalActivityKind `json:"goalActivityKind"`
+	ActivityHeadline string                `json:"activityHeadline"`
+	ActivityDetail   string                `json:"activityDetail,omitempty"`
+}
+
+// AgentGoalArtifactKind is what sort of thing a goal made.
+type AgentGoalArtifactKind string
+
+// The things a goal made that carry no conversation of their own; its
+// schedules and background work are found by the conversation instead.
+const (
+	GoalArtifactMailRule  AgentGoalArtifactKind = "mail_rule"
+	GoalArtifactReminder  AgentGoalArtifactKind = "reminder"
+	GoalArtifactAlertMute AgentGoalArtifactKind = "alert_mute"
+)
+
+// AgentGoalArtifact is one thing a goal made, by its own reference: a mail
+// rule's name, a reminder's id, an alert mute's id.
+type AgentGoalArtifact struct {
+	ID                string                `json:"id"`
+	AgentID           string                `json:"agentId"`
+	ConversationID    string                `json:"conversationId"`
+	CreatedAt         time.Time             `json:"createdAt"`
+	GoalArtifactKind  AgentGoalArtifactKind `json:"goalArtifactKind"`
+	ArtifactReference string                `json:"artifactReference"`
+	ArtifactTitle     string                `json:"artifactTitle"`
+}
 
 // GoalCheckInMarker begins the message a goal turn is given, so that
 // everything reading the transcript can tell the agent's own check-in from
@@ -243,7 +323,7 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker}
 
 // SpeakFirstMarker begins the message a turn the agent starts on its own
 // is given: an introduction, a memory check, an idea. Nobody wrote it; the
@@ -254,6 +334,17 @@ const SpeakFirstMarker = "[speaking first]"
 // conversation: the agent telling the person, unasked, what their mail
 // showed. Nobody wrote it and no turn ran; the agent's words follow it.
 const AlertMarker = "[alert]"
+
+// GoalNeedsYouMarker begins the line a goal is written under in the main
+// conversation when it comes to need the person: the goal's id follows it,
+// then its title. The agent's sentence saying what it needs comes after,
+// as an alert's words do. It is the only thing a goal says there.
+const GoalNeedsYouMarker = "[goal needs you]"
+
+// GoalRelayMarker begins the message the person's answer is written into a
+// goal's conversation as, when they gave it in the main conversation: their
+// words, carried over by the agent.
+const GoalRelayMarker = "[from the person, in the main conversation]"
 
 // GoalChangeNote is the line the conversation gets when its goal changes
 // hands: set, changed, cleared, or met. Empty when nothing worth a line
