@@ -44,6 +44,24 @@ has not:
 {{range .Facts}}{{.}}
 {{end}}</facts>
 
+{{end}}{{if .Standing}}## What was observed before
+
+These observations stand on {{.Path}} now, each by its name:
+
+<observations>
+{{range .Standing}}{{.}}
+{{end}}</observations>
+
+Each stays as it is unless you say otherwise. Saying nothing about one
+keeps it; leaving it out of what you write is not a judgement on it.
+
+- A new observation that says one of these again, sharper or corrected,
+  names it in `replacedObservations`, and the new one takes its place.
+- One that what is above no longer supports, or that turned out wrong,
+  goes in `retiredObservations` with the reason, in a sentence.
+
+Do not write one of these again just to keep it.
+
 {{end}}## What to write
 
 At most {{.Most}} observations, each one of these kinds:
@@ -67,4 +85,6 @@ there is nothing worth saying, answer with an empty list.
 
 Answer with this object and nothing else:
 
-{"reflections": [{"text": "...", "reflectionKind": "pattern", "citations": ["projects/example-app", "projects/example-lib#2"]}]}
+{"reflections": [{"text": "...", "reflectionKind": "pattern", "citations": ["projects/example-app", "projects/example-lib#2"], "replacedObservations": []}], "retiredObservations": []}{{if .Standing}}
+
+A retired one is written {"observation": "themes/example#4", "retiredReason": "..."}.{{end}}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,9 +55,8 @@ const reflectionAnswerText = `{"reflections": [
 ]}`
 
 // A theme whose overview is newer than its last reflection gets one; an
-// observation needs two citations of what its prompt showed; the next
-// reflection supersedes the last rather than deleting it.
-func TestTheNightReflectsOnAThemeAndSupersedesTheLastReflection(t *testing.T) {
+// observation needs two citations of what its prompt showed.
+func TestTheNightReflectsOnATheme(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	provider, sentPrompts := promptedProvider(t, func(string) string { return reflectionAnswerText })
@@ -74,17 +74,15 @@ func TestTheNightReflectsOnAThemeAndSupersedesTheLastReflection(t *testing.T) {
 	if !isAskedOfModel(sentPrompts()[0], "judge") {
 		t.Errorf("the reflection was not asked of the synthesize model")
 	}
-	var first *models.AgentFact
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		facts, err := tx.ListAgentFacts(run.Agent.ID, idByPath["themes/orchard-work"], false, 10)
 		if err != nil || len(facts) != 1 {
 			t.Fatalf("ListAgentFacts: %v %s", facts, err)
 		}
-		first = facts[0]
-		if first.Kind != models.FactReflection || first.ReflectionKind() != "pattern" {
-			t.Errorf("the reflection is %+v", first)
+		if facts[0].Kind != models.FactReflection || facts[0].ReflectionKind() != "pattern" {
+			t.Errorf("the reflection is %+v", facts[0])
 		}
-		if got := strings.Join(first.Citations(), " "); got != "projects/orchard-north#1 projects/orchard-south#1" {
+		if got := strings.Join(facts[0].Citations(), " "); got != "projects/orchard-north#1 projects/orchard-south#1" {
 			t.Errorf("the reflection cites %q", got)
 		}
 	})
@@ -94,29 +92,113 @@ func TestTheNightReflectsOnAThemeAndSupersedesTheLastReflection(t *testing.T) {
 	if len(sentPrompts()) != 1 {
 		t.Errorf("a theme with the same overview was reflected on again")
 	}
+}
 
-	// The overview is written again: the next reflection replaces it.
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if err := tx.SetAgentNodeOverview(run.Agent.ID, idByPath["themes/orchard-work"], "## What it is\n\nThree orchards, pruned late.", nil, "again", time.Now()); err != nil {
-			t.Fatalf("SetAgentNodeOverview: %s", err)
-		}
-	})
-	worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		live, err := tx.ListAgentFacts(run.Agent.ID, idByPath["themes/orchard-work"], false, 10)
-		if err != nil || len(live) != 1 || live[0].ID == first.ID {
-			t.Fatalf("the live reflections are %v %v", live, err)
-		}
-		all, err := tx.ListAgentFacts(run.Agent.ID, idByPath["themes/orchard-work"], true, 10)
-		if err != nil {
-			t.Fatalf("ListAgentFacts: %s", err)
-		}
-		for _, fact := range all {
-			if fact.ID == first.ID && fact.SupersededBy != live[0].ID {
-				t.Errorf("the first reflection is not superseded by the second: %+v", fact)
+// Refreshing a theme's reflections adds to what stands: a standing
+// observation goes only when an answer names it, replaced by an
+// observation that passed its checks or retired with a reason, and
+// saying less, or nothing, keeps the rest.
+func TestAReflectionReplacesOrRetiresOnlyWhatItNames(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	var answer atomic.Value
+	answer.Store(reflectionAnswerText)
+	provider, sentPrompts := promptedProvider(t, func(string) string { return answer.Load().(string) })
+	worker, run := digestSplitWorldWith(t, database, provider.URL, synthesizeOnJudge)
+	idByPath := reflectionWorld(t, database, run.Agent.ID)
+	themeId := idByPath["themes/orchard-work"]
+
+	reflectAgain := func(answerText string) {
+		t.Helper()
+		answer.Store(answerText)
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			if err := tx.SetAgentNodeOverview(run.Agent.ID, themeId, "## What it is\n\nThree orchards.", nil, "again", time.Now()); err != nil {
+				t.Fatalf("SetAgentNodeOverview: %s", err)
 			}
+		})
+		worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	}
+	// standing is the live reflections' texts by their references.
+	standing := func() map[string]string {
+		t.Helper()
+		texts := map[string]string{}
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			facts, err := tx.ListAgentFacts(run.Agent.ID, themeId, false, 20)
+			if err != nil {
+				t.Fatalf("ListAgentFacts: %s", err)
+			}
+			for _, fact := range facts {
+				texts[fact.Reference("themes/orchard-work")] = fact.Text
+			}
+		})
+		return texts
+	}
+	// reflectionNamed is a reflection, live or not, by its reference.
+	reflectionNamed := func(reference string) *models.AgentFact {
+		t.Helper()
+		var found *models.AgentFact
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			facts, err := tx.ListAgentFacts(run.Agent.ID, themeId, true, 20)
+			if err != nil {
+				t.Fatalf("ListAgentFacts: %s", err)
+			}
+			for _, fact := range facts {
+				if fact.Reference("themes/orchard-work") == reference {
+					found = fact
+				}
+			}
+		})
+		if found == nil {
+			t.Fatalf("no reflection %s", reference)
 		}
-	})
+		return found
+	}
+
+	worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	if got := standing(); len(got) != 1 || got["themes/orchard-work#1"] == "" {
+		t.Fatalf("after the first reflection: %v", got)
+	}
+
+	// A partial refresh: one new observation, naming nothing. The first
+	// stays, and the prompt showed it by its name.
+	reflectAgain(`{"reflections": [{"text": "Late pruning puts the harvest at risk.", "reflectionKind": "risk", "citations": ["projects/orchard-north#1", "projects/orchard-east#1"]}]}`)
+	if prompt := sentPrompts()[len(sentPrompts())-1]; !strings.Contains(prompt, "themes/orchard-work#1 (pattern) Pruning runs late in every orchard.") {
+		t.Errorf("the prompt does not show the standing observation by its name: %q", prompt)
+	}
+	if got := standing(); len(got) != 2 || got["themes/orchard-work#1"] == "" || got["themes/orchard-work#2"] == "" {
+		t.Fatalf("a partial refresh left %v", got)
+	}
+
+	// One that replaces the first by name: the first is superseded by
+	// it, the second is untouched.
+	reflectAgain(`{"reflections": [{"text": "Pruning runs late in every orchard, and later each year.", "reflectionKind": "trend", "citations": ["projects/orchard-north#1", "projects/orchard-south#1"], "replacedObservations": ["themes/orchard-work#1"]}]}`)
+	if got := standing(); len(got) != 2 || got["themes/orchard-work#2"] == "" || got["themes/orchard-work#3"] == "" {
+		t.Fatalf("a replacement left %v", got)
+	}
+	if first, third := reflectionNamed("themes/orchard-work#1"), reflectionNamed("themes/orchard-work#3"); first.SupersededBy != third.ID {
+		t.Errorf("the first reflection is superseded by %q, not the one that replaced it", first.SupersededBy)
+	}
+
+	// Nothing worth saying: nothing goes.
+	reflectAgain(`{"reflections": []}`)
+	// An observation that fails its checks replaces nothing, and a
+	// retirement without a reason, or of something not shown, retires
+	// nothing.
+	reflectAgain(`{"reflections": [{"text": "Something thin.", "reflectionKind": "risk", "citations": ["projects/orchard-north#1"], "replacedObservations": ["themes/orchard-work#2"]}],
+		"retiredObservations": [{"observation": "themes/orchard-work#3"}, {"observation": "themes/orchard-work#9", "retiredReason": "made up"}, {"observation": "projects/orchard-north#1", "retiredReason": "not an observation"}]}`)
+	if got := standing(); len(got) != 2 || got["themes/orchard-work#2"] == "" || got["themes/orchard-work#3"] == "" {
+		t.Fatalf("an empty or failed refresh left %v", got)
+	}
+
+	// A retirement with a reason: struck, with nothing standing in its
+	// place, and readable afterwards.
+	reflectAgain(`{"reflections": [], "retiredObservations": [{"observation": "themes/orchard-work#2", "retiredReason": "The harvest came in on time."}]}`)
+	if got := standing(); len(got) != 1 || got["themes/orchard-work#3"] == "" {
+		t.Fatalf("a retirement left %v", got)
+	}
+	if retired := reflectionNamed("themes/orchard-work#2"); !retired.Dormant || retired.SupersededBy != "" {
+		t.Errorf("the retired reflection is %+v", retired)
+	}
 }
 
 // The top-level themes are reflected on together once a week, onto the

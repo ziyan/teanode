@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,10 @@ const (
 	// shows, the most important first.
 	reflectionMemberCount = 30
 
+	// standingReflectionCount is how many of a page's current
+	// observations a reflection is shown, to keep, replace or retire.
+	standingReflectionCount = 20
+
 	// reflectionAcrossThemesEvery is how often the night reflects on the
 	// top-level themes together.
 	reflectionAcrossThemesEvery = 7 * 24 * time.Hour
@@ -44,13 +49,22 @@ const (
 // reflectionKinds is what an observation may be.
 var reflectionKinds = []string{"pattern", "tension", "trend", "risk", "question"}
 
-// reflectionAnswer is what the model answers a reflection with.
+// reflectionAnswer is what the model answers a reflection with: the new
+// observations, each naming the standing ones it replaces, and the
+// standing ones that no longer hold. A standing observation named in
+// neither stays as it is, so an answer that says less is not an answer
+// that says the rest is wrong.
 type reflectionAnswer struct {
 	Reflections []struct {
-		Text           string   `json:"text"`
-		ReflectionKind string   `json:"reflectionKind"`
-		Citations      []string `json:"citations"`
+		Text                 string   `json:"text"`
+		ReflectionKind       string   `json:"reflectionKind"`
+		Citations            []string `json:"citations"`
+		ReplacedObservations []string `json:"replacedObservations"`
 	} `json:"reflections"`
+	RetiredObservations []struct {
+		Observation   string `json:"observation"`
+		RetiredReason string `json:"retiredReason"`
+	} `json:"retiredObservations"`
 }
 
 // reflectionInputs is what one reflection is written from, and what it
@@ -61,13 +75,28 @@ type reflectionInputs struct {
 
 	pageIdByPath      map[string]string
 	factIdByReference map[string]string
+
+	// standing is the page's own current observations as the prompt
+	// shows them, and standingIdByReference their ids: the only ones an
+	// answer may replace or retire.
+	standing              []string
+	standingIdByReference map[string]string
 }
 
-// reflection is one observation that passed its checks.
+// reflection is one observation that passed its checks, and the
+// standing observations it replaces.
 type reflection struct {
 	text           string
 	reflectionKind string
 	evidence       []models.Evidence
+	replacedIds    []string
+}
+
+// retiredReflection is a standing observation the answer says no longer
+// holds, and why.
+type retiredReflection struct {
+	factId        string
+	retiredReason string
 }
 
 // dreamReflect writes the night's observations over its themes: a few
@@ -252,6 +281,12 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 	if len(inputs.members) == 0 {
 		return 0
 	}
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return readStandingReflections(tx, run.Agent.ID, page, inputs)
+	}); err != nil {
+		log.Warningf("cannot read the observations standing on %q: %s", page.Path, err)
+		return 0
+	}
 	prompt, err := render("reflect.txt", map[string]any{
 		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
 		"PersonName":        personName(run.Owner),
@@ -262,6 +297,7 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 		"Overview":          page.Overview,
 		"Members":           inputs.members,
 		"Facts":             inputs.facts,
+		"Standing":          inputs.standing,
 		"Most":              reflectionCount,
 	})
 	if err != nil {
@@ -282,9 +318,10 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 		return 0
 	}
 	kept := keptReflections(read.Value, inputs)
+	retired := retiredReflections(read.Value, inputs, kept)
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		tx.AsActor(models.ActorDream)
-		return writeReflections(tx, run.Agent.ID, page, kept, reflectedAt)
+		return writeReflections(tx, run.Agent.ID, page, kept, retired, reflectedAt)
 	}); err != nil {
 		log.Warningf("cannot keep the reflections on %q: %s", page.Path, err)
 		return 0
@@ -320,9 +357,78 @@ func keptReflections(answer reflectionAnswer, inputs *reflectionInputs) []reflec
 		if len(evidence)-1 < reflectionLeastCitations {
 			continue
 		}
-		kept = append(kept, reflection{text: text, reflectionKind: reflectionKind, evidence: evidence})
+		var replacedIds []string
+		for _, named := range wanted.ReplacedObservations {
+			if factId, isStanding := standingReflectionNamed(named, inputs); isStanding && !slices.Contains(replacedIds, factId) {
+				replacedIds = append(replacedIds, factId)
+			}
+		}
+		kept = append(kept, reflection{text: text, reflectionKind: reflectionKind, evidence: evidence, replacedIds: replacedIds})
 	}
 	return kept
+}
+
+// retiredReflections is the standing observations an answer says no
+// longer hold, with a reason. One a kept observation already replaces is
+// left to that replacement, and one with no reason is not retired: a
+// retirement nobody can read back the reason for cannot be checked.
+func retiredReflections(answer reflectionAnswer, inputs *reflectionInputs, kept []reflection) []retiredReflection {
+	isTaken := map[string]bool{}
+	for _, each := range kept {
+		for _, factId := range each.replacedIds {
+			isTaken[factId] = true
+		}
+	}
+	var retired []retiredReflection
+	for _, wanted := range answer.RetiredObservations {
+		factId, isStanding := standingReflectionNamed(wanted.Observation, inputs)
+		retiredReason := cutRunes(strings.TrimSpace(wanted.RetiredReason), 300)
+		if !isStanding || isTaken[factId] || retiredReason == "" {
+			continue
+		}
+		isTaken[factId] = true
+		retired = append(retired, retiredReflection{factId: factId, retiredReason: retiredReason})
+	}
+	return retired
+}
+
+// standingReflectionNamed reads a name of a standing observation, as the
+// prompt wrote it, as its id.
+func standingReflectionNamed(named string, inputs *reflectionInputs) (string, bool) {
+	named = strings.Trim(strings.TrimSpace(named), "`[]()")
+	if index := strings.LastIndexByte(named, '#'); index > 0 {
+		named = models.NormalizePath(named[:index]) + named[index:]
+	}
+	factId, isStanding := inputs.standingIdByReference[named]
+	return factId, isStanding
+}
+
+// readStandingReflections shows a reflection the page's own current
+// observations, the newest first, so that it can keep, replace or retire
+// each by name.
+func readStandingReflections(tx db.Transaction, agentId string, page *models.AgentNode, inputs *reflectionInputs) error {
+	facts, err := tx.ListAgentFacts(agentId, page.ID, false, 200)
+	if err != nil {
+		return err
+	}
+	var standing []*models.AgentFact
+	for _, fact := range facts {
+		if fact.Kind == models.FactReflection {
+			standing = append(standing, fact)
+		}
+	}
+	sort.SliceStable(standing, func(left, right int) bool { return standing[left].Number > standing[right].Number })
+	if len(standing) > standingReflectionCount {
+		standing = standing[:standingReflectionCount]
+	}
+	inputs.standing = nil
+	inputs.standingIdByReference = map[string]string{}
+	for _, fact := range standing {
+		reference := fact.Reference(page.Path)
+		inputs.standingIdByReference[reference] = fact.ID
+		inputs.standing = append(inputs.standing, fmt.Sprintf("%s (%s) %s", reference, fact.ReflectionKind(), strings.TrimSpace(fact.Text)))
+	}
+	return nil
 }
 
 // resolveCitation reads one citation as the page or fact it names, and
@@ -353,31 +459,37 @@ func isReflectionKind(reflectionKind string) bool {
 }
 
 // writeReflections puts the kept observations on the page, supersedes
-// the ones they replace, and marks the page reflected on.
-func writeReflections(tx db.Transaction, agentId string, page *models.AgentNode, kept []reflection, reflectedAt time.Time) error {
-	if len(kept) > 0 {
-		previous, err := tx.ListAgentFacts(agentId, page.ID, false, 200)
+// each standing one by the observation that names it as replaced, strikes
+// the ones retired with their reason, and marks the page reflected on.
+// Every other standing observation stays: refreshing a page adds to what
+// it holds, and only what the answer names goes.
+func writeReflections(tx db.Transaction, agentId string, page *models.AgentNode, kept []reflection, retired []retiredReflection, reflectedAt time.Time) error {
+	isGone := map[string]bool{}
+	for _, each := range kept {
+		fact, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: agentId, NodeID: page.ID, Kind: models.FactReflection, Text: each.text,
+			Confidence: 0.7, Inferred: true, Evidence: each.evidence,
+		})
 		if err != nil {
 			return err
 		}
-		var written []*models.AgentFact
-		for _, each := range kept {
-			fact, err := tx.AddAgentFact(&models.AgentFact{
-				AgentID: agentId, NodeID: page.ID, Kind: models.FactReflection, Text: each.text,
-				Confidence: 0.7, Inferred: true, Evidence: each.evidence,
-			})
-			if err != nil {
-				return err
-			}
-			written = append(written, fact)
-		}
-		for _, fact := range previous {
-			if fact.Kind != models.FactReflection {
+		for _, replacedId := range each.replacedIds {
+			if isGone[replacedId] {
 				continue
 			}
-			if _, err := tx.FoldAgentFact(agentId, fact.ID, written[0].ID, "a later reflection on the same page replaces it"); err != nil {
+			isGone[replacedId] = true
+			if _, err := tx.FoldAgentFact(agentId, replacedId, fact.ID, "a later reflection on the same page replaces it"); err != nil {
 				return err
 			}
+		}
+	}
+	for _, each := range retired {
+		if isGone[each.factId] {
+			continue
+		}
+		isGone[each.factId] = true
+		if _, err := tx.StrikeAgentFact(agentId, each.factId, "a later reflection found it no longer holds: "+each.retiredReason); err != nil {
+			return err
 		}
 	}
 	return tx.MarkAgentNodeReflected(agentId, page.ID, reflectedAt)
