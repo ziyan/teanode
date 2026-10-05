@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
 
@@ -24,12 +25,13 @@ func PrintJSON(value any) error {
 // jsonRequested records that the command that ran asked for JSON, so that
 // when it fails the error can be printed the same way. Set by the flag's own
 // action, which runs once the flags are parsed and before the command does,
-// and by the commands that print JSON without being asked.
-var jsonRequested bool
+// and by the commands that print JSON without being asked. Atomic, since
+// tests run commands side by side in one process.
+var jsonRequested atomic.Bool
 
 // JSONRequested says whether the command that ran wanted JSON.
 func JSONRequested() bool {
-	return jsonRequested
+	return jsonRequested.Load()
 }
 
 // JSONFlag is offered by every command that prints a table, so that a script
@@ -40,7 +42,7 @@ func JSONFlag() cli.Flag {
 		Name:  "json",
 		Usage: "print the result as JSON",
 		Action: func(ctx context.Context, command *cli.Command, value bool) error {
-			jsonRequested = value
+			jsonRequested.Store(value)
 			return nil
 		},
 	}
@@ -54,7 +56,7 @@ const alwaysJsonMetadata = "alwaysJson"
 
 // alwaysJson is the Before of a command marked with alwaysJsonMetadata.
 func alwaysJson(ctx context.Context, command *cli.Command) (context.Context, error) {
-	jsonRequested = true
+	jsonRequested.Store(true)
 	return ctx, nil
 }
 
@@ -64,11 +66,11 @@ func alwaysJson(ctx context.Context, command *cli.Command) (context.Context, err
 // JSON is known by its metadata.
 func NoteUsageError(failed *cli.Command, arguments []string) {
 	if failed != nil && failed.Metadata[alwaysJsonMetadata] == true {
-		jsonRequested = true
+		jsonRequested.Store(true)
 	}
 	for _, argument := range arguments {
 		if argument == "--json" || argument == "--json=true" {
-			jsonRequested = true
+			jsonRequested.Store(true)
 		}
 	}
 }
@@ -78,7 +80,7 @@ func NoteUsageError(failed *cli.Command, arguments []string) {
 // the same way it parses success, and as text otherwise. Always to standard
 // error, so that a failure is never mistaken for a result.
 func PrintError(err error) {
-	if !jsonRequested {
+	if !jsonRequested.Load() {
 		// A server's error can carry what a stranger wrote.
 		fmt.Fprintf(os.Stderr, "%s\n", forTerminal(err.Error()))
 		return
