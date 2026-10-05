@@ -15,17 +15,22 @@ To see it working: in the main conversation ask "keep an eye out for a reply fro
 ## Progress
 
 - [x] (2026-10-05) Surveyed every mechanism that works between conversations (goals, todos, reminders, schedules and the brief, alerts, mail rules, ideas, speaking first, background work, the reply queue, interactions, statement imports, mail to the person, the chat-app relay) and wrote this plan.
-- [ ] Milestone 1: storage. Migration 0148: the `goal` conversation kind, `goal_title` and the `dropped` state on conversations, `agent_goal_activity`, `agent_goal_artifact`. Models and database methods.
-- [ ] Milestone 2: the goal runs out of sight. Starting a goal makes its conversation; goal turns run there; every change writes an activity row; goal turns may start background work; tools that make a mail rule, a reminder or an alert mute in a goal conversation record it as an artifact.
-- [ ] Milestone 3: surfacing and answering. A goal that comes to need the person (it waits, or stalls) says so once in the main conversation; the main turn's prompt carries the goals waiting on the person; the goal tool's `tell` passes the person's answer on and starts the goal again.
-- [ ] Milestone 4: the API, the tool and the command line. `ListAgentGoals`, `GetAgentGoal`, `StartAgentGoal`, `TellAgentGoal`, `SetAgentGoalState`; the goal tool's actions over them; `teanode agent goal list|show|start|tell|done|drop`.
-- [ ] Milestone 5: the dashboard. The Goals tab grouped as Needs you, Tracking and Done, each with its status line; a goal's page with the description, artifacts and activity, a box to answer, and Done and Drop; the main conversation draws a goal's call for attention as a card that links to it.
-- [ ] Milestone 6: documentation, tests, review, deploy, and a check in a browser at desktop and phone widths.
+- [x] (2026-10-05) Milestone 1: storage. Migration 0148: `goal_title` and `goal_surfaced_at` on conversations, `agent_goal_activity`, `agent_goal_artifact`; the `goal` kind and the `dropped` state need no schema change (kinds and states are text). Models and database methods.
+- [x] (2026-10-05) Milestone 2: starting a goal makes its conversation (`StartGoal`); goal turns run there with their own check-in; note, wait, met, stall and failure write activity rows; goal turns may start background work, which wakes the goal; the mail rule, reminder and alert mute tools record artifacts through `tools.RecordGoalArtifact`; schedules made in a goal conversation answer there.
+- [x] (2026-10-05) Milestone 3: `surfaceGoals` on the worker's tick says each waiting goal once in the main conversation; the main turn's prompt lists the goals waiting on the person; `TellGoal` passes their words on; resuming from the goal's own conversation logs a row.
+- [x] (2026-10-05) Milestone 4: the five operations, the goal tool over them, `teanode agent goal list|show|start|tell|done|drop|reopen`; `conversation goal` and `conversation new --goal` removed; `StartAgentConversation(goal)` and `UpdateAgentConversation(goal)` refused outside a goal's own conversation.
+- [x] (2026-10-05) Milestone 5: the Goals tab (Needs you, Tracking, Done, Start a goal) and a goal's page; the drawer draws a goal's call with a link to it, always; its goal menu starts a background goal.
+- [x] (2026-10-05) Milestone 6: docs (`conversations.md`, `jobs-and-schedules.md`, `command-line.md`, the decision record), tests, and a run on a dev server with a real model: a goal that asked, was answered in the main conversation and was met; checked in a browser at 1400 and 390 pixels, light and dark.
+- [ ] Review, merge and deploy.
 
 
 ## Surprises & Discoveries
 
-- Nothing yet beyond the survey. Its facts that shape this plan: a goal today is five columns on `agent_conversation` (`goal`, `goal_state`, `goal_note`, `goal_next_at`, `goal_set_at`, migrations 0083 and 0087), run by the `goal` job in `internal/agent/goal.go`, which already has the turn caps (48 a day, 24 without the person), the doubling back-off, budget deferral and resuming when the person writes. Background work refuses to start from a turn with nobody present (`startBackgroundWork` in `internal/agent/background_work.go`), so a goal turn can start none. Alerts are written into the main conversation by `deliverAlert` in `internal/agent/alert.go`, which is the pattern a goal's call for attention follows. On the maintainer's server there is one goal, met, on a named conversation, and three schedules.
+- Running goals against a real model on a dev server: the model passed a note's words as `status`, not `text`, which the descriptions invited by calling it the status; the tool now takes `status` for note and wait. The drawer hid the goal's call along with the working notes, so the link to the goal never showed; it is shown always now. And the mail a waiting goal sent landed in the inbox and was alerted on, so the person heard the same question twice; goals of their own send no mail.
+  Evidence: the goal conversations and the main conversation of the dev run, 2026-10-05.
+- A conversation's goal could not be put on a non-goal conversation without breaking the drawer's goal menu, which set goals on whatever conversation was open; the menu now starts a background goal from any other conversation.
+
+- The survey's facts that shape this plan: a goal today is five columns on `agent_conversation` (`goal`, `goal_state`, `goal_note`, `goal_next_at`, `goal_set_at`, migrations 0083 and 0087), run by the `goal` job in `internal/agent/goal.go`, which already has the turn caps (48 a day, 24 without the person), the doubling back-off, budget deferral and resuming when the person writes. Background work refuses to start from a turn with nobody present (`startBackgroundWork` in `internal/agent/background_work.go`), so a goal turn can start none. Alerts are written into the main conversation by `deliverAlert` in `internal/agent/alert.go`, which is the pattern a goal's call for attention follows. On the maintainer's server there is one goal, met, on a named conversation, and three schedules.
 
 
 ## Decision Log
@@ -58,10 +63,16 @@ To see it working: in the main conversation ask "keep an eye out for a reply fro
   Rationale: changing their delivery is a separate decision with its own trade-offs; this plan consolidates where they are seen and gives long-running work a place that is not the chat.
   Date/Author: 2026-10-05.
 
+- Decision: any turn with the person present, and the agent's own turns other than a goal's, may start a goal; at most twenty are in progress at once (`goalsInProgressMost`), and a goal's own turn starts none.
+  Rationale: the agent should be able to take on something long when the person asks for it or when an alert shows something to follow up, as the agent in the motivating example does; a goal starting goals would multiply turns nobody watches, and the bound keeps the worst case visible.
+  Date/Author: 2026-10-05.
+- Decision: a goal of its own sends no mail when it waits or stalls; it calls the person in the main conversation, which the chat-app relay forwards.
+  Rationale: on the dev run the mail arrived in the person's inbox and the alert pipeline told them about it, so the same question reached them twice. One place to be called is the point.
+  Date/Author: 2026-10-05.
 
 ## Outcomes & Retrospective
 
-Not yet.
+Built as planned. A goal's whole life on the dev server took four rows (started, needs you, you answered, done) and wrote two messages into the main conversation, the question and the person's answer, where before every check-in would have been there. Open: alerts, schedules and speaking first still post to the main conversation, by the decision above; the turns a goal takes are bounded by the existing caps, and a goal can still ask too often, which only use will show.
 
 
 ## Context and Orientation
