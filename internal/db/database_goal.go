@@ -28,6 +28,11 @@ type GoalOperation interface {
 	// ListAgentGoalArtifacts is what a goal made, oldest first.
 	ListAgentGoalArtifacts(agentId, conversationId string) ([]*models.AgentGoalArtifact, error)
 
+	// ListAgentGoalsWithoutNextTurn is every goal, across agents, that is
+	// working with no next turn of its own: one its schedule keeps, or one
+	// whose schedule has since gone and that needs a turn again.
+	ListAgentGoalsWithoutNextTurn(limit int) ([]*models.AgentConversation, error)
+
 	// ListAgentGoalsToSurface is every goal, across agents, that waits on
 	// its person and has not yet been said in their main conversation.
 	ListAgentGoalsToSurface(limit int) ([]*models.AgentConversation, error)
@@ -71,6 +76,23 @@ func (self *transaction) ListAgentGoals(agentId string, goalStates []models.Agen
 	}
 	var found []agentConversationModel
 	if err := query.Order(`"last_at" DESC`).Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(found))
+	for index := range found {
+		conversations = append(conversations, conversationFromModel(&found[index]))
+	}
+	return conversations, nil
+}
+
+func (self *transaction) ListAgentGoalsWithoutNextTurn(limit int) ([]*models.AgentConversation, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	var found []agentConversationModel
+	if err := self.tx.Where(`"kind" = ? AND "goal_state" = ? AND "goal_next_at" IS NULL AND "goal" <> ''`,
+		string(models.AgentConversationGoal), string(models.GoalWorking)).
+		Order(`"modified_at" ASC`).Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	conversations := make([]*models.AgentConversation, 0, len(found))

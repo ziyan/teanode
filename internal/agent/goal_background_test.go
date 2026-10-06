@@ -148,3 +148,61 @@ func TestAPersonDropsAndReopensAGoal(t *testing.T) {
 		t.Fatal("the main conversation was treated as a goal")
 	}
 }
+
+// A goal with a schedule runs on it: moving one to the goal stops the
+// goal's own turns, a turn it was owed is not taken, and a goal whose
+// schedule is switched off is given a turn again.
+func TestAGoalWithAScheduleRunsOnIt(t *testing.T) {
+	world, goal := startBackgroundGoal(t, nil)
+	defer world.close()
+	var schedule *models.AgentSchedule
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		next := time.Now().Add(time.Hour)
+		var err error
+		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: world.found.ID, Name: "Save the photos", Cron: "0 */3 * * *", Prompt: "run the sync",
+			Deliver: models.AgentDeliverMail, ConversationID: world.conversation.ID, Enabled: true, NextRunAt: &next,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+	})
+
+	moved, err := world.worker.MoveScheduleToGoal(context.Background(), world.found, schedule.ID, goal.ID)
+	if err != nil || moved.ConversationID != goal.ID || moved.Deliver != models.AgentDeliverDrawer {
+		t.Fatalf("moved: %+v %v", moved, err)
+	}
+	after, activity := readGoal(t, world, goal.ID)
+	if after.GoalNextAt != nil || activity[0].ActivityHeadline != `Runs on the schedule "Save the photos"` {
+		t.Fatalf("a goal on a schedule books no turn of its own: %+v %+v", after, activity[0])
+	}
+
+	// A tick finds it without a turn but with a schedule: nothing queued.
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	var jobs []*models.AgentJob
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		jobs, _ = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal}}, nil)
+	})
+	if len(jobs) != 0 {
+		t.Fatalf("a goal on a schedule took a turn of its own: %+v", jobs)
+	}
+
+	// Switched off, the schedule no longer keeps it: it gets a turn.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.UpdateAgentSchedule(schedule.ID, func(changing *models.AgentSchedule) error {
+			changing.Enabled = false
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgentSchedule: %s", err)
+		}
+	})
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if woken, _ := readGoal(t, world, goal.ID); woken.GoalNextAt == nil {
+		t.Fatalf("a goal whose schedule is off has no turn: %+v", woken)
+	}
+}

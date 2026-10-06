@@ -72,6 +72,12 @@ To see it working: in the main conversation ask "keep an eye out for a reply fro
 - Decision: the per-conversation goal is removed outright, with nothing migrated and nothing kept for compatibility: no goal menu on a chat in the drawer, no goal arguments on `StartAgentConversation` or `UpdateAgentConversation`, no `isGoalInProgress` listing, no turn count on a conversation, no goal-change lines written into transcripts, and the goal tool's `set` gone. Only goal conversations take turns. An idea is no longer marked done when a conversation's goal is met.
   Rationale: two concepts named "goal" confused the model when the person asked it to set one, and the owner asked for the old one removed cleanly. The one old goal on the maintainer's server was already met.
   Date/Author: 2026-10-05.
+- Decision: a goal whose work is on a clock runs on a schedule it owns, and takes no turns of its own while it has one. A schedule becomes the goal's when made in its conversation, passed to `start`, or moved with `take_schedule`; moving it makes it answer in the goal's conversation rather than by mail. A goal whose schedule is switched off or removed is given a turn again by the worker.
+  Rationale: the first real goal on the maintainer's server had a three-hourly schedule doing the work and the goal checking every four hours that the schedule was still there: fourteen wakes a day where eight did everything, and the schedule's runs landed in the main conversation because it had been made there.
+  Date/Author: 2026-10-05.
+- Decision: what the agent writes for a goal (title, description, status, activity) is for the person: no ids, tool names or paths. The goal page links the conversation a goal was asked for in (migration 0149) instead of printing its id.
+  Rationale: the owner's review of the first real goal: ids in the activity mean nothing to the person, and links are better.
+  Date/Author: 2026-10-05.
 
 ## Outcomes & Retrospective
 

@@ -11387,6 +11387,7 @@ button.idea-history-title {
 .goal-page {
   display: grid;
   gap: var(--space-3);
+  min-width: 0;
   max-width: 720px;
 }
 
@@ -11402,6 +11403,7 @@ button.idea-history-title {
 .goal-description {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .goal-actions {
@@ -11410,33 +11412,52 @@ button.idea-history-title {
   gap: var(--space-2);
 }
 
-/* What happened on a goal, newest first, as a line down the side with a
-   mark at each entry. */
+/* What happened on a goal, newest first: a dot for each entry, joined by a
+   line drawn from each dot down to the next, so the two always line up. */
 .goal-activity {
   display: grid;
-  gap: var(--space-3);
   margin: 0;
-  padding: 0 0 0 var(--space-4);
+  padding: 0;
   list-style: none;
-  border-left: 2px solid var(--border);
 }
 
 .goal-activity-item {
   position: relative;
   display: grid;
   gap: 2px;
+  min-width: 0;
+  padding: 0 0 var(--space-4) 26px;
+}
+
+.goal-activity-item:last-child {
+  padding-bottom: 0;
 }
 
 .goal-activity-item::before {
   content: '';
   position: absolute;
-  left: calc(-1 * var(--space-4) - 6px);
-  top: 6px;
-  width: 10px;
-  height: 10px;
+  left: 0;
+  top: 4px;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   border: 2px solid var(--border-strong);
-  background: var(--background);
+  background: var(--surface);
+}
+
+.goal-activity-item::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 18px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--border);
+}
+
+.goal-activity-item:last-child::after {
+  display: none;
 }
 
 .goal-activity-waiting::before {
@@ -11453,6 +11474,7 @@ button.idea-history-title {
 
 .goal-activity-detail {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .goal-activity-when {

@@ -76,8 +76,11 @@ const (
 			artifacts { id createdAt goalArtifactKind artifactReference artifactTitle }
 		}
 	}`
-	DocumentStartAgentGoal = `mutation ($goalTitle: String!, $goalDescription: String!, $originConversationId: String) {
-		StartAgentGoal(goalTitle: $goalTitle, goalDescription: $goalDescription, originConversationId: $originConversationId) { ` + goalFields + ` }
+	DocumentStartAgentGoal = `mutation ($goalTitle: String!, $goalDescription: String!, $originConversationId: String, $scheduleIds: [String!]) {
+		StartAgentGoal(goalTitle: $goalTitle, goalDescription: $goalDescription, originConversationId: $originConversationId, scheduleIds: $scheduleIds) { ` + goalFields + ` }
+	}`
+	DocumentMoveAgentScheduleToGoal = `mutation ($scheduleId: String!, $conversationId: String!) {
+		MoveAgentScheduleToGoal(scheduleId: $scheduleId, conversationId: $conversationId) { id name cron enabled conversationId nextRunAt }
 	}`
 	DocumentTellAgentGoal = `mutation ($conversationId: String!, $text: String!) {
 		TellAgentGoal(conversationId: $conversationId, text: $text) { ` + goalFields + ` }
@@ -145,4 +148,15 @@ func SetAgentGoalState(ctx context.Context, connection *Client, conversationId, 
 		return nil, err
 	}
 	return result.SetAgentGoalState, nil
+}
+
+// MoveAgentScheduleToGoal makes a schedule one of a goal's.
+func MoveAgentScheduleToGoal(ctx context.Context, connection *Client, scheduleId, conversationId string) (*AgentGoalSchedule, error) {
+	var result struct {
+		MoveAgentScheduleToGoal *AgentGoalSchedule `json:"MoveAgentScheduleToGoal"`
+	}
+	if err := connection.Execute(ctx, DocumentMoveAgentScheduleToGoal, map[string]any{"scheduleId": scheduleId, "conversationId": conversationId}, &result); err != nil {
+		return nil, err
+	}
+	return result.MoveAgentScheduleToGoal, nil
 }

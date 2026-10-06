@@ -94,6 +94,16 @@ shows them, passes the person's words to one (`tell`), and lets the person
 close or reopen one (`done`, `drop`, `reopen`). A goal's own turn starts no
 goals and cannot tell, close or reopen one.
 
+Work on a clock belongs in a **schedule the goal owns**: one made in the goal's
+conversation, given to `start` as `schedule_ids`, or moved to it with the
+tool's `take_schedule` (`MoveAgentScheduleToGoal`, `teanode agent goal
+take-schedule`). Its runs take place in the goal's conversation and are the
+goal's turns: each ends with the goal tool, and only a `wait` reaches the
+person. While a goal has an enabled schedule it takes no turns of its own; when
+the schedule is switched off or removed, the worker gives the goal a turn
+again. A goal remembers the conversation it was asked for in, which its page
+links to (migration 0149).
+
 What happened on a goal is its **activity**, rows in `agent_goal_activity`:
 started, progress (only when a turn said something happened; a turn that only
 looked writes none), waiting, resumed, met, dropped, stalled and failed. What it

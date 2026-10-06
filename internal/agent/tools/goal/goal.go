@@ -48,17 +48,19 @@ func init() {
 				Description: "Goals: what you keep at for the person in the background, between conversations, each in a conversation of its own where your turns on it run out of their sight, until it is met or they drop it. They hear from a goal only when it needs them. " +
 					"`start` starts one, with a title of a few words and text saying what it is for and what done looks like; use it when they ask you to keep at, watch for or follow up on something that outlasts this conversation. `list` is every goal and where it stands; `show` one with what happened on it and what it made. " +
 					"`tell` passes the person's words to a goal by goal_id: their answer to what it asked, or something it should know. `done`, `drop` and `reopen` are theirs: a goal met, stopped, or taken up again. " +
-					"In a goal's own turns: `note` with status (where it stands, one line), the minutes until your next turn, and activity when something happened worth their reading later; `wait` with status saying what you need from them, which is said to them in their main conversation; `met` with text saying how it ended, as soon as it is done.",
+					"Work on a clock belongs in a schedule the goal owns: made in its turn, given to `start` as schedule_ids, or moved to it with `take_schedule`; its runs are then the goal's turns and the goal takes none of its own. In a goal's own turns: `note` with status (where it stands, one line), the minutes until your next turn (ignored while it has a schedule), and activity when something happened worth their reading later; `wait` with status saying what you need from them, which is said to them in their main conversation; `met` with text saying how it ended, as soon as it is done.",
 				Parameters: tools.Object(map[string]any{
-					"action":   tools.EnumProperty("what to do", "start", "list", "show", "tell", "done", "drop", "reopen", "note", "wait", "met"),
-					"goal_id":  tools.StringProperty("for show, tell, done, drop and reopen: the goal, by the id list gives"),
-					"title":    tools.StringProperty("for start: what the goal is called, a few words"),
-					"text":     tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For met: how it ended"),
-					"status":   tools.StringProperty("for note: where the goal stands, in one line. For wait: what you need from the person, a sentence they can answer"),
-					"activity": tools.StringProperty("for note: one line on what happened, when something did that the person would want in the goal's log; leave it out when you only looked"),
-					"minutes":  tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
+					"action":       tools.EnumProperty("what to do", "start", "list", "show", "tell", "done", "drop", "reopen", "note", "wait", "met", "take_schedule"),
+					"goal_id":      tools.StringProperty("for show, tell, done, drop and reopen: the goal, by the id list gives"),
+					"title":        tools.StringProperty("for start: what the goal is called, a few words"),
+					"text":         tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For met: how it ended"),
+					"status":       tools.StringProperty("for note: where the goal stands, in one line. For wait: what you need from the person, a sentence they can answer"),
+					"schedule_ids": tools.ArrayProperty("for start: schedules that do this goal's work on a clock, by id; they become the goal's, and their runs are its turns", tools.StringProperty("a schedule id")),
+					"schedule_id":  tools.StringProperty("for take_schedule: a schedule to make the goal's, by id"),
+					"activity":     tools.StringProperty("for note: one line on what happened, when something did that the person would want in the goal's log; leave it out when you only looked"),
+					"minutes":      tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
 				}, "action"),
-				Guidance: "goal: `start` a goal when the person asks you to keep at something beyond this conversation -- watch for, follow up, chase, keep doing until done -- and `list` first so you do not start one twice. Someone saying what they hope for (\"my goal is to run a marathon\") is not asking you to keep at anything: talk about it, and start a goal only if they ask you to work on it over time. A goal's turns run in its own conversation and end with exactly one call: `note` (status in one line, activity only when something happened), `wait` (what you need from them, said to them once in their main conversation) or `met`. When the person answers a goal that waited for them, pass their words on with `tell` and its goal_id; when they say it is done or to stop, `done` or `drop`.",
+				Guidance: "goal: `start` a goal when the person asks you to keep at something beyond this conversation -- watch for, follow up, chase, keep doing until done -- and `list` first so you do not start one twice. Write the title, text, status and activity for the person to read, in plain words: no ids, no tool names, no file paths unless they would use them; a schedule or a conversation is named, never numbered. Someone saying what they hope for (\"my goal is to run a marathon\") is not asking you to keep at anything: talk about it, and start a goal only if they ask you to work on it over time. A goal's turns run in its own conversation and end with exactly one call: `note` (status in one line, activity only when something happened), `wait` (what you need from them, said to them once in their main conversation) or `met`. When the person answers a goal that waited for them, pass their words on with `tell` and its goal_id; when they say it is done or to stop, `done` or `drop`.",
 				Run:      run,
 			},
 		}
@@ -72,7 +74,10 @@ type arguments struct {
 	Text     string `json:"text"`
 	Status   string `json:"status"`
 	Activity string `json:"activity"`
-	Minutes  int    `json:"minutes"`
+
+	ScheduleIDs []string `json:"schedule_ids"`
+	ScheduleID  string   `json:"schedule_id"`
+	Minutes     int      `json:"minutes"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -118,7 +123,21 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if here != nil {
 			variables["originConversationId"] = here.ID
 		}
+		if len(asked.ScheduleIDs) > 0 {
+			variables["scheduleIds"] = asked.ScheduleIDs
+		}
 		return operate(ctx, client.DocumentStartAgentGoal, variables, "StartAgentGoal", "the goal is started; its first turn runs at once, in its own conversation")
+	case "take_schedule":
+		// In a goal's own turn the goal is this one; from the person's
+		// turn, the one they name.
+		if goalId == "" && here.IsGoal() {
+			goalId = here.ID
+		}
+		if goalId == "" || strings.TrimSpace(asked.ScheduleID) == "" {
+			return nil, fmt.Errorf("give schedule_id, and goal_id unless this is the goal's own conversation")
+		}
+		return operate(ctx, client.DocumentMoveAgentScheduleToGoal, map[string]any{"scheduleId": strings.TrimSpace(asked.ScheduleID), "conversationId": goalId},
+			"MoveAgentScheduleToGoal", "the schedule is the goal's now: its runs are the goal's turns, and the goal takes none of its own")
 	case "tell", "done", "drop", "reopen":
 		// The person's words and the person's decisions: from a turn
 		// they are in, never one of the agent's own.
@@ -149,6 +168,17 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 
 	var after *models.AgentConversation
 	if err := current.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		// A goal with a schedule runs on it, and books no turn of its own.
+		hasSchedule := false
+		schedules, err := tx.ListAgentSchedules(here.AgentID)
+		if err != nil {
+			return err
+		}
+		for _, schedule := range schedules {
+			if schedule.ConversationID == here.ID && schedule.Enabled {
+				hasSchedule = true
+			}
+		}
 		updated, err := tx.UpdateAgentConversation(here.ID, func(conversation *models.AgentConversation) error {
 			switch action {
 			case "note", "wait", "met":
@@ -160,8 +190,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				}
 				conversation.GoalNote = text
 				if action == "note" {
-					next := time.Now().Add(interval(asked.Minutes))
-					conversation.GoalState, conversation.GoalNextAt = models.GoalWorking, &next
+					conversation.GoalState, conversation.GoalNextAt = models.GoalWorking, nil
+					if !hasSchedule {
+						next := time.Now().Add(interval(asked.Minutes))
+						conversation.GoalNextAt = &next
+					}
 					return nil
 				}
 				// Waiting and met both stop the turns: nothing is

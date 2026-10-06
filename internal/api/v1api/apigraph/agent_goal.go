@@ -47,6 +47,17 @@ type AgentGoalMutation interface {
 	// Mark a goal done (met), stop it (dropped), or take it up again
 	// (working). Needs agent:use.
 	SetAgentGoalState(ctx context.Context, arguments SetAgentGoalStateArguments) (*AgentGoalView, error)
+
+	// Make an existing schedule one of a goal's: its runs take place in the
+	// goal's conversation, as the goal's turns, answer there rather than by
+	// mail, and the goal takes no turns of its own while it has one. Needs
+	// agent:use.
+	MoveAgentScheduleToGoal(ctx context.Context, arguments MoveAgentScheduleToGoalArguments) (*models.AgentSchedule, error)
+}
+
+type MoveAgentScheduleToGoalArguments struct {
+	ScheduleID     string `json:"scheduleId"`
+	ConversationID string `json:"conversationId"`
 }
 
 type ListAgentGoalsArguments struct {
@@ -63,8 +74,12 @@ type StartAgentGoalArguments struct {
 	GoalDescription string `json:"goalDescription"`
 
 	// OriginConversationID is the conversation the goal was asked for in,
-	// kept in its first activity row.
+	// which the goal's page links to.
 	OriginConversationID string `json:"originConversationId" graphapi:"nullable"`
+
+	// ScheduleIDs are schedules that do the goal's work on a clock, moved
+	// to it as MoveAgentScheduleToGoal moves one.
+	ScheduleIDs []string `json:"scheduleIds" graphapi:"nullable"`
 }
 
 type TellAgentGoalArguments struct {
@@ -91,6 +106,13 @@ type AgentGoalView struct {
 	// agent's one line on where it stands; while it waits, what it needs.
 	GoalState  string `json:"goalState"`
 	GoalStatus string `json:"goalStatus"`
+
+	// GoalOriginConversationID is the conversation it was asked for in,
+	// and GoalOriginTitle what that conversation is called, empty for the
+	// main one; filled only by GetAgentGoal.
+	GoalOriginConversationID string `json:"goalOriginConversationId"`
+	GoalOriginTitle          string `json:"goalOriginTitle"`
+	IsGoalOriginMain         bool   `json:"isGoalOriginMain"`
 
 	GoalSetAt      *time.Time `json:"goalSetAt" graphapi:"nullable"`
 	GoalNextAt     *time.Time `json:"goalNextAt" graphapi:"nullable"`
@@ -144,9 +166,14 @@ func (self *graph) StartAgentGoal(ctx context.Context, arguments StartAgentGoalA
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	started, err := worker.StartGoal(ctx, found, arguments.GoalTitle, arguments.GoalDescription, strings.TrimSpace(arguments.OriginConversationID))
+	started, err := worker.StartGoal(ctx, found, arguments.GoalTitle, arguments.GoalDescription, arguments.OriginConversationID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	for _, scheduleId := range arguments.ScheduleIDs {
+		if _, err := worker.MoveScheduleToGoal(ctx, found, scheduleId, started.ID); err != nil {
+			return nil, fmt.Errorf("%w: the goal is started, but %s", api.ErrInvalidArguments, err)
+		}
 	}
 	return goalView(started), nil
 }
@@ -188,6 +215,22 @@ func (self *graph) SetAgentGoalState(ctx context.Context, arguments SetAgentGoal
 	return goalView(changed), nil
 }
 
+func (self *graph) MoveAgentScheduleToGoal(ctx context.Context, arguments MoveAgentScheduleToGoalArguments) (*models.AgentSchedule, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	moved, err := worker.MoveScheduleToGoal(ctx, found, arguments.ScheduleID, arguments.ConversationID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	return moved, nil
+}
+
 // goalWithDetails is one of the agent's goals with its activity and what
 // it made.
 func (self *graph) goalWithDetails(ctx context.Context, found *models.Agent, conversationId string) (*AgentGoalView, error) {
@@ -200,6 +243,14 @@ func (self *graph) goalWithDetails(ctx context.Context, found *models.Agent, con
 		return nil, fmt.Errorf("%w: there is no goal %q", api.ErrNotFound, conversationId)
 	}
 	view := goalView(goal)
+	if goal.GoalOriginConversationID != "" {
+		if origin, err := tx.GetAgentConversation(goal.GoalOriginConversationID); err != nil {
+			return nil, err
+		} else if origin != nil && origin.AgentID == found.ID {
+			view.GoalOriginConversationID, view.GoalOriginTitle = origin.ID, origin.Title
+			view.IsGoalOriginMain = origin.Kind == models.AgentConversationMain
+		}
+	}
 	if view.Activity, err = tx.ListAgentGoalActivity(found.ID, goal.ID, 100); err != nil {
 		return nil, err
 	}

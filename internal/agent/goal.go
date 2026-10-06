@@ -319,6 +319,18 @@ func (self *Agent) goalOwed(ctx context.Context, run *Run, now time.Time) (*mode
 		if found.GoalNextAt != nil && found.GoalNextAt.After(now) {
 			return nil
 		}
+		// A goal with a schedule runs on it: the turn it was owed is not
+		// taken, and it has no next one of its own.
+		if schedules, err := goalSchedules(tx, found); err != nil || len(schedules) > 0 {
+			if err != nil {
+				return err
+			}
+			_, err = tx.UpdateAgentConversation(found.ID, func(conversation *models.AgentConversation) error {
+				conversation.GoalNextAt = nil
+				return nil
+			})
+			return err
+		}
 		if self.isTurnRunning(found.ID) {
 			return goalBehindTurn(now)
 		}
@@ -453,7 +465,7 @@ func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now
 		"It is "+now.In(Location(owner)).Format("Monday 2 January, 15:04")+" where they are.",
 		"",
 		"Work toward the goal with the tools you have: look, act, schedule what should happen on a clock, start background work for anything long. Anything that needs their confirmation cannot be done with nobody present, so prepare it and ask. Read back what happened in this conversation before starting again on something already done.",
-		"End by calling the goal tool exactly once. met, with text saying how it ended, as soon as what the goal is for is done. note, with status saying where it stands in one line and the minutes until your next turn, and activity only when something happened worth their reading later. wait, with status saying what you need from them in a sentence they can answer; that, and only that, is said to them in their main conversation.",
+		"Whatever you write in the goal tool is for the person to read: plain words, no ids, no tool names. End by calling the goal tool exactly once. met, with text saying how it ended, as soon as what the goal is for is done. note, with status saying where it stands in one line and the minutes until your next turn, and activity only when something happened worth their reading later. wait, with status saying what you need from them in a sentence they can answer; that, and only that, is said to them in their main conversation.",
 	)
 	return strings.Join(lines, "\n")
 }

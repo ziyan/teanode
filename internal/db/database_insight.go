@@ -198,6 +198,8 @@ type agentConversationModel struct {
 
 	GoalSurfacedAt *time.Time `gorm:"column:goal_surfaced_at"`
 
+	GoalOriginConversationID *string `gorm:"column:goal_origin_conversation_id"`
+
 	// How many turns background commands and work have woken since the
 	// person last wrote. See migration 0122.
 	BackgroundWakeCount int `gorm:"column:background_wake_count"`
@@ -462,6 +464,9 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		at := model.GoalSurfacedAt.In(time.Local)
 		conversation.GoalSurfacedAt = &at
 	}
+	if model.GoalOriginConversationID != nil {
+		conversation.GoalOriginConversationID = *model.GoalOriginConversationID
+	}
 	if model.RememberedAt != nil {
 		at := model.RememberedAt.In(time.Local)
 		conversation.RememberedAt = &at
@@ -504,6 +509,9 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		GoalSetAt:  conversation.GoalSetAt,
 
 		GoalSurfacedAt: conversation.GoalSurfacedAt,
+	}
+	if conversation.GoalOriginConversationID != "" {
+		model.GoalOriginConversationID = &conversation.GoalOriginConversationID
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err

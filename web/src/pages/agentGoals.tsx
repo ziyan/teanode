@@ -39,6 +39,9 @@ interface GoalActivity {
 }
 
 interface GoalDetails extends Goal {
+  goalOriginConversationId: string
+  goalOriginTitle: string
+  isGoalOriginMain: boolean
   activity: GoalActivity[]
   schedules: { id: string; name: string; cron: string; enabled: boolean; nextRunAt?: string | null }[]
   backgroundWork: { id: string; workKind: string; workStatus: string; title: string }[]
@@ -62,6 +65,7 @@ const GOAL = `
   query ($conversationId: String!) {
     GetAgentGoal(conversationId: $conversationId) {
       ${GOAL_FIELDS}
+      goalOriginConversationId goalOriginTitle isGoalOriginMain
       activity { id createdAt goalActivityKind activityHeadline activityDetail }
       schedules { id name cron enabled nextRunAt }
       backgroundWork { id workKind workStatus title }
@@ -139,6 +143,14 @@ function GoalList({ onOpen }: { onOpen: (conversationId: string) => void }) {
   const tracking = every.filter((goal) => goal.goalState === 'working')
   const done = every.filter((goal) => goal.goalState === 'met' || goal.goalState === 'dropped')
   const goalIds = new Set(every.map((goal) => goal.conversationId))
+  // The next run of each goal's own schedule, for the goals that run on one.
+  const scheduledNext = new Map<string, string>()
+  for (const schedule of schedules.data?.ListAgentSchedules ?? []) {
+    if (!schedule.enabled || !schedule.conversationId || !goalIds.has(schedule.conversationId)) continue
+    const earlier = scheduledNext.get(schedule.conversationId)
+    if (schedule.nextRunAt && (!earlier || schedule.nextRunAt < earlier))
+      scheduledNext.set(schedule.conversationId, schedule.nextRunAt)
+  }
   // A schedule a goal made is shown on the goal; here only those that
   // stand on their own.
   const running = (schedules.data?.ListAgentSchedules ?? []).filter(
@@ -193,7 +205,14 @@ function GoalList({ onOpen }: { onOpen: (conversationId: string) => void }) {
   const rows = (list: Goal[]) => (
     <div className="goal-list">
       {list.map((goal) => (
-        <GoalRow key={goal.conversationId} goal={goal} busy={busy} onOpen={onOpen} onDone={markDone} />
+        <GoalRow
+          key={goal.conversationId}
+          goal={goal}
+          scheduledNextAt={scheduledNext.get(goal.conversationId)}
+          busy={busy}
+          onOpen={onOpen}
+          onDone={markDone}
+        />
       ))}
     </div>
   )
@@ -277,11 +296,13 @@ function GoalList({ onOpen }: { onOpen: (conversationId: string) => void }) {
 // and its one-line status under it.
 function GoalRow({
   goal,
+  scheduledNextAt,
   busy,
   onOpen,
   onDone,
 }: {
   goal: Goal
+  scheduledNextAt?: string
   busy: boolean
   onOpen: (conversationId: string) => void
   onDone: (goal: Goal) => void
@@ -306,7 +327,9 @@ function GoalRow({
         {goal.goalStatus ? <span className="goal-note muted">{goal.goalStatus}</span> : null}
         <span className="goal-meta muted">
           <Tag value={t(STATE_LABEL[goal.goalState])} tone={goal.goalState === 'waiting' ? 'warn' : undefined} />
-          {goal.goalState === 'working' && goal.goalNextAt ? (
+          {goal.goalState === 'working' && scheduledNextAt ? (
+            <span>{t('goals.nextScheduled', { when: formatTime(scheduledNextAt) })}</span>
+          ) : goal.goalState === 'working' && goal.goalNextAt ? (
             <span>{t('goals.nextLook', { when: formatTime(goal.goalNextAt) })}</span>
           ) : null}
         </span>
@@ -415,10 +438,25 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
           <span className="goal-meta muted">
             <Tag value={t(STATE_LABEL[found.goalState])} tone={found.goalState === 'waiting' ? 'warn' : undefined} />
             {found.goalSetAt ? <span>{t('goals.since', { when: formatTime(found.goalSetAt) })}</span> : null}
-            {found.goalState === 'working' && found.goalNextAt ? (
+            {found.goalState === 'working' && found.schedules.some((schedule) => schedule.enabled) ? (
+              <span>{t('goals.runsOnSchedule')}</span>
+            ) : found.goalState === 'working' && found.goalNextAt ? (
               <span>{t('goals.nextLook', { when: formatTime(found.goalNextAt) })}</span>
             ) : null}
           </span>
+          {found.goalOriginConversationId ? (
+            <span className="goal-origin muted">
+              {t('goals.askedIn')}{' '}
+              <button
+                /* link-button: names a conversation inline in a sentence */
+                type="button"
+                className="link"
+                onClick={() => openAgentConversation(found.goalOriginConversationId)}
+              >
+                {found.isGoalOriginMain ? t('goals.mainChat') : found.goalOriginTitle || t('goals.aConversation')}
+              </button>
+            </span>
+          ) : null}
           {found.goalStatus ? <p className="goal-status">{found.goalStatus}</p> : null}
           <p className="goal-description">{found.goalDescription}</p>
           {isOpen ? (

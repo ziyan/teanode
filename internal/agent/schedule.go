@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,6 +153,9 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		surface, turnMessage = "mail", scheduledMessage(schedule)
 	} else {
 		turnMessage = scheduleCheckIn(schedule, run.Owner, time.Now())
+		if conversation.IsGoal() {
+			turnMessage += "\n\n" + goalScheduleLines(conversation)
+		}
 	}
 	// A schedule the person wrote is the person asking. One the agent wrote
 	// through a tool is not: the agent writes on the strength of what it has
@@ -305,6 +309,18 @@ func scheduleCheckIn(schedule *models.AgentSchedule, owner *models.User, now tim
 		"Do it with the tools you have. Anything that needs their confirmation cannot be done with nobody present: prepare it and say what you would have done. What you answer is read here, in this conversation.",
 	)
 	return strings.Join(lines, "\n")
+}
+
+// goalScheduleLines is what a schedule's turn is told when the schedule
+// belongs to a goal: its runs are the goal's turns, the goal takes none of
+// its own, and nobody reads this conversation, so the turn ends with the
+// goal tool like any goal turn, and only a wait reaches the person.
+func goalScheduleLines(goal *models.AgentConversation) string {
+	return strings.Join([]string{
+		"This schedule belongs to the goal " + strconv.Quote(goalTitleOf(goal)) + ", which you keep at in the background: " + goal.Goal,
+		"Its runs are the goal's turns; the goal takes none of its own while it has a schedule, and the person does not read this conversation.",
+		"End by calling the goal tool exactly once: note, with status saying where it stands in one line and activity only when something happened worth their reading later; wait, with status saying what you need from them, when they have to act; met, when what the goal is for is done.",
+	}, "\n")
 }
 
 // scheduledMessage is how a schedule's prompt reaches the loop.

@@ -19,7 +19,8 @@ func newAgentGoalCommand() *cli.Command {
 		Description: "A goal runs in a conversation of its own, on turns the agent takes by itself, until it is met or\n" +
 			"you drop it. You hear from it in your main conversation only when it needs you. 'list' says where\n" +
 			"each stands, 'show' prints one with what happened on it and what it made, 'start' starts one,\n" +
-			"'tell' answers what it asked, and 'done', 'drop' and 'reopen' close it or take it up again.",
+			"'tell' answers what it asked, 'take-schedule' makes a schedule its clock, and 'done', 'drop'\n" +
+			"and 'reopen' close it or take it up again.",
 		Commands: []*cli.Command{
 			{
 				Name:  "list",
@@ -50,6 +51,13 @@ func newAgentGoalCommand() *cli.Command {
 				ArgsUsage: "<goal-id> <text>",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentGoalTell,
+			},
+			{
+				Name:      "take-schedule",
+				Usage:     "make a schedule the goal's: its runs become the goal's turns, and the goal takes none of its own",
+				ArgsUsage: "<goal-id> <schedule-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentGoalTakeSchedule,
 			},
 			{
 				Name:      "done",
@@ -191,6 +199,25 @@ func runAgentGoalTell(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(goal)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s  told; it goes on in a minute\n", goal.ConversationID)
+	return nil
+}
+
+func runAgentGoalTakeSchedule(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return usage("which goal, and which schedule: teanode agent goal take-schedule <goal-id> <schedule-id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	schedule, err := client.MoveAgentScheduleToGoal(ctx, connection, command.Args().Get(1), command.Args().Get(0))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(schedule)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s  %s now runs as the goal's turns\n", command.Args().Get(0), forTerminal(schedule.Name))
 	return nil
 }
 

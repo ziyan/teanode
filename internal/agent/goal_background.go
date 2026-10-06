@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,16 +73,13 @@ func (self *Agent) StartGoal(ctx context.Context, agent *models.Agent, goalTitle
 		if started, err = tx.CreateAgentConversation(&models.AgentConversation{
 			AgentID: agent.ID, Kind: models.AgentConversationGoal, Title: goalTitle, TitledBy: "program", Surface: "goal", LastAt: now,
 			Goal: goalDescription, GoalTitle: goalTitle, GoalState: models.GoalWorking, GoalNextAt: &now, GoalSetAt: &now,
+			GoalOriginConversationID: originOf(tx, agent.ID, originConversationId),
 		}); err != nil {
 			return err
 		}
-		detail := goalDescription
-		if originConversationId != "" {
-			detail += "\n\nAsked for in conversation " + originConversationId + "."
-		}
 		_, err = tx.AddAgentGoalActivity(&models.AgentGoalActivity{
 			AgentID: agent.ID, ConversationID: started.ID, GoalActivityKind: models.GoalActivityStarted,
-			ActivityHeadline: "Started " + goalTitle, ActivityDetail: detail,
+			ActivityHeadline: "Started", ActivityDetail: goalDescription,
 		})
 		return err
 	}); err != nil {
@@ -322,4 +320,106 @@ func goalTitleOf(goal *models.AgentConversation) string {
 		return title
 	}
 	return firstWords(goal.Goal, goalTitleCharacters)
+}
+
+// goalSchedules is the enabled schedules that belong to a goal: those made
+// in its conversation or moved there. While it has one, the schedule is the
+// goal's clock and the goal takes no turns of its own.
+func goalSchedules(tx db.Transaction, goal *models.AgentConversation) ([]*models.AgentSchedule, error) {
+	schedules, err := tx.ListAgentSchedules(goal.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	var owned []*models.AgentSchedule
+	for _, schedule := range schedules {
+		if schedule.ConversationID == goal.ID && schedule.Enabled {
+			owned = append(owned, schedule)
+		}
+	}
+	return owned, nil
+}
+
+// MoveScheduleToGoal makes an existing schedule one of a goal's: its runs
+// take place in the goal's conversation, as the goal's turns, and the goal
+// stops taking turns of its own.
+func (self *Agent) MoveScheduleToGoal(ctx context.Context, agent *models.Agent, scheduleId, conversationId string) (*models.AgentSchedule, error) {
+	var moved *models.AgentSchedule
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		goal, err := ownGoal(tx, agent.ID, conversationId)
+		if err != nil {
+			return err
+		}
+		schedule, err := tx.GetAgentSchedule(strings.TrimSpace(scheduleId))
+		if err != nil {
+			return err
+		}
+		if schedule == nil || schedule.AgentID != agent.ID {
+			return fmt.Errorf("there is no schedule %q", scheduleId)
+		}
+		if moved, err = tx.UpdateAgentSchedule(schedule.ID, func(changing *models.AgentSchedule) error {
+			// Its answer is read where the goal's turns run; a mailed
+			// schedule would mail the person every run instead.
+			changing.ConversationID, changing.Deliver = goal.ID, models.AgentDeliverDrawer
+			return nil
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
+			if conversation.GoalState == models.GoalWorking {
+				conversation.GoalNextAt = nil
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		return addGoalActivity(tx, goal, models.GoalActivityProgress, "Runs on the schedule "+strconv.Quote(schedule.Name), schedule.Cron)
+	}); err != nil {
+		return nil, err
+	}
+	return moved, nil
+}
+
+// wakeGoalsWithoutSchedule gives a turn to every working goal that has no
+// next turn of its own and no schedule left to run it: its schedule was
+// switched off or removed, and without this it would wait for ever.
+func (self *Agent) wakeGoalsWithoutSchedule(ctx context.Context, now time.Time) error {
+	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		idle, err := tx.ListAgentGoalsWithoutNextTurn(goalSurfaceBatch)
+		if err != nil {
+			return err
+		}
+		for _, goal := range idle {
+			schedules, err := goalSchedules(tx, goal)
+			if err != nil {
+				return err
+			}
+			if len(schedules) > 0 {
+				continue
+			}
+			if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
+				if conversation.GoalState == models.GoalWorking && conversation.GoalNextAt == nil {
+					conversation.GoalNextAt = &now
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// originOf is the conversation a goal was asked for in, when it is one of
+// the agent's that the person chats in; empty otherwise.
+func originOf(tx db.Transaction, agentId, conversationId string) string {
+	conversationId = strings.TrimSpace(conversationId)
+	if conversationId == "" {
+		return ""
+	}
+	found, err := tx.GetAgentConversation(conversationId)
+	if err != nil || found == nil || found.AgentID != agentId ||
+		(found.Kind != models.AgentConversationMain && found.Kind != models.AgentConversationNamed) {
+		return ""
+	}
+	return found.ID
 }

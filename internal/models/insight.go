@@ -206,6 +206,10 @@ type AgentConversation struct {
 	// that never needed them.
 	GoalSurfacedAt *time.Time `json:"goalSurfacedAt,omitempty"`
 
+	// GoalOriginConversationID is the conversation the goal was asked for
+	// in, when it was asked for in one.
+	GoalOriginConversationID string `json:"goalOriginConversationId,omitempty"`
+
 	// BackgroundWakeCount is how many turns ended background commands and
 	// finished background work have woken here since the person last
 	// wrote, which bounds a chain of them.
