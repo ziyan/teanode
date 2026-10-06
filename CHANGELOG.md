@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.111.0] - 2026-10-06
+
+### Added
+
+- Goals run in the background: each in a conversation of its own, with a status line, an activity log and the schedules, rules, reminders and mutes it made. Your main conversation hears from a goal only when it needs you, and you can answer it right there. The Goals tab groups them as Needs you, Tracking and Done, and `teanode agent goal` lists, starts, answers and closes them. (#339)
+
+### Removed
+
+- a goal set on a conversation you chat in. The drawer no longer offers one; ask your agent to keep at something, or start a goal on the Goals tab. (#339)
+
 ## [0.110.3] - 2026-10-05
 
 ### Fixed
