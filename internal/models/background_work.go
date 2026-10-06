@@ -67,7 +67,8 @@ type AgentBackgroundWork struct {
 	WorkRequest    AgentBackgroundWorkRequest `json:"workRequest"`
 
 	// IsPersonPresent says the turn that started it had the person
-	// present; only such work wakes its conversation.
+	// present, or was a goal's own turn, whose next turn reads the result;
+	// only such work wakes its conversation.
 	IsPersonPresent bool                      `json:"isPersonPresent"`
 	WorkStatus      AgentBackgroundWorkStatus `json:"workStatus"`
 

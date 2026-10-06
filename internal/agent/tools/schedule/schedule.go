@@ -122,16 +122,25 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			return nil, err
 		}
 		// A schedule answers in the conversation it was made in, when that
-		// is one of the person's; one made in a run of the agent's own
-		// answers in the main conversation.
+		// is one of the person's or a goal's -- a goal's schedule is one of
+		// the things it made, and its turns stay out of the person's
+		// sight; one made in a run of the agent's own answers in the main
+		// conversation.
 		conversationId := ""
 		if conversation := run.Conversation(); conversation != nil &&
-			(conversation.Kind == models.AgentConversationMain || conversation.Kind == models.AgentConversationNamed) {
+			(conversation.Kind == models.AgentConversationMain || conversation.Kind == models.AgentConversationNamed || conversation.IsGoal()) {
 			conversationId = conversation.ID
+		}
+		// A goal's schedule answers in the goal's conversation, where its
+		// runs are the goal's turns; by mail it would reach the person on
+		// every run, which a goal never does.
+		deliver := arguments.Deliver
+		if here := run.Conversation(); here.IsGoal() {
+			deliver = models.AgentDeliverDrawer
 		}
 		var created *models.AgentSchedule
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: arguments.Deliver, ConversationID: conversationId, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: &next})
+			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: deliver, ConversationID: conversationId, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: &next})
 			return err
 		}); err != nil {
 			return nil, err
@@ -169,7 +178,8 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				if arguments.Prompt != "" {
 					schedule.Prompt = arguments.Prompt
 				}
-				if arguments.Deliver != "" {
+				// One that belongs to a goal keeps answering there.
+				if arguments.Deliver != "" && !isGoalsSchedule(tx, schedule) {
 					schedule.Deliver = arguments.Deliver
 				}
 				if arguments.Enabled != nil {
@@ -220,4 +230,14 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		return tools.TextResult("queued a run of %q; the answer arrives where the schedule says", schedule.Name), nil
 	}
 	return nil, fmt.Errorf("%q is not an action of schedule", arguments.Action)
+}
+
+// isGoalsSchedule says whether a schedule belongs to a goal: it answers in
+// a goal's conversation.
+func isGoalsSchedule(tx db.Transaction, schedule *models.AgentSchedule) bool {
+	if schedule.ConversationID == "" {
+		return false
+	}
+	conversation, err := tx.GetAgentConversation(schedule.ConversationID)
+	return err == nil && conversation.IsGoal()
 }

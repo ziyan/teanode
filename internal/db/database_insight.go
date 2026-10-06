@@ -55,10 +55,6 @@ type InsightOperation interface {
 	// FindAgentConversationBySubject is the newest conversation of a kind
 	// whose subject is the one given, not archived, or nil.
 	FindAgentConversationBySubject(agentId string, kind models.AgentConversationKind, subjectId string) (*models.AgentConversation, error)
-	// ListAgentGoalsInProgress is the agent's conversations whose goal is
-	// still worked toward or waits on the person, archived or not, the
-	// latest first.
-	ListAgentGoalsInProgress(agentId string) ([]*models.AgentConversation, error)
 
 	// UpdateAgentConversation changes a conversation. When its goal becomes
 	// met, the ideas it was carrying out are done, and started again when
@@ -194,10 +190,15 @@ type agentConversationModel struct {
 	// The goal the agent keeps working toward in this conversation. See
 	// migration 0083.
 	Goal       string     `gorm:"column:goal"`
+	GoalTitle  string     `gorm:"column:goal_title"`
 	GoalState  string     `gorm:"column:goal_state"`
 	GoalNote   string     `gorm:"column:goal_note"`
 	GoalNextAt *time.Time `gorm:"column:goal_next_at"`
 	GoalSetAt  *time.Time `gorm:"column:goal_set_at"`
+
+	GoalSurfacedAt *time.Time `gorm:"column:goal_surfaced_at"`
+
+	GoalOriginConversationID *string `gorm:"column:goal_origin_conversation_id"`
 
 	// How many turns background commands and work have woken since the
 	// person last wrote. See migration 0122.
@@ -445,6 +446,7 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		CompactedThrough:  model.CompactedThrough,
 		RememberedThrough: model.RememberedThrough,
 		Goal:              model.Goal,
+		GoalTitle:         model.GoalTitle,
 		GoalState:         models.AgentGoalState(model.GoalState),
 		GoalNote:          model.GoalNote,
 
@@ -457,6 +459,13 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 	if model.GoalSetAt != nil {
 		at := model.GoalSetAt.In(time.Local)
 		conversation.GoalSetAt = &at
+	}
+	if model.GoalSurfacedAt != nil {
+		at := model.GoalSurfacedAt.In(time.Local)
+		conversation.GoalSurfacedAt = &at
+	}
+	if model.GoalOriginConversationID != nil {
+		conversation.GoalOriginConversationID = *model.GoalOriginConversationID
 	}
 	if model.RememberedAt != nil {
 		at := model.RememberedAt.In(time.Local)
@@ -493,10 +502,16 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		Surface:    conversation.Surface,
 		LastAt:     now,
 		Goal:       conversation.Goal,
+		GoalTitle:  truncateRunes(conversation.GoalTitle, 200),
 		GoalState:  string(conversation.GoalState),
 		GoalNote:   conversation.GoalNote,
 		GoalNextAt: conversation.GoalNextAt,
 		GoalSetAt:  conversation.GoalSetAt,
+
+		GoalSurfacedAt: conversation.GoalSurfacedAt,
+	}
+	if conversation.GoalOriginConversationID != "" {
+		model.GoalOriginConversationID = &conversation.GoalOriginConversationID
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -540,27 +555,6 @@ func (self *transaction) ResetAgentConversationBackgroundWakes(conversationId st
 		Update("background_wake_count", 0).Error
 }
 
-// ListAgentGoalsInProgress: see the interface.
-func (self *transaction) ListAgentGoalsInProgress(agentId string) ([]*models.AgentConversation, error) {
-	var ids []string
-	if err := self.tx.Model(&agentConversationModel{}).
-		Where(`"agent_id" = ? AND "goal" <> '' AND "goal_state" <> ?`, agentId, string(models.GoalMet)).
-		Order(`"last_at" DESC`).Pluck("id", &ids).Error; err != nil {
-		return nil, err
-	}
-	conversations := make([]*models.AgentConversation, 0, len(ids))
-	for _, id := range ids {
-		conversation, err := self.GetAgentConversation(id)
-		if err != nil {
-			return nil, err
-		}
-		if conversation != nil {
-			conversations = append(conversations, conversation)
-		}
-	}
-	return conversations, nil
-}
-
 func (self *transaction) UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error) {
 	if err := lockRow(self.tx, &agentConversationModel{}, conversationId); err != nil {
 		return nil, err
@@ -579,29 +573,9 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
-		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt,
+		"goal": after.Goal, "goal_title": truncateRunes(after.GoalTitle, 200), "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt, "goal_surfaced_at": after.GoalSurfacedAt,
 	}).Error; err != nil {
 		return nil, err
-	}
-	// An idea carried out in a conversation is done when the conversation's
-	// goal is met, whoever said so: the agent's goal tool or the person.
-	// And started again when the goal is taken back up, which is what an
-	// undo of "met" is. Here rather than at each of them, so that none can
-	// forget.
-	now := time.Now()
-	switch isMet, wasMet := after.GoalState == models.GoalMet, before.GoalState == models.GoalMet; {
-	case isMet && !wasMet:
-		if err := self.tx.Model(&agentIdeaModel{}).
-			Where(`"started_conversation_id" = ? AND "idea_status" = ?`, conversationId, string(models.IdeaStarted)).
-			Updates(map[string]any{"idea_status": string(models.IdeaDone), "closed_at": now, "modified_at": now}).Error; err != nil {
-			return nil, err
-		}
-	case wasMet && !isMet && after.Goal != "":
-		if err := self.tx.Model(&agentIdeaModel{}).
-			Where(`"started_conversation_id" = ? AND "idea_status" = ?`, conversationId, string(models.IdeaDone)).
-			Updates(map[string]any{"idea_status": string(models.IdeaStarted), "closed_at": nil, "modified_at": now}).Error; err != nil {
-			return nil, err
-		}
 	}
 	return self.GetAgentConversation(conversationId)
 }
@@ -821,8 +795,8 @@ func (self *transaction) ListDueAgentGoals(now time.Time, limit int) ([]*models.
 		limit = 50
 	}
 	var found []agentConversationModel
-	if err := self.tx.Where("\"goal_state\" = ? AND \"goal_next_at\" IS NOT NULL AND \"goal_next_at\" <= ?",
-		string(models.GoalWorking), now,
+	if err := self.tx.Where("\"kind\" = ? AND \"goal_state\" = ? AND \"goal_next_at\" IS NOT NULL AND \"goal_next_at\" <= ?",
+		string(models.AgentConversationGoal), string(models.GoalWorking), now,
 	).Order("\"goal_next_at\" ASC").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}

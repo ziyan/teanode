@@ -179,6 +179,7 @@ type Transaction interface {
 	InteractionOperation
 	IdeaOperation
 	BackgroundWorkOperation
+	GoalOperation
 	AlertOperation
 	FinanceOperation
 	ExchangeRateOperation

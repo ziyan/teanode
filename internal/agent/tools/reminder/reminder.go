@@ -130,6 +130,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		if action == "add" {
+			saved, _ := result["SaveReminder"].(map[string]any)
+			reference, _ := saved["id"].(string)
+			tools.RecordGoalArtifact(ctx, models.GoalArtifactReminder, reference, "reminder "+strings.TrimSpace(asked.Title))
+		}
 		answer.Note = "on their reminders list, and on their phone at its next sync"
 		return answer, nil
 	case "done", "reopen":

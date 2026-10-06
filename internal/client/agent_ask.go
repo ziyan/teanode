@@ -26,9 +26,9 @@ type AgentConversation struct {
 	ArchivedAt       *time.Time `json:"archivedAt"`
 	CompactedThrough string     `json:"compactedThrough"`
 
-	// The goal the agent works toward in this conversation, where it
-	// stands (working, waiting, met), its last word on it, and when it
-	// takes its next turn.
+	// On a goal's own conversation, the goal: its description, where it
+	// stands (working, waiting, met, dropped), its status line, and when
+	// it takes its next turn.
 	Goal       string     `json:"goal"`
 	GoalState  string     `json:"goalState"`
 	GoalNote   string     `json:"goalNote"`
@@ -185,7 +185,7 @@ const (
 		ResolveAgentConfirmation(runId: $runId, callId: $callId, approve: $approve)
 	}`
 	DocumentStopAgentRun            = `mutation ($runId: String!) { StopAgentRun(runId: $runId) }`
-	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String, $isGoalInProgress: Boolean) { ListAgentConversations(archived: $archived, query: $query, isGoalInProgress: $isGoalInProgress) ` + conversationFields + ` }`
+	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String) { ListAgentConversations(archived: $archived, query: $query) ` + conversationFields + ` }`
 	DocumentDeleteAgentConversation = `mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }`
 	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
 	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
@@ -197,9 +197,9 @@ const (
 			todos ` + todoFields + `
 		}
 	}`
-	DocumentStartAgentConversation  = `mutation ($title: String, $goal: String) { StartAgentConversation(title: $title, goal: $goal) ` + conversationFields + ` }`
-	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean, $goal: String, $goalState: String) {
-		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived, goal: $goal, goalState: $goalState) ` + conversationFields + `
+	DocumentStartAgentConversation  = `mutation ($title: String) { StartAgentConversation(title: $title) ` + conversationFields + ` }`
+	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean) {
+		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived) ` + conversationFields + `
 	}`
 	DocumentSetAgentMainConversation = `mutation ($conversationId: String) {
 		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
@@ -406,16 +406,13 @@ func ReadAgentConversation(ctx context.Context, connection *Client, conversation
 
 // StartAgentConversation begins a named conversation, with a goal on it
 // when one is given.
-func StartAgentConversation(ctx context.Context, connection *Client, title, goal string) (*AgentConversation, error) {
+func StartAgentConversation(ctx context.Context, connection *Client, title string) (*AgentConversation, error) {
 	var result struct {
 		StartAgentConversation *AgentConversation `json:"StartAgentConversation"`
 	}
 	variables := map[string]any{}
 	if title != "" {
 		variables["title"] = title
-	}
-	if goal != "" {
-		variables["goal"] = goal
 	}
 	if err := connection.Execute(ctx, DocumentStartAgentConversation, variables, &result); err != nil {
 		return nil, err
@@ -451,7 +448,7 @@ func SetAgentMainConversation(ctx context.Context, connection *Client, conversat
 // UpdateAgentConversation renames a conversation, archives it, or sets the
 // goal it works toward; a goal of "" clears the goal, and a nil goal
 // leaves it alone.
-func UpdateAgentConversation(ctx context.Context, connection *Client, conversationId, title string, archived *bool, goal *string) (*AgentConversation, error) {
+func UpdateAgentConversation(ctx context.Context, connection *Client, conversationId, title string, archived *bool) (*AgentConversation, error) {
 	var result struct {
 		UpdateAgentConversation *AgentConversation `json:"UpdateAgentConversation"`
 	}
@@ -462,33 +459,7 @@ func UpdateAgentConversation(ctx context.Context, connection *Client, conversati
 	if archived != nil {
 		variables["archived"] = *archived
 	}
-	if goal != nil {
-		variables["goal"] = *goal
-	}
 	if err := connection.Execute(ctx, DocumentUpdateAgentConversation, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.UpdateAgentConversation, nil
-}
-
-// ListAgentGoals is the conversations whose goal is still in progress:
-// what the agent is keeping track of.
-func ListAgentGoals(ctx context.Context, connection *Client) ([]*AgentConversation, error) {
-	var result struct {
-		ListAgentConversations []*AgentConversation `json:"ListAgentConversations"`
-	}
-	if err := connection.Execute(ctx, DocumentListAgentConversations, map[string]any{"isGoalInProgress": true}, &result); err != nil {
-		return nil, err
-	}
-	return result.ListAgentConversations, nil
-}
-
-// MarkAgentGoalMet says a conversation's goal is done.
-func MarkAgentGoalMet(ctx context.Context, connection *Client, conversationId string) (*AgentConversation, error) {
-	var result struct {
-		UpdateAgentConversation *AgentConversation `json:"UpdateAgentConversation"`
-	}
-	if err := connection.Execute(ctx, DocumentUpdateAgentConversation, map[string]any{"conversationId": conversationId, "goalState": "met"}, &result); err != nil {
 		return nil, err
 	}
 	return result.UpdateAgentConversation, nil

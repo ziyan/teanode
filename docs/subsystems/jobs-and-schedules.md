@@ -89,10 +89,11 @@ cannot retain the separate failure allowance or claim-identity protection.
 - **reply** — drafts an answer on the person's behalf. Everything below.
 - **send** — sends one held reply once its hold has passed.
 - **schedule** — a turn at a time somebody chose.
-- **goal** — a turn of the agent's own toward the goal on a conversation. Its
-  subject is the conversation, so the queue's own rule of one open job per
-  agent, kind and subject is what keeps a conversation to one goal turn at a
-  time.
+- **goal** — a turn of the agent's own toward a goal, in the goal's own
+  conversation. Its subject is the conversation, so the queue's own rule of one
+  open job per agent, kind and subject is what keeps a goal to one turn at a
+  time. The tick also runs `surfaceGoals`, which says each goal that came to
+  need the person in their main conversation, once; see `conversations.md`.
 - **background** — one survey or subagent the agent did not wait for. Its
   subject is the `agent_background_work` row, which holds what was asked and
   keeps what came of it; see `the-ask-loop.md`. It has a bound of its own,

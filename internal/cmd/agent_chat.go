@@ -74,17 +74,10 @@ func newAgentConversationCommand() *cli.Command {
 			},
 			{
 				Name:      "new",
-				Usage:     "start a named conversation",
+				Usage:     "start a named conversation; a goal for the agent to keep at is started with 'agent goal start'",
 				ArgsUsage: "[title]",
-				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "goal", Usage: "a goal for the agent to keep working toward in it"}},
+				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentConversationNew,
-			},
-			{
-				Name:      "goal",
-				Usage:     "what the agent keeps working toward in a conversation: set it, clear it, mark it met, or list the goals still in progress",
-				ArgsUsage: "[conversation-id] [goal]",
-				Flags:     []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "clear", Usage: "drop the goal and stop the turn it was taking"}, &cli.BoolFlag{Name: "met", Usage: "say the goal is done; the idea it was carrying out, if any, is done too"}},
-				Action:    runAgentConversationGoal,
 			},
 			{
 				Name:      "rename",
@@ -212,7 +205,7 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 	}
 	conversationId := command.String("conversation")
 	if command.Bool("new") {
-		conversation, err := client.StartAgentConversation(ctx, connection, "", "")
+		conversation, err := client.StartAgentConversation(ctx, connection, "")
 		if err != nil {
 			return describeError(command, err)
 		}
@@ -340,7 +333,7 @@ func runAgentChat(ctx context.Context, command *cli.Command) error {
 	}
 	conversationId := command.String("conversation")
 	if command.Bool("new") {
-		conversation, err := client.StartAgentConversation(ctx, connection, "", "")
+		conversation, err := client.StartAgentConversation(ctx, connection, "")
 		if err != nil {
 			return describeError(command, err)
 		}
@@ -415,7 +408,7 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 		title = "the main conversation"
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s (%s), %d message(s)\n", title, view.Conversation.ID, view.Total)
-	if view.Conversation.Goal != "" {
+	if view.Conversation.Kind == "goal" && view.Conversation.Goal != "" {
 		_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(view.Conversation))
 	}
 	_, _ = fmt.Fprintln(command.Writer)
@@ -467,7 +460,7 @@ func runAgentConversationNew(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := client.StartAgentConversation(ctx, connection, strings.Join(command.Args().Slice(), " "), command.String("goal"))
+	conversation, err := client.StartAgentConversation(ctx, connection, strings.Join(command.Args().Slice(), " "))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -475,69 +468,6 @@ func runAgentConversationNew(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(conversation)
 	}
 	_, _ = fmt.Fprintln(command.Writer, conversation.ID)
-	return nil
-}
-
-// runAgentConversationGoal sets, clears, marks met or lists the goals. With
-// no conversation it lists the ones still in progress, which is the
-// question somebody asks when they want to know what their agent is off
-// doing.
-func runAgentConversationGoal(ctx context.Context, command *cli.Command) error {
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	conversationId := command.Args().First()
-	if conversationId == "" {
-		if command.Bool("clear") || command.Bool("met") {
-			return fmt.Errorf("which conversation? give its id")
-		}
-		withGoals, err := client.ListAgentGoals(ctx, connection)
-		if err != nil {
-			return describeError(command, err)
-		}
-		if command.Bool("json") {
-			return PrintJSON(withGoals)
-		}
-		rows := make([][]string, 0, len(withGoals))
-		for _, conversation := range withGoals {
-			next := ""
-			if conversation.GoalNextAt != nil {
-				next = conversation.GoalNextAt.Local().Format("2006-01-02 15:04")
-			}
-			rows = append(rows, []string{conversation.ID, conversation.GoalState, conversation.Goal, conversation.GoalNote, next})
-		}
-		return printTable([]string{"id", "state", "goal", "note", "next"}, rows)
-	}
-	if command.Bool("met") {
-		conversation, err := client.MarkAgentGoalMet(ctx, connection, conversationId)
-		if err != nil {
-			return describeError(command, err)
-		}
-		if command.Bool("json") {
-			return PrintJSON(conversation)
-		}
-		_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(conversation))
-		return nil
-	}
-	goal := strings.TrimSpace(strings.Join(command.Args().Slice()[1:], " "))
-	if command.Bool("clear") {
-		goal = ""
-	} else if goal == "" {
-		return fmt.Errorf("say what to work toward, or --clear to drop the goal")
-	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", nil, &goal)
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(conversation)
-	}
-	if conversation.Goal == "" {
-		_, _ = fmt.Fprintf(command.Writer, "%s: the goal is cleared\n", conversation.ID)
-		return nil
-	}
-	_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(conversation))
 	return nil
 }
 
@@ -559,7 +489,7 @@ func runAgentConversationRename(ctx context.Context, command *cli.Command) error
 	if err != nil {
 		return err
 	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil, nil)
+	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -590,7 +520,7 @@ func setAgentConversationArchived(ctx context.Context, command *cli.Command, arc
 	if err != nil {
 		return err
 	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", &archived, nil)
+	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", &archived)
 	if err != nil {
 		return describeError(command, err)
 	}

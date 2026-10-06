@@ -39,13 +39,15 @@ const (
 	goalBrokenRound = `{"error":{"message":"the provider fell over"}}`
 )
 
-// goalWorld is a person with an agent, a mailbox to send from, and a
-// conversation carrying a goal that is already due.
+// goalWorld is a person with an agent, a mailbox to send from, a main
+// conversation, and, unless the goal is empty, a goal of its own that is
+// already due.
 type goalWorld struct {
 	database     db.Database
 	worker       *agent.Agent
 	owner        *models.User
 	found        *models.Agent
+	main         *models.AgentConversation
 	conversation *models.AgentConversation
 	sender       *fakeMailer
 	requests     *[]map[string]any
@@ -107,9 +109,18 @@ func startGoalWorld(t *testing.T, script []string, goal string) *goalWorld {
 		if _, err := tx.CreateAlias(&models.Alias{DomainID: domain.ID, Pattern: "alice", Kind: models.AliasKindMailbox, MailboxID: mailbox.ID}); err != nil {
 			t.Fatalf("CreateAlias: %s", err)
 		}
-		if world.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
+		if world.main, err = tx.CreateAgentConversation(&models.AgentConversation{
 			AgentID: world.found.ID, Kind: models.AgentConversationMain, LastAt: time.Now(),
-			Goal: goal, GoalState: models.GoalWorking, GoalNextAt: &due,
+		}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		world.conversation = world.main
+		if goal == "" {
+			return
+		}
+		if world.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: world.found.ID, Kind: models.AgentConversationGoal, LastAt: time.Now(),
+			Goal: goal, GoalTitle: "The goal", GoalState: models.GoalWorking, GoalNextAt: &due,
 		}); err != nil {
 			t.Fatalf("CreateAgentConversation: %s", err)
 		}
@@ -197,8 +208,9 @@ func TestGoalTurnNotesWhereItIsAndSchedulesTheNext(t *testing.T) {
 	}
 }
 
-// A turn that needs the person stops the turns, tells them by mail, and
-// their next turn in the conversation starts it again.
+// A turn that needs the person stops the turns, is said once in the main
+// conversation and not by mail, and their next turn in the goal's
+// conversation starts it again.
 func TestGoalThatWaitsResumesOnThePersonsTurn(t *testing.T) {
 	world := startGoalWorld(t, []string{goalWaitRound, answerRound}, "draft a reply to the newest mail and wait for me to say send")
 	defer world.close()
@@ -214,18 +226,8 @@ func TestGoalThatWaitsResumesOnThePersonsTurn(t *testing.T) {
 	if waiting.GoalNote != "two drafts are ready; say send or edit" {
 		t.Fatalf("the note says what it needs: %q", waiting.GoalNote)
 	}
-	// Told, because the drawer may well be shut.
-	world.sender.mutex.Lock()
-	sent := len(world.sender.sent)
-	var subject, body string
-	if sent > 0 {
-		subject, body = world.sender.sent[0].Subject, world.sender.sent[0].Text
-	}
-	world.sender.mutex.Unlock()
-	if sent != 1 || !strings.HasPrefix(subject, "Goal: ") || !strings.Contains(body, "two drafts are ready") {
-		t.Fatalf("a waiting goal mails the person: %d %q %q", sent, subject, body)
-	}
-	// A second tick queues nothing: a goal that waits is not due.
+	// A second tick queues nothing, since a goal that waits is not due,
+	// and says it in the main conversation; nothing is mailed.
 	if err := world.worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
@@ -236,6 +238,19 @@ func TestGoalThatWaitsResumesOnThePersonsTurn(t *testing.T) {
 	})
 	if len(jobs) != 1 {
 		t.Fatalf("a waiting goal is not queued again: %+v", jobs)
+	}
+	var said []*models.AgentMessage
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		said, _ = tx.ListAgentMessages(world.main.ID, nil)
+	})
+	if len(said) != 2 || !strings.HasPrefix(said[0].Content, models.GoalNeedsYouMarker) || !strings.Contains(said[1].Content, "two drafts are ready") {
+		t.Fatalf("the main conversation hears what the goal needs: %+v", said)
+	}
+	world.sender.mutex.Lock()
+	sent := len(world.sender.sent)
+	world.sender.mutex.Unlock()
+	if sent != 0 {
+		t.Fatalf("a waiting goal mails nothing: %d", sent)
 	}
 
 	// The person answers, and the goal goes back to work a minute later.
@@ -451,17 +466,15 @@ func TestGoalStopsAfterTurnsAlone(t *testing.T) {
 	if len(*world.requests) != 0 {
 		t.Fatalf("a goal at the bound asks the model nothing: %d requests", len(*world.requests))
 	}
+	// Said in the main conversation by the next sweep, not mailed.
+	if after.GoalSurfacedAt != nil {
+		t.Fatalf("a stalled goal is to be said in the main conversation: %+v", after)
+	}
 	world.sender.mutex.Lock()
 	sent := len(world.sender.sent)
 	world.sender.mutex.Unlock()
-	if sent != 1 {
-		t.Fatalf("the person is told once that it waits: %d", sent)
-	}
-	world.sender.mutex.Lock()
-	subject := world.sender.sent[0].Subject
-	world.sender.mutex.Unlock()
-	if !strings.HasPrefix(subject, "Goal stalled: ") {
-		t.Fatalf("the mail says it stalled: %q", subject)
+	if sent != 0 {
+		t.Fatalf("a stalled goal mails nothing: %d", sent)
 	}
 
 	// Their own turn starts the count again: with a word from them after

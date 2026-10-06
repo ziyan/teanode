@@ -205,6 +205,8 @@ func muteAlert(ctx context.Context, asked arguments) (*tools.Result, error) {
 	if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentMuteAgentAlert, variables, &muted); err != nil {
 		return nil, err
 	}
+	tools.RecordGoalArtifact(ctx, models.GoalArtifactAlertMute, muted.MuteAgentAlert.MuteTarget,
+		fmt.Sprintf("alerts muted for %s %s", muted.MuteAgentAlert.MuteScope, muted.MuteAgentAlert.MuteTarget))
 	return noted(fmt.Sprintf("muted %s %q: you will not tell them about it unasked; the person can unmute it on the agent page", muted.MuteAgentAlert.MuteScope, muted.MuteAgentAlert.MuteTarget)), nil
 }
 
