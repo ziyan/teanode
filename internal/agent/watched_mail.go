@@ -355,12 +355,15 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 		// A reply in an older thread: which of its messages are new is
 		// only in the thread.
 		read, err := skill.Run(ctx, gmailReadTool, map[string]any{"action": "thread", "id": thread.ID}, running)
-		if err != nil {
-			return fmt.Errorf("the %s skill's read of a thread on %s: %w", skillName, computer.name, err)
+		var messages []gmailThreadMessage
+		if err == nil {
+			messages, err = parseGmailThread(read)
 		}
-		messages, err := parseGmailThread(read)
 		if err != nil {
-			return fmt.Errorf("the %s skill's read of a thread on %s: %w", skillName, computer.name, err)
+			// One thread that cannot be read, deleted since it was listed
+			// or too large to print, must not stop the look at the rest.
+			log.Warningf("the %s skill could not read a thread of agent %q on %s: %s", skillName, run.Agent.ID, computer.name, err)
+			continue
 		}
 		for _, message := range messages {
 			if at := message.at(); message.ID != "" && !message.isWrittenByThePerson() && !at.Before(since) {
@@ -410,12 +413,28 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 func (self *Agent) watchOne(ctx context.Context, run *Run, skill *skills.Skill, running *skills.Running, reference watchedMessageReference, now time.Time) error {
 	configuration := run.Configuration()
 	read, err := skill.Run(ctx, gmailReadTool, map[string]any{"action": "message", "id": reference.watchedMessageId}, running)
-	if err != nil {
-		return fmt.Errorf("the %s skill's read of a message: %w", skill.Name, err)
+	var message *gmailMessage
+	if err == nil {
+		message, err = parseGmailMessage(read)
 	}
-	message, err := parseGmailMessage(read)
 	if err != nil {
-		return fmt.Errorf("the %s skill's read of a message: %w", skill.Name, err)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// A message that cannot be read, deleted since it was listed or
+		// too large to print, is recorded as looked at and left: failing
+		// the look would fail every look after it on the same message.
+		log.Warningf("the %s skill could not read a message of agent %q: %s", skill.Name, run.Agent.ID, err)
+		watchedMessageAt := reference.watchedMessageAt
+		if watchedMessageAt.IsZero() {
+			watchedMessageAt = now
+		}
+		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.AddAgentWatchedMail(&models.AgentWatchedMail{
+				AgentID: run.Agent.ID, SkillName: skill.Name, WatchedMessageID: reference.watchedMessageId,
+				WatchedMessageAt: watchedMessageAt, LookedAt: now,
+			})
+		})
 	}
 	watchedMessageAt := message.Message.at()
 	if watchedMessageAt.IsZero() {

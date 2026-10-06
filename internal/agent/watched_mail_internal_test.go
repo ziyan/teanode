@@ -132,13 +132,17 @@ func (self *watchedMailbox) answer(action string, args json.RawMessage) (bool, s
 	var printed string
 	switch {
 	case strings.Contains(call.Command, "gmail search"):
-		printed = `{"threads":[{"id":"t1","subject":"Early closing","labels":["UNREAD"],"messageCount":1},{"id":"t2","subject":"Re: Saturday","labels":["INBOX"],"messageCount":2}]}`
+		printed = `{"threads":[{"id":"t1","subject":"Early closing","labels":["UNREAD"],"messageCount":1},{"id":"t2","subject":"Re: Saturday","labels":["INBOX"],"messageCount":2},{"id":"t3","subject":"Gone","labels":["INBOX"],"messageCount":1}]}`
 	case strings.Contains(call.Command, "thread get"):
 		printed = `{"thread":{"id":"t2","messages":[{"id":"t2","internalDate":"` + milliseconds(30*time.Minute) + `","labelIds":["SENT"]},{"id":"m3","internalDate":"` + milliseconds(5*time.Minute) + `","labelIds":["INBOX"]}]}}`
 	case strings.Contains(call.Command, "gmail get") && strings.Contains(call.Command, "t1"):
 		printed = `{"body":"The school closes at noon today because of the storm. Please collect your child by 12:15.","headers":{"from":"Office <office@school.example.org>","subject":"Early closing","date":"today"},"message":{"id":"t1","internalDate":"` + milliseconds(10*time.Minute) + `","labelIds":["UNREAD","CATEGORY_UPDATES"]}}`
 	case strings.Contains(call.Command, "gmail get") && strings.Contains(call.Command, "m3"):
 		printed = `{"body":"Saturday works, see you then.","headers":{"from":"Sam <sam@friends.example.net>","subject":"Re: Saturday","date":"today"},"message":{"id":"m3","internalDate":"` + milliseconds(5*time.Minute) + `","labelIds":["INBOX"]}}`
+	case strings.Contains(call.Command, "gmail get") && strings.Contains(call.Command, "t3"):
+		// Deleted between the search and the read.
+		encoded, _ := json.Marshal(map[string]any{"stdout": "", "stderr": "message not found", "exitCode": 1})
+		return true, string(encoded)
 	default:
 		return false, "unexpected command: " + call.Command
 	}
@@ -158,10 +162,11 @@ func (self *watchedMailbox) commandCount(fragment string) int {
 	return count
 }
 
-// A look finds two new messages, one in a thread the person started, and
-// sorts each once: the school's closing is a candidate that carries the
-// message, the friend's answer is not, and the person's own message is
-// never read. The alert job tells the closing. A second look over the
+// A look finds three new messages, one in a thread the person started,
+// and sorts each it can read once: the school's closing is a candidate
+// that carries the message, the friend's answer is not, the person's own
+// message is never read, and one deleted before it could be read is passed
+// over without failing the look. The alert job tells the closing. A second look over the
 // same mail sorts nothing again.
 func TestWatchSortsNewMailOnceAndTheAlertJobTellsIt(t *testing.T) {
 	provider := &alertModel{answers: []string{
@@ -185,8 +190,11 @@ func TestWatchSortsNewMailOnceAndTheAlertJobTellsIt(t *testing.T) {
 		t.Fatalf("Tick: %s", err)
 	}
 	fixture.worker.Wait()
-	if mailbox.commandCount("gmail search") != 1 || mailbox.commandCount("gmail get") != 2 || mailbox.commandCount("thread get") != 1 || provider.callCount() != 2 {
-		t.Fatalf("one search, one thread, two messages, two sortings: %q, %d calls", mailbox.commands, provider.callCount())
+	if mailbox.commandCount("gmail search") != 1 || mailbox.commandCount("gmail get") != 3 || mailbox.commandCount("thread get") != 1 || provider.callCount() != 2 {
+		t.Fatalf("one search, one thread, three messages, two sortings: %q, %d calls", mailbox.commands, provider.callCount())
+	}
+	if jobs := fixture.jobsOf(t, models.AgentJobWatch); len(jobs) != 1 || jobs[0].Status != models.AgentJobDone {
+		t.Fatalf("the look is done: %+v", jobs)
 	}
 	waiting := fixture.waiting(t)
 	if len(waiting) != 1 {
@@ -237,7 +245,7 @@ func TestWatchSortsNewMailOnceAndTheAlertJobTellsIt(t *testing.T) {
 		t.Fatalf("Tick: %s", err)
 	}
 	fixture.worker.Wait()
-	if mailbox.commandCount("gmail search") != 2 || mailbox.commandCount("gmail get") != 2 || provider.callCount() != calls {
+	if mailbox.commandCount("gmail search") != 2 || mailbox.commandCount("gmail get") != 3 || provider.callCount() != calls {
 		t.Fatalf("searched again, nothing read or sorted again: %q, %d calls", mailbox.commands, provider.callCount()-calls)
 	}
 }
@@ -266,4 +274,16 @@ func TestWatchedCandidateFromAMutedSenderIsDropped(t *testing.T) {
 	if jobs := fixture.alertJobs(t); len(jobs) != 0 {
 		t.Fatalf("nothing to decide: %+v", jobs)
 	}
+}
+
+func (self *alertFixture) jobsOf(t *testing.T, jobKind models.AgentJobKind) []*models.AgentJob {
+	t.Helper()
+	var jobs []*models.AgentJob
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		if jobs, err = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: self.agent.ID, Kinds: []models.AgentJobKind{jobKind}}, nil); err != nil {
+			t.Fatalf("ListAgentJobs: %s", err)
+		}
+	})
+	return jobs
 }

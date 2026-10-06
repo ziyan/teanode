@@ -25,6 +25,7 @@ To see it working: with the `gmail` skill installed and enabled, a computer atta
 ## Surprises & Discoveries
 
 - `gog gmail search` lists threads, not messages. A thread with one message has the message's id as its own; a reply to an old thread is a new message in a thread whose id is the first message's. The watch reads such a thread to learn its messages' ids and dates, then reads each new one.
+- A thread or a message the skill cannot print (deleted between the search and the read, or a thread larger than the 256 KiB a skill's answer is cut at) is logged and passed over, the message recorded as looked at, so that one bad message does not fail every look after it. A reply in a very long thread can be missed that way.
 - The skill's read prints the body as the sender wrote it, usually HTML; it is reduced to text with the same function the tools use (`tools.HTMLToText`).
 
 
