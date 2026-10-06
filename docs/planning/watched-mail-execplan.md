@@ -15,10 +15,11 @@ To see it working: with the `gmail` skill installed and enabled, a computer atta
 ## Progress
 
 - [x] (2026-10-06) Surveyed how the sorting, the alert candidates and the alert job work, how a skill's command runs on a computer (`skills.Skill.Run`, `computerShell`), and what the installed `gmail` skill's two read tools print (`gog gmail search … --json`: threads with id, date, from, subject, labels, messageCount; `gog gmail get … --json`: headers and the decoded body).
-- [ ] Milestone 1: storage. Migration 0150: `agent_watched_mail` (what has been looked at), and the columns a candidate about a watched message carries on `agent_alert_candidate`.
-- [ ] Milestone 2: the `watch` job: search, read, sort, candidates. Queued by the worker's tick every ten minutes for each agent with the skill enabled and alerts on.
-- [ ] Milestone 3: the alert job and the alert's covered list read a watched candidate.
-- [ ] Milestone 4: tests, docs, a run against the real skill on a dev server, review, merge, deploy.
+- [x] (2026-10-06) Milestone 1: storage. Migration 0150: `agent_watched_mail` (what has been looked at), and the columns a candidate about a watched message carries on `agent_alert_candidate`.
+- [x] (2026-10-06) Milestone 2: the `watch` job: search, read, sort, candidates. Queued by the worker's tick every ten minutes for each agent with the skill enabled, alerts on and a computer attached.
+- [x] (2026-10-06) Milestone 3: the alert job, the alert's subject key and its covered list read a watched candidate; mutes match its sender, domain and category.
+- [x] (2026-10-06) Milestone 4a: tests (parsing, the window, a look end to end with a fake computer and model through to the alert, a muted sender, the table), docs (`agents.md`, `jobs-and-schedules.md`), the dashboard's run kind.
+- [ ] Milestone 4b: review, merge, deploy, and a look on the server against the real skill.
 
 
 ## Surprises & Discoveries
@@ -74,7 +75,7 @@ Milestone 4: unit tests for the parsing, the query and the candidate; a database
 
 ## Validation and Acceptance
 
-`make test` passes. On a dev server with the skill installed and gen7 attached, a message sent to the Gmail address and archived is sorted within ten minutes (a run titled `Sorting Gmail "…"`), and a message the sorting marks `soon` or `now` produces an alert in the main conversation.
+`make test` passes. On a server with the skill installed and a computer attached that has `gog` signed in, a message sent to the Gmail address and archived is sorted within ten minutes (a run titled `Sorting Gmail "…"`), and a message the sorting marks `soon` or `now` produces an alert in the main conversation.
 
 
 ## Idempotence and Recovery

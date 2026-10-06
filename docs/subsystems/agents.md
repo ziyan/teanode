@@ -179,6 +179,24 @@ Trash, subjects with fewer than three letters once the digits are out, old
 mail moved in, and anything older than a day never make one. Nothing is
 decided there.
 
+**Mail this server does not host** makes candidates too. A person whose
+mail is in Gmail, with the `gmail` skill installed and on, alerts on, and a
+computer attached for the skill, has a look taken at that mailbox every ten
+minutes by the **watch** job (`internal/agent/watched_mail.go`). It runs
+only the skill's own `gmail_search` and `gmail_read`, on the computer the
+person chose for the skill (or the only one attached), never anything that
+sends, drafts or labels; that is why it may run with nobody present, which
+a turn on the person's computer may not. It searches for what arrived since
+shortly before the newest message it has already looked at, archived mail
+included and sent mail, drafts, spam, trash and Gmail's promotions and
+social tabs left out, reads each new message, and sorts it with the same
+prompt, in one call. A message the sorting marks `soon` or `now` becomes a
+`watched` candidate, which carries its sender, subject, date, category and
+text (`agent_alert_candidate.watched_*`), since the message is not stored
+here. `agent_watched_mail` records each message looked at, so none is
+sorted twice. Nothing else follows from that sorting: no insight, rules,
+reply or lookup, which all act on a message this server holds.
+
 The **alert job** (`internal/agent/alert.go`) waits two minutes for
 candidates to gather, so that three messages about one incident are one
 alert, then asks the synthesize model once, with the person's triage
