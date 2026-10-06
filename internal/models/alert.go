@@ -15,12 +15,14 @@ type AlertCandidateKind string
 
 // The kinds: one message the sorting judged worth telling, a burst of
 // messages alike that a count noticed, which no single message's sorting
-// can see, and a budget or savings target crossing that code computed
-// after a sync.
+// can see, a budget or savings target crossing that code computed after a
+// sync, and a message the sorting judged worth telling in a mailbox this
+// server does not host, which the watch read through a skill.
 const (
 	AlertCandidateMessage AlertCandidateKind = "message"
 	AlertCandidateBurst   AlertCandidateKind = "burst"
 	AlertCandidateBudget  AlertCandidateKind = "budget"
+	AlertCandidateWatched AlertCandidateKind = "watched"
 )
 
 // AgentAlertCandidate is something that might be worth telling the person
@@ -50,6 +52,18 @@ type AgentAlertCandidate struct {
 	// "spending-category:<id>:2026-09:at_risk", and becomes the subject
 	// key of the alert that tells it, so the same crossing is told once.
 	BudgetKey string `json:"budgetKey,omitempty"`
+
+	// What a watched candidate is about, since its message is not stored:
+	// the skill that read it, the message's id there, its sender, subject
+	// and date, what the sorting called it, and the message as the
+	// sorting saw it.
+	WatchedSkillName    string     `json:"watchedSkillName,omitempty"`
+	WatchedMessageID    string     `json:"watchedMessageId,omitempty"`
+	WatchedSender       string     `json:"watchedSender,omitempty"`
+	WatchedSubject      string     `json:"watchedSubject,omitempty"`
+	WatchedMailCategory string     `json:"watchedMailCategory,omitempty"`
+	WatchedMessageAt    *time.Time `json:"watchedMessageAt,omitempty"`
+	WatchedMessageText  string     `json:"watchedMessageText,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -146,4 +160,15 @@ type AgentAlertMute struct {
 	AlertID string `json:"alertId"`
 
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// AgentWatchedMail is a message the watch has looked at in a mailbox this
+// server does not host, read through a skill, so that it is sorted once.
+type AgentWatchedMail struct {
+	AgentID          string    `json:"agentId"`
+	SkillName        string    `json:"skillName"`
+	WatchedMessageID string    `json:"watchedMessageId"`
+	WatchedMessageAt time.Time `json:"watchedMessageAt"`
+	AlertSignal      string    `json:"alertSignal"`
+	LookedAt         time.Time `json:"lookedAt"`
 }

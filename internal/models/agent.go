@@ -593,6 +593,12 @@ const (
 	// message that arrived at the person's statement import address, and
 	// tells them what came of it. Its subject is the message.
 	AgentJobStatementImport AgentJobKind = "statement_import"
+
+	// AgentJobWatch looks at a mailbox this server does not host, through
+	// the installed skill that reads it, sorts what arrived since the last
+	// look and makes alert candidates of what deserves one. Its subject is
+	// the skill's name.
+	AgentJobWatch AgentJobKind = "watch"
 )
 
 // AgentJobStatus is where a job is.
