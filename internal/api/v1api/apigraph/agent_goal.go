@@ -166,12 +166,12 @@ func (self *graph) StartAgentGoal(ctx context.Context, arguments StartAgentGoalA
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	started, err := worker.StartGoal(ctx, found, arguments.GoalTitle, arguments.GoalDescription, arguments.OriginConversationID)
+	started, err := worker.StartGoal(self.transaction(ctx), found, arguments.GoalTitle, arguments.GoalDescription, arguments.OriginConversationID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	for _, scheduleId := range arguments.ScheduleIDs {
-		if _, err := worker.MoveScheduleToGoal(ctx, found, scheduleId, started.ID); err != nil {
+		if _, err := worker.MoveScheduleToGoal(self.transaction(ctx), found, scheduleId, started.ID); err != nil {
 			return nil, fmt.Errorf("%w: the goal is started, but %s", api.ErrInvalidArguments, err)
 		}
 	}
@@ -187,7 +187,7 @@ func (self *graph) TellAgentGoal(ctx context.Context, arguments TellAgentGoalArg
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	told, err := worker.TellGoal(ctx, found, arguments.ConversationID, arguments.Text)
+	told, err := worker.TellGoal(self.transaction(ctx), found, arguments.ConversationID, arguments.Text)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
@@ -203,7 +203,7 @@ func (self *graph) SetAgentGoalState(ctx context.Context, arguments SetAgentGoal
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	changed, err := worker.SetGoalState(ctx, found, arguments.ConversationID, models.AgentGoalState(strings.ToLower(strings.TrimSpace(arguments.GoalState))))
+	changed, err := worker.SetGoalState(self.transaction(ctx), found, arguments.ConversationID, models.AgentGoalState(strings.ToLower(strings.TrimSpace(arguments.GoalState))))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
@@ -224,7 +224,7 @@ func (self *graph) MoveAgentScheduleToGoal(ctx context.Context, arguments MoveAg
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	moved, err := worker.MoveScheduleToGoal(ctx, found, arguments.ScheduleID, arguments.ConversationID)
+	moved, err := worker.MoveScheduleToGoal(self.transaction(ctx), found, arguments.ScheduleID, arguments.ConversationID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}

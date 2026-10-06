@@ -26,9 +26,9 @@ type AgentConversation struct {
 	ArchivedAt       *time.Time `json:"archivedAt"`
 	CompactedThrough string     `json:"compactedThrough"`
 
-	// The goal the agent works toward in this conversation, where it
-	// stands (working, waiting, met), its last word on it, and when it
-	// takes its next turn.
+	// On a goal's own conversation, the goal: its description, where it
+	// stands (working, waiting, met, dropped), its status line, and when
+	// it takes its next turn.
 	Goal       string     `json:"goal"`
 	GoalState  string     `json:"goalState"`
 	GoalNote   string     `json:"goalNote"`

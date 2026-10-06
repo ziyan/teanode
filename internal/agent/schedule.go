@@ -143,6 +143,13 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	if schedule == nil {
 		return nil
 	}
+	// The schedule of a goal that is done or dropped does not run: its
+	// turn would be the goal's, for a goal nobody is keeping at any more.
+	// Taking the goal up again lets it run again.
+	if conversation.IsGoal() && (conversation.GoalState == models.GoalMet || conversation.GoalState == models.GoalDropped) {
+		log.Infof("skipped schedule %q: its goal is %s", schedule.ID, conversation.GoalState)
+		return self.finishOnce(run, schedule.ID)
+	}
 	operations, err := self.operations(ctx, run.Owner)
 	if err != nil {
 		return err

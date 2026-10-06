@@ -123,3 +123,41 @@ func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 		}
 	})
 }
+
+// Starting a goal with a schedule that is not the person's starts nothing:
+// the goal and the move are one write.
+func TestAGoalStartedWithAStrangersScheduleIsNotStarted(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	var person *models.User
+	var agentId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if person, err = tx.CreateUser(&models.User{Username: "keeper", Name: "Example Keeper"}); err != nil {
+			t.Fatal(err)
+		}
+		created, err := tx.CreateAgent(&models.Agent{UserID: person.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agentId = created.ID
+	})
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	worker := agentpackage.New(&agentpackage.Settings{Database: database, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	resolver := &graph{database: database, config: config.NewMemoryStore(configuration), settings: &api.Settings{Agent: worker}}
+	principal := &api.Principal{User: person, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
+	err := database.TransactionContext(context.Background(), func(tx db.Transaction) error {
+		_, err := resolver.StartAgentGoal(api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx),
+			StartAgentGoalArguments{GoalTitle: "Boiler", GoalDescription: "Watch for the reply.", ScheduleIDs: []string{"no-such-schedule"}})
+		return err
+	})
+	if err == nil {
+		t.Fatal("a goal with a schedule that is not there was started")
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if goals, err := tx.ListAgentGoals(agentId, nil, 10); err != nil || len(goals) != 0 {
+			t.Fatalf("the goal stayed behind: %+v %v", goals, err)
+		}
+	})
+}

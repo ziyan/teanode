@@ -244,6 +244,38 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		return err
 	}
 
+	// A goal with a schedule runs on it: the turn just taken was owed for
+	// an answer or a reopening, and whatever it said, the schedule is the
+	// next turn. A failure is logged, and nothing is moved on.
+	var schedules []*models.AgentSchedule
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		schedules, err = goalSchedules(tx, after)
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(schedules) > 0 {
+		if failure != "" {
+			log.Warningf("the goal turn on conversation %q failed: %s", conversation.ID, failure)
+		}
+		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			// A turn that did not call the tool left the time it was owed
+			// at, which would have it owed again on every tick.
+			if _, err := tx.UpdateAgentConversation(after.ID, func(changing *models.AgentConversation) error {
+				if changing.GoalNextAt != nil && !changing.GoalNextAt.After(time.Now()) {
+					changing.GoalNextAt = nil
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+			if failure == "" {
+				return nil
+			}
+			return addGoalActivity(tx, after, models.GoalActivityFailed, "A turn failed; its schedule runs it next", failure)
+		})
+	}
+
 	// A model that answered and never called the tool is asked once more,
 	// with the goal tool alone in front of it: the first real goal on the
 	// maintainer's server wrote its table and stopped, and the row said
@@ -318,18 +350,6 @@ func (self *Agent) goalOwed(ctx context.Context, run *Run, now time.Time) (*mode
 		}
 		if found.GoalNextAt != nil && found.GoalNextAt.After(now) {
 			return nil
-		}
-		// A goal with a schedule runs on it: the turn it was owed is not
-		// taken, and it has no next one of its own.
-		if schedules, err := goalSchedules(tx, found); err != nil || len(schedules) > 0 {
-			if err != nil {
-				return err
-			}
-			_, err = tx.UpdateAgentConversation(found.ID, func(conversation *models.AgentConversation) error {
-				conversation.GoalNextAt = nil
-				return nil
-			})
-			return err
 		}
 		if self.isTurnRunning(found.ID) {
 			return goalBehindTurn(now)

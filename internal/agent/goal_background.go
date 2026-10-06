@@ -51,7 +51,7 @@ var ErrTooManyGoals = fmt.Errorf("%d goals are already in progress; finish or dr
 // once. The title is what it is called in a list, the description what it
 // is for. The origin is the conversation it was asked for in, when there
 // was one, kept in the first activity row.
-func (self *Agent) StartGoal(ctx context.Context, agent *models.Agent, goalTitle, goalDescription, originConversationId string) (*models.AgentConversation, error) {
+func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, goalTitle, goalDescription, originConversationId string) (*models.AgentConversation, error) {
 	goalTitle = cutRunes(strings.TrimSpace(strings.ReplaceAll(goalTitle, "\n", " ")), goalTitleCharacters)
 	goalDescription = cutRunes(strings.TrimSpace(goalDescription), goalDescriptionCharacters)
 	if goalDescription == "" {
@@ -61,7 +61,7 @@ func (self *Agent) StartGoal(ctx context.Context, agent *models.Agent, goalTitle
 		goalTitle = firstWords(goalDescription, goalTitleCharacters)
 	}
 	var started *models.AgentConversation
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := func() error {
 		going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgressMost+1)
 		if err != nil {
 			return err
@@ -82,7 +82,7 @@ func (self *Agent) StartGoal(ctx context.Context, agent *models.Agent, goalTitle
 			ActivityHeadline: "Started", ActivityDetail: goalDescription,
 		})
 		return err
-	}); err != nil {
+	}(); err != nil {
 		return nil, err
 	}
 	log.Noticef("agent %q started goal %q (%s)", agent.ID, goalTitle, started.ID)
@@ -93,13 +93,13 @@ func (self *Agent) StartGoal(ctx context.Context, agent *models.Agent, goalTitle
 // the goal's conversation as their words, carried over from where they said
 // them, and the goal back at work a minute later. A goal that was met or
 // dropped is not started again by this; the person does that.
-func (self *Agent) TellGoal(ctx context.Context, agent *models.Agent, conversationId, text string) (*models.AgentConversation, error) {
+func (self *Agent) TellGoal(tx db.Transaction, agent *models.Agent, conversationId, text string) (*models.AgentConversation, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, fmt.Errorf("say what to tell the goal")
 	}
 	var after *models.AgentConversation
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := func() error {
 		goal, err := ownGoal(tx, agent.ID, conversationId)
 		if err != nil {
 			return err
@@ -124,7 +124,7 @@ func (self *Agent) TellGoal(ctx context.Context, agent *models.Agent, conversati
 			ActivityHeadline: "You answered", ActivityDetail: text,
 		})
 		return err
-	}); err != nil {
+	}(); err != nil {
 		return nil, err
 	}
 	return after, nil
@@ -133,12 +133,12 @@ func (self *Agent) TellGoal(ctx context.Context, agent *models.Agent, conversati
 // SetGoalState is the person marking a goal done, dropping it, or taking
 // it up again: met, dropped, or working. Only the person does this; a turn
 // of the agent's own says note, wait or met through the goal tool.
-func (self *Agent) SetGoalState(ctx context.Context, agent *models.Agent, conversationId string, goalState models.AgentGoalState) (*models.AgentConversation, error) {
+func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, conversationId string, goalState models.AgentGoalState) (*models.AgentConversation, error) {
 	if goalState != models.GoalMet && goalState != models.GoalDropped && goalState != models.GoalWorking {
 		return nil, fmt.Errorf("a goal can be marked met, dropped, or working again, not %q", goalState)
 	}
 	var after *models.AgentConversation
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := func() error {
 		goal, err := ownGoal(tx, agent.ID, conversationId)
 		if err != nil {
 			return err
@@ -178,7 +178,7 @@ func (self *Agent) SetGoalState(ctx context.Context, agent *models.Agent, conver
 			AgentID: agent.ID, ConversationID: goal.ID, GoalActivityKind: activityKind, ActivityHeadline: headline,
 		})
 		return err
-	}); err != nil {
+	}(); err != nil {
 		return nil, err
 	}
 	return after, nil
@@ -198,8 +198,7 @@ func ownGoal(tx db.Transaction, agentId, conversationId string) (*models.AgentCo
 }
 
 // addGoalActivity writes a row of a goal's log, for a goal conversation
-// only: a goal on a named conversation, from before goals had their own,
-// keeps its notes in its transcript as it always did.
+// only.
 func addGoalActivity(tx db.Transaction, goal *models.AgentConversation, activityKind models.AgentGoalActivityKind, headline, detail string) error {
 	if !goal.IsGoal() {
 		return nil
@@ -253,21 +252,25 @@ func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversati
 	mainId = main.ID
 	isWritten, err := self.whileNoTurnRuns(mainId, func() error {
 		return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			current, err := tx.GetAgentConversation(goal.ID)
-			if err != nil || current == nil || current.GoalState != models.GoalWaiting || current.GoalSurfacedAt != nil {
+			// Checked and marked under the row's lock, so a sweep on another
+			// instance that found the same goal waits here and then finds
+			// it said.
+			isToSay := false
+			now := time.Now()
+			if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
+				if conversation.GoalState != models.GoalWaiting || conversation.GoalSurfacedAt != nil {
+					return nil
+				}
+				isToSay, conversation.GoalSurfacedAt = true, &now
+				return nil
+			}); err != nil || !isToSay {
 				return err
 			}
 			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: mainId, Role: "user", Content: checkIn}); err != nil {
 				return err
 			}
-			if said, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: mainId, Role: "assistant", Content: need}); err != nil {
-				return err
-			}
-			now := time.Now()
-			_, err = tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
-				conversation.GoalSurfacedAt = &now
-				return nil
-			})
+			var err error
+			said, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: mainId, Role: "assistant", Content: need})
 			return err
 		})
 	})
@@ -332,7 +335,10 @@ func goalSchedules(tx db.Transaction, goal *models.AgentConversation) ([]*models
 	}
 	var owned []*models.AgentSchedule
 	for _, schedule := range schedules {
-		if schedule.ConversationID == goal.ID && schedule.Enabled {
+		// Only one that answers in the goal's conversation: a mailed one
+		// runs in a conversation of its own and never says where the
+		// goal stands.
+		if schedule.ConversationID == goal.ID && schedule.Enabled && schedule.Deliver != models.AgentDeliverMail {
 			owned = append(owned, schedule)
 		}
 	}
@@ -342,9 +348,9 @@ func goalSchedules(tx db.Transaction, goal *models.AgentConversation) ([]*models
 // MoveScheduleToGoal makes an existing schedule one of a goal's: its runs
 // take place in the goal's conversation, as the goal's turns, and the goal
 // stops taking turns of its own.
-func (self *Agent) MoveScheduleToGoal(ctx context.Context, agent *models.Agent, scheduleId, conversationId string) (*models.AgentSchedule, error) {
+func (self *Agent) MoveScheduleToGoal(tx db.Transaction, agent *models.Agent, scheduleId, conversationId string) (*models.AgentSchedule, error) {
 	var moved *models.AgentSchedule
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := func() error {
 		goal, err := ownGoal(tx, agent.ID, conversationId)
 		if err != nil {
 			return err
@@ -373,7 +379,7 @@ func (self *Agent) MoveScheduleToGoal(ctx context.Context, agent *models.Agent, 
 			return err
 		}
 		return addGoalActivity(tx, goal, models.GoalActivityProgress, "Runs on the schedule "+strconv.Quote(schedule.Name), schedule.Cron)
-	}); err != nil {
+	}(); err != nil {
 		return nil, err
 	}
 	return moved, nil

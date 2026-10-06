@@ -408,7 +408,7 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 		title = "the main conversation"
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s (%s), %d message(s)\n", title, view.Conversation.ID, view.Total)
-	if view.Conversation.Goal != "" {
+	if view.Conversation.Kind == "goal" && view.Conversation.Goal != "" {
 		_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(view.Conversation))
 	}
 	_, _ = fmt.Fprintln(command.Writer)

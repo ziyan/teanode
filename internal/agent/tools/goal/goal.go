@@ -128,8 +128,12 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentStartAgentGoal, variables, "StartAgentGoal", "the goal is started; its first turn runs at once, in its own conversation")
 	case "take_schedule":
-		// In a goal's own turn the goal is this one; from the person's
-		// turn, the one they name.
+		// Moving a schedule changes where its answers go, so it is the
+		// person's: a goal's own turn makes the schedules it needs in its
+		// conversation instead.
+		if current.Headless() {
+			return nil, fmt.Errorf("only the person moves a schedule to a goal; in a goal's own turn, make the schedule here instead")
+		}
 		if goalId == "" && here.IsGoal() {
 			goalId = here.ID
 		}
@@ -188,6 +192,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				if conversation.GoalState == models.GoalDropped {
 					return fmt.Errorf("the person dropped this goal; it takes no more turns")
 				}
+				// A goal that is done stays done: only the person takes it
+				// up again.
+				if conversation.GoalState == models.GoalMet && current.Headless() {
+					return fmt.Errorf("this goal is done; only the person takes it up again")
+				}
 				conversation.GoalNote = text
 				if action == "note" {
 					conversation.GoalState, conversation.GoalNextAt = models.GoalWorking, nil
@@ -229,11 +238,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 
-	answer := map[string]any{"goal": after.Goal, "state": string(after.GoalState), "note": after.GoalNote}
+	answer := map[string]any{"goalDescription": after.Goal, "goalState": string(after.GoalState), "goalStatus": after.GoalNote}
 	note := ""
 	switch {
 	case after.GoalNextAt != nil:
-		answer["next_turn_at"] = after.GoalNextAt.Format(time.RFC3339)
+		answer["goalNextAt"] = after.GoalNextAt.Format(time.RFC3339)
 		note = fmt.Sprintf("goal: %s, next turn %s", after.GoalState, after.GoalNextAt.Format("15:04"))
 	case after.GoalState == models.GoalWaiting && after.GoalSurfacedAt == nil:
 		note = "goal: waiting; the person is told in their main conversation"
