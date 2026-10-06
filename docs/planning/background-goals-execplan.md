@@ -69,6 +69,9 @@ To see it working: in the main conversation ask "keep an eye out for a reply fro
 - Decision: a goal of its own sends no mail when it waits or stalls; it calls the person in the main conversation, which the chat-app relay forwards.
   Rationale: on the dev run the mail arrived in the person's inbox and the alert pipeline told them about it, so the same question reached them twice. One place to be called is the point.
   Date/Author: 2026-10-05.
+- Decision: the per-conversation goal is removed outright, with nothing migrated and nothing kept for compatibility: no goal menu on a chat in the drawer, no goal arguments on `StartAgentConversation` or `UpdateAgentConversation`, no `isGoalInProgress` listing, no turn count on a conversation, no goal-change lines written into transcripts, and the goal tool's `set` gone. Only goal conversations take turns. An idea is no longer marked done when a conversation's goal is met.
+  Rationale: two concepts named "goal" confused the model when the person asked it to set one, and the owner asked for the old one removed cleanly. The one old goal on the maintainer's server was already met.
+  Date/Author: 2026-10-05.
 
 ## Outcomes & Retrospective
 

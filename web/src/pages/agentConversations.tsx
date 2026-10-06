@@ -6,7 +6,7 @@ import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
 import { HighlightText } from '../components/highlightText'
-import { PlusIcon, StarIcon, TargetIcon } from '../components/icons'
+import { PlusIcon, StarIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty } from '../components/settingsList'
 import { useToast } from '../components/toast'
@@ -121,21 +121,16 @@ export function AgentConversationsPage() {
                 {/* What it is about: the agent's summary, else what it is
                     working toward, so no tile is a bare title. */}
                 <span
-                  className={conversation.summary || conversation.goal ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
+                  className={conversation.summary ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
                   id={`conversation-${conversation.id}-summary`}
                 >
-                  {conversation.summary || conversation.goal ? (
-                    <HighlightText text={conversation.summary || conversation.goal || ''} search={filter} />
+                  {conversation.summary ? (
+                    <HighlightText text={conversation.summary} search={filter} />
                   ) : (
                     t('agentConversations.noSummary')
                   )}
                 </span>
                 <span className="tile-detail">
-                  {/* A conversation working toward something says so, in the
-                      color of where it stands, the way the picker marks it. */}
-                  {conversation.goal ? (
-                    <TargetIcon size={12} className={`agent-drawer-list-goal ${conversation.goalState || 'working'}`} />
-                  ) : null}
                   <RelativeTime value={conversation.lastAt} />
                 </span>
               </button>

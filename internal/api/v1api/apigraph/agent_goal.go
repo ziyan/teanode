@@ -180,6 +180,11 @@ func (self *graph) SetAgentGoalState(ctx context.Context, arguments SetAgentGoal
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
+	// Done or dropped stops the turn it may be taking: left running, it
+	// would go on with what the person has just closed.
+	if changed.GoalState == models.GoalMet || changed.GoalState == models.GoalDropped {
+		worker.StopConversation(changed.ID)
+	}
 	return goalView(changed), nil
 }
 

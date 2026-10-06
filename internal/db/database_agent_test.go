@@ -257,7 +257,7 @@ func TestAgentConversationGoalIsStoredAndListedWhenDue(t *testing.T) {
 		now := time.Now()
 		due := now.Add(-time.Minute)
 		working, err := tx.CreateAgentConversation(&models.AgentConversation{
-			AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: now,
+			AgentID: agent.ID, Kind: models.AgentConversationGoal, LastAt: now,
 			Goal: "count the unread mails", GoalState: models.GoalWorking, GoalNextAt: &due,
 		})
 		if err != nil {
@@ -273,7 +273,7 @@ func TestAgentConversationGoalIsStoredAndListedWhenDue(t *testing.T) {
 
 		// A conversation whose goal is set later, through the modify
 		// closure, which is the path the API and the tool both take.
-		later, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: now})
+		later, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationGoal, LastAt: now})
 		if err != nil {
 			t.Fatal(err)
 		}

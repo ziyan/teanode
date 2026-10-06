@@ -125,12 +125,10 @@ The check-in a turn arrives as opens with `models.GoalCheckInMarker`
 (`[goal check-in]`), exactly, so a reader can tell it from the person's own
 words, and says in the same breath that nobody is speaking.
 
-A goal is no longer put on a conversation the person chats in:
-`StartAgentConversation(goal:)` and `UpdateAgentConversation(goal:)` on any
-conversation but a goal's own are refused. A goal left on a named or main
-conversation from before keeps running under the old rules until it is met or
-cleared, and its beginning and end are lines of its transcript, from
-`models.GoalChangeNote`.
+There is one kind of goal. A conversation the person chats in carries none:
+the drawer has no goal menu for it, and `StartAgentConversation` and
+`UpdateAgentConversation` take no goal. Only goal conversations take turns of
+their own; a goal left on another conversation from before is ignored.
 
 How the turns are queued, bounded and delivered is in `jobs-and-schedules.md`.
 The operations are `ListAgentGoals`, `GetAgentGoal`, `StartAgentGoal`,

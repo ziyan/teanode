@@ -151,20 +151,7 @@ var ideaUsedChecks = map[string]usedCheck{
 	},
 	"goal": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
 		goals, err := tx.ListAgentGoals(agent.ID, nil, 1)
-		if err != nil || len(goals) > 0 {
-			return len(goals) > 0, err
-		}
-		// A goal set on a conversation, from before goals had their own.
-		conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain, models.AgentConversationNamed}, &db.Options{Limit: 200})
-		if err != nil {
-			return false, err
-		}
-		for _, conversation := range conversations {
-			if conversation.GoalSetAt != nil {
-				return true, nil
-			}
-		}
-		return false, nil
+		return len(goals) > 0, err
 	},
 	"named_conversation": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
 		conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationNamed}, &db.Options{Limit: 1})

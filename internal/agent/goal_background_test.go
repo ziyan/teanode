@@ -19,19 +19,11 @@ import (
 const goalProgressRound = `{"id":"g5","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_5","function":{"name":"goal","arguments":"{\"action\":\"note\",\"text\":\"three of five invoices filed\",\"activity\":\"Filed the March invoices\",\"minutes\":60}"}}]},"finish_reason":"tool_calls"}]}
 {"id":"g5","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
 
-// startBackgroundGoal is the goal world with its main conversation left
-// without a goal, and a goal started in the background.
+// startBackgroundGoal is the goal world with no goal of its own, and a
+// goal started through StartGoal.
 func startBackgroundGoal(t *testing.T, script []string) (*goalWorld, *models.AgentConversation) {
 	t.Helper()
 	world := startGoalWorld(t, script, "")
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		if _, err := tx.UpdateAgentConversation(world.conversation.ID, func(conversation *models.AgentConversation) error {
-			conversation.GoalState, conversation.GoalNextAt = "", nil
-			return nil
-		}); err != nil {
-			t.Fatalf("UpdateAgentConversation: %s", err)
-		}
-	})
 	goal, err := world.worker.StartGoal(context.Background(), world.found, "Invoices filed", "File the invoices from last quarter, five in all.", world.conversation.ID)
 	if err != nil {
 		t.Fatalf("StartGoal: %s", err)

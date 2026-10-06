@@ -1932,10 +1932,10 @@ func (self *AskRun) goalLines(ctx context.Context) []string {
 		return nil
 	}
 	var lines []string
-	if conversation.Goal != "" {
-		lines = append(lines, fmt.Sprintf("This conversation has a goal on it, which you work toward across turns of your own: %q. It is %s.", conversation.Goal, conversation.GoalState))
+	if conversation.IsGoal() && conversation.Goal != "" {
+		lines = append(lines, fmt.Sprintf("This is the conversation of a goal you keep at in the background, %q: %s It is %s.", goalTitleOf(conversation), conversation.Goal, conversation.GoalState))
 		if note := strings.TrimSpace(conversation.GoalNote); note != "" {
-			lines = append(lines, "Your last word on it: "+note)
+			lines = append(lines, "Where it stands: "+note)
 		}
 	}
 	if len(waiting) > 0 {

@@ -346,46 +346,6 @@ const GoalNeedsYouMarker = "[goal needs you]"
 // words, carried over by the agent.
 const GoalRelayMarker = "[from the person, in the main conversation]"
 
-// GoalChangeNote is the line the conversation gets when its goal changes
-// hands: set, changed, cleared, or met. Empty when nothing worth a line
-// happened -- a check-in that only moved the next time, or the same goal
-// saved again unchanged.
-//
-// A goal lives beside the conversation, in a dialog and a chip, and a
-// person reading the transcript later would not see it begin or end. The
-// note puts those moments in the flow where they happened, in the words
-// the goal was given in, the way a schedule's run says which schedule.
-func GoalChangeNote(before, after *AgentConversation) (AgentNoteKind, string) {
-	var was, now string
-	var wasState AgentGoalState
-	if before != nil {
-		was, wasState = before.Goal, before.GoalState
-	}
-	if after != nil {
-		now = after.Goal
-	}
-	switch {
-	case now == "" && was == "":
-		return "", ""
-	case now == "":
-		return NoteGoalCleared, was
-	case was == "", now != was && wasState == GoalMet:
-		// A goal after one that was met is a new goal, not a change
-		// to the old one.
-		return NoteGoalSet, now
-	case now != was:
-		return NoteGoalChanged, now
-	case after.GoalState == GoalMet && wasState != GoalMet:
-		if note := strings.TrimSpace(after.GoalNote); note != "" {
-			return NoteGoalMet, note
-		}
-		return NoteGoalMet, now
-	case after.GoalState == GoalWorking && wasState == GoalMet:
-		return NoteGoalSetAgain, now
-	}
-	return "", ""
-}
-
 // AgentMessage is one turn, tool call or result in a conversation.
 type AgentMessage struct {
 	ID             string    `json:"id"`
@@ -497,12 +457,15 @@ const (
 	NoteCompacting      AgentNoteKind = "compacting"       // the earlier conversation is being folded into a note
 	NoteCompacted       AgentNoteKind = "compacted"        // it was: the detail is the note
 	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
-	NoteGoalSet         AgentNoteKind = "goal_set"         // the detail is the goal
-	NoteGoalSetAgain    AgentNoteKind = "goal_set_again"
-	NoteGoalChanged     AgentNoteKind = "goal_changed"
-	NoteGoalCleared     AgentNoteKind = "goal_cleared"
-	NoteGoalMet         AgentNoteKind = "goal_met"     // the detail is what was said of it, or the goal
-	NoteGoalStalled     AgentNoteKind = "goal_stalled" // the detail is how many turns went by alone
+	// The goal notes below are written no longer, since goals have their
+	// own conversations and activity; they are kept so that transcripts
+	// written before still read.
+	NoteGoalSet      AgentNoteKind = "goal_set" // the detail is the goal
+	NoteGoalSetAgain AgentNoteKind = "goal_set_again"
+	NoteGoalChanged  AgentNoteKind = "goal_changed"
+	NoteGoalCleared  AgentNoteKind = "goal_cleared"
+	NoteGoalMet      AgentNoteKind = "goal_met"     // the detail is what was said of it, or the goal
+	NoteGoalStalled  AgentNoteKind = "goal_stalled" // the detail is how many turns went by alone
 )
 
 // noteEnglish is each kind in English, for whoever reads a note without

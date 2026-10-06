@@ -14,8 +14,7 @@ import (
 )
 
 // A goal started through the API is the person's: listed and read back
-// with what it made, told and closed by them, and by nobody else. And a
-// goal is no longer put on a conversation the person chats in.
+// with what it made, told and closed by them, and by nobody else.
 func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
@@ -121,19 +120,6 @@ func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 		met, err := resolver.SetAgentGoalState(ctx, SetAgentGoalStateArguments{ConversationID: started.ConversationID, GoalState: "met"})
 		if err != nil || met.GoalState != "met" {
 			t.Fatalf("SetAgentGoalState: %+v %v", met, err)
-		}
-		// A goal on a conversation the person chats in is refused, by
-		// either way it used to be set.
-		if _, err := resolver.StartAgentConversation(ctx, StartAgentConversationArguments{Title: "Chat", Goal: "keep at it"}); err == nil {
-			t.Errorf("a named conversation was started with a goal on it")
-		}
-		named, err := resolver.StartAgentConversation(ctx, StartAgentConversationArguments{Title: "Chat"})
-		if err != nil {
-			t.Fatalf("StartAgentConversation: %s", err)
-		}
-		goal := "keep at it"
-		if _, err := resolver.UpdateAgentConversation(ctx, UpdateAgentConversationArguments{ConversationID: named.ID, Goal: &goal}); err == nil {
-			t.Errorf("a goal was put on a named conversation")
 		}
 	})
 }

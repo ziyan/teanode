@@ -58,7 +58,7 @@ func init() {
 					"activity": tools.StringProperty("for note: one line on what happened, when something did that the person would want in the goal's log; leave it out when you only looked"),
 					"minutes":  tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
 				}, "action"),
-				Guidance: "goal: `start` a goal when the person asks you to keep at something beyond this conversation; `list` first so you do not start one twice. A goal's turns run in its own conversation and end with exactly one call: `note` (status in one line, activity only when something happened), `wait` (what you need from them, said to them once in their main conversation) or `met`. When the person answers a goal that waited for them, pass their words on with `tell` and its goal_id; when they say it is done or to stop, `done` or `drop`.",
+				Guidance: "goal: `start` a goal when the person asks you to keep at something beyond this conversation -- watch for, follow up, chase, keep doing until done -- and `list` first so you do not start one twice. Someone saying what they hope for (\"my goal is to run a marathon\") is not asking you to keep at anything: talk about it, and start a goal only if they ask you to work on it over time. A goal's turns run in its own conversation and end with exactly one call: `note` (status in one line, activity only when something happened), `wait` (what you need from them, said to them once in their main conversation) or `met`. When the person answers a goal that waited for them, pass their words on with `tell` and its goal_id; when they say it is done or to stop, `done` or `drop`.",
 				Run:      run,
 			},
 		}
@@ -137,8 +137,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		goalState := map[string]string{"done": "met", "drop": "dropped", "reopen": "working"}[action]
 		return operate(ctx, client.DocumentSetAgentGoalState, map[string]any{"conversationId": goalId, "goalState": goalState}, "SetAgentGoalState", "the goal is "+goalState)
 	}
-	if here == nil {
-		return nil, fmt.Errorf("there is no conversation here with a goal")
+	// Note, wait and met are a goal's own turn saying where it stands, in
+	// the goal's conversation; anywhere else there is no goal to say it of.
+	if !here.IsGoal() {
+		return nil, fmt.Errorf("%s is said in a goal's own turn; this is not a goal's conversation. To start a goal, use start", action)
 	}
 	if runes := []rune(text); len(runes) > NoteCharacters {
 		text = string(runes[:NoteCharacters])
@@ -189,19 +191,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return err
 		}
 		after = updated
-		if updated.IsGoal() {
-			if err := goalActivity(tx, updated, action, text, activity); err != nil {
-				return err
-			}
-		}
-		// Set and met are moments of the conversation, so they are
-		// written into it; a note or a wait is the chip's and the bar's.
-		if kind, detail := models.GoalChangeNote(here, updated); kind != "" {
-			if _, err := tx.AppendAgentMessage(models.NewAgentNote(here.ID, kind, detail)); err != nil {
-				return err
-			}
-		}
-		return nil
+		return goalActivity(tx, updated, action, text, activity)
 	}); err != nil {
 		return nil, err
 	}
@@ -209,12 +199,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	answer := map[string]any{"goal": after.Goal, "state": string(after.GoalState), "note": after.GoalNote}
 	note := ""
 	switch {
-	case after.Goal == "":
-		note = "the goal is cleared"
 	case after.GoalNextAt != nil:
 		answer["next_turn_at"] = after.GoalNextAt.Format(time.RFC3339)
 		note = fmt.Sprintf("goal: %s, next turn %s", after.GoalState, after.GoalNextAt.Format("15:04"))
-	case after.GoalState == models.GoalWaiting && after.IsGoal() && after.GoalSurfacedAt == nil:
+	case after.GoalState == models.GoalWaiting && after.GoalSurfacedAt == nil:
 		note = "goal: waiting; the person is told in their main conversation"
 	default:
 		note = "goal: " + string(after.GoalState)

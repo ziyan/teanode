@@ -205,7 +205,7 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 	}
 	conversationId := command.String("conversation")
 	if command.Bool("new") {
-		conversation, err := client.StartAgentConversation(ctx, connection, "", "")
+		conversation, err := client.StartAgentConversation(ctx, connection, "")
 		if err != nil {
 			return describeError(command, err)
 		}
@@ -333,7 +333,7 @@ func runAgentChat(ctx context.Context, command *cli.Command) error {
 	}
 	conversationId := command.String("conversation")
 	if command.Bool("new") {
-		conversation, err := client.StartAgentConversation(ctx, connection, "", "")
+		conversation, err := client.StartAgentConversation(ctx, connection, "")
 		if err != nil {
 			return describeError(command, err)
 		}
@@ -460,7 +460,7 @@ func runAgentConversationNew(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := client.StartAgentConversation(ctx, connection, strings.Join(command.Args().Slice(), " "), "")
+	conversation, err := client.StartAgentConversation(ctx, connection, strings.Join(command.Args().Slice(), " "))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -489,7 +489,7 @@ func runAgentConversationRename(ctx context.Context, command *cli.Command) error
 	if err != nil {
 		return err
 	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil, nil)
+	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -520,7 +520,7 @@ func setAgentConversationArchived(ctx context.Context, command *cli.Command, arc
 	if err != nil {
 		return err
 	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", &archived, nil)
+	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", &archived)
 	if err != nil {
 		return describeError(command, err)
 	}

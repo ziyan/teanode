@@ -200,9 +200,6 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		}); err != nil {
 			return err
 		}
-		if stalled != nil && stalled.GoalState == models.GoalWaiting && !stalled.IsGoal() {
-			self.tellAboutGoal(ctx, run, stalled)
-		}
 		return nil
 	}
 
@@ -291,14 +288,6 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		if err := self.moveGoalOn(ctx, conversation.ID, now.Add(next), note); err != nil {
 			return err
 		}
-	} else if after.GoalState == models.GoalWaiting && !after.IsGoal() {
-		// It needs the person, so they are told in case they are not
-		// reading the conversation. A goal that is met is not mailed
-		// about: the maintainer asked not to be, and the drawer's mark
-		// and the closing note are there when they next look. A goal of
-		// its own is not mailed either: it is said in the person's main
-		// conversation, which is the one place it calls them.
-		self.tellAboutGoal(ctx, run, after)
 	}
 	if failure != "" {
 		log.Warningf("the goal turn on conversation %q failed: %s", conversation.ID, failure)
@@ -442,75 +431,15 @@ func (self *Agent) moveGoalOn(ctx context.Context, conversationId string, next t
 	})
 }
 
-// tellAboutGoal mails the person when a goal has stopped and they are not
-// there to read it: the note first, because a goal that waits says in that
-// line what it needs.
-//
-// Best effort. A person with no notification address, or no granted
-// mailbox to send from, still has the conversation and the state on it;
-// failing the job over an undelivered notice would retry the whole turn.
-func (self *Agent) tellAboutGoal(ctx context.Context, run *Run, conversation *models.AgentConversation) {
-	if self.settings.Mailer == nil || run.Owner.Email == "" {
-		return
-	}
-	subject := "Goal: " + firstWords(conversation.Goal, 60)
-	if conversation.GoalState == models.GoalMet {
-		subject = "Goal met: " + firstWords(conversation.Goal, 60)
-	} else if strings.HasPrefix(conversation.GoalNote, "Goal stalled:") {
-		subject = "Goal stalled: " + firstWords(conversation.Goal, 60)
-	}
-	body := strings.TrimSpace(conversation.GoalNote)
-	if body == "" {
-		body = "The goal is " + string(conversation.GoalState) + "."
-	}
-	body += "\n\nThe goal: " + conversation.Goal
-	if conversation.GoalState == models.GoalWaiting {
-		body += "\n\nIt is waiting for you; answering in the conversation starts it again."
-	}
-	if err := self.mailToPerson(ctx, run, subject, body); err != nil {
-		log.Warningf("cannot tell %q that the goal on conversation %q is %s: %s", run.Owner.Username, conversation.ID, conversation.GoalState, err)
-	}
-}
-
-// goalCheckIn is the message a turn of the agent's own arrives as.
+// goalCheckIn is the message a turn on a goal arrives as.
 //
 // It begins with the marker, exactly, so that everything reading the
 // transcript can tell this from the person's own words: the dashboard
 // draws it as a muted line rather than a bubble, and the model is told in
-// the same breath that nobody is speaking to it. Framed the way a
-// schedule the agent wrote for itself is framed, and for the same reason:
-// handed over as an ordinary user turn, a sentence the agent read
-// somewhere would come back as an instruction from the person.
-func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
-	if conversation.IsGoal() {
-		return backgroundGoalCheckIn(conversation, owner, now, turn)
-	}
-	// Numbered, because a goal often says "after the second look" or
-	// "three times a day", and a model that has to count its own turns
-	// from the transcript counted wrong: told to mark a goal met after the
-	// second check-in, it took a third.
-	lines := []string{
-		models.GoalCheckInMarker + fmt.Sprintf(" This is your own turn toward the goal on this conversation, the %s today, not the person speaking; they are not here.", ordinal(turn)),
-		"",
-		"The goal: " + conversation.Goal,
-	}
-	if note := strings.TrimSpace(conversation.GoalNote); note != "" {
-		lines = append(lines, "Your last note: "+note)
-	}
-	lines = append(lines,
-		"It is "+now.In(Location(owner)).Format("Monday 2 January, 15:04")+" where they are.",
-		"",
-		"Work toward the goal with the tools you have. Anything that needs their confirmation cannot be done with nobody present, so prepare it and say what you need. Read back what happened in this conversation before starting again on something that is already done.",
-		"End by calling the goal tool exactly once: note with where you are and the minutes until your next turn, wait when you need them, or met when it is done.",
-	)
-	return strings.Join(lines, "\n")
-}
-
-// backgroundGoalCheckIn is the message a turn on a goal of its own arrives
-// as. The person does not read this conversation: they hear from the goal
+// the same breath that nobody is speaking to it. The person does not read this conversation: they hear from the goal
 // only when it waits for them, so the turn is told that saying nothing
 // new is fine and that a question is what reaches them.
-func backgroundGoalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
+func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
 	lines := []string{
 		models.GoalCheckInMarker + fmt.Sprintf(" This is your own turn on a goal you keep at in the background for %s, the %s today. They are not here and do not read this conversation.", personName(owner), ordinal(turn)),
 		"",
@@ -613,5 +542,5 @@ func (self *AskRun) isGoalWaiting() bool {
 		log.Warningf("cannot read the goal of conversation %q: %s", self.settings.Conversation.ID, err)
 		return true
 	}
-	return conversation != nil && conversation.Goal != "" && conversation.GoalState == models.GoalWaiting
+	return conversation.IsGoal() && conversation.Goal != "" && conversation.GoalState == models.GoalWaiting
 }

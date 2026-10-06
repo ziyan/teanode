@@ -6239,27 +6239,6 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   font-size: 12px;
 }
 
-.head-menu-goal {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0 8px 6px;
-}
-
-.head-menu-goal p {
-  margin: 0;
-  font-size: 12px;
-}
-
-.head-menu-goal textarea {
-  width: 100%;
-  resize: vertical;
-}
-
-.head-menu-goal .agent-drawer-goal-status {
-  margin: 0;
-}
-
 .head-menu-actions {
   display: flex;
   justify-content: flex-end;
@@ -6518,55 +6497,6 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
-}
-
-/* Where the goal stands, in the dialog: a term and its value a line. */
-.agent-drawer-goal-status {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px var(--space-3);
-  margin: var(--space-3) 0 0;
-  font-size: var(--text-label);
-}
-
-.agent-drawer-goal-status dt {
-  color: var(--muted);
-}
-
-.agent-drawer-goal-status dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.agent-drawer-list-goal {
-  flex: 0 0 auto;
-  margin-right: 4px;
-  vertical-align: -1px;
-}
-
-/* The main conversation's name is a flex row with a gap of its own, and
-   the margin on top of it read as a gap twice as wide as the others. */
-.agent-drawer-list-row.main .agent-drawer-list-goal {
-  margin-right: 0;
-}
-
-.agent-drawer-list-goal.working {
-  color: var(--accent);
-}
-
-.agent-drawer-list-goal.waiting {
-  color: var(--warn);
-}
-
-.agent-drawer-list-goal.met {
-  color: var(--muted);
-}
-
-/* Where the agent has got to, under the goal in the dialog: read, not
-   edited, so it is prose rather than a field. */
-.agent-drawer-goal-said {
-  margin-top: var(--space-2);
-  font-size: 12px;
 }
 
 /* The conversations, hanging from the title like a menu: a row each, the

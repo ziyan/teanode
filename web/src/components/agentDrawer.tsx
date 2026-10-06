@@ -84,7 +84,7 @@ const DEVICES_EVERY = 10_000
 
 // Where a conversation's goal stands, as the server writes it. Empty is
 // the fourth answer and the commonest one: there is no goal.
-type GoalState = 'working' | 'waiting' | 'met'
+type GoalState = 'working' | 'waiting' | 'met' | 'dropped'
 
 export interface Conversation {
   id: string
@@ -473,7 +473,6 @@ const CONVERSATION = `
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
       conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
       actingAs
-      goalTurnsToday
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
@@ -536,8 +535,8 @@ const START = `
 // setting a goal sends no title. An empty goal is not nothing — it is the
 // person saying there is no goal any more.
 const UPDATE = `
-  mutation ($conversationId: String!, $title: String, $goal: String, $archived: Boolean) {
-    UpdateAgentConversation(conversationId: $conversationId, title: $title, goal: $goal, archived: $archived) { id }
+  mutation ($conversationId: String!, $title: String, $archived: Boolean) {
+    UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived) { id }
   }`
 
 const DELETE = `
@@ -1633,7 +1632,7 @@ function BudgetRing({
 // and its edges what it is resized by.
 
 // HeadMenuName is which of them is open.
-type HeadMenuName = 'goal' | 'computers' | 'tab' | 'usage' | 'background'
+type HeadMenuName = 'computers' | 'tab' | 'usage' | 'background'
 
 // HeadMenu is the frame: a small title, and what is under it.
 function HeadMenu({
@@ -1793,103 +1792,6 @@ function UsageMenu({ budget, zone, onClose }: { budget: Budget | null; zone: str
   )
 }
 
-// START_GOAL starts a goal in the background from the drawer, as the Goals
-// tab does.
-const START_GOAL = `
-  mutation ($goalTitle: String!, $goalDescription: String!, $originConversationId: String) {
-    StartAgentGoal(goalTitle: $goalTitle, goalDescription: $goalDescription, originConversationId: $originConversationId) {
-      conversationId
-    }
-  }`
-
-// GoalMenu is the goal on this conversation, set, changed and cleared in
-// the dropdown: the words, and where it stands under them.
-function GoalMenu({
-  conversation,
-  isBusy,
-  goalTurnsToday,
-  onSave,
-  onClose,
-}: {
-  conversation: Conversation
-  isBusy: boolean
-  goalTurnsToday: number
-  onSave: (goal: string) => void
-  onClose: () => void
-}) {
-  const { t } = useTranslation()
-  // The words being written, from the goal as it stands. The dropdown is
-  // made again for another conversation, so it never carries one's draft
-  // to the next.
-  const [draft, setDraft] = useState(conversation.goal ?? '')
-  const canSave = draft.trim() !== '' && draft.trim() !== (conversation.goal ?? '')
-  return (
-    <HeadMenu title={t('agentDrawer.goal.title')} className="goal-menu" onClose={onClose}>
-      <form
-        className="head-menu-goal"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (canSave) onSave(draft.trim())
-        }}
-      >
-        <p className="muted">
-          {t(
-            conversation.kind === 'goal' || conversation.goal
-              ? 'agentDrawer.goal.hint'
-              : 'agentDrawer.goal.backgroundHint',
-          )}
-        </p>
-        <textarea
-          rows={3}
-          value={draft}
-          aria-label={t('agentDrawer.goal.label')}
-          autoFocus
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        {/* Where the goal stands, as the row says it: the state, since
-            when, when the agent looks again, how many turns it has taken
-            today, and its last word. Read, not edited. */}
-        {conversation.goal ? (
-          <dl className="agent-drawer-goal-status">
-            <dt>{t('agentDrawer.goal.state')}</dt>
-            <dd>{t(goalStateKey(goalStateOf(conversation)))}</dd>
-            {conversation.goalSetAt ? (
-              <>
-                <dt>{t('agentDrawer.goal.since')}</dt>
-                <dd>{formatTime(conversation.goalSetAt)}</dd>
-              </>
-            ) : null}
-            {goalStateOf(conversation) === 'working' && conversation.goalNextAt ? (
-              <>
-                <dt>{t('agentDrawer.goal.next')}</dt>
-                <dd>{formatTime(conversation.goalNextAt)}</dd>
-              </>
-            ) : null}
-            <dt>{t('agentDrawer.goal.turnsToday')}</dt>
-            <dd>{goalTurnsToday}</dd>
-            {conversation.goalNote ? (
-              <>
-                <dt>{t('agentDrawer.goal.lastNote')}</dt>
-                <dd>{conversation.goalNote}</dd>
-              </>
-            ) : null}
-          </dl>
-        ) : null}
-        <div className="head-menu-actions">
-          {conversation.goal ? (
-            <button type="button" className="danger" disabled={isBusy} onClick={() => onSave('')}>
-              {t('agentDrawer.goal.clear')}
-            </button>
-          ) : null}
-          <button type="submit" className="primary" disabled={isBusy || !canSave}>
-            {t('common.save')}
-          </button>
-        </div>
-      </form>
-    </HeadMenu>
-  )
-}
-
 // goalStateOf is the state to draw a conversation's goal in. A goal with
 // no state is one the server has not written a state for yet, and it is
 // working: that is what setting one does.
@@ -1970,35 +1872,21 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
   )
 }
 
-function GoalChip({
-  conversation,
-  isOpen,
-  onOpen,
-}: {
-  conversation: Conversation
-  isOpen: boolean
-  onOpen: () => void
-}) {
+function GoalChip({ conversation }: { conversation: Conversation }) {
   const { t } = useTranslation()
-  // One icon, whatever the state: the head has the conversation's name,
-  // the attached marks and the budget ring on it, and there is no room
-  // for words. With a goal the icon takes the state's colour and the
-  // tooltip says the state and the goal; the dialog behind it says the
-  // rest.
-  const goal = conversation.goal?.trim() ?? ''
-  const state = goal ? goalStateOf(conversation) : ''
-  const label = goal ? `${t(goalStateKey(state as GoalState))} · ${goal}` : t('agentDrawer.goal.set')
+  // One icon in the state's colour; the tooltip says the state and the
+  // goal, and the goal's page says the rest.
+  const state = goalStateOf(conversation)
+  const label = `${t(goalStateKey(state))} · ${conversation.title || conversation.goal}`
   return (
     <Tooltip label={label}>
-      <button
-        type="button"
+      <Link
         className={`icon-button agent-drawer-goal ${state}`}
         aria-label={label}
-        aria-expanded={isOpen}
-        onClick={onOpen}
+        to={`/settings/agent/goals?goal=${conversation.id}`}
       >
         <TargetIcon size={16} />
-      </button>
+      </Link>
     </Tooltip>
   )
 }
@@ -2047,7 +1935,6 @@ async function readConversationSnapshot(conversationId: string, signal: AbortSig
     ReadAgentConversation: {
       conversation: Conversation
       actingAs?: string | null
-      goalTurnsToday?: number
       messages: StoredMessage[]
       total?: number
       todos: Todo[]
@@ -2150,8 +2037,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [runs, setRuns] = useState<string[]>([])
   const [showingList, setShowingList] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
-  const [goalBusy, setGoalBusy] = useState(false)
-  const [goalTurnsToday, setGoalTurnsToday] = useState(0)
   // Whether a new conversation is being started, so a second press does
   // not start a second one.
   const isStarting = useRef(false)
@@ -2288,7 +2173,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>) => {
       setLoaded(snapshot.conversation)
       setActingAs(snapshot.actingAs ?? null)
-      setGoalTurnsToday(snapshot.goalTurnsToday ?? 0)
       remember(CONVERSATION_KEY, snapshot.conversation.id)
       messages.current = snapshot.messages
       setTotal(snapshot.total ?? snapshot.messages.length)
@@ -3370,14 +3254,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             onClick={() => void switchTo(conversation.id)}
           >
             <span className="agent-drawer-list-name">
-              {/* A conversation working toward something is
-              marked before its name, in the colour of
-              where it stands: the accent while it works,
-              the warning colour while it waits for the
-              person, muted once it is met. */}
-              {conversation.goal ? (
-                <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
-              ) : null}
               {conversation.kind === 'main' ? (
                 <>
                   <StarIcon size={12} /> {t('agentDrawer.main')}
@@ -3501,40 +3377,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       await loadConversations()
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
-    }
-  }
-
-  // Save and Clear in the goal dialog are the same write: the sentence the
-  // person typed, or the empty string, which the server reads as "there is
-  // no goal any more" and which also stops the turn under way. The dialog
-  // keeps what was typed when the write fails, so nothing is retyped.
-  const saveGoal = async (goal: string) => {
-    if (!conversationId) return
-    setGoalBusy(true)
-    try {
-      // A goal runs in the background, in a conversation of its own: from
-      // any other conversation, saving one starts it there. A goal's own
-      // conversation, and an older goal left on this one, are changed in
-      // place.
-      if (goal && current && current.kind !== 'goal' && !current.goal) {
-        await graphql(START_GOAL, {
-          goalTitle: goal.split(/\s+/).slice(0, 8).join(' '),
-          goalDescription: goal,
-          originConversationId: conversationId,
-        })
-        setHeadMenu(null)
-        toast.done(t('agentDrawer.goal.startedInBackground'))
-        return
-      }
-      await graphql(UPDATE, { conversationId, goal })
-      setHeadMenu(null)
-      await loadConversations()
-      await readConversation(conversationId)
-      toast.done(goal ? t('agentDrawer.goal.saved') : t('agentDrawer.goal.cleared'))
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.goal.clearFailed'))
-    } finally {
-      setGoalBusy(false)
     }
   }
 
@@ -3759,19 +3601,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // last command ended, the limit taken away -- and none outlives the
   // conversation it was opened in. Left, it stayed open with nothing to
   // press to close it, and the backdrop under it took the next click.
-  const headConversation = conversations.find((conversation) => conversation.id === conversationId) ?? loaded
   const isHeadMenuMarked =
-    headMenu === 'goal'
-      ? Boolean(headConversation && conversationId && headConversation.kind !== 'run')
-      : headMenu === 'tab'
-        ? Boolean(tab?.attached)
-        : headMenu === 'computers'
-          ? computers.length > 0
-          : headMenu === 'usage'
-            ? Boolean(budget && budgetShown(budget))
-            : headMenu === 'background'
-              ? runningCommands.length > 0
-              : true
+    headMenu === 'tab'
+      ? Boolean(tab?.attached)
+      : headMenu === 'computers'
+        ? computers.length > 0
+        : headMenu === 'usage'
+          ? Boolean(budget && budgetShown(budget))
+          : headMenu === 'background'
+            ? runningCommands.length > 0
+            : true
   useEffect(() => {
     if (headMenu && !isHeadMenuMarked) setHeadMenu(null)
   }, [headMenu, isHeadMenuMarked])
@@ -3866,12 +3705,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               <span className="agent-drawer-title">{title}</span>
               <ChevronDownIcon size={14} className="chevron" />
             </button>
-            {/* What this conversation is working toward, set and cleared
-                here. A run has no goal: nobody talks it into one, and it
-                is over by the time it is read. */}
-            {current && conversationId && !isRun && (
-              <GoalChip conversation={current} isOpen={headMenu === 'goal'} onOpen={() => toggleHeadMenu('goal')} />
-            )}
+            {/* In a goal's own conversation, where the goal stands, and the
+                way to its page. Goals are started by asking the agent or on
+                the Goals tab, never set on a chat. */}
+            {current && current.kind === 'goal' && current.goal ? <GoalChip conversation={current} /> : null}
             {/* What of the person's own is attached, as a mark with the
                 details on hover and a line each under it on a press: the
                 transcript is for the conversation. */}
@@ -3941,16 +3778,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'usage' && <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />}
-          {headMenu === 'goal' && current && (
-            <GoalMenu
-              key={current.id}
-              conversation={current}
-              isBusy={goalBusy}
-              goalTurnsToday={goalTurnsToday}
-              onSave={(goal) => void saveGoal(goal)}
-              onClose={() => setHeadMenu(null)}
-            />
-          )}
           {showingList && (
             <>
               {/* Anywhere outside the list closes it. */}
