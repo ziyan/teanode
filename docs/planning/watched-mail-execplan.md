@@ -19,7 +19,8 @@ To see it working: with the `gmail` skill installed and enabled, a computer atta
 - [x] (2026-10-06) Milestone 2: the `watch` job: search, read, sort, candidates. Queued by the worker's tick every ten minutes for each agent with the skill enabled, alerts on and a computer attached.
 - [x] (2026-10-06) Milestone 3: the alert job, the alert's subject key and its covered list read a watched candidate; mutes match its sender, domain and category.
 - [x] (2026-10-06) Milestone 4a: tests (parsing, the window, a look end to end with a fake computer and model through to the alert, a muted sender, the table), docs (`agents.md`, `jobs-and-schedules.md`), the dashboard's run kind.
-- [ ] Milestone 4b: review, merge, deploy, and a look on the server against the real skill.
+- [x] (2026-10-06) Milestone 4b: deployed; the first look on the server ran the real skill, sorted four new messages and skipped one thread too large to print; two card charges marked `now` became candidates, which the alert job dropped as routine.
+- [ ] Review and merge.
 
 
 ## Surprises & Discoveries
@@ -50,7 +51,7 @@ To see it working: with the `gmail` skill installed and enabled, a computer atta
 
 ## Outcomes & Retrospective
 
-(To be written when the work is done.)
+The first look on the server, 2026-10-06, read the messages of the last two hours in 16 seconds with one model call each. The sorting is generous with `now` for card-charge notices; the alert job is what holds those back, as intended, so the pair works as designed. A reply in a thread longer than a skill answer can carry is still missed.
 
 
 ## Context and Orientation
