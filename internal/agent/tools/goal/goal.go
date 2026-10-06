@@ -50,7 +50,7 @@ func init() {
 					"`tell` passes the person's words to a goal by goal_id: their answer to what it asked, or something it should know. `done`, `drop` and `reopen` are theirs: a goal met, stopped, or taken up again. " +
 					"In a goal's own turns: `note` with status (where it stands, one line), the minutes until your next turn, and activity when something happened worth their reading later; `wait` with status saying what you need from them, which is said to them in their main conversation; `met` with text saying how it ended, as soon as it is done.",
 				Parameters: tools.Object(map[string]any{
-					"action":   tools.EnumProperty("what to do", "start", "list", "show", "tell", "done", "drop", "reopen", "note", "wait", "met", "set"),
+					"action":   tools.EnumProperty("what to do", "start", "list", "show", "tell", "done", "drop", "reopen", "note", "wait", "met"),
 					"goal_id":  tools.StringProperty("for show, tell, done, drop and reopen: the goal, by the id list gives"),
 					"title":    tools.StringProperty("for start: what the goal is called, a few words"),
 					"text":     tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For met: how it ended"),
@@ -149,18 +149,6 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err := current.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		updated, err := tx.UpdateAgentConversation(here.ID, func(conversation *models.AgentConversation) error {
 			switch action {
-			case "set":
-				// Goals run in the background now, each in a conversation
-				// of its own; a goal left on this one from before can only
-				// be cleared.
-				if text != "" {
-					return fmt.Errorf("goals run in the background now; start one with action start")
-				}
-				if current.Headless() {
-					return fmt.Errorf("a goal is the person's to clear; you cannot clear one in a turn of your own")
-				}
-				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = "", "", "", nil, nil
-				return nil
 			case "note", "wait", "met":
 				if conversation.Goal == "" {
 					return fmt.Errorf("there is no goal on this conversation; start one with action start")
