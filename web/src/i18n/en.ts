@@ -2937,8 +2937,6 @@ export const en = {
     'A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.',
   'agent.knowledgeCron': 'How often to read it, as a cron line',
   'agent.knowledgeCronHint': 'Five fields, in your own zone. Leave it empty and it is read once a night.',
-  'agent.knowledgeUnknownAuthors':
-    'The commits here are by {names}, and none of those is you — so none of this counts as your work.',
   'agent.knowledgeRefused': '{count} held back on the machine',
   'agent.knowledgeKeptToProfile':
     '{checkouts} checkouts here hold too few of your commits to be your work, so they are kept to their profile — what they are and where they live — and {files} files in them are left unread.',

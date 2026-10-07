@@ -2900,8 +2900,6 @@ export const ja: Catalog = {
   'agent.knowledgeUnderHint': 'グラフ内のページ（たとえば projects）。空のままならエージェントが置き場所を決めます。',
   'agent.knowledgeCron': 'どのくらいの頻度で読むか（cron 形式）',
   'agent.knowledgeCronHint': '5 つのフィールド、あなたのタイムゾーンで。空のままなら毎晩 1 回読みます。',
-  'agent.knowledgeUnknownAuthors':
-    'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
   'agent.knowledgeRefused': '{count} 件がその機械で止められました',
   'agent.knowledgeKeptToProfile':
     'ここの {checkouts} 件のチェックアウトはあなたのコミットが少なすぎてあなたの仕事とは言えないため、何でありどこにあるかという概要だけを残し、その中の {files} 件のファイルは読んでいません。',

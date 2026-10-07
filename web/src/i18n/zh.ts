@@ -2812,7 +2812,6 @@ export const zh: Catalog = {
   'agent.knowledgeUnderHint': '图谱中的一个页面，例如 projects。留空则由助手自行决定归档的位置。',
   'agent.knowledgeCron': '多久读取一次（cron 格式）',
   'agent.knowledgeCronHint': '五个字段，按你所在的时区。留空则每晚读取一次。',
-  'agent.knowledgeUnknownAuthors': '这里的提交来自 {names}，其中没有一个是你，所以这些都不算作你的工作。',
   'agent.knowledgeRefused': '有 {count} 项在本机被拦下',
   'agent.knowledgeKeptToProfile':
     '这里有 {checkouts} 个检出中属于你的提交太少，算不上你的工作，因此只保留它们的概要——是什么、在哪里——其中 {files} 个文件未被读取。',
