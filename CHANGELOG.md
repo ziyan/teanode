@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.112.0] - 2026-10-07
+
+### Added
+
+- The agent can tell you about mail that arrives in your Gmail, archived mail included, when the `gmail` skill is installed and a computer of yours is attached for it. It looks every ten minutes with the skill's own search and read, and the usual alert settings (quiet hours, the daily most, mutes) apply. (#340)
+
+### Changed
+
+- Scheduled turns, goals and the nightly run can use your attached computer, terminal, browser tab and the MCP servers on your computer, and can leave commands running in the background, without you present. Actions that need your confirmation are still refused when you are not there to give it. (#341)
+
 ## [0.111.0] - 2026-10-06
 
 ### Added
