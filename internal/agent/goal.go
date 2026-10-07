@@ -48,20 +48,11 @@ const (
 	// most often the person's.
 	goalAfterOtherTurn = time.Minute
 
-	// goalTurnsPerDay is as many turns of its own as one conversation
-	// takes in a day, counted from the job rows rather than kept in a
-	// column. Forty-eight is a turn every half hour around the clock,
-	// which is the most any goal worth having needs.
-	goalTurnsPerDay = 48
-
-	// goalTurnsAlone is as many turns of its own as a goal takes without
-	// a word from the person before it stops and asks them. The day's cap
-	// bounds a day; this bounds the goal nobody can meet, which would
-	// otherwise cost the cap every day until somebody noticed the bill.
-	// Twenty-four is a day of hourly looks, or two hours of the fastest
-	// cadence, either of which is long enough to know that the next look
-	// is not the one.
-	goalTurnsAlone = 24
+	// How many turns of its own a goal takes in a day, and alone before it
+	// stops and asks the person, are the operator's limits
+	// (GoalTurnsPerDay and GoalTurnsAlone): the day's cap bounds a day, and
+	// the other bounds the goal nobody can meet, which would otherwise
+	// cost the cap every day until somebody noticed the bill.
 )
 
 // dueGoals queues a turn for every conversation whose goal is working and
@@ -135,7 +126,8 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
-	if today >= goalTurnsPerDay {
+	goalTurnsPerDay := run.Configuration().Agent.Limits.EffectiveGoalTurnsPerDay()
+	if today >= int64(goalTurnsPerDay) {
 		tomorrow := midnight.AddDate(0, 0, 1)
 		return self.moveGoalOn(ctx, conversation.ID, tomorrow, fmt.Sprintf("%d turns today; it goes on tomorrow, or when you write", goalTurnsPerDay))
 	}
@@ -170,7 +162,8 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
-	if alone >= goalTurnsAlone {
+	goalTurnsAlone := run.Configuration().Agent.Limits.EffectiveGoalTurnsAlone()
+	if alone >= int64(goalTurnsAlone) {
 		// Stalled, not failed: nothing moved and nobody was watching,
 		// which is all the agent knows. The goal stays on the
 		// conversation as waiting, with the person's three ways on in

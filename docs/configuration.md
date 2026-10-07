@@ -1472,7 +1472,26 @@ embeds before it hands the queue back, so that one enormous source does
 not hold the worker. Zero resolves to `2000`.
 
 **`maxRoundsPerAsk`** — How many times one conversation turn may go back to
-the model.
+the model. 150 by default; it was 40, which a turn working through a long
+errand on the person's computer ran out of.
+
+**`maxRoundsPerSubagent`** — How many rounds one subagent may take. Zero
+resolves to `20`.
+
+**`goalTurnsPerDay`** — How many turns of its own one goal takes in a day,
+counting its own check-ins, not the runs of a schedule it keeps. Zero
+resolves to `48`, a turn every half hour.
+
+**`goalTurnsAlone`** — How many of those turns a goal takes without a word
+from the person before it stops and asks them. Zero resolves to `24`.
+
+**`goalsInProgress`** — How many goals one person may have working or waiting
+at once. Zero resolves to `20`.
+
+**`backgroundWakesAlone`** — How many turns finished background commands and
+work may wake in one conversation before the person writes there again; past
+it, endings are written into the conversation and wake nothing. Zero resolves
+to `20`.
 
 **`maxRoundsPerResearch`** — The same for a research run.
 

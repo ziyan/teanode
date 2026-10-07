@@ -584,6 +584,28 @@ type AgentLimits struct {
 	MaxRoundsPerDream  int `yaml:"maxRoundsPerDream"`
 	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
 
+	// MaxRoundsPerSubagent is how many rounds one subagent may take.
+	// Zero resolves to 20.
+	MaxRoundsPerSubagent int `yaml:"maxRoundsPerSubagent,omitempty"`
+
+	// GoalTurnsPerDay is how many turns of its own one goal takes in a
+	// day. Zero resolves to 48.
+	GoalTurnsPerDay int `yaml:"goalTurnsPerDay,omitempty"`
+
+	// GoalTurnsAlone is how many turns of its own a goal takes without a
+	// word from the person before it stops and asks them. Zero resolves
+	// to 24.
+	GoalTurnsAlone int `yaml:"goalTurnsAlone,omitempty"`
+
+	// GoalsInProgress is how many goals one person may have working or
+	// waiting at once. Zero resolves to 20.
+	GoalsInProgress int `yaml:"goalsInProgress,omitempty"`
+
+	// BackgroundWakesAlone is how many turns finished background commands
+	// and work may wake in one conversation before the person writes there
+	// again. Zero resolves to 20.
+	BackgroundWakesAlone int `yaml:"backgroundWakesAlone,omitempty"`
+
 	// RequestTimeout bounds one call to a provider.
 	RequestTimeout Duration `yaml:"requestTimeout"`
 
@@ -957,7 +979,7 @@ func defaultAgent() Agent {
 			// the agent nothing.
 			MaxScannedAttachmentBytes: 25 * 1024 * 1024,
 			DailyTokensPerAgent:       200000,
-			MaxRoundsPerAsk:           40,
+			MaxRoundsPerAsk:           150,
 			MaxRoundsPerResearch:      8,
 			MaxRoundsPerReply:         6,
 			MaxRoundsPerTriage:        3,
@@ -1233,6 +1255,20 @@ func (self *Configuration) validateAgent(validator *validator) {
 			validator.add("agent.limits."+field.name, "must be positive")
 		}
 	}
+	for _, field := range []struct {
+		name  string
+		value int
+	}{
+		{"maxRoundsPerSubagent", agent.Limits.MaxRoundsPerSubagent},
+		{"goalTurnsPerDay", agent.Limits.GoalTurnsPerDay},
+		{"goalTurnsAlone", agent.Limits.GoalTurnsAlone},
+		{"goalsInProgress", agent.Limits.GoalsInProgress},
+		{"backgroundWakesAlone", agent.Limits.BackgroundWakesAlone},
+	} {
+		if field.value < 0 {
+			validator.add("agent.limits."+field.name, "must not be negative; zero is the default")
+		}
+	}
 	for index, provider := range agent.Providers {
 		for position, priced := range provider.ModelPricing {
 			path := fmt.Sprintf("agent.providers[%d].modelPricing[%d]", index, position)
@@ -1431,4 +1467,46 @@ func (self *Agent) PrivateAddressesAllowed() []string {
 		allowed = append(allowed, entry)
 	}
 	return allowed
+}
+
+// The defaults of the limits whose zero means the default.
+const (
+	MaxRoundsPerSubagentDefault = 20
+	GoalTurnsPerDayDefault      = 48
+	GoalTurnsAloneDefault       = 24
+	GoalsInProgressDefault      = 20
+	BackgroundWakesAloneDefault = 20
+)
+
+// limitOr is a limit, or its default when it is not set.
+func limitOr(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+// EffectiveMaxRoundsPerSubagent resolves the zero value.
+func (self *AgentLimits) EffectiveMaxRoundsPerSubagent() int {
+	return limitOr(self.MaxRoundsPerSubagent, MaxRoundsPerSubagentDefault)
+}
+
+// EffectiveGoalTurnsPerDay resolves the zero value.
+func (self *AgentLimits) EffectiveGoalTurnsPerDay() int {
+	return limitOr(self.GoalTurnsPerDay, GoalTurnsPerDayDefault)
+}
+
+// EffectiveGoalTurnsAlone resolves the zero value.
+func (self *AgentLimits) EffectiveGoalTurnsAlone() int {
+	return limitOr(self.GoalTurnsAlone, GoalTurnsAloneDefault)
+}
+
+// EffectiveGoalsInProgress resolves the zero value.
+func (self *AgentLimits) EffectiveGoalsInProgress() int {
+	return limitOr(self.GoalsInProgress, GoalsInProgressDefault)
+}
+
+// EffectiveBackgroundWakesAlone resolves the zero value.
+func (self *AgentLimits) EffectiveBackgroundWakesAlone() int {
+	return limitOr(self.BackgroundWakesAlone, BackgroundWakesAloneDefault)
 }

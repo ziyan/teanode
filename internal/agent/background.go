@@ -42,11 +42,6 @@ const (
 	// together, and they are one turn, not three.
 	backgroundWakeGather = 2 * time.Second
 
-	// backgroundWakesAlone is how many turns ended commands and finished
-	// background work wake in one conversation, together, before the
-	// person writes again.
-	backgroundWakesAlone = 20
-
 	// A wake that failed is tried again after backgroundWakeRetry, and
 	// given up after backgroundWakeAttempts in all.
 	backgroundWakeRetry    = time.Minute
@@ -311,6 +306,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	// turn starts a subagent whose turn starts a command is one chain. The
 	// count is the conversation's row, so the bound holds whichever
 	// instance each wake of the chain lands on.
+	backgroundWakesAlone := configuration.Agent.Limits.EffectiveBackgroundWakesAlone()
 	if conversation.BackgroundWakeCount >= backgroundWakesAlone || deferral != nil {
 		reason := fmt.Sprintf("%d turns since you last wrote were woken by background commands and work", backgroundWakesAlone)
 		if deferral != nil {

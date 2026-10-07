@@ -322,7 +322,7 @@ func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *model
 		ReadOnly:      request.IsReadOnly,
 		ReadOnlyTools: readOnlyTools,
 		Allow:         allowed,
-		MaxRounds:     subagentRounds,
+		MaxRounds:     self.settings.Configuration().Agent.Limits.EffectiveMaxRoundsPerSubagent(),
 		UsageKind:     "subagent",
 		isUnattended:  true,
 		subagentDepth: 1,

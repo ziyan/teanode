@@ -191,7 +191,16 @@ type AgentLimitsSettings struct {
 	MaxRoundsPerDream      int     `json:"maxRoundsPerDream"`
 	MaxToolCallsPerRun     int     `json:"maxToolCallsPerRun"`
 	RequestTimeout         string  `json:"requestTimeout"`
-	Concurrency            int     `json:"concurrency"`
+
+	// The bounds on work nobody is watching, each zero for its default:
+	// rounds a subagent takes, goal turns a day and alone, goals in
+	// progress, and turns finished background work may wake.
+	MaxRoundsPerSubagent int `json:"maxRoundsPerSubagent"`
+	GoalTurnsPerDay      int `json:"goalTurnsPerDay"`
+	GoalTurnsAlone       int `json:"goalTurnsAlone"`
+	GoalsInProgress      int `json:"goalsInProgress"`
+	BackgroundWakesAlone int `json:"backgroundWakesAlone"`
+	Concurrency          int `json:"concurrency"`
 
 	// What the memory work may spend. Embedding is budgeted apart from
 	// everything else because the first pass over a person's own files is
@@ -351,6 +360,11 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			MaxRoundsPerDream:      agent.Limits.MaxRoundsPerDream,
 			MaxToolCallsPerRun:     agent.Limits.MaxToolCallsPerRun,
 			RequestTimeout:         agent.Limits.RequestTimeout.String(),
+			MaxRoundsPerSubagent:   agent.Limits.MaxRoundsPerSubagent,
+			GoalTurnsPerDay:        agent.Limits.GoalTurnsPerDay,
+			GoalTurnsAlone:         agent.Limits.GoalTurnsAlone,
+			GoalsInProgress:        agent.Limits.GoalsInProgress,
+			BackgroundWakesAlone:   agent.Limits.BackgroundWakesAlone,
 			Concurrency:            agent.Limits.Concurrency,
 			EmbeddingTokensPerDay:  agent.Limits.EmbeddingTokensPerDay,
 			DreamShare:             agent.Limits.DreamShare,
@@ -579,6 +593,11 @@ type AgentLimitsParameters struct {
 	MaxRoundsPerDream      *int     `json:"maxRoundsPerDream"`
 	MaxToolCallsPerRun     *int     `json:"maxToolCallsPerRun"`
 	RequestTimeout         *string  `json:"requestTimeout"`
+	MaxRoundsPerSubagent   *int     `json:"maxRoundsPerSubagent"`
+	GoalTurnsPerDay        *int     `json:"goalTurnsPerDay"`
+	GoalTurnsAlone         *int     `json:"goalTurnsAlone"`
+	GoalsInProgress        *int     `json:"goalsInProgress"`
+	BackgroundWakesAlone   *int     `json:"backgroundWakesAlone"`
 	Concurrency            *int     `json:"concurrency"`
 	EmbeddingTokensPerDay  *int64   `json:"embeddingTokensPerDay"`
 	DreamShare             *float64 `json:"dreamShare"`
@@ -835,6 +854,11 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyInt(&limits.MaxRoundsPerReply, parameters.Limits.MaxRoundsPerReply)
 		applyInt(&limits.MaxRoundsPerDream, parameters.Limits.MaxRoundsPerDream)
 		applyInt(&limits.MaxToolCallsPerRun, parameters.Limits.MaxToolCallsPerRun)
+		applyInt(&limits.MaxRoundsPerSubagent, parameters.Limits.MaxRoundsPerSubagent)
+		applyInt(&limits.GoalTurnsPerDay, parameters.Limits.GoalTurnsPerDay)
+		applyInt(&limits.GoalTurnsAlone, parameters.Limits.GoalTurnsAlone)
+		applyInt(&limits.GoalsInProgress, parameters.Limits.GoalsInProgress)
+		applyInt(&limits.BackgroundWakesAlone, parameters.Limits.BackgroundWakesAlone)
 		if err := applyDuration(&limits.RequestTimeout, parameters.Limits.RequestTimeout, "agent.limits.requestTimeout"); err != nil {
 			return err
 		}
