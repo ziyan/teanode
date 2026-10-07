@@ -138,8 +138,10 @@ export function AlertsCard() {
             subtitle={
               <>
                 {formatTime(alert.sentAt)}
-                {alert.covered.map((covered) => (
-                  <span key={covered.mailId} className="alert-covered">
+                {alert.covered.map((covered, index) => (
+                  // A message read from a mailbox this server does not
+                  // host has no mail id here.
+                  <span key={covered.mailId || `watched-${index}`} className="alert-covered">
                     {covered.subject || t('alerts.noSubject')} · {covered.fromAddress}
                   </span>
                 ))}

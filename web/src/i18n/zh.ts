@@ -1512,6 +1512,7 @@ export const zh: Catalog = {
   'agent.runKinds.alert': '提醒',
   'agent.runKinds.categorize': '分类',
   'agent.runKinds.statement_import': '导入对账单',
+  'agent.runKinds.watch': '查看邮件',
   'agent.runKinds.embed': '建立索引',
   'agent.runKinds.send': '发送',
   'agent.runKinds.backfill': '补齐',

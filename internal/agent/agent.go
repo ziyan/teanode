@@ -106,6 +106,7 @@ type Agent struct {
 	lastIngest   time.Time
 	lastDream    time.Time
 	lastSpeak    time.Time
+	lastWatch    time.Time
 	lastEvaluate time.Time
 	describing   atomic.Bool
 
@@ -255,6 +256,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobAlert, self.runAlert)
 	self.Register(models.AgentJobCategorize, self.runCategorize)
 	self.Register(models.AgentJobStatementImport, self.runStatementImport)
+	self.Register(models.AgentJobWatch, self.runWatch)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -434,6 +436,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueIngestion(ctx, now)
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
+	self.queueWatching(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)
 	self.sweepBrowsers()

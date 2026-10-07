@@ -99,6 +99,12 @@ cannot retain the separate failure allowance or claim-identity protection.
   keeps what came of it; see `the-ask-loop.md`. It has a bound of its own,
   twenty minutes, a little inside the job's, so work that reaches it fails on
   its row rather than going back in the queue.
+- **watch** — one look at a mailbox this server does not host, through the
+  installed skill that reads it; its subject is the skill's name. The tick
+  queues one every ten minutes for each person it applies to, and the queue's
+  one open job per agent, kind and subject keeps looks from piling up behind a
+  computer that is slow to answer. See `agents.md`, "Telling the person,
+  unasked".
 - **noop** — proves the queue end to end.
 
 ## Replying on somebody's behalf
