@@ -185,8 +185,7 @@ computer attached for the skill, has a look taken at that mailbox every ten
 minutes by the **watch** job (`internal/agent/watched_mail.go`). It runs
 only the skill's own `gmail_search` and `gmail_read`, on the computer the
 person chose for the skill (or the only one attached), never anything that
-sends, drafts or labels; that is why it may run with nobody present, which
-a turn on the person's computer may not. It searches for what arrived since
+sends, drafts or labels. It searches for what arrived since
 shortly before the newest message it has already looked at, archived mail
 included and sent mail, drafts, spam, trash and Gmail's promotions and
 social tabs left out, reads each new message, and sorts it with the same

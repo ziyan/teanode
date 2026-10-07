@@ -26,10 +26,10 @@ import (
 // and lookups that follow it for hosted mail act on a message this server
 // holds, and this one it does not.
 //
-// The look runs with nobody present, which a turn may not do on the
-// person's computer (computer.Of). It is code, not a turn: it runs only
-// the skill's search and read, never anything that sends, drafts or
-// labels. docs/planning/watched-mail-execplan.md is the design.
+// The look is code, not a turn: it runs only the skill's search and read,
+// never anything that sends, drafts or labels, and finds the computer
+// itself, since there is no turn to ask. docs/planning/watched-mail-execplan.md
+// is the design.
 
 const (
 	// gmailSkillName is the skill the watch reads Gmail through, and

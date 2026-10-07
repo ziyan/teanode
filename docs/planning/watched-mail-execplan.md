@@ -35,7 +35,7 @@ To see it working: with the `gmail` skill installed and enabled, a computer atta
 - Decision: the watch uses only the installed skill's own tools, run through `skills.Skill.Run` with the computer shell, exactly as a conversation runs them. It does not use the `gmail-gog` knowledge source and does not add a way of reaching Gmail.
   Rationale: the person said Gmail is already a skill and the agent should do what the skill is configured to do. The skill is what the person installed, pointed at a computer, and can switch off; the watch stops when they do.
   Date/Author: 2026-10-06.
-- Decision: the watch runs with nobody present, which `computer.Of` refuses. It finds the computer itself (the skill's reach, else the only one attached) and runs only the two read tools, `gmail_search` and `gmail_read`; it never sends, drafts or labels.
+- Decision: the watch is code, not a turn, so there is no turn to give `computer.Of`. It finds the computer itself (the skill's reach, else the only one attached) and runs only the two read tools, `gmail_search` and `gmail_read`; it never sends, drafts or labels.
   Rationale: the rule against acting on a computer unattended exists because a turn could do anything there. The watch is code, not a turn: what it runs is fixed and reads only.
   Date/Author: 2026-10-06.
 - Decision: one look every ten minutes, from the newest message already looked at less ten minutes (or two hours back on the first look), leaving out sent mail, drafts, spam, trash, chats, and Gmail's promotions and social tabs. At most 25 threads (the skill's own limit) and 25 messages a look.
