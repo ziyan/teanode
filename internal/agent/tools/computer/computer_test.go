@@ -13,13 +13,17 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
+// noConversation is a fakeRun with no conversation at all.
+const noConversation models.AgentConversationKind = "(none)"
+
 // fakeRun is a turn with the person present and a computer attached, or
 // not; only what the tools ask of it is there.
 type fakeRun struct {
 	tools.Run
 	headless bool
 	// conversationKind is the kind of the run's conversation: the main one
-	// when empty, or a run's own transcript, which nothing wakes.
+	// when empty, a run's own transcript, which nothing wakes, or
+	// noConversation for a call from a harness or the command line.
 	conversationKind models.AgentConversationKind
 	computer         tools.Computer
 	config           *config.Configuration
@@ -40,6 +44,9 @@ func (self *fakeRun) Offered() []*tools.Tool               { return nil }
 func (self *fakeRun) Agent() *models.Agent                 { return &models.Agent{ID: "agent01"} }
 func (self *fakeRun) Conversation() *models.AgentConversation {
 	conversationKind := self.conversationKind
+	if conversationKind == noConversation {
+		return nil
+	}
 	if conversationKind == "" {
 		conversationKind = models.AgentConversationMain
 	}
@@ -233,7 +240,7 @@ func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
 	if _, err := shell.Run(tools.WithRun(context.Background(), scheduled), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(attached.asked[1], `"shouldKeepOnTimeout":true`) || strings.Contains(attached.asked[1], "isHeadless") {
+	if !strings.Contains(attached.asked[1], `"shouldKeepOnTimeout":true`) || strings.Contains(attached.asked[1], "isUnwakeable") {
 		t.Fatalf("a scheduled turn leaves a command running, to be woken: %s", attached.asked[1])
 	}
 	// A run that is a transcript of its own, such as a night's, has nothing
@@ -243,11 +250,17 @@ func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
 	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(attached.asked[2], "shouldKeepOnTimeout") || !strings.Contains(attached.asked[2], `"isHeadless":true`) {
+	if strings.Contains(attached.asked[2], "shouldKeepOnTimeout") || !strings.Contains(attached.asked[2], `"isUnwakeable":true`) {
 		t.Fatalf("a run of its own does not leave a command running: %s", attached.asked[2])
 	}
 	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "no conversation to be woken") {
 		t.Fatalf("nor start one in the background: %v", err)
+	}
+	// A call from the command line has no conversation and somebody there:
+	// it keeps the command and reads it itself, as it always could.
+	direct := &fakeRun{conversationKind: noConversation, computer: attached, config: configuration}
+	if _, err := shell.Run(tools.WithRun(context.Background(), direct), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err != nil {
+		t.Fatalf("a call with no conversation may start one in the background: %v", err)
 	}
 
 	// A program that predates background commands is asked for none.

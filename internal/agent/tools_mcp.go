@@ -506,7 +506,7 @@ func (self *Agent) serverAvailable(ctx context.Context, server *config.AgentMCPS
 
 // remoteTools is every tool the connected servers offer this person,
 // as catalog entries.
-func (self *Agent) remoteTools(ctx context.Context, agentId string, headless bool) []*Tool {
+func (self *Agent) remoteTools(ctx context.Context, agentId string) []*Tool {
 	configuration := self.settings.Configuration()
 	if !FeatureAllowed(configuration, "connectedServers") {
 		return nil

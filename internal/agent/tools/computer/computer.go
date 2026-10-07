@@ -309,7 +309,7 @@ func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		// A run of its own, such as a night's, has no conversation to
 		// wake when one ends, and would leave it running for nothing.
-		if action == "run" && !tools.CanBeWoken(run) {
+		if action == "run" && !tools.CanLeaveRunning(run) {
 			return nil, fmt.Errorf("this run has no conversation to be woken in when a background command ends; run it in the foreground")
 		}
 	}
@@ -331,10 +331,10 @@ func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		Environment: arguments.Environment, IsBackground: arguments.IsBackground,
 		// Past its wait a command goes on rather than being killed, where
 		// the program can keep it and there is a conversation to wake.
-		ShouldKeepOnTimeout: hasBackground && tools.CanBeWoken(run),
+		ShouldKeepOnTimeout: hasBackground && tools.CanLeaveRunning(run),
 	}
 	if hasBackground {
-		origin, err := json.Marshal(tools.BackgroundOrigin{AgentID: run.Agent().ID, ConversationID: tools.ConversationIDOf(run), IsHeadless: !tools.CanBeWoken(run)})
+		origin, err := json.Marshal(tools.BackgroundOrigin{AgentID: run.Agent().ID, ConversationID: tools.ConversationIDOf(run), IsUnwakeable: !tools.CanLeaveRunning(run)})
 		if err != nil {
 			return nil, err
 		}

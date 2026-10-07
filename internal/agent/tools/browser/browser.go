@@ -319,6 +319,12 @@ func browserOverlay(ctx context.Context) string {
 
 // runBrowserOnTab carries a browser action to the person's tab.
 func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArguments) (*tools.Result, error) {
+	// The tab is signed in as the person: a click there can send their mail
+	// or pay with their card, and no card can be shown to an empty room to
+	// ask first. With nobody present the tab is read, not acted in.
+	if run.Headless() && browserWritingActions[arguments.Action] {
+		return nil, fmt.Errorf("a run with nobody present reads the person's tab but does not act in it, where it would act as them; %s is not done; say what you would have done", arguments.Action)
+	}
 	if browsing, err := browsingOf(run); err != nil || !browsing.TabsAllowed() {
 		return nil, fmt.Errorf("attaching a tab is off on this server")
 	}

@@ -371,6 +371,15 @@ func goalBehindTurn(now time.Time) error {
 // goalTurn runs one headless turn in the person's conversation and waits
 // for it, answering with what went wrong when something did.
 func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations, conversation *models.AgentConversation, message string, allow map[string]bool, rounds int) (string, error) {
+	// The goal's own turn reads what its background work and commands left,
+	// as the person's word does in their conversation, and starts the count
+	// of turns those may wake again: in a goal's conversation the person
+	// seldom writes, and the count would otherwise only ever grow.
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.ResetAgentConversationBackgroundWakes(conversation.ID)
+	}); err != nil {
+		return "", err
+	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: message, Surface: "goal", Headless: true, Allow: allow,
