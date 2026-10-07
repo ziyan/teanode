@@ -55,6 +55,12 @@ type Agent struct {
 	// beyond the risk classes. Add-only: nobody can subtract from the floor.
 	Confirm []string `json:"confirm"`
 
+	// UnattendedAllowedRisks are the kinds of action that would need the
+	// person's word which the agent may take when they are not there to
+	// give it: in a schedule, a goal, a night, a message by mail. Empty
+	// allows none; with nobody present such a call is refused.
+	UnattendedAllowedRisks []UnattendedRisk `json:"unattendedAllowedRisks"`
+
 	// AskModel is the person's choice for their conversations, one of the
 	// operator's choices, or empty for the operator's ask model.
 	AskModel string `json:"askModel,omitempty" graphapi:"nullable"`
@@ -267,6 +273,11 @@ func (self *Agent) Validate() error {
 		}
 		if _, err := time.Parse("15:04", clock); err != nil {
 			errors.add(field, "%q is not a time of day like 22:00", clock)
+		}
+	}
+	for _, unattendedRisk := range self.UnattendedAllowedRisks {
+		if !unattendedRisk.IsValid() {
+			errors.add("unattendedAllowedRisks", "%q is not one of outward, money, destructive, granting, listed", unattendedRisk)
 		}
 	}
 	if self.AlertDailyMost < 0 || self.AlertDailyMost > 50 {
@@ -730,3 +741,55 @@ const (
 	AgentReachSkill  = "skill"
 	AgentReachServer = "server"
 )
+
+// UnattendedRisk is a reason a call needs the person's word, as the person
+// allows it for when they are not there.
+type UnattendedRisk string
+
+// The reasons a person may allow: the call speaks for them (sends mail,
+// posts a message), spends or moves their money (a payment, an order, a
+// trade, a transfer), cannot be undone (deletes for good, overwrites),
+// gives somebody access, or is a tool on their own "ask me first" list.
+const (
+	UnattendedRiskOutward     UnattendedRisk = "outward"
+	UnattendedRiskMoney       UnattendedRisk = "money"
+	UnattendedRiskDestructive UnattendedRisk = "destructive"
+	UnattendedRiskGranting    UnattendedRisk = "granting"
+	UnattendedRiskListed      UnattendedRisk = "listed"
+)
+
+// UnattendedRiskOperatorListed is the reason no person can allow: a tool
+// on the operator's "ask first" list, which only ever makes the agent more
+// careful.
+const UnattendedRiskOperatorListed UnattendedRisk = "operatorListed"
+
+// UnattendedRisks is every reason a person may allow, in the order the
+// settings show them.
+var UnattendedRisks = []UnattendedRisk{UnattendedRiskOutward, UnattendedRiskMoney, UnattendedRiskDestructive, UnattendedRiskGranting, UnattendedRiskListed}
+
+// IsValid says the reason is one a person may allow.
+func (self UnattendedRisk) IsValid() bool {
+	for _, known := range UnattendedRisks {
+		if self == known {
+			return true
+		}
+	}
+	return false
+}
+
+// IsAllowedUnattended says every reason given is one the person allows the
+// agent to act on when they are not there. No reasons is allowed.
+func (self *Agent) IsAllowedUnattended(unattendedRisks []UnattendedRisk) bool {
+	for _, unattendedRisk := range unattendedRisks {
+		isAllowed := false
+		if self != nil {
+			for _, allowed := range self.UnattendedAllowedRisks {
+				isAllowed = isAllowed || allowed == unattendedRisk
+			}
+		}
+		if !isAllowed {
+			return false
+		}
+	}
+	return true
+}

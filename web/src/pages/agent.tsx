@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
@@ -102,6 +102,9 @@ export type Agent = {
   categories: AgentCategory[]
   notifications?: AgentNotifications | null
   confirm: string[]
+  // The kinds of action needing the person's word that the agent may take
+  // when they are not there: outward, money, destructive, granting, listed.
+  unattendedAllowedRisks?: string[]
   askModel?: string
   dreamFrom?: string
   dreamUntil?: string
@@ -137,7 +140,7 @@ export type AgentView = {
 }
 
 const VIEW = `{
-  agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
+  agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm unattendedAllowedRisks
     isMemoryCheckEnabled isIdeasEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
     voice { tone length greeting signoff }
     categories { name description }
@@ -157,12 +160,12 @@ export const READ_AGENT = `query { ReadAgent ${VIEW} }`
 const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
     $voice: AgentVoiceInput,
-    $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String,
+    $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String,
     $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean,
     $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
-      categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel,
+      categories: $categories, notifications: $notifications, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
       isIdeasEnabled: $isIdeasEnabled, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
       alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, forget: $forget) ${VIEW}
@@ -399,6 +402,7 @@ export function AgentPage() {
               <p className="muted field-hint">{t('agent.ideasHint')}</p>
             </div>
             <ConfirmForm agent={agent} busy={busy} onSave={update} />
+            <UnattendedForm agent={agent} busy={busy} onSave={update} />
             <div className="settings-subform">
               <h4>{t('agent.forget')}</h4>
               <p className="muted">{t('agent.forgetHint')}</p>
@@ -3768,6 +3772,56 @@ function ConfirmForm({ agent, busy, onSave }: SaveProps) {
         defaultWord="allow"
         onChange={(name, word) => setPolicy({ ...policy, [name]: word })}
       />
+      <SaveRow busy={busy} saved={false} />
+    </form>
+  )
+}
+
+// UNATTENDED_RISKS are the kinds of action that need the person's word, in
+// the order the form shows them.
+const UNATTENDED_RISKS = ['outward', 'money', 'destructive', 'granting', 'listed'] as const
+
+// UnattendedForm: which of the kinds of action that need the person's word
+// the agent may take when they are not there to give it, in a schedule, a
+// goal or a night. Each is off until they turn it on.
+function UnattendedForm({ agent, busy, onSave }: SaveProps) {
+  const { t } = useTranslation()
+  const saved = JSON.stringify(agent.unattendedAllowedRisks ?? [])
+  const [allowed, setAllowed] = useState<string[]>([])
+  useEffect(() => setAllowed(JSON.parse(saved)), [saved])
+  return (
+    <form
+      className="settings-subform"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void onSave(
+          { unattendedAllowedRisks: UNATTENDED_RISKS.filter((unattendedRisk) => allowed.includes(unattendedRisk)) },
+          t('agent.saved'),
+        )
+      }}
+    >
+      <h4>{t('agent.unattended')}</h4>
+      <p className="muted">{t('agent.unattendedHint')}</p>
+      {UNATTENDED_RISKS.map((unattendedRisk) => (
+        <Fragment key={unattendedRisk}>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={allowed.includes(unattendedRisk)}
+              disabled={busy}
+              onChange={(event) =>
+                setAllowed(
+                  event.target.checked
+                    ? [...allowed, unattendedRisk]
+                    : allowed.filter((existing) => existing !== unattendedRisk),
+                )
+              }
+            />
+            {t(`agent.unattended.${unattendedRisk}`)}
+          </label>
+          <p className="muted field-hint">{t(`agent.unattended.${unattendedRisk}Hint`)}</p>
+        </Fragment>
+      ))}
       <SaveRow busy={busy} saved={false} />
     </form>
   )

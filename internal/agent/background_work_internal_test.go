@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -374,7 +375,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 
 	// Nineteen woken on some instance or other.
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		for range backgroundWakesAlone - 1 {
+		for range config.BackgroundWakesAloneDefault - 1 {
 			if err := tx.AddAgentConversationBackgroundWake(conversation.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -391,7 +392,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 	if read := readWork(t, database, run.Agent.ID, first.ID); read.WokenAt == nil {
 		t.Fatalf("marked as told: %+v", read)
 	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != backgroundWakesAlone {
+	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
 		t.Fatalf("the twentieth is counted: %d", wokenCount)
 	}
 
@@ -416,7 +417,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 	if _, notes := wokenMessages(t, database, conversation.ID); len(notes) != 1 {
 		t.Fatalf("the note is written once: %q", notes)
 	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != backgroundWakesAlone {
+	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
 		t.Fatalf("a note is not a woken turn: %d", wokenCount)
 	}
 
@@ -427,7 +428,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != backgroundWakesAlone {
+	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
 		t.Fatalf("a woken turn's message reset the count: %d", wokenCount)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {

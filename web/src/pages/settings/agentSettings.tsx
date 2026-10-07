@@ -128,6 +128,11 @@ export type Agent = {
     dreamShare: number
     ingestChunksPerRun: number
     embeddingTokensPerDay: number
+    maxRoundsPerSubagent: number
+    goalTurnsPerDay: number
+    goalTurnsAlone: number
+    goalsInProgress: number
+    backgroundWakesAlone: number
   }
   retention: { runs: string; corrections: string }
   currency: string
@@ -162,7 +167,7 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
+  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -1132,6 +1137,11 @@ function limitFields(settings: Agent) {
     dreamShare: String(settings.limits.dreamShare),
     ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
     embeddingTokensPerDay: String(settings.limits.embeddingTokensPerDay),
+    maxRoundsPerSubagent: String(settings.limits.maxRoundsPerSubagent),
+    goalTurnsPerDay: String(settings.limits.goalTurnsPerDay),
+    goalTurnsAlone: String(settings.limits.goalTurnsAlone),
+    goalsInProgress: String(settings.limits.goalsInProgress),
+    backgroundWakesAlone: String(settings.limits.backgroundWakesAlone),
   }
 }
 
@@ -1185,6 +1195,11 @@ function LimitsForm({ settings, onSaved }: Props) {
               dreamShare: Number(limits.dreamShare) || 0,
               ingestChunksPerRun: number(limits.ingestChunksPerRun),
               embeddingTokensPerDay: number(limits.embeddingTokensPerDay),
+              maxRoundsPerSubagent: number(limits.maxRoundsPerSubagent),
+              goalTurnsPerDay: number(limits.goalTurnsPerDay),
+              goalTurnsAlone: number(limits.goalTurnsAlone),
+              goalsInProgress: number(limits.goalsInProgress),
+              backgroundWakesAlone: number(limits.backgroundWakesAlone),
             },
             retention,
             currency,
@@ -1218,6 +1233,13 @@ function LimitsForm({ settings, onSaved }: Props) {
         {(['maxRoundsPerDream', 'scanConcurrency', 'rewriteConcurrency', 'dreamShare'] as const).map(numeric)}
       </div>
       <div className="row">{(['ingestChunksPerRun', 'embeddingTokensPerDay'] as const).map(numeric)}</div>
+      {/* What work nobody is watching may take before it stops: zero is
+          each one's default. */}
+      <p className="muted">{t('agentSettings.limitsUnattended')}</p>
+      <div className="row">
+        {(['maxRoundsPerSubagent', 'goalTurnsPerDay', 'goalTurnsAlone'] as const).map(numeric)}
+      </div>
+      <div className="row">{(['goalsInProgress', 'backgroundWakesAlone'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">

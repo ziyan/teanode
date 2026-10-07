@@ -12,6 +12,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	devtools "github.com/ziyan/teanode/internal/browser"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 func init() {
@@ -321,8 +322,9 @@ func browserOverlay(ctx context.Context) string {
 func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArguments) (*tools.Result, error) {
 	// The tab is signed in as the person: a click there can send their mail
 	// or pay with their card, and no card can be shown to an empty room to
-	// ask first. With nobody present the tab is read, not acted in.
-	if run.Headless() && browserWritingActions[arguments.Action] {
+	// ask first. With nobody present the tab is read, not acted in, unless
+	// the person lets the agent speak for them when they are not there.
+	if run.Headless() && browserWritingActions[arguments.Action] && !run.Agent().IsAllowedUnattended([]models.UnattendedRisk{models.UnattendedRiskOutward}) {
 		return nil, fmt.Errorf("a run with nobody present reads the person's tab but does not act in it, where it would act as them; %s is not done; say what you would have done", arguments.Action)
 	}
 	if browsing, err := browsingOf(run); err != nil || !browsing.TabsAllowed() {

@@ -1,6 +1,6 @@
 # The agent uses the person's devices whether or not they are present
 
-- Status: accepted
+- Status: accepted; amended by `20261007-the-person-chooses-what-the-agent-does-alone.md`, where the person allows kinds of call to run with nobody present
 - Date: 2026-10-06
 - Deciders: the-owner
 
