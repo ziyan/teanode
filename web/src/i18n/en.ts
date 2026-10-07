@@ -3335,8 +3335,6 @@ export const en = {
   'finance.tabNetWorth': 'Net worth',
   'finance.tabSavingsTargets': 'Savings targets',
   'finance.title': 'Finance',
-  'finance.setupPointer': 'Linking institutions and the reporting currency are set up here. What they report is on the Finance page.',
-  'finance.openFinancePage': 'Open the Finance page',
   'finance.notShown': 'Finance appears here when your agent is on and this server offers a way to link institutions, or when you have linked one already.',
   'finance.openAgentPage': 'Open your agent page',
   'finance.nothingLinkedPointer': 'No institution is linked yet, so there is nothing to show here.',

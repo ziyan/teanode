@@ -3202,8 +3202,6 @@ export const zh: Catalog = {
   'finance.tabNetWorth': '净资产',
   'finance.tabSavingsTargets': '储蓄目标',
   'finance.title': '财务',
-  'finance.setupPointer': '在这里关联金融机构、选择报告货币。它们报告的内容在"财务"页面查看。',
-  'finance.openFinancePage': '打开"财务"页面',
   'finance.notShown': '当你的助手已开启，且这台服务器提供关联金融机构的方式，或你已经关联过金融机构时，这里会显示财务。',
   'finance.openAgentPage': '打开助手页面',
   'finance.nothingLinkedPointer': '还没有关联任何金融机构，所以这里没有可显示的内容。',

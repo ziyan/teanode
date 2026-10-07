@@ -3292,8 +3292,6 @@ export const ja: Catalog = {
   'finance.tabNetWorth': '純資産',
   'finance.tabSavingsTargets': '貯蓄目標',
   'finance.title': '金融',
-  'finance.setupPointer': '金融機関の連携と表示通貨はここで設定します。金融機関から届いた内容は「金融」ページで見られます。',
-  'finance.openFinancePage': '「金融」ページを開く',
   'finance.notShown': 'エージェントがオンで、このサーバーが金融機関の連携手段を提供しているとき、またはすでに連携しているときに、ここに金融が表示されます。',
   'finance.openAgentPage': 'エージェントのページを開く',
   'finance.nothingLinkedPointer': 'まだ金融機関を連携していないため、ここに表示するものはありません。',
