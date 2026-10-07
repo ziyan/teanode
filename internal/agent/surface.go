@@ -43,6 +43,18 @@ var surfaces = map[string]surface{
 	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true},
 	"extension": {situationLine: talkingThrough("extension"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"page":      {situationLine: talkingThrough("page"), overlay: dashboardOverlay, hasSuggestedReplies: true},
+	// A turn the person spoke in the drawer, transcribed. The answer is
+	// written for the ear: it is shown in the drawer as it is written, and
+	// is what will be read aloud to them.
+	"voice": {
+		situationLine: "You are talking with them by voice in the dashboard's drawer: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
+		overlay: "<surface>\nVoice: they are listening, not reading. Answer the way you would say it to them: the answer first, in a few short spoken sentences, then stop; offer more rather than giving it all. " +
+			"No tables, headings, code blocks or bullet lists, and no web addresses read out: name the page or the thing instead, and put a link or a picture only where they would look at the screen for it. " +
+			"Say numbers, sums, dates and times the way a person says them (\"half past three tomorrow\", \"about twelve hundred dollars\"). " +
+			"Ask at most one question, at the end. When a word they said may have been misheard and it changes what they want, a name, a sum, a day, say what you heard and ask before acting on it.\n</surface>",
+		hasSuggestedReplies: true,
+		canShowPages:        true,
+	},
 	"phone": {
 		situationLine:       talkingThrough("phone"),
 		overlay:             "<surface>\nA phone: keep it short, no tables. " + picturesLine + "\n</surface>",

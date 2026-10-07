@@ -16,6 +16,7 @@ func TestSurfaces(t *testing.T) {
 	}{
 		{"drawer", true, "Markdown renders", true},
 		{"phone", true, "no tables", true},
+		{"voice", true, "listening, not reading", true},
 		{"cli", true, "A terminal", false},
 		{"api", true, "A terminal", false},
 		{"mail", true, "first line is its subject", false},
@@ -44,8 +45,16 @@ func TestSurfaces(t *testing.T) {
 			t.Errorf("%s: %q", name, overlay)
 		}
 	}
+	// Spoken turns are answered for the ear, and their transcription is not
+	// taken on trust.
+	voice := surfaceOf("voice")
+	for _, said := range []string{"No tables", "the answer first", "misheard"} {
+		if !strings.Contains(voice.overlay+voice.situationLine, said) {
+			t.Errorf("voice says %q: %q", said, voice.overlay)
+		}
+	}
 	// Only the dashboard's own drawer can be moved to a page of it.
-	for _, name := range []string{"drawer", "phone"} {
+	for _, name := range []string{"drawer", "phone", "voice"} {
 		if !surfaceOf(name).canShowPages {
 			t.Errorf("%s cannot show a page", name)
 		}
