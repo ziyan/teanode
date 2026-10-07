@@ -1188,7 +1188,6 @@ export const ja: Catalog = {
   'agentDrawer.citedFrom': 'これを読み取った元（{where}）',
   'agentDrawer.citedFile': 'これを読み取った元',
   'agentDrawer.citedOpen': '画像を原寸で開く',
-  'agentDrawer.mistakes': 'AI は間違えることがあります。',
   'agentDrawer.attach': 'ファイルを添付',
   'agentDrawer.remove': '削除',
   'agentDrawer.financeTransactionReference': '取引：{day}、{name}、{amount}',

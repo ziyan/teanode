@@ -1194,7 +1194,6 @@ export const en = {
   'agentDrawer.citedFrom': 'what this was read from, from {where}',
   'agentDrawer.citedFile': 'what this was read from',
   'agentDrawer.citedOpen': 'Open the picture full size',
-  'agentDrawer.mistakes': 'AI can make mistakes.',
   'agentDrawer.attach': 'Attach a file',
   'agentDrawer.remove': 'Remove',
   'agentDrawer.financeTransactionReference': 'Transaction: {day}, {name}, {amount}',

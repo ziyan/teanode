@@ -1151,7 +1151,6 @@ export const zh: Catalog = {
   'agentDrawer.citedFrom': '这句话读自此处，来自 {where}',
   'agentDrawer.citedFile': '这句话读自此处',
   'agentDrawer.citedOpen': '查看原图',
-  'agentDrawer.mistakes': 'AI 可能会出错。',
   'agentDrawer.attach': '添加文件',
   'agentDrawer.remove': '移除',
   'agentDrawer.financeTransactionReference': '交易：{day}，{name}，{amount}',
