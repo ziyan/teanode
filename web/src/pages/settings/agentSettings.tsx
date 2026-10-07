@@ -138,6 +138,7 @@ export type Agent = {
   currency: string
   search: { kind: string; hasApiKey: boolean }
   tools: { disabled: string[]; confirm: string[]; catalog: AgentTool[] }
+  voice: { enabled: boolean; provider: string; transcriptionModel: string; silenceMS: number }
   browser: {
     enabled: boolean
     cdpEndpoint: string
@@ -172,6 +173,7 @@ export const AGENT_SELECTION = `agent {
   currency
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
+  voice { enabled provider transcriptionModel silenceMS }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
   finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
@@ -294,6 +296,7 @@ export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPar
             onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
           />
           <ModelsForm settings={settings} onSaved={onSaved} known={known} />
+          <VoiceForm settings={settings} onSaved={onSaved} />
           <FeaturesForm settings={settings} onSaved={onSaved} />
           <LimitsForm settings={settings} onSaved={onSaved} />
         </>
@@ -1499,6 +1502,87 @@ function FinanceForm({ settings, onSaved }: Props) {
         ) : null}
       </div>
       <SaveRow busy={busy} saved={false} />
+    </form>
+  )
+}
+
+function voiceFields(settings: Agent) {
+  return {
+    ...settings.voice,
+    silenceMS: settings.voice.silenceMS ? String(settings.voice.silenceMS) : '',
+  }
+}
+
+// VoiceForm: talking to the agent in the drawer, transcribed by a provider
+// of kind openai.
+function VoiceForm({ settings, onSaved }: Props) {
+  const { t } = useTranslation()
+  const { busy, problem, saved, save } = useSaver(onSaved)
+  const [voice, setVoice] = useState(voiceFields(settings))
+  useEffect(() => {
+    setVoice(voiceFields(settings))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(settings.voice)])
+  const openAIProviders = settings.providers.filter((provider) => provider.kind === 'openai')
+
+  return (
+    <form
+      className="card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save({
+          agent: {
+            voice: {
+              enabled: voice.enabled,
+              provider: voice.provider,
+              transcriptionModel: voice.transcriptionModel.trim(),
+              silenceMS: Number(voice.silenceMS) || 0,
+            },
+          },
+        })
+      }}
+    >
+      <h3>{t('agentSettings.voice')}</h3>
+      <p className="muted">{t('agentSettings.voiceDescription')}</p>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={voice.enabled}
+          onChange={(event) => setVoice({ ...voice, enabled: event.target.checked })}
+        />
+        {t('integrations.enabled')}
+      </label>
+      <div className="row">
+        <label>
+          <span>{t('agentSettings.voiceProvider')}</span>
+          <select value={voice.provider} onChange={(event) => setVoice({ ...voice, provider: event.target.value })}>
+            <option value="">{t('agentSettings.voiceProviderFirst')}</option>
+            {openAIProviders.map((provider) => (
+              <option key={provider.name} value={provider.name}>
+                {provider.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{t('agentSettings.voiceModel')}</span>
+          <input
+            value={voice.transcriptionModel}
+            placeholder="gpt-4o-transcribe"
+            onChange={(event) => setVoice({ ...voice, transcriptionModel: event.target.value })}
+          />
+        </label>
+        <label className="shrink">
+          <span>{t('agentSettings.voiceSilence')}</span>
+          <input
+            value={voice.silenceMS}
+            placeholder="500"
+            inputMode="numeric"
+            onChange={(event) => setVoice({ ...voice, silenceMS: event.target.value })}
+          />
+        </label>
+      </div>
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }

@@ -6874,6 +6874,28 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 /* Send and Stop are the size of the paperclip beside them: a round mark
    each, not a word. */
+/* The microphone, lit while it listens. */
+.agent-drawer-input .agent-voice.is-listening {
+  color: var(--bad);
+}
+
+/* What is being heard, above the box: the words so far, or that it is
+   listening. */
+.agent-drawer-voice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 12px 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.agent-drawer-voice svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--bad);
+}
+
 .agent-drawer-input .agent-send {
   border-radius: 50%;
   background: var(--accent);

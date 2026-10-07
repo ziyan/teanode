@@ -124,6 +124,9 @@ module.exports = {
       patterns: [
         { from: 'public/.gitkeep', to: '.gitkeep', toType: 'file', noErrorOnMissing: true },
         { from: 'node_modules/echarts/dist/echarts.min.js', to: 'assets/echarts.min.js' },
+        // The microphone's AudioWorklet runs as a file of its own on the
+        // audio thread; the content policy takes it only from the server.
+        { from: 'src/voice/voiceCaptureWorklet.js', to: 'assets/voice-capture-worklet.js' },
       ],
     }),
   ],

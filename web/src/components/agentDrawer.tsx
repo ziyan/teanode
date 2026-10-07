@@ -32,6 +32,7 @@ import { Markdown } from './markdown'
 import { useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
+import { VoiceSession } from '../voice/voiceSession'
 import {
   ArchiveIcon,
   ArrowDownIcon,
@@ -43,6 +44,7 @@ import {
   GlobeIcon,
   InboxIcon,
   ListIcon,
+  MicrophoneIcon,
   PaperclipIcon,
   PencilIcon,
   StarIcon,
@@ -444,6 +446,9 @@ const AGENT = `
   query {
     ReadAgent { agent { id enabled name } allowed { enabled ask } }
   }`
+
+// READ_VOICE says whether the drawer offers the microphone.
+const READ_VOICE = `query { ReadAgentVoice { isVoiceAvailable sampleRate } }`
 
 const TAB = `
   query {
@@ -2892,7 +2897,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // events draw again.
   const asked = (event: RunEvent) => {
     setRuns((previous) => (previous.includes(event.runId) ? previous : [...previous, event.runId]))
-    if (sending.current > 0 && event.note === surface()) return
+    if (sending.current > 0 && (event.note === surface() || event.note === 'voice')) return
     // A turn of the agent's own, arriving live: the line, not the bubble,
     // and nothing here to have said it twice.
     const origin = checkInOriginOf(event.text ?? '')
@@ -2955,7 +2960,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
 
   // send sends what is in the box, or a suggested reply clicked above it,
   // which leaves the box, its files and its references as they were.
-  const send = async (suggestedReply?: string) => {
+  // send sends what was typed, or the words given: a suggested reply, or
+  // what the person said aloud, which goes as the voice surface.
+  const send = async (suggestedReply?: string, options?: { isSpoken?: boolean }) => {
     const isSuggested = suggestedReply !== undefined
     const message = (isSuggested ? suggestedReply : draft).trim()
     const files = isSuggested ? [] : pending
@@ -3038,7 +3045,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           conversationId: conversationId || undefined,
           message: message || (files.length > 0 ? t('agentDrawer.filesOnly') : ''),
           viewing,
-          surface: surface(),
+          surface: options?.isSpoken ? 'voice' : surface(),
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           references: pointed.length > 0 ? pointed : undefined,
         })
@@ -3064,6 +3071,63 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       }
     }
   }
+
+  // Voice: the microphone button, when the server offers it and this is the
+  // dashboard's own drawer (the extension's page has a microphone of its
+  // own to ask for). Each utterance the server finishes hearing is sent as
+  // if typed; the caption shows the one being heard.
+  const [voiceSampleRate, setVoiceSampleRate] = useState(0)
+  const [voiceState, setVoiceState] = useState<'off' | 'starting' | 'listening'>('off')
+  const [voiceCaption, setVoiceCaption] = useState('')
+  const voiceSession = useRef<VoiceSession | null>(null)
+  const sendLatest = useRef(send)
+  sendLatest.current = send
+  useEffect(() => {
+    if (standalone || framedDrawer) return
+    let cancelled = false
+    graphql<{ ReadAgentVoice: { isVoiceAvailable: boolean; sampleRate: number } }>(READ_VOICE)
+      .then((response) => {
+        if (!cancelled && response.ReadAgentVoice.isVoiceAvailable) setVoiceSampleRate(response.ReadAgentVoice.sampleRate)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [standalone])
+  const toggleVoice = () => {
+    if (voiceSession.current) {
+      voiceSession.current.stop()
+      return
+    }
+    setVoiceState('starting')
+    const session = new VoiceSession(
+      {
+        onListening: () => setVoiceState('listening'),
+        onCaption: setVoiceCaption,
+        onTranscript: (transcriptText) => void sendLatest.current(transcriptText, { isSpoken: true }),
+        onProblem: (problemText) => toast.failed(problemText),
+        onEnded: () => {
+          if (voiceSession.current === session) voiceSession.current = null
+          setVoiceState('off')
+          setVoiceCaption('')
+        },
+      },
+      {
+        microphoneRefused: t('agentDrawer.voiceMicrophoneRefused'),
+        notHeard: t('agentDrawer.voiceNotHeard'),
+        connectionLost: t('agentDrawer.voiceConnectionLost'),
+      },
+    )
+    voiceSession.current = session
+    void session.start(voiceSampleRate).catch((caught) => {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+      session.stop()
+    })
+  }
+  // Listening ends with the conversation it was for, and with the drawer.
+  useEffect(() => {
+    return () => voiceSession.current?.stop()
+  }, [conversationId])
 
   // A draft asked to be sent is sent once its conversation is the one open
   // and its draft has been read back into the box: the same send as the
@@ -4041,6 +4105,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               <span>{waitingNote}</span>
             </div>
           ) : null}
+          {voiceState !== 'off' ? (
+            <div className="agent-drawer-voice" aria-live="polite">
+              <MicrophoneIcon size={12} />
+              <span className={voiceCaption ? undefined : 'muted'}>
+                {voiceState === 'starting'
+                  ? t('agentDrawer.voiceStarting')
+                  : voiceCaption || t('agentDrawer.voiceListening')}
+              </span>
+            </div>
+          ) : null}
           <form
             className="agent-drawer-input"
             onSubmit={(event) => {
@@ -4101,6 +4175,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   onClick={() => void stop()}
                 >
                   ■
+                </button>
+              </Tooltip>
+            )}
+            {voiceSampleRate > 0 && (
+              <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
+                <button
+                  type="button"
+                  className={['icon-button', 'agent-voice', voiceState !== 'off' ? 'is-listening' : ''].filter(Boolean).join(' ')}
+                  aria-label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}
+                  aria-pressed={voiceState !== 'off'}
+                  disabled={isRun || Boolean(actingAs)}
+                  onClick={toggleVoice}
+                >
+                  <MicrophoneIcon size={16} />
                 </button>
               </Tooltip>
             )}
