@@ -102,7 +102,6 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 		// A command on the person's own machine is held to the same rule
 		// as the shell tool, which runs any command there as a write: a
 		// skill wrapping one is no more dangerous than the command itself.
-		// A run with nobody present is refused the computer by computer.Of.
 		risk = tools.RiskWrite
 	}
 	description := strings.TrimSpace(declared.Description)
@@ -166,8 +165,7 @@ func withComputer(parameters map[string]any, meaning string) map[string]any {
 }
 
 // SkillRunsCommands says whether carrying this tool out runs anything on
-// a computer, which is what decides that it asks first and that a run
-// with nobody present never reaches it.
+// a computer, which is what decides that it is held to the shell's rule.
 func SkillRunsCommands(declared *skills.Tool) bool {
 	if declared.Type == skills.KindShell {
 		return true
@@ -254,9 +252,7 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 		}
 		if runsCommandsNamed(skill, toolName) {
 			// The computer the call names, or else the one the skill's reach
-			// names, or else the only one attached. Held to Of's rule either
-			// way: this runs commands on the person's computer, which a run
-			// with nobody present does not do, reach or no reach.
+			// names, or else the only one attached.
 			named, _ := arguments["computer"].(string)
 			if strings.TrimSpace(named) == "" {
 				named = self.reachOf(ctx, run.Agent().ID, models.AgentReachSkill, skill.Name)

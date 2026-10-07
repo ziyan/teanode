@@ -503,9 +503,10 @@ func TestOnlyTheInstanceThatClaimsAWakeWakes(t *testing.T) {
 
 // The survey starts in the background unless told to wait, once a turn
 // either way; the subagent starts there when told to, with the tools of
-// the turn less the ones that start or manage such work; neither starts
-// from a turn with nobody present; and background_work lists, reads and
-// stops what they started.
+// the turn less the ones that start or manage such work; a turn with
+// nobody present starts it too, to be woken where it ran, but a run that
+// is a transcript of its own does not; and background_work lists, reads
+// and stops what they started.
 func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -563,8 +564,15 @@ func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
 	}
 
 	headless := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: conversation, Headless: true}}
-	if _, err := worker.subagentTool().Run(tools.WithRun(t.Context(), headless), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}); err == nil {
-		t.Errorf("a turn with nobody present started background work")
+	headlessId := started(worker.subagentTool().Run(tools.WithRun(t.Context(), headless), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}))
+	if woken := readWork(t, database, run.Agent.ID, headlessId); woken.ConversationID != conversation.ID {
+		t.Errorf("a turn with nobody present starts it, to wake its conversation: %+v", woken)
+	}
+	ownRun := *conversation
+	ownRun.Kind = models.AgentConversationRun
+	transcript := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: &ownRun, Headless: true}}
+	if _, err := worker.subagentTool().Run(tools.WithRun(t.Context(), transcript), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}); err == nil {
+		t.Errorf("a run of its own started background work nothing would wake for")
 	}
 
 	tool := worker.backgroundWorkTool()

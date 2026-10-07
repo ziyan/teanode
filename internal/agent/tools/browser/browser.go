@@ -108,8 +108,6 @@ func tabOf(run tools.Run) tools.Tab {
 	return browsing.AttachedTab()
 }
 
-var browserReadingActions = map[string]bool{"navigate": true, "snapshot": true, "screenshot": true, "click": true, "select": true, "hover": true, "scroll": true, "wait": true, "back": true, "tabs": true, "open": true, "switch": true}
-
 // browserWritingActions are the ones that change a page or run code.
 var browserWritingActions = map[string]bool{"click": true, "select": true, "type": true, "press": true, "scroll": true, "evaluate": true, "hover": true, "fetch": true, "storage": true, "close": true, "cdp": true, "cdp_stop": true}
 
@@ -189,9 +187,6 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		answer.Untrusted = true
 		return answer, nil
-	}
-	if run.Headless() && !browserReadingActions[arguments.Action] {
-		return nil, fmt.Errorf("a run with nobody present may only read a page; %s is not allowed", arguments.Action)
 	}
 	if arguments.Target == "tab" {
 		return runBrowserOnTab(ctx, run, &arguments)
@@ -313,7 +308,7 @@ func browserTarget(ref int, selector string) devtools.Target {
 func browserOverlay(ctx context.Context) string {
 	run := tools.MustRun(ctx)
 	attached := tabOf(run)
-	if attached == nil || run.Headless() {
+	if attached == nil {
 		return ""
 	}
 	if !attached.HasTab() {
@@ -324,8 +319,11 @@ func browserOverlay(ctx context.Context) string {
 
 // runBrowserOnTab carries a browser action to the person's tab.
 func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArguments) (*tools.Result, error) {
-	if run.Headless() {
-		return nil, fmt.Errorf("a run with nobody present cannot use the person's tab")
+	// The tab is signed in as the person: a click there can send their mail
+	// or pay with their card, and no card can be shown to an empty room to
+	// ask first. With nobody present the tab is read, not acted in.
+	if run.Headless() && browserWritingActions[arguments.Action] {
+		return nil, fmt.Errorf("a run with nobody present reads the person's tab but does not act in it, where it would act as them; %s is not done; say what you would have done", arguments.Action)
 	}
 	if browsing, err := browsingOf(run); err != nil || !browsing.TabsAllowed() {
 		return nil, fmt.Errorf("attaching a tab is off on this server")

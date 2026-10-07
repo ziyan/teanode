@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Computing is what a run offers the shell and filesystem tools: the
@@ -17,13 +19,6 @@ type Computing interface {
 	// ComputersAllowed says whether the operator lets people attach a
 	// computer.
 	ComputersAllowed() bool
-
-	// ComputersUnattended says a run with nobody present may reach one
-	// anyway. It is false for almost everything: the confirmation card is
-	// what stands between the agent and the grave shapes, and a run
-	// nobody is watching cannot be shown one. The night is the exception
-	// the owner decided on.
-	ComputersUnattended() bool
 }
 
 // Computer is the attached computer as a tool reaches it: a request sent
@@ -50,12 +45,27 @@ type BackgroundHolder interface {
 
 // BackgroundOrigin is who started a background command, as the shell tool
 // hands it to the computer and the computer hands it back when the command
-// ends: which agent and conversation to wake, and whether the turn that
-// started it had anybody present. The computer keeps it without reading it.
+// ends: which agent and conversation to wake, and IsUnwakeable when the
+// conversation is a run's own transcript, such as a night's, which no turn
+// is woken in. The computer keeps it without reading it.
 type BackgroundOrigin struct {
 	AgentID        string `json:"agentId"`
 	ConversationID string `json:"conversationId"`
-	IsHeadless     bool   `json:"isHeadless,omitempty"`
+	IsUnwakeable   bool   `json:"isUnwakeable,omitempty"`
+}
+
+// CanLeaveRunning says the run may leave a command running past its wait:
+// any run but one whose conversation is a run's own transcript, which has
+// nothing to be woken in when the command ends. A schedule's or a goal's
+// turn is woken where it ran, as the person's is; a call with no
+// conversation at all -- a harness, the command line -- is told the
+// command's id and reads it itself.
+func CanLeaveRunning(run Run) bool {
+	conversation := run.Conversation()
+	if conversation == nil {
+		return !run.Headless()
+	}
+	return conversation.Kind != models.AgentConversationRun
 }
 
 // SessionHolder is a computer that can hold a program open: a terminal the

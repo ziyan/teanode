@@ -53,13 +53,13 @@ func (self *backgroundComputer) acknowledged() []string {
 }
 
 // endingOf is what the program says when a background command ends.
-func endingOf(t *testing.T, id, conversationId, agentId string, isHeadless bool, stdout string) json.RawMessage {
+func endingOf(t *testing.T, id, conversationId, agentId string, isUnwakeable bool, stdout string) json.RawMessage {
 	t.Helper()
 	started := time.Now().Add(-90 * time.Second)
 	ended := time.Now()
 	encoded, err := json.Marshal(map[string]any{
 		"id": id, "command": "make test", "directory": "~/project",
-		"origin":    map[string]any{"agentId": agentId, "conversationId": conversationId, "isHeadless": isHeadless},
+		"origin":    map[string]any{"agentId": agentId, "conversationId": conversationId, "isUnwakeable": isUnwakeable},
 		"startedAt": started, "endedAt": ended, "isRunning": false, "exitCode": 2,
 		"stdout": stdout, "stderr": "FAIL: two tests\n", "stdoutByteCount": len(stdout), "stderrByteCount": 16,
 	})
@@ -125,9 +125,9 @@ func TestAnEndedBackgroundCommandWakesItsConversation(t *testing.T) {
 	})
 }
 
-// A command a run with nobody present started wakes nothing; its ending is
+// A command a run of its own (a night) started wakes nothing; its ending is
 // acknowledged so it is not said again.
-func TestAnEndingFromARunWithNobodyPresentWakesNothing(t *testing.T) {
+func TestAnEndingFromARunOfItsOwnWakesNothing(t *testing.T) {
 	world := startGoalWorld(t, []string{answerRound}, "")
 	defer world.close()
 	computer := &backgroundComputer{worker: world.worker, agentId: world.found.ID}

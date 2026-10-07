@@ -151,7 +151,7 @@ func (self *directRun) MeaningSearch(ctx context.Context, mailboxId, query strin
 func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operations tools.Operations) []*tools.Tool {
 	configuration := self.settings.Configuration()
 	offered := self.catalog.Offered(operations.Permissions(), &configuration.Agent.Tools)
-	for _, tool := range self.remoteTools(ctx, person.ID, false) {
+	for _, tool := range self.remoteTools(ctx, person.ID) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			offered = append(offered, tool)
 		}
@@ -281,10 +281,6 @@ func (self *directRun) AttachedComputers() []tools.Computer {
 func (self *directRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
-
-// ComputersUnattended is false, and never matters here: this run is not
-// headless, so the unattended rule is not reached.
-func (self *directRun) ComputersUnattended() bool { return false }
 
 // The person's attached tab (tools.Browsing), which lives in their own
 // browser and outlasts any one call.

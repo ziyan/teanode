@@ -13,16 +13,20 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
+// noConversation is a fakeRun with no conversation at all.
+const noConversation models.AgentConversationKind = "(none)"
+
 // fakeRun is a turn with the person present and a computer attached, or
 // not; only what the tools ask of it is there.
 type fakeRun struct {
 	tools.Run
 	headless bool
-	// unattended is a run with nobody present that may reach the machine
-	// anyway: the night, which the owner decided should have it.
-	unattended bool
-	computer   tools.Computer
-	config     *config.Configuration
+	// conversationKind is the kind of the run's conversation: the main one
+	// when empty, a run's own transcript, which nothing wakes, or
+	// noConversation for a call from a harness or the command line.
+	conversationKind models.AgentConversationKind
+	computer         tools.Computer
+	config           *config.Configuration
 }
 
 func (self *fakeRun) AttachedComputers() []tools.Computer {
@@ -36,11 +40,17 @@ func (self *fakeRun) Headless() bool                       { return self.headles
 func (self *fakeRun) CanAsk() bool                         { return !self.Headless() }
 func (self *fakeRun) Configuration() *config.Configuration { return self.config }
 func (self *fakeRun) ComputersAllowed() bool               { return true }
-func (self *fakeRun) ComputersUnattended() bool            { return self.unattended }
 func (self *fakeRun) Offered() []*tools.Tool               { return nil }
 func (self *fakeRun) Agent() *models.Agent                 { return &models.Agent{ID: "agent01"} }
 func (self *fakeRun) Conversation() *models.AgentConversation {
-	return &models.AgentConversation{ID: "c1"}
+	conversationKind := self.conversationKind
+	if conversationKind == noConversation {
+		return nil
+	}
+	if conversationKind == "" {
+		conversationKind = models.AgentConversationMain
+	}
+	return &models.AgentConversation{ID: "c1", Kind: conversationKind}
 }
 
 // Database is none: these tests are about the computer, and a reach is read
@@ -118,22 +128,18 @@ func TestShellReachesTheComputerAndRunsWhatItIsGiven(t *testing.T) {
 		t.Fatalf("the card says what will run: %s", preview)
 	}
 
-	// Nobody present, or nothing attached: said, not tried.
-	if _, err := shell.Run(tools.WithRun(context.Background(), &fakeRun{headless: true, computer: attached, config: configuration}), &tools.Call{Arguments: json.RawMessage(`{"command":"ls"}`)}); err == nil || !strings.Contains(err.Error(), "nobody present") {
-		t.Fatalf("headless: %v", err)
-	}
+	// Nothing attached: said, not tried.
 	if _, err := shell.Run(tools.WithRun(context.Background(), &fakeRun{config: configuration}), &tools.Call{Arguments: json.RawMessage(`{"command":"ls"}`)}); err == nil || !strings.Contains(err.Error(), "teanode computer start") {
 		t.Fatalf("none attached: %v", err)
 	}
-	// Except for the run the owner said may: the night runs with nobody
-	// present and reaches the machine anyway, and the overlay tells it
-	// which machine it has.
-	night := &fakeRun{headless: true, unattended: true, computer: attached, config: configuration}
-	nightly := tools.WithRun(context.Background(), night)
-	if result, err := shell.Run(nightly, &tools.Call{Arguments: json.RawMessage(`{"command":"echo hi"}`)}); err != nil || !strings.Contains(result.Content, "hi") {
-		t.Fatalf("the night reaches it: %+v %v", result, err)
+	// A run with nobody present -- a schedule, a goal, a night -- reaches
+	// the machine as any turn does, and the overlay tells it which machine
+	// it has.
+	unattended := tools.WithRun(context.Background(), &fakeRun{headless: true, computer: attached, config: configuration})
+	if result, err := shell.Run(unattended, &tools.Call{Arguments: json.RawMessage(`{"command":"echo hi"}`)}); err != nil || !strings.Contains(result.Content, "hi") {
+		t.Fatalf("a run with nobody present reaches it: %+v %v", result, err)
 	}
-	if overlay := shell.Overlay(nightly); !strings.Contains(overlay, `"laptop" (linux)`) {
+	if overlay := shell.Overlay(unattended); !strings.Contains(overlay, `"laptop" (linux)`) {
 		t.Fatalf("and is told what is attached: %q", overlay)
 	}
 	if overlay := shell.Overlay(ctx); !strings.Contains(overlay, `"laptop" (linux)`) || !strings.Contains(overlay, "/home/alice") {
@@ -228,17 +234,33 @@ func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
 		t.Fatalf("the answer says it is still running, without an exit code it does not have: %s", result.Content)
 	}
 
-	// Nobody present: past its wait it is killed as it always was, and it
-	// may not be started in the background at all.
-	night := &fakeRun{headless: true, unattended: true, computer: attached, config: configuration}
+	// Nobody present, in a conversation that can be woken -- a schedule's,
+	// a goal's: kept past its wait like any other.
+	scheduled := &fakeRun{headless: true, computer: attached, config: configuration}
+	if _, err := shell.Run(tools.WithRun(context.Background(), scheduled), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(attached.asked[1], `"shouldKeepOnTimeout":true`) || strings.Contains(attached.asked[1], "isUnwakeable") {
+		t.Fatalf("a scheduled turn leaves a command running, to be woken: %s", attached.asked[1])
+	}
+	// A run that is a transcript of its own, such as a night's, has nothing
+	// to wake: past its wait it is killed, and it starts nothing in the
+	// background.
+	night := &fakeRun{headless: true, conversationKind: models.AgentConversationRun, computer: attached, config: configuration}
 	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(attached.asked[1], "shouldKeepOnTimeout") {
-		t.Fatalf("a run with nobody present does not leave a command running: %s", attached.asked[1])
+	if strings.Contains(attached.asked[2], "shouldKeepOnTimeout") || !strings.Contains(attached.asked[2], `"isUnwakeable":true`) {
+		t.Fatalf("a run of its own does not leave a command running: %s", attached.asked[2])
 	}
-	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "nobody present") {
+	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "no conversation to be woken") {
 		t.Fatalf("nor start one in the background: %v", err)
+	}
+	// A call from the command line has no conversation and somebody there:
+	// it keeps the command and reads it itself, as it always could.
+	direct := &fakeRun{conversationKind: noConversation, computer: attached, config: configuration}
+	if _, err := shell.Run(tools.WithRun(context.Background(), direct), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err != nil {
+		t.Fatalf("a call with no conversation may start one in the background: %v", err)
 	}
 
 	// A program that predates background commands is asked for none.

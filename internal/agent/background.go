@@ -101,13 +101,13 @@ func (self *Agent) ensureBackgroundLocked() {
 
 // wakeForBackgroundWork has finished work wake the conversation that
 // started it, with whatever else ends there meanwhile. Work started from
-// the API, or by a turn with nobody present, wakes nothing.
+// the API, which has no conversation, wakes nothing.
 //
 // The row is claimed first, and only the claimer wakes: the instance that
 // ran the work and another instance's sweep can both find it finished and
 // unwoken, and without the claim both woke the conversation.
 func (self *Agent) wakeForBackgroundWork(work *models.AgentBackgroundWork) {
-	if work.ConversationID == "" || !work.IsPersonPresent {
+	if work.ConversationID == "" {
 		return
 	}
 	if !self.claimBackgroundWorkWake(work.ID) {
@@ -152,11 +152,10 @@ func (self *Agent) ComputerBackgroundEnded(agentId string, connection DeviceConn
 	}
 	var origin tools.BackgroundOrigin
 	_ = json.Unmarshal(status.Origin, &origin)
-	// Nothing to wake: started by a turn with nobody present, which has
-	// ended and which nobody is reading, or by somebody else's agent, or
-	// before there was an origin at all. It is acknowledged, so that it is
+	// Nothing to wake: started by a run with no conversation to wake, or
+	// by somebody else's agent, or before there was an origin at all. It is acknowledged, so that it is
 	// not said again, and its output can still be read.
-	if origin.AgentID != agentId || origin.ConversationID == "" || origin.IsHeadless {
+	if origin.AgentID != agentId || origin.ConversationID == "" || origin.IsUnwakeable {
 		go self.acknowledgeBackground(found, status.ID)
 		return
 	}

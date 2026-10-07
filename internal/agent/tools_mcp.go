@@ -506,7 +506,7 @@ func (self *Agent) serverAvailable(ctx context.Context, server *config.AgentMCPS
 
 // remoteTools is every tool the connected servers offer this person,
 // as catalog entries.
-func (self *Agent) remoteTools(ctx context.Context, agentId string, headless bool) []*Tool {
+func (self *Agent) remoteTools(ctx context.Context, agentId string) []*Tool {
 	configuration := self.settings.Configuration()
 	if !FeatureAllowed(configuration, "connectedServers") {
 		return nil
@@ -515,12 +515,6 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 	for index := range configuration.Agent.MCP.Servers {
 		server := &configuration.Agent.MCP.Servers[index]
 		if !self.serverAvailable(ctx, server, agentId) {
-			continue
-		}
-		if headless && server.ResolvedLocation() == config.AgentMCPLocationComputer {
-			// Their machine, and they are not there: the same rule as the
-			// shell and the terminal, and the validation refuses the
-			// configuration that would say otherwise.
 			continue
 		}
 		entry, err := self.discovery(ctx, server, agentId)
@@ -664,11 +658,6 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string, 
 		var entry *connectedServer
 		var err error
 		if named != "" {
-			// The agent's own choice of computer: somebody has to be there,
-			// the same rule as acting on their computer with the shell.
-			if run.Headless() {
-				return nil, fmt.Errorf("a run with nobody present does not choose a computer; leave computer out to use the person's setting")
-			}
 			entry, err = self.connectionThrough(ctx, server, agentId, named)
 		} else {
 			entry, err = self.connection(ctx, server, agentId)
