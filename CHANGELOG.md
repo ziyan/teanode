@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.114.0] - 2026-10-07
+
+### Added
+
+- Your agent keeps watch on what your installed skills say is worth watching, and tells you about what matters: new mail in Gmail (archived too), new transactions in Link, new Mattermost mentions and new GitHub notifications, with the skills' new versions. (#343)
+
 ## [0.113.0] - 2026-10-07
 
 ### Added
