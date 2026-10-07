@@ -63,7 +63,7 @@ type Watch struct {
 	Guidance string `yaml:"guidance,omitempty"`
 
 	// Every is how often it looks, ten minutes when unset. Overlap is how
-	// far before the newest item already looked at each look starts, ten
+	// far before the last look each look starts, ten
 	// minutes when unset: longer for a source whose items appear late
 	// with an earlier date, such as a card transaction that posts days
 	// after it was made. Both are durations such as 10m or 72h. The first

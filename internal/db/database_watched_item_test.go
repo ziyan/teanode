@@ -10,8 +10,8 @@ import (
 )
 
 // An item looked at is recorded once per version, per agent, skill and
-// watch; the newest one's moment is where the next look starts; and what
-// is older than any look reaches back to is forgotten.
+// watch; when the watch last looked is where the next look starts; and
+// what is older than any look reaches back to is forgotten.
 func TestWatchedItemsAreRecordedOncePerVersionAndForgottenWhenOld(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -24,15 +24,15 @@ func TestWatchedItemsAreRecordedOncePerVersionAndForgottenWhenOld(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if latest, err := tx.LatestAgentWatchedItemAt(agent.ID, "mail", "new_mail"); err != nil || latest != nil {
+		if latest, err := tx.LatestAgentWatchLookedAt(agent.ID, "mail", "new_mail"); err != nil || latest != nil {
 			t.Fatalf("nothing looked at yet: %v %v", latest, err)
 		}
 		now := time.Now().Truncate(time.Second)
 		for _, watched := range []*models.AgentWatchedItem{
-			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "old", WatchedItemAt: now.Add(-40 * 24 * time.Hour)},
-			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "1", WatchedItemAt: now.Add(-2 * time.Hour)},
-			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "2", WatchedItemAt: now.Add(-time.Hour), AlertSignal: models.AlertSignalSoon},
-			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "2", WatchedItemAt: now},
+			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "old", WatchedItemAt: now.Add(-40 * 24 * time.Hour), LookedAt: now.Add(-3 * time.Hour)},
+			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "1", WatchedItemAt: now.Add(-2 * time.Hour), LookedAt: now.Add(-2 * time.Hour)},
+			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "2", WatchedItemAt: now.Add(-3 * time.Hour), LookedAt: now.Add(-time.Hour), AlertSignal: models.AlertSignalSoon},
+			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "2", WatchedItemAt: now, LookedAt: now},
 			{AgentID: agent.ID, SkillName: "mail", WatchName: "other_watch", WatchedItemID: "elsewhere", WatchedItemAt: now},
 		} {
 			if err := tx.AddAgentWatchedItem(watched); err != nil {
@@ -42,9 +42,9 @@ func TestWatchedItemsAreRecordedOncePerVersionAndForgottenWhenOld(t *testing.T) 
 		if err := tx.AddAgentWatchedItem(&models.AgentWatchedItem{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail"}); err == nil {
 			t.Fatal("an item with no id is refused")
 		}
-		latest, err := tx.LatestAgentWatchedItemAt(agent.ID, "mail", "new_mail")
+		latest, err := tx.LatestAgentWatchLookedAt(agent.ID, "mail", "new_mail")
 		if err != nil || latest == nil || !latest.Equal(now.Add(-time.Hour)) {
-			t.Fatalf("the second record of a version is left as it was: %v %v", latest, err)
+			t.Fatalf("when it last looked, by the look and not the item's own date; the second record of a version left as it was: %v %v", latest, err)
 		}
 		looked, err := tx.ListAgentWatchedItemsLooked(agent.ID, "mail", "new_mail", []string{"old", "thread", "elsewhere", "unseen"})
 		if err != nil || len(looked) != 3 || !looked[db.WatchedItemKey("old", "")] || !looked[db.WatchedItemKey("thread", "1")] || !looked[db.WatchedItemKey("thread", "2")] {

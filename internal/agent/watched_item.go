@@ -18,7 +18,7 @@ import (
 // Watches: what a skill says is worth watching, looked at with the skill's
 // own tools so that the agent can tell the person about what arrives
 // without being asked (skills/watch.go has the contract). A look lists
-// what arrived since shortly before the newest item already looked at,
+// what arrived since shortly before the last look,
 // reads each new item, judges it -- mail with the prompt the person's own
 // mail is sorted with, anything else with the watch's own guidance -- and
 // makes an alert candidate of what the judgement says they should hear
@@ -53,8 +53,11 @@ func watchSubject(skillName, watchName string) string {
 	return skillName + "/" + watchName
 }
 
-// watchSince is where a look starts: the overlap before the newest item
-// already looked at, or before now on a first look.
+// watchSince is where a look starts: the overlap before the last look, or
+// before now on a first look. By when it looked, not by the dates of what
+// it found: a source whose items carry an earlier date than they appear
+// on (a card transaction dated the day it was made, which posts two days
+// later) would otherwise send each look further back than the last.
 func watchSince(latest *time.Time, now time.Time, overlap time.Duration) time.Time {
 	if latest == nil || latest.After(now) {
 		return now.Add(-overlap)
@@ -246,7 +249,7 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 		if err := tx.DeleteAgentWatchedItemsBefore(run.Agent.ID, skillName, watchName, now.Add(-watchedItemsKept)); err != nil {
 			return err
 		}
-		latest, err = tx.LatestAgentWatchedItemAt(run.Agent.ID, skillName, watchName)
+		latest, err = tx.LatestAgentWatchLookedAt(run.Agent.ID, skillName, watchName)
 		return err
 	}); err != nil {
 		return err

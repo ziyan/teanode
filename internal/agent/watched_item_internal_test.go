@@ -222,7 +222,7 @@ func TestSkillWatchesNoteFirstThenJudgeWhatIsNew(t *testing.T) {
 	// A first look that found nothing still counts as one: a watch on an
 	// empty source judges the first item that arrives.
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-		latest, err := tx.LatestAgentWatchedItemAt(fixture.agent.ID, "papers", "new_mail")
+		latest, err := tx.LatestAgentWatchLookedAt(fixture.agent.ID, "papers", "new_mail")
 		if err != nil || latest == nil {
 			t.Fatalf("the first look is noted: %v %v", latest, err)
 		}

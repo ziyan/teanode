@@ -190,8 +190,8 @@ skill (or the only one attached) when the tools run commands, and only the
 tools the watch names, never anything that sends or changes. Gmail watches
 new mail, archived included; Link by Stripe new transactions; Mattermost new
 mentions; GitHub new notifications. A watch's first look only takes note of
-what is there. Later looks start shortly before the newest item already
-seen (longer for a source whose items turn up late with an earlier date),
+what is there. Later looks start shortly before the last look (longer for
+a source whose items turn up late with an earlier date),
 judge each item new in its id and version (a thread with a new reply is
 judged again), and make a `watched` candidate of what is marked `soon` or
 `now`, carrying the item as it was judged (`agent_alert_candidate.watched_*`),

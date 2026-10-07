@@ -22,9 +22,9 @@ type WatchedItemOperation interface {
 	// in that version is left as it is.
 	AddAgentWatchedItem(watched *models.AgentWatchedItem) error
 
-	// LatestAgentWatchedItemAt is when the newest item the watch looked at
-	// happened, or nil when it has looked at none.
-	LatestAgentWatchedItemAt(agentId, skillName, watchName string) (*time.Time, error)
+	// LatestAgentWatchLookedAt is when the watch last looked, or nil when
+	// it never has.
+	LatestAgentWatchLookedAt(agentId, skillName, watchName string) (*time.Time, error)
 
 	// DeleteAgentWatchedItemsBefore forgets the items that happened before
 	// the moment given, which no look reaches back to any more.
@@ -86,16 +86,16 @@ func (self *transaction) AddAgentWatchedItem(watched *models.AgentWatchedItem) e
 	}).Error
 }
 
-func (self *transaction) LatestAgentWatchedItemAt(agentId, skillName, watchName string) (*time.Time, error) {
+func (self *transaction) LatestAgentWatchLookedAt(agentId, skillName, watchName string) (*time.Time, error) {
 	var found []agentWatchedItemModel
 	if err := self.tx.Where(`"agent_id" = ? AND "skill_name" = ? AND "watch_name" = ?`, agentId, skillName, watchName).
-		Order(`"watched_item_at" DESC`).Limit(1).Find(&found).Error; err != nil {
+		Order(`"looked_at" DESC`).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {
 		return nil, nil
 	}
-	latest := found[0].WatchedItemAt.In(time.Local)
+	latest := found[0].LookedAt.In(time.Local)
 	return &latest, nil
 }
 
