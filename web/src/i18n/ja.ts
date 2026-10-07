@@ -1572,7 +1572,7 @@ export const ja: Catalog = {
   'agent.runKinds.alert': 'アラート',
   'agent.runKinds.categorize': '分類',
   'agent.runKinds.statement_import': '明細の取り込み',
-  'agent.runKinds.watch': 'メールの確認',
+  'agent.runKinds.watch': '見守り',
   'agent.runKinds.embed': '索引付け',
   'agent.runKinds.send': '送信',
   'agent.runKinds.backfill': '追いつき',
