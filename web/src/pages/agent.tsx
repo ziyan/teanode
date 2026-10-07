@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
@@ -3803,7 +3803,7 @@ function UnattendedForm({ agent, busy, onSave }: SaveProps) {
       <h4>{t('agent.unattended')}</h4>
       <p className="muted">{t('agent.unattendedHint')}</p>
       {UNATTENDED_RISKS.map((unattendedRisk) => (
-        <div className="field" key={unattendedRisk}>
+        <Fragment key={unattendedRisk}>
           <label className="checkbox">
             <input
               type="checkbox"
@@ -3820,7 +3820,7 @@ function UnattendedForm({ agent, busy, onSave }: SaveProps) {
             {t(`agent.unattended.${unattendedRisk}`)}
           </label>
           <p className="muted field-hint">{t(`agent.unattended.${unattendedRisk}Hint`)}</p>
-        </div>
+        </Fragment>
       ))}
       <SaveRow busy={busy} saved={false} />
     </form>
