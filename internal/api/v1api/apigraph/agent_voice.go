@@ -105,6 +105,17 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	var hello struct {
 		VoiceEvent    string `json:"voiceEvent"`
 		Authorization string `json:"authorization"`
+
+		// CaptureSettings is what the browser says it granted for the
+		// microphone, in the browser's own names: whether echo
+		// cancellation is on is what decides whether a spoken answer will
+		// be heard back as the person talking.
+		CaptureSettings struct {
+			EchoCancellation any `json:"echoCancellation"`
+			NoiseSuppression any `json:"noiseSuppression"`
+			AutoGainControl  any `json:"autoGainControl"`
+			SampleRate       any `json:"sampleRate"`
+		} `json:"captureSettings"`
 	}
 	if messageType, data, err := conn.ReadMessage(); err != nil || messageType != websocket.TextMessage || json.Unmarshal(data, &hello) != nil || hello.VoiceEvent != "hello" {
 		refuse("the first message says hello")
@@ -156,7 +167,8 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		return
 	}
 	started := time.Now()
-	log.Noticef("%s started talking to their agent", username)
+	log.Noticef("%s started talking to their agent (echo cancellation %v, noise suppression %v, gain control %v, capture at %v Hz)", username,
+		hello.CaptureSettings.EchoCancellation, hello.CaptureSettings.NoiseSuppression, hello.CaptureSettings.AutoGainControl, hello.CaptureSettings.SampleRate)
 	defer func() {
 		log.Noticef("%s stopped talking to their agent after %s", username, time.Since(started).Round(time.Second))
 	}()
@@ -209,7 +221,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 // voicePrompt tells the transcription who is being talked to, which is
 // what gets the agent's name spelled right.
 func voicePrompt(found *models.Agent, owner *models.User) string {
-	prompt := "A person talking to their personal agent, " + found.DisplayName() + "."
+	prompt := "A person talking to their personal agent, " + found.DisplayName() + ", in TeaNode, their mail and agent server."
 	if name := strings.TrimSpace(owner.Name); name != "" {
 		prompt += " The person is " + name + "."
 	}
