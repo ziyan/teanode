@@ -57,21 +57,21 @@ func TestTheJudgeSeesTheChosenCommands(t *testing.T) {
 	}
 }
 
-// A call already judged in the turn is not judged again, and a tool with
-// nothing to judge never asks by judgement.
+// A call already judged in the turn is not judged again, and says why it
+// asks; a tool with nothing to judge never asks by judgement.
 func TestACallIsJudgedOncePerTurn(t *testing.T) {
-	run := &AskRun{judgedCalls: map[string]bool{"posts a message": true, "shows a thread": false}}
+	run := &AskRun{judgedCalls: map[string]models.UnattendedRisk{"posts a message": models.UnattendedRiskOutward, "shows a thread": ""}}
 	judged := func(said string) *Tool {
 		return &Tool{Name: "notes", JudgedCall: func(json.RawMessage) string { return said }}
 	}
-	if !run.judgedToAsk(context.Background(), judged("posts a message"), nil) {
-		t.Error("a call judged to ask did not")
+	if reason := run.judgedReason(context.Background(), judged("posts a message"), nil); reason != models.UnattendedRiskOutward {
+		t.Errorf("a call judged to ask did not, or not as outward: %q", reason)
 	}
-	if run.judgedToAsk(context.Background(), judged("shows a thread"), nil) {
-		t.Error("a call judged to run asked")
+	if reason := run.judgedReason(context.Background(), judged("shows a thread"), nil); reason != "" {
+		t.Errorf("a call judged to run asked: %q", reason)
 	}
-	if run.judgedToAsk(context.Background(), &Tool{Name: "plain", Risk: tools.RiskWrite}, nil) {
-		t.Error("a tool with nothing to judge asked")
+	if reason := run.judgedReason(context.Background(), &Tool{Name: "plain", Risk: tools.RiskWrite}, nil); reason != "" {
+		t.Errorf("a tool with nothing to judge asked: %q", reason)
 	}
 }
 

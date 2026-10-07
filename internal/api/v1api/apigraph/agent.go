@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -202,7 +203,12 @@ type UpdateAgentArguments struct {
 	Categories        *[]models.AgentCategory    `json:"categories"`
 	Notifications     *models.AgentNotifications `json:"notifications"`
 	Confirm           *[]string                  `json:"confirm"`
-	AskModel          *string                    `json:"askModel"`
+
+	// UnattendedAllowedRisks are the kinds of action needing the person's
+	// word that the agent may take when they are not there: outward,
+	// destructive, granting, listed.
+	UnattendedAllowedRisks *[]string `json:"unattendedAllowedRisks"`
+	AskModel               *string   `json:"askModel"`
 
 	// DreamFrom and DreamUntil are the hours of this person's night, as
 	// "HH:MM" in their own zone. The nightly run happens between them and
@@ -530,6 +536,16 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 			// the catalog cannot show them, so what is saved from that page
 			// says the same thing in the names it can show.
 			agent.Confirm = agenttools.Rename(*arguments.Confirm)
+		}
+		if arguments.UnattendedAllowedRisks != nil {
+			unattendedAllowedRisks := []models.UnattendedRisk{}
+			for _, word := range *arguments.UnattendedAllowedRisks {
+				unattendedRisk := models.UnattendedRisk(strings.ToLower(strings.TrimSpace(word)))
+				if !slices.Contains(unattendedAllowedRisks, unattendedRisk) {
+					unattendedAllowedRisks = append(unattendedAllowedRisks, unattendedRisk)
+				}
+			}
+			agent.UnattendedAllowedRisks = unattendedAllowedRisks
 		}
 		if arguments.AskModel != nil {
 			choice := strings.TrimSpace(*arguments.AskModel)

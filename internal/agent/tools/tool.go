@@ -415,17 +415,27 @@ func SettledArguments(arguments json.RawMessage) json.RawMessage {
 // class first, then the operator's list, then the person's own. Without
 // arguments it answers for the tool as a whole.
 func NeedsConfirmation(tool *Tool, arguments json.RawMessage, policy *config.AgentTools, agent *models.Agent) bool {
-	risk := tool.RiskFor(arguments)
-	if risk == RiskDestructive || risk == RiskOutward || risk == RiskGranting {
-		return true
+	return len(ConfirmationReasons(tool, arguments, policy, agent)) > 0
+}
+
+// ConfirmationReasons are why a call must wait for the person, in the
+// words the person allows them by for when they are not there: its risk
+// class, and whether it is on the operator's or their own list. None when
+// it need not wait.
+func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.AgentTools, agent *models.Agent) []models.UnattendedRisk {
+	var unattendedRisks []models.UnattendedRisk
+	switch tool.RiskFor(arguments) {
+	case RiskOutward:
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskOutward)
+	case RiskDestructive:
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskDestructive)
+	case RiskGranting:
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskGranting)
 	}
-	if policy != nil && Listed(policy.Confirm, tool) {
-		return true
+	if (policy != nil && Listed(policy.Confirm, tool)) || (agent != nil && Listed(agent.Confirm, tool)) {
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskListed)
 	}
-	if agent != nil && Listed(agent.Confirm, tool) {
-		return true
-	}
-	return false
+	return unattendedRisks
 }
 
 // ResultCharacters bounds a tool's answer as the history keeps it and as

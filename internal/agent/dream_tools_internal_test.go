@@ -271,9 +271,10 @@ func (self *sendingOperations) Permissions() *models.EffectivePermissions {
 // tool, so it is in the round from the start, and nothing filters it out
 // any more. What stops it is the confirmation card, which cannot be shown
 // to an empty room -- so the call comes back refused and the night is told
-// to say what it would have done. This is the line the whole change rests
-// on, and it is worth a test that fails loudly if somebody ever decides an
-// unattended run may confirm its own calls.
+// to say what it would have done, unless the person allowed that kind of
+// action for when they are not there, which by default they have not (see
+// unattended_internal_test.go). Worth a test that fails loudly if the
+// default ever changes.
 func TestTheNightIsRefusedWhatLeavesTheServer(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()

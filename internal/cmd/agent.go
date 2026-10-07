@@ -195,6 +195,8 @@ func newAgentSettingsCommand() *cli.Command {
 					"alerts (true|false: whether it tells you unasked what your mail says you should know now),\n" +
 					"alert-quiet-start, alert-quiet-end (HH:MM in your zone: its night, when only what cannot wait is said),\n" +
 					"alert-daily-most (how many a day at most; 0 for the default of 5),\n" +
+					"unattended (comma list of outward, destructive, granting, listed: what it may do without your word\n" +
+					"when you are not there; empty for nothing),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
 					"voice.signoff, notify.held-reply, notify.high-priority, notify.run-failed (off|dashboard|mail).\n" +
 					"A value of \"-\" reads standard input.\n\n" +
@@ -552,7 +554,10 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		DailyCost          float64    `json:"dailyCost"`
 		OperatorDisabledAt *time.Time `json:"operatorDisabledAt"`
 		Confirm            []string   `json:"confirm"`
-		Categories         []struct {
+		// UnattendedAllowedRisks are the kinds of action needing their
+		// word that the agent may take when they are not there.
+		UnattendedAllowedRisks []string `json:"unattendedAllowedRisks"`
+		Categories             []struct {
 			Name        string `json:"name"`
 			Description string `json:"description"`
 		} `json:"categories"`
@@ -608,6 +613,13 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 	if len(agent.Confirm) > 0 {
 		fields = append(fields, [2]string{"always confirm", strings.Join(agent.Confirm, ", ")})
 	}
+	// Shown even when empty: "nothing" is the answer to "what may it do
+	// when I am not there", and worth seeing.
+	unattended := "nothing that needs your word"
+	if len(agent.UnattendedAllowedRisks) > 0 {
+		unattended = strings.Join(agent.UnattendedAllowedRisks, ", ")
+	}
+	fields = append(fields, [2]string{"may do without you", unattended})
 	if agent.Instructions != "" {
 		fields = append(fields, [2]string{"instructions", truncate(agent.Instructions, 200)})
 	}
@@ -684,6 +696,8 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 			variables["alertDailyMost"] = most
 		case "confirm":
 			variables["confirm"] = commaList(value)
+		case "unattended":
+			variables["unattendedAllowedRisks"] = commaList(value)
 		case "voice.tone", "voice.length", "voice.greeting", "voice.signoff":
 			voice[strings.TrimPrefix(key, "voice.")] = value
 		case "notify.held-reply":

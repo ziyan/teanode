@@ -102,7 +102,7 @@ type AgentJob struct {
 
 const agentViewSelection = `{
 	agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dreamedAt
-		dailyTokens dailyCost operatorDisabledAt confirm
+		dailyTokens dailyCost operatorDisabledAt confirm unattendedAllowedRisks
 		isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
 		voice { tone length greeting signoff }
 		categories { name description }
@@ -132,12 +132,12 @@ const (
 
 	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
 		$voice: AgentVoiceInput, $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput,
-		$confirm: [String!], $askModel: String, $dreamFrom: String, $dreamUntil: String,
+		$confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $dreamFrom: String, $dreamUntil: String,
 		$isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int,
 		$forget: Boolean) {
 		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
 			voice: $voice, categories: $categories, notifications: $notifications, confirm: $confirm,
-			askModel: $askModel, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil,
+			unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil,
 			isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd,
 			alertDailyMost: $alertDailyMost, forget: $forget) ` + agentViewSelection + `
 	}`

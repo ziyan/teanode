@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Whether a command a skill runs on the person's own computer asks first.
@@ -29,32 +30,43 @@ const (
 	callRiskDestructive = "destructive"
 )
 
-// judgedToAsk says whether a call the tool wants judged should ask the
-// person first. The same call judged once in a turn is not judged again.
-func (self *AskRun) judgedToAsk(ctx context.Context, tool *Tool, arguments json.RawMessage) bool {
+// judgedReason says why a call the tool wants judged should ask the person
+// first, in the words they allow it by when they are not there, or nothing
+// when it need not ask. The same call judged once in a turn is not judged
+// again.
+func (self *AskRun) judgedReason(ctx context.Context, tool *Tool, arguments json.RawMessage) models.UnattendedRisk {
 	if tool.JudgedCall == nil {
-		return false
+		return ""
 	}
 	call := tool.JudgedCall(tools.SettledArguments(arguments))
 	if call == "" {
-		return false
+		return ""
 	}
 	self.mutex.Lock()
-	isAsking, isJudged := self.judgedCalls[call]
+	unattendedRisk, isJudged := self.judgedCalls[call]
 	self.mutex.Unlock()
 	if isJudged {
-		return isAsking
+		return unattendedRisk
 	}
 	callRisk, riskReason := self.judgeCall(ctx, call)
-	isAsking = callRisk != callRiskRead && callRisk != callRiskChange
+	switch callRisk {
+	case callRiskRead, callRiskChange:
+		unattendedRisk = ""
+	case callRiskOutward:
+		unattendedRisk = models.UnattendedRiskOutward
+	default:
+		// Destructive, and anything the judgement could not name, which
+		// is treated as the worst.
+		unattendedRisk = models.UnattendedRiskDestructive
+	}
 	log.Infof("the agent of %q judged a call of %s %s: %s", self.settings.Owner.Username, tool.Name, callRisk, riskReason)
 	self.mutex.Lock()
 	if self.judgedCalls == nil {
-		self.judgedCalls = map[string]bool{}
+		self.judgedCalls = map[string]models.UnattendedRisk{}
 	}
-	self.judgedCalls[call] = isAsking
+	self.judgedCalls[call] = unattendedRisk
 	self.mutex.Unlock()
-	return isAsking
+	return unattendedRisk
 }
 
 // judgeCall asks the fast model what the call would do. Anything that goes
