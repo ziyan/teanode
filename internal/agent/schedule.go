@@ -172,6 +172,15 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	// a run holding the whole tool kit with that sentence as the person's own
 	// instruction. So the agent's own standing instructions arrive marked as
 	// what they are.
+	// A goal kept by a schedule reads what its work left on the schedule's
+	// turn, which starts again the count of turns that work may wake there.
+	if conversation.IsGoal() {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.ResetAgentConversationBackgroundWakes(conversation.ID)
+		}); err != nil {
+			return err
+		}
+	}
 	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, UsageKind: string(models.AgentJobSchedule)})
 	if err != nil {
 		return err

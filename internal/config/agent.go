@@ -1336,6 +1336,13 @@ func (self *Configuration) validateAgent(validator *validator) {
 			if server.ResolvedTransport() != AgentMCPTransportStdio {
 				validator.add(prefix+".location", "a server on the person's computer is spoken to over a command, not a URL")
 			}
+			// headless offers a server's read-only tools to the restricted
+			// runs that read mail from strangers -- sorting, research --
+			// which is no place for the person's own machine. Schedules,
+			// goals and nights reach it without the flag.
+			if server.Headless {
+				validator.add(prefix+".headless", "a server on the person's computer is not offered to the runs that read mail from strangers; it cannot be headless")
+			}
 		}
 		switch server.Auth {
 		case "", AgentMCPAuthNone, AgentMCPAuthStatic, AgentMCPAuthUser, AgentMCPAuthOAuth:

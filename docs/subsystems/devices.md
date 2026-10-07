@@ -232,7 +232,9 @@ card, which they can widen to every browser call by putting `browser` in their
 own confirm list. A password already on the page is not read back into the
 conversation, which is a different question from typing one in.
 
-A run with nobody present uses the tab as a turn the person watches does.
+A run with nobody present reads the tab but does not act in it: a click or
+a keystroke there acts as the person, signed in, and no card can be shown to
+an empty room to ask first.
 
 ## The headless browser
 

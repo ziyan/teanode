@@ -850,7 +850,7 @@ func (self *AskRun) turn() error {
 	// The catalog as this person sees it, and what the connected servers
 	// offer them.
 	self.offered = self.agent.catalog.Offered(settings.Operations.Permissions(), &configuration.Agent.Tools)
-	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID, settings.Headless) {
+	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
 		}
