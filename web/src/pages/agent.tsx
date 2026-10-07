@@ -890,7 +890,7 @@ const KNOWLEDGE_SOURCES = `
     ListAgentKnowledgeSources {
       id kind name specification { type settings computer path format mailboxId readEveryCheckout }
       rootPath enabled cron lastRunAt lastError documentCount chunkCount refusedCount more
-      unknownAuthors checkoutsKeptToProfile filesKeptToProfile
+      checkoutsKeptToProfile filesKeptToProfile
     }
   }`
 
@@ -983,7 +983,6 @@ type KnowledgeSource = {
   chunkCount: number
   refusedCount: number
   more: boolean
-  unknownAuthors: string[]
   // The checkouts under this source that hold none of the person's
   // commits: kept to what git says about them, their files left unread.
   checkoutsKeptToProfile: number
@@ -2386,17 +2385,6 @@ function KnowledgeSourcesCard() {
                   <>
                     <br />
                     <span className="muted">{source.lastError}</span>
-                  </>
-                ) : null}
-                {/* Whose commits it could not place: the one thing that
-                    makes every answer built on the source quietly empty,
-                    and takes a minute to fix. */}
-                {source.unknownAuthors.length > 0 ? (
-                  <>
-                    <br />
-                    <span className="muted">
-                      {t('agent.knowledgeUnknownAuthors', { names: source.unknownAuthors.join(', ') })}
-                    </span>
                   </>
                 ) : null}
               </>

@@ -5970,8 +5970,7 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
     height: var(--agent-drawer-height);
   }
 
-  .agent-drawer-head.movable,
-  .agent-drawer-note.movable {
+  .agent-drawer-head.movable {
     cursor: move;
     touch-action: none;
   }
@@ -8379,13 +8378,6 @@ p.notice.domain-logo-note {
   border-radius: 50%;
   background: var(--background);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-}
-
-.agent-drawer-note {
-  margin: 0;
-  padding: 0 12px 8px;
-  font-size: 11px;
-  text-align: center;
 }
 
 .agent-drawer-search {

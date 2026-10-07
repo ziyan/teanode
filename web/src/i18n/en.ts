@@ -1194,7 +1194,6 @@ export const en = {
   'agentDrawer.citedFrom': 'what this was read from, from {where}',
   'agentDrawer.citedFile': 'what this was read from',
   'agentDrawer.citedOpen': 'Open the picture full size',
-  'agentDrawer.mistakes': 'AI can make mistakes.',
   'agentDrawer.attach': 'Attach a file',
   'agentDrawer.remove': 'Remove',
   'agentDrawer.financeTransactionReference': 'Transaction: {day}, {name}, {amount}',
@@ -2956,8 +2955,6 @@ export const en = {
     'A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.',
   'agent.knowledgeCron': 'How often to read it, as a cron line',
   'agent.knowledgeCronHint': 'Five fields, in your own zone. Leave it empty and it is read once a night.',
-  'agent.knowledgeUnknownAuthors':
-    'The commits here are by {names}, and none of those is you — so none of this counts as your work.',
   'agent.knowledgeRefused': '{count} held back on the machine',
   'agent.knowledgeKeptToProfile':
     '{checkouts} checkouts here hold too few of your commits to be your work, so they are kept to their profile — what they are and where they live — and {files} files in them are left unread.',
@@ -3357,8 +3354,6 @@ export const en = {
   'finance.tabNetWorth': 'Net worth',
   'finance.tabSavingsTargets': 'Savings targets',
   'finance.title': 'Finance',
-  'finance.setupPointer': 'Linking institutions and the reporting currency are set up here. What they report is on the Finance page.',
-  'finance.openFinancePage': 'Open the Finance page',
   'finance.notShown': 'Finance appears here when your agent is on and this server offers a way to link institutions, or when you have linked one already.',
   'finance.openAgentPage': 'Open your agent page',
   'finance.nothingLinkedPointer': 'No institution is linked yet, so there is nothing to show here.',

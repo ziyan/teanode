@@ -1188,7 +1188,6 @@ export const ja: Catalog = {
   'agentDrawer.citedFrom': 'これを読み取った元（{where}）',
   'agentDrawer.citedFile': 'これを読み取った元',
   'agentDrawer.citedOpen': '画像を原寸で開く',
-  'agentDrawer.mistakes': 'AI は間違えることがあります。',
   'agentDrawer.attach': 'ファイルを添付',
   'agentDrawer.remove': '削除',
   'agentDrawer.financeTransactionReference': '取引：{day}、{name}、{amount}',
@@ -2919,8 +2918,6 @@ export const ja: Catalog = {
   'agent.knowledgeUnderHint': 'グラフ内のページ（たとえば projects）。空のままならエージェントが置き場所を決めます。',
   'agent.knowledgeCron': 'どのくらいの頻度で読むか（cron 形式）',
   'agent.knowledgeCronHint': '5 つのフィールド、あなたのタイムゾーンで。空のままなら毎晩 1 回読みます。',
-  'agent.knowledgeUnknownAuthors':
-    'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
   'agent.knowledgeRefused': '{count} 件がその機械で止められました',
   'agent.knowledgeKeptToProfile':
     'ここの {checkouts} 件のチェックアウトはあなたのコミットが少なすぎてあなたの仕事とは言えないため、何でありどこにあるかという概要だけを残し、その中の {files} 件のファイルは読んでいません。',
@@ -3314,8 +3311,6 @@ export const ja: Catalog = {
   'finance.tabNetWorth': '純資産',
   'finance.tabSavingsTargets': '貯蓄目標',
   'finance.title': '金融',
-  'finance.setupPointer': '金融機関の連携と表示通貨はここで設定します。金融機関から届いた内容は「金融」ページで見られます。',
-  'finance.openFinancePage': '「金融」ページを開く',
   'finance.notShown': 'エージェントがオンで、このサーバーが金融機関の連携手段を提供しているとき、またはすでに連携しているときに、ここに金融が表示されます。',
   'finance.openAgentPage': 'エージェントのページを開く',
   'finance.nothingLinkedPointer': 'まだ金融機関を連携していないため、ここに表示するものはありません。',
