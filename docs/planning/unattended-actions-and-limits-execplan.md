@@ -15,14 +15,15 @@ To see it working: on the agent page's settings, under "When you are not there",
 ## Progress
 
 - [x] (2026-10-06) Surveyed the confirmation gate (`internal/agent/ask.go`, `tools.NeedsConfirmation`, `command_judge.go`), the tools that check `call.Confirmed` themselves, the agent settings path (model, migration, database, `UpdateAgent`, client, `teanode agent settings`, the agent page), and every cap.
-- [ ] Milestone 1: unattended allowances, end to end.
-- [ ] Milestone 2: the caps as server limits, end to end.
-- [ ] Milestone 3: tests, docs, deploy.
+- [x] (2026-10-06) Milestone 1: unattended allowances, end to end: migration 0151, the gate, the API, `teanode agent settings set unattended=`, `agent_profile`, and the agent page.
+- [x] (2026-10-06) Milestone 2: the caps as server limits, end to end, on the server's agent settings page and in `teanode settings`.
+- [x] (2026-10-06) Milestone 3: tests and docs; checked in Chrome at 1400 and 390 pixels, light and dark; deployed. The maintainer's server had 40 rounds a turn saved, which the new default does not change; it was raised to 150 with `teanode settings set agent 'limits:={"maxRoundsPerAsk":150}'`.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- `teanode settings show agent` asks for the limits by name, so a new limit is invisible there until the client's selection names it.
+- A saved configuration keeps the round cap it saved: raising the default changes nothing on a server whose operator once pressed Save on the limits.
 
 
 ## Decision Log
