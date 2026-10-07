@@ -1321,7 +1321,7 @@ export const zh: Catalog = {
   'agent.unattended.granting': '授予访问',
   'agent.unattended.grantingHint': '分享内容，或让别人访问你的东西。',
   'agent.unattended.listed': '使用“先问我”里的工具',
-  'agent.unattended.listedHint': '你或运营者列为总要先问的工具。',
+  'agent.unattended.listedHint': '你列为总要先问的工具。运营者列出的工具总会等你确认。',
   'agent.confirmTools': '先问我',
   'agent.voice': '语气',
   'agent.voiceHint': '它替你写作时的语气：起草的回复，以及代你发出的回信。',

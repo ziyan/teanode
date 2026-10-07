@@ -1360,7 +1360,7 @@ export const ja: Catalog = {
   'agent.unattended.granting': 'アクセスを与える',
   'agent.unattended.grantingHint': '共有する、あなたのものへのアクセスを誰かに与える。',
   'agent.unattended.listed': '「先に確認」のツールを使う',
-  'agent.unattended.listedHint': 'あなたまたは運用者が常に確認するよう指定したツール。',
+  'agent.unattended.listedHint': 'あなたが常に確認するよう指定したツール。運用者が指定したものは常にあなたを待ちます。',
   'agent.confirmTools': '先に確認',
   'agent.voice': '口調',
   'agent.voiceHint': 'あなたの代わりに書くときの口調。下書きする返信と、代わりに送る返答に使われます。',
