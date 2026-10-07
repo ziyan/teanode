@@ -30,8 +30,8 @@ export const RUN_KINDS = [
   'alert',
   'categorize',
   'statement_import',
-  // A message in a mailbox this server does not host, read through a
-  // skill and sorted.
+  // An item a skill's watch found -- mail, a transaction, a mention --
+  // judged.
   'watch',
 ]
 

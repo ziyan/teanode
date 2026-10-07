@@ -107,8 +107,17 @@ type Agent struct {
 	lastDream    time.Time
 	lastSpeak    time.Time
 	lastWatch    time.Time
-	lastEvaluate time.Time
-	describing   atomic.Bool
+
+	// watchesQueuedAt is when a look was last queued for each person's
+	// watch, by agent and skill/watch; see queueWatching.
+	watchMutex      sync.Mutex
+	watchesQueuedAt map[string]time.Time
+
+	// watchJudgements are the judgements of the commands watches run, by
+	// the call as the judge saw it; see judgedWatchCall.
+	watchJudgements map[string]string
+	lastEvaluate    time.Time
+	describing      atomic.Bool
 
 	// presence is who has a dashboard open; see presence.go.
 	presence presence

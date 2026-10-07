@@ -78,7 +78,7 @@ func candidateFacts(candidate *models.AgentAlertCandidate, from, category string
 	// A watched message is not stored: who sent it and what the sorting
 	// called it travel on the candidate.
 	if candidate.CandidateKind == models.AlertCandidateWatched {
-		from, category = candidate.WatchedSender, candidate.WatchedMailCategory
+		from, category = candidate.WatchedSender, candidate.WatchedCategory
 	}
 	facts := &alertFacts{senderAddress: alertSenderAddress(from), burstKey: candidate.BurstKey}
 	if candidate.BurstKey != "" {
@@ -355,8 +355,8 @@ func coveredByAlert(tx db.Transaction, alert *models.AgentAlert) ([]*AlertCovere
 	for _, candidate := range candidates {
 		if candidate.CandidateKind == models.AlertCandidateWatched {
 			covered = append(covered, &AlertCovered{
-				Subject: candidate.WatchedSubject, FromAddress: alertSenderAddress(candidate.WatchedSender),
-				CandidateKind: string(candidate.CandidateKind), MailCategory: candidate.WatchedMailCategory,
+				Subject: candidate.WatchedTitle, FromAddress: alertSenderAddress(candidate.WatchedSender),
+				CandidateKind: string(candidate.CandidateKind), MailCategory: candidate.WatchedCategory,
 			})
 			continue
 		}

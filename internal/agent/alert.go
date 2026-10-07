@@ -150,14 +150,14 @@ func renderAlertCandidate(labeled *labeledCandidate) string {
 		// person's own. Nothing a stranger wrote, so nothing to fence.
 		return fmt.Sprintf("Candidate %s: a budget crossing the server computed after a sync of their finance accounts, not a message.\nWhat the numbers say: %s", labeled.label, candidate.CandidateReason)
 	case models.AlertCandidateWatched:
-		// Read from a mailbox this server does not host: the message as
-		// the sorting saw it is on the candidate, and is a stranger's text
-		// like any other message.
-		header = fmt.Sprintf("Candidate %s: a message in their %s, read through the %s skill, that the sorting marked %s.", labeled.label, watchedMailboxName, candidate.WatchedSkillName, candidate.AlertSignal)
+		// Found by a skill's watch: the item as the judgement saw it is on
+		// the candidate -- mail, a transaction, a mention -- and is text
+		// from outside like any message.
+		header = fmt.Sprintf("Candidate %s: something the %s skill's watch (%s) found, which the judgement marked %s.", labeled.label, candidate.WatchedSkillName, candidate.WatchedWatchName, candidate.AlertSignal)
 		if candidate.CandidateReason != "" {
-			inside = append(inside, "The sorting's note: "+candidate.CandidateReason)
+			inside = append(inside, "The judgement's note: "+candidate.CandidateReason)
 		}
-		inside = append(inside, candidate.WatchedMessageText)
+		inside = append(inside, candidate.WatchedItemText)
 		return header + "\n" + fenced(strings.Join(inside, "\n\n"))
 	case models.AlertCandidateBurst:
 		header = fmt.Sprintf("Candidate %s: a burst of %d messages alike in %d hours, counted by the server. The latest of them:", labeled.label, candidate.BurstCount, int(burstWindow.Hours()))
@@ -293,10 +293,6 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 			// when the person's switch or the sorting itself is off.
 			if !isAlertingAllowed(configuration, run.Agent, nil) {
 				gone = append(gone, candidate.ID)
-				continue
-			}
-			if candidate.WatchedMessageAt != nil && now.Sub(*candidate.WatchedMessageAt) > alertFreshness {
-				staleIds = append(staleIds, candidate.ID)
 				continue
 			}
 			facts := candidateFacts(candidate, "", "")
@@ -478,7 +474,7 @@ func (self *Agent) alertPages(ctx context.Context, run *Run, labeled []*labeledC
 	var words []string
 	for _, entry := range labeled {
 		if entry.candidate.CandidateKind == models.AlertCandidateWatched {
-			words = append(words, entry.candidate.WatchedSender, entry.candidate.WatchedSubject)
+			words = append(words, entry.candidate.WatchedSender, entry.candidate.WatchedTitle)
 			continue
 		}
 		if entry.message == nil {
@@ -759,7 +755,7 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 			return candidate.BurstKey
 		}
 		if candidate.CandidateKind == models.AlertCandidateWatched {
-			return candidate.WatchedSkillName + " " + candidate.WatchedMessageID
+			return candidate.WatchedSkillName + " " + candidate.WatchedWatchName + " " + candidate.WatchedItemID
 		}
 		return "mail " + candidate.MailID
 	}
