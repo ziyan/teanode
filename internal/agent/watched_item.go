@@ -43,6 +43,9 @@ const (
 
 	// watchedItemsKept is how long the record of an item looked at is kept.
 	watchedItemsKept = 30 * 24 * time.Hour
+
+	// watchFirstLookID is the record a first look leaves of itself.
+	watchFirstLookID = "(first look)"
 )
 
 // watchSubject is a watch job's subject: the skill and the watch.
@@ -276,7 +279,7 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 	if err != nil {
 		return fmt.Errorf("%s on %s: %w", watchSubject(skill.Name, watch.Name), where, err)
 	}
-	if len(items) == 0 {
+	if len(items) == 0 && !isFirstLook {
 		return nil
 	}
 	var looked map[string]bool
@@ -305,8 +308,17 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 	})
 	if isFirstLook {
 		// What is already there when a watch starts is not news: noted,
-		// so that the next look starts from it, and not judged.
+		// so that the next look starts from it, and not judged. The look
+		// itself is noted too, so that a first look that found nothing
+		// does not leave the next one a first look, which would note the
+		// first item to arrive rather than judge it.
 		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			if err := tx.AddAgentWatchedItem(&models.AgentWatchedItem{
+				AgentID: run.Agent.ID, SkillName: skill.Name, WatchName: watch.Name,
+				WatchedItemID: watchFirstLookID, WatchedItemAt: now, LookedAt: now,
+			}); err != nil {
+				return err
+			}
 			for _, item := range fresh {
 				if err := tx.AddAgentWatchedItem(watchedItemRecord(run.Agent.ID, skill, watch, item, now)); err != nil {
 					return err
