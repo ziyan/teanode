@@ -112,6 +112,14 @@ type agentAlertCandidateModel struct {
 	AlertID         string     `gorm:"column:alert_id"`
 	DroppedAt       *time.Time `gorm:"column:dropped_at"`
 	DropReason      string     `gorm:"column:drop_reason"`
+
+	WatchedSkillName    string     `gorm:"column:watched_skill_name"`
+	WatchedMessageID    string     `gorm:"column:watched_message_id"`
+	WatchedSender       string     `gorm:"column:watched_sender"`
+	WatchedSubject      string     `gorm:"column:watched_subject"`
+	WatchedMailCategory string     `gorm:"column:watched_mail_category"`
+	WatchedMessageAt    *time.Time `gorm:"column:watched_message_at"`
+	WatchedMessageText  string     `gorm:"column:watched_message_text"`
 }
 
 func (agentAlertCandidateModel) TableName() string { return "agent_alert_candidate" }
@@ -122,6 +130,9 @@ func (self *agentAlertCandidateModel) toModel() *models.AgentAlertCandidate {
 		CandidateKind: models.AlertCandidateKind(self.CandidateKind), AlertSignal: self.AlertSignal, CandidateReason: self.CandidateReason,
 		BurstKey: self.BurstKey, BurstCount: self.BurstCount, BudgetKey: self.BudgetKey, CreatedAt: self.CreatedAt.In(time.Local),
 		AlertID: self.AlertID, DroppedAt: self.DroppedAt, DropReason: self.DropReason,
+		WatchedSkillName: self.WatchedSkillName, WatchedMessageID: self.WatchedMessageID, WatchedSender: self.WatchedSender,
+		WatchedSubject: self.WatchedSubject, WatchedMailCategory: self.WatchedMailCategory, WatchedMessageAt: localTime(self.WatchedMessageAt),
+		WatchedMessageText: self.WatchedMessageText,
 	}
 }
 
@@ -132,6 +143,9 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 	if candidate.CandidateKind == models.AlertCandidateBudget && candidate.BudgetKey == "" {
 		return nil, fmt.Errorf("db: a budget alert candidate needs a budget key")
 	}
+	if candidate.CandidateKind == models.AlertCandidateWatched && (candidate.WatchedSkillName == "" || candidate.WatchedMessageID == "") {
+		return nil, fmt.Errorf("db: a watched alert candidate needs its skill and its message")
+	}
 	alertSignal := candidate.AlertSignal
 	if alertSignal == "" {
 		alertSignal = models.AlertSignalNone
@@ -140,6 +154,9 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 		ID: newID(), AgentID: candidate.AgentID, MailboxID: candidate.MailboxID, MailID: candidate.MailID,
 		CandidateKind: string(candidate.CandidateKind), AlertSignal: alertSignal, CandidateReason: candidate.CandidateReason,
 		BurstKey: candidate.BurstKey, BurstCount: candidate.BurstCount, BudgetKey: candidate.BudgetKey, CreatedAt: time.Now(),
+		WatchedSkillName: candidate.WatchedSkillName, WatchedMessageID: candidate.WatchedMessageID, WatchedSender: candidate.WatchedSender,
+		WatchedSubject: candidate.WatchedSubject, WatchedMailCategory: candidate.WatchedMailCategory, WatchedMessageAt: candidate.WatchedMessageAt,
+		WatchedMessageText: candidate.WatchedMessageText,
 	}
 	if model.BudgetKey == "" {
 		if err := self.tx.Create(model).Error; err != nil {

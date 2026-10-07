@@ -30,6 +30,9 @@ export const RUN_KINDS = [
   'alert',
   'categorize',
   'statement_import',
+  // A message in a mailbox this server does not host, read through a
+  // skill and sorted.
+  'watch',
 ]
 
 // runKindLabel is a run's kind in the reader's words. A kind this dashboard

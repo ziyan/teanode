@@ -1565,6 +1565,7 @@ export const en = {
   'agent.runKinds.alert': 'Alert',
   'agent.runKinds.categorize': 'Categorizing',
   'agent.runKinds.statement_import': 'Statement import',
+  'agent.runKinds.watch': 'Watching mail',
   'agent.runKinds.embed': 'Indexing',
   'agent.runKinds.send': 'Sending',
   'agent.runKinds.backfill': 'Catching up',
