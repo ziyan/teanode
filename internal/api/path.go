@@ -20,6 +20,10 @@ const (
 	// through, for the person's agent.
 	PathAgentTab = Prefix + "/agent/tab"
 
+	// PathAgentVoice is the websocket the drawer streams the microphone
+	// over, for the server to have transcribed.
+	PathAgentVoice = Prefix + "/agent/voice"
+
 	// PathAgentComputer is the websocket `teanode computer` attaches the
 	// person's computer through.
 	PathAgentComputer = Prefix + "/agent/computer"
@@ -204,7 +208,7 @@ const ()
 // login endpoints have to live outside GraphQL.
 func PublicPaths() []string {
 	return []string{
-		PathGraphQL, PathAgentTab, PathAgentComputer,
+		PathGraphQL, PathAgentTab, PathAgentComputer, PathAgentVoice,
 		// A program reads these precisely because it has no credential
 		// yet; refusing them would refuse the answer to the refusal.
 		PathOAuthProtectedResource, PathOAuthProtectedResourceMCP, PathOAuthAuthorizationServer,

@@ -51,6 +51,7 @@ type Query interface {
 	AgentSourceSecretQuery
 	AgentChannelQuery
 	AgentTabQuery
+	AgentVoiceQuery
 	AgentComputerQuery
 	AgentBackgroundQuery
 	AgentBackgroundWorkQuery
