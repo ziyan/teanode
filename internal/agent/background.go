@@ -331,6 +331,9 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
 		Message: backgroundWakeMessage(wake.endings, wake.works), Surface: backgroundSurface,
 		UsageKind: backgroundSurface,
+		// In a goal's conversation nobody is there to answer a card: what
+		// the person allows the agent to do alone applies instead.
+		isUnattended: conversation.IsGoal(),
 	})
 	if err != nil {
 		return err

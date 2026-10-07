@@ -27,6 +27,8 @@ const (
 	callRiskRead        = "read"
 	callRiskChange      = "change"
 	callRiskOutward     = "outward"
+	callRiskGranting    = "granting"
+	callRiskMoney       = "money"
 	callRiskDestructive = "destructive"
 )
 
@@ -54,6 +56,10 @@ func (self *AskRun) judgedReason(ctx context.Context, tool *Tool, arguments json
 		unattendedRisk = ""
 	case callRiskOutward:
 		unattendedRisk = models.UnattendedRiskOutward
+	case callRiskGranting:
+		unattendedRisk = models.UnattendedRiskGranting
+	case callRiskMoney:
+		unattendedRisk = models.UnattendedRiskMoney
 	default:
 		// Destructive, and anything the judgement could not name, which
 		// is treated as the worst.
@@ -109,7 +115,7 @@ func readCallRisk(text string) (string, string) {
 		return callRiskDestructive, "could not read the judgement"
 	}
 	switch callRisk := strings.ToLower(strings.TrimSpace(judged.Value.CallRisk)); callRisk {
-	case callRiskRead, callRiskChange, callRiskOutward, callRiskDestructive:
+	case callRiskRead, callRiskChange, callRiskOutward, callRiskGranting, callRiskMoney, callRiskDestructive:
 		return callRisk, strings.TrimSpace(judged.Value.RiskReason)
 	}
 	return callRiskDestructive, "an answer that is not a risk"

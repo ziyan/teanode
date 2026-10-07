@@ -148,8 +148,12 @@ type Call struct {
 	ID        string
 	Arguments json.RawMessage
 
-	// Confirmed says the person approved this call.
-	Confirmed bool
+	// Confirmed says the person approved this call, and
+	// IsConfirmedUnattended that it was not the person but what they allow
+	// the agent to do when they are not there: a call that changes what
+	// they allow refuses to be confirmed that way.
+	Confirmed             bool
+	IsConfirmedUnattended bool
 }
 
 // Result is what a tool answers, for the model and for the person.
@@ -420,8 +424,8 @@ func NeedsConfirmation(tool *Tool, arguments json.RawMessage, policy *config.Age
 
 // ConfirmationReasons are why a call must wait for the person, in the
 // words the person allows them by for when they are not there: its risk
-// class, and whether it is on the operator's or their own list. None when
-// it need not wait.
+// class, and whether it is on their own list or the operator's, which no
+// person can allow. None when it need not wait.
 func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.AgentTools, agent *models.Agent) []models.UnattendedRisk {
 	var unattendedRisks []models.UnattendedRisk
 	switch tool.RiskFor(arguments) {
@@ -432,7 +436,10 @@ func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.A
 	case RiskGranting:
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskGranting)
 	}
-	if (policy != nil && Listed(policy.Confirm, tool)) || (agent != nil && Listed(agent.Confirm, tool)) {
+	if policy != nil && Listed(policy.Confirm, tool) {
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskOperatorListed)
+	}
+	if agent != nil && Listed(agent.Confirm, tool) {
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskListed)
 	}
 	return unattendedRisks

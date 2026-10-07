@@ -41,6 +41,8 @@ To see it working: on the agent page's settings, under "When you are not there",
   Date/Author: 2026-10-06.
 
 
+- Review, 2026-10-07: `outward` covered money and the judge's `destructive` covered sharing, so ticking "speak for you" let a goal place an order; money is its own kind now and the judge answers `money` and `granting`. The operator's confirm list had become allowable as `listed`; it is its own reason no person can allow. The allowance reached read-only runs through a read tool on a confirm list; restricted runs never use it now. A background subagent could widen the setting with a call the allowance let through; the setting changes only on a card the person answered. The turn prompts still told the model nothing needing confirmation could be done; they now list what is allowed. Subagents of unattended turns and turns woken in a goal's conversation waited on cards nobody would see; they use the allowance.
+
 ## Outcomes & Retrospective
 
 (To be written when the work is done.)
@@ -58,9 +60,9 @@ To see it working: on the agent page's settings, under "When you are not there",
 
 ## Plan of Work
 
-Milestone 1. Migration 0151 adds `agent.unattended_allowed_risks` (jsonb, `[]`). `models.Agent.UnattendedAllowedRisks` with validation against the four kinds. `tools.ConfirmationReasons` gives the kinds a call needs confirmation for; `NeedsConfirmation` becomes "any reason". `judgedToAsk` returns the judged kind. In `ask.go`, when nobody can confirm, a call whose reasons are all allowed runs with `call.Confirmed` set and a log line; otherwise it is refused with a message naming the setting. `UpdateAgent` takes `unattendedAllowedRisks`; the client, `teanode agent settings set --unattended`, and the `agent_profile` tool (read, and change with confirmation, never unattended) carry it; the agent page gets a "When you are not there" form under "Ask me first".
+Milestone 1. Migration 0151 adds `agent.unattended_allowed_risks` (jsonb, `[]`). `models.Agent.UnattendedAllowedRisks` with validation against the four kinds. `tools.ConfirmationReasons` gives the kinds a call needs confirmation for; `NeedsConfirmation` becomes "any reason". `judgedToAsk` returns the judged kind. In `ask.go`, when nobody can confirm, a call whose reasons are all allowed runs with `call.Confirmed` set and a log line; otherwise it is refused with a message naming the setting. `UpdateAgent` takes `unattendedAllowedRisks`; the client, `teanode agent settings set unattended=`, and the `agent_profile` tool (read, and change with confirmation, never unattended) carry it; the agent page gets a "When you are not there" form under "Ask me first".
 
-Milestone 2. `AgentLimits` gains `GoalTurnsPerDay`, `GoalTurnsAlone`, `GoalsInProgress`, `WakesWithoutPerson`, `MaxRoundsPerSubagent`, each zero for the default, with resolvers; the code reads them instead of constants. `MaxRoundsPerAsk` defaults to 150. The server's agent settings page and `docs/configuration.md` gain the fields.
+Milestone 2. `AgentLimits` gains `GoalTurnsPerDay`, `GoalTurnsAlone`, `GoalsInProgress`, `BackgroundWakesAlone`, `MaxRoundsPerSubagent`, each zero for the default, with resolvers; the code reads them instead of constants. `MaxRoundsPerAsk` defaults to 150. The server's agent settings page and `docs/configuration.md` gain the fields.
 
 Milestone 3. Tests for the gate (allowed, partly allowed, refused), the setting's validation and round trip, the limits' resolution; docs; a run on the server.
 

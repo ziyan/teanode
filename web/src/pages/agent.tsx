@@ -103,7 +103,7 @@ export type Agent = {
   notifications?: AgentNotifications | null
   confirm: string[]
   // The kinds of action needing the person's word that the agent may take
-  // when they are not there: outward, destructive, granting, listed.
+  // when they are not there: outward, money, destructive, granting, listed.
   unattendedAllowedRisks?: string[]
   askModel?: string
   dreamFrom?: string
@@ -3779,7 +3779,7 @@ function ConfirmForm({ agent, busy, onSave }: SaveProps) {
 
 // UNATTENDED_RISKS are the kinds of action that need the person's word, in
 // the order the form shows them.
-const UNATTENDED_RISKS = ['outward', 'destructive', 'granting', 'listed'] as const
+const UNATTENDED_RISKS = ['outward', 'money', 'destructive', 'granting', 'listed'] as const
 
 // UnattendedForm: which of the kinds of action that need the person's word
 // the agent may take when they are not there to give it, in a schedule, a

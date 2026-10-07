@@ -33,7 +33,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_profile", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. For the person's own name use account_update.",
+				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. For the person's own name use account_update.",
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert", "unattended", "set_unattended"),
 					"agent_name":      tools.StringProperty("for set: what they want to call you"),
@@ -45,7 +45,7 @@ func init() {
 					"unattended_allowed_risks": map[string]any{
 						"type":        "array",
 						"description": "for set_unattended: every kind of action you may take without their word when they are not there; an empty list allows none",
-						"items":       map[string]any{"type": "string", "enum": []string{string(models.UnattendedRiskOutward), string(models.UnattendedRiskDestructive), string(models.UnattendedRiskGranting), string(models.UnattendedRiskListed)}},
+						"items":       map[string]any{"type": "string", "enum": []string{string(models.UnattendedRiskOutward), string(models.UnattendedRiskMoney), string(models.UnattendedRiskDestructive), string(models.UnattendedRiskGranting), string(models.UnattendedRiskListed)}},
 					},
 				}, "action"),
 				// Reading what is allowed is a read; changing it gives the
@@ -169,9 +169,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return noted("when the person is not there you may do without their word what is " + strings.Join(allowed, ", ") + "; anything else that needs it is refused"), nil
 	case "set_unattended":
-		// Never from a run nobody is watching, whatever it is allowed:
-		// one kind allowed must not become the means to allow the rest.
-		if current.Headless() {
+		// Only the person, on a card they answered: never a run nobody is
+		// watching, a subagent of one, or a call let through by what they
+		// allow the agent alone -- one kind allowed must not become the
+		// means to allow the rest.
+		if !current.CanAsk() || call.IsConfirmedUnattended {
 			return nil, fmt.Errorf("only the person changes what you may do when they are not there; ask them, or they set it under When you are not there on their agent's settings")
 		}
 		variables := map[string]any{"unattendedAllowedRisks": asked.UnattendedAllowedRisks}

@@ -159,7 +159,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	if isMailed {
 		surface, turnMessage = "mail", scheduledMessage(schedule)
 	} else {
-		turnMessage = scheduleCheckIn(schedule, run.Owner, time.Now())
+		turnMessage = scheduleCheckIn(schedule, run.Agent, run.Owner, time.Now())
 		if conversation.IsGoal() {
 			turnMessage += "\n\n" + goalScheduleLines(conversation)
 		}
@@ -306,7 +306,7 @@ func endIfNoTimeLeft(tx db.Transaction, scheduleId string) error {
 // and the model is told in the same breath that nobody is speaking to it.
 // The prompt comes as the person's words when they wrote it, and fenced as
 // a note to itself when the agent did.
-func scheduleCheckIn(schedule *models.AgentSchedule, owner *models.User, now time.Time) string {
+func scheduleCheckIn(schedule *models.AgentSchedule, agent *models.Agent, owner *models.User, now time.Time) string {
 	lines := []string{
 		models.ScheduleMarker + fmt.Sprintf(" The schedule %q is due. This is your own turn at a time that was set, not the person speaking; they may not be watching.", schedule.Name),
 		"",
@@ -322,7 +322,7 @@ func scheduleCheckIn(schedule *models.AgentSchedule, owner *models.User, now tim
 	}
 	lines = append(lines,
 		"",
-		"Do it with the tools you have. Anything that needs their confirmation cannot be done with nobody present: prepare it and say what you would have done. What you answer is read here, in this conversation.",
+		"Do it with the tools you have. "+unattendedLine(agent)+" What you answer is read here, in this conversation.",
 	)
 	return strings.Join(lines, "\n")
 }
