@@ -11,7 +11,8 @@ import (
 
 // An item looked at is recorded once per version, per agent, skill and
 // watch; when the watch last looked is where the next look starts; and
-// what is older than any look reaches back to is forgotten.
+// what was last looked at before any look reaches back to is forgotten,
+// whatever its own date.
 func TestWatchedItemsAreRecordedOncePerVersionAndForgottenWhenOld(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -29,7 +30,7 @@ func TestWatchedItemsAreRecordedOncePerVersionAndForgottenWhenOld(t *testing.T) 
 		}
 		now := time.Now().Truncate(time.Second)
 		for _, watched := range []*models.AgentWatchedItem{
-			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "old", WatchedItemAt: now.Add(-40 * 24 * time.Hour), LookedAt: now.Add(-3 * time.Hour)},
+			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "old", WatchedItemAt: now.Add(-time.Hour), LookedAt: now.Add(-40 * 24 * time.Hour)},
 			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "1", WatchedItemAt: now.Add(-2 * time.Hour), LookedAt: now.Add(-2 * time.Hour)},
 			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "2", WatchedItemAt: now.Add(-3 * time.Hour), LookedAt: now.Add(-time.Hour), AlertSignal: models.AlertSignalSoon},
 			{AgentID: agent.ID, SkillName: "mail", WatchName: "new_mail", WatchedItemID: "thread", WatchedItemVersion: "2", WatchedItemAt: now, LookedAt: now},

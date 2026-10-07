@@ -75,6 +75,7 @@ func TestWatchesAreParsedAndChecked(t *testing.T) {
 		"    kind: mail\n    list: {tool: notes_gone}\n":                             "does not have",
 		"    kind: mail\n    list: {tool: notes_new}\n    read: {tool: notes_new}\n": "takes no id",
 		"    kind: mail\n    every: often\n    list: {tool: notes_new}\n":            "not a duration",
+		"    kind: mail\n    list: {tool: notes_read}\n":                             "none of since",
 	} {
 		_, err := Parse([]byte(watchingSkill("watches:\n  - name: new_notes\n    description: notes\n" + broken)))
 		if err == nil || !strings.Contains(err.Error(), why) {
@@ -90,6 +91,10 @@ func TestWatchedItemsAreReadFromTheListsAnswer(t *testing.T) {
 	}
 	if items, err := ParseWatchedItems(map[string]any{"text": `{"items":[{"id":"b"}]}`}); err != nil || len(items) != 1 || items[0].ID != "b" {
 		t.Fatalf("or under items: %+v %v", items, err)
+	}
+	long := strings.Repeat("x", 201)
+	if items, err := ParseWatchedItems(map[string]any{"text": `[{"id":"--output=/tmp/x"},{"id":"` + long + `"},{"id":"ok","version":"` + long + `"},{"id":"kept"}]`}); err != nil || len(items) != 1 || items[0].ID != "kept" {
+		t.Fatalf("an id that is an option, or a key too long to record, is left out: %+v %v", items, err)
 	}
 	if items, err := ParseWatchedItems(map[string]any{"text": "  "}); err != nil || len(items) != 0 {
 		t.Fatalf("nothing printed is nothing new: %+v %v", items, err)

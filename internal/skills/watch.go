@@ -48,6 +48,14 @@ const (
 
 	// watchOverlapDefault is how far each look overlaps the last.
 	watchOverlapDefault = 10 * time.Minute
+
+	// maximumWatchName bounds a watch's name, which is also what an
+	// alert's kind is called by.
+	maximumWatchName = 40
+
+	// maximumWatchedItemKey bounds an item's id and version, which are
+	// how it is recorded.
+	maximumWatchedItemKey = 200
 )
 
 // Watch is one thing a skill says is worth watching.
@@ -158,7 +166,9 @@ func (self *Skill) ReadArguments(watch *Watch, item *WatchedItem) map[string]any
 // ParseWatchedItems reads a list tool's answer: what its command printed,
 // as a JSON array of items or an object carrying one under "items". An
 // item with no id is left out, since it could never be told apart from
-// the next look's.
+// the next look's; so is one whose id or version is longer than an item
+// is recorded by, and one whose id begins with a dash, which a read tool
+// would hand its program as an option rather than an id.
 func ParseWatchedItems(answer map[string]any) ([]*WatchedItem, error) {
 	text, _ := answer["text"].(string)
 	text = strings.TrimSpace(text)
@@ -179,9 +189,11 @@ func ParseWatchedItems(answer map[string]any) ([]*WatchedItem, error) {
 	}
 	kept := items[:0]
 	for _, item := range items {
-		if item != nil && strings.TrimSpace(item.ID) != "" {
-			kept = append(kept, item)
+		if item == nil || strings.TrimSpace(item.ID) == "" || strings.HasPrefix(item.ID, "-") ||
+			len(item.ID) > maximumWatchedItemKey || len(item.Version) > maximumWatchedItemKey {
+			continue
 		}
+		kept = append(kept, item)
 	}
 	return kept, nil
 }
@@ -211,6 +223,9 @@ func (self *Skill) validateWatches() error {
 		if !nameShape.MatchString(watch.Name) {
 			return fmt.Errorf("skills: %q is not a watch name in %s: lower-case words joined by underscores", watch.Name, self.Name)
 		}
+		if len(watch.Name) > maximumWatchName {
+			return fmt.Errorf("skills: the watch name %q of %s is longer than %d characters", watch.Name, self.Name, maximumWatchName)
+		}
 		if seen[watch.Name] {
 			return fmt.Errorf("skills: %s declares the watch %s twice", self.Name, watch.Name)
 		}
@@ -237,6 +252,12 @@ func (self *Skill) validateWatches() error {
 		}
 		if watch.List == nil || self.Tool(watch.List.Tool) == nil {
 			return fmt.Errorf("skills: %s lists with a tool the skill does not have", where)
+		}
+		// A list that is not told where to start lists the same things on
+		// every look, and anything new behind them is never reached.
+		declared := declaredParameters(self.Tool(watch.List.Tool))
+		if !declared[WatchSince] && !declared[WatchSinceEpoch] && !declared[WatchSinceDate] {
+			return fmt.Errorf("skills: %s lists with %s, which takes none of since, since_epoch and since_date", where, watch.List.Tool)
 		}
 		if watch.Read != nil {
 			read := self.Tool(watch.Read.Tool)

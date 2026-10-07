@@ -72,18 +72,28 @@ func (self *AskRun) judgedReason(ctx context.Context, tool *Tool, arguments json
 // judgeCall asks the fast model what the call would do. Anything that goes
 // wrong is judged destructive, which asks.
 func (self *AskRun) judgeCall(ctx context.Context, call string) (string, string) {
-	settings := self.settings
+	callRisk, riskReason, usage, isJudged := self.agent.judgeCallText(ctx, self.settings.Agent.DisplayName(), personName(self.settings.Owner), call)
+	if isJudged {
+		self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), usage)
+	}
+	return callRisk, riskReason
+}
+
+// judgeCallText is the judgement itself, for a turn or for a watch: what
+// the call would do, why, what the judgement cost, and whether a judgement
+// was had at all. Anything that goes wrong is judged destructive.
+func (self *Agent) judgeCallText(ctx context.Context, agentName, person, call string) (string, string, llm.Usage, bool) {
 	prompt, err := render("command_judge.txt", map[string]any{
-		"AgentName":  settings.Agent.DisplayName(),
-		"PersonName": personName(settings.Owner),
+		"AgentName":  agentName,
+		"PersonName": person,
 		"Call":       cutRunes(call, 6000),
 	})
 	if err != nil {
-		return callRiskDestructive, "the judgement could not be written"
+		return callRiskDestructive, "the judgement could not be written", llm.Usage{}, false
 	}
-	provider, model, err := self.agent.settings.Registry.ForWork(config.AgentWorkTriage)
+	provider, model, err := self.settings.Registry.ForWork(config.AgentWorkTriage)
 	if err != nil {
-		return callRiskDestructive, "no model to judge with"
+		return callRiskDestructive, "no model to judge with", llm.Usage{}, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -93,10 +103,10 @@ func (self *AskRun) judgeCall(ctx context.Context, call string) (string, string)
 		Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
 	})
 	if err != nil {
-		return callRiskDestructive, "could not judge: " + err.Error()
+		return callRiskDestructive, "could not judge: " + err.Error(), llm.Usage{}, false
 	}
-	self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), response.Usage)
-	return readCallRisk(response.Message.Content)
+	callRisk, riskReason := readCallRisk(response.Message.Content)
+	return callRisk, riskReason, response.Usage, true
 }
 
 // readCallRisk reads the judgement; anything it cannot read asks.

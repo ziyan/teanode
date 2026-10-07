@@ -605,10 +605,10 @@ const (
 	// tells them what came of it. Its subject is the message.
 	AgentJobStatementImport AgentJobKind = "statement_import"
 
-	// AgentJobWatch looks at a mailbox this server does not host, through
-	// the installed skill that reads it, sorts what arrived since the last
-	// look and makes alert candidates of what deserves one. Its subject is
-	// the skill's name.
+	// AgentJobWatch is one look by one watch of an installed skill: it
+	// lists what arrived since the last look through the skill's own
+	// tools, judges each new item and makes alert candidates of what
+	// deserves one. Its subject is "skill/watch".
 	AgentJobWatch AgentJobKind = "watch"
 )
 

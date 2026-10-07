@@ -187,13 +187,17 @@ watch's own guidance. For each person with alerts on, the **watch** job
 (`internal/agent/watched_item.go`) runs every watch of every installed,
 enabled skill on its cadence, on the computer the person chose for the
 skill (or the only one attached) when the tools run commands, and only the
-tools the watch names, never anything that sends or changes. Gmail watches
+tools the watch names. A watch is held to what a turn is held to: one
+whose tools make a request that is not a read, or whose commands the
+command judge says would send something or destroy something, does not run;
+the judgement is had once per command and kept. Gmail watches
 new mail, archived included; Link by Stripe new transactions; Mattermost new
 mentions; GitHub new notifications. A watch's first look only takes note of
-what is there. Later looks start shortly before the last look (longer for
-a source whose items turn up late with an earlier date),
+what is there. Every look is recorded, and the next starts shortly before
+it (longer for a source whose items turn up late with an earlier date),
 judge each item new in its id and version (a thread with a new reply is
-judged again), and make a `watched` candidate of what is marked `soon` or
+judged again), newest first and at most 25 a look, noting without judging
+what is older than an alert could be news for, and make a `watched` candidate of what is marked `soon` or
 `now`, carrying the item as it was judged (`agent_alert_candidate.watched_*`),
 since it is not stored here. `agent_watched_item` records what each watch
 has looked at.

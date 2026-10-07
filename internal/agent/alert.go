@@ -755,7 +755,7 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 			return candidate.BurstKey
 		}
 		if candidate.CandidateKind == models.AlertCandidateWatched {
-			return candidate.WatchedSkillName + " " + candidate.WatchedItemID
+			return candidate.WatchedSkillName + " " + candidate.WatchedWatchName + " " + candidate.WatchedItemID
 		}
 		return "mail " + candidate.MailID
 	}

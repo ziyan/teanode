@@ -2,17 +2,20 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/skills"
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // Watches: what a skill says is worth watching, looked at with the skill's
@@ -27,14 +30,20 @@ import (
 //
 // The look is code, not a turn: it runs only the list and read tools the
 // skill names for the watch, and finds the computer itself, since there is
-// no turn to ask. docs/planning/skill-watches-execplan.md is the design.
+// no turn to ask. It is held to what a turn would be held to all the same:
+// a watch whose tools ask for more than a read, or whose commands the
+// judge says send or destroy something, does not run. Each look runs the
+// same commands with only the moment and an item's id changing, so the
+// judgement is had once per command and kept.
+// docs/planning/skill-watches-execplan.md is the design.
 
 const (
 	// watchQueueEvery is how often the tick asks whether a watch is due.
 	watchQueueEvery = time.Minute
 
-	// watchItemsAtOnce bounds the items one look judges. The oldest go
-	// first, so what is left is found by the next look.
+	// watchItemsAtOnce bounds the items one look judges. The newest go
+	// first; what is left past it is noted and not judged, like what a
+	// first look finds: a backlog that size is not news.
 	watchItemsAtOnce = 25
 
 	// watchedItemCharacters is how much of an item a candidate keeps for
@@ -43,9 +52,6 @@ const (
 
 	// watchedItemsKept is how long the record of an item looked at is kept.
 	watchedItemsKept = 30 * 24 * time.Hour
-
-	// watchFirstLookID is the record a first look leaves of itself.
-	watchFirstLookID = "(first look)"
 )
 
 // watchSubject is a watch job's subject: the skill and the watch.
@@ -70,8 +76,8 @@ var watchedItemTimeLayouts = []string{time.RFC3339Nano, time.RFC3339, "2006-01-0
 
 // watchedItemAt is when an item happened, in any of the usual forms, as
 // seconds or milliseconds since 1970 too; the zero time when it does not
-// say.
-func watchedItemAt(written string) time.Time {
+// say. A form with no zone is read in the location given, the person's.
+func watchedItemAt(written string, location *time.Location) time.Time {
 	written = strings.TrimSpace(written)
 	if written == "" {
 		return time.Time{}
@@ -82,8 +88,11 @@ func watchedItemAt(written string) time.Time {
 		}
 		return time.Unix(number, 0)
 	}
+	if location == nil {
+		location = time.UTC
+	}
 	for _, layout := range watchedItemTimeLayouts {
-		if at, err := time.Parse(layout, written); err == nil {
+		if at, err := time.ParseInLocation(layout, written, location); err == nil {
 			return at
 		}
 	}
@@ -162,11 +171,11 @@ func (self *Agent) queueWatching(ctx context.Context, now time.Time) {
 				if watchNeedsSecrets(skill, watch) {
 					continue
 				}
-				if watchRunsCommands(skill, watch) && self.watchComputer(ctx, agent.ID, skill.Name) == nil {
-					continue
-				}
 				key := agent.ID + "|" + watchSubject(skill.Name, watch.Name)
 				if looked, ok := self.watchLookedAt(key); ok && now.Sub(looked) < watch.EveryDuration() {
+					continue
+				}
+				if watchRunsCommands(skill, watch) && self.watchComputer(ctx, agent.ID, skill.Name) == nil {
 					continue
 				}
 				self.markWatchLookedAt(key, now)
@@ -228,7 +237,7 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 	}
 	now := time.Now()
 	var skill *skills.Skill
-	var latest *time.Time
+	var lastLookedAt *time.Time
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := RequireBudget(tx, configuration, run.Agent, run.Owner, now); err != nil {
 			return err
@@ -249,7 +258,7 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 		if err := tx.DeleteAgentWatchedItemsBefore(run.Agent.ID, skillName, watchName, now.Add(-watchedItemsKept)); err != nil {
 			return err
 		}
-		latest, err = tx.LatestAgentWatchLookedAt(run.Agent.ID, skillName, watchName)
+		lastLookedAt, err = tx.LatestAgentWatchLookedAt(run.Agent.ID, skillName, watchName)
 		return err
 	}); err != nil {
 		return err
@@ -261,40 +270,46 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 	if watchNeedsSecrets(skill, watch) {
 		return nil
 	}
-	running := &skills.Running{}
-	where := "this server"
-	if watchRunsCommands(skill, watch) {
-		computer := self.watchComputer(ctx, run.Agent.ID, skill.Name)
-		if computer == nil {
-			return nil // the next look, once one is attached
-		}
-		running.Shell = &computerShell{attached: computer}
-		where = computer.name
+	if refusal := self.watchRefusal(ctx, run, skill, watch); refusal != "" {
+		log.Warningf("%s does not run for agent %q: %s", watchSubject(skill.Name, watch.Name), run.Agent.ID, refusal)
+		return nil
 	}
-	isFirstLook := latest == nil
-	since := watchSince(latest, now, watch.OverlapDuration())
+	running, where := self.watchRunning(ctx, run, skill, watch)
+	if running == nil {
+		return nil // the next look, once the computer is attached
+	}
+	location := Location(run.Owner)
+	isFirstLook := lastLookedAt == nil
+	since := watchSince(lastLookedAt, now, watch.OverlapDuration())
 
 	listed, err := skill.Run(ctx, watch.List.Tool, skill.ListArguments(watch, since), running)
 	if err != nil {
+		// The computer went away or the program could not be run: tried
+		// again, from the same place.
 		return fmt.Errorf("%s on %s: %w", watchSubject(skill.Name, watch.Name), where, err)
 	}
 	items, err := skills.ParseWatchedItems(listed)
 	if err != nil {
-		return fmt.Errorf("%s on %s: %w", watchSubject(skill.Name, watch.Name), where, err)
-	}
-	if len(items) == 0 && !isFirstLook {
-		return nil
+		// What the list printed cannot be read (cut at the most an answer
+		// may carry, or a program that printed something else), and the
+		// next look over the same span would fail the same way: said, and
+		// the look counted, so that the next starts later rather than
+		// stalling here.
+		log.Warningf("%s on %s answered with nothing readable for agent %q: %s", watchSubject(skill.Name, watch.Name), where, run.Agent.ID, err)
+		return markWatchLooked(ctx, run, skill, watch, now)
 	}
 	var looked map[string]bool
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		ids := make([]string, 0, len(items))
-		for _, item := range items {
-			ids = append(ids, item.ID)
+	if len(items) > 0 {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			ids := make([]string, 0, len(items))
+			for _, item := range items {
+				ids = append(ids, item.ID)
+			}
+			looked, err = tx.ListAgentWatchedItemsLooked(run.Agent.ID, skill.Name, watch.Name, ids)
+			return err
+		}); err != nil {
+			return err
 		}
-		looked, err = tx.ListAgentWatchedItemsLooked(run.Agent.ID, skill.Name, watch.Name, ids)
-		return err
-	}); err != nil {
-		return err
 	}
 	var fresh []*skills.WatchedItem
 	for _, item := range items {
@@ -304,46 +319,161 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 			fresh = append(fresh, item)
 		}
 	}
-	// The oldest first, so that a look cut short leaves the newest for the
-	// next one; items that do not say when are taken as they came.
+	// The newest first: if there is more than one look judges, what is
+	// left is the oldest. An item that does not say when counts as now.
+	happenedAt := func(item *skills.WatchedItem) time.Time {
+		if at := watchedItemAt(item.At, location); !at.IsZero() {
+			return at
+		}
+		return now
+	}
 	slices.SortStableFunc(fresh, func(left, right *skills.WatchedItem) int {
-		return watchedItemAt(left.At).Compare(watchedItemAt(right.At))
+		return happenedAt(right).Compare(happenedAt(left))
 	})
-	if isFirstLook {
-		// What is already there when a watch starts is not news: noted,
-		// so that the next look starts from it, and not judged. The look
-		// itself is noted too, so that a first look that found nothing
-		// does not leave the next one a first look, which would note the
-		// first item to arrive rather than judge it.
-		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			if err := tx.AddAgentWatchedItem(&models.AgentWatchedItem{
-				AgentID: run.Agent.ID, SkillName: skill.Name, WatchName: watch.Name,
-				WatchedItemID: watchFirstLookID, WatchedItemAt: now, LookedAt: now,
-			}); err != nil {
-				return err
-			}
-			for _, item := range fresh {
-				if err := tx.AddAgentWatchedItem(watchedItemRecord(run.Agent.ID, skill, watch, item, now)); err != nil {
+	// Noted without judging: everything on a first look, which is what was
+	// there when the watch began; what is older than any alert could be
+	// news for; and what is past the most a look judges.
+	oldest := now.Add(-(alertFreshness + watch.OverlapDuration()))
+	var judged, noted []*skills.WatchedItem
+	for _, item := range fresh {
+		if isFirstLook || happenedAt(item).Before(oldest) || len(judged) >= watchItemsAtOnce {
+			noted = append(noted, item)
+			continue
+		}
+		judged = append(judged, item)
+	}
+	if len(noted) > 0 {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			for _, item := range noted {
+				if err := tx.AddAgentWatchedItem(watchedItemRecord(run.Agent.ID, skill, watch, item, now, location)); err != nil {
 					return err
 				}
 			}
 			return nil
-		})
-	}
-	if len(fresh) > watchItemsAtOnce {
-		fresh = fresh[:watchItemsAtOnce]
-	}
-	for _, item := range fresh {
-		if err := self.watchOne(ctx, run, skill, watch, running, item, now); err != nil {
+		}); err != nil {
 			return err
 		}
 	}
-	return nil
+	for _, item := range judged {
+		// An error here is the computer, the model or the budget, not the
+		// item: the look stops without being counted, and the next one
+		// starts from the same place and finds what this one did not judge.
+		if err := self.watchOne(ctx, run, skill, watch, running, item, now, location); err != nil {
+			return err
+		}
+	}
+	return markWatchLooked(ctx, run, skill, watch, now)
+}
+
+// markWatchLooked records that the watch looked, whatever it found, so that
+// the next look starts from it and a first look that found nothing is not
+// followed by another first look.
+func markWatchLooked(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch, now time.Time) error {
+	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.MarkAgentWatchLooked(run.Agent.ID, skill.Name, watch.Name, now)
+	})
+}
+
+// watchRunning is how a look runs the skill's tools, as a turn would: on
+// the computer the person chose for the skill when they run commands, its
+// requests through that computer when they chose one, and the operator's
+// allowances for addresses inside their network either way. Nil when the
+// computer it needs is not attached; the second answer says where it runs.
+func (self *Agent) watchRunning(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch) (*skills.Running, string) {
+	configuration := run.Configuration()
+	running := &skills.Running{
+		Allowance:  safefetch.ParseAllowance(configuration.Agent.PrivateAddressesAllowed()),
+		Unverified: safefetch.ParseAllowance(configuration.Agent.SkipCertificateCheck),
+	}
+	if watchRunsCommands(skill, watch) {
+		attached := self.watchComputer(ctx, run.Agent.ID, skill.Name)
+		if attached == nil {
+			return nil, ""
+		}
+		running.Shell = &computerShell{attached: attached}
+		return running, attached.name
+	}
+	if chosen := self.reachOf(ctx, run.Agent.ID, models.AgentReachSkill, skill.Name); chosen != "" {
+		for _, attached := range self.computersFor(run.Agent.ID) {
+			if strings.EqualFold(attached.name, chosen) {
+				running.Client = computer.HTTPClient(attached)
+				return running, attached.name
+			}
+		}
+		return nil, ""
+	}
+	return running, "this server"
+}
+
+// watchRefusal says why a watch may not run, or nothing: a tool of it that
+// asks for something other than a read, or a command the judge says would
+// send something or destroy something. A judgement that could not be had
+// refuses this look and is asked for again on the next.
+func (self *Agent) watchRefusal(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch) string {
+	calls := []*skills.WatchCall{watch.List}
+	if watch.Read != nil {
+		calls = append(calls, watch.Read)
+	}
+	for index, call := range calls {
+		tool := skill.Tool(call.Tool)
+		if changesSomething(tool) {
+			return tool.Name + " makes a request that is not a read"
+		}
+		if !SkillRunsCommands(tool) {
+			continue
+		}
+		// The call as the judge would see it in a turn, with the values a
+		// look fills in standing for themselves.
+		var arguments map[string]any
+		if index == 0 {
+			arguments = skill.ListArguments(watch, time.Unix(0, 0))
+			for _, name := range []string{skills.WatchSince, skills.WatchSinceEpoch, skills.WatchSinceDate} {
+				if _, ok := arguments[name]; ok {
+					arguments[name] = "<the moment of the last look>"
+				}
+			}
+		} else {
+			arguments = skill.ReadArguments(watch, &skills.WatchedItem{ID: "<an item's id>"})
+		}
+		encoded, _ := json.Marshal(arguments)
+		text := describeSkillCall(skill, tool)(encoded)
+		callRisk, isJudged := self.judgedWatchCall(ctx, run, text)
+		if !isJudged {
+			return "its commands could not be judged yet"
+		}
+		if callRisk == callRiskOutward || callRisk == callRiskDestructive {
+			return fmt.Sprintf("the judge says %s would %s", tool.Name, map[string]string{callRiskOutward: "speak for the person", callRiskDestructive: "destroy something"}[callRisk])
+		}
+	}
+	return ""
+}
+
+// judgedWatchCall is the judgement of a watch's command, had once and kept
+// for as long as the server runs: a look runs the same command each time.
+func (self *Agent) judgedWatchCall(ctx context.Context, run *Run, text string) (string, bool) {
+	self.watchMutex.Lock()
+	callRisk, ok := self.watchJudgements[text]
+	self.watchMutex.Unlock()
+	if ok {
+		return callRisk, true
+	}
+	callRisk, riskReason, _, isJudged := self.judgeCallText(ctx, run.Agent.DisplayName(), personName(run.Owner), text)
+	if !isJudged {
+		return "", false
+	}
+	log.Infof("a watch's command was judged %s: %s", callRisk, riskReason)
+	self.watchMutex.Lock()
+	if self.watchJudgements == nil {
+		self.watchJudgements = map[string]string{}
+	}
+	self.watchJudgements[text] = callRisk
+	self.watchMutex.Unlock()
+	return callRisk, true
 }
 
 // watchedItemRecord is the record that an item was looked at.
-func watchedItemRecord(agentId string, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, now time.Time) *models.AgentWatchedItem {
-	at := watchedItemAt(item.At)
+func watchedItemRecord(agentId string, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, now time.Time, location *time.Location) *models.AgentWatchedItem {
+	at := watchedItemAt(item.At, location)
 	if at.IsZero() || at.After(now) {
 		at = now
 	}
@@ -370,31 +500,29 @@ type watchedJudgement struct {
 
 // watchOne reads one new item, judges it, and records that it was looked
 // at, with the candidate the judgement makes of it, in one transaction.
-func (self *Agent) watchOne(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch, running *skills.Running, item *skills.WatchedItem, now time.Time) error {
+func (self *Agent) watchOne(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch, running *skills.Running, item *skills.WatchedItem, now time.Time, location *time.Location) error {
 	configuration := run.Configuration()
-	watched := watchedItemRecord(run.Agent.ID, skill, watch, item, now)
+	watched := watchedItemRecord(run.Agent.ID, skill, watch, item, now, location)
+	noteOnly := func() error {
+		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.AddAgentWatchedItem(watched)
+		})
+	}
 	content := strings.TrimSpace(item.Text)
 	if watch.Read != nil {
 		read, err := skill.Run(ctx, watch.Read.Tool, skill.ReadArguments(watch, item), running)
-		var text string
-		if err == nil {
-			text, _ = read["text"].(string)
-			text = strings.TrimSpace(text)
-			if strings.HasPrefix(text, "[ended ") {
-				err = fmt.Errorf("%s", cutRunes(text, 300))
-			}
-		}
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			// An item that cannot be read, gone since it was listed or too
-			// large to print, is recorded as looked at and left: failing the
-			// look would fail every look after it on the same item.
-			log.Warningf("%s could not read an item of agent %q: %s", watchSubject(skill.Name, watch.Name), run.Agent.ID, err)
-			return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-				return tx.AddAgentWatchedItem(watched)
-			})
+			// The computer or the program, not the item: tried again.
+			return fmt.Errorf("%s reading an item: %w", watchSubject(skill.Name, watch.Name), err)
+		}
+		text, _ := read["text"].(string)
+		text = strings.TrimSpace(text)
+		if strings.HasPrefix(text, "[ended ") {
+			// The program could not read this one, gone since it was listed
+			// or too large: noted and left, since every look would fail on
+			// it the same way.
+			log.Warningf("%s could not read an item of agent %q: %s", watchSubject(skill.Name, watch.Name), run.Agent.ID, cutRunes(text, 300))
+			return noteOnly()
 		}
 		if content != "" {
 			// What the list said of it, before what the read says.
@@ -427,12 +555,19 @@ func (self *Agent) watchOne(ctx context.Context, run *Run, skill *skills.Skill, 
 	if err != nil {
 		return err
 	}
+	if judgement == nil {
+		// The judgement answered with something other than the object,
+		// which an item written to provoke it can make it do every time:
+		// noted, so that it does not stand in front of the items after it.
+		log.Warningf("%s could not judge an item of agent %q", watchSubject(skill.Name, watch.Name), run.Agent.ID)
+		return noteOnly()
+	}
 	watched.AlertSignal = judgement.alertSignal
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := tx.AddAgentWatchedItem(watched); err != nil {
 			return err
 		}
-		return noteWatchedCandidate(tx, run.Agent.ID, skill, watch, item, rendered, judgement, now)
+		return noteWatchedCandidate(tx, run.Agent.ID, skill, watch, item, rendered, judgement, now, location)
 	})
 }
 
@@ -455,7 +590,7 @@ func renderWatchedItem(skill *skills.Skill, item *skills.WatchedItem, content st
 
 // judgeWatchedItem asks the model whether the person should hear about
 // the item: as mail, with the sorting's prompt, or as an item, with the
-// watch's guidance.
+// watch's guidance. Nil, and no error, when the answer could not be read.
 func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, content, rendered string, memories, corrections []string) (*watchedJudgement, error) {
 	title := fmt.Sprintf("Watching %s: %q", skill.Name, cutRunes(firstNonEmpty(item.Title, item.From, item.ID), 80))
 	if watch.Kind == skills.WatchKindMail {
@@ -476,11 +611,11 @@ func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills
 		}
 		answer, err := llm.Extract[TriageAnswer](thinking.Text)
 		if err != nil {
-			return nil, fmt.Errorf("the judgement of %s did not answer with an object: %w", watchSubject(skill.Name, watch.Name), err)
+			return nil, nil
 		}
 		insight, err := InterpretTriage(&answer, run.Agent)
 		if err != nil {
-			return nil, err
+			return nil, nil
 		}
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("%s: %s, alert %s. %s", title, insight.Category, insight.AlertSignal, insight.Summary))
 		return &watchedJudgement{alertSignal: insight.AlertSignal, alertReason: insight.AlertReason, summary: insight.Summary, watchedCategory: insight.Category}, nil
@@ -488,7 +623,7 @@ func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills
 	prompt, err := render("watched_item.txt", map[string]any{
 		"PersonName": personName(run.Owner), "SkillName": skill.Name, "WatchDescription": watch.Description,
 		"Guidance": strings.TrimSpace(watch.Guidance), "Language": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
-		"Memories": memories, "Item": rendered,
+		"Memories": memories, "Item": fenced(rendered),
 	})
 	if err != nil {
 		return nil, err
@@ -499,7 +634,7 @@ func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills
 	}
 	answer, err := llm.Extract[watchedItemAnswer](thinking.Text)
 	if err != nil {
-		return nil, fmt.Errorf("the judgement of %s did not answer with an object: %w", watchSubject(skill.Name, watch.Name), err)
+		return nil, nil
 	}
 	judgement := &watchedJudgement{alertSignal: models.AlertSignalNone, summary: cutRunes(strings.TrimSpace(answer.Summary), 200), watchedCategory: watch.Name}
 	switch alertSignal := strings.ToLower(strings.TrimSpace(answer.AlertSignal)); alertSignal {
@@ -525,25 +660,25 @@ func firstNonEmpty(values ...string) string {
 // to, if any, and queues the job that decides on it. An item the person
 // muted the sender, the domain or the kind of is written down and dropped
 // at once, as hosted mail's is.
-func noteWatchedCandidate(tx db.Transaction, agentId string, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, rendered string, judgement *watchedJudgement, now time.Time) error {
+func noteWatchedCandidate(tx db.Transaction, agentId string, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, rendered string, judgement *watchedJudgement, now time.Time, location *time.Location) error {
 	if judgement.alertSignal != models.AlertSignalSoon && judgement.alertSignal != models.AlertSignalNow {
 		return nil
 	}
 	// Older than the look reaches back to is not news, though it is new
 	// here: an item that turned up late is news for as long as the
 	// overlap that found it.
-	if at := watchedItemAt(item.At); !at.IsZero() && now.Sub(at) > alertFreshness+watch.OverlapDuration() {
+	if at := watchedItemAt(item.At, location); !at.IsZero() && now.Sub(at) > alertFreshness+watch.OverlapDuration() {
 		return nil
 	}
 	happenedAt := now
-	if at := watchedItemAt(item.At); !at.IsZero() && at.Before(now) {
+	if at := watchedItemAt(item.At, location); !at.IsZero() && at.Before(now) {
 		happenedAt = at
 	}
 	created, err := tx.CreateAgentAlertCandidate(&models.AgentAlertCandidate{
 		AgentID: agentId, CandidateKind: models.AlertCandidateWatched,
 		AlertSignal: judgement.alertSignal, CandidateReason: judgement.alertReason,
 		WatchedSkillName: skill.Name, WatchedWatchName: watch.Name, WatchedItemID: item.ID,
-		WatchedSender: item.From, WatchedTitle: item.Title, WatchedCategory: judgement.watchedCategory,
+		WatchedSender: item.From, WatchedTitle: item.Title, WatchedCategory: cutRunes(judgement.watchedCategory, 40),
 		WatchedItemAt: &happenedAt, WatchedItemText: cutRunes(rendered, watchedItemCharacters), WatchedItemURL: item.URL,
 	})
 	if err != nil {

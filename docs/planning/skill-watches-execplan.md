@@ -48,6 +48,8 @@ To see it working: install the new versions of the four skills; within ten minut
   Date/Author: 2026-10-06.
 
 
+- Review, 2026-10-07: a watch ran a skill's commands with none of the judgement a turn's call gets. A watch now runs only when its tools make no request that is not a read and the command judge says its commands neither send nor destroy anything, judged once per command and kept. The review also found that a look which failed on one item failed every look after it, that a list printed past the size of an answer stalled the watch, that the 25-item cap dropped the newest, and that the item was not fenced in its prompt; each is fixed: an unjudgeable or unreadable item is noted and passed, an unreadable list counts its look, the newest are judged first and the rest noted, and the item goes inside the untrusted-data fence.
+
 ## Outcomes & Retrospective
 
 Four skills declare watches and the code names none of them. On the server each look takes a few seconds; Gmail judged its first new message twenty minutes after the deploy. What remains possible: Google Drive could watch files newly shared with the person, and a skill that needs a person's secret cannot be watched yet, because a look has nobody to fill one in.

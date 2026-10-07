@@ -112,6 +112,10 @@ type Agent struct {
 	// watch, by agent and skill/watch; see queueWatching.
 	watchMutex      sync.Mutex
 	watchesQueuedAt map[string]time.Time
+
+	// watchJudgements are the judgements of the commands watches run, by
+	// the call as the judge saw it; see judgedWatchCall.
+	watchJudgements map[string]string
 	lastEvaluate    time.Time
 	describing      atomic.Bool
 

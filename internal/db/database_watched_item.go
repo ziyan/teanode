@@ -26,10 +26,17 @@ type WatchedItemOperation interface {
 	// it never has.
 	LatestAgentWatchLookedAt(agentId, skillName, watchName string) (*time.Time, error)
 
-	// DeleteAgentWatchedItemsBefore forgets the items that happened before
+	// MarkAgentWatchLooked records that the watch looked, at the moment
+	// given, whatever it found: the next look starts from it.
+	MarkAgentWatchLooked(agentId, skillName, watchName string, lookedAt time.Time) error
+
+	// DeleteAgentWatchedItemsBefore forgets the items last looked at before
 	// the moment given, which no look reaches back to any more.
 	DeleteAgentWatchedItemsBefore(agentId, skillName, watchName string, before time.Time) error
 }
+
+// WatchLookID is the record a look leaves of itself, among the items.
+const WatchLookID = "(look)"
 
 // WatchedItemKey is how ListAgentWatchedItemsLooked names an item in one
 // version.
@@ -99,7 +106,20 @@ func (self *transaction) LatestAgentWatchLookedAt(agentId, skillName, watchName 
 	return &latest, nil
 }
 
+func (self *transaction) MarkAgentWatchLooked(agentId, skillName, watchName string, lookedAt time.Time) error {
+	return self.tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "agent_id"}, {Name: "skill_name"}, {Name: "watch_name"}, {Name: "watched_item_id"}, {Name: "watched_item_version"}},
+		DoUpdates: clause.AssignmentColumns([]string{"watched_item_at", "looked_at"}),
+	}).Create(&agentWatchedItemModel{
+		AgentID: agentId, SkillName: skillName, WatchName: watchName, WatchedItemID: WatchLookID,
+		WatchedItemAt: lookedAt, AlertSignal: models.AlertSignalNone, LookedAt: lookedAt,
+	}).Error
+}
+
 func (self *transaction) DeleteAgentWatchedItemsBefore(agentId, skillName, watchName string, before time.Time) error {
-	return self.tx.Where(`"agent_id" = ? AND "skill_name" = ? AND "watch_name" = ? AND "watched_item_at" < ?`, agentId, skillName, watchName, before).
+	// By when they were looked at, not by their own date: an item a source
+	// keeps listing (an old notification still unread) is seen again on
+	// every look, and forgetting it by its date would judge it again.
+	return self.tx.Where(`"agent_id" = ? AND "skill_name" = ? AND "watch_name" = ? AND "looked_at" < ?`, agentId, skillName, watchName, before).
 		Delete(&agentWatchedItemModel{}).Error
 }

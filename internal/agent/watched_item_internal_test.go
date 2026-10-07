@@ -83,14 +83,22 @@ func (self *watchedWorld) answer(action string, args json.RawMessage) (bool, str
 			threads = []map[string]any{
 				{"id": "t1", "version": "2", "at": at(5 * time.Minute), "from": "Sam <sam@friends.example.net>", "title": "Re: Saturday"},
 				{"id": "t2", "version": "1", "at": at(2 * time.Minute), "from": "Office <office@school.example.org>", "title": "Early closing", "text": "labels: UNREAD"},
+				// One the model will not judge, and one too old to be news:
+				// both noted, neither in the way of the rest.
+				{"id": "t3", "version": "1", "at": at(4 * time.Minute), "from": "Garbled Mailer", "title": "?"},
+				{"id": "t4", "version": "1", "at": at(9 * 24 * time.Hour), "from": "Old Friend", "title": "From last week"},
 			}
 		}
 		encoded, _ := json.Marshal(threads)
 		printed = string(encoded)
 	case command == "papers thread t1":
 		printed = "From: Sam\n\nSaturday works, see you then."
+	case command == "papers thread t3":
+		printed = "From: Garbled Mailer\n\nGarbled Mailer says nothing at all."
 	case command == "papers thread t2":
 		printed = "From: Office\n\nThe school closes at noon today because of the storm. Please collect your child by 12:15."
+	case strings.HasPrefix(command, "papers send"):
+		printed = "[]"
 	case strings.HasPrefix(command, "papers charges"):
 		charges := `[{"id":"c1","at":"` + self.now.UTC().Format(time.DateOnly) + `","from":"Corner Grocer","title":"-42.10 USD","text":"a purchase at Corner Grocer"}]`
 		if isLater {
@@ -130,6 +138,15 @@ func (self *judgingModel) serve(t *testing.T) *httptest.Server {
 		prompt := string(body)
 		answer := `{"category":"personal","priority":"normal","needs_reply":false,"research":false,"extract":false,"summary":"nothing","action_items":[],"alert_signal":"none","alert_reason":""}`
 		switch {
+		case strings.Contains(prompt, "is about to make a call"):
+			// The command judge, once per watch command: these only list
+			// and read, except a command that sends.
+			answer = `{"callRisk":"read","riskReason":"it lists and reads"}`
+			if strings.Contains(prompt, `\"send\"`) {
+				answer = `{"callRisk":"outward","riskReason":"it sends mail as them"}`
+			}
+		case strings.Contains(prompt, "Garbled Mailer"):
+			answer = "I would rather not say."
 		case strings.Contains(prompt, "Decide which of the candidates"):
 			answer = `{"alerts":[{"subject_key":"school early closing","is_urgent":true,"candidate_ids":["c1"],"alert_text":"The school is closing at noon today; pick-up is by 12:15."},{"subject_key":"unexpected electronics charge","is_urgent":false,"candidate_ids":["c2"],"alert_text":"A charge of 1,899 dollars at an electronics shop went through on your card."}],"dropped":[]}`
 		case strings.Contains(prompt, "closes at noon"):
@@ -232,8 +249,8 @@ func TestSkillWatchesNoteFirstThenJudgeWhatIsNew(t *testing.T) {
 	world.isLater = true
 	world.mutex.Unlock()
 	look()
-	if world.count("papers thread t1") != 1 || world.count("papers thread t2") != 1 || provider.callCount() != 3 {
-		t.Fatalf("the reply, the new thread and the new charge judged: %q, %d calls", world.commands, provider.callCount())
+	if world.count("papers thread t1") != 1 || world.count("papers thread t2") != 1 || world.count("papers thread t3") != 1 || world.count("papers thread t4") != 0 || provider.callCount() != 4 {
+		t.Fatalf("the reply, the new thread, the garbled one and the new charge judged; the old one not: %q, %d calls", world.commands, provider.callCount())
 	}
 	if provider.judged("Corner Grocer") || !provider.judged("Faraway Electronics") {
 		t.Fatal("the charge already noted is not judged again, the new one is")
@@ -283,7 +300,7 @@ func TestSkillWatchesNoteFirstThenJudgeWhatIsNew(t *testing.T) {
 
 	calls := provider.callCount()
 	look()
-	if provider.callCount() != calls || world.count("papers thread") != 2 {
+	if provider.callCount() != calls || world.count("papers thread") != 3 {
 		t.Fatalf("nothing judged or read again: %d calls, %q", provider.callCount()-calls, world.commands)
 	}
 }
@@ -296,12 +313,19 @@ func TestWatchedItemMomentsAreReadInTheUsualForms(t *testing.T) {
 		"1772600767":           time.Unix(1772600767, 0),
 		"1772600767000":        time.UnixMilli(1772600767000),
 	} {
-		if got := watchedItemAt(written); !got.Equal(want) {
+		if got := watchedItemAt(written, time.UTC); !got.Equal(want) {
 			t.Errorf("%q is %s, want %s", written, got, want)
 		}
 	}
-	if !watchedItemAt("yesterday").IsZero() {
+	if !watchedItemAt("yesterday", time.UTC).IsZero() {
 		t.Error("what does not read is the zero time")
+	}
+	zone := time.FixedZone("east", 9*60*60)
+	if got := watchedItemAt("2026-03-04 05:06", zone); !got.Equal(time.Date(2026, 3, 4, 5, 6, 0, 0, zone)) {
+		t.Errorf("a time with no zone is the person's: %s", got)
+	}
+	if got := watchedItemAt("2026-03-04T05:06:07Z", zone); !got.Equal(time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)) {
+		t.Errorf("a time with a zone keeps it: %s", got)
 	}
 	now := time.Now()
 	if since := watchSince(nil, now, time.Hour); !since.Equal(now.Add(-time.Hour)) {
@@ -315,4 +339,59 @@ func TestWatchedItemMomentsAreReadInTheUsualForms(t *testing.T) {
 		t.Errorf("the subject: %s", subject)
 	}
 	_ = skills.WatchKindMail
+}
+
+// A watch whose command the judge says would speak for the person does not
+// run at all; one whose list prints something unreadable counts the look,
+// so that it does not stall there.
+func TestWatchesTheJudgeRefusesDoNotRunAndUnreadableListsDoNotStall(t *testing.T) {
+	provider := &judgingModel{}
+	server := provider.serve(t)
+	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 12))
+	sending := strings.Replace(watchingSkillForTest, "command: [papers, mail, --after, \"{{since_epoch}}\"]", "command: [papers, send, --after, \"{{since_epoch}}\"]", 1)
+	sending = strings.Replace(sending, "command: [papers, charges, --from, \"{{since_date}}\"]", "command: [papers, garbled, --from, \"{{since_date}}\"]", 1)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if _, err := tx.PutAgentSkill(&models.AgentSkill{Name: "papers", Enabled: true, Content: sending}); err != nil {
+			t.Fatalf("PutAgentSkill: %s", err)
+		}
+	})
+	world := &watchedWorld{now: time.Now()}
+	answers := func(action string, args json.RawMessage) (bool, string) {
+		if strings.Contains(string(args), "garbled") {
+			encoded, _ := json.Marshal(map[string]any{"stdout": "[{\"id\": \"c1\"", "stderr": "", "exitCode": 0})
+			return true, string(encoded)
+		}
+		return world.answer(action, args)
+	}
+	fixture.worker.AttachComputer(fixture.agent.ID, &fakeComputer{agent: fixture.worker, agentId: fixture.agent.ID, answers: answers}, ComputerIdentity{Name: "laptop", System: "linux", Home: "/home/robin"})
+	if err := fixture.worker.Tick(t.Context()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	fixture.worker.Wait()
+	if world.count("papers send") != 0 {
+		t.Fatalf("a watch judged to send never runs: %q", world.commands)
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if latest, err := tx.LatestAgentWatchLookedAt(fixture.agent.ID, "papers", "new_mail"); err != nil || latest != nil {
+			t.Fatalf("the refused watch never looked: %v %v", latest, err)
+		}
+		if latest, err := tx.LatestAgentWatchLookedAt(fixture.agent.ID, "papers", "new_charges"); err != nil || latest == nil {
+			t.Fatalf("the unreadable list still counts its look: %v %v", latest, err)
+		}
+	})
+	if jobs := fixture.jobsOf(t, models.AgentJobWatch); len(jobs) != 2 || jobs[0].Status != models.AgentJobDone || jobs[1].Status != models.AgentJobDone {
+		t.Fatalf("both looks are done, not failing over and over: %+v", jobs)
+	}
+}
+
+func (self *alertFixture) jobsOf(t *testing.T, jobKind models.AgentJobKind) []*models.AgentJob {
+	t.Helper()
+	var jobs []*models.AgentJob
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		if jobs, err = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: self.agent.ID, Kinds: []models.AgentJobKind{jobKind}}, nil); err != nil {
+			t.Fatalf("ListAgentJobs: %s", err)
+		}
+	})
+	return jobs
 }
