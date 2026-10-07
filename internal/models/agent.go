@@ -277,7 +277,7 @@ func (self *Agent) Validate() error {
 	}
 	for _, unattendedRisk := range self.UnattendedAllowedRisks {
 		if !unattendedRisk.IsValid() {
-			errors.add("unattendedAllowedRisks", "%q is not one of outward, destructive, granting, listed", unattendedRisk)
+			errors.add("unattendedAllowedRisks", "%q is not one of outward, money, destructive, granting, listed", unattendedRisk)
 		}
 	}
 	if self.AlertDailyMost < 0 || self.AlertDailyMost > 50 {
@@ -746,21 +746,28 @@ const (
 // allows it for when they are not there.
 type UnattendedRisk string
 
-// The reasons: the call speaks for the person (sends mail, posts a
-// message), cannot be undone (deletes for good, overwrites), gives somebody
-// access, or is a tool on the person's or the operator's "ask me first"
-// list.
+// The reasons a person may allow: the call speaks for them (sends mail,
+// posts a message), spends or moves their money (a payment, an order, a
+// trade, a transfer), cannot be undone (deletes for good, overwrites),
+// gives somebody access, or is a tool on their own "ask me first" list.
 const (
 	UnattendedRiskOutward     UnattendedRisk = "outward"
+	UnattendedRiskMoney       UnattendedRisk = "money"
 	UnattendedRiskDestructive UnattendedRisk = "destructive"
 	UnattendedRiskGranting    UnattendedRisk = "granting"
 	UnattendedRiskListed      UnattendedRisk = "listed"
 )
 
-// UnattendedRisks is every reason, in the order the settings show them.
-var UnattendedRisks = []UnattendedRisk{UnattendedRiskOutward, UnattendedRiskDestructive, UnattendedRiskGranting, UnattendedRiskListed}
+// UnattendedRiskOperatorListed is the reason no person can allow: a tool
+// on the operator's "ask first" list, which only ever makes the agent more
+// careful.
+const UnattendedRiskOperatorListed UnattendedRisk = "operatorListed"
 
-// IsValid says the reason is one of the four.
+// UnattendedRisks is every reason a person may allow, in the order the
+// settings show them.
+var UnattendedRisks = []UnattendedRisk{UnattendedRiskOutward, UnattendedRiskMoney, UnattendedRiskDestructive, UnattendedRiskGranting, UnattendedRiskListed}
+
+// IsValid says the reason is one a person may allow.
 func (self UnattendedRisk) IsValid() bool {
 	for _, known := range UnattendedRisks {
 		if self == known {

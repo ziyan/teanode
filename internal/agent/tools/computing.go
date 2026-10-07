@@ -45,22 +45,27 @@ type BackgroundHolder interface {
 
 // BackgroundOrigin is who started a background command, as the shell tool
 // hands it to the computer and the computer hands it back when the command
-// ends: which agent and conversation to wake, and IsHeadless when there is
-// no conversation a turn could be woken in (a run of its own, such as a
-// night's). The computer keeps it without reading it.
+// ends: which agent and conversation to wake, and IsUnwakeable when the
+// conversation is a run's own transcript, such as a night's, which no turn
+// is woken in. The computer keeps it without reading it.
 type BackgroundOrigin struct {
 	AgentID        string `json:"agentId"`
 	ConversationID string `json:"conversationId"`
-	IsHeadless     bool   `json:"isHeadless,omitempty"`
+	IsUnwakeable   bool   `json:"isUnwakeable,omitempty"`
 }
 
-// CanBeWoken says the run's conversation is one a turn can be woken in
-// when something it left running ends: any conversation but a run's own
-// transcript, with or without the person there. A schedule's or a goal's
-// turn is woken where it ran, as the person's is.
-func CanBeWoken(run Run) bool {
+// CanLeaveRunning says the run may leave a command running past its wait:
+// any run but one whose conversation is a run's own transcript, which has
+// nothing to be woken in when the command ends. A schedule's or a goal's
+// turn is woken where it ran, as the person's is; a call with no
+// conversation at all -- a harness, the command line -- is told the
+// command's id and reads it itself.
+func CanLeaveRunning(run Run) bool {
 	conversation := run.Conversation()
-	return conversation != nil && conversation.Kind != models.AgentConversationRun
+	if conversation == nil {
+		return !run.Headless()
+	}
+	return conversation.Kind != models.AgentConversationRun
 }
 
 // SessionHolder is a computer that can hold a program open: a terminal the

@@ -96,7 +96,12 @@ turn, a goal, a night. What stands between such a run and the machine is not a
 card, which cannot be shown to an empty room, but the refusal a call gets when
 it needs the person's word: anything the rule above classifies as asking is
 refused with nobody present, and the run is told to say what it would have
-done. A run that has a conversation to wake may leave a command running in the
+done, unless the person allowed that kind of action for when they are not
+there (speaking for them, money, what cannot be undone, giving access, or the
+tools on their own list; never the operator's list, and never in a run that
+reads mail from strangers).
+`docs/decisions/20261007-the-person-chooses-what-the-agent-does-alone.md` says
+how. A run that has a conversation to wake may leave a command running in the
 background and is woken there when it ends; a run that is a transcript of its
 own, such as a night's, runs commands in the foreground.
 `docs/decisions/20261006-the-agent-uses-the-persons-devices-whoever-is-present.md`
@@ -232,7 +237,9 @@ card, which they can widen to every browser call by putting `browser` in their
 own confirm list. A password already on the page is not read back into the
 conversation, which is a different question from typing one in.
 
-A run with nobody present uses the tab as a turn the person watches does.
+A run with nobody present reads the tab but does not act in it: a click or
+a keystroke there acts as the person, signed in, and no card can be shown to
+an empty room to ask first.
 
 ## The headless browser
 

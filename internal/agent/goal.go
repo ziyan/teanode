@@ -224,7 +224,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		return err
 	}
 	failure, err := self.goalTurn(ctx, run, operations, conversation,
-		goalCheckIn(conversation, run.Owner, now, int(today)+1), nil, configuration.Agent.Limits.MaxRoundsPerAsk)
+		goalCheckIn(conversation, run.Agent, run.Owner, now, int(today)+1), nil, configuration.Agent.Limits.MaxRoundsPerAsk)
 	if errors.Is(err, errTurnRunning) {
 		return goalBehindTurn(now)
 	}
@@ -364,6 +364,15 @@ func goalBehindTurn(now time.Time) error {
 // goalTurn runs one headless turn in the person's conversation and waits
 // for it, answering with what went wrong when something did.
 func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations, conversation *models.AgentConversation, message string, allow map[string]bool, rounds int) (string, error) {
+	// The goal's own turn reads what its background work and commands left,
+	// as the person's word does in their conversation, and starts the count
+	// of turns those may wake again: in a goal's conversation the person
+	// seldom writes, and the count would otherwise only ever grow.
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.ResetAgentConversationBackgroundWakes(conversation.ID)
+	}); err != nil {
+		return "", err
+	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: message, Surface: "goal", Headless: true, Allow: allow,
@@ -464,7 +473,7 @@ func (self *Agent) moveGoalOn(ctx context.Context, conversationId string, next t
 // the same breath that nobody is speaking to it. The person does not read this conversation: they hear from the goal
 // only when it waits for them, so the turn is told that saying nothing
 // new is fine and that a question is what reaches them.
-func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
+func goalCheckIn(conversation *models.AgentConversation, agent *models.Agent, owner *models.User, now time.Time, turn int) string {
 	lines := []string{
 		models.GoalCheckInMarker + fmt.Sprintf(" This is your own turn on a goal you keep at in the background for %s, the %s today. They are not here and do not read this conversation.", personName(owner), ordinal(turn)),
 		"",
@@ -477,7 +486,7 @@ func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now
 	lines = append(lines,
 		"It is "+now.In(Location(owner)).Format("Monday 2 January, 15:04")+" where they are.",
 		"",
-		"Work toward the goal with the tools you have: look, act, schedule what should happen on a clock, start background work for anything long. Anything that needs their confirmation cannot be done with nobody present, so prepare it and ask. Read back what happened in this conversation before starting again on something already done.",
+		"Work toward the goal with the tools you have: look, act, schedule what should happen on a clock, start background work for anything long. "+unattendedLine(agent)+" Read back what happened in this conversation before starting again on something already done.",
 		"Whatever you write in the goal tool is for the person to read: plain words, no ids, no tool names. End by calling the goal tool exactly once. met, with text saying how it ended, as soon as what the goal is for is done. note, with status saying where it stands in one line and the minutes until your next turn, and activity only when something happened worth their reading later. wait, with status saying what you need from them in a sentence they can answer; that, and only that, is said to them in their main conversation.",
 	)
 	return strings.Join(lines, "\n")

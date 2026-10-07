@@ -1,6 +1,6 @@
 # The agent uses the person's devices whether or not they are present
 
-- Status: accepted
+- Status: accepted; amended by `20261007-the-person-chooses-what-the-agent-does-alone.md`, where the person allows kinds of call to run with nobody present
 - Date: 2026-10-06
 - Deciders: the-owner
 
@@ -22,13 +22,17 @@ is expected to do what they asked whether or not they are watching.
 
 ## Decision
 
-Any run reaches the person's attached computer, terminal, tab and browser, and
+Any run reaches the person's attached computer, terminal and browser, and
 the MCP servers that run on their computer, with or without the person
-present. A run that has a conversation to wake (a schedule's, a goal's, the
+present. Their attached tab is read by any run but acted in only with the
+person present, since a click there acts as them, signed in; and a server on
+their computer is never offered to the restricted runs that read mail from
+strangers. A run that has a conversation to wake (a schedule's, a goal's, the
 person's) may leave a command running in the background and start background
-work, and is woken where it ran when that ends. Only a run that is a
-transcript of its own, such as a night's, has nothing to wake and runs
-commands in the foreground.
+work, and is woken where it ran when that ends; a goal's own turn starts the
+count of turns that may wake it again, as the person's word does elsewhere.
+Only a run that is a transcript of its own, such as a night's, has nothing to
+wake and runs commands in the foreground.
 
 What stays is the confirmation a call is held to. A call that needs the
 person's word (by its risk, by the command judgement, by the operator's or the

@@ -151,7 +151,7 @@ func (self *directRun) MeaningSearch(ctx context.Context, mailboxId, query strin
 func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operations tools.Operations) []*tools.Tool {
 	configuration := self.settings.Configuration()
 	offered := self.catalog.Offered(operations.Permissions(), &configuration.Agent.Tools)
-	for _, tool := range self.remoteTools(ctx, person.ID, false) {
+	for _, tool := range self.remoteTools(ctx, person.ID) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			offered = append(offered, tool)
 		}

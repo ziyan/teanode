@@ -99,7 +99,7 @@ func (self *Agent) startBackgroundWork(ctx context.Context, parent *AskRun, work
 	if parent.settings.Conversation == nil || parent.settings.Conversation.Kind == models.AgentConversationRun {
 		return nil, fmt.Errorf("this run has no conversation to be woken in when it finishes; set background to false and wait for it")
 	}
-	work.ConversationID, work.IsPersonPresent = parent.settings.Conversation.ID, true
+	work.ConversationID, work.IsPersonPresent = parent.settings.Conversation.ID, !parent.settings.Headless
 	var started *models.AgentBackgroundWork
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		started, err = self.QueueBackgroundWork(tx, work)

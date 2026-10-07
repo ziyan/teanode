@@ -553,7 +553,16 @@ func (self *AskRun) Configuration() *config.Configuration { return self.agent.se
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
 func (self *AskRun) CanAsk() bool {
-	return (!self.settings.Headless || self.settings.CanAsk) && !self.settings.isUnattended
+	if self.settings.isUnattended {
+		return false
+	}
+	// A subagent's cards are shown in the turn that started it, so it can
+	// ask only when that turn can: under a schedule or a goal it has nobody
+	// to ask, and what the person allows for that is what applies.
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.CanAsk()
+	}
+	return !self.settings.Headless || self.settings.CanAsk
 }
 
 // resultCharacters is how much of a tool's answer the history keeps.
@@ -850,7 +859,7 @@ func (self *AskRun) turn() error {
 	// The catalog as this person sees it, and what the connected servers
 	// offer them.
 	self.offered = self.agent.catalog.Offered(settings.Operations.Permissions(), &configuration.Agent.Tools)
-	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID, settings.Headless) {
+	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
 		}
@@ -1506,10 +1515,15 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			// Nobody can confirm. What the person allowed the agent to do
 			// when they are not there goes ahead as if they had; the rest
 			// is refused, saying where they allow it.
-			if !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
+			// Never in a run held to reading or to a few named tools: those
+			// are the runs that read mail from strangers, and what the
+			// person allows the agent to do alone is not theirs to steer.
+			isRestricted := self.settings.ReadOnly || self.settings.Allow != nil
+			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
 				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
 			}
 			log.Noticef("the agent of %q ran %s with nobody present, as allowed for %s", self.settings.Owner.Username, tool.Name, joinUnattendedRisks(unattendedRisks))
+			call.IsConfirmedUnattended = true
 		} else {
 			approved, err := self.confirm(ctx, tool, call)
 			if errors.Is(err, ErrLeftOpen) {

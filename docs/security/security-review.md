@@ -1421,7 +1421,8 @@ The rest of what was looked at held. The guards on the newest surfaces are in
 place and were read rather than assumed: a subagent is depth-limited, carries
 its parent's permissions and read-only flag, and answers its confirmations
 through the parent; the terminal tool resolves its computer through the same
-gate every other computer tool does, which refuses a run with nobody present.
+gate every other computer tool does, which refuses a run with nobody present. (Since 2026-10-06 that gate admits a run with nobody present too; see
+`docs/decisions/20261006-the-agent-uses-the-persons-devices-whoever-is-present.md`.)
 
 ## Findings
 
@@ -1501,7 +1502,8 @@ Named so nobody repeats the work:
   permission set inherited, confirmations answered through the parent, rounds
   bounded, usage recorded under its own kind.
 - **The terminal on an attached computer** resolves through the same gate as
-  every other computer tool: refused for a run with nobody present, refused
+  every other computer tool: refused for a run with nobody present (admitted
+  since 2026-10-06, see the decision record of that date), refused
   when the operator has not allowed computers, refused when the feature is
   off.
 - **Self-upgrade** builds its client without a timeout, which is correct: both

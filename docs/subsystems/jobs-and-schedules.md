@@ -161,8 +161,9 @@ whose cron line stops making sense is switched off, so it can be seen and
 mended.
 
 The run is a headless turn with the whole catalog the person's permissions
-allow — but nobody is present to confirm anything, so every destructive or
-outward call is refused with an explanation rather than performed.
+allow — but nobody is present to confirm anything, so every call that would
+ask is refused with an explanation rather than performed, except the kinds the
+person allows for when they are not there (see `devices.md`).
 
 A schedule that answers in the drawer takes that turn in the conversation it
 was made in, the way a goal's check-in does: the turn opens with a message

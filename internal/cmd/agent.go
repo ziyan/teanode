@@ -195,7 +195,7 @@ func newAgentSettingsCommand() *cli.Command {
 					"alerts (true|false: whether it tells you unasked what your mail says you should know now),\n" +
 					"alert-quiet-start, alert-quiet-end (HH:MM in your zone: its night, when only what cannot wait is said),\n" +
 					"alert-daily-most (how many a day at most; 0 for the default of 5),\n" +
-					"unattended (comma list of outward, destructive, granting, listed: what it may do without your word\n" +
+					"unattended (comma list of outward, money, destructive, granting, listed: what it may do without your word\n" +
 					"when you are not there; empty for nothing),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
 					"voice.signoff, notify.held-reply, notify.high-priority, notify.run-failed (off|dashboard|mail).\n" +
