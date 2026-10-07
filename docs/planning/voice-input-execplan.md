@@ -15,11 +15,13 @@ To see it working: the operator turns on voice under the server's agent settings
 ## Progress
 
 - [x] (2026-10-07) Read #345 to #348 and the code they name; surveyed the WebSocket endpoints, AskAgent, providers, settings, the drawer and the instance rules; probed OpenAI's realtime transcription with the server's key (see Surprises).
-- [ ] Milestone 1: `agent.voice` in the configuration, its settings on the server's agent page and in `teanode settings`, and a `voice` surface.
-- [ ] Milestone 2: `internal/voice`: the provider session (dial, configure, relay audio, read events) and the turn ordering, tested against a fake provider.
-- [ ] Milestone 3: the `/api/v1/agent/voice` socket: sign-in, the person's agent, the budget, relay both ways, usage recorded; `ReadAgentVoice` for the drawer.
-- [ ] Milestone 4: the drawer: microphone capture through an AudioWorklet at 24 kHz PCM16, the socket, the caption, final transcripts sent through the drawer's own send; the Permissions-Policy that allows the microphone.
-- [ ] Milestone 5: tests, docs, a run with a real voice on a dev server, deploy.
+- [x] (2026-10-07) Milestone 1: `agent.voice` in the configuration, its settings on the server's agent page and in `teanode settings`, and a `voice` surface.
+- [x] (2026-10-07) Milestone 2: `internal/voice`: the provider session (dial, configure, relay audio, read events) and the turn ordering, tested against a fake provider.
+- [x] (2026-10-07) Milestone 3: the `/api/v1/agent/voice` socket: sign-in, the person's agent, the budget, relay both ways, usage recorded; `ReadAgentVoice` for the drawer.
+- [x] (2026-10-07) Milestone 4: the drawer: microphone capture through an AudioWorklet at 24 kHz PCM16, the socket, the caption, final transcripts sent through the drawer's own send; the Permissions-Policy that allows the microphone.
+- [x] (2026-10-07) Voice mode in the drawer: while it is on, the box is replaced by a meter that follows the microphone (green while the provider hears speech, breathing while the agent works), what is being heard, stop and End; the conversation stays visible above. Checked in headless Chrome with a recorded voice at 390 and 1280 pixels, light and dark.
+- [x] (2026-10-07) Safari on iPhone: the audio context is made and resumed inside the tap, and the capture node reaches the speakers through a gain of zero, which WebKit needs to run it. Not yet tried on a real iPhone.
+- [ ] Milestone 5: deploy, and a run on a real iPhone.
 
 
 ## Surprises & Discoveries
@@ -30,6 +32,10 @@ To see it working: the operator turns on voice under the server's agent settings
 - A pause inside one spoken request produced two utterances 2.5 seconds apart. In TeaNode the second becomes a steering message into the running turn, which is how a typed follow-up behaves.
 - `gpt-live-transcribe` and `gpt-realtime-whisper` require turn detection off and commits from the application, so they cannot be used with the provider's speech detection this plan relies on.
 - The dashboard sends `Permissions-Policy: microphone=()`, which blocks the microphone outright, and its CSP allows scripts only from the server itself, so the AudioWorklet is a file the server serves, not a blob.
+
+
+- Measured on a dev server with a recorded voice: the microphone is listening about 0.5 seconds after the tap, and a finished utterance is sent about 0.3 seconds after the provider completes it (about 1.3 seconds after the person stops talking).
+- Chrome on Linux granted `echoCancellation: true` at 48 kHz. The drawer reports what was granted in its first message and the server logs it, because echo is the main risk once answers are spoken (#347, #348): the browser's echo canceller only removes audio played by the same page, so spoken answers must be played by the drawer itself, and a speaker on a laptop with no canceller would have the provider hear the agent and start a new turn. Before answers are spoken, speech heard while an answer plays should be checked against what is playing rather than trusted.
 
 
 ## Decision Log
@@ -47,6 +53,9 @@ To see it working: the operator turns on voice under the server's agent settings
 - Decision: the configuration is the operator's (`agent.voice`): on or off, which OpenAI provider (its key), the model, and the silence that ends a turn. It is shown on the server's agent settings and in `teanode settings`. The drawer learns only whether voice is available, through `ReadAgentVoice`, which needs `agent:use`.
   Date/Author: 2026-10-07.
 - Decision: the transcription prompt names the agent and the person ("A person talking to their personal agent, Bertie."); the richer, refreshed context of #346 is later work.
+  Date/Author: 2026-10-07.
+- Decision: in voice mode the box gives way to a voice panel, and comes back only when the person presses End; the conversation list stays. Stop for a running turn sits in the panel too.
+  Rationale: the person asked for it, and a box nobody types into only invites a half-typed, half-spoken turn.
   Date/Author: 2026-10-07.
 - Decision: no voice in the browser extension's drawer for now; it is hidden there.
   Rationale: the extension's page is another origin with its own microphone permission, which is a separate piece of work.

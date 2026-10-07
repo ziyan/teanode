@@ -20,6 +20,8 @@ export type VoiceEvent = {
 export type VoiceCallbacks = {
   // Listening: the server and the provider are ready for speech.
   onListening: () => void
+  // The provider hears somebody talking, or no longer does.
+  onHearing: (isHearing: boolean) => void
   // The words of the utterance being heard, so far; empty clears them.
   onCaption: (captionText: string) => void
   // A finished utterance: once each, in the order spoken.
@@ -83,6 +85,8 @@ export class VoiceSession {
   private socket?: WebSocket
   private stream?: MediaStream
   private context?: AudioContext
+  private analyser?: AnalyserNode
+  private samples?: Float32Array<ArrayBuffer>
   private isEnded = false
   private isReady = false
   private tracker = new TranscriptTracker()
@@ -92,7 +96,13 @@ export class VoiceSession {
     private messages: { microphoneRefused: string; notHeard: string; connectionLost: string },
   ) {}
 
+  // start begins listening. It is called from the person's tap: Safari on a
+  // phone starts an audio context only within the gesture that asked for
+  // it, so the context is made and resumed before anything is waited on.
   async start(sampleRate: number) {
+    const context = new AudioContext()
+    this.context = context
+    void context.resume().catch(() => undefined)
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -102,23 +112,48 @@ export class VoiceSession {
       return
     }
     if (this.isEnded) return this.release()
-    this.context = new AudioContext()
-    await this.context.audioWorklet.addModule('/assets/voice-capture-worklet.js')
+    await context.audioWorklet.addModule('/assets/voice-capture-worklet.js')
     if (this.isEnded) return this.release()
-    const source = this.context.createMediaStreamSource(this.stream)
-    // No outputs: it only listens, and plays nothing back.
-    const capture = new AudioWorkletNode(this.context, 'voice-capture', {
+    if (context.state !== 'running') await context.resume().catch(() => undefined)
+    const source = context.createMediaStreamSource(this.stream)
+    // How loud the microphone is, for the drawer to draw.
+    this.analyser = context.createAnalyser()
+    this.analyser.fftSize = 512
+    this.samples = new Float32Array(this.analyser.fftSize)
+    const capture = new AudioWorkletNode(context, 'voice-capture', {
       numberOfInputs: 1,
-      numberOfOutputs: 0,
+      numberOfOutputs: 1,
       processorOptions: { targetRate: sampleRate },
     })
-    source.connect(capture)
+    // WebKit renders only what reaches the speakers, so the capture is
+    // connected to them through a gain of nothing: it runs everywhere and
+    // plays nothing back.
+    const silent = context.createGain()
+    silent.gain.value = 0
+    source.connect(this.analyser)
+    this.analyser.connect(capture)
+    capture.connect(silent)
+    silent.connect(context.destination)
 
     const socket = new WebSocket(voiceSocketAddress(window.location))
     socket.binaryType = 'arraybuffer'
     this.socket = socket
+    // What the browser granted, which is not always what was asked for:
+    // without echo cancellation a spoken answer would be heard back.
+    const granted = this.stream.getAudioTracks()[0]?.getSettings() ?? {}
     socket.onopen = () => {
-      socket.send(JSON.stringify({ voiceEvent: 'hello', authorization: authorization().Authorization }))
+      socket.send(
+        JSON.stringify({
+          voiceEvent: 'hello',
+          authorization: authorization().Authorization,
+          captureSettings: {
+            echoCancellation: granted.echoCancellation,
+            noiseSuppression: granted.noiseSuppression,
+            autoGainControl: granted.autoGainControl,
+            sampleRate: granted.sampleRate,
+          },
+        }),
+      )
     }
     capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
       // Before the server is ready there is nobody to hear it.
@@ -143,12 +178,25 @@ export class VoiceSession {
           this.end(event.errorMessage ?? this.messages.connectionLost)
           return
       }
+      if (event.voiceEvent === 'speechStarted') this.callbacks.onHearing(true)
+      if (event.voiceEvent === 'speechStopped') this.callbacks.onHearing(false)
       const changed = this.tracker.accept(event)
       if (changed.captionText !== undefined) this.callbacks.onCaption(changed.captionText)
       if (changed.transcriptText) this.callbacks.onTranscript(changed.transcriptText)
       if (changed.isNotHeard) this.callbacks.onProblem(this.messages.notHeard, false)
     }
     socket.onclose = () => this.end(this.isEnded ? undefined : this.messages.connectionLost)
+  }
+
+  // level is how loud the microphone is now, from 0 to 1, for drawing.
+  level(): number {
+    if (!this.analyser || !this.samples) return 0
+    this.analyser.getFloatTimeDomainData(this.samples)
+    let sum = 0
+    for (const sample of this.samples) sum += sample * sample
+    // Speech at a normal distance sits around a tenth in root mean square;
+    // scaled so that it fills most of the range.
+    return Math.min(1, Math.sqrt(sum / this.samples.length) * 6)
   }
 
   // stop ends listening at the person's word.
@@ -164,6 +212,7 @@ export class VoiceSession {
     this.isEnded = true
     this.release()
     if (problemText) this.callbacks.onProblem(problemText, true)
+    this.callbacks.onHearing(false)
     this.callbacks.onCaption('')
     this.callbacks.onEnded()
   }

@@ -33,6 +33,7 @@ import { useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
 import { VoiceSession } from '../voice/voiceSession'
+import { VoiceMeter } from '../voice/voiceMeter'
 import {
   ArchiveIcon,
   ArrowDownIcon,
@@ -3079,7 +3080,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [voiceSampleRate, setVoiceSampleRate] = useState(0)
   const [voiceState, setVoiceState] = useState<'off' | 'starting' | 'listening'>('off')
   const [voiceCaption, setVoiceCaption] = useState('')
+  const [isVoiceHearing, setVoiceHearing] = useState(false)
   const voiceSession = useRef<VoiceSession | null>(null)
+  const voiceLevel = useCallback(() => voiceSession.current?.level() ?? 0, [])
   const sendLatest = useRef(send)
   sendLatest.current = send
   useEffect(() => {
@@ -3087,7 +3090,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     let cancelled = false
     graphql<{ ReadAgentVoice: { isVoiceAvailable: boolean; sampleRate: number } }>(READ_VOICE)
       .then((response) => {
-        if (!cancelled && response.ReadAgentVoice.isVoiceAvailable) setVoiceSampleRate(response.ReadAgentVoice.sampleRate)
+        if (!cancelled && response.ReadAgentVoice.isVoiceAvailable)
+          setVoiceSampleRate(response.ReadAgentVoice.sampleRate)
       })
       .catch(() => undefined)
     return () => {
@@ -3103,6 +3107,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const session = new VoiceSession(
       {
         onListening: () => setVoiceState('listening'),
+        onHearing: setVoiceHearing,
         onCaption: setVoiceCaption,
         onTranscript: (transcriptText) => void sendLatest.current(transcriptText, { isSpoken: true }),
         onProblem: (problemText) => toast.failed(problemText),
@@ -4105,104 +4110,132 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               <span>{waitingNote}</span>
             </div>
           ) : null}
+          {/* Voice mode: the box gives way to what is being heard, until the
+              person ends it; the conversation above stays where it is. */}
           {voiceState !== 'off' ? (
-            <div className="agent-drawer-voice" aria-live="polite">
-              <MicrophoneIcon size={12} />
-              <span className={voiceCaption ? undefined : 'muted'}>
+            <div className="agent-drawer-voice-mode" role="group" aria-label={t('agentDrawer.voiceMode')}>
+              <VoiceMeter level={voiceLevel} isHearing={isVoiceHearing} isAnswering={running} />
+              <p
+                className={['agent-drawer-voice-caption', voiceCaption ? '' : 'muted'].filter(Boolean).join(' ')}
+                aria-live="polite"
+              >
                 {voiceState === 'starting'
                   ? t('agentDrawer.voiceStarting')
-                  : voiceCaption || t('agentDrawer.voiceListening')}
-              </span>
+                  : voiceCaption ||
+                    (isVoiceHearing
+                      ? t('agentDrawer.voiceHearing')
+                      : running
+                        ? t('agentDrawer.voiceWorking')
+                        : t('agentDrawer.voiceListening'))}
+              </p>
+              {running && (
+                <Tooltip label={t('agentDrawer.stop')}>
+                  <button
+                    type="button"
+                    className="icon-button agent-stop"
+                    aria-label={t('agentDrawer.stop')}
+                    onClick={() => void stop()}
+                  >
+                    ■
+                  </button>
+                </Tooltip>
+              )}
+              <button type="button" className="agent-drawer-voice-end" onClick={toggleVoice}>
+                {t('agentDrawer.voiceEnd')}
+              </button>
             </div>
-          ) : null}
-          <form
-            className="agent-drawer-input"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void send()
-            }}
-          >
-            <input
-              ref={filePicker}
-              type="file"
-              multiple
-              hidden
-              onChange={(event) => {
-                addFiles(event.target.files)
-                event.target.value = ''
+          ) : (
+            <form
+              className="agent-drawer-input"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void send()
               }}
-            />
-            <Tooltip label={t('agentDrawer.attach')}>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={t('agentDrawer.attach')}
-                onClick={() => filePicker.current?.click()}
-              >
-                <PaperclipIcon size={16} />
-              </button>
-            </Tooltip>
-            <textarea
-              ref={input}
-              rows={1}
-              value={draft}
-              placeholder={uploading ? t('agentDrawer.uploading') : askPlaceholder}
-              aria-label={askPlaceholder}
-              onChange={(event) => setDraft(event.target.value)}
-              onPaste={(event) => {
-                const files = Array.from(event.clipboardData.files ?? [])
-                if (files.length > 0) {
-                  event.preventDefault()
-                  addFiles(files)
-                }
-              }}
-              onKeyDown={(event) => {
-                // Enter while an input method is composing picks a
-                // character, not a message to send.
-                if (event.nativeEvent.isComposing || event.keyCode === 229) return
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  void send()
-                }
-              }}
-            />
-            {running && (
-              <Tooltip label={t('agentDrawer.stop')}>
+            >
+              <input
+                ref={filePicker}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  addFiles(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+              <Tooltip label={t('agentDrawer.attach')}>
                 <button
                   type="button"
-                  className="icon-button agent-stop"
-                  aria-label={t('agentDrawer.stop')}
-                  onClick={() => void stop()}
+                  className="icon-button"
+                  aria-label={t('agentDrawer.attach')}
+                  onClick={() => filePicker.current?.click()}
                 >
-                  ■
+                  <PaperclipIcon size={16} />
                 </button>
               </Tooltip>
-            )}
-            {voiceSampleRate > 0 && (
-              <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
+              <textarea
+                ref={input}
+                rows={1}
+                value={draft}
+                placeholder={uploading ? t('agentDrawer.uploading') : askPlaceholder}
+                aria-label={askPlaceholder}
+                onChange={(event) => setDraft(event.target.value)}
+                onPaste={(event) => {
+                  const files = Array.from(event.clipboardData.files ?? [])
+                  if (files.length > 0) {
+                    event.preventDefault()
+                    addFiles(files)
+                  }
+                }}
+                onKeyDown={(event) => {
+                  // Enter while an input method is composing picks a
+                  // character, not a message to send.
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    void send()
+                  }
+                }}
+              />
+              {running && (
+                <Tooltip label={t('agentDrawer.stop')}>
+                  <button
+                    type="button"
+                    className="icon-button agent-stop"
+                    aria-label={t('agentDrawer.stop')}
+                    onClick={() => void stop()}
+                  >
+                    ■
+                  </button>
+                </Tooltip>
+              )}
+              {voiceSampleRate > 0 && (
+                <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
+                  <button
+                    type="button"
+                    className={['icon-button', 'agent-voice', voiceState !== 'off' ? 'is-listening' : '']
+                      .filter(Boolean)
+                      .join(' ')}
+                    aria-label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}
+                    aria-pressed={voiceState !== 'off'}
+                    disabled={isRun || Boolean(actingAs)}
+                    onClick={toggleVoice}
+                  >
+                    <MicrophoneIcon size={16} />
+                  </button>
+                </Tooltip>
+              )}
+              <Tooltip label={t('agentDrawer.send')}>
                 <button
-                  type="button"
-                  className={['icon-button', 'agent-voice', voiceState !== 'off' ? 'is-listening' : ''].filter(Boolean).join(' ')}
-                  aria-label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}
-                  aria-pressed={voiceState !== 'off'}
-                  disabled={isRun || Boolean(actingAs)}
-                  onClick={toggleVoice}
+                  type="submit"
+                  className="icon-button agent-send"
+                  aria-label={t('agentDrawer.send')}
+                  disabled={!canSend || isReadingConversation}
                 >
-                  <MicrophoneIcon size={16} />
+                  <ArrowUpIcon size={16} />
                 </button>
               </Tooltip>
-            )}
-            <Tooltip label={t('agentDrawer.send')}>
-              <button
-                type="submit"
-                className="icon-button agent-send"
-                aria-label={t('agentDrawer.send')}
-                disabled={!canSend || isReadingConversation}
-              >
-                <ArrowUpIcon size={16} />
-              </button>
-            </Tooltip>
-          </form>
+            </form>
+          )}
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}

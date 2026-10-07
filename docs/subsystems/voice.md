@@ -61,6 +61,25 @@ before acting on a misheard name, sum or day. The transcription itself is told
 whom the person is talking to, which is what gets the agent's name spelled
 right.
 
+**Voice mode in the drawer.** Pressing the microphone puts the drawer in
+voice mode: the box is replaced by a meter of five bars that follows how loud
+the microphone is, green while the provider says it hears speech and breathing
+slowly while the agent works, beside the words heard so far, stop for a running
+turn, and End. The conversation stays visible above it. The box comes back only
+when the person presses End, or listening stops on its own (a lost
+connection, a refused microphone).
+
+**Safari on a phone.** The audio context is made and resumed in the same tap
+that asks for the microphone, before anything is waited on, and the capture
+node is connected to the speakers through a gain of zero, since WebKit only
+runs nodes that reach them. Nothing is played.
+
+**Echo.** The first message reports what the browser granted (echo
+cancellation, noise suppression, gain control, sample rate) and the server
+logs it. While answers are only shown this does not matter; once they are
+spoken (#347) it is the main risk, since the provider would hear the answer
+and start a turn of its own.
+
 ## Configuration
 
 `agent.voice` in `docs/configuration.md`: on or off, which provider of kind

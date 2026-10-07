@@ -6879,21 +6879,59 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   color: var(--bad);
 }
 
-/* What is being heard, above the box: the words so far, or that it is
-   listening. */
-.agent-drawer-voice {
+/* Voice mode, in the box's place: the meter, what is being heard, and the
+   way out. As tall as the box, so the conversation above does not move. */
+.agent-drawer-voice-mode {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 0 12px 6px;
-  font-size: 13px;
-  line-height: 1.4;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
 }
 
-.agent-drawer-voice svg {
+.agent-drawer-voice-caption {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.35;
+  /* Two lines of what is being heard; a long utterance shows its end. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.agent-drawer-voice-end {
   flex: none;
-  margin-top: 3px;
-  color: var(--bad);
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+}
+
+.voice-meter {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 34px;
+  height: 32px;
+}
+
+.voice-meter-bar {
+  flex: 1;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--muted);
+  transform: scaleY(0.15);
+  transform-origin: center;
+  transition: background-color 0.2s;
+  will-change: transform;
+}
+
+.voice-meter.is-hearing .voice-meter-bar {
+  background: var(--leaf);
 }
 
 .agent-drawer-input .agent-send {
@@ -6907,7 +6945,8 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   cursor: default;
 }
 
-.agent-drawer-input .agent-stop {
+.agent-drawer-input .agent-stop,
+.agent-drawer-voice-mode .agent-stop {
   border-radius: 50%;
   border: 1px solid var(--border);
   font-size: 12px;

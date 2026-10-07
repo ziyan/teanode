@@ -13,10 +13,17 @@ describe('TranscriptTracker', () => {
       captionText: 'What is on',
     })
     expect(
-      tracker.accept({ voiceEvent: 'transcriptFinal', utteranceId: 'a', utteranceSequence: 1, transcriptText: ' What is on? ' }),
+      tracker.accept({
+        voiceEvent: 'transcriptFinal',
+        utteranceId: 'a',
+        utteranceSequence: 1,
+        transcriptText: ' What is on? ',
+      }),
     ).toEqual({ captionText: '', transcriptText: 'What is on?' })
     // Said again, after a reconnect or a repeat: not sent twice.
-    expect(tracker.accept({ voiceEvent: 'transcriptFinal', utteranceId: 'a', transcriptText: 'What is on?' })).toEqual({})
+    expect(tracker.accept({ voiceEvent: 'transcriptFinal', utteranceId: 'a', transcriptText: 'What is on?' })).toEqual(
+      {},
+    )
     expect(tracker.accept({ voiceEvent: 'transcriptDelta', utteranceId: 'a', transcriptText: 'late' })).toEqual({})
   })
 
@@ -73,7 +80,8 @@ describe('the capture worklet', () => {
     const total = 48000 / 5
     for (let start = 0; start < total; start += 128) {
       const block = new Float32Array(128)
-      for (let index = 0; index < 128; index++) block[index] = 0.5 * Math.sin((2 * Math.PI * 440 * (start + index)) / 48000)
+      for (let index = 0; index < 128; index++)
+        block[index] = 0.5 * Math.sin((2 * Math.PI * 440 * (start + index)) / 48000)
       capture.process([[block]])
     }
     // 9,600 input samples make 4,800 output samples: two whole frames.
