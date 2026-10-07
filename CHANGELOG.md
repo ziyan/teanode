@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.114.1] - 2026-10-07
+
+### Changed
+
+- The agent's Sources tab no longer lists, under each source, the commit authors it could not match to you. (#344)
+- The chat box no longer carries the line "AI can make mistakes." (#344)
+- The agent's Finance tab no longer opens with a line pointing to the Finance page. (#344)
+
 ## [0.114.0] - 2026-10-07
 
 ### Added
