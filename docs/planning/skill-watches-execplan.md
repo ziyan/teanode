@@ -17,15 +17,18 @@ To see it working: install the new versions of the four skills; within ten minut
 ## Progress
 
 - [x] (2026-10-06) Read every skill in the registry and what each program prints (gog, link-cli, mm, gh); decided which deserve a watch.
-- [ ] Milestone 1: the `watches:` block in the skill format, parsed and validated.
-- [ ] Milestone 2: the generic watch job, migration 0152 renaming the mail-specific table and columns, the alert job reading the renamed candidate.
-- [ ] Milestone 3: the four skills' new tools and watches in the registry, signed, and installed on the server.
-- [ ] Milestone 4: tests, docs, deploy, a look on the server.
+- [x] (2026-10-06) Milestone 1: the `watches:` block in the skill format, parsed and validated.
+- [x] (2026-10-06) Milestone 2: the generic watch job, migration 0152, the alert job reading the renamed candidate.
+- [x] (2026-10-06) Milestone 3: gmail 1.1.0, link 1.1.0, mattermost 1.2.0 and github 2.1.0 with their watches, signed, merged (teanode-skills#9) and installed; link, mattermost and github pointed at the computer gmail already used, since three computers are attached and a watch needs to know which.
+- [x] (2026-10-06) Milestone 4: tests, docs, deployed; every watch has looked, and Gmail's judged its first new message.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- A first look that found nothing left no record, so the next look was a first look again and would have noted, not judged, the first item to arrive. A first look now records itself.
+- Starting each look from the newest item's date sent Link's looks further back each time: transactions are dated the day they were made and appear days later, so the second look reached days before the first and judged as new what the first had not reached. Looks now start from when the watch last looked, less the overlap.
+- An `lookBack` setting was dropped for the silent first look: what is there when a watch starts is not news, whatever its age.
+  Evidence: the first looks on the maintainer's server, 2026-10-06.
 
 
 ## Decision Log
@@ -47,7 +50,7 @@ To see it working: install the new versions of the four skills; within ten minut
 
 ## Outcomes & Retrospective
 
-(To be written when the work is done.)
+Four skills declare watches and the code names none of them. On the server each look takes a few seconds; Gmail judged its first new message twenty minutes after the deploy. What remains possible: Google Drive could watch files newly shared with the person, and a skill that needs a person's secret cannot be watched yet, because a look has nobody to fill one in.
 
 
 ## Context and Orientation
