@@ -91,17 +91,21 @@ of the shapes that change what runs
 or who may get in: shell startup files, `.ssh`, `.gnupg`, autostart and service
 directories, `/etc`, git hooks, the password files.
 
-A run with nobody present cannot reach a computer, with one exception: the
-nightly run. The owner read the case against it — an unattended run that can
-execute programs on somebody's machine is a different risk from a conversation
-they are watching — and accepted it, so the night has the whole tool kit and
-the machine with it. Everything else unattended is still turned away here: a
-scheduled turn, a goal, a sorting run. For the night, the card is not what
-stands between it and the machine, because a card cannot be shown to an empty
-room; what stands there instead is the refusal a call gets when it needs the
-person's word. Anything the rule above classifies as asking is therefore not
-merely delayed for a night, it is refused, and the night is told to say what
-it would have done.
+Any run reaches the computer, with or without the person there: a scheduled
+turn, a goal, a night. What stands between such a run and the machine is not a
+card, which cannot be shown to an empty room, but the refusal a call gets when
+it needs the person's word: anything the rule above classifies as asking is
+refused with nobody present, and the run is told to say what it would have
+done, unless the person allowed that kind of action for when they are not
+there (speaking for them, money, what cannot be undone, giving access, or the
+tools on their own list; never the operator's list, and never in a run that
+reads mail from strangers).
+`docs/decisions/20261007-the-person-chooses-what-the-agent-does-alone.md` says
+how. A run that has a conversation to wake may leave a command running in the
+background and is woken there when it ends; a run that is a transcript of its
+own, such as a night's, runs commands in the foreground.
+`docs/decisions/20261006-the-agent-uses-the-persons-devices-whoever-is-present.md`
+says why.
 
 **The rule is the server's alone.** The program runs what it is sent. An
 attached computer trusts its server the way a terminal trusts the person at it.
@@ -233,7 +237,9 @@ card, which they can widen to every browser call by putting `browser` in their
 own confirm list. A password already on the page is not read back into the
 conversation, which is a different question from typing one in.
 
-A run with nobody present never touches the tab.
+A run with nobody present reads the tab but does not act in it: a click or
+a keystroke there acts as the person, signed in, and no card can be shown to
+an empty room to ask first.
 
 ## The headless browser
 

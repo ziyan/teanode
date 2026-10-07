@@ -6,6 +6,27 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.113.0] - 2026-10-07
+
+### Added
+
+- Under "When you are not there" on your agent's settings, choose what your agent may do without asking when nobody is there to confirm: speak for you, do what cannot be undone, give access, or use the tools you listed under "Ask me first". Each is off until you turn it on. (#342)
+- Operators can set the limits on unattended work on the server's agent settings: rounds per subagent, goal turns a day and without the person, goals in progress per person, and wakes by background work. (#342)
+
+### Changed
+
+- A conversation turn may go back to the model 150 times by default instead of 40. A server that saved its own value keeps it. (#342)
+
+## [0.112.0] - 2026-10-07
+
+### Added
+
+- The agent can tell you about mail that arrives in your Gmail, archived mail included, when the `gmail` skill is installed and a computer of yours is attached for it. It looks every ten minutes with the skill's own search and read, and the usual alert settings (quiet hours, the daily most, mutes) apply. (#340)
+
+### Changed
+
+- Scheduled turns, goals and the nightly run can use your attached computer, terminal, browser tab and the MCP servers on your computer, and can leave commands running in the background, without you present. Actions that need your confirmation are still refused when you are not there to give it. (#341)
+
 ## [0.111.0] - 2026-10-06
 
 ### Added

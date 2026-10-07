@@ -1472,7 +1472,26 @@ embeds before it hands the queue back, so that one enormous source does
 not hold the worker. Zero resolves to `2000`.
 
 **`maxRoundsPerAsk`** — How many times one conversation turn may go back to
-the model.
+the model. 150 by default; it was 40, which a turn working through a long
+errand on the person's computer ran out of.
+
+**`maxRoundsPerSubagent`** — How many rounds one subagent may take. Zero
+resolves to `20`.
+
+**`goalTurnsPerDay`** — How many turns of its own one goal takes in a day,
+counting its own check-ins, not the runs of a schedule it keeps. Zero
+resolves to `48`, a turn every half hour.
+
+**`goalTurnsAlone`** — How many of those turns a goal takes without a word
+from the person before it stops and asks them. Zero resolves to `24`.
+
+**`goalsInProgress`** — How many goals one person may have working or waiting
+at once. Zero resolves to `20`.
+
+**`backgroundWakesAlone`** — How many turns finished background commands and
+work may wake in one conversation before the person writes there again; past
+it, endings are written into the conversation and wake nothing. Zero resolves
+to `20`.
 
 **`maxRoundsPerResearch`** — The same for a research run.
 
@@ -1625,8 +1644,10 @@ inferred: `stdio` when a command is set and no URL, otherwise `http`.
 **`location`** — Location is where a command-spoken server runs: "server",
 the default, is this server's own host, as this process; "computer" is the
 person's own attached computer, as them. A server on the computer is reached
-only while one is attached, and never by a run with nobody present, and it
-cannot be marked headless.
+only while one is attached, by schedules, goals and nights as by a
+conversation, and it cannot be marked headless: that flag offers a server to
+the runs that read mail from strangers, which do not reach the person's
+machine.
 
 **`env`** — Variables given to the subprocess over this server's own
 environment, each with a `name` and a `value`; how a stdio server is given
@@ -1665,8 +1686,9 @@ For a service that sends an authorization only to a loopback address, the
 flow meant for a program on somebody's own machine. The person has to finish
 it in a browser on that computer. Only for `auth: oauth`.
 
-**`headless`** — Whether processing runs with nobody present may use the
-server's read-only tools.
+**`headless`** — Whether the restricted runs that read mail from strangers
+(sorting, research) may use the server's read-only tools. Schedules, goals and
+nights reach every connected server without it.
 
 **`readOnly`** — The tools that only read, which need no confirmation and
 are the only ones a headless run may call. Every other tool of the server

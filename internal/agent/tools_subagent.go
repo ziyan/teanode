@@ -26,11 +26,6 @@ import (
 // middle of it as it happens, which is why its transcript is a run of its
 // own that can be read afterwards.
 const (
-	// subagentRounds is how many rounds one may take. Fewer than a turn's
-	// forty: this is one piece of work, and a subagent still going after
-	// twenty rounds has not understood it and will not on the twenty-first.
-	subagentRounds = 20
-
 	// subagentWait is how long the turn waits for it. A turn blocked on a
 	// subagent is a person watching nothing happen, so this is minutes,
 	// not the hour a background job may take.
@@ -120,7 +115,7 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		// own would not be held to anything.
 		ReadOnlyTools: parent.settings.ReadOnlyTools,
 		Allow:         allowed,
-		MaxRounds:     subagentRounds,
+		MaxRounds:     self.settings.Configuration().Agent.Limits.EffectiveMaxRoundsPerSubagent(),
 		UsageKind:     "subagent",
 		// Not headless: somebody is present, at the other end of the turn
 		// that started this. Which is what makes the next line work.

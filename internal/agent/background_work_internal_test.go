@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -374,7 +375,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 
 	// Nineteen woken on some instance or other.
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		for range backgroundWakesAlone - 1 {
+		for range config.BackgroundWakesAloneDefault - 1 {
 			if err := tx.AddAgentConversationBackgroundWake(conversation.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -391,7 +392,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 	if read := readWork(t, database, run.Agent.ID, first.ID); read.WokenAt == nil {
 		t.Fatalf("marked as told: %+v", read)
 	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != backgroundWakesAlone {
+	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
 		t.Fatalf("the twentieth is counted: %d", wokenCount)
 	}
 
@@ -416,7 +417,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 	if _, notes := wokenMessages(t, database, conversation.ID); len(notes) != 1 {
 		t.Fatalf("the note is written once: %q", notes)
 	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != backgroundWakesAlone {
+	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
 		t.Fatalf("a note is not a woken turn: %d", wokenCount)
 	}
 
@@ -427,7 +428,7 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != backgroundWakesAlone {
+	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
 		t.Fatalf("a woken turn's message reset the count: %d", wokenCount)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -503,9 +504,10 @@ func TestOnlyTheInstanceThatClaimsAWakeWakes(t *testing.T) {
 
 // The survey starts in the background unless told to wait, once a turn
 // either way; the subagent starts there when told to, with the tools of
-// the turn less the ones that start or manage such work; neither starts
-// from a turn with nobody present; and background_work lists, reads and
-// stops what they started.
+// the turn less the ones that start or manage such work; a turn with
+// nobody present starts it too, to be woken where it ran, but a run that
+// is a transcript of its own does not; and background_work lists, reads
+// and stops what they started.
 func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -563,8 +565,15 @@ func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
 	}
 
 	headless := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: conversation, Headless: true}}
-	if _, err := worker.subagentTool().Run(tools.WithRun(t.Context(), headless), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}); err == nil {
-		t.Errorf("a turn with nobody present started background work")
+	headlessId := started(worker.subagentTool().Run(tools.WithRun(t.Context(), headless), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}))
+	if woken := readWork(t, database, run.Agent.ID, headlessId); woken.ConversationID != conversation.ID {
+		t.Errorf("a turn with nobody present starts it, to wake its conversation: %+v", woken)
+	}
+	ownRun := *conversation
+	ownRun.Kind = models.AgentConversationRun
+	transcript := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: &ownRun, Headless: true}}
+	if _, err := worker.subagentTool().Run(tools.WithRun(t.Context(), transcript), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}); err == nil {
+		t.Errorf("a run of its own started background work nothing would wake for")
 	}
 
 	tool := worker.backgroundWorkTool()

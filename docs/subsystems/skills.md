@@ -220,8 +220,9 @@ which is why a skill's commands are refused outright on a Windows computer:
 `cmd` gives those quotes no meaning and a value would become another command.
 
 That choice has consequences the tool's own description states, so the model
-plans around them: a skill that runs commands needs a computer attached and
-is never reached by a run with nobody present.
+plans around them: a skill that runs commands needs a computer attached, and a
+run with nobody present reaches it like any other tool, with what would ask
+first refused.
 
 A skill's command is held to the same rule as the `shell` tool, which runs any
 command on the person's computer as a write that does not ask: wrapping the

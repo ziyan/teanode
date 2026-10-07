@@ -106,8 +106,18 @@ type Agent struct {
 	lastIngest   time.Time
 	lastDream    time.Time
 	lastSpeak    time.Time
-	lastEvaluate time.Time
-	describing   atomic.Bool
+	lastWatch    time.Time
+
+	// watchesQueuedAt is when a look was last queued for each person's
+	// watch, by agent and skill/watch; see queueWatching.
+	watchMutex      sync.Mutex
+	watchesQueuedAt map[string]time.Time
+
+	// watchJudgements are the judgements of the commands watches run, by
+	// the call as the judge saw it; see judgedWatchCall.
+	watchJudgements map[string]string
+	lastEvaluate    time.Time
+	describing      atomic.Bool
 
 	// presence is who has a dashboard open; see presence.go.
 	presence presence
@@ -255,6 +265,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobAlert, self.runAlert)
 	self.Register(models.AgentJobCategorize, self.runCategorize)
 	self.Register(models.AgentJobStatementImport, self.runStatementImport)
+	self.Register(models.AgentJobWatch, self.runWatch)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -434,6 +445,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueIngestion(ctx, now)
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
+	self.queueWatching(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)
 	self.sweepBrowsers()

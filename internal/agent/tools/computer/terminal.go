@@ -52,9 +52,6 @@ func init() {
 				// every round, because it changes what typing means.
 				Overlay: func(ctx context.Context) string {
 					run := tools.MustRun(ctx)
-					if run.Headless() {
-						return ""
-					}
 					computing, ok := run.(tools.Computing)
 					if !ok || !computing.ComputersAllowed() {
 						return ""

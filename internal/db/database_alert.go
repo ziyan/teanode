@@ -112,6 +112,16 @@ type agentAlertCandidateModel struct {
 	AlertID         string     `gorm:"column:alert_id"`
 	DroppedAt       *time.Time `gorm:"column:dropped_at"`
 	DropReason      string     `gorm:"column:drop_reason"`
+
+	WatchedSkillName string     `gorm:"column:watched_skill_name"`
+	WatchedWatchName string     `gorm:"column:watched_watch_name"`
+	WatchedItemID    string     `gorm:"column:watched_item_id"`
+	WatchedSender    string     `gorm:"column:watched_sender"`
+	WatchedTitle     string     `gorm:"column:watched_title"`
+	WatchedCategory  string     `gorm:"column:watched_category"`
+	WatchedItemAt    *time.Time `gorm:"column:watched_item_at"`
+	WatchedItemText  string     `gorm:"column:watched_item_text"`
+	WatchedItemURL   string     `gorm:"column:watched_item_url"`
 }
 
 func (agentAlertCandidateModel) TableName() string { return "agent_alert_candidate" }
@@ -122,6 +132,9 @@ func (self *agentAlertCandidateModel) toModel() *models.AgentAlertCandidate {
 		CandidateKind: models.AlertCandidateKind(self.CandidateKind), AlertSignal: self.AlertSignal, CandidateReason: self.CandidateReason,
 		BurstKey: self.BurstKey, BurstCount: self.BurstCount, BudgetKey: self.BudgetKey, CreatedAt: self.CreatedAt.In(time.Local),
 		AlertID: self.AlertID, DroppedAt: self.DroppedAt, DropReason: self.DropReason,
+		WatchedSkillName: self.WatchedSkillName, WatchedWatchName: self.WatchedWatchName, WatchedItemID: self.WatchedItemID, WatchedSender: self.WatchedSender,
+		WatchedTitle: self.WatchedTitle, WatchedCategory: self.WatchedCategory, WatchedItemAt: localTime(self.WatchedItemAt),
+		WatchedItemText: self.WatchedItemText, WatchedItemURL: self.WatchedItemURL,
 	}
 }
 
@@ -132,6 +145,9 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 	if candidate.CandidateKind == models.AlertCandidateBudget && candidate.BudgetKey == "" {
 		return nil, fmt.Errorf("db: a budget alert candidate needs a budget key")
 	}
+	if candidate.CandidateKind == models.AlertCandidateWatched && (candidate.WatchedSkillName == "" || candidate.WatchedWatchName == "" || candidate.WatchedItemID == "") {
+		return nil, fmt.Errorf("db: a watched alert candidate needs its skill, its watch and its item")
+	}
 	alertSignal := candidate.AlertSignal
 	if alertSignal == "" {
 		alertSignal = models.AlertSignalNone
@@ -140,6 +156,9 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 		ID: newID(), AgentID: candidate.AgentID, MailboxID: candidate.MailboxID, MailID: candidate.MailID,
 		CandidateKind: string(candidate.CandidateKind), AlertSignal: alertSignal, CandidateReason: candidate.CandidateReason,
 		BurstKey: candidate.BurstKey, BurstCount: candidate.BurstCount, BudgetKey: candidate.BudgetKey, CreatedAt: time.Now(),
+		WatchedSkillName: candidate.WatchedSkillName, WatchedWatchName: candidate.WatchedWatchName, WatchedItemID: candidate.WatchedItemID, WatchedSender: candidate.WatchedSender,
+		WatchedTitle: candidate.WatchedTitle, WatchedCategory: candidate.WatchedCategory, WatchedItemAt: candidate.WatchedItemAt,
+		WatchedItemText: candidate.WatchedItemText, WatchedItemURL: candidate.WatchedItemURL,
 	}
 	if model.BudgetKey == "" {
 		if err := self.tx.Create(model).Error; err != nil {

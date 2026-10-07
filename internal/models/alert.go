@@ -15,12 +15,14 @@ type AlertCandidateKind string
 
 // The kinds: one message the sorting judged worth telling, a burst of
 // messages alike that a count noticed, which no single message's sorting
-// can see, and a budget or savings target crossing that code computed
-// after a sync.
+// can see, a budget or savings target crossing that code computed after a
+// sync, and an item a skill's watch found and judged worth telling: mail
+// in a mailbox this server does not host, a transaction, a mention.
 const (
 	AlertCandidateMessage AlertCandidateKind = "message"
 	AlertCandidateBurst   AlertCandidateKind = "burst"
 	AlertCandidateBudget  AlertCandidateKind = "budget"
+	AlertCandidateWatched AlertCandidateKind = "watched"
 )
 
 // AgentAlertCandidate is something that might be worth telling the person
@@ -50,6 +52,20 @@ type AgentAlertCandidate struct {
 	// "spending-category:<id>:2026-09:at_risk", and becomes the subject
 	// key of the alert that tells it, so the same crossing is told once.
 	BudgetKey string `json:"budgetKey,omitempty"`
+
+	// What a watched candidate is about, since its item is not stored
+	// here: the skill and its watch that found it, the item's id there,
+	// who it is from, its title and when it happened, what the judgement
+	// called it, the item as the judgement saw it, and where it is.
+	WatchedSkillName string     `json:"watchedSkillName,omitempty"`
+	WatchedWatchName string     `json:"watchedWatchName,omitempty"`
+	WatchedItemID    string     `json:"watchedItemId,omitempty"`
+	WatchedSender    string     `json:"watchedSender,omitempty"`
+	WatchedTitle     string     `json:"watchedTitle,omitempty"`
+	WatchedCategory  string     `json:"watchedCategory,omitempty"`
+	WatchedItemAt    *time.Time `json:"watchedItemAt,omitempty"`
+	WatchedItemText  string     `json:"watchedItemText,omitempty"`
+	WatchedItemURL   string     `json:"watchedItemUrl,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -146,4 +162,18 @@ type AgentAlertMute struct {
 	AlertID string `json:"alertId"`
 
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// AgentWatchedItem is an item a skill's watch has looked at, in the version
+// it was looked at, so that it is judged once and again only when it
+// changes.
+type AgentWatchedItem struct {
+	AgentID            string    `json:"agentId"`
+	SkillName          string    `json:"skillName"`
+	WatchName          string    `json:"watchName"`
+	WatchedItemID      string    `json:"watchedItemId"`
+	WatchedItemVersion string    `json:"watchedItemVersion"`
+	WatchedItemAt      time.Time `json:"watchedItemAt"`
+	AlertSignal        string    `json:"alertSignal"`
+	LookedAt           time.Time `json:"lookedAt"`
 }

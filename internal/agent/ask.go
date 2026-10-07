@@ -277,8 +277,9 @@ type AskRun struct {
 	confirmations map[string]chan bool
 
 	// judgedCalls are the calls this turn has already judged, by what the
-	// judge was shown, and whether each asks; see judgedToAsk.
-	judgedCalls map[string]bool
+	// judge was shown, and why each asks, empty when it does not; see
+	// judgedReason.
+	judgedCalls map[string]models.UnattendedRisk
 
 	// judgementUsage is what the judgements made for this turn cost and no
 	// answer carries yet; see countJudgement.
@@ -552,7 +553,16 @@ func (self *AskRun) Configuration() *config.Configuration { return self.agent.se
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
 func (self *AskRun) CanAsk() bool {
-	return (!self.settings.Headless || self.settings.CanAsk) && !self.settings.isUnattended
+	if self.settings.isUnattended {
+		return false
+	}
+	// A subagent's cards are shown in the turn that started it, so it can
+	// ask only when that turn can: under a schedule or a goal it has nobody
+	// to ask, and what the person allows for that is what applies.
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.CanAsk()
+	}
+	return !self.settings.Headless || self.settings.CanAsk
 }
 
 // resultCharacters is how much of a tool's answer the history keeps.
@@ -622,18 +632,6 @@ func (self *AskRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
 
-// ComputersUnattended is the night, and nothing else.
-//
-// Every other run with nobody present is refused the machine, because the
-// confirmation card is what stands between the agent and the shapes that
-// cannot be taken back, and a card cannot be shown to an empty room. The
-// owner read that reasoning and accepted the risk for the night alone, so
-// it is named here rather than inferred from the shape of the settings:
-// widening it to scheduled turns or goals is a decision somebody should
-// have to make on purpose.
-func (self *AskRun) ComputersUnattended() bool {
-	return self.settings.Surface == string(models.AgentJobDream)
-}
 func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
 	return self.agent.DraftReply(ctx, request)
 }
@@ -861,7 +859,7 @@ func (self *AskRun) turn() error {
 	// The catalog as this person sees it, and what the connected servers
 	// offer them.
 	self.offered = self.agent.catalog.Offered(settings.Operations.Permissions(), &configuration.Agent.Tools)
-	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID, settings.Headless) {
+	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
 		}
@@ -898,18 +896,16 @@ func (self *AskRun) turn() error {
 	// handed work in the same way, many of them. In the round from the
 	// start, since its guidance is what tells the model to reach for it
 	// on a broad question instead of answering from the few facts recall
-	// carried. Not in a run with nobody present: the night is given every
-	// tool, and a survey is minutes of calls that nobody is there to have
-	// asked for.
-	if survey := self.agent.surveyTool(); !settings.Headless && settings.subagentDepth == 0 &&
+	// carried. In a run with nobody present too: a schedule or a goal may
+	// need the broad answer as much as the person does.
+	if survey := self.agent.surveyTool(); settings.subagentDepth == 0 &&
 		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, survey) {
 		self.offered = append(self.offered, survey)
 		self.loaded[survey.Name] = true
 	}
 	// What the two above leave running in the background, to read and to
-	// stop, wherever either can start it: a turn with somebody present,
-	// not inside a subagent.
-	if work := self.agent.backgroundWorkTool(); !settings.Headless && settings.subagentDepth == 0 &&
+	// stop, wherever either can start it: any turn, not inside a subagent.
+	if work := self.agent.backgroundWorkTool(); settings.subagentDepth == 0 &&
 		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
 		self.offered = append(self.offered, work)
 		self.loaded[work.Name] = true
@@ -919,7 +915,7 @@ func (self *AskRun) turn() error {
 	// browser to drive; their browser, connected through the extension
 	// with a tab attached or none, needs no Chrome beside the server, and
 	// while it is connected the tool is in the round from the start.
-	tabAttached := !settings.Headless && self.TabsAllowed() && self.AttachedTab() != nil
+	tabAttached := self.TabsAllowed() && self.AttachedTab() != nil
 	if !FeatureAllowed(configuration, "browser") || (!configuration.Agent.Browser.Enabled && !tabAttached) {
 		withoutBrowser := self.offered[:0:0]
 		for _, tool := range self.offered {
@@ -1514,19 +1510,31 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	if self.takePreApproval(tool.Name, call.Arguments) {
 		call.Confirmed = true
-	} else if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) || self.judgedToAsk(ctx, tool, call.Arguments) {
+	} else if unattendedRisks := self.confirmationReasons(ctx, configuration, tool, call.Arguments); len(unattendedRisks) > 0 {
 		if !self.CanAsk() || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
-			return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "needs_confirmation: nobody is present to confirm this; tell the person what you would have done"}`)}
-		}
-		approved, err := self.confirm(ctx, tool, call)
-		if errors.Is(err, ErrLeftOpen) {
-			return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "awaiting_approval: the person has not answered yet, and the card stays open on their screen. When they approve, a new turn will let you make exactly this call. End your turn now with at most a short line, and do not try another way."}`)}
-		}
-		if err != nil {
-			return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: %s"}`, err.Error()))}
-		}
-		if !approved {
-			return toolOutcome{content: self.toolAnswer(toolCall, `{"declined": true, "note": "the person declined; do not try another way"}`)}
+			// Nobody can confirm. What the person allowed the agent to do
+			// when they are not there goes ahead as if they had; the rest
+			// is refused, saying where they allow it.
+			// Never in a run held to reading or to a few named tools: those
+			// are the runs that read mail from strangers, and what the
+			// person allows the agent to do alone is not theirs to steer.
+			isRestricted := self.settings.ReadOnly || self.settings.Allow != nil
+			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
+				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
+			}
+			log.Noticef("the agent of %q ran %s with nobody present, as allowed for %s", self.settings.Owner.Username, tool.Name, joinUnattendedRisks(unattendedRisks))
+			call.IsConfirmedUnattended = true
+		} else {
+			approved, err := self.confirm(ctx, tool, call)
+			if errors.Is(err, ErrLeftOpen) {
+				return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "awaiting_approval: the person has not answered yet, and the card stays open on their screen. When they approve, a new turn will let you make exactly this call. End your turn now with at most a short line, and do not try another way."}`)}
+			}
+			if err != nil {
+				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: %s"}`, err.Error()))}
+			}
+			if !approved {
+				return toolOutcome{content: self.toolAnswer(toolCall, `{"declined": true, "note": "the person declined; do not try another way"}`)}
+			}
 		}
 		call.Confirmed = true
 	}
@@ -1555,6 +1563,31 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	self.emit(Event{Kind: EventToolResult, Tool: toolCall.Name, CallID: toolCall.ID, Note: result.Note, Text: content})
 	return toolOutcome{content: content, images: result.Images}
+}
+
+// confirmationReasons are why a call must wait for the person: its class
+// and the confirm lists, and the judgement of what a command would do.
+// None when it need not wait.
+func (self *AskRun) confirmationReasons(ctx context.Context, configuration *config.Configuration, tool *Tool, arguments json.RawMessage) []models.UnattendedRisk {
+	unattendedRisks := tools.ConfirmationReasons(tool, arguments, &configuration.Agent.Tools, self.settings.Agent)
+	if len(unattendedRisks) > 0 {
+		// Already waiting: the judgement would only say why again, at the
+		// cost of a call to the model.
+		return unattendedRisks
+	}
+	if judged := self.judgedReason(ctx, tool, arguments); judged != "" {
+		unattendedRisks = append(unattendedRisks, judged)
+	}
+	return unattendedRisks
+}
+
+// joinUnattendedRisks says the reasons as a list for a message.
+func joinUnattendedRisks(unattendedRisks []models.UnattendedRisk) string {
+	words := make([]string, 0, len(unattendedRisks))
+	for _, unattendedRisk := range unattendedRisks {
+		words = append(words, string(unattendedRisk))
+	}
+	return strings.Join(words, ", ")
 }
 
 func (self *AskRun) toolAnswer(toolCall llm.ToolCall, content string) string {
@@ -1915,7 +1948,7 @@ func (self *AskRun) goalLines(ctx context.Context) []string {
 		if conversation.Kind != models.AgentConversationMain {
 			return nil
 		}
-		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgressMost)
+		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, self.agent.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress())
 		for _, goal := range going {
 			if goal.GoalState == models.GoalWaiting {
 				waiting = append(waiting, goal)

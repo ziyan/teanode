@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Whether a command a skill runs on the person's own computer asks first.
@@ -26,52 +27,79 @@ const (
 	callRiskRead        = "read"
 	callRiskChange      = "change"
 	callRiskOutward     = "outward"
+	callRiskGranting    = "granting"
+	callRiskMoney       = "money"
 	callRiskDestructive = "destructive"
 )
 
-// judgedToAsk says whether a call the tool wants judged should ask the
-// person first. The same call judged once in a turn is not judged again.
-func (self *AskRun) judgedToAsk(ctx context.Context, tool *Tool, arguments json.RawMessage) bool {
+// judgedReason says why a call the tool wants judged should ask the person
+// first, in the words they allow it by when they are not there, or nothing
+// when it need not ask. The same call judged once in a turn is not judged
+// again.
+func (self *AskRun) judgedReason(ctx context.Context, tool *Tool, arguments json.RawMessage) models.UnattendedRisk {
 	if tool.JudgedCall == nil {
-		return false
+		return ""
 	}
 	call := tool.JudgedCall(tools.SettledArguments(arguments))
 	if call == "" {
-		return false
+		return ""
 	}
 	self.mutex.Lock()
-	isAsking, isJudged := self.judgedCalls[call]
+	unattendedRisk, isJudged := self.judgedCalls[call]
 	self.mutex.Unlock()
 	if isJudged {
-		return isAsking
+		return unattendedRisk
 	}
 	callRisk, riskReason := self.judgeCall(ctx, call)
-	isAsking = callRisk != callRiskRead && callRisk != callRiskChange
+	switch callRisk {
+	case callRiskRead, callRiskChange:
+		unattendedRisk = ""
+	case callRiskOutward:
+		unattendedRisk = models.UnattendedRiskOutward
+	case callRiskGranting:
+		unattendedRisk = models.UnattendedRiskGranting
+	case callRiskMoney:
+		unattendedRisk = models.UnattendedRiskMoney
+	default:
+		// Destructive, and anything the judgement could not name, which
+		// is treated as the worst.
+		unattendedRisk = models.UnattendedRiskDestructive
+	}
 	log.Infof("the agent of %q judged a call of %s %s: %s", self.settings.Owner.Username, tool.Name, callRisk, riskReason)
 	self.mutex.Lock()
 	if self.judgedCalls == nil {
-		self.judgedCalls = map[string]bool{}
+		self.judgedCalls = map[string]models.UnattendedRisk{}
 	}
-	self.judgedCalls[call] = isAsking
+	self.judgedCalls[call] = unattendedRisk
 	self.mutex.Unlock()
-	return isAsking
+	return unattendedRisk
 }
 
 // judgeCall asks the fast model what the call would do. Anything that goes
 // wrong is judged destructive, which asks.
 func (self *AskRun) judgeCall(ctx context.Context, call string) (string, string) {
-	settings := self.settings
+	callRisk, riskReason, usage, isJudged := self.agent.judgeCallText(ctx, self.settings.Agent.DisplayName(), personName(self.settings.Owner), call)
+	if isJudged {
+		self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), usage)
+	}
+	return callRisk, riskReason
+}
+
+// judgeCallText is the judgement itself, for a turn or for a watch: what
+// the call would do, why, what the judgement cost, and whether a judgement
+// was had at all. Anything that goes wrong is judged destructive.
+func (self *Agent) judgeCallText(ctx context.Context, agentName, person, call string) (string, string, llm.Usage, bool) {
 	prompt, err := render("command_judge.txt", map[string]any{
-		"AgentName":  settings.Agent.DisplayName(),
-		"PersonName": personName(settings.Owner),
+		"AgentName":  agentName,
+		"PersonName": person,
 		"Call":       cutRunes(call, 6000),
 	})
 	if err != nil {
-		return callRiskDestructive, "the judgement could not be written"
+		return callRiskDestructive, "the judgement could not be written", llm.Usage{}, false
 	}
-	provider, model, err := self.agent.settings.Registry.ForWork(config.AgentWorkTriage)
+	provider, model, err := self.settings.Registry.ForWork(config.AgentWorkTriage)
 	if err != nil {
-		return callRiskDestructive, "no model to judge with"
+		return callRiskDestructive, "no model to judge with", llm.Usage{}, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -81,10 +109,10 @@ func (self *AskRun) judgeCall(ctx context.Context, call string) (string, string)
 		Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
 	})
 	if err != nil {
-		return callRiskDestructive, "could not judge: " + err.Error()
+		return callRiskDestructive, "could not judge: " + err.Error(), llm.Usage{}, false
 	}
-	self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), response.Usage)
-	return readCallRisk(response.Message.Content)
+	callRisk, riskReason := readCallRisk(response.Message.Content)
+	return callRisk, riskReason, response.Usage, true
 }
 
 // readCallRisk reads the judgement; anything it cannot read asks.
@@ -97,7 +125,7 @@ func readCallRisk(text string) (string, string) {
 		return callRiskDestructive, "could not read the judgement"
 	}
 	switch callRisk := strings.ToLower(strings.TrimSpace(judged.Value.CallRisk)); callRisk {
-	case callRiskRead, callRiskChange, callRiskOutward, callRiskDestructive:
+	case callRiskRead, callRiskChange, callRiskOutward, callRiskGranting, callRiskMoney, callRiskDestructive:
 		return callRisk, strings.TrimSpace(judged.Value.RiskReason)
 	}
 	return callRiskDestructive, "an answer that is not a risk"

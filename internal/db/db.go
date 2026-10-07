@@ -180,6 +180,7 @@ type Transaction interface {
 	IdeaOperation
 	BackgroundWorkOperation
 	GoalOperation
+	WatchedItemOperation
 	AlertOperation
 	FinanceOperation
 	ExchangeRateOperation

@@ -99,6 +99,12 @@ cannot retain the separate failure allowance or claim-identity protection.
   keeps what came of it; see `the-ask-loop.md`. It has a bound of its own,
   twenty minutes, a little inside the job's, so work that reaches it fails on
   its row rather than going back in the queue.
+- **watch** — one look by one watch of an installed skill; its subject is
+  `skill/watch`. The tick queues each watch on the cadence the skill gives it,
+  ten minutes by default, for each person it applies to, and the queue's one
+  open job per agent, kind and subject keeps looks from piling up behind a
+  computer that is slow to answer. See `agents.md`, "Telling the person,
+  unasked".
 - **noop** — proves the queue end to end.
 
 ## Replying on somebody's behalf
@@ -155,8 +161,9 @@ whose cron line stops making sense is switched off, so it can be seen and
 mended.
 
 The run is a headless turn with the whole catalog the person's permissions
-allow — but nobody is present to confirm anything, so every destructive or
-outward call is refused with an explanation rather than performed.
+allow — but nobody is present to confirm anything, so every call that would
+ask is refused with an explanation rather than performed, except the kinds the
+person allows for when they are not there (see `devices.md`).
 
 A schedule that answers in the drawer takes that turn in the conversation it
 was made in, the way a goal's check-in does: the turn opens with a message

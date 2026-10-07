@@ -149,6 +149,16 @@ func renderAlertCandidate(labeled *labeledCandidate) string {
 		// finance transactions, and the spending category's name is the
 		// person's own. Nothing a stranger wrote, so nothing to fence.
 		return fmt.Sprintf("Candidate %s: a budget crossing the server computed after a sync of their finance accounts, not a message.\nWhat the numbers say: %s", labeled.label, candidate.CandidateReason)
+	case models.AlertCandidateWatched:
+		// Found by a skill's watch: the item as the judgement saw it is on
+		// the candidate -- mail, a transaction, a mention -- and is text
+		// from outside like any message.
+		header = fmt.Sprintf("Candidate %s: something the %s skill's watch (%s) found, which the judgement marked %s.", labeled.label, candidate.WatchedSkillName, candidate.WatchedWatchName, candidate.AlertSignal)
+		if candidate.CandidateReason != "" {
+			inside = append(inside, "The judgement's note: "+candidate.CandidateReason)
+		}
+		inside = append(inside, candidate.WatchedItemText)
+		return header + "\n" + fenced(strings.Join(inside, "\n\n"))
 	case models.AlertCandidateBurst:
 		header = fmt.Sprintf("Candidate %s: a burst of %d messages alike in %d hours, counted by the server. The latest of them:", labeled.label, candidate.BurstCount, int(burstWindow.Hours()))
 		inside = append(inside, "What the count saw: "+candidate.CandidateReason)
@@ -219,7 +229,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		mailIds := make([]string, 0, len(waiting))
 		mailIdsByMailbox := map[string][]string{}
 		for _, candidate := range waiting {
-			if candidate.CandidateKind == models.AlertCandidateBudget {
+			if candidate.CandidateKind == models.AlertCandidateBudget || candidate.CandidateKind == models.AlertCandidateWatched {
 				continue
 			}
 			isAllowed, isKnown := isAllowedByMailbox[candidate.MailboxID]
@@ -270,6 +280,21 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	var staleIds []string
 	for _, candidate := range waiting {
 		if candidate.CandidateKind == models.AlertCandidateBudget {
+			facts := candidateFacts(candidate, "", "")
+			if mutedBy(mutes, facts) != nil {
+				mutedIds = append(mutedIds, candidate.ID)
+				continue
+			}
+			labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, facts: facts})
+			continue
+		}
+		if candidate.CandidateKind == models.AlertCandidateWatched {
+			// No mailbox to ask: the sorting is what made it, so it goes
+			// when the person's switch or the sorting itself is off.
+			if !isAlertingAllowed(configuration, run.Agent, nil) {
+				gone = append(gone, candidate.ID)
+				continue
+			}
 			facts := candidateFacts(candidate, "", "")
 			if mutedBy(mutes, facts) != nil {
 				mutedIds = append(mutedIds, candidate.ID)
@@ -448,6 +473,10 @@ func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*label
 func (self *Agent) alertPages(ctx context.Context, run *Run, labeled []*labeledCandidate) []string {
 	var words []string
 	for _, entry := range labeled {
+		if entry.candidate.CandidateKind == models.AlertCandidateWatched {
+			words = append(words, entry.candidate.WatchedSender, entry.candidate.WatchedTitle)
+			continue
+		}
 		if entry.message == nil {
 			continue
 		}
@@ -724,6 +753,9 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 	if subjectKey == "" {
 		if candidate.BurstKey != "" {
 			return candidate.BurstKey
+		}
+		if candidate.CandidateKind == models.AlertCandidateWatched {
+			return candidate.WatchedSkillName + " " + candidate.WatchedWatchName + " " + candidate.WatchedItemID
 		}
 		return "mail " + candidate.MailID
 	}

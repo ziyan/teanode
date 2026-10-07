@@ -127,23 +127,26 @@ type AgentUsage struct {
 }
 
 type agentModel struct {
-	ID                 string     `gorm:"column:id;primaryKey"`
-	CreatedAt          time.Time  `gorm:"column:created_at"`
-	ModifiedAt         time.Time  `gorm:"column:modified_at"`
-	UserID             string     `gorm:"column:user_id"`
-	Name               string     `gorm:"column:name"`
-	Enabled            bool       `gorm:"column:enabled"`
-	Instructions       string     `gorm:"column:instructions"`
-	Language           string     `gorm:"column:language"`
-	KnowledgeLanguage  string     `gorm:"column:knowledge_language"`
-	Voice              []byte     `gorm:"column:voice;type:jsonb"`
-	Categories         []byte     `gorm:"column:categories;type:jsonb"`
-	Notifications      []byte     `gorm:"column:notifications;type:jsonb"`
-	Confirm            []byte     `gorm:"column:confirm;type:jsonb"`
-	AskModel           string     `gorm:"column:ask_model"`
-	DailyTokens        int64      `gorm:"column:daily_tokens"`
-	DailyCost          float64    `gorm:"column:daily_cost"`
-	OperatorDisabledAt *time.Time `gorm:"column:operator_disabled_at"`
+	ID                string    `gorm:"column:id;primaryKey"`
+	CreatedAt         time.Time `gorm:"column:created_at"`
+	ModifiedAt        time.Time `gorm:"column:modified_at"`
+	UserID            string    `gorm:"column:user_id"`
+	Name              string    `gorm:"column:name"`
+	Enabled           bool      `gorm:"column:enabled"`
+	Instructions      string    `gorm:"column:instructions"`
+	Language          string    `gorm:"column:language"`
+	KnowledgeLanguage string    `gorm:"column:knowledge_language"`
+	Voice             []byte    `gorm:"column:voice;type:jsonb"`
+	Categories        []byte    `gorm:"column:categories;type:jsonb"`
+	Notifications     []byte    `gorm:"column:notifications;type:jsonb"`
+	Confirm           []byte    `gorm:"column:confirm;type:jsonb"`
+	// UnattendedAllowedRisks are the kinds of action needing the person's
+	// word that the agent may take when they are not there.
+	UnattendedAllowedRisks []byte     `gorm:"column:unattended_allowed_risks;type:jsonb"`
+	AskModel               string     `gorm:"column:ask_model"`
+	DailyTokens            int64      `gorm:"column:daily_tokens"`
+	DailyCost              float64    `gorm:"column:daily_cost"`
+	OperatorDisabledAt     *time.Time `gorm:"column:operator_disabled_at"`
 
 	// When the person's night is, and when the nightly run last finished.
 	DreamFrom      string     `gorm:"column:dream_from"`
@@ -227,6 +230,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		KnowledgeLanguage:      model.KnowledgeLanguage,
 		Categories:             []models.AgentCategory{},
 		Confirm:                []string{},
+		UnattendedAllowedRisks: []models.UnattendedRisk{},
 		AskModel:               model.AskModel,
 		DailyTokens:            model.DailyTokens,
 		DailyCost:              model.DailyCost,
@@ -268,11 +272,17 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 	if err := decodeJSON(model.Confirm, &agent.Confirm); err != nil {
 		return nil, fmt.Errorf("db: cannot read the confirm list of agent %q: %w", model.ID, err)
 	}
+	if err := decodeJSON(model.UnattendedAllowedRisks, &agent.UnattendedAllowedRisks); err != nil {
+		return nil, fmt.Errorf("db: cannot read what agent %q may do unattended: %w", model.ID, err)
+	}
 	if agent.Categories == nil {
 		agent.Categories = []models.AgentCategory{}
 	}
 	if agent.Confirm == nil {
 		agent.Confirm = []string{}
+	}
+	if agent.UnattendedAllowedRisks == nil {
+		agent.UnattendedAllowedRisks = []models.UnattendedRisk{}
 	}
 	return agent, nil
 }
@@ -327,6 +337,13 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		confirm = []string{}
 	}
 	if model.Confirm, err = json.Marshal(confirm); err != nil {
+		return nil, err
+	}
+	unattendedAllowedRisks := agent.UnattendedAllowedRisks
+	if unattendedAllowedRisks == nil {
+		unattendedAllowedRisks = []models.UnattendedRisk{}
+	}
+	if model.UnattendedAllowedRisks, err = json.Marshal(unattendedAllowedRisks); err != nil {
 		return nil, err
 	}
 	return model, nil
@@ -459,6 +476,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 	after := *before
 	after.Categories = append([]models.AgentCategory(nil), before.Categories...)
 	after.Confirm = append([]string(nil), before.Confirm...)
+	after.UnattendedAllowedRisks = append([]models.UnattendedRisk(nil), before.UnattendedAllowedRisks...)
 	if before.Voice != nil {
 		voice := *before.Voice
 		after.Voice = &voice
@@ -484,7 +502,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"modified_at": model.ModifiedAt, "name": model.Name, "enabled": model.Enabled,
 			"instructions": model.Instructions, "language": model.Language, "knowledge_language": model.KnowledgeLanguage,
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
-			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
+			"confirm": model.Confirm, "unattended_allowed_risks": model.UnattendedAllowedRisks, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
 			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
 			"dreamed_at":              model.DreamedAt,

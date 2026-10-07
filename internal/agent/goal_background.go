@@ -30,11 +30,6 @@ const (
 	// it is for and what done looks like, a paragraph.
 	goalDescriptionCharacters = 2000
 
-	// goalsInProgressMost is as many goals as may be working or waiting at
-	// once. Each costs turns of the person's budget with nobody watching;
-	// past this, one has to finish or be dropped before another starts.
-	goalsInProgressMost = 20
-
 	// goalSurfaceBatch is how many waiting goals one sweep says in the
 	// main conversation, across every agent.
 	goalSurfaceBatch = 20
@@ -44,8 +39,9 @@ const (
 	goalSurface = "goal_needs_you"
 )
 
-// ErrTooManyGoals is starting a goal while goalsInProgressMost are going.
-var ErrTooManyGoals = fmt.Errorf("%d goals are already in progress; finish or drop one first", goalsInProgressMost)
+// ErrTooManyGoals is starting a goal while the operator's limit of goals
+// in progress (GoalsInProgress) are going.
+var ErrTooManyGoals = errors.New("as many goals as this server allows are already in progress; finish or drop one first")
 
 // StartGoal starts a goal in a conversation of its own and makes it due at
 // once. The title is what it is called in a list, the description what it
@@ -62,11 +58,12 @@ func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, goalTitle, 
 	}
 	var started *models.AgentConversation
 	if err := func() error {
-		going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgressMost+1)
+		goalsInProgress := self.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress()
+		going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgress+1)
 		if err != nil {
 			return err
 		}
-		if len(going) >= goalsInProgressMost {
+		if len(going) >= goalsInProgress {
 			return ErrTooManyGoals
 		}
 		now := time.Now()
@@ -148,11 +145,12 @@ func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, conversa
 			return nil
 		}
 		if goalState == models.GoalWorking {
-			going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgressMost+1)
+			goalsInProgress := self.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress()
+			going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgress+1)
 			if err != nil {
 				return err
 			}
-			if len(going) >= goalsInProgressMost && goal.GoalState != models.GoalWaiting {
+			if len(going) >= goalsInProgress && goal.GoalState != models.GoalWaiting {
 				return ErrTooManyGoals
 			}
 		}

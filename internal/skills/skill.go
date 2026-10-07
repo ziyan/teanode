@@ -19,6 +19,10 @@ type Skill struct {
 	Profiles    map[string]*Profile `yaml:"authenticationProfiles"`
 	Tools       []*Tool             `yaml:"tools"`
 
+	// Watches are what the agent looks at on its own, through this skill's
+	// tools, to tell the person about what arrives (see watch.go).
+	Watches []*Watch `yaml:"watches,omitempty"`
+
 	// Prose is everything after the header, kept so that a person can be
 	// shown what they installed.
 	Prose string `yaml:"-"`
@@ -375,7 +379,7 @@ func (self *Skill) validate() error {
 			return err
 		}
 	}
-	return nil
+	return self.validateWatches()
 }
 
 func (self *Skill) validateTool(tool *Tool, secrets map[string]bool) error {
