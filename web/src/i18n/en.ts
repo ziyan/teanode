@@ -1367,7 +1367,7 @@ export const en = {
   'agent.unattended.granting': 'Give access',
   'agent.unattended.grantingHint': 'Share something, or give someone access to what is yours or take it away.',
   'agent.unattended.listed': 'Use the tools under Ask me first',
-  'agent.unattended.listedHint': 'The tools you or the operator listed to always ask about.',
+  'agent.unattended.listedHint': 'The tools you listed to always ask about. Those the operator listed always wait for you.',
   'agent.confirmTools': 'Ask me first',
   'agent.voice': 'Voice',
   'agent.voiceHint': 'How it sounds when it writes for you: replies it drafts and answers it sends.',
