@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Computing is what a run offers the shell and filesystem tools: the
@@ -17,13 +19,6 @@ type Computing interface {
 	// ComputersAllowed says whether the operator lets people attach a
 	// computer.
 	ComputersAllowed() bool
-
-	// ComputersUnattended says a run with nobody present may reach one
-	// anyway. It is false for almost everything: the confirmation card is
-	// what stands between the agent and the grave shapes, and a run
-	// nobody is watching cannot be shown one. The night is the exception
-	// the owner decided on.
-	ComputersUnattended() bool
 }
 
 // Computer is the attached computer as a tool reaches it: a request sent
@@ -50,12 +45,22 @@ type BackgroundHolder interface {
 
 // BackgroundOrigin is who started a background command, as the shell tool
 // hands it to the computer and the computer hands it back when the command
-// ends: which agent and conversation to wake, and whether the turn that
-// started it had anybody present. The computer keeps it without reading it.
+// ends: which agent and conversation to wake, and IsHeadless when there is
+// no conversation a turn could be woken in (a run of its own, such as a
+// night's). The computer keeps it without reading it.
 type BackgroundOrigin struct {
 	AgentID        string `json:"agentId"`
 	ConversationID string `json:"conversationId"`
 	IsHeadless     bool   `json:"isHeadless,omitempty"`
+}
+
+// CanBeWoken says the run's conversation is one a turn can be woken in
+// when something it left running ends: any conversation but a run's own
+// transcript, with or without the person there. A schedule's or a goal's
+// turn is woken where it ran, as the person's is.
+func CanBeWoken(run Run) bool {
+	conversation := run.Conversation()
+	return conversation != nil && conversation.Kind != models.AgentConversationRun
 }
 
 // SessionHolder is a computer that can hold a program open: a terminal the

@@ -622,18 +622,6 @@ func (self *AskRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
 
-// ComputersUnattended is the night, and nothing else.
-//
-// Every other run with nobody present is refused the machine, because the
-// confirmation card is what stands between the agent and the shapes that
-// cannot be taken back, and a card cannot be shown to an empty room. The
-// owner read that reasoning and accepted the risk for the night alone, so
-// it is named here rather than inferred from the shape of the settings:
-// widening it to scheduled turns or goals is a decision somebody should
-// have to make on purpose.
-func (self *AskRun) ComputersUnattended() bool {
-	return self.settings.Surface == string(models.AgentJobDream)
-}
 func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
 	return self.agent.DraftReply(ctx, request)
 }
@@ -898,18 +886,16 @@ func (self *AskRun) turn() error {
 	// handed work in the same way, many of them. In the round from the
 	// start, since its guidance is what tells the model to reach for it
 	// on a broad question instead of answering from the few facts recall
-	// carried. Not in a run with nobody present: the night is given every
-	// tool, and a survey is minutes of calls that nobody is there to have
-	// asked for.
-	if survey := self.agent.surveyTool(); !settings.Headless && settings.subagentDepth == 0 &&
+	// carried. In a run with nobody present too: a schedule or a goal may
+	// need the broad answer as much as the person does.
+	if survey := self.agent.surveyTool(); settings.subagentDepth == 0 &&
 		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, survey) {
 		self.offered = append(self.offered, survey)
 		self.loaded[survey.Name] = true
 	}
 	// What the two above leave running in the background, to read and to
-	// stop, wherever either can start it: a turn with somebody present,
-	// not inside a subagent.
-	if work := self.agent.backgroundWorkTool(); !settings.Headless && settings.subagentDepth == 0 &&
+	// stop, wherever either can start it: any turn, not inside a subagent.
+	if work := self.agent.backgroundWorkTool(); settings.subagentDepth == 0 &&
 		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
 		self.offered = append(self.offered, work)
 		self.loaded[work.Name] = true
@@ -919,7 +905,7 @@ func (self *AskRun) turn() error {
 	// browser to drive; their browser, connected through the extension
 	// with a tab attached or none, needs no Chrome beside the server, and
 	// while it is connected the tool is in the round from the start.
-	tabAttached := !settings.Headless && self.TabsAllowed() && self.AttachedTab() != nil
+	tabAttached := self.TabsAllowed() && self.AttachedTab() != nil
 	if !FeatureAllowed(configuration, "browser") || (!configuration.Agent.Browser.Enabled && !tabAttached) {
 		withoutBrowser := self.offered[:0:0]
 		for _, tool := range self.offered {

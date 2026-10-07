@@ -1,6 +1,6 @@
 # A connected server that runs on the person's own computer is the person's
 
-- Status: accepted
+- Status: accepted; amended by `20261006-the-agent-uses-the-persons-devices-whoever-is-present.md`, where runs with nobody present reach the person's devices too
 - Date: 2026-09-15
 - Deciders: the-owner
 - Amends: [20260910-stdio-servers-are-the-operators.md](20260910-stdio-servers-are-the-operators.md)

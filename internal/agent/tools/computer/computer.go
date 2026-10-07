@@ -210,12 +210,10 @@ func Of(run tools.Run, name string) (tools.Computer, error) {
 	if !ok || !computing.ComputersAllowed() || !tools.FeatureAllowed(run.Configuration(), "computer") {
 		return nil, fmt.Errorf("attaching a computer is off on this server")
 	}
-	// A run with nobody present is refused the machine unless it is one
-	// the owner said may have it. The card is not a boundary for such a
-	// run -- nobody is there to be shown one -- so the boundary is here.
-	if run.Headless() && !computing.ComputersUnattended() {
-		return nil, fmt.Errorf("the computer is not reached by a run with nobody present")
-	}
+	// Any run reaches it, with or without the person there: a schedule,
+	// a goal and a night all do their work on it. What would need the
+	// person's word is still refused when nobody is there to give it, by
+	// the confirmation the call is held to, not here.
 	attached := computing.AttachedComputers()
 	if len(attached) == 0 {
 		return nil, fmt.Errorf("no computer is attached; ask the person to run `teanode computer start` on it")
@@ -309,10 +307,10 @@ func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if !hasBackground {
 			return nil, fmt.Errorf("the program on %s keeps no background commands; the person updates teanode there to have them", attached.Name())
 		}
-		// A run with nobody present has nobody to wake when one ends,
-		// and would leave it running for nobody.
-		if action == "run" && run.Headless() {
-			return nil, fmt.Errorf("a run with nobody present cannot leave a command running in the background")
+		// A run of its own, such as a night's, has no conversation to
+		// wake when one ends, and would leave it running for nothing.
+		if action == "run" && !tools.CanBeWoken(run) {
+			return nil, fmt.Errorf("this run has no conversation to be woken in when a background command ends; run it in the foreground")
 		}
 	}
 	switch action {
@@ -332,11 +330,11 @@ func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		Command: arguments.Command, Directory: arguments.Directory, Timeout: arguments.Timeout,
 		Environment: arguments.Environment, IsBackground: arguments.IsBackground,
 		// Past its wait a command goes on rather than being killed, where
-		// the program can keep it and somebody is there to be woken.
-		ShouldKeepOnTimeout: hasBackground && !run.Headless(),
+		// the program can keep it and there is a conversation to wake.
+		ShouldKeepOnTimeout: hasBackground && tools.CanBeWoken(run),
 	}
 	if hasBackground {
-		origin, err := json.Marshal(tools.BackgroundOrigin{AgentID: run.Agent().ID, ConversationID: tools.ConversationIDOf(run), IsHeadless: run.Headless()})
+		origin, err := json.Marshal(tools.BackgroundOrigin{AgentID: run.Agent().ID, ConversationID: tools.ConversationIDOf(run), IsHeadless: !tools.CanBeWoken(run)})
 		if err != nil {
 			return nil, err
 		}
@@ -573,11 +571,6 @@ func computerOverlay(ctx context.Context) string {
 	run := tools.MustRun(ctx)
 	computing, ok := run.(tools.Computing)
 	if !ok || !computing.ComputersAllowed() {
-		return ""
-	}
-	// A run that cannot reach a computer is not told one is attached: it
-	// would only spend a call finding out it may not.
-	if run.Headless() && !computing.ComputersUnattended() {
 		return ""
 	}
 	attached := computing.AttachedComputers()

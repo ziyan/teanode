@@ -517,12 +517,6 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 		if !self.serverAvailable(ctx, server, agentId) {
 			continue
 		}
-		if headless && server.ResolvedLocation() == config.AgentMCPLocationComputer {
-			// Their machine, and they are not there: the same rule as the
-			// shell and the terminal, and the validation refuses the
-			// configuration that would say otherwise.
-			continue
-		}
 		entry, err := self.discovery(ctx, server, agentId)
 		if err != nil {
 			log.Warningf("connected server %q is not answering: %s", server.Name, err)
@@ -664,11 +658,6 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string, 
 		var entry *connectedServer
 		var err error
 		if named != "" {
-			// The agent's own choice of computer: somebody has to be there,
-			// the same rule as acting on their computer with the shell.
-			if run.Headless() {
-				return nil, fmt.Errorf("a run with nobody present does not choose a computer; leave computer out to use the person's setting")
-			}
 			entry, err = self.connectionThrough(ctx, server, agentId, named)
 		} else {
 			entry, err = self.connection(ctx, server, agentId)

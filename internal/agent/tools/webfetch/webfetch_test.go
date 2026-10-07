@@ -43,7 +43,6 @@ type deskRun struct {
 
 func (self *deskRun) AttachedComputers() []tools.Computer  { return []tools.Computer{deskComputer{}} }
 func (self *deskRun) ComputersAllowed() bool               { return true }
-func (self *deskRun) ComputersUnattended() bool            { return false }
 func (self *deskRun) Headless() bool                       { return false }
 func (self *deskRun) CanAsk() bool                         { return !self.Headless() }
 func (self *deskRun) Configuration() *config.Configuration { return self.configuration }

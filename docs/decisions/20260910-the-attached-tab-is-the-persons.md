@@ -1,6 +1,6 @@
 # A browser tab the agent drives with the person's session is attached only by that person, only while they watch
 
-- Status: accepted
+- Status: accepted; amended by `20261006-the-agent-uses-the-persons-devices-whoever-is-present.md`, where runs with nobody present reach the person's devices too
 - Date: 2026-09-10
 - Deciders: the-owner
 

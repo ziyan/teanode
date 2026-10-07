@@ -14,9 +14,8 @@ import (
 // the choice. Headless is a Chrome the operator runs beside the server —
 // a fresh, isolated context per turn, discarded when the turn ends, never
 // signed in as anybody. A tab is the person's own, attached through the
-// extension, for what needs their session; it is never used by a run with
-// nobody present. A headless run may only read; which actions count as
-// reading is browserReadingActions, in the tool's own package.
+// extension, for what needs their session. Either is used by any run,
+// with or without the person there.
 
 // browserRunner is the browser as one turn reaches it.
 type browserRunner struct {

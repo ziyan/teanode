@@ -1,6 +1,6 @@
 # The agent reaches a person's computer through a program that person runs, signed in as them, only while they talk
 
-- Status: accepted
+- Status: accepted; amended by `20261006-the-agent-uses-the-persons-devices-whoever-is-present.md`, where runs with nobody present reach the person's devices too
 - Date: 2026-09-11
 - Deciders: the-owner
 

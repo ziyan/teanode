@@ -1300,9 +1300,6 @@ func (self *Configuration) validateAgent(validator *validator) {
 			if server.ResolvedTransport() != AgentMCPTransportStdio {
 				validator.add(prefix+".location", "a server on the person's computer is spoken to over a command, not a URL")
 			}
-			if server.Headless {
-				validator.add(prefix+".headless", "a server on the person's computer is reached only while they are present; it cannot be headless")
-			}
 		}
 		switch server.Auth {
 		case "", AgentMCPAuthNone, AgentMCPAuthStatic, AgentMCPAuthUser, AgentMCPAuthOAuth:

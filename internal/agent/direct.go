@@ -282,10 +282,6 @@ func (self *directRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
 
-// ComputersUnattended is false, and never matters here: this run is not
-// headless, so the unattended rule is not reached.
-func (self *directRun) ComputersUnattended() bool { return false }
-
 // The person's attached tab (tools.Browsing), which lives in their own
 // browser and outlasts any one call.
 func (self *directRun) AttachedTab() tools.Tab {
