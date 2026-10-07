@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.113.0] - 2026-10-07
+
+### Added
+
+- Under "When you are not there" on your agent's settings, choose what your agent may do without asking when nobody is there to confirm: speak for you, do what cannot be undone, give access, or use the tools you listed under "Ask me first". Each is off until you turn it on. (#342)
+- Operators can set the limits on unattended work on the server's agent settings: rounds per subagent, goal turns a day and without the person, goals in progress per person, and wakes by background work. (#342)
+
+### Changed
+
+- A conversation turn may go back to the model 150 times by default instead of 40. A server that saved its own value keeps it. (#342)
+
 ## [0.112.0] - 2026-10-07
 
 ### Added
