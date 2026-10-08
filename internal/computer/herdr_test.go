@@ -98,7 +98,7 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 			self.afterKeys(target, keys)
 		}
 	case "workspace.create", "tab.create":
-		self.created = append(self.created, request.Method+" "+fmt.Sprint(request.Params["cwd"]))
+		self.created = append(self.created, request.Method+" "+fmt.Sprint(request.Params["cwd"])+" "+fmt.Sprint(request.Params["label"]))
 		result = map[string]any{"root_pane": map[string]any{"pane_id": "w9:p1"}}
 	case "agent.start":
 		if len(self.startRefusals) > 0 {
@@ -746,18 +746,20 @@ func TestAPaneIsNamedAsThePersonFindsItInHerdr(t *testing.T) {
 	}
 	fake.workspaces = []map[string]any{
 		{"workspace_id": "w1", "label": "website", "tab_count": 1},
-		{"workspace_id": "w2", "label": "parser", "tab_count": 2},
+		{"workspace_id": "w2", "label": "parser", "tab_count": 3},
 	}
 	fake.tabs = []map[string]any{
 		{"tab_id": "w1:t1", "workspace_id": "w1", "label": "1"},
 		{"tab_id": "w2:t1", "workspace_id": "w2", "label": "1"},
 		{"tab_id": "w2:t2", "workspace_id": "w2", "label": "review"},
+		{"tab_id": "w2:t3", "workspace_id": "w2", "label": "claude-code-2"},
 	}
 	place("w1:p1", "w1", "w1:t1", CodingAgentKindClaude, "")
 	place("w2:p1", "w2", "w2:t1", CodingAgentKindClaude, "")
 	place("w2:p2", "w2", "w2:t2", CodingAgentKindClaude, "")
 	place("w2:p3", "w2", "w2:t2", CodingAgentKindCodex, "")
 	place("w2:p4", "w2", "w2:t2", CodingAgentKindClaude, "fixer")
+	place("w2:p5", "w2", "w2:t3", CodingAgentKindClaude, "claude-code-2")
 	herdr := NewHerdr(home)
 	names := map[string]string{}
 	for _, session := range listForTest(t, herdr) {
@@ -769,6 +771,8 @@ func TestAPaneIsNamedAsThePersonFindsItInHerdr(t *testing.T) {
 		"w2:p2": "parser › review › Claude Code",
 		"w2:p3": "parser › review › Codex",
 		"w2:p4": "parser › review › fixer",
+		// Opened by TeaNode: the tab and its agent are named alike.
+		"w2:p5": "parser › claude-code-2",
 	}
 	for paneId, name := range want {
 		if names[paneId] != name {
@@ -812,7 +816,7 @@ func TestASessionIsOpenedInItsDirectoryAndClosedWhenIdle(t *testing.T) {
 	fake.mutex.Lock()
 	created := slices.Clone(fake.created)
 	fake.mutex.Unlock()
-	want := []string{"workspace.create " + directory, "start codex example-repo", "close w9:p1"}
+	want := []string{"workspace.create " + directory + " Example Repo", "start codex example-repo", "close w9:p1"}
 	if !slices.Equal(created, want) {
 		t.Errorf("did %q, want %q", created, want)
 	}
@@ -847,7 +851,23 @@ func TestAPaneIsStartedOnceItsShellIsUpAndClosedWhenItNeverIs(t *testing.T) {
 	fake.mutex.Lock()
 	created := slices.Clone(fake.created)
 	fake.mutex.Unlock()
-	want := []string{"workspace.create " + directory, "refused agent_missing", "close w9:p1"}
+	want := []string{"workspace.create " + directory + " example", "refused agent_missing", "close w9:p1"}
+	if !slices.Equal(created, want) {
+		t.Errorf("did %q, want %q", created, want)
+	}
+	// In the directory's workspace, a tab named as its agent is.
+	fake.mutex.Lock()
+	fake.created = nil
+	fake.workspaces = []map[string]any{{"workspace_id": "w9", "label": "example", "tab_count": 1}}
+	fake.agents = []map[string]any{{"pane_id": "w9:p0", "agent": "claude", "agent_status": "idle", "name": "claude-code"}}
+	fake.mutex.Unlock()
+	if _, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{Directory: directory, CodingAgentKind: "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	fake.mutex.Lock()
+	created = slices.Clone(fake.created)
+	fake.mutex.Unlock()
+	want = []string{"tab.create " + directory + " claude-code-2", "start claude claude-code-2"}
 	if !slices.Equal(created, want) {
 		t.Errorf("did %q, want %q", created, want)
 	}

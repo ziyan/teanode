@@ -750,9 +750,14 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 			parts = append(parts, strings.TrimSpace(label))
 		}
 		inTab := agentsOfTab[agent.TabID]
+		// A name that only repeats the workspace's or the tab's says
+		// nothing more.
+		isRepeated := herdrAgentNameOf(agent.Name) == herdrAgentNameOf(workspace.Label)
+		if tab := tabOf[agent.TabID]; tab != nil && workspace.TabCount > 1 {
+			isRepeated = isRepeated || herdrAgentNameOf(agent.Name) == herdrAgentNameOf(tab.Label)
+		}
 		switch {
-		// A name that only repeats the workspace's says nothing more.
-		case strings.TrimSpace(agent.Name) != "" && !strings.EqualFold(strings.TrimSpace(agent.Name), strings.TrimSpace(workspace.Label)):
+		case strings.TrimSpace(agent.Name) != "" && !isRepeated:
 			parts = append(parts, strings.TrimSpace(agent.Name))
 		case len(inTab) > 1:
 			name := herdrAgentNames[agent.Agent]
@@ -973,6 +978,12 @@ var herdrSkipPermissionsFlags = map[string]string{CodingAgentKindClaude: "--dang
 // herdrAgentNamePattern is what herdr takes as an agent's name.
 var herdrAgentNamePattern = regexp.MustCompile(`[^a-z0-9_-]+`)
 
+// herdrAgentNameOf is a label in the letters herdr takes for an agent's
+// name.
+func herdrAgentNameOf(label string) string {
+	return strings.Trim(herdrAgentNamePattern.ReplaceAllString(strings.ToLower(strings.TrimSpace(label)), "-"), "-")
+}
+
 // open starts a coding agent in a pane of its own, in a directory of the
 // person's: a new tab of the workspace named after the directory when there
 // is one, a new workspace otherwise, so it is found where the person would
@@ -991,24 +1002,9 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if info, err := os.Stat(directory); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory on this computer", directory)
 	}
-	label := strings.TrimSpace(arguments.AgentName)
-	if label == "" {
-		label = filepath.Base(directory)
-	}
-	// A tab in the directory's workspace says which agent it holds; the
-	// workspace already says the directory.
-	tabLabel := strings.TrimSpace(arguments.AgentName)
-	if tabLabel == "" {
-		tabLabel = herdrAgentNames[kind]
-	}
 	workspaces, err := self.client.listWorkspaces(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var created struct {
-		RootPane struct {
-			PaneID string `json:"pane_id"`
-		} `json:"root_pane"`
 	}
 	workspaceId := ""
 	for _, workspace := range workspaces {
@@ -1017,8 +1013,41 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 			break
 		}
 	}
+	// A name of herdr's kind, not taken by another agent: the one asked
+	// for, or else the directory's in a new workspace, and which agent it
+	// is in a new tab of the directory's, where the workspace already says
+	// the directory.
+	label := strings.TrimSpace(arguments.AgentName)
+	if label == "" && workspaceId == "" {
+		label = filepath.Base(directory)
+	} else if label == "" {
+		label = herdrAgentNames[kind]
+	}
+	agents, err := self.client.listAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	isTaken := map[string]bool{}
+	for _, agent := range agents {
+		isTaken[agent.Name] = true
+	}
+	name := herdrAgentNameOf(label)
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
+		name = kind + "-" + name
+	}
+	base := strings.Trim(firstCharacters(name, 28), "-…")
+	name = base
+	for index := 2; isTaken[name]; index++ {
+		name = base + "-" + strconv.Itoa(index)
+	}
+	var created struct {
+		RootPane struct {
+			PaneID string `json:"pane_id"`
+		} `json:"root_pane"`
+	}
+	// A tab is labeled as its agent is named, so the two read as one.
 	if workspaceId != "" {
-		err = self.client.call(ctx, "tab.create", map[string]any{"workspace_id": workspaceId, "cwd": directory, "label": tabLabel}, &created)
+		err = self.client.call(ctx, "tab.create", map[string]any{"workspace_id": workspaceId, "cwd": directory, "label": name}, &created)
 	} else {
 		err = self.client.call(ctx, "workspace.create", map[string]any{"cwd": directory, "label": filepath.Base(directory)}, &created)
 	}
@@ -1037,24 +1066,6 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 			_ = self.client.call(context.WithoutCancel(ctx), "pane.close", map[string]any{"pane_id": paneId}, nil)
 		}
 	}()
-	// A name of herdr's kind, not taken by another agent.
-	agents, err := self.client.listAgents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	isTaken := map[string]bool{}
-	for _, agent := range agents {
-		isTaken[agent.Name] = true
-	}
-	base := strings.Trim(herdrAgentNamePattern.ReplaceAllString(strings.ToLower(label), "-"), "-")
-	if base == "" || base[0] < 'a' || base[0] > 'z' {
-		base = kind + "-" + base
-	}
-	base = strings.Trim(firstCharacters(base, 28), "-…")
-	name := base
-	for index := 2; isTaken[name]; index++ {
-		name = base + "-" + strconv.Itoa(index)
-	}
 	start := map[string]any{"name": name, "kind": kind, "pane_id": paneId, "timeout_ms": 60000}
 	if arguments.ShouldSkipPermissions {
 		start["args"] = []string{herdrSkipPermissionsFlags[kind]}
