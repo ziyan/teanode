@@ -178,6 +178,10 @@ type AskAgentArguments struct {
 	Viewing        *agent.Viewing `json:"viewing" graphapi:"nullable"`
 	Surface        string         `json:"surface" graphapi:"nullable"`
 
+	// InterruptedAnswer is how much of a spoken answer the person heard
+	// before they talked over it.
+	InterruptedAnswer *agent.InterruptedAnswer `json:"interruptedAnswer" graphapi:"nullable"`
+
 	// ReadOnly leaves out every tool that changes anything: what a
 	// read-only profile of the command line asks for.
 	ReadOnly bool `json:"readOnly" graphapi:"nullable"`
@@ -769,11 +773,13 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		Message:      arguments.Message,
 		Viewing:      arguments.Viewing,
 		Surface:      surface,
-		ReadOnly:     arguments.ReadOnly,
-		Attachments:  attachments,
-		References:   arguments.References,
-		Effort:       arguments.Effort,
-		Origin:       origin,
+
+		InterruptedAnswer: arguments.InterruptedAnswer,
+		ReadOnly:          arguments.ReadOnly,
+		Attachments:       attachments,
+		References:        arguments.References,
+		Effort:            arguments.Effort,
+		Origin:            origin,
 	})
 	if err != nil {
 		return nil, translateError(err)

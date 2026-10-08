@@ -111,3 +111,30 @@ func TestThePromptNamesOnlyTheToolsTheRoundHas(t *testing.T) {
 		}
 	}
 }
+
+// After a spoken answer the person cut in on, the model reads how much of
+// it was heard before what they said; otherwise their words as they are.
+func TestPersonTextSaysHowMuchOfAnInterruptedAnswerWasHeard(t *testing.T) {
+	plain := &AskSettings{Message: "And on Friday?"}
+	if got := personText(plain); got != "And on Friday?" {
+		t.Fatalf("no interruption: %q", got)
+	}
+	interrupted := &AskSettings{Message: "And on Friday?", InterruptedAnswer: &InterruptedAnswer{
+		HeardText:   "Tomorrow you have a dentist at nine.",
+		UnheardText: "Then lunch at noon.",
+	}}
+	got := personText(interrupted)
+	for _, part := range []string{"<interrupted>", `Heard: "Tomorrow you have a dentist at nine."`, `Not heard: "Then lunch at noon."`} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing %q in %q", part, got)
+		}
+	}
+	if !strings.HasSuffix(got, "\n\nAnd on Friday?") {
+		t.Fatalf("their own words come last: %q", got)
+	}
+	// Everything was heard: nothing to say.
+	whole := &AskSettings{Message: "Thanks", InterruptedAnswer: &InterruptedAnswer{HeardText: "Done."}}
+	if got := personText(whole); got != "Thanks" {
+		t.Fatalf("nothing unheard: %q", got)
+	}
+}
