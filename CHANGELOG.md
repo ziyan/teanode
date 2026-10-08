@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.119.0] - 2026-10-08
+
+### Added
+
+- The agent drawer draws formulas written in TeX (`\[ … \]`, `$$ … $$`, `\( … \)`, `$x$`) as math instead of showing the TeX. (#358)
+
 ## [0.118.0] - 2026-10-08
 
 ### Added
