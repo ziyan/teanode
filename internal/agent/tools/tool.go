@@ -696,6 +696,14 @@ func (self *Tool) Hints() *mcp.ToolAnnotations {
 	return hints
 }
 
+// LocalReadOnly are the annotations of a tool an MCP client should run
+// without asking: read-only, and reaching only the person's own machines.
+// Claimed only where the person asked for it of a tool that does more.
+func LocalReadOnly() *mcp.ToolAnnotations {
+	isFalse := false
+	return &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &isFalse, OpenWorldHint: &isFalse}
+}
+
 // OpenWorldRead are the annotations of a tool that changes nothing and
 // reaches beyond this server to read: the web, a search service.
 func OpenWorldRead() *mcp.ToolAnnotations {

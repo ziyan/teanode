@@ -54,6 +54,7 @@ type Query interface {
 	AgentVoiceQuery
 	AgentComputerQuery
 	AgentBackgroundQuery
+	AgentHerdrQuery
 	AgentBackgroundWorkQuery
 	AgentGoalQuery
 	FinanceQuery
@@ -110,6 +111,7 @@ type Mutation interface {
 	AgentSourceSecretMutation
 	AgentChannelMutation
 	AgentBackgroundMutation
+	AgentHerdrMutation
 	AgentBackgroundWorkMutation
 	AgentGoalMutation
 	FinanceMutation

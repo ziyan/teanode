@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -47,6 +48,17 @@ import (
 // speaking 1 says so rather than failing obscurely.
 const Protocol = 2
 
+// pingEvery is how often the program pings the server, which answers each
+// ping; silentMost is how long nothing may arrive before the connection is
+// taken as dead. A connection can die in one direction only: the program's
+// pings still leave, so the server goes on thinking it is attached, while
+// its requests never arrive and every one waits out its full time. Vars,
+// so a test can shorten them.
+var (
+	pingEvery  = 30 * time.Second
+	silentMost = 3 * pingEvery
+)
+
 // The bounds of one request.
 const (
 	defaultTimeout = 120 * time.Second
@@ -59,7 +71,6 @@ const (
 	searchEntries  = 200
 	grepMatches    = 200
 	grepLineChars  = 300
-	pingEvery      = 30 * time.Second
 	welcomeWait    = 15 * time.Second
 )
 
@@ -90,6 +101,11 @@ type Options struct {
 	// connections; a program that reconnects passes the same one each
 	// time. When nil, the program does not offer background commands.
 	Background *BackgroundCommands
+
+	// Herdr watches the person's herdr sessions across connections, as
+	// Background holds commands. When nil, the program does not offer
+	// them.
+	Herdr *Herdr
 
 	// Token is the person's, from `teanode auth login`.
 	Token string
@@ -213,6 +229,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		hello.Features = append(hello.Features, FeatureBackground)
 	}
 	hello.Features = append(hello.Features, FeatureAuthorizationForward)
+	if options.Herdr != nil {
+		hello.Features = append(hello.Features, FeatureHerdr)
+	}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
 	// a dead pty until they find the key that kills it.
@@ -233,6 +252,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	welcome := make(chan message, 1)
 	readErrors := make(chan error, 1)
 	requests := make(chan message, 16)
+	// When anything last arrived, in Unix nanoseconds.
+	var receivedAt atomic.Int64
+	receivedAt.Store(time.Now().UnixNano())
 	go func() {
 		for {
 			var received message
@@ -240,6 +262,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 				readErrors <- err
 				return
 			}
+			receivedAt.Store(time.Now().UnixNano())
 			switch received.Type {
 			case "welcome", "refused":
 				welcome <- received
@@ -269,6 +292,17 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		}
 		_ = write(message{Type: "background", Session: status.ID, Event: "ended", Code: status.ExitCode, Data: data})
 	})()
+	// What came and went in herdr is told the same way, and said again
+	// until acknowledged.
+	if options.Herdr != nil {
+		defer options.Herdr.listen(func(event *HerdrEvent) {
+			data, err := json.Marshal(event)
+			if err != nil {
+				return
+			}
+			_ = write(message{Type: "herdr", Event: event.HerdrEventKind, Data: data})
+		})()
+	}
 	// A request belongs to the connection that asked it. When the
 	// connection ends -- the server restarted, the network went -- its
 	// answer has nowhere to go, and a scan left running took the computer
@@ -286,7 +320,11 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			// decides how much it can take, not a count here, and the loop
 			// goes on pinging and reading whatever the requests do.
 			go func() {
-				if strings.HasPrefix(request.Action, "background_") {
+				// Asked every few seconds while the person looks, and said
+				// nothing about, like the background commands' list. What
+				// types into a pane or changes settings is said, as any
+				// other request is.
+				if strings.HasPrefix(request.Action, "background_") || isQuietHerdrAction[request.Action] {
 					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
@@ -312,6 +350,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 				_ = write(answer)
 			}()
 		case <-pings.C:
+			if silent := time.Since(time.Unix(0, receivedAt.Load())); silent > silentMost {
+				return fmt.Errorf("nothing came from the server for %s, not even an answer to a ping; reconnecting", silent.Round(time.Second))
+			}
 			if err := write(message{Type: "ping"}); err != nil {
 				return err
 			}
@@ -325,6 +366,11 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// isQuietHerdrAction says a herdr action only looks.
+var isQuietHerdrAction = map[string]bool{
+	"herdr_list": true, "herdr_read": true, "herdr_screen": true, "herdr_wait": true, "herdr_acknowledge": true,
 }
 
 // ErrTerminalEnded is how Serve ends when the shell the person attached
@@ -430,6 +476,14 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = background.acknowledge(&arguments)
+	case "herdr_list", "herdr_read", "herdr_screen", "herdr_send", "herdr_wait", "herdr_answer", "herdr_watch", "herdr_acknowledge", "herdr_setup", "herdr_open", "herdr_close":
+		var arguments HerdrArguments
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &arguments); err != nil {
+				return nil, fmt.Errorf("the request is not readable: %w", err)
+			}
+		}
+		result, err = RunHerdr(ctx, options.Herdr, action, &arguments)
 	case "http":
 		var arguments HTTPArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

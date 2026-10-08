@@ -1,0 +1,13 @@
+● Here are the steps I took:
+
+  1. Read the parser.
+  2. Added a test for the empty case.
+  3. Ran the suite.
+
+✻ Cooked for 4s · done 11:10 AM
+
+─────────────────────────────────────────────
+❯
+─────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ←…
+                         ◐ medium · /effort

@@ -122,6 +122,16 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
 		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,
 		"StopAgentBackgroundCommand":  client.DocumentStopAgentBackgroundCommand,
+		"ListAgentHerdrSessions":      client.DocumentListAgentHerdrSessions,
+		"ReadAgentHerdrSession":       client.DocumentReadAgentHerdrSession,
+		"ReadAgentHerdrScreen":        client.DocumentReadAgentHerdrScreen,
+		"SendAgentHerdrSession":       client.DocumentSendAgentHerdrSession,
+		"WaitAgentHerdrSession":       client.DocumentWaitAgentHerdrSession,
+		"AnswerAgentHerdrQuestion":    client.DocumentAnswerAgentHerdrQuestion,
+		"WatchAgentHerdrSession":      client.DocumentWatchAgentHerdrSession,
+		"SetUpAgentHerdrHooks":        client.DocumentSetUpAgentHerdrHooks,
+		"OpenAgentHerdrSession":       client.DocumentOpenAgentHerdrSession,
+		"CloseAgentHerdrSession":      client.DocumentCloseAgentHerdrSession,
 		// The surveys and subagents it did not wait for, and the survey the
 		// command line starts and waits for by asking.
 		"StartAgentSurvey":        client.DocumentStartAgentSurvey,

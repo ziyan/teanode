@@ -327,7 +327,7 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker}
 
 // SpeakFirstMarker begins the message a turn the agent starts on its own
 // is given: an introduction, a memory check, an idea. Nobody wrote it; the
@@ -344,6 +344,16 @@ const AlertMarker = "[alert]"
 // then its title. The agent's sentence saying what it needs comes after,
 // as an alert's words do. It is the only thing a goal says there.
 const GoalNeedsYouMarker = "[goal needs you]"
+
+// HerdrQuestionMarker begins the line a question from one of the person's
+// herdr coding sessions is written under in the main conversation, followed
+// by the computer, the pane and the question's fingerprint, so the drawer
+// can show its options and the next turn can pass the person's answer on.
+const HerdrQuestionMarker = "[herdr question]"
+
+// HerdrSessionMarker begins the message the agent is woken with when a
+// herdr coding session it watched has finished.
+const HerdrSessionMarker = "[herdr session]"
 
 // GoalRelayMarker begins the message the person's answer is written into a
 // goal's conversation as, when they gave it in the main conversation: their
@@ -465,6 +475,8 @@ const (
 	NoteCompacting      AgentNoteKind = "compacting"       // the earlier conversation is being folded into a note
 	NoteCompacted       AgentNoteKind = "compacted"        // it was: the detail is the note
 	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
+	NoteHerdrAsked      AgentNoteKind = "herdr_asked"      // a coding session's question, for the drawer to draw: JSON
+	NoteHerdrAnswered   AgentNoteKind = "herdr_answered"   // it went, and what it was answered with: JSON
 	// The goal notes below are written no longer, since goals have their
 	// own conversations and activity; they are kept so that transcripts
 	// written before still read.
@@ -488,6 +500,8 @@ var noteEnglish = map[AgentNoteKind]string{
 	NoteCompacting:      "compacting the earlier conversation into a note",
 	NoteCompacted:       "the earlier conversation was compacted into a note",
 	NoteDepth:           "looking into this carefully",
+	NoteHerdrAsked:      "a coding session asked a question",
+	NoteHerdrAnswered:   "a coding session's question was answered",
 	NoteGoalSet:         "Goal set",
 	NoteGoalSetAgain:    "Goal set again",
 	NoteGoalChanged:     "Goal changed",

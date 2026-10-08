@@ -13310,3 +13310,373 @@ button.idea-history-title {
   color: var(--muted);
   font-weight: normal;
 }
+
+/* The person's herdr sessions: a question with its options as buttons, a
+   session's last turns or its screen, and a box to type into it. The same
+   question card is drawn in the drawer, under the line it was written under,
+   and in the session's dialog on the agent page. */
+.herdr-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.herdr-question-card {
+  margin-top: var(--space-2);
+}
+
+.herdr-question-kind {
+  margin: 0;
+  font-size: var(--text-label);
+}
+
+/* What the coding agent asked, as it drew it: a plan or a command keeps
+   its lines. */
+.herdr-question-text {
+  max-height: 14em;
+  margin: 0;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: var(--text-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* One option a button, the whole width, its label and under it what the
+   coding agent said of it: a tap on a phone needs the room. */
+.herdr-question-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The generic "label span" is a muted caption above a field; here the
+   span is the option itself, its label in the text's color and its
+   description muted under it. */
+.herdr-question-option.tick > span {
+  display: block;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.herdr-question-option.tick > span > .muted {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.herdr-question-option.tick {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  color: var(--text);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.herdr-question-option .muted {
+  font-size: var(--text-label);
+}
+
+.herdr-question-free {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.herdr-question-free input {
+  flex: 1;
+  min-width: 0;
+}
+
+.herdr-question-done {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-label);
+}
+
+.herdr-session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.herdr-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The pane as it stands: kept as drawn, so its forms line up, and scrolled
+   sideways in its own box rather than the dialog's. */
+.herdr-screen {
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.herdr-turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.herdr-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.herdr-turn-role {
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.herdr-turn-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.herdr-turn.tool .herdr-turn-text {
+  color: var(--muted);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.herdr-send {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.herdr-send textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+}
+
+/* One line a session, the pane first and how it stands beside it: on a
+   phone those two are what is in view before the table scrolls. */
+.herdr-sessions td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.herdr-sessions td > button.link {
+  padding: 0;
+  font: inherit;
+}
+
+.herdr-hooks table {
+  width: 100%;
+}
+
+.herdr-hooks-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* Under the agent's words that say what a coding session asks: its
+   options, the drawer's width, to read and tap on a phone. */
+.agent-line.herdr-question-line {
+  align-self: stretch;
+  max-width: 100%;
+}
+
+.agent-line.herdr-question-line .herdr-question-card {
+  margin-top: 0;
+}
+
+/* A session's dialog holds a terminal's screen, drawn as the terminal drew
+   it: wider than other dialogs, as wide as the window allows. */
+.dialog-wide:has(.herdr-session) {
+  max-width: min(960px, 100%);
+}
+
+/* A coding session's question in the drawer is one box: a head that says
+   what it asks, what it was answered with, and who asks, and under it the
+   options. Answered, it folds to its head, which opens it again in place:
+   the same box, the same head, the options frozen with the chosen one
+   marked. */
+.agent-line.herdr-question-line {
+  align-self: stretch;
+  max-width: 100%;
+}
+
+.herdr-question-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.herdr-question-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+button.herdr-question-head {
+  cursor: pointer;
+}
+
+.herdr-question-head > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.herdr-question-box.waiting .herdr-question-head > svg:first-child {
+  color: var(--warn);
+}
+
+.herdr-question-box.folded .herdr-question-head > svg:first-child {
+  color: var(--good);
+}
+
+.herdr-question-head > svg:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.herdr-question-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.herdr-question-head-asked {
+  font-size: var(--text-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-head-answer {
+  color: var(--good);
+}
+
+.herdr-question-head-who {
+  color: var(--muted);
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+/* The options sit in the same box, under a hairline, without a box of
+   their own. */
+.herdr-question-body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.herdr-question-body .herdr-question-card {
+  margin: 0;
+}
+
+.herdr-question-body .herdr-question {
+  padding: var(--space-2) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+}
+
+/* Frozen: nothing to press, the chosen option marked. */
+.herdr-question.frozen .herdr-question-option {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.herdr-question.frozen .herdr-question-option.chosen {
+  border-color: var(--good);
+  opacity: 1;
+}
+
+.herdr-question-option.chosen strong > svg {
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--good);
+}
+
+.herdr-question-typed {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--good);
+  border-radius: var(--radius-1);
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-unknown {
+  margin: 0;
+  font-size: var(--text-label);
+}
+
+/* Who asks, over the question: the coding agent, its pane, its computer. */
+.herdr-question-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.herdr-question-who strong {
+  color: var(--text);
+}
+
+.herdr-question-checking {
+  margin: 0;
+  font-size: var(--text-label);
+}
+
+/* Folded, the head keeps to two lines; opened, it says the whole. */
+.herdr-question-box.folded:not(.open) .herdr-question-head-asked {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

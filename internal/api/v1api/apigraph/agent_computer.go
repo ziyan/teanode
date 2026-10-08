@@ -191,6 +191,13 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 			if attached && message.Event == "ended" {
 				worker.ComputerBackgroundEnded(found.ID, socket, message.Data)
 			}
+		case "herdr":
+			// A question came or went in one of the person's herdr panes,
+			// or a watched session finished. Said again after a reconnect
+			// until it is acknowledged.
+			if attached {
+				worker.ComputerHerdrChanged(found.ID, socket, message.Data)
+			}
 		case "bye":
 			return
 		}

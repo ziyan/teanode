@@ -1,0 +1,9 @@
+● Bash(go test ./...)
+  ⎿  Running…
+
+✻ Simmering… (12s · ↓ 1.2k tokens · esc to interrupt)
+
+─────────────────────────────────────────────
+❯
+─────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ←…

@@ -263,3 +263,30 @@ func TestARequestEndsWithItsConnection(t *testing.T) {
 		t.Fatalf("the request went on after its connection ended")
 	}
 }
+
+// A connection that goes silent, with the program's pings leaving and
+// nothing arriving, is dropped so the program connects again.
+func TestASilentConnectionIsDropped(t *testing.T) {
+	before, beforeSilent := pingEvery, silentMost
+	pingEvery, silentMost = 20*time.Millisecond, 60*time.Millisecond
+	defer func() { pingEvery, silentMost = before, beforeSilent }()
+	connection := &fakeConnection{incoming: make(chan message, 8), outgoing: make(chan message, 64)}
+	ended := make(chan error, 1)
+	go func() {
+		ended <- Serve(context.Background(), connection, &Options{Token: "t", Name: "laptop", Home: t.TempDir()})
+	}()
+	connection.next(t, "hello")
+	connection.incoming <- message{Type: "welcome"}
+	go func() {
+		for range connection.outgoing {
+		}
+	}()
+	select {
+	case err := <-ended:
+		if err == nil || !strings.Contains(err.Error(), "nothing came from the server") {
+			t.Errorf("%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a silent connection was kept")
+	}
+}

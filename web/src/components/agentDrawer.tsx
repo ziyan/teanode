@@ -40,6 +40,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
+  ChevronUpIcon,
   ChevronDownIcon,
   CloseIcon,
   ComputerIcon,
@@ -63,6 +64,7 @@ import {
   ExternalIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
+import { HerdrQuestionAnswer, HerdrQuestionCard, codingAgentName, paneNameOf, type HerdrSession } from './herdrSessions'
 import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
@@ -165,6 +167,28 @@ const ALERT_SURFACE = 'alert'
 const GOAL_NEEDS_YOU_MARKER = '[goal needs you]'
 const GOAL_NEEDS_YOU_SURFACE = 'goal_needs_you'
 
+// The marker a question from one of the person's herdr coding sessions is
+// written under in the main conversation, followed by the computer, the
+// pane and the question's fingerprint, which is models.HerdrQuestionMarker
+// on the server. Its surface opens the drawer as an alert's does, and its
+// line carries the question's options for the person to answer.
+const HERDR_QUESTION_MARKER = '[herdr question]'
+const HERDR_QUESTION_SURFACE = 'herdr_question'
+
+// The kind of the note written when a herdr question went, which is
+// models.NoteHerdrAnswered on the server; its detail is the computer, the
+// pane and the fingerprint, as the question's marker line names them.
+const HERDR_ANSWERED_NOTE = 'herdr_answered'
+
+// The kind of the note written beside a herdr question when it is asked,
+// which is models.NoteHerdrAsked: the session and the question whole, so
+// the question is drawn as its card from the transcript alone.
+const HERDR_ASKED_NOTE = 'herdr_asked'
+
+// The marker a turn begins with when a herdr coding session the agent
+// watched has finished, which is models.HerdrSessionMarker on the server.
+const HERDR_SESSION_MARKER = '[herdr session]'
+
 // What a question card answers when the person would rather talk than
 // pick, which is askuser.ChatAboutIt on the server: the same in every
 // language, so the tool can tell it from an answer.
@@ -183,6 +207,8 @@ type CheckInOrigin =
   | 'schedule'
   | 'speakFirst'
   | 'alert'
+  | 'herdrQuestion'
+  | 'herdrSession'
   | 'approved'
   | 'declined'
 
@@ -202,6 +228,8 @@ function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
   if (text.startsWith(ALERT_MARKER)) return 'alert'
+  if (text.startsWith(HERDR_QUESTION_MARKER)) return 'herdrQuestion'
+  if (text.startsWith(HERDR_SESSION_MARKER)) return 'herdrSession'
   if (text.startsWith(APPROVED_MARKER)) return 'approved'
   if (text.startsWith(DECLINED_MARKER)) return 'declined'
   return null
@@ -1243,6 +1271,13 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
         })
         break
       case 'note':
+        // That a coding session's question went: drawn by nobody, read by
+        // the question's line, which then starts collapsed. Not timed, so
+        // it opens no day of its own.
+        if (message.name === HERDR_ANSWERED_NOTE || message.name === HERDR_ASKED_NOTE) {
+          lines.push({ kind: 'note', key: message.id, text: '', noteKind: message.name, detail: message.content })
+          break
+        }
         // Timed, so that the day divider counts a note that opens a day
         // -- "Goal set" is the first line of a fresh conversation -- and
         // does not land under it.
@@ -1832,12 +1867,15 @@ const CHECK_IN_LABEL = {
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
   alert: 'agentDrawer.alertTurn',
+  herdrQuestion: 'agentDrawer.herdrQuestionTurn',
+  herdrSession: 'agentDrawer.herdrSessionTurn',
   approved: 'agentDrawer.approvedLater',
   declined: 'agentDrawer.declinedLater',
 } as const
 
 function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
-  if (origin === 'background') return <TerminalIcon size={12} />
+  if (origin === 'background' || origin === 'herdrSession') return <TerminalIcon size={12} />
+  if (origin === 'herdrQuestion') return <WarningIcon size={12} />
   if (origin === 'backgroundWork') return <ListIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
@@ -1851,6 +1889,236 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
 // the marker.
 function goalIdOf(text: string): string {
   return text.slice(GOAL_NEEDS_YOU_MARKER.length).trim().split(/\s+/)[0] ?? ''
+}
+
+// herdrQuestionOf is the question a "[herdr question]" line names: the
+// computer, which may hold spaces, then the pane and the fingerprint.
+function herdrQuestionOf(text: string): { computer: string; paneId: string; questionFingerprint: string } | null {
+  const words = (text.slice(HERDR_QUESTION_MARKER.length).split('\n')[0] ?? '').trim().split(/\s+/)
+  if (words.length < 3) return null
+  return {
+    computer: words.slice(0, -2).join(' '),
+    paneId: words[words.length - 2],
+    questionFingerprint: words[words.length - 1],
+  }
+}
+
+// herdrSummaryOf is a herdr question as the agent said it: the question's
+// first line, and who asked it.
+function herdrSummaryOf(text: string): { asked: string; who: string } {
+  const lines = text.split('\n')
+  const who = (lines[0] ?? '')
+    .replace(/\*\*/g, '')
+    .replace(/( \(.*\))? asks[^:]*:\s*$/, '')
+    .trim()
+  // The line that asks, where the form opens with something else (a path,
+  // a heading); the first line otherwise.
+  const quoted = lines.filter((each) => each.startsWith('> ')).map((each) => each.slice(2).trim())
+  const asking = quoted.find((each) => each.includes('?')) ?? quoted[0] ?? ''
+  const asked = asking.length > 160 ? `${asking.slice(0, 157)}…` : asking
+  return { asked: asked || who, who: asked ? who : '' }
+}
+
+// questionFromSaid is a herdr question read back from the agent's words,
+// for one asked before its question was kept whole beside it: the quoted
+// lines are the question, the numbered ones its options.
+function questionFromSaid(
+  text: string,
+  question: { computer: string; paneId: string; questionFingerprint: string },
+): HerdrSession | undefined {
+  const lines = text.split('\n')
+  const options = lines
+    .map((line) => /^(\d+)\. (.*)$/.exec(line.trim()))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => {
+      const [label, ...rest] = match[2].split(': ')
+      const optionLabel = label.trim()
+      const herdrOptionKind: 'choice' | 'freeText' | 'chat' = optionLabel.startsWith('Chat about')
+        ? 'chat'
+        : optionLabel.startsWith('Type something') || optionLabel.startsWith('Tell Claude what to change')
+          ? 'freeText'
+          : 'choice'
+      return { optionNumber: Number(match[1]), optionLabel, optionDescription: rest.join(': ').trim(), herdrOptionKind }
+    })
+  if (options.length === 0) return undefined
+  const head = (lines[0] ?? '').replace(/\*\*/g, '')
+  const codingAgentKind = head.startsWith('Codex') ? 'codex' : 'claude'
+  return {
+    computer: question.computer,
+    paneId: question.paneId,
+    paneName: '',
+    codingAgentKind,
+    codingSessionId: '',
+    herdrSessionState: 'idle',
+    herdrAgentStatus: '',
+    paneTitle: '',
+    workingDirectory: '',
+    transcriptPath: '',
+    isWatched: false,
+    question: {
+      questionFingerprint: question.questionFingerprint,
+      herdrQuestionKind: 'question',
+      questionText: lines
+        .filter((line) => line.startsWith('> '))
+        .map((line) => line.slice(2))
+        .join('\n'),
+      isMultipleChoice: text.includes('You may choose several.'),
+      isFromTranscript: false,
+      options,
+    },
+  }
+}
+
+// HERDR_QUESTION_STALE_MS is how old a question with no word of its answer
+// is taken to be answered without asking its computer: a coding session
+// does not wait a day on one question.
+const HERDR_QUESTION_STALE_MS = 24 * 60 * 60 * 1000
+
+// herdrNoteOf reads a herdr question's note: JSON, or, in a note written
+// before notes carried more, the computer, the pane and the fingerprint.
+interface HerdrNote {
+  computer: string
+  paneId: string
+  questionFingerprint: string
+  herdrSession?: HerdrSession
+  answerText?: string
+}
+
+function herdrNoteOf(detail: string | undefined): HerdrNote | null {
+  if (!detail) return null
+  try {
+    return JSON.parse(detail) as HerdrNote
+  } catch {
+    const words = detail.trim().split(/\s+/)
+    if (words.length < 3) return null
+    return {
+      computer: words.slice(0, -2).join(' '),
+      paneId: words[words.length - 2],
+      questionFingerprint: words[words.length - 1],
+    }
+  }
+}
+
+// askingLineOf is the line of a question that asks, where a form opens with
+// something else (a path, a heading), cut to a line's length.
+function askingLineOf(questionText: string): string {
+  const lines = questionText
+    .split('\n')
+    .map((each) => each.trim())
+    .filter(Boolean)
+  const asking = lines.find((each) => each.includes('?')) ?? lines[0] ?? ''
+  return asking.length > 160 ? `${asking.slice(0, 157)}…` : asking
+}
+
+// HerdrQuestionLine is a coding session's question, in one box: a head that
+// says what it asks, what it was answered with once it was, and who asks;
+// under it, the options. While it waits they can be pressed. Once it is
+// answered, at the keyboard or here, the box folds to its head, which opens
+// it again to the same options, frozen, with the chosen one marked. What it
+// asked and how it went are read from the notes written beside it, so it is
+// drawn as it stands the moment the transcript is, with no question asked
+// of the computer for one that went.
+function HerdrQuestionLine({
+  drawn,
+  text,
+  at,
+  question,
+  asked,
+  answered,
+}: {
+  drawn: React.ReactNode
+  text: string
+  at?: string
+  question: { computer: string; paneId: string; questionFingerprint: string }
+  asked?: HerdrSession
+  answered: HerdrNote | null
+}) {
+  const { t } = useTranslation()
+  const isStale = !!at && Date.now() - new Date(at).getTime() > HERDR_QUESTION_STALE_MS
+  const [foldReason, setFoldReason] = useState<'answered' | 'unreachable' | null>(
+    answered || isStale ? 'answered' : null,
+  )
+  const [answerText, setAnswerText] = useState(answered?.answerText ?? '')
+  const [isOpen, setOpen] = useState(false)
+  useEffect(() => {
+    if (!answered) return
+    setFoldReason('answered')
+    if (answered.answerText) setAnswerText(answered.answerText)
+  }, [answered])
+  const summary = herdrSummaryOf(text)
+  // Kept whole beside it, or read back from the agent's words for a
+  // question asked before it was.
+  const shown = asked?.question ? asked : questionFromSaid(text, question)
+  const title = asked?.question ? askingLineOf(asked.question.questionText) : summary.asked
+  const who = asked
+    ? [codingAgentName(asked.codingAgentKind), paneNameOf(asked), question.computer].join(' · ')
+    : summary.who
+  // A question of more than a line (an approval's command, a plan) shows
+  // the whole of it over its options; the head says the rest.
+  const isWhole =
+    !!asked?.question && asked.question.questionText.split('\n').filter((each: string) => each.trim()).length > 1
+  const isFolded = foldReason !== null
+  const head = (
+    <>
+      {isFolded ? <CheckIcon size={14} /> : <WarningIcon size={14} />}
+      <span className="herdr-question-head-text">
+        <span className="herdr-question-head-asked">
+          {foldReason === 'unreachable' ? `${t('herdr.unreachable')} · ` : null}
+          {title}
+          {answerText ? <span className="herdr-question-head-answer"> → {answerText}</span> : null}
+        </span>
+        {who ? <span className="herdr-question-head-who">{who}</span> : null}
+      </span>
+      {isFolded ? isOpen ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} /> : null}
+    </>
+  )
+  return (
+    <div className="agent-line herdr-question-line">
+      <div className={['herdr-question-box', isFolded ? 'folded' : 'waiting', isOpen ? 'open' : ''].join(' ')}>
+        {isFolded ? (
+          <button
+            type="button"
+            className="herdr-question-head"
+            aria-expanded={isOpen}
+            onClick={() => setOpen((before) => !before)}
+          >
+            {head}
+          </button>
+        ) : (
+          <div className="herdr-question-head">{head}</div>
+        )}
+        {!isFolded ? (
+          <div className="herdr-question-body">
+            <HerdrQuestionCard
+              {...question}
+              initial={asked}
+              isHeaderShown={false}
+              isQuestionShown={isWhole}
+              onAnswered={(answeredWith) => {
+                if (answeredWith) setAnswerText(answeredWith)
+                setFoldReason('answered')
+              }}
+              onUnreachable={() => setFoldReason('unreachable')}
+            />
+          </div>
+        ) : null}
+        {isFolded && isOpen ? (
+          <div className="herdr-question-body">
+            {shown?.question ? (
+              <HerdrQuestionAnswer
+                session={shown}
+                question={shown.question}
+                isQuestionShown={isWhole}
+                answeredWith={answerText}
+              />
+            ) : (
+              drawn
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 // CheckInLine is one turn of the agent's own -- toward the goal, on
@@ -2462,7 +2730,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (
           stopped ||
           event.kind !== 'asked' ||
-          !(note.startsWith(SPEAK_FIRST_SURFACE) || note === ALERT_SURFACE || note === GOAL_NEEDS_YOU_SURFACE)
+          !(
+            note.startsWith(SPEAK_FIRST_SURFACE) ||
+            note === ALERT_SURFACE ||
+            note === GOAL_NEEDS_YOU_SURFACE ||
+            note === HERDR_QUESTION_SURFACE
+          )
         )
           return
         void loadConversations()
@@ -3660,6 +3933,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (!showWorkingNotes && line.origin !== 'goalNeedsYou') return null
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
+        if (line.noteKind === HERDR_ANSWERED_NOTE || line.noteKind === HERDR_ASKED_NOTE) return null
         if (!showWorkingNotes && line.noteKind && WORKING_NOTES.has(line.noteKind)) return null
         if (line.detail) {
           return (
@@ -4030,7 +4304,43 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     {dayLabel(at, t('agentDrawer.today'), t('agentDrawer.yesterday'))}
                   </div>
                 ) : null
-              const drawn = drawLine(line)
+              let drawn = drawLine(line)
+              // A coding session's question, as the agent said it, takes
+              // its options under it while it still waits. Which question
+              // is named by the line it was written under, which is kept
+              // in the list even where working notes are not shown.
+              const asked = line.kind === 'assistant' && index > 0 ? lines[index - 1] : undefined
+              const herdrQuestion =
+                asked?.kind === 'checkin' && asked.origin === 'herdrQuestion' ? herdrQuestionOf(asked.text) : null
+              if (herdrQuestion && line.kind === 'assistant') {
+                // Its notes, read from the lines after it: what it asked,
+                // and whether and how it was answered.
+                const isThis = (note: HerdrNote | null): note is HerdrNote =>
+                  !!note &&
+                  note.computer === herdrQuestion.computer &&
+                  note.paneId === herdrQuestion.paneId &&
+                  note.questionFingerprint === herdrQuestion.questionFingerprint
+                const notesOf = (noteKind: string) =>
+                  lines
+                    .slice(index + 1)
+                    .map((later) =>
+                      later.kind === 'note' && later.noteKind === noteKind ? herdrNoteOf(later.detail) : null,
+                    )
+                    .filter(isThis)
+                const askedNote = notesOf(HERDR_ASKED_NOTE)[0]
+                const answeredNote = notesOf(HERDR_ANSWERED_NOTE)[0] ?? null
+                drawn = (
+                  <HerdrQuestionLine
+                    key={`${line.key}-herdr`}
+                    drawn={drawn}
+                    text={line.text}
+                    at={line.at}
+                    question={herdrQuestion}
+                    asked={askedNote?.herdrSession}
+                    answered={answeredNote}
+                  />
+                )
+              }
               return divider ? (
                 <Fragment key={`day-${line.key}`}>
                   {divider}

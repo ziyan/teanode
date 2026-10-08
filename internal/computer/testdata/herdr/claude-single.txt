@@ -1,0 +1,24 @@
+  single-choice question: which fruit
+  should we pick, with options Apple,
+  Banana, Cherry (each with a one-line
+  description). Do nothing else.
+─────────────────────────────────────────────
+ ☐ Fruit
+
+Which fruit should we pick?
+
+❯ 1. Apple
+     Crisp and sweet, and it keeps well for
+     days.
+  2. Banana
+     Soft and easy to peel, a quick source of
+     energy.
+  3. Cherry
+     Small, juicy and tart-sweet, best eaten
+     in season.
+  4. Type something.
+─────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to
+cancel

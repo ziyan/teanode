@@ -43,6 +43,13 @@ type BackgroundHolder interface {
 	HasBackground() bool
 }
 
+// FeatureHolder is a computer whose program says which features beyond
+// its protocol it offers, such as the person's herdr sessions. A program
+// that predates a feature does not name it.
+type FeatureHolder interface {
+	HasFeature(name string) bool
+}
+
 // BackgroundOrigin is who started a background command, as the shell tool
 // hands it to the computer and the computer hands it back when the command
 // ends: which agent and conversation to wake, and IsUnwakeable when the
