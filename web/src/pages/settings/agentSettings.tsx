@@ -145,6 +145,7 @@ export type Agent = {
     silenceMS: number
     speechModel: string
     speechVoice: string
+    askModel: string
   }
   browser: {
     enabled: boolean
@@ -180,7 +181,7 @@ export const AGENT_SELECTION = `agent {
   currency
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
-  voice { enabled provider transcriptionModel silenceMS speechModel speechVoice }
+  voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
   finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
@@ -1563,6 +1564,7 @@ function VoiceForm({ settings, onSaved }: Props) {
               silenceMS: Number(voice.silenceMS) || 0,
               speechModel: voice.speechModel.trim(),
               speechVoice: voice.speechVoice,
+              askModel: voice.askModel.trim(),
             },
           },
         })
@@ -1609,6 +1611,14 @@ function VoiceForm({ settings, onSaved }: Props) {
         </label>
       </div>
       <div className="row">
+        <label>
+          <span>{t('agentSettings.voiceAskModel')}</span>
+          <input
+            value={voice.askModel}
+            placeholder={t('agentSettings.voiceAskModelSame')}
+            onChange={(event) => setVoice({ ...voice, askModel: event.target.value })}
+          />
+        </label>
         <label>
           <span>{t('agentSettings.voiceSpeechModel')}</span>
           <input

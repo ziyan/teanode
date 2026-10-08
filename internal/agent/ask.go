@@ -350,6 +350,10 @@ type AskRun struct {
 	// chat found, once it has (startKnowledgeRecall).
 	knowledgeRecalled chan []string
 
+	// graphRecalled is what a spoken turn's search of the graph and the
+	// lessons found, once it has (startGraphRecall).
+	graphRecalled chan *graphRecall
+
 	// firstWordsAt is when the model's first words of this round came,
 	// for the log.
 	firstWordsAt time.Time
@@ -801,6 +805,10 @@ func (self *AskRun) loop() {
 	// The search of the person's files and chat needs nothing the depth
 	// judgement decides: begun now, it runs while the judgement does.
 	self.startKnowledgeRecall(self.ctx)
+	// Nor, on a spoken turn, which is not judged, does the graph's.
+	if self.settings.Surface == "voice" {
+		self.startGraphRecall(self.ctx)
+	}
 	self.chooseDepth()
 	self.isGoalWaitingAtStart = self.isGoalWaiting()
 	if err := self.turn(); err != nil {
@@ -845,6 +853,8 @@ func (self *AskRun) turn() error {
 		modelName = settings.Model
 	case settings.Work != "":
 		modelName = registry.Configuration().Models.ForWork(settings.Work)
+	case voiceModel(configuration, settings) != "":
+		modelName = voiceModel(configuration, settings)
 	case settings.Agent.AskModel != "":
 		modelName = settings.Agent.AskModel
 	}
@@ -1326,12 +1336,24 @@ func historyLimit(contextLength int) int {
 	return max(askHistoryTokens, contextLength/askHistoryWindowShare)
 }
 
+// voiceModel is the model a spoken turn is answered with, where the
+// operator chose one for calls; empty otherwise.
+func voiceModel(configuration *config.Configuration, settings *AskSettings) string {
+	if settings.Surface != "voice" {
+		return ""
+	}
+	return strings.TrimSpace(configuration.Agent.Voice.AskModel)
+}
+
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {
 	if self.settings.Model != "" {
 		return registry.ForModel(self.settings.Model)
 	}
 	if self.settings.Work != "" {
 		return registry.ForWork(self.settings.Work)
+	}
+	if spoken := voiceModel(configuration, self.settings); spoken != "" {
+		return registry.ForModel(spoken)
 	}
 	if chosen := strings.TrimSpace(self.settings.Agent.AskModel); chosen != "" {
 		for _, choice := range configuration.Agent.Models.Choices {

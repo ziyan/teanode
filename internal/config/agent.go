@@ -800,6 +800,12 @@ type AgentVoice struct {
 	// SpeechVoice is the provider's voice the answers are spoken in. Empty
 	// is marin.
 	SpeechVoice string `yaml:"speechVoice,omitempty"`
+
+	// AskModel is the model a spoken turn is answered with, as
+	// provider:model; empty is the one a typed turn uses. A call wants the
+	// first words soon: on a long conversation a smaller model starts
+	// speaking a second or more before a larger one.
+	AskModel string `yaml:"askModel,omitempty"`
 }
 
 // The defaults of the voice settings.
@@ -1318,6 +1324,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	checkModel("agent.models.embedding", agent.Models.Embedding)
 	checkModel("agent.models.triage", agent.Models.Triage)
 	checkModel("agent.models.research", agent.Models.Research)
+	checkModel("agent.voice.askModel", agent.Voice.AskModel)
 	checkModel("agent.models.summarize", agent.Models.Summarize)
 	checkModel("agent.models.reply", agent.Models.Reply)
 	checkModel("agent.models.ask", agent.Models.Ask)

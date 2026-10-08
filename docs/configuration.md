@@ -1648,6 +1648,12 @@ while it works on the first, as a typed follow-up would.
 **`speechModel`** — The text-to-speech model the answers are spoken with,
 through the same provider. Empty is `gpt-4o-mini-tts`.
 
+**`askModel`** — The model a spoken turn is answered with, as
+`provider:model`; empty is the one a typed turn uses. A call wants the first
+words soon, and on a long conversation a smaller model starts speaking a second
+or more before a larger one, even though it reads the conversation uncached
+the first time.
+
 **`speechVoice`** — The provider's voice the answers are spoken in, such as
 `marin`, `cedar`, `alloy` or `coral`. Empty is `marin`. Each person may choose
 their own on their agent's settings, which this is the default for.
