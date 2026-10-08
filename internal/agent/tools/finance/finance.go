@@ -1261,7 +1261,9 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 	}
 	listKey := pagedListKeys[name]
-	if _, isLimitGiven := variables["limit"]; listKey != "" && !isLimitGiven {
+	// A limit of zero or less is none given, as the API reads it, and
+	// takes the tool's page rather than the API's.
+	if limit, _ := variables["limit"].(int); listKey != "" && limit <= 0 {
 		variables["limit"] = pageRows
 	}
 	var answered any

@@ -92,4 +92,19 @@ func TestFinanceToolListsAPageThatFitsAndSaysHowToReadOn(test *testing.T) {
 	if !strings.Contains(cursor.Content, "and after 2030-03-14/01JTRANSACTION000000000020 reads the next page") {
 		test.Errorf("a page read from a cursor names the cursor of the next: %s", cursor.Content)
 	}
+
+	// A limit of zero or less is none given: the page of twenty, and a
+	// hint that does not ask for a limit of zero.
+	for _, limit := range []string{"0", "-5"} {
+		unlimited, err := call(test, operations, `{"operation":"transactions","limit":`+limit+`}`)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if sent := operations.variables[len(operations.variables)-1]; sent["limit"] != 20 {
+			test.Errorf("limit %s asks for twenty: %v", limit, sent)
+		}
+		if !strings.Contains(unlimited.Content, "offset 20 reads the next page") || strings.Contains(unlimited.Content, "with limit") {
+			test.Errorf("limit %s reads on by offset alone: %s", limit, unlimited.Content)
+		}
+	}
 }
