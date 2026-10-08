@@ -138,7 +138,14 @@ export type Agent = {
   currency: string
   search: { kind: string; hasApiKey: boolean }
   tools: { disabled: string[]; confirm: string[]; catalog: AgentTool[] }
-  voice: { enabled: boolean; provider: string; transcriptionModel: string; silenceMS: number }
+  voice: {
+    enabled: boolean
+    provider: string
+    transcriptionModel: string
+    silenceMS: number
+    speechModel: string
+    speechVoice: string
+  }
   browser: {
     enabled: boolean
     cdpEndpoint: string
@@ -173,7 +180,7 @@ export const AGENT_SELECTION = `agent {
   currency
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
-  voice { enabled provider transcriptionModel silenceMS }
+  voice { enabled provider transcriptionModel silenceMS speechModel speechVoice }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
   finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
@@ -1513,6 +1520,23 @@ function voiceFields(settings: Agent) {
   }
 }
 
+// SPEECH_VOICES are the provider's voices an answer can be read in.
+const SPEECH_VOICES = [
+  'marin',
+  'cedar',
+  'alloy',
+  'ash',
+  'ballad',
+  'coral',
+  'echo',
+  'fable',
+  'nova',
+  'onyx',
+  'sage',
+  'shimmer',
+  'verse',
+]
+
 // VoiceForm: talking to the agent in the drawer, transcribed by a provider
 // of kind openai.
 function VoiceForm({ settings, onSaved }: Props) {
@@ -1537,6 +1561,8 @@ function VoiceForm({ settings, onSaved }: Props) {
               provider: voice.provider,
               transcriptionModel: voice.transcriptionModel.trim(),
               silenceMS: Number(voice.silenceMS) || 0,
+              speechModel: voice.speechModel.trim(),
+              speechVoice: voice.speechVoice,
             },
           },
         })
@@ -1580,6 +1606,30 @@ function VoiceForm({ settings, onSaved }: Props) {
             inputMode="numeric"
             onChange={(event) => setVoice({ ...voice, silenceMS: event.target.value })}
           />
+        </label>
+      </div>
+      <div className="row">
+        <label>
+          <span>{t('agentSettings.voiceSpeechModel')}</span>
+          <input
+            value={voice.speechModel}
+            placeholder="gpt-4o-mini-tts"
+            onChange={(event) => setVoice({ ...voice, speechModel: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>{t('agentSettings.voiceSpeechVoice')}</span>
+          <select
+            value={voice.speechVoice}
+            onChange={(event) => setVoice({ ...voice, speechVoice: event.target.value })}
+          >
+            <option value="">marin</option>
+            {SPEECH_VOICES.filter((speechVoice) => speechVoice !== 'marin').map((speechVoice) => (
+              <option key={speechVoice} value={speechVoice}>
+                {speechVoice}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
       <SaveRow busy={busy} saved={saved} problem={problem} />

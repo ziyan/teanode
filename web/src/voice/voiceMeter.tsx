@@ -1,18 +1,21 @@
 import { useEffect, useRef } from 'react'
 
 // VoiceMeter is voice mode's picture: five bars that follow how loud the
-// microphone is, frame by frame. Heard (the provider says somebody is
-// talking) they stand up in the accent; while the agent works they breathe
-// slowly on their own; otherwise they rest low. Drawn by setting each bar's
+// microphone is, or the answer being spoken, frame by frame. Heard (the
+// provider says somebody is talking) they stand up green; speaking, in the
+// accent; while the agent works they breathe slowly on their own;
+// otherwise they rest low. Drawn by setting each bar's
 // height directly, not through React, since it changes sixty times a
 // second.
 export function VoiceMeter({
   level,
   isHearing,
+  isSpeaking,
   isAnswering,
 }: {
   level: () => number
   isHearing: boolean
+  isSpeaking: boolean
   isAnswering: boolean
 }) {
   const bars = useRef<(HTMLSpanElement | null)[]>([])
@@ -51,7 +54,12 @@ export function VoiceMeter({
 
   return (
     <span
-      className={['voice-meter', isHearing ? 'is-hearing' : '', isAnswering ? 'is-answering' : '']
+      className={[
+        'voice-meter',
+        isHearing ? 'is-hearing' : '',
+        isSpeaking && !isHearing ? 'is-speaking' : '',
+        isAnswering ? 'is-answering' : '',
+      ]
         .filter(Boolean)
         .join(' ')}
       aria-hidden="true"

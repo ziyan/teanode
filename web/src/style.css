@@ -6903,11 +6903,18 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   overflow: hidden;
 }
 
-.agent-drawer-voice-end {
+/* Hanging up is the red handset, as on a phone. */
+.agent-drawer-voice-mode .agent-drawer-voice-end {
   flex: none;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: 18px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bad);
+  color: #fff;
+}
+
+.agent-drawer-voice-mode .agent-voice-mute[aria-pressed='true'] {
+  color: var(--muted);
 }
 
 .voice-meter {
@@ -6932,6 +6939,10 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 .voice-meter.is-hearing .voice-meter-bar {
   background: var(--leaf);
+}
+
+.voice-meter.is-speaking .voice-meter-bar {
+  background: var(--accent);
 }
 
 .agent-drawer-input .agent-send {

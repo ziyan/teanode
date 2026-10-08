@@ -1,10 +1,12 @@
 import { authorization } from '../api'
+import { AnswerPlayer, AnswerVoice, type AnswerRunEvent, type InterruptedAnswer } from './voiceAnswer'
 
 // Voice: the person talking to their agent in the drawer. The microphone
 // streams to the server over a websocket as they speak; the server has it
 // transcribed and says back what it heard (internal/voice). Each finished
 // utterance is handed to the drawer once, in the order spoken, and the
-// drawer sends it the way it sends what was typed.
+// drawer sends it the way it sends what was typed. The answers are spoken
+// back through the same socket (voiceAnswer).
 
 // VoiceEvent is one thing the server says on the voice socket.
 export type VoiceEvent = {
@@ -14,6 +16,9 @@ export type VoiceEvent = {
   transcriptText?: string
   errorMessage?: string
   sampleRate?: number
+  answerSegmentId?: string
+  // Some of a spoken answer's audio: base64 of mono 16-bit PCM.
+  answerAudio?: string
 }
 
 // VoiceCallbacks are what a session tells the drawer.
@@ -24,8 +29,11 @@ export type VoiceCallbacks = {
   onHearing: (isHearing: boolean) => void
   // The words of the utterance being heard, so far; empty clears them.
   onCaption: (captionText: string) => void
-  // A finished utterance: once each, in the order spoken.
-  onTranscript: (transcriptText: string) => void
+  // A finished utterance: once each, in the order spoken. When it cut in
+  // on a spoken answer, how much of that answer was heard.
+  onTranscript: (transcriptText: string, interruptedAnswer?: InterruptedAnswer) => void
+  // An answer is being spoken, or no longer is.
+  onSpeaking: (isSpeaking: boolean) => void
   // Something the person should be told; isEnding says listening stopped.
   onProblem: (problemText: string, isEnding: boolean) => void
   // Listening stopped, for whatever reason.
@@ -87,22 +95,57 @@ export class VoiceSession {
   private context?: AudioContext
   private analyser?: AnalyserNode
   private samples?: Float32Array<ArrayBuffer>
+  private answers?: AnswerVoice
+  private isMuted = false
   private isEnded = false
   private isReady = false
   private tracker = new TranscriptTracker()
 
   constructor(
     private callbacks: VoiceCallbacks,
-    private messages: { microphoneRefused: string; notHeard: string; connectionLost: string },
+    private messages: {
+      microphoneRefused: string
+      notHeard: string
+      connectionLost: string
+      confirmationNeeded: string
+      answerNotSpoken: string
+    },
   ) {}
 
   // start begins listening. It is called from the person's tap: Safari on a
   // phone starts an audio context only within the gesture that asked for
   // it, so the context is made and resumed before anything is waited on.
   async start(sampleRate: number) {
+    // Safari on a phone: recording and playing at once, through the
+    // speaker rather than the earpiece.
+    const audioSession = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
+    if (audioSession) {
+      try {
+        audioSession.type = 'play-and-record'
+      } catch {
+        // Older Safari, which decides for itself.
+      }
+    }
     const context = new AudioContext()
     this.context = context
     void context.resume().catch(() => undefined)
+    // The answers play in the same context the microphone is read in, so
+    // that what the browser cancels as echo is what it plays.
+    let hasToldAnswerFailure = false
+    this.answers = new AnswerVoice(
+      new AnswerPlayer(
+        context,
+        {
+          request: (answerSegmentId, answerText) =>
+            this.sendJSON({ voiceEvent: 'speakAnswer', answerSegmentId, answerText }),
+          cancel: (answerSegmentIds) => this.sendJSON({ voiceEvent: 'cancelAnswer', answerSegmentIds }),
+        },
+        (isSpeaking) => this.callbacks.onSpeaking(isSpeaking),
+      ),
+      { confirmationNeeded: this.messages.confirmationNeeded },
+    )
+    this.answers.setMuted(this.isMuted)
+    const answers = this.answers
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -169,6 +212,22 @@ export class VoiceSession {
         return
       }
       switch (event.voiceEvent) {
+        case 'answerAudio':
+          if (event.answerSegmentId && event.answerAudio) {
+            answers.accept(event.answerSegmentId, pcmOf(event.answerAudio))
+          }
+          return
+        case 'answerAudioDone':
+          if (event.answerSegmentId) answers.complete(event.answerSegmentId, false)
+          return
+        case 'answerAudioFailed':
+          if (event.answerSegmentId) answers.complete(event.answerSegmentId, true)
+          // Said once a session, not once a sentence.
+          if (!hasToldAnswerFailure) {
+            hasToldAnswerFailure = true
+            this.callbacks.onProblem(`${this.messages.answerNotSpoken} ${event.errorMessage ?? ''}`.trim(), false)
+          }
+          return
         case 'ready':
           this.isReady = true
           this.callbacks.onListening()
@@ -178,18 +237,51 @@ export class VoiceSession {
           this.end(event.errorMessage ?? this.messages.connectionLost)
           return
       }
-      if (event.voiceEvent === 'speechStarted') this.callbacks.onHearing(true)
-      if (event.voiceEvent === 'speechStopped') this.callbacks.onHearing(false)
+      if (event.voiceEvent === 'speechStarted') {
+        this.callbacks.onHearing(true)
+        answers.speechStarted()
+      }
+      if (event.voiceEvent === 'speechStopped') {
+        this.callbacks.onHearing(false)
+        answers.speechStopped()
+      }
       const changed = this.tracker.accept(event)
       if (changed.captionText !== undefined) this.callbacks.onCaption(changed.captionText)
-      if (changed.transcriptText) this.callbacks.onTranscript(changed.transcriptText)
-      if (changed.isNotHeard) this.callbacks.onProblem(this.messages.notHeard, false)
+      if (changed.transcriptText) {
+        const verdict = answers.transcript(changed.transcriptText)
+        // The answer heard back through the microphone is not the person.
+        if (!verdict.isEcho) this.callbacks.onTranscript(changed.transcriptText, verdict.interruptedAnswer)
+      } else if (event.voiceEvent === 'transcriptFinal' || changed.isNotHeard) {
+        answers.notHeard()
+      }
+      if (changed.isNotHeard && !answers.isSpeaking()) this.callbacks.onProblem(this.messages.notHeard, false)
     }
     socket.onclose = () => this.end(this.isEnded ? undefined : this.messages.connectionLost)
   }
 
-  // level is how loud the microphone is now, from 0 to 1, for drawing.
+  // follow hands the session an event of the conversation, whose answers
+  // it speaks.
+  follow(event: AnswerRunEvent) {
+    this.answers?.follow(event)
+  }
+
+  // adopt speaks the turns running now from here on: the person spoke
+  // into them.
+  adopt(runIds: string[]) {
+    this.answers?.adopt(runIds)
+  }
+
+  // setMuted stops speaking answers, or starts again with the next.
+  setMuted(isMuted: boolean) {
+    this.isMuted = isMuted
+    this.answers?.setMuted(isMuted)
+  }
+
+  // level is how loud the microphone or the answer is now, from 0 to 1,
+  // for drawing.
   level(): number {
+    const answerLevel = this.answers?.level() ?? 0
+    if (answerLevel > 0) return answerLevel
     if (!this.analyser || !this.samples) return 0
     this.analyser.getFloatTimeDomainData(this.samples)
     let sum = 0
@@ -207,9 +299,15 @@ export class VoiceSession {
     this.end()
   }
 
+  private sendJSON(message: object) {
+    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
+  }
+
   private end(problemText?: string) {
     if (this.isEnded) return
     this.isEnded = true
+    this.answers?.close()
+    this.callbacks.onSpeaking(false)
     this.release()
     if (problemText) this.callbacks.onProblem(problemText, true)
     this.callbacks.onHearing(false)
@@ -222,4 +320,12 @@ export class VoiceSession {
     this.stream?.getTracks().forEach((track) => track.stop())
     void this.context?.close().catch(() => undefined)
   }
+}
+
+// pcmOf reads a piece of an answer's audio off the socket.
+export function pcmOf(answerAudio: string): Int16Array {
+  const binary = atob(answerAudio)
+  const bytes = new Uint8Array(binary.length - (binary.length % 2))
+  for (let index = 0; index < bytes.length; index++) bytes[index] = binary.charCodeAt(index)
+  return new Int16Array(bytes.buffer)
 }

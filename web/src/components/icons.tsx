@@ -615,6 +615,45 @@ export function MicrophoneIcon(props: IconProps) {
   )
 }
 
+// PhoneIcon is a handset: a call to the agent.
+export function PhoneIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" />
+    </Icon>
+  )
+}
+
+// PhoneHangUpIcon is a handset laid down: ending the call.
+export function PhoneHangUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.4 13.6 4.6 15.8a1.6 1.6 0 0 0 2 .2l2-1.3a1.6 1.6 0 0 0 .7-1.4v-1.9a14.5 14.5 0 0 1 5.4 0v1.9a1.6 1.6 0 0 0 .7 1.4l2 1.3a1.6 1.6 0 0 0 2-.2l2.2-2.2a1.6 1.6 0 0 0 0-2.3 13.8 13.8 0 0 0-19.2 0 1.6 1.6 0 0 0 0 2.3z" />
+    </Icon>
+  )
+}
+
+// SpeakerIcon is a loudspeaker sounding; SpeakerOffIcon one silenced.
+export function SpeakerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M11 5 6 9H2v6h4l5 4V5z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M19 5a10 10 0 0 1 0 14" />
+    </Icon>
+  )
+}
+
+export function SpeakerOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M11 5 6 9H2v6h4l5 4V5z" />
+      <path d="m22 9-6 6" />
+      <path d="m16 9 6 6" />
+    </Icon>
+  )
+}
+
 export function PaperclipIcon(props: IconProps) {
   return (
     <Icon {...props}>

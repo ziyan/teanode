@@ -33,6 +33,7 @@ import { useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
 import { VoiceSession } from '../voice/voiceSession'
+import type { InterruptedAnswer } from '../voice/voiceAnswer'
 import { VoiceMeter } from '../voice/voiceMeter'
 import {
   ArchiveIcon,
@@ -45,7 +46,10 @@ import {
   GlobeIcon,
   InboxIcon,
   ListIcon,
-  MicrophoneIcon,
+  PhoneHangUpIcon,
+  PhoneIcon,
+  SpeakerIcon,
+  SpeakerOffIcon,
   PaperclipIcon,
   PencilIcon,
   StarIcon,
@@ -449,6 +453,7 @@ const AGENT = `
   }`
 
 // READ_VOICE says whether the drawer offers the microphone.
+const VOICE_MUTED_KEY = 'teanode.agent.voiceMuted'
 const READ_VOICE = `query { ReadAgentVoice { isVoiceAvailable sampleRate } }`
 
 const TAB = `
@@ -506,8 +511,8 @@ const CITED = `
   }`
 
 const ASK = `
-  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!]) {
-    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, attachmentIds: $attachmentIds, references: $references) { runId conversationId }
+  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!]) {
+    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references) { runId conversationId }
   }`
 
 const FEED = `
@@ -2277,6 +2282,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           return
         }
         const event = data.AgentConversationEvents
+        // In voice mode the answers are spoken as they are written.
+        voiceSession.current?.follow(event)
         if (event.kind === 'asked') {
           asked(event)
           return
@@ -2963,7 +2970,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // which leaves the box, its files and its references as they were.
   // send sends what was typed, or the words given: a suggested reply, or
   // what the person said aloud, which goes as the voice surface.
-  const send = async (suggestedReply?: string, options?: { isSpoken?: boolean }) => {
+  const send = async (
+    suggestedReply?: string,
+    options?: { isSpoken?: boolean; interruptedAnswer?: InterruptedAnswer },
+  ) => {
     const isSuggested = suggestedReply !== undefined
     const message = (isSuggested ? suggestedReply : draft).trim()
     const files = isSuggested ? [] : pending
@@ -3039,6 +3049,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           ),
         )
       }
+      // What is said aloud into a running turn is answered aloud too.
+      if (options?.isSpoken) voiceSession.current?.adopt(runs)
       sending.current += 1
       let response: { AskAgent: { runId: string; conversationId: string } }
       try {
@@ -3047,6 +3059,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           message: message || (files.length > 0 ? t('agentDrawer.filesOnly') : ''),
           viewing,
           surface: options?.isSpoken ? 'voice' : surface(),
+          interruptedAnswer: options?.interruptedAnswer,
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           references: pointed.length > 0 ? pointed : undefined,
         })
@@ -3081,6 +3094,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [voiceState, setVoiceState] = useState<'off' | 'starting' | 'listening'>('off')
   const [voiceCaption, setVoiceCaption] = useState('')
   const [isVoiceHearing, setVoiceHearing] = useState(false)
+  const [isVoiceSpeaking, setVoiceSpeaking] = useState(false)
+  // Whether answers are read aloud, remembered on this device.
+  const [isVoiceMuted, setVoiceMuted] = useState(() => remembered(VOICE_MUTED_KEY) === '1')
   const voiceSession = useRef<VoiceSession | null>(null)
   const voiceLevel = useCallback(() => voiceSession.current?.level() ?? 0, [])
   const sendLatest = useRef(send)
@@ -3109,7 +3125,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         onListening: () => setVoiceState('listening'),
         onHearing: setVoiceHearing,
         onCaption: setVoiceCaption,
-        onTranscript: (transcriptText) => void sendLatest.current(transcriptText, { isSpoken: true }),
+        onTranscript: (transcriptText, interruptedAnswer) =>
+          void sendLatest.current(transcriptText, { isSpoken: true, interruptedAnswer }),
+        onSpeaking: setVoiceSpeaking,
         onProblem: (problemText) => toast.failed(problemText),
         onEnded: () => {
           if (voiceSession.current === session) voiceSession.current = null
@@ -3121,13 +3139,22 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         microphoneRefused: t('agentDrawer.voiceMicrophoneRefused'),
         notHeard: t('agentDrawer.voiceNotHeard'),
         connectionLost: t('agentDrawer.voiceConnectionLost'),
+        confirmationNeeded: t('agentDrawer.voiceConfirmationNeeded'),
+        answerNotSpoken: t('agentDrawer.voiceAnswerNotSpoken'),
       },
     )
+    session.setMuted(isVoiceMuted)
     voiceSession.current = session
     void session.start(voiceSampleRate).catch((caught) => {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
       session.stop()
     })
+  }
+  const toggleVoiceMuted = () => {
+    const isMuted = !isVoiceMuted
+    setVoiceMuted(isMuted)
+    remember(VOICE_MUTED_KEY, isMuted ? '1' : '')
+    voiceSession.current?.setMuted(isMuted)
   }
   // Listening ends with the conversation it was for, and with the drawer.
   useEffect(() => {
@@ -4114,7 +4141,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               person ends it; the conversation above stays where it is. */}
           {voiceState !== 'off' ? (
             <div className="agent-drawer-voice-mode" role="group" aria-label={t('agentDrawer.voiceMode')}>
-              <VoiceMeter level={voiceLevel} isHearing={isVoiceHearing} isAnswering={running} />
+              <VoiceMeter
+                level={voiceLevel}
+                isHearing={isVoiceHearing}
+                isSpeaking={isVoiceSpeaking}
+                isAnswering={running}
+              />
               <p
                 className={['agent-drawer-voice-caption', voiceCaption ? '' : 'muted'].filter(Boolean).join(' ')}
                 aria-live="polite"
@@ -4124,9 +4156,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   : voiceCaption ||
                     (isVoiceHearing
                       ? t('agentDrawer.voiceHearing')
-                      : running
-                        ? t('agentDrawer.voiceWorking')
-                        : t('agentDrawer.voiceListening'))}
+                      : isVoiceSpeaking
+                        ? t('agentDrawer.voiceSpeaking')
+                        : running
+                          ? t('agentDrawer.voiceWorking')
+                          : t('agentDrawer.voiceListening'))}
               </p>
               {running && (
                 <Tooltip label={t('agentDrawer.stop')}>
@@ -4140,9 +4174,27 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   </button>
                 </Tooltip>
               )}
-              <button type="button" className="agent-drawer-voice-end" onClick={toggleVoice}>
-                {t('agentDrawer.voiceEnd')}
-              </button>
+              <Tooltip label={isVoiceMuted ? t('agentDrawer.voiceUnmute') : t('agentDrawer.voiceMute')}>
+                <button
+                  type="button"
+                  className="icon-button agent-voice-mute"
+                  aria-label={isVoiceMuted ? t('agentDrawer.voiceUnmute') : t('agentDrawer.voiceMute')}
+                  aria-pressed={isVoiceMuted}
+                  onClick={toggleVoiceMuted}
+                >
+                  {isVoiceMuted ? <SpeakerOffIcon size={16} /> : <SpeakerIcon size={16} />}
+                </button>
+              </Tooltip>
+              <Tooltip label={t('agentDrawer.voiceEnd')}>
+                <button
+                  type="button"
+                  className="icon-button agent-drawer-voice-end"
+                  aria-label={t('agentDrawer.voiceEnd')}
+                  onClick={toggleVoice}
+                >
+                  <PhoneHangUpIcon size={18} />
+                </button>
+              </Tooltip>
             </div>
           ) : (
             <form
@@ -4220,7 +4272,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     disabled={isRun || Boolean(actingAs)}
                     onClick={toggleVoice}
                   >
-                    <MicrophoneIcon size={16} />
+                    <PhoneIcon size={16} />
                   </button>
                 </Tooltip>
               )}

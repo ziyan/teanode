@@ -21,7 +21,9 @@ To see it working: the operator turns on voice under the server's agent settings
 - [x] (2026-10-07) Milestone 4: the drawer: microphone capture through an AudioWorklet at 24 kHz PCM16, the socket, the caption, final transcripts sent through the drawer's own send; the Permissions-Policy that allows the microphone.
 - [x] (2026-10-07) Voice mode in the drawer: while it is on, the box is replaced by a meter that follows the microphone (green while the provider hears speech, breathing while the agent works), what is being heard, stop and End; the conversation stays visible above. Checked in headless Chrome with a recorded voice at 390 and 1280 pixels, light and dark.
 - [x] (2026-10-07) Safari on iPhone: the audio context is made and resumed inside the tap, and the capture node reaches the speakers through a gain of zero, which WebKit needs to run it. Not yet tried on a real iPhone.
-- [ ] Milestone 5: deploy, and a run on a real iPhone.
+- [x] (2026-10-07) Deployed the input half; voice turned on in production at the person's word.
+- [x] (2026-10-07) Spoken answers (#348) and cutting in (#347): the drawer cuts each turn's text into sentences, the socket speaks them through the provider's text-to-speech, the drawer plays them in order, quietens and pauses on speech onset, and decides on the transcript whether it was echo (goes on) or the person (ends the answer, and the turn carries what was heard). A telephone starts the call and a red handset ends it, as the person asked. End to end in headless Chrome with a recorded request and a cut-in.
+- [ ] A run on a real iPhone, and on a laptop's speakers without headphones.
 
 
 ## Surprises & Discoveries
@@ -39,6 +41,14 @@ To see it working: the operator turns on voice under the server's agent settings
 
 
 ## Decision Log
+
+- Decision: answers are spoken through the voice socket, not a separate HTTP endpoint: the socket is signed in, has the person's agent and budget, and its provider already; a piece of audio is a JSON event naming the piece. The drawer, which already follows the conversation's events, decides what to speak.
+  Date/Author: 2026-10-07.
+- Decision: speech onset quietens the answer at once and pauses it after 0.6 seconds of continued speech; the transcript decides. Words that follow what was just played are echo, dropped, and the answer resumes where it paused; anything else ends the answer and is sent with `interruptedAnswer`. A spoken cut-in steers the running turn; stopping the work is the stop button.
+  Rationale: the person asked for the provider's speech detection to drive barge-in; deciding on onset alone would let the answer's own echo stop it, and waiting for the transcript alone would talk over the person for seconds.
+  Date/Author: 2026-10-07.
+- Decision: what was heard of an interrupted answer reaches the model as a block ahead of the person's words in that turn, and is not stored; a piece cut off counts only up to its last whole word.
+  Date/Author: 2026-10-07.
 
 - Decision: the provider detects speech and ends turns (`server_vad`), and its speech-start events reach the browser as soon as they arrive, for the barge-in of #347. The application does not run its own detector.
   Rationale: the person asked for VAD and barge-in to be the provider's; the probe shows it works in a transcription session with `gpt-4o-transcribe`. Models that need application commits are refused by validation rather than silently losing turn detection.
