@@ -213,9 +213,9 @@ in `HerdrActions` and checked by `TestHerdrParity`. The decision is
 
 The tool's `list` gives the sessions asking first, then those working, twenty
 to a page with `totalCount` and `nextOffset`, and leaves out what `read` and
-`screen` are for (the history file, herdr's own status): a listing of every
-pane on several computers ran past what some MCP clients read whole, and they
-cut it without saying where.
+`screen` are for (the history file, herdr's own status), stopping short of the
+run's result budget: a listing of every pane on several computers ran past
+what some MCP clients read whole, and they cut it without saying where.
 
 A pane is shown by the name the person finds it under in herdr: the
 workspace's label, the tab's when the workspace has several, and the agent's
@@ -349,8 +349,9 @@ disabled or confirm lists, and a person can add either to their own.
   default); running it on a machine that also runs `teanode computer` under
   the same name replaces that attachment. Give one of them a name.
 - **Herdr's own state can be wrong**; `herdr agent explain <pane>` says which
-  of its rules decided it. The state shown here is the program's own, with
-  herdr's beside it as `herdrAgentStatus`.
+  of its rules decided it. The state shown here is the program's own; the
+  dashboard and the command line show herdr's beside it as
+  `herdrAgentStatus`, which the tool's `list` leaves out.
 - **A question is recognized from the layouts the coding agents draw now.** A
   form drawn differently is not recognized, and the session shows idle or
   unknown with its screen still readable.

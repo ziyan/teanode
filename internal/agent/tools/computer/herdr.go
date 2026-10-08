@@ -295,10 +295,14 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 
 // herdrListLimit is how many sessions a page of list gives by default, and
 // herdrListMost the most it gives: a listing of every pane on several
-// computers runs past what some clients of the tool read whole.
+// computers runs past what some clients of the tool read whole. A page also
+// stops short of herdrListRoom under the run's result budget, since a
+// session that asks carries its question and is twice the size of one that
+// does not, and the room is left for the counts and the note.
 const (
 	herdrListLimit = 20
 	herdrListMost  = 50
+	herdrListRoom  = 800
 )
 
 // herdrListedSession is a session as list gives it: what the agent needs
@@ -383,17 +387,45 @@ func listHerdr(ctx context.Context, run tools.Run, name string, limit, offset in
 		if sessions[left].Computer != sessions[right].Computer {
 			return sessions[left].Computer < sessions[right].Computer
 		}
-		return sessions[left].PaneName < sessions[right].PaneName
+		if sessions[left].PaneName != sessions[right].PaneName {
+			return sessions[left].PaneName < sessions[right].PaneName
+		}
+		return sessions[left].PaneID < sessions[right].PaneID
 	})
 	totalCount := len(sessions)
-	page := sessions[min(offset, totalCount):min(offset+limit, totalCount)]
+	offset = min(offset, totalCount)
+	// As many as the limit allows and the budget holds, and always one.
+	page := []herdrListedSession{}
+	pageCharacterCount := 0
+	for _, session := range sessions[offset:] {
+		if len(page) >= limit {
+			break
+		}
+		encoded, err := json.Marshal(session)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) > 0 && pageCharacterCount+len(encoded)+1 > tools.ResultCharactersOf(run)-herdrListRoom {
+			break
+		}
+		page = append(page, session)
+		pageCharacterCount += len(encoded) + 1
+	}
 	answer := map[string]any{"herdrSessions": page, "totalCount": totalCount, "offset": offset}
 	if len(failures) > 0 {
 		answer["unreachableComputers"] = failures
 	}
-	if remainingCount := totalCount - offset - len(page); remainingCount > 0 {
-		answer["nextOffset"] = offset + len(page)
-		answer["moreNote"] = fmt.Sprintf("%d more sessions; list again with offset %d to read on", remainingCount, offset+len(page))
+	nextOffset := offset + len(page)
+	switch remainingCount := totalCount - nextOffset; {
+	case remainingCount > 0:
+		limitWords := ""
+		if limit != herdrListLimit {
+			limitWords = fmt.Sprintf(" and limit %d", limit)
+		}
+		answer["nextOffset"] = nextOffset
+		answer["moreNote"] = fmt.Sprintf("%d more sessions; list again with offset %d%s to read on", remainingCount, nextOffset, limitWords)
+	case len(page) == 0 && totalCount > 0:
+		answer["moreNote"] = fmt.Sprintf("offset %d is past the end: there are %d sessions; list again from offset 0", offset, totalCount)
 	}
 	result, err := tools.JSONResult(answer)
 	if err != nil {
