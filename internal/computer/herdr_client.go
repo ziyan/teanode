@@ -105,7 +105,10 @@ func (self *herdrClient) call(ctx context.Context, method string, params any, re
 			Result json.RawMessage `json:"result"`
 			Error  *herdrError     `json:"error"`
 		}
-		if err := json.Unmarshal(line, &answer); err != nil || answer.ID != id {
+		// A request herdr could not read is refused with no id, since it
+		// could not read the id either; on a connection of its own, that
+		// refusal is this request's.
+		if err := json.Unmarshal(line, &answer); err != nil || (answer.ID != id && (answer.ID != "" || answer.Error == nil)) {
 			continue
 		}
 		if answer.Error != nil {
@@ -133,7 +136,7 @@ func (self *herdrClient) listAgents(ctx context.Context) ([]*herdrAgent, error) 
 }
 
 // readAgent is the text of the pane an agent is in: "visible" is the
-// screen as it stands, "recent-unwrapped" the last lines with wrapped ones
+// screen as it stands, "recent_unwrapped" the last lines with wrapped ones
 // joined.
 func (self *herdrClient) readAgent(ctx context.Context, paneId, source string, lineCount int) (string, error) {
 	params := map[string]any{"target": paneId, "source": source}

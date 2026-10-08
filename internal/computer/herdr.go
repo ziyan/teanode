@@ -644,7 +644,7 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 	}
 	source, lineCount := "visible", 0
 	if arguments.LineCount > 0 {
-		source, lineCount = "recent-unwrapped", min(arguments.LineCount, herdrMostLineCount)
+		source, lineCount = "recent_unwrapped", min(arguments.LineCount, herdrMostLineCount)
 	}
 	text, err := self.client.readAgent(ctx, session.PaneID, source, lineCount)
 	if err != nil {

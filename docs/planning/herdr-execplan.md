@@ -94,6 +94,9 @@ To see it working, on a computer running `teanode computer` with herdr running a
 - Observation: the secret check reads a file name ending in the shell suffix as a host name under that top-level domain.
   Evidence: `make lint-ci` failed on the hook script's name; the script is `teanode-herdr-hook`.
 
+- Observation: herdr's socket spells a read's source `recent_unwrapped`, where its command line says `recent-unwrapped`, and a request it cannot read is refused with an empty `id`.
+  Evidence: the agent's `screen` with lines failed as "herdr did not answer agent.read: EOF" in the end-to-end test: the client waited for its own id and never saw the refusal.
+
 ## Decision Log
 
 - Decision: TeaNode works only through the person's own herdr panes. It never starts a headless run (`claude -p`, `codex exec`, or a second process resuming the same session).
@@ -244,7 +247,7 @@ Herdr's terms, as used here:
 The socket methods used are:
 
 - `agent.list` and `agent.get`;
-- `agent.read`, the pane's text (source `recent-unwrapped` joins wrapped lines; `visible` is the viewport);
+- `agent.read`, the pane's text (source `recent_unwrapped` on the socket, `recent-unwrapped` on herdr's command line, joins wrapped lines; `visible` is the viewport);
 - `agent.prompt`, which types text and Enter;
 - `agent.send_keys`, named keys such as `1`, `enter`, `esc`, `up`, `down`, `tab`, `space`, `alt+up`;
 - `agent.wait`;

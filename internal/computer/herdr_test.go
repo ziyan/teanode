@@ -91,12 +91,13 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 	case "agent.prompt":
 		self.prompted = append(self.prompted, request.Params["text"].(string))
 	default:
-		failure = map[string]any{"code": "unknown_method", "message": request.Method}
+		failure = map[string]any{"code": "invalid_request", "message": "unknown variant " + request.Method}
 	}
 	self.mutex.Unlock()
 	answer := map[string]any{"id": request.ID, "result": result}
 	if failure != nil {
-		answer = map[string]any{"id": request.ID, "error": failure}
+		// As herdr refuses a request it cannot read: without its id.
+		answer = map[string]any{"id": "", "error": failure}
 	}
 	data, _ := json.Marshal(answer)
 	_, _ = connection.Write(append(data, '\n'))
@@ -637,5 +638,15 @@ func TestTheHookScriptReportsOnlyTheEventAndTheSession(t *testing.T) {
 	}
 	if got := hookStateOf(readHookReports(home), "0000-dddd", time.Now()); got != hookStateWorking {
 		t.Errorf("%q from %s", got, written)
+	}
+}
+
+func TestARequestHerdrCannotReadIsRefusedInHerdrsWords(t *testing.T) {
+	home := t.TempDir()
+	startFakeHerdr(t, home)
+	err := newHerdrClient(home).call(context.Background(), "agent.unknown", map[string]any{}, nil)
+	var refused *herdrError
+	if !errors.As(err, &refused) || refused.Code != "invalid_request" {
+		t.Errorf("%v", err)
 	}
 }
