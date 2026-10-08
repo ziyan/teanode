@@ -11,6 +11,7 @@
 package computer
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -254,9 +255,12 @@ func carry(ctx context.Context, attached tools.Computer, action string, argument
 	return carryReshaped(ctx, attached, action, arguments, wait, note, nil)
 }
 
-// carryReshaped is carry with the answer reshaped before it is cut to
+// carryReshaped is carry with the answer reshaped before it is fitted to
 // size, so that what reshaping adds or takes out is not lost with the
 // part of a long answer that is cut.
+//
+// Fitted, not cut: the answer is JSON, and cutting its text at the bound
+// left something that was not, without the fields after the longest one.
 func carryReshaped(ctx context.Context, attached tools.Computer, action string, arguments any, wait time.Duration, note string,
 	reshape func(json.RawMessage) json.RawMessage) (*tools.Result, error) {
 	data, err := attached.Ask(ctx, action, arguments, wait)
@@ -266,11 +270,72 @@ func carryReshaped(ctx context.Context, attached tools.Computer, action string, 
 	if reshape != nil {
 		data = reshape(data)
 	}
-	text := string(data)
-	if len(text) > tools.ResultCharacters {
-		text = text[:tools.ResultCharacters] + "\n[cut here: the answer goes on]"
+	return &tools.Result{Content: tools.FitJSON(data, resultCharactersIn(ctx)), Untrusted: true, Note: note}, nil
+}
+
+// resultCharactersIn is what the run in ctx keeps of a result.
+func resultCharactersIn(ctx context.Context) int {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return tools.ResultCharacters
 	}
-	return &tools.Result{Content: text, Untrusted: true, Note: note}, nil
+	return tools.ResultCharactersOf(run)
+}
+
+// fitRead fits a page of a file read to budget by giving fewer of its lines
+// rather than cutting it: what is shown ends at a line, more says there is
+// more, and nextOffset is where reading on starts. A first line too long
+// for budget on its own is cut, and the note says so.
+func fitRead(answer json.RawMessage, budget int) json.RawMessage {
+	if len(answer) <= budget {
+		return answer
+	}
+	var fields map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(answer))
+	decoder.UseNumber()
+	if decoder.Decode(&fields) != nil {
+		return answer
+	}
+	content, isText := fields["content"].(string)
+	offsetNumber, hasOffset := fields["offset"].(json.Number)
+	offset, err := offsetNumber.Int64()
+	if !isText || !hasOffset || err != nil {
+		return answer
+	}
+	lines := strings.Split(content, "\n")
+	encodedWith := func(lineCount int, note string) json.RawMessage {
+		fields["content"] = strings.Join(lines[:lineCount], "\n")
+		fields["more"] = true
+		fields["nextOffset"] = offset + int64(lineCount)
+		fields[tools.CutNoteKey] = note
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			return answer
+		}
+		return encoded
+	}
+	noteFor := func(lineCount int) string {
+		return fmt.Sprintf("%d of this page's %d lines are shown, to fit what one answer holds; read on with offset %d",
+			lineCount, len(lines), offset+int64(lineCount))
+	}
+	// The most lines that fit: fewer lines are never longer.
+	fewest, most := 0, len(lines)-1
+	for fewest < most {
+		middle := (fewest + most + 1) / 2
+		if len(encodedWith(middle, noteFor(middle))) <= budget {
+			fewest = middle
+		} else {
+			most = middle - 1
+		}
+	}
+	if fewest > 0 {
+		return encodedWith(fewest, noteFor(fewest))
+	}
+	// Not even its first line fits: that line, cut, and reading on starts
+	// at the next.
+	encoded := encodedWith(1, fmt.Sprintf("the line at offset %d is longer than one answer holds and is cut; "+
+		"the shell reads it in pieces; read on with offset %d", offset, offset+1))
+	return json.RawMessage(tools.FitJSON(encoded, budget))
 }
 
 func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -474,7 +539,12 @@ func runFilesystem(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	if arguments.Action == "put" {
 		return putOnComputer(ctx, run, attached, arguments)
 	}
-	result, err := carry(ctx, attached, "filesystem", arguments, 2*time.Minute, arguments.Action+" "+arguments.Path+" on "+attached.Name())
+	var reshape func(json.RawMessage) json.RawMessage
+	if arguments.Action == "read" {
+		budget := tools.ResultCharactersOf(run)
+		reshape = func(answer json.RawMessage) json.RawMessage { return fitRead(answer, budget) }
+	}
+	result, err := carryReshaped(ctx, attached, "filesystem", arguments, 2*time.Minute, arguments.Action+" "+arguments.Path+" on "+attached.Name(), reshape)
 	if err != nil || arguments.Action != "read" {
 		return result, err
 	}

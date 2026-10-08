@@ -358,9 +358,8 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 			return screenshotResult(ctx, image, arguments.Show)
 		}
 	}
-	text := string(data)
-	if len(text) > tools.ResultCharacters {
-		text = text[:tools.ResultCharacters] + "\n[cut here: the answer goes on]"
-	}
+	// Fitted rather than cut: the tab answers in JSON, and a cut through
+	// its text left something that was not, without its later fields.
+	text := tools.FitJSON(data, tools.ResultCharactersOf(run))
 	return &tools.Result{Content: text, Untrusted: true, Note: "in their browser: " + arguments.Action}, nil
 }
