@@ -672,6 +672,7 @@ type FinanceReceipt struct {
 	PaymentAccountMask    string                 `json:"paymentAccountMask,omitempty"`
 	ReceiptCheckState     string                 `json:"receiptCheckState"`
 	CheckDifferenceAmount string                 `json:"checkDifferenceAmount"`
+	IsFeeAfterSubtotal    bool                   `json:"isFeeAfterSubtotal"`
 	ReceiptLines          []*FinanceReceiptLine  `json:"receiptLines"`
 	ReceiptMatches        []*FinanceReceiptMatch `json:"receiptMatches"`
 	CreatedAt             time.Time              `json:"createdAt"`
@@ -750,7 +751,7 @@ const (
 
 	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence duplicateOfTransactionId duplicateDecidedBy annotation annotatedBy receiptCount }`
 
-	financeReceiptFields = `{ id receiptSourceKind mailId mailboxItemId gmailMessageId agentAttachmentId merchantName merchantReceiptNumber purchasedOn purchasedAt currencyCode subtotalAmount totalAmount paymentAccountMask receiptCheckState checkDifferenceAmount createdAt modifiedAt
+	financeReceiptFields = `{ id receiptSourceKind mailId mailboxItemId gmailMessageId agentAttachmentId merchantName merchantReceiptNumber purchasedOn purchasedAt currencyCode subtotalAmount totalAmount paymentAccountMask receiptCheckState checkDifferenceAmount isFeeAfterSubtotal createdAt modifiedAt
     receiptLines { id lineNumber receiptLineKind description quantity quantityUnit unitPriceAmount lineAmount taxClassCode discountedLineNumber discountedLineId }
     receiptMatches { receiptId financeTransactionId matchedAmount receiptMatchSource matchConfidence createdAt } }`
 

@@ -73,6 +73,7 @@ const grocerReceipt: FinanceReceipt = {
   totalAmount: '16.9700',
   receiptCheckState: 'balanced',
   checkDifferenceAmount: '0',
+  isFeeAfterSubtotal: false,
   receiptLines: [
     {
       id: 'line-1',
@@ -160,6 +161,7 @@ const misreadReceipt: FinanceReceipt = {
   totalAmount: '2.6000',
   receiptCheckState: 'unbalanced',
   checkDifferenceAmount: '0.4000',
+  isFeeAfterSubtotal: false,
   receiptLines: [
     {
       id: 'line-b1',
@@ -349,6 +351,36 @@ describe('the receipts section', () => {
     expect(photo.getAttribute('href')).toBe('/api/v1/agent/attachments/attachment-grocer')
     // Twenty charged, 16.97 explained.
     expect(screen.getByText('finance.unexplained').parentElement?.textContent).toMatch(/3\.03/)
+  })
+
+  it('puts a fee printed after the subtotal with the taxes', async () => {
+    // An invented order email: two items, the subtotal, then shipping and
+    // tax. 84.00 + 22.50 is 106.50; 106.50 + 7.95 + 8.79 is 123.24.
+    const orderReceipt: FinanceReceipt = {
+      ...grocerReceipt,
+      id: 'receipt-order',
+      merchantName: 'Brightwater Outfitters',
+      subtotalAmount: '106.5000',
+      totalAmount: '123.2400',
+      isFeeAfterSubtotal: true,
+      receiptLines: [
+        { id: 'line-o1', lineNumber: 1, receiptLineKind: 'item', description: 'Trail Jacket', lineAmount: '84.0000' },
+        { id: 'line-o2', lineNumber: 2, receiptLineKind: 'item', description: 'Wool Socks', lineAmount: '22.5000' },
+        { id: 'line-o3', lineNumber: 3, receiptLineKind: 'fee', description: 'Shipping', lineAmount: '7.9500' },
+        { id: 'line-o4', lineNumber: 4, receiptLineKind: 'tax', description: 'Tax', lineAmount: '8.7900' },
+      ],
+      receiptMatches: [],
+    }
+    answer({ receipts: () => [orderReceipt] })
+    renderDialog({ ...charge, amount: '-123.2400' })
+    const receipt = await screen.findByRole('article', { name: 'Brightwater Outfitters' })
+    const rows = within(receipt).getAllByRole('row')
+    const subtotalIndex = rows.findIndex((row) => row.textContent?.includes('finance.receiptSubtotal'))
+    const shipping = within(receipt).getByText('Shipping').closest('tr')!
+    expect(shipping.className).toContain('finance-receipt-fee')
+    expect(subtotalIndex).toBeGreaterThan(rows.indexOf(within(receipt).getByText('Wool Socks').closest('tr')!))
+    expect(rows.indexOf(shipping)).toBeGreaterThan(subtotalIndex)
+    expect(rows.indexOf(shipping)).toBeLessThan(rows.indexOf(within(receipt).getByText('Tax').closest('tr')!))
   })
 
   it('shows how far an unbalanced receipt is off, and opens its message', async () => {

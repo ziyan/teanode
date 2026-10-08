@@ -67,10 +67,14 @@ func FormatReceiptAmount(amount, currencyCode string) string {
 // not an item, and an amount with more places than the currency has. A
 // unit price may have more, since a weighed item is priced finer than a
 // cent. Then it answers whether the lines add up and by how much they
-// miss: the items, discounts and fees against the subtotal when one is
-// printed, then that subtotal (or those lines) with the taxes and tips
-// against the total; the difference is what the lines come to less what
-// is printed, at the first that misses, "0" when balanced.
+// miss: every line against the total, then, when a subtotal is printed,
+// the items and discounts with the fees against it, or the items and
+// discounts alone, since a receipt prints its fees (shipping, delivery,
+// a bag) before the subtotal or after it. The difference is what the
+// lines come to less what is printed, against the total when that
+// misses, and against the subtotal when only the subtotal does (the
+// nearer of with the fees and without them), "0" when balanced. It sets IsFeeAfterSubtotal, as
+// IsReceiptFeeAfterSubtotal says.
 func CheckReceipt(receipt *models.FinanceReceipt) (models.ReceiptCheckState, string, error) {
 	if receipt == nil {
 		return "", "", refuseReceipt("there is no receipt")
@@ -102,7 +106,7 @@ func CheckReceipt(receipt *models.FinanceReceipt) (models.ReceiptCheckState, str
 	for _, line := range receipt.ReceiptLines {
 		kindByLineNumber[line.LineNumber] = line.ReceiptLineKind
 	}
-	beforeTaxAmount, afterTaxAmount := new(big.Rat), new(big.Rat)
+	linesAmount, itemsAmount, feesAmount := new(big.Rat), new(big.Rat), new(big.Rat)
 	for _, line := range receipt.ReceiptLines {
 		line.Description = strings.TrimSpace(normalization.NFKC.String(line.Description))
 		line.TaxClassCode = strings.TrimSpace(normalization.NFKC.String(line.TaxClassCode))
@@ -141,25 +145,71 @@ func CheckReceipt(receipt *models.FinanceReceipt) (models.ReceiptCheckState, str
 				return "", "", refuseReceipt("%s discounts line %d, which is not an item", label, line.DiscountedLineNumber)
 			}
 		}
+		linesAmount.Add(linesAmount, lineAmount)
 		switch line.ReceiptLineKind {
-		case models.ReceiptLineKindTax, models.ReceiptLineKindTip:
-			afterTaxAmount.Add(afterTaxAmount, lineAmount)
-		default:
-			beforeTaxAmount.Add(beforeTaxAmount, lineAmount)
+		case models.ReceiptLineKindItem, models.ReceiptLineKindDiscount:
+			itemsAmount.Add(itemsAmount, lineAmount)
+		case models.ReceiptLineKindFee:
+			feesAmount.Add(feesAmount, lineAmount)
 		}
 	}
-	base := beforeTaxAmount
-	if subtotalAmount != nil {
-		if difference := new(big.Rat).Sub(beforeTaxAmount, subtotalAmount); difference.Sign() != 0 {
-			return models.ReceiptCheckStateUnbalanced, formatReceiptAmount(difference, currencyCode), nil
-		}
-		base = subtotalAmount
-	}
-	difference := new(big.Rat).Sub(new(big.Rat).Add(base, afterTaxAmount), totalAmount)
-	if difference.Sign() != 0 {
+	receipt.IsFeeAfterSubtotal = isFeeAfterSubtotal(itemsAmount, feesAmount, subtotalAmount)
+	if difference := new(big.Rat).Sub(linesAmount, totalAmount); difference.Sign() != 0 {
 		return models.ReceiptCheckStateUnbalanced, formatReceiptAmount(difference, currencyCode), nil
 	}
+	if subtotalAmount != nil {
+		withFeesDifference := new(big.Rat).Sub(new(big.Rat).Add(itemsAmount, feesAmount), subtotalAmount)
+		withoutFeesDifference := new(big.Rat).Sub(itemsAmount, subtotalAmount)
+		if withFeesDifference.Sign() != 0 && withoutFeesDifference.Sign() != 0 {
+			difference := withFeesDifference
+			if new(big.Rat).Abs(withoutFeesDifference).Cmp(new(big.Rat).Abs(withFeesDifference)) < 0 {
+				difference = withoutFeesDifference
+			}
+			return models.ReceiptCheckStateUnbalanced, formatReceiptAmount(difference, currencyCode), nil
+		}
+	}
 	return models.ReceiptCheckStateBalanced, "0", nil
+}
+
+// isFeeAfterSubtotal says the fees are printed after the subtotal: there
+// is one, the fees come to something, and the items and discounts alone
+// come to it. Fees in part before and in part after are not looked for;
+// which side each sits on would need saying line by line, and a receipt
+// that does it would show as unbalanced rather than be guessed at.
+func isFeeAfterSubtotal(itemsAmount, feesAmount, subtotalAmount *big.Rat) bool {
+	return subtotalAmount != nil && feesAmount.Sign() != 0 && itemsAmount.Cmp(subtotalAmount) == 0
+}
+
+// IsReceiptFeeAfterSubtotal says whether a stored receipt prints its fees
+// after its subtotal, with its taxes and tips, rather than among the
+// items it adds up; it is worked out from the lines and the subtotal each
+// time a receipt is read, never stored. An amount that cannot be read
+// counts as nothing, since a stored receipt was checked when written.
+func IsReceiptFeeAfterSubtotal(receipt *models.FinanceReceipt) bool {
+	if receipt == nil || strings.TrimSpace(receipt.SubtotalAmount) == "" {
+		return false
+	}
+	subtotalAmount, err := parseDecimal(strings.TrimSpace(receipt.SubtotalAmount))
+	if err != nil {
+		return false
+	}
+	itemsAmount, feesAmount := new(big.Rat), new(big.Rat)
+	for _, line := range receipt.ReceiptLines {
+		if line == nil {
+			continue
+		}
+		lineAmount, err := parseDecimal(strings.TrimSpace(line.LineAmount))
+		if err != nil {
+			continue
+		}
+		switch line.ReceiptLineKind {
+		case models.ReceiptLineKindItem, models.ReceiptLineKindDiscount:
+			itemsAmount.Add(itemsAmount, lineAmount)
+		case models.ReceiptLineKindFee:
+			feesAmount.Add(feesAmount, lineAmount)
+		}
+	}
+	return isFeeAfterSubtotal(itemsAmount, feesAmount, subtotalAmount)
 }
 
 // ReceiptCheckSummary says in a sentence what CheckReceipt found.

@@ -65,6 +65,7 @@ const hardwareReceipt: FinanceReceipt = {
   totalAmount: '12.5000',
   receiptCheckState: 'balanced',
   checkDifferenceAmount: '0',
+  isFeeAfterSubtotal: false,
   receiptLines: [
     { id: 'line-h1', lineNumber: 1, receiptLineKind: 'item', description: 'WOOD SCREWS', lineAmount: '12.5000' },
   ],
@@ -92,6 +93,7 @@ const floristReceipt: FinanceReceipt = {
   totalAmount: '8.2500',
   receiptCheckState: 'unbalanced',
   checkDifferenceAmount: '0.2500',
+  isFeeAfterSubtotal: false,
   receiptLines: [
     { id: 'line-f1', lineNumber: 1, receiptLineKind: 'item', description: 'TULIPS', lineAmount: '8.5000' },
   ],

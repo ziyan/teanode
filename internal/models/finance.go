@@ -429,10 +429,10 @@ func (self ReceiptLineKind) IsValid() bool {
 // totals.
 type ReceiptCheckState string
 
-// Balanced: the items, discounts and fees come to the subtotal, and the
-// subtotal with the taxes and tips to the total, to the cent (with no
-// subtotal printed, every line comes to the total). Unbalanced: they miss,
-// by CheckDifferenceAmount.
+// Balanced: every line comes to the total, to the cent, and when a
+// subtotal is printed the items and discounts come to it, with the fees
+// or without them (a receipt prints its fees before the subtotal or after
+// it). Unbalanced: they miss, by CheckDifferenceAmount.
 const (
 	ReceiptCheckStateBalanced   ReceiptCheckState = "balanced"
 	ReceiptCheckStateUnbalanced ReceiptCheckState = "unbalanced"
@@ -506,6 +506,12 @@ type FinanceReceipt struct {
 	// less what is printed, zero when balanced.
 	ReceiptCheckState     ReceiptCheckState `json:"receiptCheckState"`
 	CheckDifferenceAmount string            `json:"checkDifferenceAmount"`
+
+	// IsFeeAfterSubtotal says the receipt prints its fees after the
+	// subtotal, with the taxes and tips, rather than among the items the
+	// subtotal adds up; worked out from the lines each time the receipt
+	// is read (finance.IsReceiptFeeAfterSubtotal), not stored.
+	IsFeeAfterSubtotal bool `json:"isFeeAfterSubtotal"`
 
 	ReceiptLines   []*FinanceReceiptLine  `json:"receiptLines"`
 	ReceiptMatches []*FinanceReceiptMatch `json:"receiptMatches"`

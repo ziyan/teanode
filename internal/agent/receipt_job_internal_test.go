@@ -134,6 +134,69 @@ func TestReceiptJobReadsAMessageAndMatchesIt(t *testing.T) {
 	}
 }
 
+// inventedOrderAnswer is the model's reading of an invented order email
+// that prints shipping after the subtotal and names no card: 84.00 +
+// 22.50 is the subtotal 106.50, and 106.50 + 7.95 + 8.79 the total 123.24.
+const inventedOrderAnswer = `{"isPurchase": true, "merchantName": "Brightwater Outfitters", "merchantReceiptNumber": "BW-55120", "purchasedOn": "2026-09-14",
+"currencyCode": "USD", "subtotalAmount": "106.50", "totalAmount": "123.24", "receiptLines": [
+ {"lineNumber": 1, "receiptLineKind": "item", "description": "Trail Jacket", "lineAmount": "84.00"},
+ {"lineNumber": 2, "receiptLineKind": "item", "description": "Wool Socks", "lineAmount": "22.50"},
+ {"lineNumber": 3, "receiptLineKind": "fee", "description": "Shipping", "lineAmount": "7.95"},
+ {"lineNumber": 4, "receiptLineKind": "tax", "description": "Tax", "lineAmount": "8.79"}]}`
+
+// An order email that names no card and prints its shipping after the
+// subtotal is still a purchase: the prompt says so, and the reading is
+// recorded balanced, its fees after the subtotal, and matched to the one
+// charge of its total that shares a word of the merchant.
+func TestReceiptJobRecordsAnOrderWithShippingAfterItsSubtotal(t *testing.T) {
+	model := &alertModel{answers: []string{inventedOrderAnswer}}
+	server := model.serve(t)
+	fixture := newFinanceFixture(t, server.URL)
+	fixture.applySync(t, &finance.SyncResult{
+		Accounts: []finance.Account{inventedAccount()},
+		Added: []finance.Transaction{
+			inventedTransaction("order-charge", "2026-09-16", "-123.24", "BRIGHTWATER OUTFIT 4471", "", ""),
+			inventedTransaction("other-charge", "2026-09-15", "-106.50", "CORNER CAFE", "", ""),
+		},
+	})
+	var mailbox *models.Mailbox
+	var mail *models.Mail
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		var err error
+		if mailbox, err = tx.CreateMailbox(&models.Mailbox{UserID: fixture.owner.ID, Name: "Personal", Agent: &models.AgentMailbox{Granted: true}}); err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		if mail, err = tx.CreateMail(&models.Mail{Subject: "Your order", From: "orders@example.com", Kind: models.MailKindIncoming}, nil); err != nil {
+			t.Fatalf("CreateMail: %s", err)
+		}
+	})
+	orderEmail := "Thanks for your order BW-55120 placed 2026-09-14.\n\nTrail Jacket $84.00\nWool Socks $22.50\n" +
+		"Subtotal: $106.50\nShipping: $7.95\nTax: $8.79\nTotal: $123.24\n"
+	if err := fixture.worker.settings.Storage.Put(t.Context(), mail.ID, []string{"From: orders@example.com", "Subject: Your order", "Content-Type: text/plain"}, []byte(orderEmail)); err != nil {
+		t.Fatalf("Put: %s", err)
+	}
+	if err := fixture.worker.runReadReceipt(t.Context(), fixture.receiptJobRun(mailbox, mail.ID)); err != nil {
+		t.Fatalf("runReadReceipt: %s", err)
+	}
+	if model.callCount() != 1 || !strings.Contains(model.prompts[0], "a receipt that does not say how it was paid is still a purchase") ||
+		!strings.Contains(model.prompts[0], "wherever the receipt prints them") {
+		t.Fatalf("the prompt says an order naming no card is a purchase and where a fee may be printed")
+	}
+	receipts := fixture.receipts(t)
+	if len(receipts) != 1 {
+		t.Fatalf("the order is recorded: %d receipts", len(receipts))
+	}
+	receipt := receipts[0]
+	if receipt.ReceiptCheckState != models.ReceiptCheckStateBalanced || !receipt.IsFeeAfterSubtotal || len(receipt.ReceiptLines) != 4 {
+		t.Fatalf("the order is balanced with its shipping after the subtotal: %+v", receipt)
+	}
+	charge := fixture.transactions(t)["BRIGHTWATER OUTFIT 4471"]
+	if len(receipt.ReceiptMatches) != 1 || receipt.ReceiptMatches[0].FinanceTransactionID != charge.ID ||
+		receipt.ReceiptMatches[0].ReceiptMatchSource != models.ReceiptMatchSourceReceiptMatcher {
+		t.Fatalf("it is matched to the order's charge by the matcher: %+v", receipt.ReceiptMatches)
+	}
+}
+
 // A message that is not a purchase records nothing, and says so.
 func TestReceiptJobRecordsNothingForANonPurchase(t *testing.T) {
 	fixture, _ := receiptJobFixture(t, `{"isPurchase": false}`)

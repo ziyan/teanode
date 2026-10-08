@@ -339,21 +339,29 @@ const KIND_LABELS: Partial<Record<FinanceReceiptLine['receiptLineKind'], Key>> =
   tip: 'finance.receiptLineKindTip',
 }
 
-// The lines printed after the subtotal: it is the items, discounts and
-// fees added up, and taxes and tips come on top of it, as the balance check
-// counts them.
-const AFTER_SUBTOTAL_KINDS: FinanceReceiptLine['receiptLineKind'][] = ['tax', 'tip']
+// The lines printed after the subtotal: it is the items and discounts
+// added up, with the fees unless the receipt prints them after it
+// (isFeeAfterSubtotal, as the balance check found), and taxes and tips
+// come on top of it.
+function isAfterSubtotal(line: FinanceReceiptLine, isFeeAfterSubtotal: boolean): boolean {
+  return (
+    line.receiptLineKind === 'tax' ||
+    line.receiptLineKind === 'tip' ||
+    (isFeeAfterSubtotal && line.receiptLineKind === 'fee')
+  )
+}
 
 // ReceiptLines is a receipt's lines as a compact table that stays a table
 // on a phone: what each says, how much of what at what price, and the
 // amount. A discount sits indented under its item with its amount marked;
-// fees are labeled among the items, and the subtotal comes before the
-// taxes and tips it does not include, as a receipt prints them.
+// fees are labeled, among the items or after the subtotal as the receipt
+// prints them, and the subtotal comes before the taxes and tips it does
+// not include.
 export function ReceiptLines({ receipt }: { receipt: FinanceReceipt }) {
   const { t, language } = useTranslation()
   const lines = [...receipt.receiptLines].sort((first, second) => first.lineNumber - second.lineNumber)
-  const subtotalLines = lines.filter((line) => !AFTER_SUBTOTAL_KINDS.includes(line.receiptLineKind))
-  const afterSubtotalLines = lines.filter((line) => AFTER_SUBTOTAL_KINDS.includes(line.receiptLineKind))
+  const subtotalLines = lines.filter((line) => !isAfterSubtotal(line, receipt.isFeeAfterSubtotal))
+  const afterSubtotalLines = lines.filter((line) => isAfterSubtotal(line, receipt.isFeeAfterSubtotal))
   const lineRow = (line: FinanceReceiptLine) => {
     const kindLabel = KIND_LABELS[line.receiptLineKind]
     return (

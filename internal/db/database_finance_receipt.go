@@ -792,6 +792,9 @@ func (self *transaction) receiptsWithLines(agentId string, rows []agentFinanceRe
 	for index := range matchRows {
 		byId[matchRows[index].ReceiptID].ReceiptMatches = append(byId[matchRows[index].ReceiptID].ReceiptMatches, matchRows[index].toModel())
 	}
+	for _, receipt := range receipts {
+		receipt.IsFeeAfterSubtotal = finance.IsReceiptFeeAfterSubtotal(receipt)
+	}
 	return receipts, nil
 }
 

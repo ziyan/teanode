@@ -729,13 +729,16 @@ export type FinanceReceipt = {
   paymentAccountMask?: string | null
   receiptCheckState: 'balanced' | 'unbalanced'
   checkDifferenceAmount: string
+  // isFeeAfterSubtotal says the receipt prints its fees after the subtotal,
+  // with the taxes and tips, rather than among the items it adds up.
+  isFeeAfterSubtotal: boolean
   receiptLines: FinanceReceiptLine[]
   receiptMatches: FinanceReceiptMatch[]
 }
 
 const RECEIPT_FIELDS = `id receiptSourceKind mailId gmailMessageId agentAttachmentId mailboxItemId merchantName
   merchantReceiptNumber purchasedOn purchasedAt currencyCode subtotalAmount totalAmount paymentAccountMask
-  receiptCheckState checkDifferenceAmount
+  receiptCheckState checkDifferenceAmount isFeeAfterSubtotal
   receiptLines { id lineNumber receiptLineKind description quantity quantityUnit unitPriceAmount lineAmount
     taxClassCode discountedLineNumber discountedLineId }
   receiptMatches { receiptId financeTransactionId matchedAmount receiptMatchSource matchConfidence createdAt }`

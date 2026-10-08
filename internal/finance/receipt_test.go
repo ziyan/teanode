@@ -83,6 +83,74 @@ func TestCheckReceiptReportsAMisreadLineByItsDifference(t *testing.T) {
 	}
 }
 
+// inventedOrderReceipt is shaped like an online order email: two items, a
+// subtotal, then shipping, tax and the total, and no payment line. Every
+// name and number is invented: 84.00 + 22.50 is 106.50; 106.50 + 7.95 +
+// 8.79 is 123.24.
+func inventedOrderReceipt() *models.FinanceReceipt {
+	return &models.FinanceReceipt{
+		ReceiptSourceKind: models.ReceiptSourceKindMail, MailID: "mail-order-one",
+		MerchantName: "Brightwater Outfitters", MerchantReceiptNumber: "BW-55120", PurchasedOn: "2026-09-14", CurrencyCode: "USD",
+		SubtotalAmount: "106.50", TotalAmount: "123.24",
+		ReceiptLines: []*models.FinanceReceiptLine{
+			{LineNumber: 1, ReceiptLineKind: models.ReceiptLineKindItem, Description: "Trail Jacket", LineAmount: "84.00"},
+			{LineNumber: 2, ReceiptLineKind: models.ReceiptLineKindItem, Description: "Wool Socks", LineAmount: "22.50"},
+			{LineNumber: 3, ReceiptLineKind: models.ReceiptLineKindFee, Description: "Shipping", LineAmount: "7.95"},
+			{LineNumber: 4, ReceiptLineKind: models.ReceiptLineKindTax, Description: "Tax", LineAmount: "8.79"},
+		},
+	}
+}
+
+// A receipt may print its fees before the subtotal or after it, and
+// balances either way, saying which; a misread line still misses the
+// total by its difference.
+func TestCheckReceiptTakesFeesOnEitherSideOfTheSubtotal(t *testing.T) {
+	order := inventedOrderReceipt()
+	receiptCheckState, checkDifferenceAmount, err := CheckReceipt(order)
+	if err != nil {
+		t.Fatalf("CheckReceipt: %s", err)
+	}
+	if receiptCheckState != models.ReceiptCheckStateBalanced || checkDifferenceAmount != "0" || !order.IsFeeAfterSubtotal || !IsReceiptFeeAfterSubtotal(order) {
+		t.Fatalf("shipping after the subtotal balances, after it: %s %s %v", receiptCheckState, checkDifferenceAmount, order.IsFeeAfterSubtotal)
+	}
+
+	// A bag fee among the items: 16.29 + 0.10 is the subtotal 16.39, and
+	// 16.39 + 0.49 + 0.19 the total 17.07.
+	grocery := inventedGroceryReceipt()
+	grocery.ReceiptLines = append(grocery.ReceiptLines[:5:5], append([]*models.FinanceReceiptLine{
+		{LineNumber: 6, ReceiptLineKind: models.ReceiptLineKindFee, Description: "Bag Fee", LineAmount: "0.10"},
+	}, grocery.ReceiptLines[5:]...)...)
+	grocery.ReceiptLines[6].LineNumber, grocery.ReceiptLines[7].LineNumber = 7, 8
+	grocery.SubtotalAmount, grocery.TotalAmount = "16.39", "17.07"
+	if receiptCheckState, checkDifferenceAmount, err := CheckReceipt(grocery); err != nil || receiptCheckState != models.ReceiptCheckStateBalanced ||
+		grocery.IsFeeAfterSubtotal || IsReceiptFeeAfterSubtotal(grocery) {
+		t.Fatalf("a bag fee before the subtotal balances, before it: %s %s %v %v", receiptCheckState, checkDifferenceAmount, grocery.IsFeeAfterSubtotal, err)
+	}
+	if IsReceiptFeeAfterSubtotal(inventedGroceryReceipt()) {
+		t.Fatalf("a receipt with no fees has none after its subtotal")
+	}
+
+	for _, testCase := range []struct {
+		description        string
+		misread            func(*models.FinanceReceipt)
+		expectedDifference string
+	}{
+		{"an item read a dollar high", func(receipt *models.FinanceReceipt) { receipt.ReceiptLines[0].LineAmount = "85.00" }, "1.00"},
+		{"shipping read low", func(receipt *models.FinanceReceipt) { receipt.ReceiptLines[2].LineAmount = "7.59" }, "-0.36"},
+		{"the subtotal misread", func(receipt *models.FinanceReceipt) { receipt.SubtotalAmount = "105.60" }, "0.90"},
+	} {
+		receipt := inventedOrderReceipt()
+		testCase.misread(receipt)
+		receiptCheckState, checkDifferenceAmount, err := CheckReceipt(receipt)
+		if err != nil {
+			t.Fatalf("%s: %s", testCase.description, err)
+		}
+		if receiptCheckState != models.ReceiptCheckStateUnbalanced || checkDifferenceAmount != testCase.expectedDifference {
+			t.Errorf("%s: %s by %s, not unbalanced by %s", testCase.description, receiptCheckState, checkDifferenceAmount, testCase.expectedDifference)
+		}
+	}
+}
+
 // What cannot be a receipt as printed is refused, saying why.
 func TestCheckReceiptRefusesWhatCannotBePrinted(t *testing.T) {
 	for description, broken := range map[string]func(*models.FinanceReceipt){
