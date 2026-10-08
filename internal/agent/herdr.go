@@ -42,8 +42,9 @@ const (
 	herdrActionWait = 30 * time.Second
 
 	// herdrQuestionTries is how many times a question is tried while a
-	// turn runs in the main conversation, herdrQuestionRetry apart.
-	herdrQuestionTries = 20
+	// turn runs in the main conversation, herdrQuestionRetry apart: a day,
+	// unless it is answered first.
+	herdrQuestionTries = 24 * 60 * 4
 	herdrQuestionRetry = 15 * time.Second
 
 	// herdrSettledTurnCount is how many of a finished session's last turns
@@ -142,7 +143,7 @@ func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName stri
 	// Every computer is asked at once, and one that does not answer, or
 	// runs no herdr, is left out rather than taking the others with it.
 	answers := make([][]*HerdrSession, len(asked))
-	failures := make([]bool, len(asked))
+	hasFailedByIndex := make([]bool, len(asked))
 	var waitGroup sync.WaitGroup
 	for index, one := range asked {
 		waitGroup.Add(1)
@@ -151,7 +152,7 @@ func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName stri
 			sessions, err := askHerdr[[]*computer.HerdrSession](ctx, one, "herdr_list", &computer.HerdrArguments{}, herdrListWait)
 			if err != nil {
 				log.Debugf("cannot list the herdr sessions on %q: %s", one.name, err)
-				failures[index] = true
+				hasFailedByIndex[index] = true
 				return
 			}
 			for _, session := range *sessions {
@@ -163,7 +164,7 @@ func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName stri
 	listed, failedComputerNames := []*HerdrSession{}, []string{}
 	for index, sessions := range answers {
 		listed = append(listed, sessions...)
-		if failures[index] {
+		if hasFailedByIndex[index] {
 			failedComputerNames = append(failedComputerNames, asked[index].name)
 		}
 	}
@@ -366,6 +367,22 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 			defer self.waitGroup.Done()
 			self.tellHerdrQuestion(agentId, found, &event)
 		}()
+	case computer.HerdrEventKindAnswered:
+		// A question that went needs nothing more here, and one still
+		// waiting for a turn to end before it is written is not written:
+		// its card asks the computer whether it still waits.
+		if event.HerdrSession.Question != nil {
+			self.backgroundMutex.Lock()
+			if self.herdrAnswered == nil {
+				self.herdrAnswered = map[string]bool{}
+			}
+			// Only one still being written: the rest are done with.
+			if toldAt, isKnown := self.herdrTold[herdrToldKey(found.name, &event)]; isKnown && toldAt.IsZero() {
+				self.herdrAnswered[herdrToldKey(found.name, &event)] = true
+			}
+			self.backgroundMutex.Unlock()
+		}
+		go self.acknowledgeHerdr(found, event.HerdrEventID)
 	case computer.HerdrEventKindSettled:
 		self.waitGroup.Add(1)
 		go func() {
@@ -431,6 +448,7 @@ func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer,
 	}
 	checkIn, said := herdrQuestionCheckIn(attached.name, session), herdrQuestionSaid(attached.name, session)
 	err := errTurnRunning
+	isAnswered := false
 	for try := 0; try < herdrQuestionTries && errors.Is(err, errTurnRunning); try++ {
 		if try > 0 {
 			select {
@@ -439,16 +457,28 @@ func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer,
 				continue
 			case <-time.After(herdrQuestionRetry):
 			}
+			self.backgroundMutex.Lock()
+			isAnswered = self.herdrAnswered[key]
+			self.backgroundMutex.Unlock()
+			if isAnswered {
+				// Answered at the keyboard while a turn ran: nothing to tell.
+				break
+			}
 		}
 		err = self.writeHerdrQuestion(agentId, checkIn, said)
 	}
 	self.backgroundMutex.Lock()
-	if err == nil {
+	delete(self.herdrAnswered, key)
+	if err == nil || isAnswered {
 		self.herdrTold[key] = time.Now()
 	} else {
 		delete(self.herdrTold, key)
 	}
 	self.backgroundMutex.Unlock()
+	if isAnswered {
+		self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
+		return
+	}
 	if err != nil {
 		// Not acknowledged: the computer says it again when it next
 		// connects, and it is tried again then.
@@ -529,9 +559,10 @@ func herdrQuestionCheckIn(computerName string, session *computer.HerdrSession) s
 // markdownEscaper takes the meaning out of what markdown would read as
 // emphasis, code, a link or a picture: what a coding agent drew on its
 // screen is shown as it was drawn, and an option label shaped as a picture
-// fetches nothing when the drawer or a chat app renders it. Only these,
-// since a chat app's markdown shows any other escape as a backslash.
-var markdownEscaper = strings.NewReplacer("\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]")
+// fetches nothing when the drawer or a chat app renders it, since a link
+// cannot open without its bracket. Only these four, which are all a chat
+// app's markdown takes an escape for; any other shows its backslash.
+var markdownEscaper = strings.NewReplacer("`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[")
 
 // herdrQuestionSaid is the question as the person reads it, in the drawer
 // and in their chat apps. Everything in it that came from the screen is

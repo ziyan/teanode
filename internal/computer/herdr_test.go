@@ -436,6 +436,29 @@ func TestAnUnacknowledgedQuestionIsSaidAgainOnReconnect(t *testing.T) {
 	}
 }
 
+func TestAScreenThatCouldNotBeReadKeepsItsQuestion(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
+	herdr := NewHerdr(home)
+	first := listForTest(t, herdr)[0].Question.QuestionFingerprint
+	// A screen that fails to read, then one read mid-redraw with no form.
+	herdr.mutex.Lock()
+	unread := &HerdrSession{PaneID: "w1:p1", CodingAgentKind: CodingAgentKindClaude, isScreenUnread: true}
+	var events []*HerdrEvent
+	herdr.recordLocked(unread, &events)
+	herdr.mutex.Unlock()
+	if unread.Question == nil || unread.Question.QuestionFingerprint != first {
+		t.Errorf("an unread screen lost its question: %+v", unread.Question)
+	}
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	listForTest(t, herdr)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
+	if again := listForTest(t, herdr)[0].Question.QuestionFingerprint; again != first {
+		t.Error("a form missed for one look came back as another question")
+	}
+}
+
 func TestTheSameQuestionAskedAgainIsAnotherQuestion(t *testing.T) {
 	home := t.TempDir()
 	fake := startFakeHerdr(t, home)
@@ -445,7 +468,9 @@ func TestTheSameQuestionAskedAgainIsAnotherQuestion(t *testing.T) {
 	if again := listForTest(t, herdr)[0].Question.QuestionFingerprint; again != first {
 		t.Fatal("a question still waiting changed its fingerprint")
 	}
+	// Answered, and gone for two looks, then asked again.
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	listForTest(t, herdr)
 	listForTest(t, herdr)
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
 	second := listForTest(t, herdr)[0].Question.QuestionFingerprint
@@ -573,7 +598,7 @@ func TestTheHookScriptReportsOnlyTheEventAndTheSession(t *testing.T) {
 	if _, err := setUpHooks(home, false); err != nil {
 		t.Fatal(err)
 	}
-	input := "{\n  \"session_id\": \"0000-dddd\",\n  \"prompt\": \"a secret prompt\",\n  \"tool_input\": {\"command\": \"echo \\\"session_id\\\": \\\"other\\\"\"}\n}\n"
+	input := "{\n  \"session_id\": \"0000-dddd\",\n  \"prompt\": \"a secret prompt\",\n  \"tool_input\": {\"session_id\": \"0000-eeee\"}\n}\n"
 	command := exec.Command("sh", filepath.Join(home, hookScriptPath), "UserPromptSubmit")
 	command.Env = append(os.Environ(), "HOME="+home)
 	command.Stdin = strings.NewReader(input)

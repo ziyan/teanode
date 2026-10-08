@@ -106,6 +106,10 @@ type HerdrSession struct {
 	// IsWatched says somebody asked to be told when it next finishes.
 	IsWatched bool           `json:"isWatched,omitempty"`
 	Question  *HerdrQuestion `json:"question,omitempty"`
+
+	// isScreenUnread says the screen could not be read this time, so what
+	// was seen of the pane before stands.
+	isScreenUnread bool
 }
 
 // HerdrArguments are what every herdr action may be given.
@@ -208,6 +212,8 @@ type Herdr struct {
 type herdrAppearance struct {
 	questionFingerprint string
 	appearanceID        string
+	// missCount is how many looks in a row have not seen it.
+	missCount int
 }
 
 type herdrWatch struct {
@@ -259,10 +265,10 @@ func (self *Herdr) listen(notify func(*HerdrEvent)) func() {
 	self.notify = notify
 	// A question that came and was answered while no server listened is
 	// not told: it would reach the person already answered.
-	answered := map[string]bool{}
+	isAnsweredByKey := map[string]bool{}
 	for _, event := range self.events {
 		if !event.isAcknowledged && event.HerdrEventKind == HerdrEventKindAnswered && event.HerdrSession.Question != nil {
-			answered[event.HerdrSession.PaneID+"\x00"+event.HerdrSession.Question.QuestionFingerprint] = true
+			isAnsweredByKey[event.HerdrSession.PaneID+"\x00"+event.HerdrSession.Question.QuestionFingerprint] = true
 		}
 	}
 	var unheard []*HerdrEvent
@@ -270,7 +276,7 @@ func (self *Herdr) listen(notify func(*HerdrEvent)) func() {
 		if event.isAcknowledged {
 			continue
 		}
-		if event.HerdrEventKind == HerdrEventKindAsking && answered[event.HerdrSession.PaneID+"\x00"+event.HerdrSession.Question.QuestionFingerprint] {
+		if event.HerdrEventKind == HerdrEventKindAsking && isAnsweredByKey[event.HerdrSession.PaneID+"\x00"+event.HerdrSession.Question.QuestionFingerprint] {
 			event.isAcknowledged = true
 			continue
 		}
@@ -375,8 +381,22 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 
 // recordLocked keeps what was seen of one pane and queues what it changed.
 func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
+	if previous := self.sessions[session.PaneID]; session.isScreenUnread && previous != nil && previous.Question != nil {
+		// One read that failed is not a question answered: it would be
+		// told again, under another fingerprint, at the next look.
+		session.Question, session.HerdrSessionState = previous.Question, previous.HerdrSessionState
+		self.sessions[session.PaneID] = session
+		return
+	}
 	if session.Question == nil {
-		delete(self.appearances, session.PaneID)
+		// Gone for two looks before it is gone: a screen read while it
+		// redraws shows no form for a moment.
+		if appearance := self.appearances[session.PaneID]; appearance != nil {
+			appearance.missCount++
+			if appearance.missCount >= 2 {
+				delete(self.appearances, session.PaneID)
+			}
+		}
 	} else {
 		// The question as recognized names what it asks; the fingerprint
 		// handed out names this appearance of it.
@@ -386,6 +406,7 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 			appearance = &herdrAppearance{questionFingerprint: question.QuestionFingerprint, appearanceID: security.NewULID()}
 			self.appearances[session.PaneID] = appearance
 		}
+		appearance.missCount = 0
 		question.QuestionFingerprint = appearanceFingerprint(appearance)
 		session.Question = &question
 	}
@@ -453,6 +474,8 @@ func (self *Herdr) observe(ctx context.Context, agent *herdrAgent, reports map[s
 	screen, err := self.client.readAgent(ctx, agent.PaneID, "visible", 0)
 	if err == nil {
 		session.Question = recognizeQuestion(agent.Agent, screen)
+	} else {
+		session.isScreenUnread = true
 	}
 	var lifecycle *codexLifecycle
 	if agent.Agent == CodingAgentKindCodex && session.TranscriptPath != "" {
@@ -614,13 +637,14 @@ func (self *Herdr) wait(ctx context.Context, arguments *HerdrArguments) (*HerdrW
 		}
 		// Right after a send the session may not show its turn yet; a wait
 		// that returned then would say it finished before it started.
-		if session.HerdrSessionState == HerdrSessionStateWorking {
+		isWorking := session.HerdrSessionState == HerdrSessionStateWorking
+		if isWorking {
 			hasSeenWorking = true
 		} else if hasSeenWorking || session.HerdrSessionState == HerdrSessionStateAsking || time.Since(started) >= herdrWaitUnseen {
 			return &HerdrWaitResult{HerdrSession: session}, nil
 		}
 		if time.Now().After(deadline) {
-			return &HerdrWaitResult{HerdrSession: session, IsTimedOut: true}, nil
+			return &HerdrWaitResult{HerdrSession: session, IsTimedOut: isWorking}, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -651,11 +675,12 @@ func (self *Herdr) watch(ctx context.Context, arguments *HerdrArguments) (*Herdr
 }
 
 // hasControlCharacters says text holds a character a terminal reads as a
-// key: escape, carriage return, a control letter. A line break is allowed
-// where it is typed as text, in a message.
+// key: escape, carriage return, tab, a control letter. A line break and a
+// tab are allowed where they are typed as text, in a message, and not in an
+// answer typed into a form, where tab moves on.
 func hasControlCharacters(text string, isLineBreakAllowed bool) bool {
 	for _, character := range text {
-		if character == '\n' && isLineBreakAllowed || character == '\t' {
+		if (character == '\n' || character == '\t') && isLineBreakAllowed {
 			continue
 		}
 		if unicode.IsControl(character) {

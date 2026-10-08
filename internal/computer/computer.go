@@ -309,7 +309,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 				// nothing about, like the background commands' list. What
 				// types into a pane or changes settings is said, as any
 				// other request is.
-				if strings.HasPrefix(request.Action, "background_") || quietHerdrActions[request.Action] {
+				if strings.HasPrefix(request.Action, "background_") || isQuietHerdrAction[request.Action] {
 					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
@@ -350,8 +350,8 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	}
 }
 
-// quietHerdrActions are the herdr actions that only look.
-var quietHerdrActions = map[string]bool{
+// isQuietHerdrAction says a herdr action only looks.
+var isQuietHerdrAction = map[string]bool{
 	"herdr_list": true, "herdr_read": true, "herdr_screen": true, "herdr_wait": true, "herdr_acknowledge": true,
 }
 

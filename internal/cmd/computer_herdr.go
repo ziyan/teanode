@@ -71,6 +71,7 @@ func newComputerHerdrCommand() *cli.Command {
 					computerFlag,
 					&cli.StringFlag{Name: "fingerprint", Usage: "the question's fingerprint, as list prints it; an answer to a question that has changed is refused"},
 					&cli.IntSliceFlag{Name: "option", Usage: "the number of an option to choose (repeatable, for a question that takes several)"},
+					&cli.StringSliceFlag{Name: "label", Usage: "the label of each option chosen, in the same order, as list prints it; refused when the options are labeled otherwise"},
 					&cli.StringFlag{Name: "text", Usage: "what to type, for the option that takes text"},
 					JSONFlag(),
 				},
@@ -294,6 +295,10 @@ func runComputerHerdrAnswer(ctx context.Context, command *cli.Command) error {
 		optionNumbers = append(optionNumbers, int(number))
 	}
 	freeText := command.String("text")
+	optionLabels := command.StringSlice("label")
+	if len(optionLabels) > 0 && len(optionLabels) != len(optionNumbers) {
+		return usage("give one --label for each --option")
+	}
 	if len(optionNumbers) == 0 && strings.TrimSpace(freeText) == "" {
 		return usage("answer with --option, --text or both")
 	}
@@ -325,7 +330,7 @@ func runComputerHerdrAnswer(ctx context.Context, command *cli.Command) error {
 		}
 		return usage("pane " + paneId + " asks something on several computers; say which with --computer")
 	}
-	answered, err := client.AnswerAgentHerdrQuestion(ctx, connection, command.String("computer"), paneId, fingerprint, optionNumbers, nil, freeText)
+	answered, err := client.AnswerAgentHerdrQuestion(ctx, connection, command.String("computer"), paneId, fingerprint, optionNumbers, optionLabels, freeText)
 	if err != nil {
 		return describeError(command, err)
 	}

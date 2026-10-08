@@ -72,7 +72,7 @@ const hookScript = `#!/bin/sh
 umask 077
 directory="$HOME/.local/state/teanode"
 mkdir -p "$directory" 2>/dev/null
-session=$(tr -d '\n' | sed -n 's/.*"session_id" *: *"\([A-Za-z0-9-]*\)".*/\1/p')
+session=$(tr -d '\n' | sed -n 's/"session_id" *: *"\([A-Za-z0-9-]*\)".*/@@@\1/; t found; d; :found; s/.*@@@//p')
 line=$(printf '{"hookEventName":"%s","sessionId":"%s","reportedAt":%s}' "$1" "$session" "$(date +%s)")
 printf '%s\n' "$line" >> "$directory/herdr-events.jsonl" 2>/dev/null
 exit 0
@@ -164,6 +164,27 @@ func trimHookEvents(home string) {
 	_ = writeFileAtomically(path, bytes.Join(lines, []byte("\n")))
 }
 
+// tidyHookEvents keeps only the lines of the events file that hold no more
+// than the event and the session, and makes it the person's alone. A script
+// from before kept whatever the hook was given, prompts and tool output, in
+// a file anybody on the machine could read.
+func tidyHookEvents(home string) {
+	path := filepath.Join(home, hookEventsPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var kept [][]byte
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		var report hookReport
+		if json.Unmarshal(line, &report) == nil && report.SessionID != "" && !bytes.Contains(line, []byte(`"input"`)) {
+			kept = append(kept, line)
+		}
+	}
+	_ = os.Chmod(path, 0o600)
+	_ = writeFileAtomically(path, append(bytes.Join(kept, []byte("\n")), '\n'))
+}
+
 // setUpHooks puts TeaNode's hooks into Claude Code's settings, or takes
 // them out, leaving every other entry as it was.
 func setUpHooks(home string, isRemoval bool) (*HerdrSetupResult, error) {
@@ -248,6 +269,7 @@ func setUpHooks(home string, isRemoval bool) (*HerdrSetupResult, error) {
 		if err := os.WriteFile(scriptPath, []byte(hookScript), 0o700); err != nil {
 			return nil, err
 		}
+		tidyHookEvents(home)
 	}
 	if original != nil && !bytes.Equal(original, indented.Bytes()) {
 		backupPath := settingsPath + hookBackupSuffix

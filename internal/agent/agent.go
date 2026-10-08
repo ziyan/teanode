@@ -185,6 +185,9 @@ type Agent struct {
 	// conversation, by computer, pane and fingerprint, so a question said
 	// again after a reconnect is written once. Under the background lock.
 	herdrTold map[string]time.Time
+	// herdrAnswered are the questions that went while waiting to be
+	// written, so they are not written. Under the background lock.
+	herdrAnswered map[string]bool
 
 	contextsMutex sync.Mutex
 	contextsOpen  int

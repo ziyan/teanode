@@ -643,8 +643,11 @@ export function HerdrQuestionCard({
   useEffect(() => {
     if (questionState !== 'waiting') return
     let isStopped = false
-    const look = (fresh: boolean) => {
-      if (document.hidden && !fresh) return
+    // The first look is made however the page stands, so a drawer drawn
+    // in a tab out of sight has its options when it is looked at; the
+    // ones after wait for the page to be seen.
+    const look = (fresh: boolean, isFirst = false) => {
+      if (document.hidden && !fresh && !isFirst) return
       listHerdrSessions(fresh)
         .then((listed) => {
           if (isStopped) return
@@ -666,11 +669,16 @@ export function HerdrQuestionCard({
         })
         .catch(() => undefined)
     }
-    look(lookCount > 0)
+    look(lookCount > 0, true)
     const every = window.setInterval(() => look(false), QUESTION_EVERY)
+    const seen = () => {
+      if (!document.hidden) look(false)
+    }
+    document.addEventListener('visibilitychange', seen)
     return () => {
       isStopped = true
       window.clearInterval(every)
+      document.removeEventListener('visibilitychange', seen)
     }
   }, [computer, paneId, questionFingerprint, questionState, lookCount])
   if (questionState === 'answered') return <p className="herdr-question-done muted">{t('herdr.questionDone')}</p>
