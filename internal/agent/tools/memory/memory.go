@@ -56,6 +56,12 @@ const (
 	childrenShown = 24
 	searchCounted = 200
 
+	// linksShown is how many of a page's links a get lists. A page that
+	// everything points at, such as self, had over a thousand, and their
+	// lines were three quarters of a get that a client cut short without
+	// a word; the rest are read with link_offset.
+	linksShown = 40
+
 	// historyShown is how many changes a history answers with, and
 	// historyMost the ceiling on asking for more. The same numbers the
 	// API bounds it by, so the same question asked here and on the
@@ -85,30 +91,31 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from`, `index` and `search` with `offset`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
+				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from` for facts and `link_offset` for links, `index` and `search` with `offset`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
 						"index", "get", "search", "look", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
-					"path":       tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
-					"depth":      tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
-					"query":      tools.StringProperty("for search: words"),
-					"document":   tools.StringProperty("for look: one file on its own, by the document identifier knowledge search and read give; not needed when you give path and number"),
-					"text":       tools.StringProperty("for note: the fact, in a sentence or two; with number, the whole sentence as it should now read"),
-					"fact_kind":  tools.EnumProperty("for note: what sort of statement it is, 'fact' by default; 'preference' and 'decision' are only for what the person themselves said", factKinds...),
-					"happened":   tools.StringProperty("for note: when it was true, if that is not now -- 2023-06, 2023-06-14, or a date the person gave"),
-					"kind":       tools.EnumProperty("for note and page: what the page is about, needed when the page is new", kinds...),
-					"name":       tools.StringProperty("for note and page: what the page is called, when it is new or being renamed"),
-					"summary":    tools.StringProperty("for page: what the page says, rewritten whole"),
-					"aliases":    tools.ArrayProperty("for page: what else they call it", tools.StringProperty("an alias")),
-					"pinned":     tools.BooleanProperty("for page: always in your prompt"),
-					"applies_to": tools.ArrayProperty("for note: which runs besides the conversation read it; any of "+strings.Join(audiences, ", "), tools.StringProperty("an audience")),
-					"to":         tools.StringProperty("for link: the other page's path. For move: the path of the page it goes under, or with number the page the fact goes on. For merge: the page that survives"),
-					"relation":   tools.EnumProperty("for link: what the first page is to the second", relations...),
-					"number":     tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself. For look: the fact whose picture to show you"),
-					"limit":      tools.IntegerProperty("for search, index and history: how many"),
-					"from":       tools.IntegerProperty("for get: list the page's facts in number order starting at this fact number, 60 at a time; 1 starts at the first. Without it get shows the 60 most recently used"),
-					"offset":     tools.IntegerProperty("for index: how many lines to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
-					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
+					"path":        tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
+					"depth":       tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
+					"query":       tools.StringProperty("for search: words"),
+					"document":    tools.StringProperty("for look: one file on its own, by the document identifier knowledge search and read give; not needed when you give path and number"),
+					"text":        tools.StringProperty("for note: the fact, in a sentence or two; with number, the whole sentence as it should now read"),
+					"fact_kind":   tools.EnumProperty("for note: what sort of statement it is, 'fact' by default; 'preference' and 'decision' are only for what the person themselves said", factKinds...),
+					"happened":    tools.StringProperty("for note: when it was true, if that is not now -- 2023-06, 2023-06-14, or a date the person gave"),
+					"kind":        tools.EnumProperty("for note and page: what the page is about, needed when the page is new", kinds...),
+					"name":        tools.StringProperty("for note and page: what the page is called, when it is new or being renamed"),
+					"summary":     tools.StringProperty("for page: what the page says, rewritten whole"),
+					"aliases":     tools.ArrayProperty("for page: what else they call it", tools.StringProperty("an alias")),
+					"pinned":      tools.BooleanProperty("for page: always in your prompt"),
+					"applies_to":  tools.ArrayProperty("for note: which runs besides the conversation read it; any of "+strings.Join(audiences, ", "), tools.StringProperty("an audience")),
+					"to":          tools.StringProperty("for link: the other page's path. For move: the path of the page it goes under, or with number the page the fact goes on. For merge: the page that survives"),
+					"relation":    tools.EnumProperty("for link: what the first page is to the second", relations...),
+					"number":      tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself. For look: the fact whose picture to show you"),
+					"limit":       tools.IntegerProperty("for search, index and history: how many"),
+					"from":        tools.IntegerProperty("for get: list the page's facts in number order starting at this fact number, 60 at a time; 1 starts at the first. Without it get shows the 60 most recently used"),
+					"offset":      tools.IntegerProperty("for index: how many lines to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
+					"link_offset": tools.IntegerProperty("for get: how many of the page's links to pass over; a get with it answers with the next 40 links alone, to read on from where a get stopped listing them"),
+					"items":       tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
 				Guidance: "memory: pages by path (people/alice-chen, projects/portal, self), facts by number (people/alice-chen#3). What is known about the person lives on `self`; a people page about them is a duplicate to `merge` into self, never the other way. Correct a wrong fact with `note` and its number, and `move` one on the wrong page by number: both keep its evidence and the day it was learned, which forgetting and writing it again loses. `history` says where a fact came from or who changed it. A fact read out of a picture: `look` at the picture with the page and number before answering from the sentence. A fact addressed to triage or to reply changes how mail is sorted or answered from the next message on; prefer a rule for anything rule-shaped.",
 				Preview: tools.PreviewOf(func(call struct {
@@ -238,6 +245,10 @@ type memoryItem struct {
 	// stopped.
 	From   int `json:"from"`
 	Offset int `json:"offset"`
+
+	// LinkOffset is how many of a page's links a get passes over, and
+	// with it a get answers with the links alone.
+	LinkOffset int `json:"link_offset"`
 
 	// Document is one file on its own, for look: the identifier the
 	// knowledge tool answers a search and a read with.
@@ -398,6 +409,10 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 		if node, err = tx.GetAgentNode(agentId, path); err != nil || node == nil {
 			return err
 		}
+		if arguments.LinkOffset > 0 {
+			edges, err = tx.ListAgentEdges(agentId, node.ID)
+			return err
+		}
 		every, err := tx.ListAgentFacts(agentId, node.ID, false, everyFact)
 		if err != nil {
 			return err
@@ -427,6 +442,9 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 		// only "no": a model that guessed the path wrongly can then
 		// guess again from the answer instead of searching.
 		return notThere(ctx, run, path)
+	}
+	if arguments.LinkOffset > 0 {
+		return tools.TextResult("%s", pageHeading(node)+renderLinks(node, edges, arguments.LinkOffset)), nil
 	}
 	page := renderPage(node, facts, edges, children)
 	if more != "" {
@@ -476,8 +494,9 @@ func factsToGet(tx db.Transaction, agentId string, node *models.AgentNode, every
 	return facts, fmt.Sprintf("… %d more facts on this page are not shown: these are the %d most recently used of %d. get again with from: 1 to list every fact in number order, %d at a time", len(every)-len(facts), len(facts), len(every), factsShown), nil
 }
 
-// renderPage is a page as the model reads it.
-func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*models.AgentEdge, children []*models.AgentNode) string {
+// pageHeading is the line a page opens with: its path, name and kind,
+// and what else it is called.
+func pageHeading(node *models.AgentNode) string {
 	var builder strings.Builder
 	builder.WriteString(node.Path)
 	if node.Name != "" {
@@ -487,6 +506,13 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 	if len(node.Aliases) > 0 {
 		builder.WriteString("\nalso called: " + strings.Join(node.Aliases, ", "))
 	}
+	return builder.String()
+}
+
+// renderPage is a page as the model reads it.
+func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*models.AgentEdge, children []*models.AgentNode) string {
+	var builder strings.Builder
+	builder.WriteString(pageHeading(node))
 	if summary := strings.TrimSpace(node.Summary); summary != "" {
 		builder.WriteString("\n\n" + summary)
 	}
@@ -538,28 +564,7 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 			}
 		}
 	}
-	if len(edges) > 0 {
-		builder.WriteString("\n")
-		for _, edge := range edges {
-			if edge.Relation == models.EdgePartOf {
-				continue
-			}
-			// "perhaps" in front and whose guess it was at the end. A link
-			// the nightly walk invented is a hypothesis, and read as a
-			// bare relation it was repeated to the person as fact.
-			relation := string(edge.Relation)
-			guess := ""
-			if edge.Proposed() {
-				relation = "perhaps " + relation
-				guess = " (the agent's guess)"
-			}
-			if edge.FromPath == node.Path {
-				builder.WriteString("\n→ " + relation + " " + edge.ToPath + guess)
-			} else {
-				builder.WriteString("\n← " + edge.FromPath + " " + relation + " this" + guess)
-			}
-		}
-	}
+	builder.WriteString(renderLinks(node, edges, 0))
 	if len(children) > 0 {
 		builder.WriteString("\n\nunder it: ")
 		paths := make([]string, 0, min(len(children), childrenShown))
@@ -571,6 +576,69 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 		if moreCount := len(children) - childrenShown; moreCount > 0 {
 			fmt.Fprintf(&builder, " … and %d more: index with path %s and depth 1 lists them", moreCount, node.Path)
 		}
+	}
+	return builder.String()
+}
+
+// renderLinks is linksShown of a page's links from offset, each on a line
+// of its own, and the line that says how many more there are and the get
+// that reads them. A link that files the page under another is left out:
+// the path already says it.
+func renderLinks(node *models.AgentNode, edges []*models.AgentEdge, offset int) string {
+	links := make([]*models.AgentEdge, 0, len(edges))
+	for _, edge := range edges {
+		if edge.Relation != models.EdgePartOf {
+			links = append(links, edge)
+		}
+	}
+	// In an order that holds from one get to the next, so that reading on
+	// from an offset neither repeats a link nor skips one: the page's own
+	// links first, then those pointing at it, each by relation and path.
+	isOutgoing := func(edge *models.AgentEdge) bool { return edge.FromPath == node.Path }
+	otherPath := func(edge *models.AgentEdge) string {
+		if isOutgoing(edge) {
+			return edge.ToPath
+		}
+		return edge.FromPath
+	}
+	sort.SliceStable(links, func(left, right int) bool {
+		if isOutgoing(links[left]) != isOutgoing(links[right]) {
+			return isOutgoing(links[left])
+		}
+		if links[left].Relation != links[right].Relation {
+			return links[left].Relation < links[right].Relation
+		}
+		return otherPath(links[left]) < otherPath(links[right])
+	})
+	if len(links) == 0 {
+		return ""
+	}
+	if offset >= len(links) {
+		return fmt.Sprintf("\n\n… no links past the first %d; the page has %d, and a get without link_offset starts at the first", offset, len(links))
+	}
+	var builder strings.Builder
+	builder.WriteString("\n")
+	if offset > 0 {
+		fmt.Fprintf(&builder, "\nlinks %d to %d of %d:", offset+1, min(offset+linksShown, len(links)), len(links))
+	}
+	for _, edge := range links[offset:min(offset+linksShown, len(links))] {
+		// "perhaps" in front and whose guess it was at the end. A link
+		// the nightly walk invented is a hypothesis, and read as a bare
+		// relation it was repeated to the person as fact.
+		relation := string(edge.Relation)
+		guess := ""
+		if edge.Proposed() {
+			relation = "perhaps " + relation
+			guess = " (the agent's guess)"
+		}
+		if isOutgoing(edge) {
+			builder.WriteString("\n→ " + relation + " " + edge.ToPath + guess)
+		} else {
+			builder.WriteString("\n← " + edge.FromPath + " " + relation + " this" + guess)
+		}
+	}
+	if next := offset + linksShown; next < len(links) {
+		fmt.Fprintf(&builder, "\n… %d more links; get again with link_offset: %d", len(links)-next, next)
 	}
 	return builder.String()
 }
