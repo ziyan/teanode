@@ -1802,10 +1802,11 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 	// first round, so a prompt read afresh each round differed from the
 	// second round on and the whole of it was paid for again every time.
 	if self.promptData == nil {
+		knowledge, selfLines := self.personSnapshot(ctx)
 		self.promptData = &turnPromptData{
 			situation: self.situation(ctx, configuration),
-			knowledge: self.carryIndex(ctx, indexTokens),
-			self:      self.agent.selfLines(ctx, settings.Agent, settings.Owner),
+			knowledge: knowledge,
+			self:      selfLines,
 		}
 	}
 	return render("ask.txt", map[string]any{
@@ -1829,6 +1830,61 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		// A turn asked to research gets a procedure for it; see Research.
 		"Researching": settings.Research,
 	})
+}
+
+// promptSnapshotLasts is how long a conversation keeps what its prompt
+// read of the person: the facts on their page and the index of what the
+// agent knows.
+//
+// Read afresh each turn they came out different each time, since the facts
+// are ordered by when they were last used and recall marks them used every
+// turn; the prompt is the front of every request, so a turn's first round
+// paid for the whole history again, ninety thousand tokens and ten
+// seconds and more on a long conversation, where the provider would have
+// served it from its cache. Kept for a while, the front stays the same from
+// one turn to the next. What is new in the meantime reaches the model
+// through recall, every round.
+const promptSnapshotLasts = 30 * time.Minute
+
+// promptSnapshot is what a conversation's prompt read of the person.
+type promptSnapshot struct {
+	agentID   string
+	knowledge []string
+	self      []string
+	takenAt   time.Time
+}
+
+// personSnapshot is the facts and the index for this turn's prompt: the
+// conversation's snapshot while it lasts, read afresh otherwise.
+func (self *AskRun) personSnapshot(ctx context.Context) (knowledge, selfLines []string) {
+	settings := self.settings
+	conversationID := ""
+	if settings.Conversation != nil {
+		conversationID = settings.Conversation.ID
+	}
+	now := time.Now()
+	if conversationID != "" {
+		if found, isFound := self.agent.promptSnapshots.Load(conversationID); isFound {
+			snapshot := found.(*promptSnapshot)
+			if snapshot.agentID == settings.Agent.ID && now.Sub(snapshot.takenAt) < promptSnapshotLasts {
+				return snapshot.knowledge, snapshot.self
+			}
+		}
+	}
+	knowledge = self.carryIndex(ctx, indexTokens)
+	selfLines = self.agent.selfLines(ctx, settings.Agent, settings.Owner)
+	if conversationID != "" {
+		self.agent.promptSnapshots.Store(conversationID, &promptSnapshot{agentID: settings.Agent.ID, knowledge: knowledge, self: selfLines, takenAt: now})
+		// The ones run out are let go here, so that the map holds only
+		// the conversations of the last half hour.
+		self.agent.promptSnapshots.Range(func(key, value any) bool {
+			if now.Sub(value.(*promptSnapshot).takenAt) >= promptSnapshotLasts {
+				self.agent.promptSnapshots.Delete(key)
+			}
+			return true
+		})
+	}
+	return knowledge, selfLines
 }
 
 // turnPromptData is what the prompt reads from the person's data, read
@@ -1921,9 +1977,11 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	} else {
 		lines = append(lines, "Search is by keyword only.")
 	}
-	if line := surfaceOf(settings.Surface).situationLine; line != "" {
-		lines = append(lines, line)
-	}
+	// Where the turn is happening is said after the history, with how to
+	// write for it (overlays): it changes from one turn to the next, a
+	// spoken turn after a typed one, and here it changed the front of the
+	// prompt and so every cached token of the history behind it.
+	//
 	// The goal on this conversation, where there is one. Rebuilt each
 	// round from the row rather than from the conversation the turn
 	// started with, because the goal tool writes that row mid-turn and a
@@ -2124,6 +2182,9 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	// How to write for where the answer goes, and on the dashboard the
 	// replies it draws as buttons above the box, to send with a click.
 	where := surfaceOf(settings.Surface)
+	if where.situationLine != "" {
+		blocks = append(blocks, "<where>\n"+where.situationLine+"\n</where>")
+	}
 	if where.hasSuggestedReplies {
 		blocks = append(blocks, suggestedRepliesBlock)
 	}
