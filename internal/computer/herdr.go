@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -198,7 +200,9 @@ type Herdr struct {
 	// appearances are the questions waiting, by pane: the same question
 	// asked again later is another appearance, with another fingerprint,
 	// so it is told to the person again, and an answer to the first is not
-	// pressed into the second.
+	// pressed into the second. They are kept in a file, so a question
+	// waiting when the program restarts keeps its fingerprint and is not
+	// told again.
 	appearances map[string]*herdrAppearance
 	watches     map[string][]*herdrWatch
 	events      []*HerdrEvent
@@ -210,10 +214,39 @@ type Herdr struct {
 }
 
 type herdrAppearance struct {
-	questionFingerprint string
-	appearanceID        string
+	QuestionFingerprint string `json:"questionFingerprint"`
+	AppearanceID        string `json:"appearanceId"`
+	// IsTold says the server heard that it was asked.
+	IsTold bool `json:"isTold"`
 	// missCount is how many looks in a row have not seen it.
 	missCount int
+}
+
+// herdrAppearancesPath is where the appearances are kept, under the home
+// directory.
+var herdrAppearancesPath = filepath.Join(".local", "state", "teanode", "herdr-appearances.json")
+
+// loadAppearances reads the appearances kept by the program before.
+func loadAppearances(home string) map[string]*herdrAppearance {
+	appearances := map[string]*herdrAppearance{}
+	data, err := os.ReadFile(filepath.Join(home, herdrAppearancesPath))
+	if err == nil {
+		_ = json.Unmarshal(data, &appearances)
+	}
+	return appearances
+}
+
+// saveAppearancesLocked keeps them. Called with the lock held; the file is
+// small, a few lines a waiting question.
+func (self *Herdr) saveAppearancesLocked() {
+	data, err := json.Marshal(self.appearances)
+	if err != nil {
+		return
+	}
+	path := filepath.Join(self.home, herdrAppearancesPath)
+	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
+		_ = writeFileAtomically(path, data)
+	}
 }
 
 type herdrWatch struct {
@@ -226,7 +259,7 @@ type herdrWatch struct {
 // directory this is. Start watches it.
 func NewHerdr(home string) *Herdr {
 	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
-		appearances: map[string]*herdrAppearance{}, watches: map[string][]*herdrWatch{}}
+		appearances: loadAppearances(home), watches: map[string][]*herdrWatch{}}
 }
 
 // Start looks at every pane from now until Close.
@@ -300,10 +333,19 @@ func (self *Herdr) acknowledge(ids []string) *SessionResult {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	kept := self.events[:0]
+	isAppearanceChanged := false
 	for _, event := range self.events {
 		for _, id := range ids {
-			if event.HerdrEventID == id {
-				event.isAcknowledged = true
+			if event.HerdrEventID != id {
+				continue
+			}
+			event.isAcknowledged = true
+			if event.HerdrEventKind != HerdrEventKindAsking || event.HerdrSession.Question == nil {
+				continue
+			}
+			if appearance := self.appearances[event.HerdrSession.PaneID]; appearance != nil &&
+				appearanceFingerprint(appearance) == event.HerdrSession.Question.QuestionFingerprint && !appearance.IsTold {
+				appearance.IsTold, isAppearanceChanged = true, true
 			}
 		}
 		if !event.isAcknowledged {
@@ -311,6 +353,9 @@ func (self *Herdr) acknowledge(ids []string) *SessionResult {
 		}
 	}
 	self.events = kept
+	if isAppearanceChanged {
+		self.saveAppearancesLocked()
+	}
 	return &SessionResult{OK: true}
 }
 
@@ -364,7 +409,10 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 		}
 		delete(self.watches, paneId)
 		delete(self.sessions, paneId)
-		delete(self.appearances, paneId)
+		if self.appearances[paneId] != nil {
+			delete(self.appearances, paneId)
+			self.saveAppearancesLocked()
+		}
 	}
 	notify := self.notify
 	for _, session := range observed {
@@ -395,6 +443,7 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 			appearance.missCount++
 			if appearance.missCount >= 2 {
 				delete(self.appearances, session.PaneID)
+				self.saveAppearancesLocked()
 			}
 		}
 	} else {
@@ -402,9 +451,10 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 		// handed out names this appearance of it.
 		question := *session.Question
 		appearance := self.appearances[session.PaneID]
-		if appearance == nil || appearance.questionFingerprint != question.QuestionFingerprint {
-			appearance = &herdrAppearance{questionFingerprint: question.QuestionFingerprint, appearanceID: security.NewULID()}
+		if appearance == nil || appearance.QuestionFingerprint != question.QuestionFingerprint {
+			appearance = &herdrAppearance{QuestionFingerprint: question.QuestionFingerprint, AppearanceID: security.NewULID()}
 			self.appearances[session.PaneID] = appearance
+			self.saveAppearancesLocked()
 		}
 		appearance.missCount = 0
 		question.QuestionFingerprint = appearanceFingerprint(appearance)
@@ -426,7 +476,9 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 			answered.Question = before.Question
 			self.tellLocked(HerdrEventKindAnswered, &answered, nil, told)
 		}
-		if nowFingerprint != "" {
+		// One the server heard before this program restarted is not told
+		// again.
+		if appearance := self.appearances[session.PaneID]; nowFingerprint != "" && (before != nil || appearance == nil || !appearance.IsTold) {
 			self.tellLocked(HerdrEventKindAsking, session, nil, told)
 		}
 	}
@@ -453,7 +505,7 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 
 // appearanceFingerprint is the fingerprint of one appearance of a question.
 func appearanceFingerprint(appearance *herdrAppearance) string {
-	hash := sha256.Sum256([]byte(appearance.questionFingerprint + "\n" + appearance.appearanceID))
+	hash := sha256.Sum256([]byte(appearance.QuestionFingerprint + "\n" + appearance.AppearanceID))
 	return hex.EncodeToString(hash[:])[:16]
 }
 

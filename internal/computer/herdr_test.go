@@ -436,6 +436,28 @@ func TestAnUnacknowledgedQuestionIsSaidAgainOnReconnect(t *testing.T) {
 	}
 }
 
+func TestAQuestionToldBeforeARestartIsNotToldAgain(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
+	before := NewHerdr(home)
+	var told []*HerdrEvent
+	stop := before.listen(func(event *HerdrEvent) { told = append(told, event) })
+	first := listForTest(t, before)[0].Question.QuestionFingerprint
+	stop()
+	before.acknowledge([]string{told[0].HerdrEventID})
+
+	after := NewHerdr(home)
+	var toldAfter []string
+	defer after.listen(func(event *HerdrEvent) { toldAfter = append(toldAfter, event.HerdrEventKind) })()
+	if again := listForTest(t, after)[0].Question.QuestionFingerprint; again != first {
+		t.Errorf("the fingerprint changed across a restart")
+	}
+	if len(toldAfter) != 0 {
+		t.Errorf("told again after a restart: %v", toldAfter)
+	}
+}
+
 func TestAScreenThatCouldNotBeReadKeepsItsQuestion(t *testing.T) {
 	home := t.TempDir()
 	fake := startFakeHerdr(t, home)

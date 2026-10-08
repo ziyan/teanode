@@ -335,9 +335,9 @@ disabled or confirm lists, and a person can add either to their own.
 - **A question is recognized from the layouts the coding agents draw now.** A
   form drawn differently is not recognized, and the session shows idle or
   unknown with its screen still readable.
-- **A herdr watch does not survive a restart** of the program on the computer,
-  and a question still waiting then is told again, under a new fingerprint: the
-  card from before says it was answered.
+- **A herdr watch does not survive a restart** of the program on the computer.
+  A question still waiting does: it keeps its fingerprint
+  (`~/.local/state/teanode/herdr-appearances.json`) and is not told again.
 - A server on the computer is as available as the computer is: gone when the
   person stops the program, back when they start it. With several computers
   attached it runs on the first by name; there is no way yet to say which.
