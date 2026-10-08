@@ -81,11 +81,11 @@ func TestAListOfSkillsNamesTheirToolsAndOneSkillDescribesThem(t *testing.T) {
 
 	every := call(`{"action":"list"}`)
 	t.Logf("a list of 12 skills: %d characters", len(every))
-	if len(every) > 4000 {
+	if len(every) > 5000 {
 		t.Errorf("a list of 12 skills is %d characters", len(every))
 	}
-	if !strings.Contains(every, `"garden12_tool5"`) || strings.Contains(every, "Waters bed") {
-		t.Fatalf("a list names every tool and describes none: %s", every)
+	if !strings.Contains(every, `"name":"garden12_tool5","needsComputer":false}`) || strings.Contains(every, "Waters bed") {
+		t.Fatalf("a list names every tool, says whether it needs a computer, and describes none: %s", every)
 	}
 	if !strings.Contains(every, "list with name gives one skill's tools and what each does") {
 		t.Fatalf("and says how to read one skill's tools: %s", every)
@@ -94,6 +94,17 @@ func TestAListOfSkillsNamesTheirToolsAndOneSkillDescribesThem(t *testing.T) {
 	one := call(`{"action":"list","name":"garden7"}`)
 	if !strings.Contains(one, "Waters bed 3 of garden 7") || strings.Contains(one, "garden8") {
 		t.Fatalf("list with a name describes that skill's tools alone: %s", one)
+	}
+	// One shape and one set of names in both answers.
+	for _, answer := range []string{every, one} {
+		for _, wanted := range []string{`"isEnabled":true`, `"isReadable":true`, `"publisher":"registry"`} {
+			if !strings.Contains(answer, wanted) {
+				t.Errorf("an answer without %s: %s", wanted, answer)
+			}
+		}
+		if strings.Contains(answer, `"enabled"`) || strings.Contains(answer, `"readable"`) {
+			t.Errorf("an answer names a field another way: %s", answer)
+		}
 	}
 	if _, err := skill.Run(ctx, &tools.Call{ID: "c2", Arguments: []byte(`{"action":"list","name":"orchard"}`)}); err == nil {
 		t.Fatalf("a name that is not installed is refused")
