@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.117.0] - 2026-10-08
+
+### Added
+
+- On a call the agent answers at once with a few words, says what it is doing before it looks something up, and says "mm-hmm" while you talk at length. (#355)
+
+### Fixed
+
+- The suggested replies shown as buttons are no longer read aloud at the end of a spoken answer. (#355)
+
 ## [0.116.0] - 2026-10-08
 
 ### Added
