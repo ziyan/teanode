@@ -13328,6 +13328,23 @@ button.idea-history-title {
   overflow-wrap: anywhere;
 }
 
+/* The generic "label span" is a muted caption above a field; here the
+   span is the option itself, its label in the text's color and its
+   description muted under it. */
+.herdr-question-option.tick > span {
+  display: block;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.herdr-question-option.tick > span > .muted {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
 .herdr-question-option.tick {
   flex-direction: row;
   align-items: flex-start;
