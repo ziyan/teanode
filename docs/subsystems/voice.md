@@ -138,12 +138,13 @@ fewer, that it is looking something up ("Let me check.", "Looking that up."),
 which the drawer speaks before the look begins. It says nothing between later
 looks, or two words at most, and never restates its plan: asked for a few
 words before every tool call, a small model restated the whole plan in every
-round of a long turn. While the person talks at length, the drawer itself makes the small
-sounds a listener makes: "mm-hmm" and "uh-huh", spoken once at the start of the
-call in the agent's voice, played quietly at a pause after four seconds of
-talking and at most every six seconds, never over an answer or with answers
-muted. A sound the microphone hears back is taken out of the transcript. The
-line of suggested replies the dashboard draws as buttons is never read out.
+round of a long turn. While the person talks at length, the drawer itself
+makes the small sounds a listener makes: "mm-hmm" and "uh-huh", spoken once at
+the start of the call in the agent's voice, played quietly at a pause after
+four seconds of talking and at most every six seconds, never over an answer or
+with answers muted. A sound the microphone hears back is taken out of the
+transcript. The line of suggested replies the dashboard draws as buttons is
+never read out.
 
 **A quick model, and a larger one for hard questions.** Where the operator
 set `agent.voice.askModel`, a spoken turn is answered by that model, which

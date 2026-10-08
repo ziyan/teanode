@@ -26,6 +26,8 @@ func catalog() *searchRun {
 	run := &searchRun{loaded: map[string]bool{}}
 	run.offered = append(run.offered, &tools.Tool{Name: "mail_search", Core: true, Description: "Search the person's mail in their mailboxes"})
 	run.offered = append(run.offered, &tools.Tool{Name: "folder_list", Description: "The folders of a mailbox"})
+	run.offered = append(run.offered, &tools.Tool{Name: "tool_search", Core: true, Description: "Search for more tools by what they do"})
+	run.offered = append(run.offered, &tools.Tool{Name: "datetime", Core: true, Description: "The date and the time in a time zone"})
 	for index := 0; index < tools.DeferralThreshold; index++ {
 		run.offered = append(run.offered, &tools.Tool{Name: fmt.Sprintf("other_%d", index), Description: "Something unrelated"})
 	}
@@ -56,5 +58,19 @@ func TestASearchNamesTheToolsTheModelHasAlready(t *testing.T) {
 	}
 	if !strings.Contains(content, `"alreadyAvailable":["mail_search"]`) {
 		t.Fatalf("the tool held is not named: %s", content)
+	}
+}
+
+// A tool held is named back only when the query names it: a word like "a"
+// or "the" is in every description, and tool_search is never the answer.
+func TestASearchDoesNotNameToolsItDidNotAskFor(t *testing.T) {
+	run := catalog()
+	content := search(t, run, "send a message to the team on a chat app")
+	if strings.Contains(content, "already") {
+		t.Errorf("a search for nothing held named tools held: %s", content)
+	}
+	content = search(t, run, "search tool for the mail")
+	if strings.Contains(content, "tool_search") || !strings.Contains(content, "mail_search") {
+		t.Errorf("named tool_search, or not the tool held: %s", content)
 	}
 }

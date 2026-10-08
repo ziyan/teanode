@@ -649,3 +649,32 @@ func TestTwoMessagesOfARoundAreTwoParagraphs(test *testing.T) {
 		test.Errorf("it said %q", answer.Message.Content)
 	}
 }
+
+// A first message that ended with a line break gets one more, not two.
+func TestASecondMessageAfterALineBreakIsOneBlankLineDown(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range []string{
+			`{"type":"response.output_item.added","item":{"type":"message","phase":"commentary"}}`,
+			`{"type":"response.output_text.delta","delta":"Checking.\n"}`,
+			`{"type":"response.output_item.added","item":{"type":"message","phase":"final_answer"}}`,
+			`{"type":"response.output_text.delta","delta":"Done."}`,
+			`{"type":"response.completed","response":{"id":"resp-3"}}`,
+		} {
+			_, _ = io.WriteString(writer, "data: "+event+"\n\n")
+		}
+	})
+	defer server.Close()
+
+	answer, err := made.Chat(context.Background(), &ChatRequest{
+		Model: "gpt-5.5", Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}},
+	})
+	if err != nil {
+		test.Fatalf("Chat: %s", err)
+	}
+	if answer.Message.Content != "Checking.\n\nDone." {
+		test.Errorf("it said %q", answer.Message.Content)
+	}
+}

@@ -284,7 +284,15 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 				delta := event.Delta
 				if isNewMessage {
 					isNewMessage = false
-					delta = "\n\n" + delta
+					// A blank line between them, counting the line breaks
+					// the first already ended with.
+					switch saidSoFar := said.String(); {
+					case strings.HasSuffix(saidSoFar, "\n\n"):
+					case strings.HasSuffix(saidSoFar, "\n"):
+						delta = "\n" + delta
+					default:
+						delta = "\n\n" + delta
+					}
 				}
 				said.WriteString(delta)
 				events <- StreamEvent{Kind: StreamText, Text: delta}

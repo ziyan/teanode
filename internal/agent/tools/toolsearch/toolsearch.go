@@ -35,6 +35,33 @@ func init() {
 // a search names, besides what it loads.
 const alreadyAvailableLimit = 3
 
+// isNamedBy says whether a query names a tool the model holds: a word of
+// it, of three letters or more, is the tool's name or a word of the name.
+// Search matches a word anywhere in a description, so "a" or "the" would
+// match every tool held. tool_search itself is never named: told to call
+// it, the model would only search again.
+func isNamedBy(tool *tools.Tool, query string) bool {
+	if tool.Name == "tool_search" {
+		return false
+	}
+	name := strings.ToLower(tool.Name)
+	nameWords := append(strings.FieldsFunc(name, func(character rune) bool {
+		return character == '_' || character == '-' || character == '.'
+	}), name)
+	for _, word := range strings.Fields(strings.ToLower(query)) {
+		word = strings.Trim(word, ".,;:!?\"'()")
+		if len(word) < 3 {
+			continue
+		}
+		for _, nameWord := range nameWords {
+			if word == nameWord {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 type toolSearchArguments struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit"`
@@ -56,8 +83,10 @@ func runToolSearch(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	// The tools the model has already that match: a model that searched
 	// for a tool it holds searched again and again, each search a round.
 	alreadyAvailableNames := []string{}
-	for _, tool := range tools.Search(sent, arguments.Query, alreadyAvailableLimit) {
-		alreadyAvailableNames = append(alreadyAvailableNames, tool.Name)
+	for _, tool := range tools.Search(sent, arguments.Query, len(sent)) {
+		if len(alreadyAvailableNames) < alreadyAvailableLimit && isNamedBy(tool, arguments.Query) {
+			alreadyAvailableNames = append(alreadyAvailableNames, tool.Name)
+		}
 	}
 	found := tools.Search(deferred, arguments.Query, arguments.Limit)
 	loaded := make([]map[string]any, 0, len(found))
