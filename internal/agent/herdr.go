@@ -244,13 +244,14 @@ func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, p
 	return &HerdrScreen{ComputerName: attached.name, HerdrScreenResult: result}, nil
 }
 
-// SendHerdrSession types text into a session, followed by enter.
-func (self *Agent) SendHerdrSession(ctx context.Context, agentId, computerName, paneId, text string, shouldQueue bool) (*HerdrSession, error) {
+// SendHerdrSession types text into a session, followed by enter; a session
+// at work takes it as a message in its turn.
+func (self *Agent) SendHerdrSession(ctx context.Context, agentId, computerName, paneId, text string) (*HerdrSession, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrSendResult](ctx, attached, "herdr_send", &computer.HerdrArguments{PaneID: paneId, Text: text, ShouldQueue: shouldQueue}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrSendResult](ctx, attached, "herdr_send", &computer.HerdrArguments{PaneID: paneId, Text: text}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}

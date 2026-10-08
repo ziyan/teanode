@@ -1245,7 +1245,6 @@ export const zh: Catalog = {
   'herdr.role.agent': '编程助手',
   'herdr.role.tool': '工具',
   'herdr.send': '发送',
-  'herdr.queue': '排队',
   'herdr.sendPlaceholder': '给这个会话输入指令',
   'herdr.sendDisabled': '请先回答它的问题',
   'herdr.sent': '已输入到 {pane}',

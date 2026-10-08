@@ -227,7 +227,7 @@ func TestACodexQuestionItsToolRefusedIsNotWaiting(t *testing.T) {
 	}
 }
 
-func TestSendIsRefusedWhileAskingAndWhileWorkingUnlessQueued(t *testing.T) {
+func TestSendIsRefusedWhileAskingAndReachesASessionAtWork(t *testing.T) {
 	home := t.TempDir()
 	fake := startFakeHerdr(t, home)
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-single"))
@@ -238,11 +238,9 @@ func TestSendIsRefusedWhileAskingAndWhileWorkingUnlessQueued(t *testing.T) {
 	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p1", Text: "go on"}); err == nil || !strings.Contains(err.Error(), "asking a question") {
 		t.Errorf("asking: %v", err)
 	}
-	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p2", Text: "go on"}); err == nil || !strings.Contains(err.Error(), "is working") {
+	// A session at work reads it in its turn.
+	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p2", Text: "and then this"}); err != nil {
 		t.Errorf("working: %v", err)
-	}
-	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p2", Text: "and then this", ShouldQueue: true}); err != nil {
-		t.Errorf("queued: %v", err)
 	}
 	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p3", Text: "go on"}); err != nil {
 		t.Errorf("idle: %v", err)

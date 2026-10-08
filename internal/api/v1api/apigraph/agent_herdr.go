@@ -40,8 +40,8 @@ type AgentHerdrQuery interface {
 // AgentHerdrMutation acts in them.
 type AgentHerdrMutation interface {
 	// Type text into a session and press enter, in view of whoever sits at
-	// it. Refused while it asks a question, and while it works unless
-	// shouldQueue. Needs agent:use.
+	// it; a session at work takes it as a message in its turn. Refused while
+	// it asks a question. Needs agent:use.
 	SendAgentHerdrSession(ctx context.Context, arguments SendAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
 
 	// Answer the question a session waits on with the options chosen, or
@@ -84,10 +84,9 @@ type ReadAgentHerdrScreenArguments struct {
 
 // SendAgentHerdrSessionArguments are the text and where it goes.
 type SendAgentHerdrSessionArguments struct {
-	Computer    string `json:"computer" graphapi:"nullable"`
-	PaneID      string `json:"paneId"`
-	Text        string `json:"text"`
-	ShouldQueue bool   `json:"shouldQueue" graphapi:"nullable"`
+	Computer string `json:"computer" graphapi:"nullable"`
+	PaneID   string `json:"paneId"`
+	Text     string `json:"text"`
 }
 
 // WaitAgentHerdrSessionArguments name a session, and how long to wait.
@@ -294,7 +293,7 @@ func (self *graph) SendAgentHerdrSession(ctx context.Context, arguments SendAgen
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	session, err := worker.SendHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.Text, arguments.ShouldQueue)
+	session, err := worker.SendHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.Text)
 	if err != nil {
 		return nil, err
 	}

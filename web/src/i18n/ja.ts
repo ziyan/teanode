@@ -1282,7 +1282,6 @@ export const ja: Catalog = {
   'herdr.role.agent': 'コーディングエージェント',
   'herdr.role.tool': 'ツール',
   'herdr.send': '送信',
-  'herdr.queue': '後で送る',
   'herdr.sendPlaceholder': 'このセッションへの指示を入力',
   'herdr.sendDisabled': '先に質問に答えてください',
   'herdr.sent': '{pane} に入力しました',

@@ -86,8 +86,8 @@ export const HERDR_DOCUMENTS = {
   ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int) {
     ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) { herdrSession { ${SESSION_FIELDS} } screenText }
   }`,
-  SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String!, $shouldQueue: Boolean) {
-    SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, shouldQueue: $shouldQueue) { ${SESSION_FIELDS} }
+  SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String!) {
+    SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text) { ${SESSION_FIELDS} }
   }`,
   WaitAgentHerdrSession: `query ($computer: String, $paneId: String!, $waitSeconds: Int) {
     WaitAgentHerdrSession(computer: $computer, paneId: $paneId, waitSeconds: $waitSeconds) { herdrSession { ${SESSION_FIELDS} } isTimedOut }
@@ -351,7 +351,6 @@ function HerdrSessionDialog({
         computer: current.computer,
         paneId: current.paneId,
         text,
-        shouldQueue: current.herdrSessionState === 'working',
       })
       setCurrent(response.SendAgentHerdrSession)
       setText('')
@@ -453,7 +452,7 @@ function HerdrSessionDialog({
               onChange={(event) => setText(event.target.value)}
             />
             <button type="submit" disabled={!isSendable || isSending || !text.trim()}>
-              {current.herdrSessionState === 'working' ? t('herdr.queue') : t('herdr.send')}
+              {t('herdr.send')}
             </button>
           </form>
         </div>
@@ -639,6 +638,7 @@ export function HerdrSessionsCard() {
 // A computer that is not attached is looked for QUESTION_ABSENT_LOOKS
 // times, then left: an old line in a long transcript asks nothing more.
 const QUESTION_EVERY = 5_000
+const QUESTION_RECHECK = 1_500
 const QUESTION_ABSENT_LOOKS = 6
 
 export function HerdrQuestionCard({
@@ -659,6 +659,7 @@ export function HerdrQuestionCard({
   useEffect(() => {
     if (questionState !== 'waiting') return
     let isStopped = false
+    let recheck: number | undefined
     // The first look is made however the page stands, so a drawer drawn
     // in a tab out of sight has its options when it is looked at; the
     // ones after wait for the page to be seen.
@@ -681,7 +682,14 @@ export function HerdrQuestionCard({
             return
           }
           missCount.current += 1
-          if (missCount.current >= 2) setQuestionState('answered')
+          if (missCount.current >= 2) {
+            setQuestionState('answered')
+            return
+          }
+          // A second look soon after the first miss, rather than at the
+          // next round: a question already answered says so in a moment
+          // when the page opens, not after a round of waiting.
+          recheck = window.setTimeout(() => look(true), QUESTION_RECHECK)
         })
         .catch(() => undefined)
     }
@@ -694,6 +702,7 @@ export function HerdrQuestionCard({
     return () => {
       isStopped = true
       window.clearInterval(every)
+      window.clearTimeout(recheck)
       document.removeEventListener('visibilitychange', seen)
     }
   }, [computer, paneId, questionFingerprint, questionState, lookCount])
@@ -705,7 +714,11 @@ export function HerdrQuestionCard({
         session={found.session}
         question={found.question}
         isQuestionShown={false}
-        onAnswered={() => setLookCount((count) => count + 1)}
+        // An answer this card gave, taken by the session, is known at once.
+        onAnswered={(after) => {
+          if (after && after.question?.questionFingerprint !== questionFingerprint) setQuestionState('answered')
+          else setLookCount((count) => count + 1)
+        }}
       />
     </div>
   )

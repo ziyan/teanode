@@ -126,7 +126,6 @@ type HerdrArguments struct {
 	TurnCount           int    `json:"turnCount,omitempty"`
 	LineCount           int    `json:"lineCount,omitempty"`
 	Text                string `json:"text,omitempty"`
-	ShouldQueue         bool   `json:"shouldQueue,omitempty"`
 	WaitSeconds         int    `json:"waitSeconds,omitempty"`
 	QuestionFingerprint string `json:"questionFingerprint,omitempty"`
 	OptionNumbers       []int  `json:"optionNumbers,omitempty"`
@@ -837,11 +836,12 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if err != nil {
 		return nil, err
 	}
+	// A session that works takes what is typed as a message in its turn:
+	// Claude Code and Codex both read it while they work. One that asks
+	// would take it as the answer.
 	switch {
 	case session.HerdrSessionState == HerdrSessionStateAsking:
 		return nil, fmt.Errorf("%s is asking a question; answer it first", session.named())
-	case session.HerdrSessionState == HerdrSessionStateWorking && !arguments.ShouldQueue:
-		return nil, fmt.Errorf("%s is working; wait for it, or queue the text to be read when it is done", session.named())
 	case session.HerdrAgentStatus == "blocked":
 		return nil, fmt.Errorf("%s shows something waiting for an answer that was not recognized; look at its screen", session.named())
 	}

@@ -52,9 +52,9 @@ func newComputerHerdrCommand() *cli.Command {
 			},
 			{
 				Name:      "send",
-				Usage:     "type text into a session and press enter",
+				Usage:     "type text into a session and press enter; one at work reads it in its turn",
 				ArgsUsage: "<pane> <text>",
-				Flags:     []cli.Flag{computerFlag, &cli.BoolFlag{Name: "queue", Usage: "type it even while the session works, for it to read when its turn ends"}, JSONFlag()},
+				Flags:     []cli.Flag{computerFlag, JSONFlag()},
 				Action:    runComputerHerdrSend,
 			},
 			{
@@ -263,7 +263,7 @@ func runComputerHerdrSend(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	session, err := client.SendAgentHerdrSession(ctx, connection, command.String("computer"), paneId, text, command.Bool("queue"))
+	session, err := client.SendAgentHerdrSession(ctx, connection, command.String("computer"), paneId, text)
 	if err != nil {
 		return describeError(command, err)
 	}

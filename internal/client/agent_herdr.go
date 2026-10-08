@@ -113,8 +113,8 @@ const (
 			herdrSession { ` + HerdrSessionFields + ` } screenText
 		}
 	}`
-	DocumentSendAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $text: String!, $shouldQueue: Boolean) {
-		SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, shouldQueue: $shouldQueue) { ` + HerdrSessionFields + ` }
+	DocumentSendAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $text: String!) {
+		SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text) { ` + HerdrSessionFields + ` }
 	}`
 	DocumentWaitAgentHerdrSession = `query ($computer: String, $paneId: String!, $waitSeconds: Int) {
 		WaitAgentHerdrSession(computer: $computer, paneId: $paneId, waitSeconds: $waitSeconds) {
@@ -186,12 +186,13 @@ func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, pan
 	return result.ReadAgentHerdrScreen, nil
 }
 
-// SendAgentHerdrSession types text into a session and presses enter.
-func SendAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId, text string, shouldQueue bool) (*AgentHerdrSession, error) {
+// SendAgentHerdrSession types text into a session and presses enter; a
+// session at work takes it as a message in its turn.
+func SendAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId, text string) (*AgentHerdrSession, error) {
 	var result struct {
 		SendAgentHerdrSession *AgentHerdrSession `json:"SendAgentHerdrSession"`
 	}
-	variables := herdrVariables(computer, map[string]any{"paneId": paneId, "text": text, "shouldQueue": shouldQueue})
+	variables := herdrVariables(computer, map[string]any{"paneId": paneId, "text": text})
 	if err := connection.Execute(ctx, DocumentSendAgentHerdrSession, variables, &result); err != nil {
 		return nil, err
 	}

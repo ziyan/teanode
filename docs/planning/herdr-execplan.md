@@ -192,6 +192,10 @@ To see it working, on a computer running `teanode computer` with herdr running a
   Rationale: in a build led by the agent, a deploy by another session restarted the program while Codex reviewed, and the watch on it was lost: the review finished and nobody was woken. Deploys are frequent, so a watch has to outlive them.
   Date/Author: 2026-10-08, agent.
 
+- Decision: `send` reaches a session at work, as a message in its turn, and the `shouldQueue` option is gone from every surface. Only a session that asks refuses it.
+  Rationale: the person asked for in-turn messages: Claude Code and Codex both read what is typed while they work. A send from ChatGPT to a session mid-turn had failed with "is working", and the caller had no way to know it should have asked to queue.
+  Date/Author: 2026-10-08, the person.
+
 ## Outcomes & Retrospective
 
 All milestones are done. Checked end to end against the deployed server, in a scratch herdr workspace with a Claude Code session:

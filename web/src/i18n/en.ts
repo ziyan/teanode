@@ -1288,7 +1288,6 @@ export const en = {
   'herdr.role.agent': 'Agent',
   'herdr.role.tool': 'Tool',
   'herdr.send': 'Send',
-  'herdr.queue': 'Queue',
   'herdr.sendPlaceholder': 'Type an instruction for this session',
   'herdr.sendDisabled': 'Answer its question first',
   'herdr.sent': 'Typed into {pane}',
