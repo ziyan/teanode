@@ -618,3 +618,34 @@ func TestTheRoundsOverlayStaysAfterTheConversation(test *testing.T) {
 		test.Error("a round with tools should be able to call several at once")
 	}
 }
+
+// Two messages in one round, a word of what the model is doing and then
+// its answer, read as two paragraphs, not as one sentence running into the
+// next.
+func TestTwoMessagesOfARoundAreTwoParagraphs(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range []string{
+			`{"type":"response.output_item.added","item":{"type":"message","phase":"commentary"}}`,
+			`{"type":"response.output_text.delta","delta":"Checking."}`,
+			`{"type":"response.output_item.added","item":{"type":"message","phase":"final_answer"}}`,
+			`{"type":"response.output_text.delta","delta":"Done."}`,
+			`{"type":"response.completed","response":{"id":"resp-2"}}`,
+		} {
+			_, _ = io.WriteString(writer, "data: "+event+"\n\n")
+		}
+	})
+	defer server.Close()
+
+	answer, err := made.Chat(context.Background(), &ChatRequest{
+		Model: "gpt-5.5", Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}},
+	})
+	if err != nil {
+		test.Fatalf("Chat: %s", err)
+	}
+	if answer.Message.Content != "Checking.\n\nDone." {
+		test.Errorf("it said %q", answer.Message.Content)
+	}
+}
