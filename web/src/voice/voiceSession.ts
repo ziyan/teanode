@@ -132,18 +132,22 @@ export class VoiceSession {
     // The answers play in the same context the microphone is read in, so
     // that what the browser cancels as echo is what it plays.
     let hasToldAnswerFailure = false
-    this.answers = new AnswerVoice(
-      new AnswerPlayer(
-        context,
-        {
-          request: (answerSegmentId, answerText) =>
-            this.sendJSON({ voiceEvent: 'speakAnswer', answerSegmentId, answerText }),
-          cancel: (answerSegmentIds) => this.sendJSON({ voiceEvent: 'cancelAnswer', answerSegmentIds }),
-        },
-        (isSpeaking) => this.callbacks.onSpeaking(isSpeaking),
-      ),
-      { confirmationNeeded: this.messages.confirmationNeeded },
+    const player = new AnswerPlayer(
+      context,
+      {
+        request: (answerSegmentId, answerText) =>
+          this.sendJSON({ voiceEvent: 'speakAnswer', answerSegmentId, answerText }),
+        cancel: (answerSegmentIds) => this.sendJSON({ voiceEvent: 'cancelAnswer', answerSegmentIds }),
+      },
+      (isSpeaking) => {
+        this.answers?.answering(isSpeaking)
+        this.callbacks.onSpeaking(isSpeaking)
+      },
     )
+    this.answers = new AnswerVoice(player, { confirmationNeeded: this.messages.confirmationNeeded }, () => ({
+      microphoneRms: this.microphoneRms(),
+      answerRms: player.rootMeanSquare(),
+    }))
     this.answers.setMuted(this.isMuted)
     const answers = this.answers
     try {
@@ -198,9 +202,13 @@ export class VoiceSession {
         }),
       )
     }
+    // Without echo cancellation the answer would be heard as the person:
+    // nothing is sent while it plays, and a tap cuts it short instead.
+    const isHalfDuplex = granted.echoCancellation === false
     capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
       // Before the server is ready there is nobody to hear it.
       if (!this.isReady || socket.readyState !== WebSocket.OPEN) return
+      if (isHalfDuplex && answers.isSpeaking()) return
       if (socket.bufferedAmount > MAXIMUM_BUFFERED_BYTES) return
       socket.send(event.data)
     }
@@ -232,6 +240,10 @@ export class VoiceSession {
           this.isReady = true
           this.callbacks.onListening()
           return
+        case 'problem':
+          // Something the provider minded, which the call goes on after.
+          if (event.errorMessage) this.callbacks.onProblem(event.errorMessage, false)
+          return
         case 'refused':
         case 'error':
           this.end(event.errorMessage ?? this.messages.connectionLost)
@@ -239,7 +251,7 @@ export class VoiceSession {
       }
       if (event.voiceEvent === 'speechStarted') {
         this.callbacks.onHearing(true)
-        answers.speechStarted()
+        answers.speechStarted(event.utteranceId)
       }
       if (event.voiceEvent === 'speechStopped') {
         this.callbacks.onHearing(false)
@@ -248,11 +260,11 @@ export class VoiceSession {
       const changed = this.tracker.accept(event)
       if (changed.captionText !== undefined) this.callbacks.onCaption(changed.captionText)
       if (changed.transcriptText) {
-        const verdict = answers.transcript(changed.transcriptText)
+        const verdict = answers.transcript(changed.transcriptText, event.utteranceId)
         // The answer heard back through the microphone is not the person.
         if (!verdict.isEcho) this.callbacks.onTranscript(changed.transcriptText, verdict.interruptedAnswer)
       } else if (event.voiceEvent === 'transcriptFinal' || changed.isNotHeard) {
-        answers.notHeard()
+        answers.notHeard(event.utteranceId)
       }
       if (changed.isNotHeard && !answers.isSpeaking()) this.callbacks.onProblem(this.messages.notHeard, false)
     }
@@ -277,18 +289,28 @@ export class VoiceSession {
     this.answers?.setMuted(isMuted)
   }
 
+  // cutAnswer ends the answer being spoken at the person's tap.
+  cutAnswer() {
+    this.answers?.cutByTap()
+  }
+
   // level is how loud the microphone or the answer is now, from 0 to 1,
   // for drawing.
   level(): number {
     const answerLevel = this.answers?.level() ?? 0
     if (answerLevel > 0) return answerLevel
+    // Speech at a normal distance sits around a tenth in root mean square;
+    // scaled so that it fills most of the range.
+    return Math.min(1, this.microphoneRms() * 6)
+  }
+
+  // microphoneRms is how loud the microphone is now, as captured.
+  private microphoneRms(): number {
     if (!this.analyser || !this.samples) return 0
     this.analyser.getFloatTimeDomainData(this.samples)
     let sum = 0
     for (const sample of this.samples) sum += sample * sample
-    // Speech at a normal distance sits around a tenth in root mean square;
-    // scaled so that it fills most of the range.
-    return Math.min(1, Math.sqrt(sum / this.samples.length) * 6)
+    return Math.sqrt(sum / this.samples.length)
   }
 
   // stop ends listening at the person's word.

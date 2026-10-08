@@ -148,9 +148,15 @@ export function isLikelyEcho(heardText: string, spokenText: string): boolean {
   const heard = wordsOf(heardText)
   const spoken = wordsOf(spokenText)
   if (heard.length === 0 || spoken.length === 0) return false
-  // Run together, which also covers languages written without spaces.
-  if (spoken.join('').includes(heard.join(''))) return true
+  // A language written without spaces is one long word: matched run
+  // together, once it is long enough not to turn up anywhere by chance.
+  if (heard.length === 1 && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(heard[0])) {
+    return heard[0].length >= 4 && spoken.join('').includes(heard[0])
+  }
+  // A word or two ("no", "wait") is the person as often as the echo; how
+  // loud it was decides those (EchoGate), not its words.
   if (heard.length < 3) return false
+  if (` ${spoken.join(' ')} `.includes(` ${heard.join(' ')} `)) return true
   const spokenPairs = new Set(spoken.slice(1).map((word, index) => `${spoken[index]} ${word}`))
   const heardPairs = heard.slice(1).map((word, index) => `${heard[index]} ${word}`)
   const matchedCount = heardPairs.filter((pair) => spokenPairs.has(pair)).length
@@ -362,11 +368,16 @@ export class AnswerPlayer {
 
   // level is how loud the answer is now, from 0 to 1, for drawing.
   level(): number {
+    return Math.min(1, this.rootMeanSquare() * 6)
+  }
+
+  // rootMeanSquare is how loud the answer is now, as it is played.
+  rootMeanSquare(): number {
     if (!this.isActive()) return 0
     this.analyser.getFloatTimeDomainData(this.samples)
     let sum = 0
     for (const sample of this.samples) sum += sample * sample
-    return Math.min(1, Math.sqrt(sum / this.samples.length) * 6)
+    return Math.sqrt(sum / this.samples.length)
   }
 
   close() {
@@ -486,15 +497,75 @@ export class AnswerPlayer {
   }
 }
 
+// How long a followed turn may say nothing before it is forgotten: one
+// that ended while the feed was down never says it is done.
+const QUIET_RUN_FORGOTTEN_MS = 10 * 60 * 1000
+// How many turns' latest events are remembered, for adopting one.
+const SEEN_RUNS_REMEMBERED = 50
+
 type FollowedRun = {
   segmenter: AnswerSegmenter
   lastSequence: number
+  lastEventAt: number
   // The text of the assistant message being written, from its deltas.
   messageText: string
   // After the person cut in, the rest of the message being written then
   // is not spoken: it answers what they said before.
   isSkippingMessage: boolean
 }
+
+// Below this the microphone or the answer is taken for silence.
+const SILENT_RMS = 0.006
+// How much louder than the answer's own echo the microphone must be for
+// speech heard while the answer plays to be the person.
+const DOUBLE_TALK_FACTOR = 2.5
+// How long speech heard over the answer is listened to before deciding
+// whether it is the person.
+const GATE_WINDOW_MS = 400
+// How often the levels are compared while the answer plays.
+const GATE_SAMPLE_MS = 40
+// How long a cut-in made with a tap waits for the words that follow it.
+const TAPPED_CUT_LASTS_MS = 30000
+
+// EchoGate tells the person talking over an answer from the answer heard
+// back through the microphone, by how loud the microphone is. While the
+// answer plays and nobody is said to be talking, it learns how much of the
+// answer reaches the microphone (what echo cancellation leaves); speech
+// then counts as the person only when the microphone is clearly louder
+// than that. Phones, where the speaker sits beside the microphone and the
+// browser's echo cancellation leaves the most, are why.
+export class EchoGate {
+  // The microphone's level over the answer's, for the echo alone. Until
+  // it has been heard, as loud as the answer itself: speech must be well
+  // above what is playing to count.
+  private echoRatio = 1
+  private learnedCount = 0
+
+  // learn takes the levels of a moment when only the answer is sounding.
+  learn(microphoneRms: number, answerRms: number) {
+    if (answerRms < SILENT_RMS) return
+    const ratio = Math.min(4, microphoneRms / answerRms)
+    if (this.learnedCount < 5) {
+      this.echoRatio = this.learnedCount === 0 ? ratio : Math.max(this.echoRatio, ratio)
+    } else {
+      // Up quickly, down slowly: underestimating the echo is the costly
+      // mistake, since it lets the answer interrupt itself.
+      this.echoRatio =
+        ratio > this.echoRatio ? 0.7 * this.echoRatio + 0.3 * ratio : 0.97 * this.echoRatio + 0.03 * ratio
+    }
+    this.learnedCount += 1
+  }
+
+  // isPersonLouder says whether the microphone now is more than the echo
+  // of the answer can account for.
+  isPersonLouder(microphoneRms: number, answerRms: number): boolean {
+    const echoRms = this.echoRatio * answerRms
+    return microphoneRms > Math.max(SILENT_RMS * 2, DOUBLE_TALK_FACTOR * echoRms)
+  }
+}
+
+// AnswerLevels are how loud the microphone and the answer are now.
+export type AnswerLevels = () => { microphoneRms: number; answerRms: number }
 
 // TranscriptVerdict is what to do with what the person was heard saying.
 export type TranscriptVerdict = { isEcho: boolean; interruptedAnswer?: InterruptedAnswer }
@@ -503,20 +574,32 @@ export type TranscriptVerdict = { isEcho: boolean; interruptedAnswer?: Interrupt
 // decides what speech heard while one plays means.
 export class AnswerVoice {
   private runs = new Map<string, FollowedRun>()
+  private seenSequences = new Map<string, number>()
   private isMuted = false
   private isCandidate = false
   private pauseTimer?: number
   private resumeTimer?: number
+  private gate = new EchoGate()
+  private gateTimer?: number
+  // Whether the provider says somebody is talking now.
+  private isHearing = false
+  // What each utterance heard over the answer was judged to be.
+  private utteranceVerdicts = new Map<string, 'echo' | 'person'>()
+  private judging?: { utteranceId: string; frameCount: number; louderCount: number; startedAt: number }
+  // A cut-in made with a tap, for the words said after it.
+  private tappedCut?: { interruptedAnswer: InterruptedAnswer; at: number }
 
   constructor(
     private player: AnswerPlayer,
     private messages: { confirmationNeeded: string },
+    private levels: AnswerLevels = () => ({ microphoneRms: 0, answerRms: 0 }),
   ) {}
 
   // follow reads one event of the conversation. A turn is spoken from its
   // start when voice mode saw it start, or from where it is when the
   // person spoke into it (adopt).
   follow(event: AnswerRunEvent) {
+    this.noteSeen(event)
     if (event.kind === 'asked' && !this.runs.has(event.runId)) {
       this.runs.set(event.runId, this.newRun(event.sequence))
       return
@@ -526,6 +609,7 @@ export class AnswerVoice {
     // A replay after a reconnection says nothing twice.
     if (event.sequence <= run.lastSequence) return
     run.lastSequence = event.sequence
+    run.lastEventAt = performance.now()
     if (this.isMuted && event.kind !== 'done') return
     switch (event.kind) {
       case 'text':
@@ -575,7 +659,24 @@ export class AnswerVoice {
   // the next thing they say.
   adopt(runIds: string[]) {
     for (const runId of runIds) {
-      if (!this.runs.has(runId)) this.runs.set(runId, this.newRun(-1))
+      // From the latest event seen of it, so that a replay of what came
+      // before is not read out.
+      if (!this.runs.has(runId)) this.runs.set(runId, this.newRun(this.seenSequences.get(runId) ?? -1))
+    }
+  }
+
+  // noteSeen remembers each turn's latest event, and forgets the followed
+  // turns that have gone quiet.
+  private noteSeen(event: AnswerRunEvent) {
+    this.seenSequences.delete(event.runId)
+    this.seenSequences.set(event.runId, event.sequence)
+    if (this.seenSequences.size > SEEN_RUNS_REMEMBERED) {
+      const oldest = this.seenSequences.keys().next().value
+      if (oldest !== undefined) this.seenSequences.delete(oldest)
+    }
+    const now = performance.now()
+    for (const [runId, run] of this.runs) {
+      if (now - run.lastEventAt > QUIET_RUN_FORGOTTEN_MS) this.runs.delete(runId)
     }
   }
 
@@ -600,53 +701,118 @@ export class AnswerVoice {
     return this.player.level()
   }
 
-  // speechStarted: somebody may be talking over the answer. It quietens
-  // at once, and pauses if they keep on.
-  speechStarted() {
+  // answering says the answer started or stopped playing: the levels are
+  // compared only while it plays.
+  answering(isAnswering: boolean) {
+    window.clearInterval(this.gateTimer)
+    this.gateTimer = isAnswering ? window.setInterval(() => this.sample(), GATE_SAMPLE_MS) : undefined
+  }
+
+  // speechStarted: somebody may be talking over the answer. Whether it is
+  // the person or the answer's echo is decided by how loud the microphone
+  // is over the next moments; only the person quietens and pauses it.
+  speechStarted(utteranceId = '') {
+    this.isHearing = true
     if (!this.player.isActive()) return
-    this.isCandidate = true
-    window.clearTimeout(this.resumeTimer)
-    this.player.duck(true)
-    window.clearTimeout(this.pauseTimer)
-    this.pauseTimer = window.setTimeout(() => this.player.pause(), PAUSE_AFTER_MS)
+    this.judging = { utteranceId, frameCount: 0, louderCount: 0, startedAt: performance.now() }
   }
 
   // speechStopped: what they said is being transcribed; should it never
   // come, the answer goes on by itself.
   speechStopped() {
+    this.isHearing = false
+    if (this.judging) this.decide()
     window.clearTimeout(this.pauseTimer)
     if (!this.isCandidate) return
     window.clearTimeout(this.resumeTimer)
     this.resumeTimer = window.setTimeout(() => this.goOn(), LONGEST_PAUSE_MS)
   }
 
-  // transcript decides what words heard mean: the answer's own echo, which
-  // is dropped while the answer goes on; or the person, who ends the
-  // answer, which the agent is told how much of was heard.
-  transcript(transcriptText: string): TranscriptVerdict {
+  // transcript decides what words heard mean: the answer's own echo, by
+  // how loud it was or by its words, which is dropped while the answer
+  // goes on; or the person, who ends the answer, which the agent is told
+  // how much of was heard.
+  transcript(transcriptText: string, utteranceId = ''): TranscriptVerdict {
+    const utteranceVerdict = this.utteranceVerdicts.get(utteranceId)
+    this.utteranceVerdicts.delete(utteranceId)
+    if (utteranceVerdict === 'echo') return { isEcho: true }
     if (this.player.wasRecentlyActive() && isLikelyEcho(transcriptText, this.player.recentText())) {
       this.goOn()
       return { isEcho: true }
     }
     if (!this.player.isActive()) {
       this.goOn()
-      return { isEcho: false }
+      return { isEcho: false, interruptedAnswer: this.takeTappedCut() }
     }
     const cut = this.cutIn()
-    return { isEcho: false, interruptedAnswer: cut.unheardText ? cut : undefined }
+    return { isEcho: false, interruptedAnswer: cut.unheardText ? cut : this.takeTappedCut() }
   }
 
   // notHeard: nothing came of the speech (a cough, a noise); the answer
   // goes on.
-  notHeard() {
+  notHeard(utteranceId = '') {
+    this.utteranceVerdicts.delete(utteranceId)
     if (this.isCandidate) this.goOn()
+  }
+
+  // cutByTap ends the answer at the person's tap, whatever the microphone
+  // heard; what they say next is told how much of it they heard.
+  cutByTap() {
+    if (!this.player.isActive()) return
+    const cut = this.cutIn()
+    if (cut.unheardText) this.tappedCut = { interruptedAnswer: cut, at: performance.now() }
   }
 
   close() {
     window.clearTimeout(this.pauseTimer)
     window.clearTimeout(this.resumeTimer)
+    window.clearInterval(this.gateTimer)
     this.player.close()
     this.runs.clear()
+    this.utteranceVerdicts.clear()
+  }
+
+  // sample compares the levels: learning the echo while only the answer
+  // sounds, and judging speech heard over it.
+  private sample() {
+    if (!this.player.isActive()) return
+    const { microphoneRms, answerRms } = this.levels()
+    if (!this.isHearing) {
+      this.gate.learn(microphoneRms, answerRms)
+      return
+    }
+    if (!this.judging) return
+    this.judging.frameCount += 1
+    if (this.gate.isPersonLouder(microphoneRms, answerRms)) this.judging.louderCount += 1
+    if (performance.now() - this.judging.startedAt >= GATE_WINDOW_MS) this.decide()
+  }
+
+  // decide settles what the speech heard over the answer was: the person
+  // when the microphone was louder than the echo most of the time.
+  private decide() {
+    const judging = this.judging
+    this.judging = undefined
+    if (!judging) return
+    const isPerson = judging.frameCount > 0 && judging.louderCount * 2 >= judging.frameCount
+    this.utteranceVerdicts.set(judging.utteranceId, isPerson ? 'person' : 'echo')
+    // Only the latest few are kept: a verdict is taken by its transcript.
+    if (this.utteranceVerdicts.size > 8) {
+      const oldest = this.utteranceVerdicts.keys().next().value
+      if (oldest !== undefined) this.utteranceVerdicts.delete(oldest)
+    }
+    if (!isPerson) return
+    this.isCandidate = true
+    window.clearTimeout(this.resumeTimer)
+    this.player.duck(true)
+    window.clearTimeout(this.pauseTimer)
+    this.pauseTimer = window.setTimeout(() => this.player.pause(), Math.max(0, PAUSE_AFTER_MS - GATE_WINDOW_MS))
+  }
+
+  private takeTappedCut(): InterruptedAnswer | undefined {
+    const tapped = this.tappedCut
+    this.tappedCut = undefined
+    if (!tapped || performance.now() - tapped.at > TAPPED_CUT_LASTS_MS) return undefined
+    return tapped.interruptedAnswer
   }
 
   private goOn() {
@@ -671,6 +837,12 @@ export class AnswerVoice {
   }
 
   private newRun(sequence: number): FollowedRun {
-    return { segmenter: new AnswerSegmenter(), lastSequence: sequence, messageText: '', isSkippingMessage: false }
+    return {
+      segmenter: new AnswerSegmenter(),
+      lastSequence: sequence,
+      lastEventAt: performance.now(),
+      messageText: '',
+      isSkippingMessage: false,
+    }
   }
 }

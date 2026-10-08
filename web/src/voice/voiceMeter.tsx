@@ -20,8 +20,8 @@ export function VoiceMeter({
 }) {
   const bars = useRef<(HTMLSpanElement | null)[]>([])
   const smoothed = useRef(0)
-  const state = useRef({ isHearing, isAnswering })
-  state.current = { isHearing, isAnswering }
+  const meterFlags = useRef({ isHearing, isAnswering })
+  meterFlags.current = { isHearing, isAnswering }
 
   useEffect(() => {
     const isReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -32,7 +32,7 @@ export function VoiceMeter({
       const now = level()
       // Up quickly, down gently: speech reads as a pulse, not a flicker.
       smoothed.current = now > smoothed.current ? now : smoothed.current * 0.88 + now * 0.12
-      const { isAnswering } = state.current
+      const { isAnswering } = meterFlags.current
       bars.current.forEach((bar, index) => {
         if (!bar) return
         let height: number

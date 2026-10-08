@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AnswerSegmenter,
   AnswerVoice,
+  EchoGate,
   heardSplit,
   isLikelyEcho,
   speakableText,
@@ -53,10 +54,34 @@ describe('isLikelyEcho', () => {
     expect(isLikelyEcho('a dentist appointment at nine then lunch', spoken)).toBe(true)
     expect(isLikelyEcho('Lunch with the team.', spoken)).toBe(true)
   })
+  it('leaves a word or two to the loudness, even inside a longer word', () => {
+    expect(isLikelyEcho('No', 'I know nothing about November.')).toBe(false)
+    expect(isLikelyEcho('Wait', 'Wait for the next train.')).toBe(false)
+  })
+  it('matches a language written without spaces once it is long enough', () => {
+    expect(isLikelyEcho('明日は歯医者', '明日は歯医者の予約があります。')).toBe(true)
+    expect(isLikelyEcho('明日', '明日は歯医者の予約があります。')).toBe(false)
+  })
   it('lets the person through', () => {
     expect(isLikelyEcho('Wait, move the dentist to Friday.', spoken)).toBe(false)
     expect(isLikelyEcho('Stop.', spoken)).toBe(false)
     expect(isLikelyEcho('anything', '')).toBe(false)
+  })
+})
+
+describe('EchoGate', () => {
+  it('learns how much of the answer reaches the microphone', () => {
+    const gate = new EchoGate()
+    for (let index = 0; index < 20; index++) gate.learn(0.04, 0.1)
+    // The echo again, a little louder: not the person.
+    expect(gate.isPersonLouder(0.06, 0.1)).toBe(false)
+    // Somebody close to the microphone.
+    expect(gate.isPersonLouder(0.3, 0.1)).toBe(true)
+  })
+  it('wants speech well above the answer before it has heard the echo', () => {
+    const gate = new EchoGate()
+    expect(gate.isPersonLouder(0.12, 0.1)).toBe(false)
+    expect(gate.isPersonLouder(0.3, 0.1)).toBe(true)
   })
 })
 
@@ -121,21 +146,71 @@ describe('AnswerVoice', () => {
     expect(enqueued).toEqual(['Done.', 'Which one?', 'Approve: send the reply'])
   })
 
-  it('drops the answer heard back, and goes on', () => {
-    vi.useFakeTimers()
+  it('drops the answer heard back by its words, and goes on', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
     const { player } = fakePlayer()
-    const voice = new AnswerVoice(player as unknown as AnswerPlayer, { confirmationNeeded: '' })
+    const levels = { microphoneRms: 0.3, answerRms: 0.1 }
+    const voice = new AnswerVoice(player as unknown as AnswerPlayer, { confirmationNeeded: '' }, () => levels)
     voice.follow({ kind: 'asked', runId: 'run', sequence: 1 })
     voice.follow({ kind: 'text', runId: 'run', sequence: 2, text: 'You have a dentist at nine tomorrow. ' })
-    voice.speechStarted()
-    expect(player.duck).toHaveBeenLastCalledWith(true)
+    voice.answering(true)
+    voice.speechStarted('u1')
     vi.advanceTimersByTime(700)
+    // Loud enough to be taken for the person: quietened and paused.
+    expect(player.duck).toHaveBeenLastCalledWith(true)
     expect(player.pause).toHaveBeenCalled()
     voice.speechStopped()
-    expect(voice.transcript('a dentist at nine tomorrow')).toEqual({ isEcho: true })
+    expect(voice.transcript('a dentist at nine tomorrow', 'u1')).toEqual({ isEcho: true })
     expect(player.resume).toHaveBeenCalled()
     expect(player.duck).toHaveBeenLastCalledWith(false)
     expect(player.interrupt).not.toHaveBeenCalled()
+  })
+
+  it('drops speech no louder than the echo without even pausing', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
+    const { player } = fakePlayer()
+    const levels = { microphoneRms: 0.04, answerRms: 0.1 }
+    const voice = new AnswerVoice(player as unknown as AnswerPlayer, { confirmationNeeded: '' }, () => levels)
+    voice.follow({ kind: 'asked', runId: 'run', sequence: 1 })
+    voice.follow({ kind: 'text', runId: 'run', sequence: 2, text: 'You have a dentist at nine tomorrow. ' })
+    voice.answering(true)
+    // Only the answer sounding: the echo is learned.
+    vi.advanceTimersByTime(1000)
+    levels.microphoneRms = 0.06
+    voice.speechStarted('u1')
+    vi.advanceTimersByTime(700)
+    expect(player.duck).not.toHaveBeenCalled()
+    expect(player.pause).not.toHaveBeenCalled()
+    voice.speechStopped()
+    // Whatever the words came out as, it was the echo.
+    expect(voice.transcript('Hey, a tennis tomorrow', 'u1')).toEqual({ isEcho: true })
+    expect(player.interrupt).not.toHaveBeenCalled()
+  })
+
+  it('cuts the answer at a tap, and tells the next words how much was heard', () => {
+    const { player, enqueued } = fakePlayer()
+    const voice = new AnswerVoice(player as unknown as AnswerPlayer, { confirmationNeeded: '' })
+    voice.follow({ kind: 'asked', runId: 'run', sequence: 1 })
+    voice.follow({ kind: 'text', runId: 'run', sequence: 2, text: 'Sure. You have a dentist at nine and' })
+    expect(enqueued).toEqual(['Sure.'])
+    voice.cutByTap()
+    expect(player.interrupt).toHaveBeenCalled()
+    expect(voice.transcript('Move it to Friday.', 'u2')).toEqual({
+      isEcho: false,
+      interruptedAnswer: { heardText: 'Sure.', unheardText: 'You have a dentist at nine and' },
+    })
+    // Said once: the words after those go on their own.
+    expect(voice.transcript('And Saturday.', 'u3')).toEqual({ isEcho: false, interruptedAnswer: undefined })
+  })
+
+  it('speaks an adopted turn from its latest event, not from a replay', () => {
+    const { player, enqueued } = fakePlayer()
+    const voice = new AnswerVoice(player as unknown as AnswerPlayer, { confirmationNeeded: '' })
+    voice.follow({ kind: 'text', runId: 'run', sequence: 5, text: 'Already shown.' })
+    voice.adopt(['run'])
+    voice.follow({ kind: 'text', runId: 'run', sequence: 5, text: 'Already shown.' })
+    voice.follow({ kind: 'message', runId: 'run', sequence: 6, text: 'Next part.' })
+    expect(enqueued).toEqual(['Next part.'])
   })
 
   it('ends the answer when the person cuts in, and says how much they heard', () => {
@@ -149,7 +224,12 @@ describe('AnswerVoice', () => {
     expect(verdict.interruptedAnswer).toEqual({ heardText: 'Sure.', unheardText: 'You have a dentist at nine and' })
     // The rest of the message being written then is not spoken.
     voice.follow({ kind: 'text', runId: 'run', sequence: 3, text: ' lunch at noon.' })
-    voice.follow({ kind: 'message', runId: 'run', sequence: 4, text: 'Sure. You have a dentist at nine and lunch at noon.' })
+    voice.follow({
+      kind: 'message',
+      runId: 'run',
+      sequence: 4,
+      text: 'Sure. You have a dentist at nine and lunch at noon.',
+    })
     // The next message, after what they said was read, is.
     voice.follow({ kind: 'text', runId: 'run', sequence: 5, text: 'Moved to Friday.' })
     voice.follow({ kind: 'done', runId: 'run', sequence: 6 })

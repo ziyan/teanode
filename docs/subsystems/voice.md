@@ -109,13 +109,28 @@ node is connected to the speakers through a gain of zero, since WebKit only
 runs nodes that reach them. Nothing is played.
 
 **Echo.** The answer would be heard back through the microphone and taken
-for the person. Three things stand against it: the browser's echo
-cancellation, asked for and reported in the first message (the server logs
-what was granted); the answer playing in the same audio context as the
-capture, which is what the browser cancels; and the check above, which drops
-an utterance whose words follow what was just played. On a phone, Safari is
-asked for its play-and-record audio session, so the answer comes out of the
-speaker with the phone's own echo cancellation.
+for the person, and on a phone, where the speaker sits beside the
+microphone, the browser's echo cancellation leaves a good deal of it. Four
+things stand against it:
+
+- The browser's echo cancellation, asked for and reported in the first
+  message (the server logs what was granted), with the answer played in the
+  same audio context the microphone is read in.
+- How loud it is. While the answer plays and the provider hears nobody, the
+  drawer learns how much of the answer reaches the microphone. When the
+  provider then says somebody started talking, the drawer listens for 0.4
+  seconds: only a microphone well above that echo (two and a half times)
+  counts as the person and quietens the answer. Anything else is the echo:
+  the answer plays on and that utterance is dropped, whatever it was
+  transcribed as.
+- Its words. An utterance of three words or more that follows what was just
+  played is the echo too.
+- The person's hand. While an answer plays, tapping the meter cuts it short,
+  and what they say next carries how much they heard. A browser that grants
+  no echo cancellation at all sends nothing while the answer plays.
+
+On a phone Safari is asked for its play-and-record audio session, so the
+answer comes out of the speaker. Headphones avoid the echo altogether.
 
 ## Configuration
 

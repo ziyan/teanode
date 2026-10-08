@@ -6966,6 +6966,21 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   white-space: nowrap;
 }
 
+/* The meter as a button: plain, and only a button while an answer plays. */
+.agent-drawer-voice-mode .agent-drawer-voice-meter {
+  flex: none;
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-2);
+}
+
+.agent-drawer-voice-mode .agent-drawer-voice-meter:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
 .voice-meter.is-speaking .voice-meter-bar {
   background: var(--accent);
 }

@@ -3156,10 +3156,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     remember(VOICE_MUTED_KEY, isMuted ? '1' : '')
     voiceSession.current?.setMuted(isMuted)
   }
-  // Listening ends with the conversation it was for, and with the drawer.
+  // The call ends when the person moves to another conversation, but not
+  // when a new one is given its id by the call's own first turn.
+  const callConversationId = useRef(conversationId)
   useEffect(() => {
-    return () => voiceSession.current?.stop()
+    const previous = callConversationId.current
+    callConversationId.current = conversationId
+    if (previous && previous !== conversationId) voiceSession.current?.stop()
   }, [conversationId])
+  // And when the drawer closes, which hides the way to hang up: a
+  // microphone left listening behind a closed drawer is not acceptable.
+  useEffect(() => {
+    if (!open) voiceSession.current?.stop()
+  }, [open])
+  useEffect(() => () => voiceSession.current?.stop(), [])
 
   // A draft asked to be sent is sent once its conversation is the one open
   // and its draft has been read back into the box: the same send as the
@@ -4141,12 +4151,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               person ends it; the conversation above stays where it is. */}
           {voiceState !== 'off' ? (
             <div className="agent-drawer-voice-mode" role="group" aria-label={t('agentDrawer.voiceMode')}>
-              <VoiceMeter
-                level={voiceLevel}
-                isHearing={isVoiceHearing}
-                isSpeaking={isVoiceSpeaking}
-                isAnswering={running}
-              />
+              {/* While an answer is read aloud the meter cuts it short at a
+                  tap: what a voice cannot do where the phone hears itself. */}
+              <button
+                type="button"
+                className="agent-drawer-voice-meter"
+                aria-label={t('agentDrawer.voiceCutAnswer')}
+                title={isVoiceSpeaking ? t('agentDrawer.voiceCutAnswer') : undefined}
+                disabled={!isVoiceSpeaking}
+                onClick={() => voiceSession.current?.cutAnswer()}
+              >
+                <VoiceMeter
+                  level={voiceLevel}
+                  isHearing={isVoiceHearing}
+                  isSpeaking={isVoiceSpeaking}
+                  isAnswering={running}
+                />
+              </button>
               <p
                 className={['agent-drawer-voice-caption', voiceCaption ? '' : 'muted'].filter(Boolean).join(' ')}
                 aria-live="polite"
