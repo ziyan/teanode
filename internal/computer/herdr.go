@@ -250,16 +250,50 @@ func (self *Herdr) saveAppearancesLocked() {
 }
 
 type herdrWatch struct {
-	origin         json.RawMessage
-	since          time.Time
-	hasSeenWorking bool
+	Origin         json.RawMessage `json:"origin"`
+	Since          time.Time       `json:"since"`
+	HasSeenWorking bool            `json:"hasSeenWorking"`
+}
+
+// herdrWatchesPath is where the watches are kept, under the home
+// directory: a program restarted (upgraded, or its server deployed) while a
+// watched session works still says when it finishes.
+var herdrWatchesPath = filepath.Join(".local", "state", "teanode", "herdr-watches.json")
+
+// loadWatches reads the watches kept by the program before. Each is taken
+// as having seen its session work: a turn that ended while the program was
+// down is said to have finished at the first look.
+func loadWatches(home string) map[string][]*herdrWatch {
+	watches := map[string][]*herdrWatch{}
+	data, err := os.ReadFile(filepath.Join(home, herdrWatchesPath))
+	if err == nil {
+		_ = json.Unmarshal(data, &watches)
+	}
+	for _, kept := range watches {
+		for _, watch := range kept {
+			watch.HasSeenWorking = true
+		}
+	}
+	return watches
+}
+
+// saveWatchesLocked keeps them. Called with the lock held.
+func (self *Herdr) saveWatchesLocked() {
+	data, err := json.Marshal(self.watches)
+	if err != nil {
+		return
+	}
+	path := filepath.Join(self.home, herdrWatchesPath)
+	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
+		_ = writeFileAtomically(path, data)
+	}
 }
 
 // NewHerdr is the view of the herdr running for the person whose home
 // directory this is. Start watches it.
 func NewHerdr(home string) *Herdr {
 	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
-		appearances: loadAppearances(home), watches: map[string][]*herdrWatch{}}
+		appearances: loadAppearances(home), watches: loadWatches(home)}
 }
 
 // Start looks at every pane from now until Close.
@@ -405,14 +439,29 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 			self.tellLocked(HerdrEventKindAnswered, before, nil, &told)
 		}
 		for _, watch := range self.watches[paneId] {
-			self.tellLocked(HerdrEventKindSettled, &gone, watch.origin, &told)
+			self.tellLocked(HerdrEventKindSettled, &gone, watch.Origin, &told)
 		}
-		delete(self.watches, paneId)
+		if self.watches[paneId] != nil {
+			delete(self.watches, paneId)
+			self.saveWatchesLocked()
+		}
 		delete(self.sessions, paneId)
 		if self.appearances[paneId] != nil {
 			delete(self.appearances, paneId)
 			self.saveAppearancesLocked()
 		}
+	}
+	// Watches kept from before a restart, of panes that closed meanwhile.
+	for paneId, kept := range self.watches {
+		if seen[paneId] {
+			continue
+		}
+		gone := &HerdrSession{PaneID: paneId, HerdrSessionState: HerdrSessionStateUnknown}
+		for _, watch := range kept {
+			self.tellLocked(HerdrEventKindSettled, gone, watch.Origin, &told)
+		}
+		delete(self.watches, paneId)
+		self.saveWatchesLocked()
 	}
 	notify := self.notify
 	for _, session := range observed {
@@ -484,22 +533,28 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 	}
 	watches := self.watches[session.PaneID]
 	var kept []*herdrWatch
+	isWatchChanged := false
 	for _, watch := range watches {
 		if session.HerdrSessionState == HerdrSessionStateWorking {
-			watch.hasSeenWorking = true
+			isWatchChanged = isWatchChanged || !watch.HasSeenWorking
+			watch.HasSeenWorking = true
 			kept = append(kept, watch)
 			continue
 		}
-		if !watch.hasSeenWorking && time.Since(watch.since) < herdrWatchUnseen {
+		if !watch.HasSeenWorking && time.Since(watch.Since) < herdrWatchUnseen {
 			kept = append(kept, watch)
 			continue
 		}
-		self.tellLocked(HerdrEventKindSettled, session, watch.origin, told)
+		self.tellLocked(HerdrEventKindSettled, session, watch.Origin, told)
+		isWatchChanged = true
 	}
 	if len(kept) == 0 {
 		delete(self.watches, session.PaneID)
 	} else {
 		self.watches[session.PaneID] = kept
+	}
+	if isWatchChanged {
+		self.saveWatchesLocked()
 	}
 }
 
@@ -727,8 +782,9 @@ func (self *Herdr) watch(ctx context.Context, arguments *HerdrArguments) (*Herdr
 	}
 	self.mutex.Lock()
 	self.watches[session.PaneID] = append(self.watches[session.PaneID], &herdrWatch{
-		origin: arguments.Origin, since: time.Now(), hasSeenWorking: session.HerdrSessionState == HerdrSessionStateWorking,
+		Origin: arguments.Origin, Since: time.Now(), HasSeenWorking: session.HerdrSessionState == HerdrSessionStateWorking,
 	})
+	self.saveWatchesLocked()
 	self.mutex.Unlock()
 	// A copy: the one looked at is the one kept, which an event may be
 	// carrying to the server now.

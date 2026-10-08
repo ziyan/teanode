@@ -52,8 +52,8 @@ type AgentHerdrMutation interface {
 	AnswerAgentHerdrQuestion(ctx context.Context, arguments AnswerAgentHerdrQuestionArguments) (*AgentHerdrAnswerView, error)
 
 	// Wake a conversation of the caller's when a session next finishes
-	// its turn: the one named, or their main conversation. Watches end when
-	// teanode computer restarts there. Needs agent:use.
+	// its turn: the one named, or their main conversation. A watch outlives
+	// a restart of teanode computer there. Needs agent:use.
 	WatchAgentHerdrSession(ctx context.Context, arguments WatchAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
 
 	// Put TeaNode's reporting hooks into Claude Code's settings on a

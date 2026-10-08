@@ -678,3 +678,27 @@ func TestAFormThatWaitsForEnterAfterTheNumberGetsIt(t *testing.T) {
 		t.Error("not accepted")
 	}
 }
+
+func TestAWatchOutlivesARestartAndSaysWhenItsSessionFinished(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "working", "", readHerdrFixture(t, "claude-working"))
+	before := NewHerdr(home)
+	origin := json.RawMessage(`{"conversationId":"c1"}`)
+	if _, err := RunHerdr(context.Background(), before, "herdr_watch", &HerdrArguments{PaneID: "w1:p1", Origin: origin}); err != nil {
+		t.Fatal(err)
+	}
+	// The program restarts; the session finished meanwhile.
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	after := NewHerdr(home)
+	var told []*HerdrEvent
+	defer after.listen(func(event *HerdrEvent) { told = append(told, event) })()
+	listForTest(t, after)
+	listForTest(t, after)
+	if len(told) != 1 || told[0].HerdrEventKind != HerdrEventKindSettled || string(told[0].Origin) != string(origin) {
+		t.Errorf("told %+v", told)
+	}
+	if again := NewHerdr(home); len(again.watches) != 0 {
+		t.Errorf("a watch told was kept: %+v", again.watches)
+	}
+}

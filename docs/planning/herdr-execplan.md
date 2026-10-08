@@ -188,6 +188,10 @@ To see it working, on a computer running `teanode computer` with herdr running a
   Rationale: the person found a card for every answer too many and asked for sending and answering to go through. The model still answers only with the person's choice: the guidance says so, the call must carry the chosen options' labels, and the fingerprint must still be the question on screen.
   Date/Author: 2026-10-08, the person.
 
+- Decision: watches are kept in a file beside the question appearances, and a watch read back after a restart counts as having seen its session work.
+  Rationale: in a build led by the agent, a deploy by another session restarted the program while Codex reviewed, and the watch on it was lost: the review finished and nobody was woken. Deploys are frequent, so a watch has to outlive them.
+  Date/Author: 2026-10-08, agent.
+
 ## Outcomes & Retrospective
 
 All milestones are done. Checked end to end against the deployed server, in a scratch herdr workspace with a Claude Code session:

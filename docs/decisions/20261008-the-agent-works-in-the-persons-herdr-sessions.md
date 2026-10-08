@@ -51,7 +51,9 @@ herdr`, named in one table that a test checks against all four.
   session then shows as idle or unknown, and its screen is still readable.
 - Polling every pane every three seconds costs a socket read per pane, about
   0.4 seconds for fifteen panes, on a program that is otherwise idle.
-- A watch lives in the program's memory and ends when it restarts.
+- The questions waiting and the watches are kept in small files on the
+  computer, so a restart of the program, which every deploy causes, loses
+  neither.
 - TeaNode's reporting hooks change the person's Claude Code settings, so they
   are put in only when the person asks, beside what is there, with a copy of
   the file kept first. They report and decide nothing.
