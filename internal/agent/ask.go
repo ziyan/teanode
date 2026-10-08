@@ -855,7 +855,7 @@ func (self *AskRun) turn() error {
 	if err != nil {
 		return err
 	}
-	modelName := self.askModelName(configuration, registry)
+	modelName := self.askModelName(configuration, registry, false)
 	self.modelName = modelName
 	// The model's window is asked for only once the history passes what
 	// any window holds, which most runs never do.
@@ -959,7 +959,7 @@ func (self *AskRun) turn() error {
 	// A spoken turn answered by the small model for calls may hand itself
 	// to the larger one, in the round from the start: the decision is the
 	// first thing the small model makes.
-	if spoken := voiceModel(configuration, settings); spoken != "" && spoken != self.typedModelName(configuration, registry) {
+	if spoken := voiceModel(configuration, settings); spoken != "" && spoken != self.askModelName(configuration, registry, true) {
 		if thinkHarder := self.agent.thinkHarderTool(); !listed(configuration.Agent.Tools.Disabled, thinkHarder) {
 			self.offered = append(self.offered, thinkHarder)
 			self.loaded[thinkHarder.Name] = true
@@ -1084,8 +1084,19 @@ func (self *AskRun) turn() error {
 			if provider, model, err = self.chooseModel(configuration, registry); err != nil {
 				return err
 			}
-			modelName = self.askModelName(configuration, registry)
+			modelName = self.askModelName(configuration, registry, false)
 			self.modelName = modelName
+			// The larger model's window is its own, and the hand-off, and
+			// its guidance for a small model, are not offered to it.
+			historyLimitTokens = 0
+			withoutThinkHarder := self.offered[:0:0]
+			for _, tool := range self.offered {
+				if tool.Name != thinkHarderToolName {
+					withoutThinkHarder = append(withoutThinkHarder, tool)
+				}
+			}
+			self.offered = withoutThinkHarder
+			delete(self.loaded, thinkHarderToolName)
 		}
 		// What the person wrote since the last round, read before the
 		// model decides what to do next.
@@ -1363,25 +1374,22 @@ func voiceModel(configuration *config.Configuration, settings *AskSettings) stri
 	return strings.TrimSpace(configuration.Agent.Voice.AskModel)
 }
 
-// typedModelName is the model this turn would be answered with typed.
-func (self *AskRun) typedModelName(configuration *config.Configuration, registry *llm.Registry) string {
-	isPast := self.settings.isPastVoiceModel
-	self.settings.isPastVoiceModel = true
-	defer func() { self.settings.isPastVoiceModel = isPast }()
-	return self.askModelName(configuration, registry)
-}
-
 // askModelName is the name of the model this turn is answered with, as
-// chooseModel chooses it.
-func (self *AskRun) askModelName(configuration *config.Configuration, registry *llm.Registry) string {
+// chooseModel chooses it; isTyped asks for the one it would be answered
+// with typed, leaving out the model for calls.
+func (self *AskRun) askModelName(configuration *config.Configuration, registry *llm.Registry, isTyped bool) string {
 	settings := self.settings
+	spoken := ""
+	if !isTyped {
+		spoken = voiceModel(configuration, settings)
+	}
 	switch {
 	case settings.Model != "":
 		return settings.Model
 	case settings.Work != "":
 		return registry.Configuration().Models.ForWork(settings.Work)
-	case voiceModel(configuration, settings) != "":
-		return voiceModel(configuration, settings)
+	case spoken != "":
+		return spoken
 	case settings.Agent.AskModel != "":
 		return settings.Agent.AskModel
 	}

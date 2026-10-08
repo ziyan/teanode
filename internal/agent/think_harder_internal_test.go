@@ -93,6 +93,9 @@ func TestASpokenTurnHandsAHardQuestionToTheLargerModel(t *testing.T) {
 	if !offered(toolNames[0]) {
 		t.Errorf("the model for calls was not offered the hand-off: %v", toolNames[0])
 	}
+	if offered(toolNames[1]) {
+		t.Errorf("the larger model was offered the hand-off")
+	}
 	if offered(toolNames[2]) {
 		t.Errorf("a typed turn was offered the hand-off")
 	}
