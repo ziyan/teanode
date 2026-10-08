@@ -133,10 +133,12 @@ On a phone Safari is asked for its play-and-record audio session, so the
 answer comes out of the speaker. Headphones avoid the echo altogether.
 
 **Never silent for long.** A call feels live when the other side answers at
-once. The `voice` surface has the model begin every reply with a few spoken
-words ("Got it."), and say what it is doing before each tool call ("Let me
-check.", "Looking that up."), which the drawer speaks as soon as the call
-arrives. While the person talks at length, the drawer itself makes the small
+once. The `voice` surface has the model say, once a turn and in five words or
+fewer, that it is looking something up ("Let me check.", "Looking that up."),
+which the drawer speaks before the look begins. It says nothing between later
+looks, or two words at most, and never restates its plan: asked for a few
+words before every tool call, a small model restated the whole plan in every
+round of a long turn. While the person talks at length, the drawer itself makes the small
 sounds a listener makes: "mm-hmm" and "uh-huh", spoken once at the start of the
 call in the agent's voice, played quietly at a pause after four seconds of
 talking and at most every six seconds, never over an answer or with answers
