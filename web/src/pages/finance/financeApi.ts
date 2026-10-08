@@ -73,6 +73,12 @@ export type FinanceTransaction = {
   // mirror_detection or person (the person counted it).
   duplicateOfTransactionId?: string | null
   duplicateDecidedBy?: string | null
+  // What the person or their agent wrote on it, and which of them
+  // (person or agent); both empty when nobody has. How many receipts are
+  // matched to it.
+  annotation?: string | null
+  annotatedBy?: 'person' | 'agent' | '' | null
+  receiptCount?: number
   createdAt: string
   modifiedAt: string
 }
@@ -561,7 +567,7 @@ export const CREDIT_USAGE = `query {
 const TRANSACTION_FIELDS = `id financeAccountId providerTransactionId postedOn transactedAt amount currencyCode
   description merchantName providerCategoryPrimary providerCategoryDetailed isPending pendingProviderTransactionId
   providerMetadata spendingCategoryId categorizedBy categorizationConfidence
-  duplicateOfTransactionId duplicateDecidedBy createdAt modifiedAt`
+  duplicateOfTransactionId duplicateDecidedBy annotation annotatedBy receiptCount createdAt modifiedAt`
 
 // FINANCE_TRANSACTIONS is a page of finance transactions by its offset,
 // and how many there are on every page. The mirrored copies are left out
@@ -666,6 +672,139 @@ export const COUNT_TRANSACTION = `mutation ($financeTransactionId: String!) {
 
 export const UNDO_COUNT_TRANSACTION = `mutation ($financeTransactionId: String!) {
   UndoCountTransaction(financeTransactionId: $financeTransactionId) { ${TRANSACTION_FIELDS} }
+}`
+
+// --- receipts and annotations ----------------------------------------------
+
+// ANNOTATE_TRANSACTION writes the person's words on a finance transaction;
+// empty takes them away.
+export const ANNOTATE_TRANSACTION = `mutation ($financeTransactionId: String!, $annotation: String) {
+  AnnotateTransaction(financeTransactionId: $financeTransactionId, annotation: $annotation) { ${TRANSACTION_FIELDS} }
+}`
+
+// One printed line of a receipt, as printed: a discount is negative, a
+// tax is a line of its own carrying the mark it covers.
+export type FinanceReceiptLine = {
+  id: string
+  lineNumber: number
+  receiptLineKind: 'item' | 'discount' | 'tax' | 'fee' | 'tip'
+  description: string
+  quantity?: string | null
+  quantityUnit?: string | null
+  unitPriceAmount?: string | null
+  lineAmount: string
+  taxClassCode?: string | null
+  discountedLineNumber?: number | null
+  discountedLineId?: string | null
+}
+
+// How much of one charge a receipt explains, a positive decimal, and what
+// matched them: the receipt matcher or the person.
+export type FinanceReceiptMatch = {
+  receiptId: string
+  financeTransactionId: string
+  matchedAmount: string
+  receiptMatchSource: 'receipt_matcher' | 'person'
+  matchConfidence?: string | null
+  createdAt: string
+}
+
+// A merchant's record of one purchase. It was read from a message in the
+// person's mailbox (mailboxItemId is where that message is now, empty when
+// it is gone), a Gmail message, or an uploaded photo or file.
+export type FinanceReceipt = {
+  id: string
+  receiptSourceKind: 'mail' | 'gmail_message' | 'attachment'
+  mailId?: string | null
+  gmailMessageId?: string | null
+  agentAttachmentId?: string | null
+  mailboxItemId?: string | null
+  merchantName: string
+  merchantReceiptNumber?: string | null
+  purchasedOn?: string | null
+  purchasedAt?: string | null
+  currencyCode: string
+  subtotalAmount?: string | null
+  totalAmount: string
+  paymentAccountMask?: string | null
+  receiptCheckState: 'balanced' | 'unbalanced'
+  checkDifferenceAmount: string
+  receiptLines: FinanceReceiptLine[]
+  receiptMatches: FinanceReceiptMatch[]
+}
+
+const RECEIPT_FIELDS = `id receiptSourceKind mailId gmailMessageId agentAttachmentId mailboxItemId merchantName
+  merchantReceiptNumber purchasedOn purchasedAt currencyCode subtotalAmount totalAmount paymentAccountMask
+  receiptCheckState checkDifferenceAmount
+  receiptLines { id lineNumber receiptLineKind description quantity quantityUnit unitPriceAmount lineAmount
+    taxClassCode discountedLineNumber discountedLineId }
+  receiptMatches { receiptId financeTransactionId matchedAmount receiptMatchSource matchConfidence createdAt }`
+
+// FinanceReceiptPage is one page of receipts, newest purchase first and
+// those that print no day last: the cursor for the next page (empty on
+// the last) and how many match the filters on every page.
+export type FinanceReceiptPage = {
+  financeReceipts: FinanceReceipt[]
+  nextCursor?: string | null
+  totalCount: number
+}
+
+// FINANCE_RECEIPTS is one page of receipts: those matched to one finance
+// transaction, purchased within a range of days, printing no day
+// (isUndated, not with a range), or matched to none. It pages like
+// FinanceTransactions: limit (at most 200), offset, or after with the
+// nextCursor of the page before.
+export const FINANCE_RECEIPTS = `query ($financeTransactionId: String, $from: String, $to: String,
+  $isUndated: Boolean, $isUnmatched: Boolean, $limit: Int, $after: String, $offset: Int) {
+  FinanceReceipts(financeTransactionId: $financeTransactionId, from: $from, to: $to, isUndated: $isUndated,
+    isUnmatched: $isUnmatched, limit: $limit, after: $after, offset: $offset) {
+    financeReceipts { ${RECEIPT_FIELDS} }
+    nextCursor
+    totalCount
+  }
+}`
+
+// The most receipts one page holds (the server's own limit): what a
+// transaction's details read of the receipts matched to it.
+export const MAXIMUM_LISTED_RECEIPT_COUNT = 200
+
+// A charge a receipt could explain, with what agrees between them.
+export type ReceiptMatchCandidate = {
+  financeTransactionId: string
+  financeTransaction?: FinanceTransaction | null
+  matchedAmount: string
+  isExactAmount: boolean
+  isSameAccount: boolean
+  isMerchantNameShared: boolean
+  dayDistanceCount: number
+  isAutomatic: boolean
+  matchConfidence?: string | null
+}
+
+export const PROPOSE_RECEIPT_MATCHES = `query ($receiptId: String!) {
+  ProposeReceiptMatches(receiptId: $receiptId) {
+    financeTransactionId matchedAmount isExactAmount isSameAccount isMerchantNameShared dayDistanceCount
+    isAutomatic matchConfidence financeTransaction { ${TRANSACTION_FIELDS} }
+  }
+}`
+
+export const MATCH_RECEIPT = `mutation ($receiptId: String!, $financeTransactionId: String!, $matchedAmount: String) {
+  MatchReceipt(receiptId: $receiptId, financeTransactionId: $financeTransactionId, matchedAmount: $matchedAmount) {
+    ${RECEIPT_FIELDS}
+  }
+}`
+
+export const UNMATCH_RECEIPT = `mutation ($receiptId: String!, $financeTransactionId: String!) {
+  UnmatchReceipt(receiptId: $receiptId, financeTransactionId: $financeTransactionId) { ${RECEIPT_FIELDS} }
+}`
+
+export const DELETE_RECEIPT = `mutation ($receiptId: String!) { DeleteReceipt(receiptId: $receiptId) }`
+
+// READ_RECEIPT queues the receipt job to read an uploaded photo (or a
+// message), matching what it reads to the finance transaction given.
+export const READ_RECEIPT = `mutation ($agentAttachmentId: String, $mailboxItemId: String, $financeTransactionId: String) {
+  ReadReceipt(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId,
+    financeTransactionId: $financeTransactionId) { agentJobId }
 }`
 
 // --- spending --------------------------------------------------------------

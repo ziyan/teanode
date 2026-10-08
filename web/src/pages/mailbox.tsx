@@ -57,6 +57,7 @@ import { NotesView, isNotesFolder } from '../components/notes'
 import { ProposalCards } from '../components/proposalCard'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
+import { ReadAsReceiptMenuItem } from './mailboxReadReceipt'
 import { Select } from '../components/select'
 import { useAgent } from './agent'
 
@@ -2461,6 +2462,9 @@ export function ThreadMessage({
                       >
                         {t(details ? 'mailbox.hideDetails' : 'mailbox.showDetails')}
                       </button>
+                      {/* A receipt sorting missed, or one to read again:
+                          the server says when it cannot. */}
+                      <ReadAsReceiptMenuItem mailboxItemId={entry.item.id} onChosen={close} />
                     </>
                   )}
                 />

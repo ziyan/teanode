@@ -49,6 +49,8 @@ var spanningOperations = map[string][]string{
 	"delete_source":          {},
 	// Says where the person deletes an imported account.
 	"delete_statement_account": {},
+	// A message only, never an uploaded file, as import_statement.
+	"read_receipt": {"ReadReceipt"},
 }
 
 // The deliberate gaps: a setup token and a provider credential are never
@@ -143,9 +145,11 @@ func TestFinanceParityWithTheTool(test *testing.T) {
 
 // Each tool operation takes the arguments of the operation it calls, in
 // snake case, and nothing else but month, its shorthand for a range. The
-// one deliberate exception: whether an asset may be estimated from the
-// web, and what the estimate searches for, are the person's to set in the
-// dashboard or with teanode finance, never the agent's.
+// deliberate exceptions: whether an asset may be estimated from the web,
+// and what the estimate searches for, are the person's to set in the
+// dashboard or with teanode finance, never the agent's; and whether the
+// person asked for an annotation is set by the tool from the run, never
+// by the model.
 func TestFinanceToolArgumentsMatchTheAPI(test *testing.T) {
 	test.Parallel()
 	personOnly := map[string]bool{}
@@ -171,7 +175,8 @@ func TestFinanceToolArgumentsMatchTheAPI(test *testing.T) {
 			}
 		}
 		for argument := range wanted {
-			isException := personOnly[argument] && (called == "CreateAsset" || called == "UpdateAsset")
+			isException := (personOnly[argument] && (called == "CreateAsset" || called == "UpdateAsset")) ||
+				(argument == "is_asked_by_person" && called == "AnnotateTransaction")
 			if isException && accepted[argument] {
 				test.Errorf("the tool's %s takes %s, which only the person may set", name, argument)
 			}
@@ -234,6 +239,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
 		"statement_import": true, "delete_statement_account": true, "preview_import_transactions": true,
+		"receipts": true, "receipt": true, "propose_receipt_matches": true, "preview_record_receipt": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite
@@ -248,6 +254,11 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 			// Rows that do not add up are refused before anything is asked,
 			// so the write is judged on rows that do.
 			arguments = inventedBankRows
+		}
+		if name == "record_receipt" {
+			// So is a receipt whose lines do not add up, so the write is
+			// judged on one that does.
+			arguments = inventedReceiptCall
 		}
 		if name == "categorize_transaction" {
 			// So is no spending category, so the write is judged on one.
@@ -291,9 +302,16 @@ func (self *fakeOperations) Permissions() *models.EffectivePermissions {
 type fakeRun struct {
 	tools.Run
 	operations *fakeOperations
+
+	// surface and canAsk say where the person is, as a run does; empty
+	// and false are a run with nobody present.
+	surface string
+	canAsk  bool
 }
 
 func (self *fakeRun) Operations() tools.Operations { return self.operations }
+func (self *fakeRun) Surface() string              { return self.surface }
+func (self *fakeRun) CanAsk() bool                 { return self.canAsk }
 func (self *fakeRun) Owner() *models.User          { return &models.User{ID: "owner-one"} }
 func (self *fakeRun) Configuration() *config.Configuration {
 	configuration := config.Default()

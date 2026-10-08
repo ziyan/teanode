@@ -253,6 +253,63 @@ var operations = map[string]*financeOperation{
 			return "Let mirror detection decide again whether " + lookup.transaction(text(call, "finance_transaction_id")) + " is a mirrored copy"
 		},
 	},
+	"annotate_transaction": {
+		graphqlOperation: "AnnotateTransaction", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_transaction_id", "annotation"}, required: []string{"finance_transaction_id"},
+		preview: annotateTransactionPreview,
+	},
+	"receipts": {
+		graphqlOperation: "FinanceReceipts", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
+		arguments: append([]string{"finance_transaction_id", "is_unmatched", "is_undated", "limit", "offset", "after"}, rangeArguments...),
+	},
+	"receipt": {graphqlOperation: "FinanceReceipt", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"receipt_id"}, required: []string{"receipt_id"}},
+	"propose_receipt_matches": {
+		graphqlOperation: "ProposeReceiptMatches", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"receipt_id"}, required: []string{"receipt_id"},
+	},
+	// RecordReceipt with what the agent read, checked here first
+	// (receipt.go) so the card says what was checked, and previewed by
+	// the server so it says which charge it would be matched to.
+	"record_receipt": {
+		graphqlOperation: "RecordReceipt", risk: tools.RiskWrite, isUntrusted: true, arguments: receiptArguments,
+		required: []string{"merchant_name", "currency_code", "total_amount", "receipt_lines"}, preview: recordReceiptPreview,
+	},
+	"preview_record_receipt": {
+		graphqlOperation: "PreviewRecordReceipt", risk: tools.RiskRead, isUntrusted: true, arguments: receiptArguments,
+		required: []string{"merchant_name", "currency_code", "total_amount", "receipt_lines"},
+	},
+	// ReadReceipt for a message only: a file handed over in conversation
+	// carries no id the model is shown, so the tool takes the message,
+	// which mail_search and mail_read name, as import_statement does.
+	"read_receipt": {
+		risk: tools.RiskWrite, arguments: []string{"mailbox_item_id"}, required: []string{"mailbox_item_id"},
+		preview: func(*previewLookup, map[string]any) string {
+			return "Have the receipt job read the receipt in a message, record it and match it"
+		},
+	},
+	"match_receipt": {
+		graphqlOperation: "MatchReceipt", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"receipt_id", "finance_transaction_id", "matched_amount"}, required: []string{"receipt_id", "finance_transaction_id"},
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			line := "Match " + lookup.receiptName(text(call, "receipt_id")) + " to " + lookup.transaction(text(call, "finance_transaction_id"))
+			if matchedAmount := amountText(call["matched_amount"]); matchedAmount != "" {
+				line += ", explaining " + matchedAmount + " of it"
+			}
+			return line
+		},
+	},
+	"unmatch_receipt": {
+		graphqlOperation: "UnmatchReceipt", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"receipt_id", "finance_transaction_id"}, required: []string{"receipt_id", "finance_transaction_id"},
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			return "Take " + lookup.receiptName(text(call, "receipt_id")) + " off " + lookup.transaction(text(call, "finance_transaction_id"))
+		},
+	},
+	"delete_receipt": {
+		graphqlOperation: "DeleteReceipt", risk: tools.RiskDestructive, arguments: []string{"receipt_id"}, required: []string{"receipt_id"},
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			return "Delete " + lookup.receiptName(text(call, "receipt_id")) + ", its lines and its matches, and the photo or PDF it was read from"
+		},
+	},
 	"budgets": {graphqlOperation: "Budgets", risk: tools.RiskRead},
 	"set_budget": {
 		graphqlOperation: "SetBudget", risk: tools.RiskWrite,
@@ -387,6 +444,9 @@ var argumentInsteadOf = map[string]string{
 	"spending_category":  "spending_category_id",
 	"valuation_date":     "valued_on",
 	"is_transfer":        "spending_category_id",
+	"note":               "annotation",
+	"amount_matched":     "matched_amount",
+	"lines":              "receipt_lines",
 }
 
 // valueInsteadOf is the value the argument argumentInsteadOf names takes in
@@ -626,7 +686,17 @@ const description = "The person's money: their finance sources (logins at banks,
 	"When the person says a duplicate is a real charge of its own, `count_transaction` counts it (duplicateDecidedBy person) and detection leaves it alone; `undo_count_transaction` takes that back.\n" +
 	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none (a value read now can go in the same call), then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
 	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the dashboard's Finance page or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
-	"- Converting currencies: `convert_currency` or `exchange_rate`, with from_currency_code, to_currency_code and rate_on for another day; the answer names the published day the rate is from."
+	"- Converting currencies: `convert_currency` or `exchange_rate`, with from_currency_code, to_currency_code and rate_on for another day; the answer names the published day the rate is from.\n" +
+	"- Annotations: `annotate_transaction` writes what a transaction was for (annotation; empty takes it away); what you write is annotatedBy agent. One the person wrote (annotatedBy person) is theirs: change or remove it only when they ask you to in this conversation, and with nobody present (a schedule, a goal, mail) it is refused. A call from an MCP client counts as the person asking.\n" +
+	"- Receipts: a receipt is one merchant's record of one purchase, kept line by line and matched to the charges it explains; for what somebody bought, read the receipts of the transactions (`receipts` with finance_transaction_id, a range or month). " +
+	"`record_receipt` records one you read: from a message in their mailbox (mailbox_item_id, as mail_search gives it), a Gmail message read through the Gmail skill (gmail_message_id), or an uploaded file whose id you were given (agent_attachment_id). " +
+	"Send receipt_lines one per printed line, in order and exactly as printed: each item with its amount (and quantity, quantity_unit and unit_price_amount for a weighed or counted one); each discount as a line of its own, negative, with discounted_line_number the item it is printed under; each tax as a line of its own with the receipt's mark as tax_class_code (and the same mark on the items it covers); fees (bags, delivery) and tips as lines of their own. " +
+	"Leave out what is not money paid: \"You Saved\" and savings totals, the subtotal and total lines (give them as subtotal_amount and total_amount), the payment line and change. payment_account_mask is the card's last digits. " +
+	"The server checks the lines come to the subtotal and the subtotal with taxes and tips to the total, to the cent; a receipt that does not add up is refused, naming the difference: read it again, and give is_unbalanced_accepted true only when the person says to record it as it is. " +
+	"Recording the same message again replaces its receipt. It is matched to the one charge of its exact amount (or the one on the card it prints) posted from three days before to seven after the purchase, when that charge is on the printed card or shares a word of the merchant and no other receipt explains it; a charge other receipts explain in full is no candidate. Anything less sure is left unmatched with candidates, never guessed: ask, then `match_receipt` (matched_amount for an order charged in parts, one call per charge; a match beyond what the charge took, in another currency, or to money in is refused). " +
+	"`read_receipt` has the receipt job read the receipt in a message (mailbox_item_id) in the background, record it and match it, as when sorting files a message as a receipt. " +
+	"`receipts` pages like `transactions` (limit, offset or after, and totalCount); with no range it lists every receipt, those that print no day last, and is_undated lists only those. " +
+	"`preview_record_receipt` says what recording would do, writing nothing; `receipt` reads one line by line; `propose_receipt_matches` lists the charges a stored one could explain; `unmatch_receipt` takes one off a charge; `delete_receipt` deletes it."
 
 func init() {
 	tools.Register(func() []*tools.Tool {
@@ -635,17 +705,43 @@ func init() {
 				Name: "finance", Family: tools.FamilyFinance, Risk: tools.RiskWrite,
 				Description: description,
 				Parameters: tools.Object(map[string]any{
-					"operation":                   tools.EnumProperty("what to do", operationNames()...),
-					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
-					"mailbox_item_id":             tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import, by the item_id mail_search or mail_read gives"),
+					"operation":               tools.EnumProperty("what to do", operationNames()...),
+					"source_id":               tools.StringProperty("a finance source, by the id sources gives"),
+					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; by the item_id mail_search or mail_read gives"),
+					"gmail_message_id":        tools.StringProperty("for record_receipt and preview_record_receipt: the Gmail message the receipt was read from, by the id the Gmail skill gives"),
+					"agent_attachment_id":     tools.StringProperty("for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from, only by an id you were given"),
+					"annotation":              tools.StringProperty("for annotate_transaction: what the transaction was for, in the person's words; empty takes it away"),
+					"receipt_id":              tools.StringProperty("a receipt, by the id receipts gives"),
+					"is_unmatched":            tools.BooleanProperty("for receipts: only those matched to no transaction"),
+					"is_undated":              tools.BooleanProperty("for receipts: only those that print no day of purchase; not with from, to or month"),
+					"merchant_name":           tools.StringProperty("for record_receipt: the merchant as the receipt names it"),
+					"merchant_receipt_number": tools.StringProperty("for record_receipt: the order or receipt number printed, when there is one"),
+					"purchased_on":            tools.StringProperty("for record_receipt: the day of purchase, 2026-09-30"),
+					"purchased_at":            tools.StringProperty("for record_receipt: the time printed, 2026-09-30T14:05:00-04:00, when there is one"),
+					"subtotal_amount":         tools.StringProperty("for record_receipt: the subtotal as printed, left out when none is printed"),
+					"total_amount":            tools.StringProperty("for record_receipt: the total as printed, what was paid"),
+					"payment_account_mask":    tools.StringProperty("for record_receipt: the last digits of the card or account the receipt says paid, digits only"),
+					"receipt_lines": tools.ArrayProperty("for record_receipt: every printed line that is money, one each, in order, exactly as printed", tools.Object(map[string]any{
+						"line_number":            tools.IntegerProperty("its place on the receipt, from 1; the order given when left out"),
+						"receipt_line_kind":      tools.EnumProperty("what the line is", "item", "discount", "tax", "fee", "tip"),
+						"description":            tools.StringProperty("what the line says, as printed"),
+						"quantity":               tools.StringProperty("the quantity printed (2.53 for a weighed item), when there is one"),
+						"quantity_unit":          tools.StringProperty("the unit printed with the quantity (lb, kg), when there is one"),
+						"unit_price_amount":      tools.StringProperty("the price of one unit printed (1.59 for 1.59/lb), when there is one"),
+						"line_amount":            tools.StringProperty("the line's amount as printed, a decimal without separators; a discount negative"),
+						"tax_class_code":         tools.StringProperty("the receipt's tax mark: on an item or discount the tax it falls under, on a tax line the mark it covers"),
+						"discounted_line_number": tools.IntegerProperty("for a discount: the line_number of the item it is printed under"),
+					}, "receipt_line_kind", "line_amount")),
+					"is_unbalanced_accepted":      tools.BooleanProperty("for record_receipt: true only when the person said to record a receipt whose lines do not add up, as it is"),
+					"matched_amount":              tools.StringProperty("for match_receipt: how much of the charge the receipt explains, for an order charged in parts; the charge or the receipt's total, whichever is less, when left out"),
 					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings; for import_transactions and preview_import_transactions: the imported account the rows are of"),
 					"is_new_account":              tools.BooleanProperty("for import_transactions and preview_import_transactions: true only when the person said the rows are of an account not imported before, after the server named accounts at the same institution"),
 					"is_holding":                  tools.BooleanProperty("for assets: true lists only the holdings of investment accounts (one asset per position); left out, assets leaves the holdings out unless finance_account_id is given"),
-					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
+					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives; for receipts, only its receipts; for record_receipt, the charge the person said the receipt is for, matched by hand"),
 					"finance_transaction_ids":     tools.ArrayProperty("several finance transactions, by the ids transactions gives. For transactions: only these, to read one by its id (a duplicate's counted copy, say). For categorize_transaction: at most 500 categorized together. For propose_spending_rules: at most 5000", tools.StringProperty("a finance transaction id")),
 					"finance_security_id":         tools.StringProperty("for trades: a security, by the financeSecurityId an asset or a trade gives"),
-					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01"),
-					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30"),
+					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01; for receipts, the first day of purchase"),
+					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30; for receipts, the last day of purchase"),
 					"text":                        tools.StringProperty("for transactions: words within the description or merchant; for assets: words within the asset's name"),
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
@@ -654,11 +750,11 @@ func init() {
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones that need a spending category, not decided yet (a transfer has the transfer category, one that fits nothing the other category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
 					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
-					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
-					"offset":                      tools.IntegerProperty("for transactions and trades: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
-					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
+					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, at most 200"),
+					"offset":                      tools.IntegerProperty("for transactions, trades and receipts: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
+					"after":                       tools.StringProperty("for transactions, trades and receipts: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
-					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency"),
+					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency. For record_receipt: the receipt's currency"),
 					"institution_name":            tools.StringProperty("for import_transactions: the bank or card issuer, as its app or list shows it"),
 					"account_name":                tools.StringProperty("for import_transactions: the account's own name or label as shown (Savings, the card's product name), left out when none; for rename_statement_account: the new name, left out to keep the name"),
 					"account_mask":                tools.StringProperty("for rename_statement_account: the last 4 to 8 digits of the account's number as the person gives them, shown and matched in place of the statement's; none takes the person's back so the statement's shows again; left out or empty leaves the number"),
@@ -708,7 +804,7 @@ func init() {
 					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, or for several, exactly the rules propose_spending_rules lists for the same ids and spending category; only when the person said yes"),
 					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month, or on an income spending category the income expected a month; 0 ends the budget"),
 					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
-					"month":                       tools.StringProperty("a month, 2026-09. For budget_status, saving_summary and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
+					"month":                       tools.StringProperty("a month, 2026-09. For budget_status, saving_summary and spending_by_day: the month, this one when left out. For transactions, trades, receipts, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
 					"year":                        tools.StringProperty("for budget_status and saving_summary: a calendar year, 2026, instead of month: each month's budgets as they were in force that month, added up, against the year's spending and income (the year to date for this one, with a projection to its end). saving_summary counts only the months with a budget, and says which; each budget_status row says its own months (budgetedMonthCount, firstBudgetedMonth, lastBudgetedMonth)"),
 					"compare_month":               tools.StringProperty("for spending_by_day: the month to compare with; the one before when left out"),
 					"from_month":                  tools.StringProperty("for cash_flow: the first month"),
@@ -733,6 +829,9 @@ func init() {
 					}
 					name := strings.ToLower(strings.TrimSpace(call.Operation))
 					if name == "import_transactions" && isRefusedTransactionRows(arguments) {
+						return tools.RiskRead
+					}
+					if name == "record_receipt" && isRefusedReceipt(arguments) {
 						return tools.RiskRead
 					}
 					if name == "categorize_transaction" {
@@ -1084,6 +1183,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return categorizeTransactions(ctx, executor, name, asked)
 	case "import_transactions", "preview_import_transactions":
 		return importTransactions(ctx, executor, name, asked)
+	case "record_receipt", "preview_record_receipt":
+		return recordReceipt(ctx, executor, name, asked)
+	case "read_receipt":
+		return readReceipt(ctx, executor, name, asked)
 	case "import_statement":
 		// Only a message in a mailbox the person granted, as mail_read
 		// reads: a mailbox kept back from the agent stays kept back.
@@ -1124,6 +1227,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		variables["rulePriority"] = int(priority)
 	}
 	switch name {
+	case "annotate_transaction":
+		// Set from the run, never from the model: whether the person is
+		// there to have asked, which is what lets the agent replace an
+		// annotation they wrote.
+		variables["isAskedByPerson"] = isPersonPresent(current, call)
 	case "rename_statement_account":
 		// A blank account_mask is left out rather than sent, since the
 		// server reads an empty one as taking the person's digits back;
@@ -1173,6 +1281,19 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return result, nil
 }
 
+// isPersonPresent says the person is there in the conversation this call
+// is made from, to have asked for it and to see what it does: a run that
+// can put a card to them, not one started by mail, a schedule or
+// research, and not a call let through by what they allow the agent when
+// they are away.
+func isPersonPresent(current tools.Run, call *tools.Call) bool {
+	switch current.Surface() {
+	case "mail", "schedule", "research":
+		return false
+	}
+	return current.CanAsk() && !call.IsConfirmedUnattended
+}
+
 // agentValuationSource sets the valuation source of a value the agent
 // records: agent_reading when none is given, agent_estimate when asked,
 // and never manual, which is the person's own.
@@ -1207,12 +1328,12 @@ func emptyHint(name string, answered any) string {
 	return ""
 }
 
-// pageHint says which rows of how many a page of transactions or trades
-// holds, so the answer can say "50 of 1,234" rather than leave the rest
-// unmentioned, and how to read the next page. Empty when the page holds
-// every row.
+// pageHint says which rows of how many a page of transactions, trades or
+// receipts holds, so the answer can say "50 of 1,234" rather than leave
+// the rest unmentioned, and how to read the next page. Empty when the
+// page holds every row.
 func pageHint(name string, variables map[string]any, answered any) string {
-	listKey := map[string]string{"transactions": "financeTransactions", "trades": "financeTrades"}[name]
+	listKey := map[string]string{"transactions": "financeTransactions", "trades": "financeTrades", "receipts": "financeReceipts"}[name]
 	page, isPage := answered.(map[string]any)
 	if listKey == "" || !isPage {
 		return ""

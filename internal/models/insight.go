@@ -382,6 +382,10 @@ type AgentAttachment struct {
 	ContentType    string    `json:"contentType"`
 	Size           int64     `json:"size"`
 	Text           string    `json:"-"`
+
+	// FinanceTransactionID is the finance transaction the file was
+	// uploaded to as its receipt, empty for any other file.
+	FinanceTransactionID string `json:"financeTransactionId,omitempty" graphapi:"nullable"`
 }
 
 // AgentReference is a thread or message the person pointed the agent at

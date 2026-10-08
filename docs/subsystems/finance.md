@@ -518,6 +518,26 @@ what is still uncategorized, the categorize job queued for the rest, and
 budget alert candidates written. Mirrored copies are decided inside the
 sync's own transaction, see below.
 
+A posted transaction that replaces a pending one takes, in the same
+database transaction and before the pending one is deleted, what was kept
+on the pending one (`carryPendingToPosted`): the person's spending category
+and duplicate decision, the annotation and who wrote it unless the posted
+one has its own, every receipt match with its source, confidence and
+matched amount, and the receipt uploads made to the pending charge. A
+receipt matcher's match of one receipt to one charge for the whole pending
+amount becomes the whole posted amount when the charge posts for a
+different amount, but never more than the receipt's total (a tip the
+receipt does not print stays unexplained); the person's matched amount is
+otherwise kept. When the
+charge posts for less than its matches explain (a hold released for less),
+they are cut to fit it (`capCarriedReceiptMatches`): the person's first, then
+the oldest, each explaining at most what the ones before it left, and one
+left with nothing is taken off, its receipt unmatched. Plaid names
+the pending transaction on the posted one. SimpleFIN names nothing, so a
+replaced pending transaction holding any of these goes to a posted one the
+sync inserted on the same account, with the same amount and currency,
+within five days, equal charges taken in order.
+
 Deleting a finance source removes it at the provider first (best effort), keeps
 its assets' history by turning them into manual assets closed on the day before
 the delete, in the person's time zone, and then deletes the source, which
@@ -529,6 +549,76 @@ already closed keeps its day. Linking the institution again takes back and opens
 name, kind, side and currency, when exactly one detached asset matches; any
 other account starts a new asset, and none is counted twice. Deleting an agent
 removes its assets with everything else.
+
+## Annotations and receipts
+
+An annotation is what the person or their agent writes on a finance
+transaction ("party supplies"), with `annotatedBy` saying which. The person
+replaces or removes any annotation. The agent replaces or removes the
+person's only when the person asks in a conversation they are there for: the
+finance tool sets `isAskedByPerson` on `AnnotateTransaction` from the run
+(one that can put a card to the person, not one started by mail, a schedule
+or research, and not a call let through by what the person allows while
+away), never from the model's arguments. In a run with nobody present it is
+refused. A call from an MCP client is a direct run, which can always put a
+card (the person at the harness made the call), so it counts as the person
+asking and may replace their annotation, as `agent_profile` treats direct
+runs. What the agent writes is `annotatedBy agent` either way. The write
+is guarded in its own statement, so a person's annotation written while the
+agent's was waiting stands, and the agent's is answered as not written with
+no audit event.
+
+A receipt is one merchant's record of one purchase, stored line by line as
+printed and checked against its printed totals (`internal/finance/receipt.go`).
+A receipt whose lines miss is described by sign, "the lines come to 2.20 USD
+less than printed". Receipts are matched to the charges they explain through
+`agent_finance_receipt_match`, with the amount of the charge each explains.
+
+The matcher (`ProposeReceiptMatches`) looks at money out in the receipt's
+currency posted from three days before the purchase to seven after, and
+leaves out a charge its receipts already explain in full. It matches without
+asking only the one charge of the exact amount (or the one on the card the
+receipt prints, when several have it), and only when that charge is on the
+printed card or shares a word of the merchant, and no other receipt is
+matched to it. An exact amount alone is a candidate for the person. So an
+order email and its shipping email, or a photo and the email of the same
+purchase, never both explain one charge on their own; the person may still
+match the second by hand for what is left. The receipt job's prompt records
+only a purchase paid with a card or bank account, nothing for a newsletter,
+a quote, a bill still to pay or an order paid some other way.
+
+Every match is refused, by hand or by the matcher, when the charge is in
+another currency than the receipt, is not money out, the amount has more
+places than the currency, the matches from every receipt on that charge
+would explain more than it took, or the receipt's matches across all its
+charges would explain more than its total. The receipt's row and then the
+charge's are locked while the amounts are added up. A match by hand with no
+amount explains what other receipts leave of the charge, or what the
+receipt's other matches leave of its total when that is less.
+
+`ReadReceipt` refuses an upload to money in before anything is read. A
+receipt the job reads from an upload whose match to its charge is refused
+(other receipts already explain the charge, or it is in another currency,
+which is known only once the receipt is read) is recorded anyway, unmatched
+with its candidates, and the run's title says why it was not matched to that
+charge. A matcher's match refused because another receipt was matched to the
+charge first (two receipt jobs at once) leaves the receipt recorded and
+unmatched too. `RecordReceipt` from the API, where the person can correct
+the call, still refuses the whole receipt.
+
+`FinanceReceipts` pages as `FinanceTransactions` does: `limit` (at most
+200, 50 by default), `offset`, or `after` with the `nextCursor` of the page
+before, answering `{ financeReceipts, nextCursor, totalCount }`. The newest
+purchase comes first and receipts that print no day come after every dated
+one, so with no range every receipt is reached; `isUndated` lists only those,
+and cannot go with `from` or `to`, which leave them out.
+
+A receipt's photo or PDF is an ordinary agent attachment. The sweep of
+uploads never sent leaves one a receipt was read from, and one uploaded to a
+finance transaction and waiting to be read while that transaction exists.
+Deleting a conversation leaves a receipt's photo to the receipt
+(`DetachReceiptAttachments`); deleting the receipt deletes it unless a
+message holds it.
 
 ## Mirrored copies
 

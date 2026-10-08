@@ -849,15 +849,23 @@ func TestMirroredMigrationMarksStoredCopies(t *testing.T) {
 		t.Fatalf("the data set does not say what it was meant to: %v", detected)
 	}
 
-	var migration migrations.Migration
+	var migration, laterMigration migrations.Migration
 	for _, candidate := range migrations.Migrations() {
-		if candidate.ID == "0144_agent_finance_transaction_duplicate" {
+		switch candidate.ID {
+		case "0144_agent_finance_transaction_duplicate":
 			migration = candidate
+		case "0154_finance_receipts":
+			laterMigration = candidate
 		}
 	}
-	if migration.SQL == "" || migration.ReverseSQL == "" {
-		t.Fatal("the migration 0144_agent_finance_transaction_duplicate is missing")
+	if migration.SQL == "" || migration.ReverseSQL == "" || laterMigration.SQL == "" {
+		t.Fatal("the migrations 0144_agent_finance_transaction_duplicate and 0154_finance_receipts are missing")
 	}
+	// A later migration adds columns to the same table after these, so it
+	// is taken off first and put back after, newest first as a downgrade
+	// does: the columns then come back in the order the driver's cached
+	// statements were prepared against.
+	dbtest.Exec(t, database, laterMigration.ReverseSQL)
 	dbtest.Exec(t, database, migration.ReverseSQL)
 	columns := rawQueryString(t, database, `SELECT COUNT(*)::text FROM "information_schema"."columns"
 		WHERE "table_name" = 'agent_finance_transaction' AND "column_name" LIKE 'duplicate%'`)
@@ -865,6 +873,7 @@ func TestMirroredMigrationMarksStoredCopies(t *testing.T) {
 		t.Fatalf("the reverse leaves %s duplicate columns", columns)
 	}
 	dbtest.Exec(t, database, migration.SQL)
+	dbtest.Exec(t, database, laterMigration.SQL)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		migrated := duplicateOfByProviderId(t, tx, fixture.agentId)
 		if fmt.Sprint(migrated) != fmt.Sprint(detected) {

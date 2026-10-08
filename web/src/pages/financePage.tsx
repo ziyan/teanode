@@ -8,6 +8,7 @@ import { FinanceBudgetsSection } from './finance/financeBudgets'
 import { usePersonZone } from './finance/financeCommon'
 import { FinanceNetWorthSection } from './finance/financeNetWorth'
 import { useAgentFinancePresence } from './finance/financePresence'
+import { FinanceReceiptListSection } from './finance/financeReceiptList'
 import { FinanceSavingsTargetsSection } from './finance/financeSavingsTargets'
 import { FinanceSpendingSection } from './finance/financeSpending'
 import { FinanceTransactionsSection } from './finance/financeTransactions'
@@ -27,6 +28,7 @@ export const FINANCE_SETUP_PATH = '/settings/agent/finance'
 export const FINANCE_SECTIONS: TabItem[] = [
   { id: 'spending', label: 'finance.tabSpending' },
   { id: 'transactions', label: 'finance.tabTransactions' },
+  { id: 'receipts', label: 'finance.tabReceipts' },
   { id: 'accounts', label: 'finance.tabAccounts' },
   { id: 'budgets', label: 'finance.tabBudgets' },
   { id: 'net-worth', label: 'finance.tabNetWorth' },
@@ -75,6 +77,7 @@ export function FinancePage() {
       ) : null}
       {section === 'spending' ? <FinanceSpendingSection /> : null}
       {section === 'transactions' ? <FinanceTransactionsSection /> : null}
+      {section === 'receipts' ? <FinanceReceiptListSection /> : null}
       {section === 'accounts' ? <FinanceAccountsSection /> : null}
       {section === 'budgets' ? <FinanceBudgetsSection /> : null}
       {section === 'net-worth' ? <FinanceNetWorthSection /> : null}

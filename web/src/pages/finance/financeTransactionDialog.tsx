@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { askAgentAbout, graphql } from '../../api'
 import { CopyIconButton, formatMoney, formatTime } from '../../components/common'
@@ -11,6 +11,7 @@ import { useTranslation } from '../../i18n/i18n'
 import {
   FINANCE_TRANSACTIONS,
   FinanceAccount,
+  FinanceReceipt,
   FinanceTransaction,
   FinanceTransactionPage,
   amountOf,
@@ -18,6 +19,13 @@ import {
   hasAmount,
 } from './financeApi'
 import { accountLabel, useFinanceWords } from './financeCommon'
+import {
+  DeleteReceiptConfirmation,
+  FinanceAnnotationEditor,
+  FinanceReceiptsSection,
+  ReceiptMatchChooser,
+  useTransactionReceipts,
+} from './financeReceipts'
 
 // providerMetadataText is the provider's object for a transaction laid out
 // to be read: indented JSON, or nothing when the provider sent none.
@@ -52,6 +60,15 @@ export function providerMetadataText(providerMetadata: unknown): string {
 // Ask the agent points the agent at the transaction, as the reader does at
 // a thread: the dialog closes, since its scrim would cover the drawer
 // that opens with a chip for it, or the agent page when there is no drawer.
+//
+// The annotation is edited where it is shown, and the receipts matched to
+// the transaction are listed with what can be done to them, both right
+// after the spending category: they are what a person opens a charge to
+// read or change, and the provider's categories, ids and times under them
+// are what they rarely need. Choosing a receipt to match and confirming a delete take this
+// dialog's place while they are open, so one Escape closes one dialog;
+// onTransactionChanged hands the list what changed (the annotation, how
+// many receipts), so the row shows it too.
 export function FinanceTransactionDialog({
   financeTransaction,
   financeAccount,
@@ -63,6 +80,7 @@ export function FinanceTransactionDialog({
   onCount,
   onUndoCount,
   onOpenTransaction,
+  onTransactionChanged,
   onClose,
 }: {
   financeTransaction: FinanceTransaction
@@ -75,12 +93,16 @@ export function FinanceTransactionDialog({
   onCount: () => void
   onUndoCount: () => void
   onOpenTransaction: (financeTransaction: FinanceTransaction) => void
+  onTransactionChanged?: (changes: Partial<FinanceTransaction>) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
   const metadata = providerMetadataText(financeTransaction.providerMetadata)
   const duplicateOfTransactionId = financeTransaction.duplicateOfTransactionId ?? ''
+  const receipts = useTransactionReceipts(financeTransaction, onTransactionChanged)
+  const [isChoosingReceipt, setIsChoosingReceipt] = useState(false)
+  const [deletingReceipt, setDeletingReceipt] = useState<FinanceReceipt | null>(null)
   // The counted copy of a duplicate, asked for by its id, or the
   // duplicates of a counted copy.
   const related = useQuery(
@@ -90,7 +112,9 @@ export function FinanceTransactionDialog({
           financeTransactionIds: [duplicateOfTransactionId],
         })
         return {
-          countedCopy: answer.FinanceTransactions.financeTransactions.find((copy) => copy.id === duplicateOfTransactionId),
+          countedCopy: answer.FinanceTransactions.financeTransactions.find(
+            (copy) => copy.id === duplicateOfTransactionId,
+          ),
           duplicates: [] as FinanceTransaction[],
         }
       }
@@ -120,7 +144,8 @@ export function FinanceTransactionDialog({
       ?.closest('.dialog')
       ?.querySelector<HTMLElement>('.dialog-actions > button')
       ?.focus()
-  }, [])
+    // Again when a receipt's own dialog gives this one its place back.
+  }, [isChoosingReceipt, deletingReceipt])
   const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
   const yesOrNo = (value: boolean) => (value ? t('common.yes') : t('common.no'))
   const categorizedBy = [
@@ -155,6 +180,35 @@ export function FinanceTransactionDialog({
       description: financeTransaction.description,
     })
     if (!isHandled) window.location.assign('/settings/agent')
+  }
+
+  if (isChoosingReceipt) {
+    return (
+      <ReceiptMatchChooser
+        financeTransaction={financeTransaction}
+        isBusy={receipts.isBusy}
+        onMatch={(receipt, matchedAmount) =>
+          void receipts.match(receipt, matchedAmount).then((isMatched) => {
+            if (isMatched) setIsChoosingReceipt(false)
+          })
+        }
+        onClose={() => setIsChoosingReceipt(false)}
+      />
+    )
+  }
+  if (deletingReceipt) {
+    return (
+      <DeleteReceiptConfirmation
+        receipt={deletingReceipt}
+        isBusy={receipts.isBusy}
+        onConfirm={() =>
+          void receipts.remove(deletingReceipt).then((isDeleted) => {
+            if (isDeleted) setDeletingReceipt(null)
+          })
+        }
+        onClose={() => setDeletingReceipt(null)}
+      />
+    )
   }
 
   return (
@@ -267,6 +321,27 @@ export function FinanceTransactionDialog({
                 <span className="muted finance-detail-note">{t('finance.duplicateCategoryNotCounted')}</span>
               ) : null}
             </dd>
+            <dt className="finance-annotation-term">{t('finance.annotation')}</dt>
+            <dd className="finance-annotation-value">
+              <FinanceAnnotationEditor
+                financeTransaction={financeTransaction}
+                isBusy={receipts.isBusy}
+                onSave={receipts.annotate}
+              />
+            </dd>
+          </dl>
+          <FinanceReceiptsSection
+            financeTransaction={financeTransaction}
+            receipts={receipts.receipts}
+            isLoading={receipts.isLoading}
+            isBusy={receipts.isBusy}
+            isReading={receipts.isReading}
+            onUpload={(file) => void receipts.upload(file)}
+            onMatch={() => setIsChoosingReceipt(true)}
+            onUnmatch={(receipt) => void receipts.unmatch(receipt)}
+            onDelete={setDeletingReceipt}
+          />
+          <dl className="properties">
             {property(t('finance.providerCategoryPrimary'), financeTransaction.providerCategoryPrimary, 'mono')}
             {property(t('finance.providerCategoryDetailed'), financeTransaction.providerCategoryDetailed, 'mono')}
             {property(t('finance.pending'), yesOrNo(financeTransaction.isPending))}
@@ -277,9 +352,7 @@ export function FinanceTransactionDialog({
           </dl>
           <div className="finance-metadata-head">
             <strong>{t('finance.providerMetadata')}</strong>
-            {metadata ? (
-              <CopyIconButton value={metadata} label={t('finance.copyProviderMetadata')} />
-            ) : null}
+            {metadata ? <CopyIconButton value={metadata} label={t('finance.copyProviderMetadata')} /> : null}
           </div>
           <p className="muted field-hint">
             {metadata ? t('finance.providerMetadataHint') : t('finance.noProviderMetadata')}

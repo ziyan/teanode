@@ -115,6 +115,9 @@ type FinanceTransaction struct {
 	CategorizationConfidence string     `json:"categorizationConfidence,omitempty"`
 	DuplicateOfTransactionID string     `json:"duplicateOfTransactionId,omitempty"`
 	DuplicateDecidedBy       string     `json:"duplicateDecidedBy,omitempty"`
+	Annotation               string     `json:"annotation,omitempty"`
+	AnnotatedBy              string     `json:"annotatedBy,omitempty"`
+	ReceiptCount             int        `json:"receiptCount"`
 }
 
 // FinanceTransactionPage is one page of finance transactions, the cursor
@@ -641,6 +644,103 @@ type StatementImport struct {
 	LastStatementImport   *FinanceStatementImport `json:"lastStatementImport,omitempty"`
 }
 
+// FinanceReceiptPage is one page of receipts, the cursor for the next,
+// empty on the last, and how many match on every page.
+type FinanceReceiptPage struct {
+	FinanceReceipts []*FinanceReceipt `json:"financeReceipts"`
+	NextCursor      string            `json:"nextCursor,omitempty"`
+	TotalCount      int               `json:"totalCount"`
+}
+
+// FinanceReceipt is one merchant's record of one purchase, stored line by
+// line as printed, checked against its totals and matched to the charges
+// it explains. MailboxItemID is where its message is now, for opening it.
+type FinanceReceipt struct {
+	ID                    string                 `json:"id"`
+	ReceiptSourceKind     string                 `json:"receiptSourceKind"`
+	MailID                string                 `json:"mailId,omitempty"`
+	MailboxItemID         string                 `json:"mailboxItemId,omitempty"`
+	GmailMessageID        string                 `json:"gmailMessageId,omitempty"`
+	AgentAttachmentID     string                 `json:"agentAttachmentId,omitempty"`
+	MerchantName          string                 `json:"merchantName"`
+	MerchantReceiptNumber string                 `json:"merchantReceiptNumber,omitempty"`
+	PurchasedOn           string                 `json:"purchasedOn,omitempty"`
+	PurchasedAt           *time.Time             `json:"purchasedAt,omitempty"`
+	CurrencyCode          string                 `json:"currencyCode"`
+	SubtotalAmount        string                 `json:"subtotalAmount,omitempty"`
+	TotalAmount           string                 `json:"totalAmount"`
+	PaymentAccountMask    string                 `json:"paymentAccountMask,omitempty"`
+	ReceiptCheckState     string                 `json:"receiptCheckState"`
+	CheckDifferenceAmount string                 `json:"checkDifferenceAmount"`
+	ReceiptLines          []*FinanceReceiptLine  `json:"receiptLines"`
+	ReceiptMatches        []*FinanceReceiptMatch `json:"receiptMatches"`
+	CreatedAt             time.Time              `json:"createdAt"`
+	ModifiedAt            time.Time              `json:"modifiedAt"`
+}
+
+// FinanceReceiptLine is one printed line of a receipt, its amount signed
+// as printed.
+type FinanceReceiptLine struct {
+	ID                   string `json:"id"`
+	LineNumber           int    `json:"lineNumber"`
+	ReceiptLineKind      string `json:"receiptLineKind"`
+	Description          string `json:"description"`
+	Quantity             string `json:"quantity,omitempty"`
+	QuantityUnit         string `json:"quantityUnit,omitempty"`
+	UnitPriceAmount      string `json:"unitPriceAmount,omitempty"`
+	LineAmount           string `json:"lineAmount"`
+	TaxClassCode         string `json:"taxClassCode,omitempty"`
+	DiscountedLineNumber int    `json:"discountedLineNumber,omitempty"`
+	DiscountedLineID     string `json:"discountedLineId,omitempty"`
+}
+
+// FinanceReceiptMatch is how much of a finance transaction a receipt
+// explains, and what matched them (receipt_matcher or person).
+type FinanceReceiptMatch struct {
+	ReceiptID            string    `json:"receiptId"`
+	FinanceTransactionID string    `json:"financeTransactionId"`
+	MatchedAmount        string    `json:"matchedAmount"`
+	ReceiptMatchSource   string    `json:"receiptMatchSource"`
+	MatchConfidence      string    `json:"matchConfidence,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
+}
+
+// ReceiptMatchCandidate is a charge a receipt could explain, with the
+// finance transaction itself.
+type ReceiptMatchCandidate struct {
+	FinanceTransactionID string              `json:"financeTransactionId"`
+	FinanceTransaction   *FinanceTransaction `json:"financeTransaction,omitempty"`
+	MatchedAmount        string              `json:"matchedAmount"`
+	IsExactAmount        bool                `json:"isExactAmount"`
+	IsSameAccount        bool                `json:"isSameAccount"`
+	IsMerchantNameShared bool                `json:"isMerchantNameShared"`
+	DayDistanceCount     int                 `json:"dayDistanceCount"`
+	IsAutomatic          bool                `json:"isAutomatic"`
+	MatchConfidence      string              `json:"matchConfidence,omitempty"`
+}
+
+// ReceiptReading is the receipt job queued to read a receipt.
+type ReceiptReading struct {
+	AgentJobID string `json:"agentJobId"`
+}
+
+// RecordedReceipt is what recording a receipt did.
+type RecordedReceipt struct {
+	FinanceReceipt         *FinanceReceipt          `json:"financeReceipt"`
+	ReceiptCheckSummary    string                   `json:"receiptCheckSummary"`
+	ReceiptMatchCandidates []*ReceiptMatchCandidate `json:"receiptMatchCandidates"`
+	IsReplaced             bool                     `json:"isReplaced"`
+}
+
+// ReceiptPreview is what recording a receipt would do.
+type ReceiptPreview struct {
+	ReceiptCheckState      string                   `json:"receiptCheckState"`
+	CheckDifferenceAmount  string                   `json:"checkDifferenceAmount"`
+	ReceiptCheckSummary    string                   `json:"receiptCheckSummary"`
+	ReceiptMatchCandidates []*ReceiptMatchCandidate `json:"receiptMatchCandidates"`
+	IsReplacing            bool                     `json:"isReplacing"`
+}
+
 // The fields each document selects, so a type is read the same way by
 // every document that returns it.
 const (
@@ -648,7 +748,18 @@ const (
 
 	financeSourceFields = `{ id name providerKind institutionId institutionName isEnabled cron lastRunAt nextRunAt lastError isSignInRequired createdAt financeAccounts ` + financeAccountFields + ` }`
 
-	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence duplicateOfTransactionId duplicateDecidedBy }`
+	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence duplicateOfTransactionId duplicateDecidedBy annotation annotatedBy receiptCount }`
+
+	financeReceiptFields = `{ id receiptSourceKind mailId mailboxItemId gmailMessageId agentAttachmentId merchantName merchantReceiptNumber purchasedOn purchasedAt currencyCode subtotalAmount totalAmount paymentAccountMask receiptCheckState checkDifferenceAmount createdAt modifiedAt
+    receiptLines { id lineNumber receiptLineKind description quantity quantityUnit unitPriceAmount lineAmount taxClassCode discountedLineNumber discountedLineId }
+    receiptMatches { receiptId financeTransactionId matchedAmount receiptMatchSource matchConfidence createdAt } }`
+
+	receiptMatchCandidateFields = `{ financeTransactionId financeTransaction ` + financeTransactionFields + ` matchedAmount isExactAmount isSameAccount isMerchantNameShared dayDistanceCount isAutomatic matchConfidence }`
+
+	// The variables and arguments RecordReceipt and its preview share.
+	receiptVariables = `($mailboxItemId: String, $gmailMessageId: String, $agentAttachmentId: String, $merchantName: String!, $merchantReceiptNumber: String, $purchasedOn: String, $purchasedAt: String, $currencyCode: String!, $subtotalAmount: String, $totalAmount: String!, $paymentAccountMask: String, $receiptLines: [ReceiptLineInput!]!, $financeTransactionId: String, $isUnbalancedAccepted: Boolean)`
+
+	receiptArguments = `(mailboxItemId: $mailboxItemId, gmailMessageId: $gmailMessageId, agentAttachmentId: $agentAttachmentId, merchantName: $merchantName, merchantReceiptNumber: $merchantReceiptNumber, purchasedOn: $purchasedOn, purchasedAt: $purchasedAt, currencyCode: $currencyCode, subtotalAmount: $subtotalAmount, totalAmount: $totalAmount, paymentAccountMask: $paymentAccountMask, receiptLines: $receiptLines, financeTransactionId: $financeTransactionId, isUnbalancedAccepted: $isUnbalancedAccepted)`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -896,6 +1007,42 @@ const (
   UndoCountTransaction(financeTransactionId: $financeTransactionId) ` + financeTransactionFields + `
 }`
 
+	DocumentAnnotateTransaction = `mutation ($financeTransactionId: String!, $annotation: String, $isAskedByPerson: Boolean) {
+  AnnotateTransaction(financeTransactionId: $financeTransactionId, annotation: $annotation, isAskedByPerson: $isAskedByPerson) ` + financeTransactionFields + `
+}`
+
+	DocumentFinanceReceipts = `query ($financeTransactionId: String, $from: String, $to: String, $isUndated: Boolean, $isUnmatched: Boolean, $limit: Int, $after: String, $offset: Int) {
+  FinanceReceipts(financeTransactionId: $financeTransactionId, from: $from, to: $to, isUndated: $isUndated, isUnmatched: $isUnmatched, limit: $limit, after: $after, offset: $offset) {
+    financeReceipts ` + financeReceiptFields + ` nextCursor totalCount
+  }
+}`
+
+	DocumentFinanceReceipt = `query ($receiptId: String!) { FinanceReceipt(receiptId: $receiptId) ` + financeReceiptFields + ` }`
+
+	DocumentProposeReceiptMatches = `query ($receiptId: String!) { ProposeReceiptMatches(receiptId: $receiptId) ` + receiptMatchCandidateFields + ` }`
+
+	DocumentRecordReceipt = `mutation ` + receiptVariables + ` {
+  RecordReceipt` + receiptArguments + ` { financeReceipt ` + financeReceiptFields + ` receiptCheckSummary receiptMatchCandidates ` + receiptMatchCandidateFields + ` isReplaced }
+}`
+
+	DocumentPreviewRecordReceipt = `query ` + receiptVariables + ` {
+  PreviewRecordReceipt` + receiptArguments + ` { receiptCheckState checkDifferenceAmount receiptCheckSummary receiptMatchCandidates ` + receiptMatchCandidateFields + ` isReplacing }
+}`
+
+	DocumentMatchReceipt = `mutation ($receiptId: String!, $financeTransactionId: String!, $matchedAmount: String) {
+  MatchReceipt(receiptId: $receiptId, financeTransactionId: $financeTransactionId, matchedAmount: $matchedAmount) ` + financeReceiptFields + `
+}`
+
+	DocumentUnmatchReceipt = `mutation ($receiptId: String!, $financeTransactionId: String!) {
+  UnmatchReceipt(receiptId: $receiptId, financeTransactionId: $financeTransactionId) ` + financeReceiptFields + `
+}`
+
+	DocumentDeleteReceipt = `mutation ($receiptId: String!) { DeleteReceipt(receiptId: $receiptId) }`
+
+	DocumentReadReceipt = `mutation ($agentAttachmentId: String, $mailboxItemId: String, $financeTransactionId: String) {
+  ReadReceipt(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId, financeTransactionId: $financeTransactionId) { agentJobId }
+}`
+
 	DocumentSetBudget = `mutation ($spendingCategoryId: String!, $monthlyAmount: String!, $currencyCode: String, $effectiveFrom: String) {
   SetBudget(spendingCategoryId: $spendingCategoryId, monthlyAmount: $monthlyAmount, currencyCode: $currencyCode, effectiveFrom: $effectiveFrom) ` + budgetFields + `
 }`
@@ -945,6 +1092,10 @@ var FinanceDocuments = map[string]string{
 	"CountTransaction": DocumentCountTransaction, "UndoCountTransaction": DocumentUndoCountTransaction,
 	"CreateSavingsTarget": DocumentCreateSavingsTarget,
 	"UpdateSavingsTarget": DocumentUpdateSavingsTarget, "CloseSavingsTarget": DocumentCloseSavingsTarget,
+	"AnnotateTransaction": DocumentAnnotateTransaction, "FinanceReceipts": DocumentFinanceReceipts, "FinanceReceipt": DocumentFinanceReceipt,
+	"ProposeReceiptMatches": DocumentProposeReceiptMatches, "RecordReceipt": DocumentRecordReceipt,
+	"PreviewRecordReceipt": DocumentPreviewRecordReceipt, "MatchReceipt": DocumentMatchReceipt,
+	"UnmatchReceipt": DocumentUnmatchReceipt, "DeleteReceipt": DocumentDeleteReceipt, "ReadReceipt": DocumentReadReceipt,
 }
 
 // Executor runs a document: a Client, or the agent's operations as the

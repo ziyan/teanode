@@ -348,6 +348,9 @@ func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail,
 				}
 			}
 		}
+		if err := self.queueReceiptReading(tx, run, mail, insight); err != nil {
+			return err
+		}
 		// Whether the person should hear of it, or of the run of messages
 		// like it, without opening their mail: candidates for the alert
 		// job, which decides later and with more in hand.

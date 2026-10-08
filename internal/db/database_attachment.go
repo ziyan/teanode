@@ -26,10 +26,24 @@ type AttachmentOperation interface {
 	ListAgentAttachments(agentId, conversationId string) ([]*models.AgentAttachment, error)
 
 	// ListOrphanAgentAttachments is what was uploaded and never sent with
-	// a turn, older than the given time, for the sweep.
+	// a turn, older than the given time, for the sweep. A photo or PDF a
+	// finance receipt was read from is not an orphan: the receipt holds
+	// it. Nor is one uploaded to a finance transaction as its receipt,
+	// waiting to be read, while that finance transaction exists.
 	ListOrphanAgentAttachments(before time.Time) ([]*models.AgentAttachment, error)
 
+	// DetachReceiptAttachments takes a conversation's files that a finance
+	// receipt was read from out of the conversation, for deleting the
+	// conversation without them: they no longer name a conversation or a
+	// message, and go when their receipt is deleted.
+	DetachReceiptAttachments(agentId, conversationId string) error
+
 	DeleteAgentAttachment(attachmentId string) error
+
+	// SetAgentAttachmentFinanceTransaction records the finance transaction
+	// an upload of the agent's is the receipt for. ErrNotFound when the
+	// agent has no such upload or no such finance transaction.
+	SetAgentAttachmentFinanceTransaction(agentId, attachmentId, financeTransactionId string) error
 }
 
 type agentAttachmentModel struct {
@@ -42,6 +56,8 @@ type agentAttachmentModel struct {
 	ContentType    string    `gorm:"column:content_type"`
 	Size           int64     `gorm:"column:size"`
 	Text           string    `gorm:"column:text"`
+
+	FinanceTransactionID *string `gorm:"column:finance_transaction_id"`
 }
 
 func (agentAttachmentModel) TableName() string { return "agent_attachment" }
@@ -51,6 +67,7 @@ func attachmentFromModel(model *agentAttachmentModel) *models.AgentAttachment {
 		ID: model.ID, CreatedAt: model.CreatedAt.In(time.Local), AgentID: model.AgentID,
 		ConversationID: model.ConversationID, MessageID: model.MessageID,
 		Name: model.Name, ContentType: model.ContentType, Size: model.Size, Text: model.Text,
+		FinanceTransactionID: optionalString(model.FinanceTransactionID),
 	}
 }
 
@@ -130,7 +147,11 @@ func (self *transaction) ListAgentAttachments(agentId, conversationId string) ([
 
 func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models.AgentAttachment, error) {
 	var found []agentAttachmentModel
-	if err := self.tx.Where("\"message_id\" = '' AND \"created_at\" < ?", before).Limit(500).Find(&found).Error; err != nil {
+	// The finance transaction id is set null when its finance transaction
+	// is deleted, so a set one names a charge that still exists.
+	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL
+		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before).
+		Limit(500).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	attachments := make([]*models.AgentAttachment, 0, len(found))
@@ -140,6 +161,35 @@ func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models
 	return attachments, nil
 }
 
+func (self *transaction) DetachReceiptAttachments(agentId, conversationId string) error {
+	if conversationId == "" {
+		return fmt.Errorf("%w: detaching a conversation's receipt files needs the conversation", ErrInvalidArguments)
+	}
+	return self.tx.Exec(`UPDATE "agent_attachment" SET "conversation_id" = '', "message_id" = ''
+		WHERE "agent_id" = ? AND "conversation_id" = ?
+		  AND EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`,
+		agentId, conversationId).Error
+}
+
 func (self *transaction) DeleteAgentAttachment(attachmentId string) error {
 	return self.tx.Where("\"id\" = ?", attachmentId).Delete(&agentAttachmentModel{}).Error
+}
+
+func (self *transaction) SetAgentAttachmentFinanceTransaction(agentId, attachmentId, financeTransactionId string) error {
+	financeTransaction, err := self.GetFinanceTransaction(agentId, financeTransactionId)
+	if err != nil {
+		return err
+	}
+	if financeTransaction == nil {
+		return ErrNotFound
+	}
+	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, attachmentId).
+		Update("finance_transaction_id", financeTransaction.ID)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

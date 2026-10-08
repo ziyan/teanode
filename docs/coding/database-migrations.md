@@ -60,7 +60,16 @@ again is the way out that loses nothing.
 1. Add both files with the next number and a short descriptive slug.
 2. The forward file makes the change. The reverse file undoes it exactly,
    dropping things in dependency order.
-3. Both run inside a transaction, so no explicit `BEGIN`.
+3. Both run inside a transaction, so no explicit `BEGIN`. Everything in one
+   file shares that transaction and its locks until it commits, so a
+   statement that cannot run in a transaction (`CREATE INDEX CONCURRENTLY`)
+   does not belong in a migration. A check on a large existing table is
+   added `NOT VALID` and validated with `VALIDATE CONSTRAINT` in a statement
+   of its own: the `ALTER TABLE` that adds it then does not scan the table,
+   and `VALIDATE` scans under a lock that lets readers and writers through.
+   In one file the `ALTER TABLE`'s own lock is held until the commit either
+   way; to keep the table open while it is checked, validate in the next
+   migration.
 4. Update the corresponding GORM model in `internal/db/`.
 5. Run `make test`, which applies every migration against a fresh database.
 

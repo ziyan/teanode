@@ -301,8 +301,31 @@ type FinanceTransaction struct {
 	DuplicateOfTransactionID string             `json:"duplicateOfTransactionId,omitempty" graphapi:"nullable"`
 	DuplicateDecidedBy       DuplicateDecidedBy `json:"duplicateDecidedBy,omitempty" graphapi:"nullable"`
 
+	// Annotation is what the person or their agent wrote on it, and
+	// AnnotatedBy which of them; both empty when nobody has. The agent
+	// never overwrites the person's.
+	Annotation  string      `json:"annotation,omitempty" graphapi:"nullable"`
+	AnnotatedBy AnnotatedBy `json:"annotatedBy,omitempty" graphapi:"nullable"`
+
+	// ReceiptCount is how many receipts are matched to it.
+	ReceiptCount int `json:"receiptCount"`
+
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// AnnotatedBy is who wrote a finance transaction's annotation.
+type AnnotatedBy string
+
+// The person, or their agent acting for them.
+const (
+	AnnotatedByPerson AnnotatedBy = "person"
+	AnnotatedByAgent  AnnotatedBy = "agent"
+)
+
+// IsValid says the author is one of the two.
+func (self AnnotatedBy) IsValid() bool {
+	return self == AnnotatedByPerson || self == AnnotatedByAgent
 }
 
 // DuplicateDecidedBy is what decided whether a finance transaction is a
@@ -357,4 +380,184 @@ type FinanceSpendingSummaryRow struct {
 	MoneyOut                string `json:"moneyOut"`
 	MoneyIn                 string `json:"moneyIn"`
 	FinanceTransactionCount int    `json:"financeTransactionCount"`
+}
+
+// ReceiptSourceKind is where a finance receipt was read from.
+type ReceiptSourceKind string
+
+// A message stored here (the mail row, which keeps its id as the person
+// files it from folder to folder), a Gmail message the agent read through
+// the Gmail skill, or a photo or PDF uploaded as an agent attachment.
+const (
+	ReceiptSourceKindMail         ReceiptSourceKind = "mail"
+	ReceiptSourceKindGmailMessage ReceiptSourceKind = "gmail_message"
+	ReceiptSourceKindAttachment   ReceiptSourceKind = "attachment"
+)
+
+// IsValid says the kind is one of the three.
+func (self ReceiptSourceKind) IsValid() bool {
+	switch self {
+	case ReceiptSourceKindMail, ReceiptSourceKindGmailMessage, ReceiptSourceKindAttachment:
+		return true
+	}
+	return false
+}
+
+// ReceiptLineKind is what one printed line of a receipt is.
+type ReceiptLineKind string
+
+// An item bought, a discount (negative, as printed), a tax, a fee (a bag,
+// a delivery) or a tip.
+const (
+	ReceiptLineKindItem     ReceiptLineKind = "item"
+	ReceiptLineKindDiscount ReceiptLineKind = "discount"
+	ReceiptLineKindTax      ReceiptLineKind = "tax"
+	ReceiptLineKindFee      ReceiptLineKind = "fee"
+	ReceiptLineKindTip      ReceiptLineKind = "tip"
+)
+
+// IsValid says the kind is one of the five.
+func (self ReceiptLineKind) IsValid() bool {
+	switch self {
+	case ReceiptLineKindItem, ReceiptLineKindDiscount, ReceiptLineKindTax, ReceiptLineKindFee, ReceiptLineKindTip:
+		return true
+	}
+	return false
+}
+
+// ReceiptCheckState is whether a receipt's lines add up to its printed
+// totals.
+type ReceiptCheckState string
+
+// Balanced: the items, discounts and fees come to the subtotal, and the
+// subtotal with the taxes and tips to the total, to the cent (with no
+// subtotal printed, every line comes to the total). Unbalanced: they miss,
+// by CheckDifferenceAmount.
+const (
+	ReceiptCheckStateBalanced   ReceiptCheckState = "balanced"
+	ReceiptCheckStateUnbalanced ReceiptCheckState = "unbalanced"
+)
+
+// IsValid says the state is one of the two.
+func (self ReceiptCheckState) IsValid() bool {
+	return self == ReceiptCheckStateBalanced || self == ReceiptCheckStateUnbalanced
+}
+
+// ReceiptMatchSource is what matched a receipt to a finance transaction.
+type ReceiptMatchSource string
+
+// The receipt matcher, which matches only an exact amount that is the one
+// candidate, or the person (or their agent asked by them), whose match the
+// matcher never removes or replaces.
+const (
+	ReceiptMatchSourceReceiptMatcher ReceiptMatchSource = "receipt_matcher"
+	ReceiptMatchSourcePerson         ReceiptMatchSource = "person"
+)
+
+// IsValid says the source is one of the two.
+func (self ReceiptMatchSource) IsValid() bool {
+	return self == ReceiptMatchSourceReceiptMatcher || self == ReceiptMatchSourcePerson
+}
+
+// FinanceReceipt is one merchant's printed or emailed record of one
+// purchase or order, stored line by line exactly as printed, checked
+// against its own totals, and matched to the charges it explains. Amounts
+// are decimals, positive for what was paid. The finance transaction, not
+// the receipt, is what totals count.
+type FinanceReceipt struct {
+	ID      string `json:"id"`
+	AgentID string `json:"agentId"`
+
+	// ReceiptSourceKind says where it was read from, and exactly one of
+	// MailID, GmailMessageID and AgentAttachmentID is set, the one it
+	// names.
+	ReceiptSourceKind ReceiptSourceKind `json:"receiptSourceKind"`
+	MailID            string            `json:"mailId,omitempty" graphapi:"nullable"`
+	GmailMessageID    string            `json:"gmailMessageId,omitempty" graphapi:"nullable"`
+	AgentAttachmentID string            `json:"agentAttachmentId,omitempty" graphapi:"nullable"`
+
+	// MailboxItemID is where the message is in the person's mailboxes now,
+	// for opening it; filled when the receipt is read for the person, not
+	// stored, and empty when the message is gone.
+	MailboxItemID string `json:"mailboxItemId,omitempty" graphapi:"nullable"`
+
+	// MerchantName and MerchantReceiptNumber (an order or receipt number)
+	// are as the merchant wrote them.
+	MerchantName          string `json:"merchantName"`
+	MerchantReceiptNumber string `json:"merchantReceiptNumber,omitempty" graphapi:"nullable"`
+
+	// PurchasedOn is the day, "2006-01-02", and PurchasedAt the moment
+	// when the receipt prints a time.
+	PurchasedOn string     `json:"purchasedOn,omitempty" graphapi:"nullable"`
+	PurchasedAt *time.Time `json:"purchasedAt,omitempty" graphapi:"nullable"`
+
+	CurrencyCode string `json:"currencyCode"`
+
+	// SubtotalAmount is empty when the receipt prints none.
+	SubtotalAmount string `json:"subtotalAmount,omitempty" graphapi:"nullable"`
+	TotalAmount    string `json:"totalAmount"`
+
+	// PaymentAccountMask is the last digits of the card or account the
+	// receipt says paid, empty when it does not say.
+	PaymentAccountMask string `json:"paymentAccountMask,omitempty" graphapi:"nullable"`
+
+	// ReceiptCheckState says whether the lines add up, and
+	// CheckDifferenceAmount by how much they miss: what the lines come to
+	// less what is printed, zero when balanced.
+	ReceiptCheckState     ReceiptCheckState `json:"receiptCheckState"`
+	CheckDifferenceAmount string            `json:"checkDifferenceAmount"`
+
+	ReceiptLines   []*FinanceReceiptLine  `json:"receiptLines"`
+	ReceiptMatches []*FinanceReceiptMatch `json:"receiptMatches"`
+
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// FinanceReceiptLine is one printed line of a finance receipt.
+type FinanceReceiptLine struct {
+	ID string `json:"id"`
+
+	// LineNumber is its place on the receipt, from 1.
+	LineNumber      int             `json:"lineNumber"`
+	ReceiptLineKind ReceiptLineKind `json:"receiptLineKind"`
+	Description     string          `json:"description"`
+
+	// Quantity, QuantityUnit ("lb", "kg") and UnitPriceAmount are what the
+	// line prints of them, empty when it prints none.
+	Quantity        string `json:"quantity,omitempty" graphapi:"nullable"`
+	QuantityUnit    string `json:"quantityUnit,omitempty" graphapi:"nullable"`
+	UnitPriceAmount string `json:"unitPriceAmount,omitempty" graphapi:"nullable"`
+
+	// LineAmount is signed as printed: a discount is negative.
+	LineAmount string `json:"lineAmount"`
+
+	// TaxClassCode is the receipt's own mark: on an item or a discount the
+	// tax it falls under, on a tax line the mark it covers. Empty when the
+	// receipt does not say.
+	TaxClassCode string `json:"taxClassCode,omitempty" graphapi:"nullable"`
+
+	// DiscountedLineNumber and DiscountedLineID are a discount's item:
+	// written by its number, kept by its id.
+	DiscountedLineNumber int    `json:"discountedLineNumber,omitempty" graphapi:"nullable"`
+	DiscountedLineID     string `json:"discountedLineId,omitempty" graphapi:"nullable"`
+
+	// SpendingCategoryID is reserved for splitting a charge across
+	// spending categories by its receipt; nothing writes it yet.
+	SpendingCategoryID string `json:"spendingCategoryId,omitempty" graphapi:"nullable"`
+}
+
+// FinanceReceiptMatch is a link between one finance receipt and one
+// finance transaction: how much of the transaction the receipt explains,
+// a positive decimal, and what made the link.
+type FinanceReceiptMatch struct {
+	ReceiptID            string             `json:"receiptId"`
+	FinanceTransactionID string             `json:"financeTransactionId"`
+	MatchedAmount        string             `json:"matchedAmount"`
+	ReceiptMatchSource   ReceiptMatchSource `json:"receiptMatchSource"`
+
+	// MatchConfidence is the matcher's confidence, a decimal between 0
+	// and 1; empty for the person's.
+	MatchConfidence string    `json:"matchConfidence,omitempty" graphapi:"nullable"`
+	CreatedAt       time.Time `json:"createdAt"`
 }

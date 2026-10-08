@@ -48,10 +48,12 @@ var financeSubcommandsSpanningOperations = map[string][]string{
 	"categorize-transaction": {"CategorizeTransaction", "CategorizeTransactions"},
 	// The preview is the import with --dry-run.
 	"import-transactions": {"ImportTransactions", "PreviewImportTransactions"},
-	"sync":                {},
-	"disable-source":      {},
-	"enable-source":       {},
-	"delete-source":       {},
+	// So is recording a receipt's.
+	"record-receipt": {"RecordReceipt", "PreviewRecordReceipt"},
+	"sync":           {},
+	"disable-source": {},
+	"enable-source":  {},
+	"delete-source":  {},
 }
 
 // Every operation of the finance area has a teanode finance subcommand
