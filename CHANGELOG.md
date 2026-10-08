@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.120.0] - 2026-10-08
+
+### Added
+
+- Your agent can work in the Claude Code and Codex sessions you keep in herdr on your computers: it reads them, types into them where you can see (also while they work), opens and closes them, and shows you the questions and approvals they wait on, so you can answer from the drawer, a chat app or `teanode computer herdr answer`. Update `teanode computer` on each computer that runs herdr. (#357)
+
 ## [0.119.0] - 2026-10-08
 
 ### Added
