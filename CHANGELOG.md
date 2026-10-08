@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.118.0] - 2026-10-08
+
+### Added
+
+- Annotate a transaction, and see receipts on it line by line: read from receipt emails, from a photo you upload, or by your agent, checked to add up and matched to the charge. (#353)
+
 ## [0.117.0] - 2026-10-08
 
 ### Added
