@@ -159,11 +159,14 @@ describe('AnswerVoice', () => {
   it('drops the answer heard back by its words, and goes on', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
     const { player } = fakePlayer()
-    const levels = { microphoneRms: 0.3, answerRms: 0.1 }
+    const levels = { microphoneRms: 0.01, answerRms: 0.1 }
     const voice = new AnswerVoice(player as unknown as AnswerPlayer, { confirmationNeeded: '' }, () => levels)
     voice.follow({ kind: 'asked', runId: 'run', sequence: 1 })
     voice.follow({ kind: 'text', runId: 'run', sequence: 2, text: 'You have a dentist at nine tomorrow. ' })
     voice.answering(true)
+    // Past the answer's start, with its quiet echo learned.
+    vi.advanceTimersByTime(1600)
+    levels.microphoneRms = 0.6
     voice.speechStarted('u1')
     vi.advanceTimersByTime(700)
     // Loud enough to be taken for the person: quietened and paused.
@@ -174,6 +177,39 @@ describe('AnswerVoice', () => {
     expect(player.resume).toHaveBeenCalled()
     expect(player.duck).toHaveBeenLastCalledWith(false)
     expect(player.interrupt).not.toHaveBeenCalled()
+  })
+
+  it('wants the person louder still while the answer is starting', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
+    const { player } = fakePlayer()
+    const levels = { microphoneRms: 0.3, answerRms: 0.1 }
+    const heard: string[] = []
+    const voice = new AnswerVoice(
+      player as unknown as AnswerPlayer,
+      { confirmationNeeded: '' },
+      () => levels,
+      () => heard.push('person'),
+    )
+    voice.follow({ kind: 'asked', runId: 'run', sequence: 1 })
+    voice.follow({ kind: 'text', runId: 'run', sequence: 2, text: 'You have a dentist at nine tomorrow. ' })
+    voice.answering(true)
+    // Three times the answer, the moment it starts: its unlearned echo.
+    voice.speechStarted('u1')
+    expect(voice.isEchoUtterance('u1')).toBe(true)
+    vi.advanceTimersByTime(700)
+    voice.speechStopped()
+    expect(player.duck).not.toHaveBeenCalled()
+    expect(heard).toEqual([])
+    expect(voice.isEchoUtterance('u1')).toBe(true)
+    // The same, later in the answer, over a quiet echo: the person.
+    levels.microphoneRms = 0.01
+    vi.advanceTimersByTime(1000)
+    levels.microphoneRms = 0.3
+    voice.speechStarted('u2')
+    vi.advanceTimersByTime(500)
+    expect(heard).toEqual(['person'])
+    expect(voice.isEchoUtterance('u2')).toBe(false)
+    expect(player.duck).toHaveBeenLastCalledWith(true)
   })
 
   it('drops speech no louder than the echo without even pausing', () => {

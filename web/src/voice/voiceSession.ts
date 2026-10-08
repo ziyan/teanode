@@ -144,10 +144,12 @@ export class VoiceSession {
         this.callbacks.onSpeaking(isSpeaking)
       },
     )
-    this.answers = new AnswerVoice(player, { confirmationNeeded: this.messages.confirmationNeeded }, () => ({
-      microphoneRms: this.microphoneRms(),
-      answerRms: player.rootMeanSquare(),
-    }))
+    this.answers = new AnswerVoice(
+      player,
+      { confirmationNeeded: this.messages.confirmationNeeded },
+      () => ({ microphoneRms: this.microphoneRms(), answerRms: player.rootMeanSquare() }),
+      () => this.callbacks.onHearing(true),
+    )
     this.answers.setMuted(this.isMuted)
     const answers = this.answers
     try {
@@ -250,7 +252,9 @@ export class VoiceSession {
           return
       }
       if (event.voiceEvent === 'speechStarted') {
-        this.callbacks.onHearing(true)
+        // Over an answer it is shown as heard only once it is judged the
+        // person's (onPersonHeard), not the answer's own echo.
+        if (!answers.isSpeaking()) this.callbacks.onHearing(true)
         answers.speechStarted(event.utteranceId)
       }
       if (event.voiceEvent === 'speechStopped') {
@@ -258,7 +262,9 @@ export class VoiceSession {
         answers.speechStopped()
       }
       const changed = this.tracker.accept(event)
-      if (changed.captionText !== undefined) this.callbacks.onCaption(changed.captionText)
+      if (changed.captionText !== undefined && !answers.isEchoUtterance(event.utteranceId)) {
+        this.callbacks.onCaption(changed.captionText)
+      }
       if (changed.transcriptText) {
         const verdict = answers.transcript(changed.transcriptText, event.utteranceId)
         // The answer heard back through the microphone is not the person.
