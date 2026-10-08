@@ -23,7 +23,7 @@ export function SpeechVoiceChoice({
   const toast = useToast()
   const [voices, setVoices] = useState<{ speechVoices: string[]; serverSpeechVoice: string } | null>(null)
   const [isPlaying, setPlaying] = useState(false)
-  const playing = useRef<HTMLAudioElement | null>(null)
+  const playing = useRef<{ context: AudioContext; source?: AudioBufferSourceNode } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -36,14 +36,21 @@ export function SpeechVoiceChoice({
       .catch(() => undefined)
     return () => {
       cancelled = true
-      playing.current?.pause()
+      void playing.current?.context.close().catch(() => undefined)
     }
   }, [])
   if (!voices) return null
 
   const heard = speechVoice || voices.serverSpeechVoice
+  // play says the sample through Web Audio: the dashboard lets media
+  // elements load only from this server, which a blob address is not, and
+  // Safari on a phone plays only from an audio context made in the tap
+  // itself, so it is made before anything is waited on.
   const play = async () => {
-    playing.current?.pause()
+    void playing.current?.context.close().catch(() => undefined)
+    const context = new AudioContext()
+    void context.resume().catch(() => undefined)
+    playing.current = { context }
     setPlaying(true)
     try {
       const response = await fetch(`/api/v1/agent/voice/sample?speechVoice=${encodeURIComponent(heard)}`, {
@@ -54,15 +61,19 @@ export function SpeechVoiceChoice({
         const refusal = (await response.json().catch(() => ({}))) as { error?: string }
         throw new Error(refusal.error ?? response.statusText)
       }
-      const address = URL.createObjectURL(await response.blob())
-      const audio = new Audio(address)
-      playing.current = audio
-      audio.onended = () => {
-        URL.revokeObjectURL(address)
+      const buffer = wavBuffer(context, await response.arrayBuffer())
+      if (playing.current?.context !== context) return
+      const source = context.createBufferSource()
+      source.buffer = buffer
+      source.connect(context.destination)
+      source.onended = () => {
+        void context.close().catch(() => undefined)
         setPlaying(false)
       }
-      await audio.play()
+      playing.current = { context, source }
+      source.start()
     } catch (caught) {
+      void context.close().catch(() => undefined)
       setPlaying(false)
       toast.failed(caught instanceof Error ? caught.message : String(caught))
     }
@@ -73,7 +84,7 @@ export function SpeechVoiceChoice({
       <h4>{t('agent.speechVoice')}</h4>
       <p className="muted">{t('agent.speechVoiceHint')}</p>
       <div className="form-narrow">
-        <div className="row speech-voice-row">
+        <div className="speech-voice-row">
           <label>
             <Select
               block
@@ -87,11 +98,29 @@ export function SpeechVoiceChoice({
               onChange={(value) => void onSave({ speechVoice: value }, t('agent.saved'))}
             />
           </label>
-          <button type="button" className="button" disabled={isPlaying} onClick={() => void play()}>
+          <button
+            type="button"
+            className="button-quiet speech-voice-listen"
+            disabled={isPlaying}
+            onClick={() => void play()}
+          >
             <SpeakerIcon size={14} /> {isPlaying ? t('agent.speechVoicePlaying') : t('agent.speechVoiceListen')}
           </button>
         </div>
       </div>
     </div>
   )
+}
+
+// wavBuffer reads the server's sample, a WAV file of mono 16-bit PCM, into
+// an audio buffer, at the rate its header says.
+export function wavBuffer(context: BaseAudioContext, wav: ArrayBuffer): AudioBuffer {
+  const view = new DataView(wav)
+  if (wav.byteLength < 44 || view.getUint32(0, false) !== 0x52494646) throw new Error('not a WAV file')
+  const sampleRate = view.getUint32(24, true)
+  const sampleCount = Math.floor((wav.byteLength - 44) / 2)
+  const buffer = context.createBuffer(1, Math.max(1, sampleCount), sampleRate)
+  const channel = buffer.getChannelData(0)
+  for (let index = 0; index < sampleCount; index++) channel[index] = view.getInt16(44 + index * 2, true) / 32768
+  return buffer
 }
