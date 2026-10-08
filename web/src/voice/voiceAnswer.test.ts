@@ -63,6 +63,13 @@ describe('AnswerSegmenter', () => {
     expect(segmenter.push('\n```\nIt takes a minute.')).toEqual([])
     expect(segmenter.flush()).toEqual(['It takes a minute.'])
   })
+
+  it('leaves a displayed formula out', () => {
+    const segmenter = new AnswerSegmenter()
+    expect(segmenter.push('The rate is:\n\\[ \\frac{a}{b')).toEqual(['The rate is:'])
+    expect(segmenter.push('} \\]\nThat is about a tenth.')).toEqual([])
+    expect(segmenter.flush()).toEqual(['That is about a tenth.'])
+  })
 })
 
 describe('isLikelyEcho', () => {

@@ -54,11 +54,13 @@ const FIRST_CLAUSE_LENGTH = 40
 
 const SENTENCE_END = /[.!?;:。！？；](?=["')\]]*(\s|$))|\n/g
 const FENCE = '```'
-// What is written for the screen and never said: a code block, and an HTML
-// comment such as the line of suggested replies the dashboard draws as
-// buttons.
+// What is written for the screen and never said: a code block, a displayed
+// formula, and an HTML comment such as the line of suggested replies the
+// dashboard draws as buttons.
 const UNSPOKEN = [
   { opening: FENCE, closing: FENCE },
+  { opening: '\\[', closing: '\\]' },
+  { opening: '$$', closing: '$$' },
   { opening: '<!--', closing: '-->' },
 ]
 
