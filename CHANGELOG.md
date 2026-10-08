@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.115.2] - 2026-10-08
+
+### Changed
+
+- Agent turns start answering several seconds sooner on servers with large knowledge sources: recall now looks for passages holding every word of the question, beside the search by meaning, and no longer ranks every passage that shares one word with it. Spoken turns skip the depth judgment. (#352)
+
 ## [0.115.1] - 2026-10-08
 
 ### Changed
