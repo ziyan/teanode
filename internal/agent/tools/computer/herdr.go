@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,11 +75,13 @@ func init() {
 				// asks, or an answer to a question that changed, is refused
 				// whoever calls.
 				Annotations: tools.LocalReadOnly(),
-				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is every session on every computer, with the state each is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
+				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
 				Parameters: tools.Object(map[string]any{
 					"action":                  tools.EnumProperty("what to do", herdrToolActions()...),
 					"computer":                tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
 					"pane":                    tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it"),
+					"limit":                   tools.IntegerProperty("list: how many sessions a page gives, 20 by default, 50 at most"),
+					"offset":                  tools.IntegerProperty("list: how many to skip, for the next page (the nextOffset the page before gave)"),
 					"turn_count":              tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
 					"line_count":              tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
 					"text":                    tools.StringProperty("send: what to type; enter is pressed after it"),
@@ -170,6 +173,8 @@ type herdrArguments struct {
 	CodingAgent           string   `json:"coding_agent"`
 	AgentName             string   `json:"agent_name"`
 	ShouldSkipPermissions bool     `json:"should_skip_permissions"`
+	Limit                 int      `json:"limit"`
+	Offset                int      `json:"offset"`
 }
 
 // herdrWait is how long an action is waited for, beyond its own wait.
@@ -232,7 +237,7 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	action := strings.ToLower(strings.TrimSpace(arguments.Action))
 	if action == "list" {
-		return listHerdr(ctx, run, arguments.Computer)
+		return listHerdr(ctx, run, arguments.Computer, arguments.Limit, arguments.Offset)
 	}
 	attached, err := herdrComputerOf(run, arguments.Computer)
 	if err != nil {
@@ -288,9 +293,40 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return carry(ctx, attached, "herdr_"+action, asked, wait, note)
 }
 
+// herdrListLimit is how many sessions a page of list gives by default, and
+// herdrListMost the most it gives: a listing of every pane on several
+// computers runs past what some clients of the tool read whole.
+const (
+	herdrListLimit = 20
+	herdrListMost  = 50
+)
+
+// herdrListedSession is a session as list gives it: what the agent needs
+// to name it, judge it and answer it. Its history file and herdr's own
+// status are left out; read and screen go further.
+type herdrListedSession struct {
+	Computer          string                        `json:"computer"`
+	PaneID            string                        `json:"paneId"`
+	PaneName          string                        `json:"paneName"`
+	CodingAgentKind   string                        `json:"codingAgentKind"`
+	HerdrSessionState string                        `json:"herdrSessionState"`
+	PaneTitle         string                        `json:"paneTitle,omitempty"`
+	WorkingDirectory  string                        `json:"workingDirectory,omitempty"`
+	IsWatched         bool                          `json:"isWatched,omitempty"`
+	Question          *deviceComputer.HerdrQuestion `json:"question,omitempty"`
+}
+
+// herdrStateOrder puts the sessions that want the person first.
+var herdrStateOrder = map[string]int{
+	deviceComputer.HerdrSessionStateAsking:  0,
+	deviceComputer.HerdrSessionStateWorking: 1,
+	deviceComputer.HerdrSessionStateIdle:    2,
+}
+
 // listHerdr lists the sessions on every computer that runs herdr, or the
-// one named, each under its computer's name.
-func listHerdr(ctx context.Context, run tools.Run, name string) (*tools.Result, error) {
+// one named: those asking first, then those working, then the rest, a page
+// at a time, saying how many there are and how to read on.
+func listHerdr(ctx context.Context, run tools.Run, name string, limit, offset int) (*tools.Result, error) {
 	var asked []tools.Computer
 	if strings.TrimSpace(name) != "" {
 		one, err := herdrComputerOf(run, name)
@@ -305,21 +341,63 @@ func listHerdr(ctx context.Context, run tools.Run, name string) (*tools.Result, 
 		}
 		asked = watching
 	}
-	listed := map[string]any{}
+	if limit <= 0 {
+		limit = herdrListLimit
+	}
+	limit = min(limit, herdrListMost)
+	offset = max(offset, 0)
+	var sessions []herdrListedSession
+	failures := map[string]string{}
 	for _, one := range asked {
 		answer, err := one.Ask(ctx, "herdr_list", &deviceComputer.HerdrArguments{}, herdrWait)
 		if err != nil {
-			listed[one.Name()] = map[string]string{"error": err.Error()}
+			failures[one.Name()] = err.Error()
 			continue
 		}
-		listed[one.Name()] = json.RawMessage(answer)
+		var listed []*deviceComputer.HerdrSession
+		if err := json.Unmarshal(answer, &listed); err != nil {
+			failures[one.Name()] = "its program answered what this server cannot read: " + err.Error()
+			continue
+		}
+		for _, session := range listed {
+			sessions = append(sessions, herdrListedSession{
+				Computer: one.Name(), PaneID: session.PaneID, PaneName: session.PaneName,
+				CodingAgentKind: session.CodingAgentKind, HerdrSessionState: session.HerdrSessionState,
+				PaneTitle: session.PaneTitle, WorkingDirectory: session.WorkingDirectory,
+				IsWatched: session.IsWatched, Question: session.Question,
+			})
+		}
 	}
-	result, err := tools.JSONResult(map[string]any{"computers": listed})
+	sort.SliceStable(sessions, func(left, right int) bool {
+		leftOrder, isLeftKnown := herdrStateOrder[sessions[left].HerdrSessionState]
+		rightOrder, isRightKnown := herdrStateOrder[sessions[right].HerdrSessionState]
+		if !isLeftKnown {
+			leftOrder = len(herdrStateOrder)
+		}
+		if !isRightKnown {
+			rightOrder = len(herdrStateOrder)
+		}
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if sessions[left].Computer != sessions[right].Computer {
+			return sessions[left].Computer < sessions[right].Computer
+		}
+		return sessions[left].PaneName < sessions[right].PaneName
+	})
+	totalCount := len(sessions)
+	page := sessions[min(offset, totalCount):min(offset+limit, totalCount)]
+	answer := map[string]any{"herdrSessions": page, "totalCount": totalCount, "offset": offset}
+	if len(failures) > 0 {
+		answer["unreachableComputers"] = failures
+	}
+	if remainingCount := totalCount - offset - len(page); remainingCount > 0 {
+		answer["nextOffset"] = offset + len(page)
+		answer["moreNote"] = fmt.Sprintf("%d more sessions; list again with offset %d to read on", remainingCount, offset+len(page))
+	}
+	result, err := tools.JSONResult(answer)
 	if err != nil {
 		return nil, err
-	}
-	if len(result.Content) > tools.ResultCharacters {
-		result.Content = result.Content[:tools.ResultCharacters] + "\n[cut here: the answer goes on]"
 	}
 	// What a coding session says and asks is data from outside.
 	result.Untrusted = true

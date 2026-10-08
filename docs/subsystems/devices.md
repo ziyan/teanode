@@ -211,6 +211,12 @@ them: the `herdr` tool, the Herdr sessions card on the agent page, and
 in `HerdrActions` and checked by `TestHerdrParity`. The decision is
 `docs/decisions/20261008-the-agent-works-in-the-persons-herdr-sessions.md`.
 
+The tool's `list` gives the sessions asking first, then those working, twenty
+to a page with `totalCount` and `nextOffset`, and leaves out what `read` and
+`screen` are for (the history file, herdr's own status): a listing of every
+pane on several computers ran past what some MCP clients read whole, and they
+cut it without saying where.
+
 A pane is shown by the name the person finds it under in herdr: the
 workspace's label, the tab's when the workspace has several, and the agent's
 name, or which agent it is, when a tab holds more than one. Every action takes
