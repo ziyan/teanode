@@ -13491,54 +13491,129 @@ button.idea-history-title {
   max-width: min(960px, 100%);
 }
 
-/* A coding session's question that was answered folds to a line: what it
-   asked, in the text's color, and under it who asked, muted. It opens to
-   the agent's words. */
+/* A coding session's question in the drawer is one box: a head that says
+   what it asks, what it was answered with, and who asks, and under it the
+   options. Answered, it folds to its head, which opens it again in place:
+   the same box, the same head, the options frozen with the chosen one
+   marked. */
 .agent-line.herdr-question-line {
   align-self: stretch;
   max-width: 100%;
 }
 
-.herdr-question-summary {
+.herdr-question-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.herdr-question-head {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   width: 100%;
+  margin: 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--text);
+  font: inherit;
   text-align: left;
+}
+
+button.herdr-question-head {
   cursor: pointer;
 }
 
-.herdr-question-summary > svg {
+.herdr-question-head > svg {
   flex: 0 0 auto;
   margin-top: 3px;
+}
+
+.herdr-question-box.waiting .herdr-question-head > svg:first-child {
+  color: var(--warn);
+}
+
+.herdr-question-box.folded .herdr-question-head > svg:first-child {
   color: var(--good);
 }
 
-.herdr-question-summary-text {
+.herdr-question-head > svg:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.herdr-question-head-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.herdr-question-summary-asked {
+.herdr-question-head-asked {
   font-size: var(--text-body);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.herdr-question-summary-who {
+.herdr-question-head-answer {
+  color: var(--good);
+}
+
+.herdr-question-head-who {
   color: var(--muted);
   font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
 
-.herdr-question-line.folded > .agent-line {
-  margin-top: var(--space-2);
+/* The options sit in the same box, under a hairline, without a box of
+   their own. */
+.herdr-question-body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.herdr-question-body .herdr-question-card {
+  margin: 0;
+}
+
+.herdr-question-body .herdr-question {
+  padding: var(--space-2) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+}
+
+/* Frozen: nothing to press, the chosen option marked. */
+.herdr-question.frozen .herdr-question-option {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.herdr-question.frozen .herdr-question-option.chosen {
+  border-color: var(--good);
+  opacity: 1;
+}
+
+.herdr-question-option.chosen strong > svg {
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--good);
+}
+
+.herdr-question-typed {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--good);
+  border-radius: var(--radius-1);
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-unknown {
+  margin: 0;
+  font-size: var(--text-label);
 }
 
 /* Who asks, over the question: the coding agent, its pane, its computer. */

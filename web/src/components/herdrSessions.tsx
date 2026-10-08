@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from './common'
+import { CheckIcon } from './icons'
 import { ConfirmDialog } from './dialog'
 import { SettingsEmpty, SettingsSection } from './settingsList'
 import { Tabs } from './tabs'
@@ -155,16 +156,23 @@ export function HerdrQuestionAnswer({
   session,
   question,
   isQuestionShown = true,
+  answeredWith,
   onAnswered,
 }: {
   session: HerdrSession
   question: HerdrQuestion
-  // Left out under the agent's words in the drawer, which say it already.
+  // Left out where a heading above says it already.
   isQuestionShown?: boolean
-  onAnswered: (after: HerdrSession | null) => void
+  // Given once the question was answered: the options are drawn as they
+  // were, nothing can be pressed, and the ones chosen are marked. Empty
+  // when the answer is not known.
+  answeredWith?: string
+  onAnswered?: (after: HerdrSession | null, answeredWith?: string) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
+  const isFrozen = answeredWith !== undefined
+  const { chosenNumbers, typedAnswer } = chosenOf(question, answeredWith ?? '')
   const [ticked, setTicked] = useState<number[]>([])
   const [freeText, setFreeText] = useState('')
   const [isBusy, setBusy] = useState(false)
@@ -199,18 +207,18 @@ export function HerdrQuestionAnswer({
         toast.failure(null, t('herdr.answerStillThere', { pane: paneNameOf(session) }))
       }
       sharedList = null
-      onAnswered(answered.herdrSession)
+      onAnswered?.(answered.herdrSession, answered.answeredWith)
     } catch (caught) {
       toast.failure(caught, t('herdr.answerFailed'))
       sharedList = null
-      onAnswered(null)
+      onAnswered?.(null)
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="herdr-question">
+    <div className={isFrozen ? 'herdr-question frozen' : 'herdr-question'}>
       {isQuestionShown ? (
         <>
           <p className="herdr-question-kind muted">
@@ -222,11 +230,18 @@ export function HerdrQuestionAnswer({
       <div className="herdr-question-options">
         {choices.map((option) =>
           question.isMultipleChoice ? (
-            <label key={option.optionNumber} className="herdr-question-option tick">
+            <label
+              key={option.optionNumber}
+              className={
+                chosenNumbers.includes(option.optionNumber)
+                  ? 'herdr-question-option tick chosen'
+                  : 'herdr-question-option tick'
+              }
+            >
               <input
                 type="checkbox"
-                checked={ticked.includes(option.optionNumber)}
-                disabled={isBusy}
+                checked={isFrozen ? chosenNumbers.includes(option.optionNumber) : ticked.includes(option.optionNumber)}
+                disabled={isBusy || isFrozen}
                 onChange={(event) =>
                   setTicked((before) =>
                     event.target.checked
@@ -244,11 +259,15 @@ export function HerdrQuestionAnswer({
             <button
               key={option.optionNumber}
               type="button"
-              className="herdr-question-option"
-              disabled={isBusy}
+              className={
+                chosenNumbers.includes(option.optionNumber) ? 'herdr-question-option chosen' : 'herdr-question-option'
+              }
+              disabled={isBusy || isFrozen}
+              aria-pressed={isFrozen ? chosenNumbers.includes(option.optionNumber) : undefined}
               onClick={() => void answer([option.optionNumber], '')}
             >
               <strong>
+                {chosenNumbers.includes(option.optionNumber) ? <CheckIcon size={14} /> : null}
                 {option.optionNumber}. {option.optionLabel}
               </strong>
               {option.optionDescription ? <span className="muted">{option.optionDescription}</span> : null}
@@ -256,7 +275,9 @@ export function HerdrQuestionAnswer({
           ),
         )}
       </div>
-      {question.isMultipleChoice ? (
+      {isFrozen && typedAnswer ? <p className="herdr-question-typed">{typedAnswer}</p> : null}
+      {isFrozen && !answeredWith ? <p className="herdr-question-unknown muted">{t('herdr.answerUnknown')}</p> : null}
+      {question.isMultipleChoice && !isFrozen ? (
         <button
           type="button"
           className="primary"
@@ -271,7 +292,7 @@ export function HerdrQuestionAnswer({
           {t('herdr.submitChoices')}
         </button>
       ) : null}
-      {freeTextOption && !question.isMultipleChoice ? (
+      {freeTextOption && !question.isMultipleChoice && !isFrozen ? (
         <form
           className="herdr-question-free"
           onSubmit={(event) => {
@@ -294,6 +315,23 @@ export function HerdrQuestionAnswer({
       ) : null}
     </div>
   )
+}
+
+// chosenOf reads an answer back onto a question's options: the ones it
+// names, by label or as "number. label", and what was typed, when it names
+// none.
+function chosenOf(question: HerdrQuestion, answeredWith: string): { chosenNumbers: number[]; typedAnswer: string } {
+  const answer = answeredWith.trim()
+  if (!answer) return { chosenNumbers: [], typedAnswer: '' }
+  const chosenNumbers = question.options
+    .filter((option) => option.herdrOptionKind !== 'freeText')
+    .filter((option) =>
+      answer
+        .split(', ')
+        .some((part) => part === option.optionLabel || part === `${option.optionNumber}. ${option.optionLabel}`),
+    )
+    .map((option) => option.optionNumber)
+  return { chosenNumbers, typedAnswer: chosenNumbers.length > 0 ? '' : answer.replace(/^"(.*)"$/, '$1') }
 }
 
 // HerdrSessionDialog is one session: what it asks, its last turns or its
@@ -645,21 +683,33 @@ export function HerdrQuestionCard({
   computer,
   paneId,
   questionFingerprint,
+  initial,
+  isHeaderShown = true,
+  isQuestionShown = false,
   onAnswered,
   onUnreachable,
 }: {
   computer: string
   paneId: string
   questionFingerprint: string
-  // Told once the question is found answered, or its computer gone, so
-  // what holds the card can fold it away.
-  onAnswered?: () => void
+  // The session and its question as they were when it was asked, to draw
+  // at once while the computer is asked whether it still waits.
+  initial?: HerdrSession
+  isHeaderShown?: boolean
+  isQuestionShown?: boolean
+  // Told once the question is found answered, with what it was answered
+  // with when this card answered it, or its computer gone, so what holds
+  // the card can fold it away.
+  onAnswered?: (answeredWith?: string) => void
   onUnreachable?: () => void
 }) {
   const { t } = useTranslation()
-  const [found, setFound] = useState<{ session: HerdrSession; question: HerdrQuestion } | null>(null)
+  const [found, setFound] = useState<{ session: HerdrSession; question: HerdrQuestion } | null>(
+    initial?.question ? { session: initial, question: initial.question } : null,
+  )
   const [questionState, setQuestionState] = useState<'waiting' | 'answered' | 'unreachable'>('waiting')
   const [lookCount, setLookCount] = useState(0)
+  const answeredWithHere = useRef<string | undefined>(undefined)
   const missCount = useRef(0)
   const absentCount = useRef(0)
   useEffect(() => {
@@ -713,7 +763,7 @@ export function HerdrQuestionCard({
     }
   }, [computer, paneId, questionFingerprint, questionState, lookCount])
   useEffect(() => {
-    if (questionState === 'answered') onAnswered?.()
+    if (questionState === 'answered') onAnswered?.(answeredWithHere.current)
     if (questionState === 'unreachable') onUnreachable?.()
     // The callbacks are the holder's, and only the change of state matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -725,18 +775,23 @@ export function HerdrQuestionCard({
   const { session } = found
   return (
     <div className="herdr-question-card">
-      <p className="herdr-question-who">
-        <strong>{codingAgentName(session.codingAgentKind)}</strong>
-        <span>{paneNameOf(session)}</span>
-        <span>{session.computer}</span>
-      </p>
+      {isHeaderShown ? (
+        <p className="herdr-question-who">
+          <strong>{codingAgentName(session.codingAgentKind)}</strong>
+          <span>{paneNameOf(session)}</span>
+          <span>{session.computer}</span>
+        </p>
+      ) : null}
       <HerdrQuestionAnswer
         session={found.session}
         question={found.question}
+        isQuestionShown={isQuestionShown}
         // An answer this card gave, taken by the session, is known at once.
-        onAnswered={(after) => {
-          if (after && after.question?.questionFingerprint !== questionFingerprint) setQuestionState('answered')
-          else setLookCount((count) => count + 1)
+        onAnswered={(after, answeredWith) => {
+          if (after && after.question?.questionFingerprint !== questionFingerprint) {
+            answeredWithHere.current = answeredWith
+            setQuestionState('answered')
+          } else setLookCount((count) => count + 1)
         }}
       />
     </div>

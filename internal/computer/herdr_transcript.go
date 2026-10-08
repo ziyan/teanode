@@ -303,6 +303,50 @@ func firstCharacters(text string, most int) string {
 	return string([]rune(text)[:most]) + "…"
 }
 
+// claudeAnswerOf is what the person answered a question Claude Code asked,
+// as Claude Code wrote it into its history: the answers of the latest
+// AskUserQuestion whose question is in the text shown, or empty.
+func claudeAnswerOf(path, questionText string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	lines, _, err := tailLines(file, info.Size(), transcriptLifecycleBytes)
+	if err != nil {
+		return ""
+	}
+	shown := strings.Join(strings.Fields(questionText), " ")
+	for index := len(lines) - 1; index >= 0; index-- {
+		if !bytes.Contains(lines[index], []byte(`"answers"`)) {
+			continue
+		}
+		var record struct {
+			ToolUseResult struct {
+				Answers map[string]string `json:"answers"`
+			} `json:"toolUseResult"`
+		}
+		if json.Unmarshal(lines[index], &record) != nil {
+			continue
+		}
+		var said []string
+		for question, answer := range record.ToolUseResult.Answers {
+			if strings.Contains(shown, strings.Join(strings.Fields(question), " ")) {
+				said = append(said, answer)
+			}
+		}
+		if len(said) > 0 {
+			sort.Strings(said)
+			return strings.Join(said, ", ")
+		}
+	}
+	return ""
+}
+
 // codexLifecycle is what the end of a Codex history file says about now:
 // whether a turn runs, and the question waiting for the person, if any.
 type codexLifecycle struct {

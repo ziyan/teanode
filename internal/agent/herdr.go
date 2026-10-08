@@ -401,13 +401,42 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 	}
 }
 
+// herdrNote is a herdr question's note, as the drawer reads it: which
+// question, by the same computer, pane and fingerprint its marker line
+// names, the session and the question whole when it is asked, and what it
+// was answered with when it goes.
+type herdrNote struct {
+	Computer            string                 `json:"computer"`
+	PaneID              string                 `json:"paneId"`
+	QuestionFingerprint string                 `json:"questionFingerprint"`
+	HerdrSession        *computer.HerdrSession `json:"herdrSession,omitempty"`
+	AnswerText          string                 `json:"answerText,omitempty"`
+}
+
+// herdrNoteOf is the note's detail: the asked note carries the session and
+// its question, the answered note what it was answered with.
+func herdrNoteOf(computerName string, session *computer.HerdrSession, isAsked bool, answerText string) string {
+	note := herdrNote{Computer: computerName, PaneID: session.PaneID, AnswerText: answerText}
+	if session.Question != nil {
+		note.QuestionFingerprint = session.Question.QuestionFingerprint
+	}
+	if isAsked {
+		note.HerdrSession = session
+	}
+	encoded, err := json.Marshal(note)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
 // noteHerdrAnswered writes into the main conversation, as a note nobody
 // reads but the drawer, that a question went, so a drawer opened later
 // draws it answered at once rather than asking the computer first. Notes
 // are not part of what the model is given.
 func (self *Agent) noteHerdrAnswered(agentId string, attached *attachedComputer, event *computer.HerdrEvent) {
 	if question := event.HerdrSession.Question; question != nil {
-		detail := attached.name + " " + event.HerdrSession.PaneID + " " + question.QuestionFingerprint
+		detail := herdrNoteOf(attached.name, event.HerdrSession, false, event.AnswerText)
 		if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
 			main, err := scheduleConversation(tx, agentId, "")
 			if err != nil {
@@ -492,7 +521,7 @@ func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer,
 				break
 			}
 		}
-		err = self.writeHerdrQuestion(agentId, checkIn, said)
+		err = self.writeHerdrQuestion(agentId, checkIn, said, herdrNoteOf(attached.name, session, true, ""))
 	}
 	self.backgroundMutex.Lock()
 	delete(self.herdrAnswered, key)
@@ -517,7 +546,7 @@ func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer,
 
 // writeHerdrQuestion writes the two messages into the main conversation,
 // when no turn runs there, and says so on the feed.
-func (self *Agent) writeHerdrQuestion(agentId, checkIn, said string) error {
+func (self *Agent) writeHerdrQuestion(agentId, checkIn, said, asked string) error {
 	ctx := self.ctx
 	var main *models.AgentConversation
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -531,7 +560,12 @@ func (self *Agent) writeHerdrQuestion(agentId, checkIn, said string) error {
 			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "user", Content: checkIn}); err != nil {
 				return err
 			}
-			_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "assistant", Content: said})
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "assistant", Content: said}); err != nil {
+				return err
+			}
+			// The question whole, for the drawer to draw as the card it is;
+			// a note, so the model is not given it twice.
+			_, err := tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteHerdrAsked, asked))
 			return err
 		})
 	})

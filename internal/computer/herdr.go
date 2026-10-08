@@ -151,6 +151,10 @@ type HerdrEvent struct {
 	HerdrSession   *HerdrSession   `json:"herdrSession"`
 	Origin         json.RawMessage `json:"origin,omitempty"`
 	EventAt        time.Time       `json:"eventAt"`
+	// AnswerText is what a question that went was answered with, when that
+	// is known: the answer given through TeaNode, or the one Claude Code
+	// wrote into its history when the person answered at the keyboard.
+	AnswerText     string `json:"answerText,omitempty"`
 	isAcknowledged bool
 }
 
@@ -202,6 +206,10 @@ type Herdr struct {
 
 	mutex    sync.Mutex
 	sessions map[string]*HerdrSession
+	// answers are what questions were answered with through TeaNode, by
+	// fingerprint, until the question is seen to go and the answer is told
+	// with it.
+	answers map[string]string
 	// appearances are the questions waiting, by pane: the same question
 	// asked again later is another appearance, with another fingerprint,
 	// so it is told to the person again, and an answer to the first is not
@@ -298,7 +306,7 @@ func (self *Herdr) saveWatchesLocked() {
 // directory this is. Start watches it.
 func NewHerdr(home string) *Herdr {
 	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
-		appearances: loadAppearances(home), watches: loadWatches(home)}
+		appearances: loadAppearances(home), watches: loadWatches(home), answers: map[string]string{}}
 }
 
 // Start looks at every pane from now until Close.
@@ -533,10 +541,17 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 	}
 	if beforeFingerprint != nowFingerprint {
 		if beforeFingerprint != "" {
-			// Said with the question that went, so its card can be found.
+			// Said with the question that went, so its card can be found,
+			// and with its answer where that is known.
 			answered := *session
 			answered.Question = before.Question
+			answerText := self.answers[beforeFingerprint]
+			delete(self.answers, beforeFingerprint)
+			if answerText == "" && session.CodingAgentKind == CodingAgentKindClaude && session.TranscriptPath != "" {
+				answerText = claudeAnswerOf(session.TranscriptPath, before.Question.QuestionText)
+			}
 			self.tellLocked(HerdrEventKindAnswered, &answered, nil, told)
+			(*told)[len(*told)-1].AnswerText = answerText
 		}
 		// One the server heard before this program restarted is not told
 		// again.
@@ -1001,6 +1016,11 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 		}
 	}
 	isAccepted := after.Question == nil || after.Question.QuestionFingerprint != question.QuestionFingerprint
+	if isAccepted {
+		self.mutex.Lock()
+		self.answers[question.QuestionFingerprint] = answeredWith
+		self.mutex.Unlock()
+	}
 	return &HerdrAnswerResult{HerdrSession: after, IsAnswerAccepted: isAccepted, AnsweredWith: answeredWith}, nil
 }
 
