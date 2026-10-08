@@ -13491,29 +13491,71 @@ button.idea-history-title {
   max-width: min(960px, 100%);
 }
 
-/* A coding session's question that was answered folds to one muted line,
-   with a tick, that opens to what was asked. */
-.agent-line.herdr-question-line.answered {
+/* A coding session's question that was answered folds to a line: what it
+   asked, in the text's color, and under it who asked, muted. It opens to
+   the agent's words. */
+.agent-line.herdr-question-line {
   align-self: stretch;
+  max-width: 100%;
 }
 
 .herdr-question-summary {
   display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 100%;
-  padding: 2px 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: var(--text-label);
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 
-.herdr-question-summary > span {
+.herdr-question-summary > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--good);
+}
+
+.herdr-question-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.herdr-question-summary-asked {
+  font-size: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-summary-who {
+  color: var(--muted);
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-line.folded > .agent-line {
+  margin-top: var(--space-2);
+}
+
+/* Who asks, over the question: the coding agent, its pane, its computer. */
+.herdr-question-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.herdr-question-who strong {
+  color: var(--text);
+}
+
+.herdr-question-checking {
+  margin: 0;
+  font-size: var(--text-label);
 }

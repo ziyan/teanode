@@ -1903,17 +1903,22 @@ function herdrQuestionOf(text: string): { computer: string; paneId: string; ques
   }
 }
 
-// herdrSummaryOf is a herdr question as the agent said it, in a line: who
-// asks, then the question's first line.
-function herdrSummaryOf(text: string): string {
+// herdrSummaryOf is a herdr question as the agent said it: the question's
+// first line, and who asked it.
+function herdrSummaryOf(text: string): { asked: string; who: string } {
   const lines = text.split('\n')
   const who = (lines[0] ?? '')
     .replace(/\*\*/g, '')
     .replace(/( \(.*\))? asks[^:]*:\s*$/, '')
     .trim()
   const asked = (lines.find((each) => each.startsWith('> ')) ?? '').slice(2).trim()
-  return asked ? `${who} · ${asked}` : who
+  return { asked: asked || who, who: asked ? who : '' }
 }
+
+// HERDR_QUESTION_STALE_MS is how old a question with no word of its answer
+// is taken to be answered without asking its computer: a coding session
+// does not wait a day on one question.
+const HERDR_QUESTION_STALE_MS = 24 * 60 * 60 * 1000
 
 // HerdrQuestionLine is a coding session's question as the agent said it,
 // with its options under it while it waits. Once answered, at the keyboard
@@ -1923,46 +1928,59 @@ function herdrSummaryOf(text: string): string {
 function HerdrQuestionLine({
   drawn,
   text,
+  at,
   question,
   isAnsweredAtLoad,
 }: {
   drawn: React.ReactNode
   text: string
+  at?: string
   question: { computer: string; paneId: string; questionFingerprint: string }
   isAnsweredAtLoad: boolean
 }) {
   const { t } = useTranslation()
-  const [isAnswered, setAnswered] = useState(isAnsweredAtLoad)
+  const isStale = !!at && Date.now() - new Date(at).getTime() > HERDR_QUESTION_STALE_MS
+  // Why it is folded, once it is: answered, or its computer is not here.
+  const [foldReason, setFoldReason] = useState<'answered' | 'unreachable' | null>(
+    isAnsweredAtLoad || isStale ? 'answered' : null,
+  )
   const [isOpen, setOpen] = useState(false)
   useEffect(() => {
-    if (isAnsweredAtLoad) setAnswered(true)
+    if (isAnsweredAtLoad) setFoldReason('answered')
   }, [isAnsweredAtLoad])
-  if (isAnswered && !isOpen) {
+  const { asked, who } = herdrSummaryOf(text)
+  if (foldReason) {
     return (
-      <div className="agent-line herdr-question-line answered">
-        <button type="button" className="herdr-question-summary" aria-expanded={false} onClick={() => setOpen(true)}>
-          <CheckIcon size={12} />
-          <span>{t('herdr.answeredLine', { summary: herdrSummaryOf(text) })}</span>
+      <div className="agent-line herdr-question-line folded">
+        <button
+          type="button"
+          className="herdr-question-summary"
+          aria-expanded={isOpen}
+          onClick={() => setOpen((before) => !before)}
+        >
+          <CheckIcon size={14} />
+          <span className="herdr-question-summary-text">
+            <span className="herdr-question-summary-asked">
+              {t(foldReason === 'answered' ? 'herdr.answeredLine' : 'herdr.unreachableLine', { asked })}
+            </span>
+            {who ? <span className="herdr-question-summary-who">{who}</span> : null}
+          </span>
         </button>
+        {isOpen ? drawn : null}
       </div>
     )
   }
+  // While it may still wait, the card is the whole of it: who asks, the
+  // question and its options, once each. The agent's words, which say the
+  // same for a chat app, open from the line once it is folded.
   return (
-    <>
-      {drawn}
-      {isAnswered ? (
-        <div className="agent-line herdr-question-line answered">
-          <button type="button" className="herdr-question-summary" aria-expanded onClick={() => setOpen(false)}>
-            <CheckIcon size={12} />
-            <span>{t('herdr.hideQuestion')}</span>
-          </button>
-        </div>
-      ) : (
-        <div className="agent-line herdr-question-line">
-          <HerdrQuestionCard {...question} onAnswered={() => setAnswered(true)} />
-        </div>
-      )}
-    </>
+    <div className="agent-line herdr-question-line">
+      <HerdrQuestionCard
+        {...question}
+        onAnswered={() => setFoldReason('answered')}
+        onUnreachable={() => setFoldReason('unreachable')}
+      />
+    </div>
   )
 }
 
@@ -4171,6 +4189,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     key={`${line.key}-herdr`}
                     drawn={drawn}
                     text={line.text}
+                    at={line.at}
                     question={herdrQuestion}
                     isAnsweredAtLoad={isAnsweredAtLoad}
                   />

@@ -646,13 +646,15 @@ export function HerdrQuestionCard({
   paneId,
   questionFingerprint,
   onAnswered,
+  onUnreachable,
 }: {
   computer: string
   paneId: string
   questionFingerprint: string
-  // Told once the question is found answered, so what holds the card can
-  // fold it away.
+  // Told once the question is found answered, or its computer gone, so
+  // what holds the card can fold it away.
   onAnswered?: () => void
+  onUnreachable?: () => void
 }) {
   const { t } = useTranslation()
   const [found, setFound] = useState<{ session: HerdrSession; question: HerdrQuestion } | null>(null)
@@ -712,17 +714,25 @@ export function HerdrQuestionCard({
   }, [computer, paneId, questionFingerprint, questionState, lookCount])
   useEffect(() => {
     if (questionState === 'answered') onAnswered?.()
-    // onAnswered is the holder's, and only the change of state matters.
+    if (questionState === 'unreachable') onUnreachable?.()
+    // The callbacks are the holder's, and only the change of state matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionState])
-  if (questionState === 'answered') return <p className="herdr-question-done muted">{t('herdr.questionDone')}</p>
-  if (questionState === 'unreachable' || !found) return null
+  if (questionState !== 'waiting') return null
+  // Until the computer says, a line rather than the question: a question
+  // drawn whole and then folded a moment later is the flicker this avoids.
+  if (!found) return <p className="herdr-question-checking muted">{t('herdr.checking')}</p>
+  const { session } = found
   return (
     <div className="herdr-question-card">
+      <p className="herdr-question-who">
+        <strong>{codingAgentName(session.codingAgentKind)}</strong>
+        <span>{paneNameOf(session)}</span>
+        <span>{session.computer}</span>
+      </p>
       <HerdrQuestionAnswer
         session={found.session}
         question={found.question}
-        isQuestionShown={false}
         // An answer this card gave, taken by the session, is known at once.
         onAnswered={(after) => {
           if (after && after.question?.questionFingerprint !== questionFingerprint) setQuestionState('answered')
