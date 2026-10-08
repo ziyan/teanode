@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.116.0] - 2026-10-08
+
+### Added
+
+- `agent.voice.askModel` chooses the model spoken turns are answered with, so a call can use a faster model than typed turns; for a hard question it hands the turn to the typed model. (#354)
+
+### Changed
+
+- On a call the answer starts sooner, starts quietly and rises, and is not taken for the person while the phone's echo cancellation settles. (#354)
+
 ## [0.115.2] - 2026-10-08
 
 ### Changed
