@@ -103,7 +103,7 @@ func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 		// call of a night reasoned first: three times the output, two to
 		// three times as long, and the allowance spent on thinking nobody
 		// asked for.
-		effort = self.unaskedEffort()
+		effort = self.unaskedEffort(request.Model)
 	}
 	if effort != "" {
 		body.Reasoning = &codexReasoning{Effort: effort}
@@ -255,6 +255,13 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 				} `json:"error"`
 			} `json:"response"`
 			Message string `json:"message"`
+
+			// Error is what an error event says went wrong, and with which
+			// field of the request.
+			Error *struct {
+				Message string `json:"message"`
+				Param   string `json:"param"`
+			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			continue
@@ -302,6 +309,12 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 			message := event.Message
 			if event.Response != nil && event.Response.Error != nil && event.Response.Error.Message != "" {
 				message = event.Response.Error.Message
+			}
+			if event.Error != nil && event.Error.Message != "" {
+				message = event.Error.Message
+				if event.Error.Param != "" {
+					message += " (" + event.Error.Param + ")"
+				}
 			}
 			if message == "" {
 				message = "the service ended the answer without saying why"

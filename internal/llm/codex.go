@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -79,9 +78,11 @@ type codex struct {
 		keptAt time.Time
 	}
 
-	// isNoReasoningRefused is set once the plan has refused an effort of
-	// "none", after which a request that asks for none is sent "low".
-	isNoReasoningRefused atomic.Bool
+	// noReasoningRefusedModels are the models that have refused an effort
+	// of "none", to which a request that asks for none is sent "low". Kept
+	// per model: one model on the plan that insists on reasoning must not
+	// make every other one reason too.
+	noReasoningRefusedModels sync.Map
 
 	// doesTakeOutputLimit says the endpoint takes max_output_tokens. The
 	// keyed Responses endpoint does; the plan's refuses the whole request
@@ -195,30 +196,52 @@ func (self *codex) Chat(ctx context.Context, request *ChatRequest) (*ChatRespons
 }
 
 // unaskedEffort is the effort sent for a request that asked for none.
-func (self *codex) unaskedEffort() string {
-	if self.isNoReasoningRefused.Load() {
+func (self *codex) unaskedEffort(model string) string {
+	if _, isRefused := self.noReasoningRefusedModels.Load(model); isRefused {
 		return EffortLow
 	}
 	return "none"
 }
 
-// ChatStream sends a conversation and returns the answer as it comes.
-func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
+// isNoReasoningRefusal says whether err is the plan refusing a request
+// that asked for no reasoning, which is then asked again with the least
+// the model takes.
+func (self *codex) isNoReasoningRefusal(request *ChatRequest, err error) bool {
+	if err == nil || request.ReasoningEffort != "" {
+		return false
+	}
+	if _, isRefused := self.noReasoningRefusedModels.Load(request.Model); isRefused {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "reasoning")
+}
+
+// encodeAndPost sends a conversation, asking again with low reasoning
+// when the plan refuses to answer this model without any.
+func (self *codex) encodeAndPost(ctx context.Context, request *ChatRequest) (*http.Response, error) {
 	body, err := self.encode(request)
 	if err != nil {
 		return nil, err
 	}
 	response, err := self.post(ctx, body, request.CacheKey)
-	if err != nil && request.ReasoningEffort == "" && !self.isNoReasoningRefused.Load() && strings.Contains(strings.ToLower(err.Error()), "reasoning") {
-		// A model on the plan that will not go without reasoning: ask for
-		// the least it takes from now on.
-		log.Noticef("the %s plan will not answer without reasoning (%s); asking for low from now on", config.AgentProviderKindCodex, err)
-		self.isNoReasoningRefused.Store(true)
+	if self.isNoReasoningRefusal(request, err) {
+		self.refuseNoReasoning(request.Model, err)
 		if body, err = self.encode(request); err != nil {
 			return nil, err
 		}
 		response, err = self.post(ctx, body, request.CacheKey)
 	}
+	return response, err
+}
+
+func (self *codex) refuseNoReasoning(model string, err error) {
+	log.Noticef("%s on the %s plan will not answer without reasoning (%s); asking it for low from now on", model, config.AgentProviderKindCodex, err)
+	self.noReasoningRefusedModels.Store(model, true)
+}
+
+// ChatStream sends a conversation and returns the answer as it comes.
+func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
+	response, err := self.encodeAndPost(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -226,8 +249,34 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 	events := make(chan StreamEvent, 16)
 	go func() {
 		defer close(events)
-		defer func() { _ = response.Body.Close() }()
-		self.read(response, request.Model, events)
+		read := make(chan StreamEvent, 16)
+		go func() {
+			defer close(read)
+			defer func() { _ = response.Body.Close() }()
+			self.read(response, request.Model, read)
+		}()
+		// The plan may also refuse inside the stream, as its first event,
+		// before anything has been said: asked again the same way.
+		first, isOpen := <-read
+		if isOpen && first.Kind == StreamError && self.isNoReasoningRefusal(request, first.Err) {
+			for range read {
+			}
+			self.refuseNoReasoning(request.Model, first.Err)
+			retried, err := self.encodeAndPost(ctx, request)
+			if err != nil {
+				events <- StreamEvent{Kind: StreamError, Err: err}
+				return
+			}
+			defer func() { _ = retried.Body.Close() }()
+			self.read(retried, request.Model, events)
+			return
+		}
+		if isOpen {
+			events <- first
+		}
+		for event := range read {
+			events <- event
+		}
 	}()
 	return events, nil
 }

@@ -425,6 +425,56 @@ func TestAPlanThatMustReasonIsAskedForLittle(test *testing.T) {
 	}
 }
 
+// A model that refuses no reasoning inside the stream, as the plan does,
+// is asked again for low, and only that model: another on the same plan
+// still goes without. The refusal says what it was, not that nothing was
+// said.
+func TestAModelThatMustReasonSaysSoInTheStream(test *testing.T) {
+	test.Parallel()
+
+	var mutex sync.Mutex
+	var asked []string
+	made, server := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		var body codexRequest
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		effort := ""
+		if body.Reasoning != nil {
+			effort = body.Reasoning.Effort
+		}
+		mutex.Lock()
+		asked = append(asked, body.Model+":"+effort)
+		mutex.Unlock()
+		writer.Header().Set("Content-Type", "text/event-stream")
+		if effort == "none" && body.Model == "insists" {
+			_, _ = io.WriteString(writer, "event: error\ndata: "+`{"type":"error","error":{"message":"Unsupported value: 'none' is not supported with the 'insists' model.","param":"reasoning.effort","code":"unsupported_value"}}`+"\n\n")
+			return
+		}
+		_, _ = io.WriteString(writer, "data: "+`{"type":"response.output_text.delta","delta":"Fine."}`+"\n\n")
+		_, _ = io.WriteString(writer, "data: "+`{"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":10,"output_tokens":2}}}`+"\n\n")
+	})
+	defer server.Close()
+
+	for _, model := range []string{"insists", "insists", "relaxed"} {
+		answer, err := made.Chat(context.Background(), &ChatRequest{Model: model, Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}}})
+		if err != nil || answer.Message.Content != "Fine." {
+			test.Fatalf("%s: %+v, %v", model, answer, err)
+		}
+	}
+	if strings.Join(asked, ",") != "insists:none,insists:low,insists:low,relaxed:none" {
+		test.Errorf("it asked %v", asked)
+	}
+
+	// Another refusal in the stream is said in its own words.
+	busy, refusing := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: "+`{"type":"error","error":{"message":"The model is busy.","param":""}}`+"\n\n")
+	})
+	defer refusing.Close()
+	if _, err := busy.Chat(context.Background(), &ChatRequest{Model: "relaxed", Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}}}); err == nil || !strings.Contains(err.Error(), "The model is busy.") {
+		test.Errorf("the refusal said %v", err)
+	}
+}
+
 // How long a window is and when it resets are read as the service says
 // them: minutes for the one, seconds from now for the other.
 func TestAPlanWindowSaysItsLengthAndReset(test *testing.T) {
