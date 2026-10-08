@@ -126,7 +126,8 @@ func TestAListOfManyIdeasIsAPageOfHeadlinesThatSaysHowToReadOn(t *testing.T) {
 			t.Errorf("a list leaves out %s: %s", leftOut, first)
 		}
 	}
-	if !strings.Contains(first, `"totalCount":35`) || !strings.Contains(first, "20 more, and list again with offset: 15 reads them") {
+	if !strings.Contains(first, `"totalCount":35`) || !strings.Contains(first, "20 more, and list again with offset: 15 reads them") ||
+		!strings.Contains(first, "after changing an idea's status, list again from offset 0") {
 		t.Fatalf("and says how many more and how to read them: %s", first)
 	}
 

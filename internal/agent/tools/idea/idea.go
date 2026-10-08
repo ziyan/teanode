@@ -37,7 +37,7 @@ func init() {
 			{
 				Name: "idea", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
 				Description: "Your list of ideas for the person: offers of work you can do for them, and what became of each. " +
-					"`list` shows the open ones, or those in the statuses given, 15 at a time, each by its headline; a list with more ends with the offset that reads on. An expired one has an expiredReason: past_date, missing_tool (it cannot be reopened until the tool is connected) or already_used (they already do it, and may still reopen it). " +
+					"`list` shows the open ones, or those in the statuses given, 15 at a time, each by its headline; a list with more ends with the offset that reads on, and after starting, finishing, dismissing or reopening one, list again from offset 0, since the ideas in a status move. An expired one has an expiredReason: past_date, missing_tool (it cannot be reopened until the tool is connected) or already_used (they already do it, and may still reopen it). " +
 					"`get` with idea_id gives one whole: its body, the request that starts it and the evidence. " +
 					"`propose` keeps one you found in their own mail, memory or conversations, with the evidence you looked up; it is refused when it needs a tool you lack, does not say where it asks first, or has no evidence. " +
 					"`start` records that this conversation carries one out, when they take it up here. " +
@@ -225,7 +225,7 @@ func listIdeas(ctx context.Context, asked arguments) (*tools.Result, error) {
 		if len(asked.Statuses) > 0 {
 			call += " and the same statuses"
 		}
-		payload["hint"] = fmt.Sprintf("ideas %d to %d of %d shown; %d more, and %s reads them. get with idea_id gives one whole",
+		payload["hint"] = fmt.Sprintf("ideas %d to %d of %d shown; %d more, and %s reads them; after changing an idea's status, list again from offset 0 instead, since the pages move. get with idea_id gives one whole",
 			offset+1, offset+len(ideas), int(totalCount), int(totalCount)-offset-len(ideas), call)
 	case len(ideas) == 0 && offset > 0:
 		payload["hint"] = fmt.Sprintf("offset %d is past the end, there are %d in all", offset, int(totalCount))

@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -108,16 +106,34 @@ func runAgentIdeaList(ctx context.Context, command *cli.Command) error {
 	if err := printTable([]string{"id", "status", "kind", "category", "idea", "why"}, rows); err != nil {
 		return err
 	}
-	// pageNote reads the next page by cursor or offset; ideas page by
-	// offset alone, so any cursor stands for there being a next page.
-	nextCursor := ""
-	if page.NextOffset > 0 {
-		nextCursor = strconv.Itoa(page.NextOffset)
-	}
-	if note := pageNote(len(page.Ideas), offset, page.TotalCount, nextCursor, false); note != "" {
-		fmt.Fprintln(os.Stderr, note)
+	if note := ideaPageNote(len(page.Ideas), offset, int(command.Int("limit")), page.TotalCount, page.NextOffset); note != "" {
+		_, _ = fmt.Fprintln(command.ErrWriter, note)
 	}
 	return nil
+}
+
+// ideaPageNote says which ideas of how many a page holds and the flags
+// that read the next page, the limit among them when one was given, so
+// that the next page is as long as this one. Empty when the page holds
+// every idea.
+func ideaPageNote(shownCount, offset, limit, totalCount, nextOffset int) string {
+	if nextOffset == 0 && offset == 0 {
+		return ""
+	}
+	// An offset past the last idea holds nothing, and "21 to 20" would
+	// say a range that is not there.
+	if shownCount == 0 && offset >= totalCount {
+		return fmt.Sprintf("note: --offset %d is past the end, there are %d in all", offset, totalCount)
+	}
+	shown := fmt.Sprintf("note: %d to %d of %d", offset+1, offset+shownCount, totalCount)
+	if nextOffset == 0 {
+		return shown
+	}
+	next := fmt.Sprintf("--offset %d", nextOffset)
+	if limit > 0 {
+		next += fmt.Sprintf(" --limit %d", limit)
+	}
+	return fmt.Sprintf("%s; add %s for the next page", shown, next)
 }
 
 func runAgentIdeaGet(ctx context.Context, command *cli.Command) error {

@@ -24,3 +24,22 @@ func TestTheIdeaListSaysWhyAnIdeaExpired(t *testing.T) {
 		}
 	}
 }
+
+// A page of ideas says which ideas of how many it holds and the flags that
+// read the next, with the limit given, so that --limit 5 --offset 5 reads
+// on five at a time rather than everything after.
+func TestTheIdeaPageNoteRepeatsTheLimit(t *testing.T) {
+	for _, each := range []struct {
+		shownCount, offset, limit, totalCount, nextOffset int
+		want                                              string
+	}{
+		{5, 5, 5, 23, 10, "note: 6 to 10 of 23; add --offset 10 --limit 5 for the next page"},
+		{3, 20, 5, 23, 0, "note: 21 to 23 of 23"},
+		{0, 40, 5, 23, 0, "note: --offset 40 is past the end, there are 23 in all"},
+		{23, 0, 0, 23, 0, ""},
+	} {
+		if got := ideaPageNote(each.shownCount, each.offset, each.limit, each.totalCount, each.nextOffset); got != each.want {
+			t.Errorf("%+v: %q, want %q", each, got, each.want)
+		}
+	}
+}
