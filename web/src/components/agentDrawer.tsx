@@ -1911,7 +1911,11 @@ function herdrSummaryOf(text: string): { asked: string; who: string } {
     .replace(/\*\*/g, '')
     .replace(/( \(.*\))? asks[^:]*:\s*$/, '')
     .trim()
-  const asked = (lines.find((each) => each.startsWith('> ')) ?? '').slice(2).trim()
+  // The line that asks, where the form opens with something else (a path,
+  // a heading); the first line otherwise.
+  const quoted = lines.filter((each) => each.startsWith('> ')).map((each) => each.slice(2).trim())
+  const asking = quoted.find((each) => each.includes('?')) ?? quoted[0] ?? ''
+  const asked = asking.length > 160 ? `${asking.slice(0, 157)}…` : asking
   return { asked: asked || who, who: asked ? who : '' }
 }
 
