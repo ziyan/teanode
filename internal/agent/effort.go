@@ -74,6 +74,13 @@ func (self *AskRun) chooseDepth() {
 	if settings.Headless || settings.Surface == backgroundSurface || settings.Effort != "" || settings.Research {
 		return
 	}
+	// A spoken turn is answered as it comes. The judgement is a second
+	// a turn before the model is asked anything, and what it is for is
+	// deciding when to dig, which takes minutes a person on a call does
+	// not want to wait through.
+	if settings.Surface == "voice" {
+		return
+	}
 	switch setting := self.agent.settings.Configuration().Agent.Effort; setting {
 	case "":
 		return
@@ -84,13 +91,14 @@ func (self *AskRun) chooseDepth() {
 		settings.Effort, settings.Research = setting, true
 		return
 	}
+	judgedFrom := time.Now()
 	judgement := self.judgeDepth()
 	depth, reason := judgement.depth, judgement.reason
 	settings.Effort, settings.Research = deepenedTurn(depth)
 	if depth != depthAnswer {
 		self.plan = &RetrievalPlan{Searches: judgement.searches, IsBroad: judgement.isBroad}
 	}
-	log.Infof("the agent of %q judged a message worth %s: %s", settings.Owner.Username, depth, reason)
+	log.Infof("the agent of %q judged a message worth %s in %s: %s", settings.Owner.Username, depth, time.Since(judgedFrom).Round(time.Millisecond), reason)
 	if depth != depthDig {
 		return
 	}

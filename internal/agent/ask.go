@@ -346,6 +346,14 @@ type AskRun struct {
 	loaded  map[string]bool
 	offered []*Tool
 
+	// knowledgeRecalled is what the turn's search of the person's files and
+	// chat found, once it has (startKnowledgeRecall).
+	knowledgeRecalled chan []string
+
+	// firstWordsAt is when the model's first words of this round came,
+	// for the log.
+	firstWordsAt time.Time
+
 	// promptData is the part of the prompt read from the person's data,
 	// kept for the turn's rounds; see systemPrompt.
 	promptData *turnPromptData
@@ -790,6 +798,9 @@ func (self *AskRun) loop() {
 			return
 		}
 	}
+	// The search of the person's files and chat needs nothing the depth
+	// judgement decides: begun now, it runs while the judgement does.
+	self.startKnowledgeRecall(self.ctx)
 	self.chooseDepth()
 	self.isGoalWaitingAtStart = self.isGoalWaiting()
 	if err := self.turn(); err != nil {
@@ -1096,10 +1107,15 @@ func (self *AskRun) turn() error {
 		compactedTokens := llm.EstimateTokens(renderHistory(history))
 		compact := settings.Short || compactedTokens > historyLimitFor(compactedTokens)/2
 		sent, deferred := Split(self.offered, self.loaded, compact)
+		// Where a round's time goes, said in the log: a turn that feels
+		// slow is the prompt, the recall, or the model, and only this says
+		// which.
+		roundStartedAt := time.Now()
 		system, err := self.systemPrompt(ctx, configuration, sent, deferred, compact)
 		if err != nil {
 			return err
 		}
+		promptBuiltAt := time.Now()
 		if !recalledThisTurn {
 			// Once the prompt has said which memories it carries, what
 			// the person actually asked about is looked up beside them.
@@ -1108,12 +1124,14 @@ func (self *AskRun) turn() error {
 			recalledThisTurn = true
 			self.recallForTurn(ctx)
 		}
+		recalledAt := time.Now()
 		messages := make([]llm.ChatMessage, 0, len(history)+2)
 		messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: system, CacheBreakpoint: true})
 		messages = append(messages, history...)
 		if overlays := self.overlays(ctx, configuration, sent); overlays != "" {
 			messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: overlays})
 		}
+		overlaidAt := time.Now()
 		definitions := make([]llm.ToolDefinition, 0, len(sent))
 		for _, tool := range sent {
 			definitions = append(definitions, tool.Definition())
@@ -1131,6 +1149,13 @@ func (self *AskRun) turn() error {
 		}
 
 		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: roundTokens(settings.Effort), ToolChoice: toolChoice, ReasoningEffort: settings.Effort, CacheKey: settings.Conversation.ID})
+		answeredAt := time.Now()
+		if response != nil {
+			log.Infof("round %d of %q's turn: prompt %s, recall %s, overlays %s, first words %s, answer %s; %d tokens unread from the cache, %d read from it",
+				round+1, settings.Owner.Username, promptBuiltAt.Sub(roundStartedAt).Round(time.Millisecond), recalledAt.Sub(promptBuiltAt).Round(time.Millisecond),
+				overlaidAt.Sub(recalledAt).Round(time.Millisecond), self.firstWordsAfter(overlaidAt), answeredAt.Sub(overlaidAt).Round(time.Millisecond),
+				response.Usage.PromptTokens, response.Usage.CacheReadTokens)
+		}
 		if response != nil {
 			self.usage = self.usage.Add(response.Usage)
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
@@ -1328,6 +1353,15 @@ func textualToolCall(content string) bool {
 	return strings.Contains(content, "<tool_call>") || strings.Contains(content, "<function=")
 }
 
+// firstWordsAfter is how long the model took to say its first words of
+// the round, or a dash when it said none as it went.
+func (self *AskRun) firstWordsAfter(sentAt time.Time) string {
+	if self.firstWordsAt.IsZero() {
+		return "-"
+	}
+	return self.firstWordsAt.Sub(sentAt).Round(time.Millisecond).String()
+}
+
 // lastRoundNotice is what the final round is told. Sent, not stored: it is
 // the loop's word, not the person's, and the transcript is theirs.
 const lastRoundNotice = "This is the last round: no tool can be called now. Answer in words, with the object that was asked for, from what you have."
@@ -1345,7 +1379,11 @@ func (self *AskRun) chat(ctx context.Context, provider llm.Provider, request *ll
 	var response *llm.ChatResponse
 	var text strings.Builder
 	var toolCalls []llm.ToolCall
+	self.firstWordsAt = time.Time{}
 	for event := range events {
+		if self.firstWordsAt.IsZero() && (event.Kind == llm.StreamText || event.Kind == llm.StreamToolCall) {
+			self.firstWordsAt = time.Now()
+		}
 		switch event.Kind {
 		case llm.StreamText:
 			text.WriteString(event.Text)

@@ -594,3 +594,38 @@ func TestReadingADocumentReadsItsCopies(test *testing.T) {
 		}
 	})
 }
+
+// The narrow search finds a passage holding every word that matters, best
+// match first, and nothing that holds only some of them.
+func TestEveryWordFindsOnlyPassagesWithAllTheWords(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		document, err := tx.PutAgentDocument(&models.AgentDocument{
+			AgentID: source.AgentID, SourceID: source.ID, ExternalID: "notes",
+			Kind: models.DocumentChat, Title: "notes", Hash: "hash-of-notes",
+		})
+		if err != nil {
+			test.Fatalf("PutAgentDocument: %s", err)
+		}
+		if err := tx.ReplaceAgentChunks(document, []*models.AgentChunk{
+			{Text: "copy the image with docker save and load it on the other controller", Segmented: true},
+			{Text: "the docker daemon restarts on its own", Segmented: true},
+			{Text: "the other controller is in the next room", Segmented: true},
+		}); err != nil {
+			test.Fatalf("ReplaceAgentChunks: %s", err)
+		}
+		found, err := tx.SearchAgentChunksEveryWord(source.AgentID, "how do I move a docker image to another controller", 10)
+		if err != nil {
+			test.Fatalf("SearchAgentChunksEveryWord: %s", err)
+		}
+		if len(found) != 0 {
+			test.Fatalf("no passage holds every word, yet %d were found", len(found))
+		}
+		found, err = tx.SearchAgentChunksEveryWord(source.AgentID, "docker controller", 10)
+		if err != nil || len(found) != 1 || !strings.Contains(found[0].Text, "docker save") {
+			test.Fatalf("found %+v, %v", found, err)
+		}
+	})
+}

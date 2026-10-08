@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -34,6 +35,35 @@ import (
 // the model, which is why it happens every turn rather than being asked
 // for.
 func (self *AskRun) recallForTurn(ctx context.Context) {
+	words := self.recallWords()
+	if words == "" {
+		return
+	}
+	startedAt := time.Now()
+	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)
+	retrievedAt := time.Now()
+	self.writeRecalled(ctx, nodes, facts, sections)
+	writtenAt := time.Now()
+	self.recallLessons(ctx, words)
+	lessonsAt := time.Now()
+	// The knowledge search began with the turn (startKnowledgeRecall);
+	// what it found by now is taken, last, as it always was.
+	if self.knowledgeRecalled == nil {
+		self.startKnowledgeRecall(ctx)
+	}
+	if self.knowledgeRecalled != nil {
+		for _, line := range <-self.knowledgeRecalled {
+			self.Recall(line)
+		}
+	}
+	log.Infof("recall for %q: graph %s, writing %s, lessons %s, knowledge waited for %s", self.settings.Owner.Username,
+		retrievedAt.Sub(startedAt).Round(time.Millisecond), writtenAt.Sub(retrievedAt).Round(time.Millisecond),
+		lessonsAt.Sub(writtenAt).Round(time.Millisecond), time.Since(lessonsAt).Round(time.Millisecond))
+}
+
+// recallWords are the words a turn recalls by: what the person said and
+// what they pointed at, or nothing for a turn that recalls nothing.
+func (self *AskRun) recallWords() string {
 	// A job's turn is not the person speaking. Its message is a prompt
 	// the code wrote -- a batch of twenty documents, a month's record, a
 	// thread to summarize -- and what it needs from the graph is in that
@@ -43,7 +73,7 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	// ranked the whole corpus of a third of a million documents, eleven
 	// times at once, for seven minutes, while the model sat idle.
 	if self.settings.Headless {
-		return
+		return ""
 	}
 	// What has no vector yet is not given one here. Backfilling on the
 	// interactive path put twenty embedding calls between the person
@@ -52,7 +82,7 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	// backfills two hundred at a time with nobody waiting.
 	words := strings.TrimSpace(self.settings.Message)
 	if words == "" {
-		return
+		return ""
 	}
 	// What the person pointed at is part of what this turn is about.
 	// A finance transaction is about its merchant.
@@ -62,11 +92,45 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 			words += "\n" + reference.MerchantName
 		}
 	}
+	return words
+}
 
-	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)
-	self.writeRecalled(ctx, nodes, facts, sections)
-	self.recallLessons(ctx, words)
-	self.recallFromKnowledge(ctx, words)
+// How long a turn's search of the person's files and chat may take before
+// the turn goes on without it. On a corpus of millions of passages a
+// question of common words matched a third of a million of them, and
+// ranking them all took four seconds on a quiet database and seventeen on
+// a busy one, all of it before the model was asked anything. What it would
+// have found is a knowledge search away for the model. A spoken turn is
+// given less: a pause before an answer is felt more on a call.
+const (
+	knowledgeRecallLongest      = 3 * time.Second
+	knowledgeRecallLongestVoice = 1500 * time.Millisecond
+)
+
+// startKnowledgeRecall begins the turn's search of the person's files and
+// chat as the turn begins, beside the depth judgement and the graph's
+// search, which it needs nothing from; recallForTurn takes what it found.
+func (self *AskRun) startKnowledgeRecall(ctx context.Context) {
+	words := self.recallWords()
+	if words == "" || !FeatureAllowed(self.agent.settings.Configuration(), "knowledge") {
+		return
+	}
+	longest := knowledgeRecallLongest
+	if self.settings.Surface == "voice" {
+		longest = knowledgeRecallLongestVoice
+	}
+	found := make(chan []string, 1)
+	self.knowledgeRecalled = found
+	go func() {
+		searchContext, cancel := context.WithTimeout(ctx, longest)
+		defer cancel()
+		startedAt := time.Now()
+		lines := self.knowledgeLines(ctx, searchContext, words)
+		if searchContext.Err() != nil && ctx.Err() == nil {
+			log.Infof("the knowledge search for %q's turn gave up after %s; the turn goes on without it", self.settings.Owner.Username, time.Since(startedAt).Round(time.Millisecond))
+		}
+		found <- lines
+	}()
 }
 
 // recallLinkedPages is how many pages linked to the top page one hop
@@ -205,34 +269,47 @@ func (self *AskRun) linkedPages(ctx context.Context, page *models.AgentNode) []*
 	return linked
 }
 
-// recallFromKnowledge puts the two or three passages of the person's own
-// files and chat that this turn's words touch in front of the model.
+// knowledgeLines are the two or three passages of the person's own files
+// and chat that this turn's words touch, to put in front of the model. The
+// two searches, by meaning and for every word, run at once and within
+// searchContext; what they found is then read within ctx.
 //
 // Only where they score well: a question about their own work should be
 // answered from their own work without a search, and a question about
 // anything else should not drag three code files into the prompt. The
 // tool is there for going further.
-func (self *AskRun) recallFromKnowledge(ctx context.Context, words string) {
-	if !FeatureAllowed(self.agent.settings.Configuration(), "knowledge") {
-		return
-	}
-	var byWords []*models.AgentChunk
-	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		byWords, err = tx.SearchAgentChunks(self.settings.Agent.ID, nil, words, recallChunks*4)
-		return err
-	}); err != nil {
-		log.Debugf("cannot search what %q indexed: %s", self.settings.Owner.Username, err)
-	}
-	byMeaning, indexed := self.SearchKnowledgeByMeaning(ctx, nil, words, recallChunks*2)
+func (self *AskRun) knowledgeLines(ctx, searchContext context.Context, words string) []string {
+	var byWords, byMeaning []*models.AgentChunk
+	var indexed bool
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(2)
+	go func() {
+		defer waitGroup.Done()
+		if err := self.agent.settings.Database.TransactionContext(searchContext, func(tx db.Transaction) (err error) {
+			byWords, err = tx.SearchAgentChunksEveryWord(self.settings.Agent.ID, words, recallChunks*4)
+			return err
+		}); err != nil {
+			byWords = nil
+			log.Debugf("cannot search what %q indexed: %s", self.settings.Owner.Username, err)
+		}
+	}()
+	go func() {
+		defer waitGroup.Done()
+		byMeaning, indexed = self.SearchKnowledgeByMeaning(searchContext, nil, words, recallChunks*2)
+	}()
+	waitGroup.Wait()
+	// Cut short, what either search found in time still counts.
 	var chunks []*models.AgentChunk
-	if indexed {
+	switch {
+	case indexed:
 		chunks = fuseChunks(recallChunks, byMeaning, byWords)
-	} else {
-		chunks = self.RankChunksByMeaning(ctx, words, byWords, recallChunks)
+	case searchContext.Err() == nil:
+		chunks = self.RankChunksByMeaning(searchContext, words, byWords, recallChunks)
 	}
 	if len(chunks) == 0 {
-		return
+		return nil
 	}
+	var lines []string
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		ids := make([]string, 0, len(chunks))
 		for _, chunk := range chunks {
@@ -262,12 +339,14 @@ func (self *AskRun) recallFromKnowledge(ctx context.Context, words string) {
 				break
 			}
 			spent += cost
-			self.Recall(line)
+			lines = append(lines, line)
 		}
 		return nil
 	}); err != nil {
 		log.Debugf("cannot recall from what was indexed: %s", err)
+		return nil
 	}
+	return lines
 }
 
 // recalledPassage is a passage as recall carries it: to
