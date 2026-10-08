@@ -1025,8 +1025,10 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		name = base + "-" + strconv.Itoa(index)
 	}
 	err = self.client.call(ctx, "agent.start", map[string]any{"name": name, "kind": kind, "pane_id": paneId, "timeout_ms": 60000}, nil)
+	// One that stopped at a question as it started is open, and asking it.
 	var refused *herdrError
-	if err != nil && !(errors.As(err, &refused) && refused.Code == "agent_not_ready") {
+	isAsking := errors.As(err, &refused) && refused.Code == "agent_not_ready"
+	if err != nil && !isAsking {
 		return nil, fmt.Errorf("cannot start %s in %s: %w", herdrAgentNames[kind], directory, err)
 	}
 	return self.session(ctx, paneId)
