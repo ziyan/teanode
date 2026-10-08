@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.115.0] - 2026-10-08
+
+### Added
+
+- Voice calls with the agent in the drawer. Turn it on under the agent settings (`agent.voice`), with an OpenAI provider; a telephone button then appears beside send. What you say is transcribed and sent as a message, the answer is read aloud as it is written, and talking over it stops it. Each person can choose the voice their answers are read in. Transcription and speech count toward the agent's daily budget. (#349)
+
+### Fixed
+
+- A ChatGPT plan model that will not answer without reasoning, such as gpt-6.1-sol, no longer fails every turn with an unexplained 502: it is asked with low reasoning, and a refusal from the plan now says what it was. (#350)
+
 ## [0.114.1] - 2026-10-07
 
 ### Changed

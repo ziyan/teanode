@@ -65,6 +65,10 @@ type Settings struct {
 type Agent struct {
 	settings *Settings
 
+	// promptSnapshots are what each recent conversation's prompt read of
+	// the person, by conversation id (personSnapshot).
+	promptSnapshots sync.Map
+
 	ctx       context.Context
 	cancel    context.CancelFunc
 	waitGroup sync.WaitGroup
