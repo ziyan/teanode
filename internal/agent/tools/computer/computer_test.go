@@ -371,6 +371,24 @@ func TestALongReadGivesFewerLinesAndSaysWhereToReadOn(t *testing.T) {
 	}
 }
 
+// A page of markup is measured as it is sent: json.Marshal writes each <, >
+// and & as six bytes, and a page measured with it came out half the size it
+// had room for.
+func TestAReadOfMarkupFillsItsBudget(t *testing.T) {
+	lines := make([]string, 2000)
+	for index := range lines {
+		lines[index] = "<p>one & two</p>"
+	}
+	encoded, _ := json.Marshal(map[string]any{"path": "/tmp/example.html", "lines": 2000, "offset": 0, "content": strings.Join(lines, "\n"), "more": false})
+	fitted := fitRead(encoded, 8000)
+	if len(fitted) > 8000 || len(fitted) < 8000-40 {
+		t.Fatalf("a page with room for 8000 bytes came out as %d", len(fitted))
+	}
+	if !json.Valid(fitted) {
+		t.Fatal("the page is not JSON")
+	}
+}
+
 // One line longer than a whole answer is cut, the answer stays JSON, and
 // reading on starts at the line after it.
 func TestALineLongerThanAnAnswerIsCutAndReadingOnSkipsIt(t *testing.T) {

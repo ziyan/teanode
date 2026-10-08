@@ -308,11 +308,10 @@ func fitRead(answer json.RawMessage, budget int) json.RawMessage {
 		fields["more"] = true
 		fields["nextOffset"] = offset + int64(lineCount)
 		fields[tools.CutNoteKey] = note
-		encoded, err := json.Marshal(fields)
-		if err != nil {
-			return answer
-		}
-		return encoded
+		// Measured as FitJSON writes it: json.Marshal makes each <, > and &
+		// six bytes, and a page measured that way came out shorter than it
+		// had room to be.
+		return json.RawMessage(tools.EncodeJSON(fields))
 	}
 	noteFor := func(lineCount int) string {
 		return fmt.Sprintf("%d of this page's %d lines are shown, to fit what one answer holds; read on with offset %d",
