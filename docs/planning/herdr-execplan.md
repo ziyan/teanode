@@ -196,6 +196,10 @@ To see it working, on a computer running `teanode computer` with herdr running a
   Rationale: the person asked for in-turn messages: Claude Code and Codex both read what is typed while they work. A send from ChatGPT to a session mid-turn had failed with "is working", and the caller had no way to know it should have asked to queue.
   Date/Author: 2026-10-08, the person.
 
+- Decision: the `herdr` tool says to MCP clients that it is read-only, though `send` and `answer` type into the person's sessions.
+  Rationale: the person uses TeaNode's tools from ChatGPT, which asks before every call of a tool that is not read-only, and its "Always allow" did not take. They asked for the prompt to be gone for their own coding sessions. TeaNode's own checks are unchanged: a session that asks refuses text, and an answer must match the question on screen.
+  Date/Author: 2026-10-08, the person.
+
 ## Outcomes & Retrospective
 
 All milestones are done. Checked end to end against the deployed server, in a scratch herdr workspace with a Claude Code session:

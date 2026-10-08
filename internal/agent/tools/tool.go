@@ -696,13 +696,12 @@ func (self *Tool) Hints() *mcp.ToolAnnotations {
 	return hints
 }
 
-// LocalWrite are the annotations of a tool that may change things, none
-// beyond undoing, and only on the person's own machines: no MCP client need
-// treat a call as one that destroys or reaches the world, so a person can
-// let it run without asking each time.
-func LocalWrite() *mcp.ToolAnnotations {
+// LocalReadOnly are the annotations of a tool an MCP client should run
+// without asking: read-only, and reaching only the person's own machines.
+// Claimed only where the person asked for it of a tool that does more.
+func LocalReadOnly() *mcp.ToolAnnotations {
 	isFalse := false
-	return &mcp.ToolAnnotations{DestructiveHint: &isFalse, OpenWorldHint: &isFalse}
+	return &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &isFalse, OpenWorldHint: &isFalse}
 }
 
 // OpenWorldRead are the annotations of a tool that changes nothing and

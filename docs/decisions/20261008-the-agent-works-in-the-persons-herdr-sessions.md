@@ -32,7 +32,9 @@ changed. The agent's `herdr` tool carries the person's choice, with the
 chosen options' labels, which must match the form. Sending and answering are
 write risk and raise no confirmation card: a card for every answer was more
 than the person wanted. A person who wants one can still list the tool in
-their confirm list.
+their confirm list. To MCP clients the tool says it is read-only, at the
+person's word, so ChatGPT and the like run it without asking each time:
+they would not let the person always allow a tool that writes.
 
 The program on the computer decides each session's state itself rather than
 taking herdr's: herdr reads mostly the window title and reported a Claude Code
