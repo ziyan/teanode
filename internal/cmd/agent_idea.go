@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -27,8 +29,17 @@ func newAgentIdeaCommand() *cli.Command {
 					&cli.StringSliceFlag{Name: "status", Usage: "open, started, done, dismissed or expired; repeatable; open by default, all with --all"},
 					&cli.StringSliceFlag{Name: "kind", Usage: "catalog or personal; repeatable; both by default"},
 					&cli.BoolFlag{Name: "all", Usage: "every idea, whatever became of it"},
+					&cli.IntFlag{Name: "limit", Usage: "how many ideas a page holds; every one when left out"},
+					&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page or one further on"},
 				},
 				Action: runAgentIdeaList,
+			},
+			{
+				Name:      "get",
+				Usage:     "one idea whole: what it offers, what you would say to start it, and what prompted it",
+				ArgsUsage: "<idea-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentIdeaGet,
 			},
 			{
 				Name:  "propose",
@@ -70,22 +81,86 @@ func runAgentIdeaList(ctx context.Context, command *cli.Command) error {
 	if len(statuses) == 0 && !command.Bool("all") {
 		statuses = []string{"open"}
 	}
-	ideas, err := client.ListAgentIdeas(ctx, connection, statuses, command.StringSlice("kind"))
+	offset := int(command.Int("offset"))
+	page, err := client.ListAgentIdeas(ctx, connection, client.AgentIdeaListing{
+		Statuses: statuses, Kinds: command.StringSlice("kind"), Limit: int(command.Int("limit")), Offset: offset,
+	})
 	if err != nil {
 		return describeError(command, err)
 	}
+	isPaged := command.IsSet("limit") || command.IsSet("offset")
 	if command.Bool("json") {
-		return PrintJSON(ideas)
+		// The ideas alone, as before paging, unless a page was asked for:
+		// a script that reads the list keeps working.
+		if isPaged {
+			return PrintJSON(page)
+		}
+		return PrintJSON(page.Ideas)
 	}
-	if len(ideas) == 0 {
+	if len(page.Ideas) == 0 && offset == 0 {
 		_, _ = fmt.Fprintln(command.Writer, "no ideas here")
 		return nil
 	}
-	rows := make([][]string, 0, len(ideas))
-	for _, idea := range ideas {
+	rows := make([][]string, 0, len(page.Ideas))
+	for _, idea := range page.Ideas {
 		rows = append(rows, []string{idea.ID, ideaStatusText(idea), idea.IdeaKind, idea.IdeaCategory, strings.TrimSpace(idea.Emoji + " " + idea.Headline), idea.SuggestionReason})
 	}
-	return printTable([]string{"id", "status", "kind", "category", "idea", "why"}, rows)
+	if err := printTable([]string{"id", "status", "kind", "category", "idea", "why"}, rows); err != nil {
+		return err
+	}
+	// pageNote reads the next page by cursor or offset; ideas page by
+	// offset alone, so any cursor stands for there being a next page.
+	nextCursor := ""
+	if page.NextOffset > 0 {
+		nextCursor = strconv.Itoa(page.NextOffset)
+	}
+	if note := pageNote(len(page.Ideas), offset, page.TotalCount, nextCursor, false); note != "" {
+		fmt.Fprintln(os.Stderr, note)
+	}
+	return nil
+}
+
+func runAgentIdeaGet(ctx context.Context, command *cli.Command) error {
+	ideaId := command.Args().First()
+	if ideaId == "" {
+		return fmt.Errorf("which idea? give its id; agent idea list shows them")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	page, err := client.ListAgentIdeas(ctx, connection, client.AgentIdeaListing{IdeaIDs: []string{ideaId}})
+	if err != nil {
+		return describeError(command, err)
+	}
+	if len(page.Ideas) == 0 {
+		return fmt.Errorf("there is no idea %q; agent idea list --all shows them", ideaId)
+	}
+	idea := page.Ideas[0]
+	if command.Bool("json") {
+		return PrintJSON(idea)
+	}
+	writer := command.Writer
+	_, _ = fmt.Fprintf(writer, "%s\n%s, %s, %s\n", strings.TrimSpace(idea.Emoji+" "+idea.Headline), ideaStatusText(idea), idea.IdeaKind, idea.IdeaCategory)
+	if body := strings.TrimSpace(idea.Body); body != "" {
+		_, _ = fmt.Fprintf(writer, "\n%s\n", body)
+	}
+	if request := strings.TrimSpace(idea.OpeningRequest); request != "" {
+		_, _ = fmt.Fprintf(writer, "\nto start it: %s\n", request)
+	}
+	if reason := strings.TrimSpace(idea.SuggestionReason); reason != "" {
+		_, _ = fmt.Fprintf(writer, "why: %s\n", reason)
+	}
+	if len(idea.NeededToolNames) > 0 {
+		_, _ = fmt.Fprintf(writer, "needs: %s\n", strings.Join(idea.NeededToolNames, ", "))
+	}
+	for _, evidence := range idea.Evidence {
+		_, _ = fmt.Fprintf(writer, "prompted by %s %s: %s\n", evidence.EvidenceKind, evidence.EvidenceID, evidence.EvidenceSummary)
+	}
+	if idea.ExpiresAt != nil {
+		_, _ = fmt.Fprintf(writer, "expires: %s\n", idea.ExpiresAt.Format("2006-01-02"))
+	}
+	return nil
 }
 
 // ideaExpiredReasonWords are why an idea expired, in a few words for a
