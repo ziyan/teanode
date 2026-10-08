@@ -645,10 +645,14 @@ export function HerdrQuestionCard({
   computer,
   paneId,
   questionFingerprint,
+  onAnswered,
 }: {
   computer: string
   paneId: string
   questionFingerprint: string
+  // Told once the question is found answered, so what holds the card can
+  // fold it away.
+  onAnswered?: () => void
 }) {
   const { t } = useTranslation()
   const [found, setFound] = useState<{ session: HerdrSession; question: HerdrQuestion } | null>(null)
@@ -706,6 +710,11 @@ export function HerdrQuestionCard({
       document.removeEventListener('visibilitychange', seen)
     }
   }, [computer, paneId, questionFingerprint, questionState, lookCount])
+  useEffect(() => {
+    if (questionState === 'answered') onAnswered?.()
+    // onAnswered is the holder's, and only the change of state matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionState])
   if (questionState === 'answered') return <p className="herdr-question-done muted">{t('herdr.questionDone')}</p>
   if (questionState === 'unreachable' || !found) return null
   return (

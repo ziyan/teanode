@@ -475,6 +475,7 @@ const (
 	NoteCompacting      AgentNoteKind = "compacting"       // the earlier conversation is being folded into a note
 	NoteCompacted       AgentNoteKind = "compacted"        // it was: the detail is the note
 	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
+	NoteHerdrAnswered   AgentNoteKind = "herdr_answered"   // a coding session's question went: the computer, pane and fingerprint
 	// The goal notes below are written no longer, since goals have their
 	// own conversations and activity; they are kept so that transcripts
 	// written before still read.
@@ -498,6 +499,7 @@ var noteEnglish = map[AgentNoteKind]string{
 	NoteCompacting:      "compacting the earlier conversation into a note",
 	NoteCompacted:       "the earlier conversation was compacted into a note",
 	NoteDepth:           "looking into this carefully",
+	NoteHerdrAnswered:   "a coding session's question was answered",
 	NoteGoalSet:         "Goal set",
 	NoteGoalSetAgain:    "Goal set again",
 	NoteGoalChanged:     "Goal changed",

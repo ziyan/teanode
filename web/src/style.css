@@ -13490,3 +13490,30 @@ button.idea-history-title {
 .dialog-wide:has(.herdr-session) {
   max-width: min(960px, 100%);
 }
+
+/* A coding session's question that was answered folds to one muted line,
+   with a tick, that opens to what was asked. */
+.agent-line.herdr-question-line.answered {
+  align-self: stretch;
+}
+
+.herdr-question-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--text-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.herdr-question-summary > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1276,6 +1276,8 @@ export const ja: Catalog = {
   'herdr.typeAnswer': '回答を入力',
   'herdr.sendAnswer': '答える',
   'herdr.questionDone': '回答済み、または取り下げられました。',
+  'herdr.answeredLine': '回答済み: {summary}',
+  'herdr.hideQuestion': '質問を閉じる',
   'herdr.turns': '最近のやり取り',
   'herdr.screen': '画面',
   'herdr.role.person': 'あなた',

@@ -383,7 +383,11 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 			}
 			self.backgroundMutex.Unlock()
 		}
-		go self.acknowledgeHerdr(found, event.HerdrEventID)
+		self.waitGroup.Add(1)
+		go func() {
+			defer self.waitGroup.Done()
+			self.noteHerdrAnswered(agentId, found, &event)
+		}()
 	case computer.HerdrEventKindSettled:
 		self.waitGroup.Add(1)
 		go func() {
@@ -395,6 +399,28 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 		// computer whether it still waits.
 		go self.acknowledgeHerdr(found, event.HerdrEventID)
 	}
+}
+
+// noteHerdrAnswered writes into the main conversation, as a note nobody
+// reads but the drawer, that a question went, so a drawer opened later
+// draws it answered at once rather than asking the computer first. Notes
+// are not part of what the model is given.
+func (self *Agent) noteHerdrAnswered(agentId string, attached *attachedComputer, event *computer.HerdrEvent) {
+	if question := event.HerdrSession.Question; question != nil {
+		detail := attached.name + " " + event.HerdrSession.PaneID + " " + question.QuestionFingerprint
+		if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
+			main, err := scheduleConversation(tx, agentId, "")
+			if err != nil {
+				return err
+			}
+			_, err = tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteHerdrAnswered, detail))
+			return err
+		}); err != nil {
+			log.Warningf("cannot note that the herdr question in %s on %q went: %s", event.HerdrSession.PaneID, attached.name, err)
+			return
+		}
+	}
+	self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 }
 
 // acknowledgeHerdr tells the computer the server has heard an event, so it
@@ -587,12 +613,15 @@ func herdrQuestionSaid(computerName string, session *computer.HerdrSession) stri
 	case computer.HerdrQuestionKindPlanApproval:
 		what = "asks you to approve its plan"
 	}
-	where := session.WorkingDirectory
-	if title := strings.TrimSpace(session.PaneTitle); title != "" {
-		where = title + ", " + where
+	// The pane's name says where; the title, when the coding agent set one,
+	// says what it was about. A shell's own title (a prompt, a path) adds
+	// nothing the name does not.
+	about := ""
+	if title := strings.TrimSpace(session.PaneTitle); title != "" && !strings.Contains(title, "@") && !strings.Contains(title, "/") {
+		about = " (" + markdownLinkBreaker.Replace(title) + ")"
 	}
-	fmt.Fprintf(&said, "**%s** in %s on %s (%s) %s:\n\n", codingAgentName(session.CodingAgentKind),
-		markdownLinkBreaker.Replace(paneNameOf(session)), markdownLinkBreaker.Replace(computerName), markdownLinkBreaker.Replace(where), what)
+	fmt.Fprintf(&said, "**%s** in %s on %s%s %s:\n\n", codingAgentName(session.CodingAgentKind),
+		markdownLinkBreaker.Replace(paneNameOf(session)), markdownLinkBreaker.Replace(computerName), about, what)
 	for _, line := range strings.Split(question.QuestionText, "\n") {
 		said.WriteString("> " + markdownLinkBreaker.Replace(line) + "\n")
 	}

@@ -1239,6 +1239,8 @@ export const zh: Catalog = {
   'herdr.typeAnswer': '输入回答',
   'herdr.sendAnswer': '回答',
   'herdr.questionDone': '已回答，或不再提问。',
+  'herdr.answeredLine': '已回答：{summary}',
+  'herdr.hideQuestion': '收起问题',
   'herdr.turns': '最近的对话',
   'herdr.screen': '屏幕',
   'herdr.role.person': '你',

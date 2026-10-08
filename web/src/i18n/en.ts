@@ -1282,6 +1282,8 @@ export const en = {
   'herdr.typeAnswer': 'Type an answer',
   'herdr.sendAnswer': 'Answer',
   'herdr.questionDone': 'Answered, or no longer asked.',
+  'herdr.answeredLine': 'Answered: {summary}',
+  'herdr.hideQuestion': 'Hide the question',
   'herdr.turns': 'Last turns',
   'herdr.screen': 'Screen',
   'herdr.role.person': 'You',

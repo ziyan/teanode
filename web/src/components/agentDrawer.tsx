@@ -174,6 +174,11 @@ const GOAL_NEEDS_YOU_SURFACE = 'goal_needs_you'
 const HERDR_QUESTION_MARKER = '[herdr question]'
 const HERDR_QUESTION_SURFACE = 'herdr_question'
 
+// The kind of the note written when a herdr question went, which is
+// models.NoteHerdrAnswered on the server; its detail is the computer, the
+// pane and the fingerprint, as the question's marker line names them.
+const HERDR_ANSWERED_NOTE = 'herdr_answered'
+
 // The marker a turn begins with when a herdr coding session the agent
 // watched has finished, which is models.HerdrSessionMarker on the server.
 const HERDR_SESSION_MARKER = '[herdr session]'
@@ -1260,6 +1265,19 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
         })
         break
       case 'note':
+        // That a coding session's question went: drawn by nobody, read by
+        // the question's line, which then starts collapsed. Not timed, so
+        // it opens no day of its own.
+        if (message.name === HERDR_ANSWERED_NOTE) {
+          lines.push({
+            kind: 'note',
+            key: message.id,
+            text: '',
+            noteKind: HERDR_ANSWERED_NOTE,
+            detail: message.content,
+          })
+          break
+        }
         // Timed, so that the day divider counts a note that opens a day
         // -- "Goal set" is the first line of a fresh conversation -- and
         // does not land under it.
@@ -1883,6 +1901,69 @@ function herdrQuestionOf(text: string): { computer: string; paneId: string; ques
     paneId: words[words.length - 2],
     questionFingerprint: words[words.length - 1],
   }
+}
+
+// herdrSummaryOf is a herdr question as the agent said it, in a line: who
+// asks, then the question's first line.
+function herdrSummaryOf(text: string): string {
+  const lines = text.split('\n')
+  const who = (lines[0] ?? '')
+    .replace(/\*\*/g, '')
+    .replace(/( \(.*\))? asks[^:]*:\s*$/, '')
+    .trim()
+  const asked = (lines.find((each) => each.startsWith('> ')) ?? '').slice(2).trim()
+  return asked ? `${who} · ${asked}` : who
+}
+
+// HerdrQuestionLine is a coding session's question as the agent said it,
+// with its options under it while it waits. Once answered, at the keyboard
+// or here, it folds to a line that opens to what was asked; one already
+// answered when the transcript was read starts folded, and asks nothing of
+// the computer.
+function HerdrQuestionLine({
+  drawn,
+  text,
+  question,
+  isAnsweredAtLoad,
+}: {
+  drawn: React.ReactNode
+  text: string
+  question: { computer: string; paneId: string; questionFingerprint: string }
+  isAnsweredAtLoad: boolean
+}) {
+  const { t } = useTranslation()
+  const [isAnswered, setAnswered] = useState(isAnsweredAtLoad)
+  const [isOpen, setOpen] = useState(false)
+  useEffect(() => {
+    if (isAnsweredAtLoad) setAnswered(true)
+  }, [isAnsweredAtLoad])
+  if (isAnswered && !isOpen) {
+    return (
+      <div className="agent-line herdr-question-line answered">
+        <button type="button" className="herdr-question-summary" aria-expanded={false} onClick={() => setOpen(true)}>
+          <CheckIcon size={12} />
+          <span>{t('herdr.answeredLine', { summary: herdrSummaryOf(text) })}</span>
+        </button>
+      </div>
+    )
+  }
+  return (
+    <>
+      {drawn}
+      {isAnswered ? (
+        <div className="agent-line herdr-question-line answered">
+          <button type="button" className="herdr-question-summary" aria-expanded onClick={() => setOpen(false)}>
+            <CheckIcon size={12} />
+            <span>{t('herdr.hideQuestion')}</span>
+          </button>
+        </div>
+      ) : (
+        <div className="agent-line herdr-question-line">
+          <HerdrQuestionCard {...question} onAnswered={() => setAnswered(true)} />
+        </div>
+      )}
+    </>
+  )
 }
 
 // CheckInLine is one turn of the agent's own -- toward the goal, on
@@ -3697,6 +3778,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (!showWorkingNotes && line.origin !== 'goalNeedsYou') return null
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
+        if (line.noteKind === HERDR_ANSWERED_NOTE) return null
         if (!showWorkingNotes && line.noteKind && WORKING_NOTES.has(line.noteKind)) return null
         if (line.detail) {
           return (
@@ -4075,14 +4157,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               const asked = line.kind === 'assistant' && index > 0 ? lines[index - 1] : undefined
               const herdrQuestion =
                 asked?.kind === 'checkin' && asked.origin === 'herdrQuestion' ? herdrQuestionOf(asked.text) : null
-              if (herdrQuestion) {
+              if (herdrQuestion && line.kind === 'assistant') {
+                const answeredDetail = `${herdrQuestion.computer} ${herdrQuestion.paneId} ${herdrQuestion.questionFingerprint}`
+                const isAnsweredAtLoad = lines.some(
+                  (later, laterIndex) =>
+                    laterIndex > index &&
+                    later.kind === 'note' &&
+                    later.noteKind === HERDR_ANSWERED_NOTE &&
+                    later.detail === answeredDetail,
+                )
                 drawn = (
-                  <Fragment key={`${line.key}-herdr`}>
-                    {drawn}
-                    <div className="agent-line herdr-question-line">
-                      <HerdrQuestionCard {...herdrQuestion} />
-                    </div>
-                  </Fragment>
+                  <HerdrQuestionLine
+                    key={`${line.key}-herdr`}
+                    drawn={drawn}
+                    text={line.text}
+                    question={herdrQuestion}
+                    isAnsweredAtLoad={isAnsweredAtLoad}
+                  />
                 )
               }
               return divider ? (
