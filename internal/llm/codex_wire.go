@@ -220,6 +220,9 @@ func codexContentOf(message *ChatMessage) ([]codexContent, error) {
 func (self *codex) read(response *http.Response, model string, events chan<- StreamEvent) {
 	answer := &ChatResponse{Model: model, Message: ChatMessage{Role: RoleAssistant}}
 	var said strings.Builder
+	// isNewMessage is set when a second message of the round begins, until
+	// its first words come.
+	isNewMessage := false
 
 	scanner := bufio.NewScanner(response.Body)
 	// A line here is a whole event and some of them carry a picture's worth
@@ -268,10 +271,31 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 		}
 
 		switch event.Type {
+		case "response.output_item.added":
+			// One round may say two messages, a word of what the model is
+			// doing and then its answer: the second starts a paragraph of
+			// its own, rather than running on from the first's last word.
+			if event.Item != nil && event.Item.Type == "message" && said.Len() > 0 {
+				isNewMessage = true
+			}
+
 		case "response.output_text.delta":
 			if event.Delta != "" {
-				said.WriteString(event.Delta)
-				events <- StreamEvent{Kind: StreamText, Text: event.Delta}
+				delta := event.Delta
+				if isNewMessage {
+					isNewMessage = false
+					// A blank line between them, counting the line breaks
+					// the first already ended with.
+					switch saidSoFar := said.String(); {
+					case strings.HasSuffix(saidSoFar, "\n\n"):
+					case strings.HasSuffix(saidSoFar, "\n"):
+						delta = "\n" + delta
+					default:
+						delta = "\n\n" + delta
+					}
+				}
+				said.WriteString(delta)
+				events <- StreamEvent{Kind: StreamText, Text: delta}
 			}
 
 		case "response.output_item.done":
