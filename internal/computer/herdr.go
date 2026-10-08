@@ -233,10 +233,14 @@ type Herdr struct {
 	// waiting when the program restarts keeps its fingerprint and is not
 	// told again.
 	appearances map[string]*herdrAppearance
-	watches     map[string][]*herdrWatch
-	events      []*HerdrEvent
-	notify      func(*HerdrEvent)
-	listener    int64
+	// answering holds a lock for each pane being answered, so two answers
+	// to one question are not both pressed: the second finds the question
+	// gone.
+	answering map[string]*sync.Mutex
+	watches   map[string][]*herdrWatch
+	events    []*HerdrEvent
+	notify    func(*HerdrEvent)
+	listener  int64
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -249,6 +253,10 @@ type herdrAppearance struct {
 	IsTold bool `json:"isTold"`
 	// missCount is how many looks in a row have not seen it.
 	missCount int
+	// isAnswerPressed says an answer was pressed into it through TeaNode:
+	// the first look without it means it went, and whatever comes after is
+	// another appearance, even a form that reads the same.
+	isAnswerPressed bool
 }
 
 // herdrAppearancesPath is where the appearances are kept, under the home
@@ -258,9 +266,9 @@ var herdrAppearancesPath = filepath.Join(".local", "state", "teanode", "herdr-ap
 // loadAppearances reads the appearances kept by the program before.
 func loadAppearances(home string) map[string]*herdrAppearance {
 	appearances := map[string]*herdrAppearance{}
-	data, err := os.ReadFile(filepath.Join(home, herdrAppearancesPath))
+	encodedAppearances, err := os.ReadFile(filepath.Join(home, herdrAppearancesPath))
 	if err == nil {
-		_ = json.Unmarshal(data, &appearances)
+		_ = json.Unmarshal(encodedAppearances, &appearances)
 	}
 	return appearances
 }
@@ -268,13 +276,13 @@ func loadAppearances(home string) map[string]*herdrAppearance {
 // saveAppearancesLocked keeps them. Called with the lock held; the file is
 // small, a few lines a waiting question.
 func (self *Herdr) saveAppearancesLocked() {
-	data, err := json.Marshal(self.appearances)
+	encodedAppearances, err := json.Marshal(self.appearances)
 	if err != nil {
 		return
 	}
 	path := filepath.Join(self.home, herdrAppearancesPath)
 	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
-		_ = writeFileAtomically(path, data)
+		_ = writeFileAtomically(path, encodedAppearances)
 	}
 }
 
@@ -294,9 +302,9 @@ var herdrWatchesPath = filepath.Join(".local", "state", "teanode", "herdr-watche
 // down is said to have finished at the first look.
 func loadWatches(home string) map[string][]*herdrWatch {
 	watches := map[string][]*herdrWatch{}
-	data, err := os.ReadFile(filepath.Join(home, herdrWatchesPath))
+	encodedWatches, err := os.ReadFile(filepath.Join(home, herdrWatchesPath))
 	if err == nil {
-		_ = json.Unmarshal(data, &watches)
+		_ = json.Unmarshal(encodedWatches, &watches)
 	}
 	for _, kept := range watches {
 		for _, watch := range kept {
@@ -308,13 +316,13 @@ func loadWatches(home string) map[string][]*herdrWatch {
 
 // saveWatchesLocked keeps them. Called with the lock held.
 func (self *Herdr) saveWatchesLocked() {
-	data, err := json.Marshal(self.watches)
+	encodedWatches, err := json.Marshal(self.watches)
 	if err != nil {
 		return
 	}
 	path := filepath.Join(self.home, herdrWatchesPath)
 	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
-		_ = writeFileAtomically(path, data)
+		_ = writeFileAtomically(path, encodedWatches)
 	}
 }
 
@@ -322,7 +330,8 @@ func (self *Herdr) saveWatchesLocked() {
 // directory this is. Start watches it.
 func NewHerdr(home string) *Herdr {
 	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
-		appearances: loadAppearances(home), watches: loadWatches(home), answers: map[string]string{}}
+		appearances: loadAppearances(home), watches: loadWatches(home), answers: map[string]string{},
+		answering: map[string]*sync.Mutex{}}
 }
 
 // Start looks at every pane from now until Close.
@@ -524,12 +533,17 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 	}
 	if session.Question == nil {
 		// Gone for two looks before it is gone: a screen read while it
-		// redraws shows no form for a moment.
+		// redraws shows no form for a moment, and the question is still
+		// waiting, so it is neither told answered nor told again.
 		if appearance := self.appearances[session.PaneID]; appearance != nil {
 			appearance.missCount++
-			if appearance.missCount >= 2 {
+			if appearance.missCount >= 2 || appearance.isAnswerPressed {
 				delete(self.appearances, session.PaneID)
 				self.saveAppearancesLocked()
+			} else if previous := self.sessions[session.PaneID]; previous != nil && previous.Question != nil {
+				session.Question, session.HerdrSessionState = previous.Question, previous.HerdrSessionState
+				self.sessions[session.PaneID] = session
+				return
 			}
 		}
 	} else {
@@ -735,6 +749,21 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 	for _, agent := range sorted {
 		agentsOfTab[agent.TabID] = append(agentsOfTab[agent.TabID], agent)
 	}
+	// isNamedApart says an agent has a name of its own: one that does more
+	// than repeat its workspace's label, or its tab's.
+	isNamedApart := func(agent *herdrAgent) bool {
+		name := herdrAgentNameOf(agent.Name)
+		if name == "" {
+			return false
+		}
+		if workspace := workspaceOf[agent.WorkspaceID]; workspace != nil && name == herdrAgentNameOf(workspace.Label) {
+			return false
+		}
+		if tab := tabOf[agent.TabID]; tab != nil && name == herdrAgentNameOf(tab.Label) {
+			return false
+		}
+		return true
+	}
 	for _, agent := range sorted {
 		workspace := workspaceOf[agent.WorkspaceID]
 		if workspace == nil || strings.TrimSpace(workspace.Label) == "" {
@@ -750,14 +779,8 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 			parts = append(parts, strings.TrimSpace(label))
 		}
 		inTab := agentsOfTab[agent.TabID]
-		// A name that only repeats the workspace's or the tab's says
-		// nothing more.
-		isRepeated := herdrAgentNameOf(agent.Name) == herdrAgentNameOf(workspace.Label)
-		if tab := tabOf[agent.TabID]; tab != nil && workspace.TabCount > 1 {
-			isRepeated = isRepeated || herdrAgentNameOf(agent.Name) == herdrAgentNameOf(tab.Label)
-		}
 		switch {
-		case strings.TrimSpace(agent.Name) != "" && !isRepeated:
+		case isNamedApart(agent):
 			parts = append(parts, strings.TrimSpace(agent.Name))
 		case len(inTab) > 1:
 			name := herdrAgentNames[agent.Agent]
@@ -767,7 +790,7 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 			sameKind, ordinal := 0, 0
 			// Those with a name of their own are told apart by it.
 			for _, other := range inTab {
-				if other.Agent == agent.Agent && strings.TrimSpace(other.Name) == "" {
+				if other.Agent == agent.Agent && !isNamedApart(other) {
 					sameKind++
 					if other.PaneID == agent.PaneID {
 						ordinal = sameKind
@@ -1101,6 +1124,9 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		}
 		select {
 		case <-ctx.Done():
+			if session == nil {
+				return nil, ctx.Err()
+			}
 			return session, nil
 		case <-time.After(time.Second):
 		}
@@ -1133,6 +1159,21 @@ type herdrStep struct {
 
 func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*HerdrAnswerResult, error) {
 	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	self.mutex.Lock()
+	paneLock := self.answering[session.PaneID]
+	if paneLock == nil {
+		paneLock = &sync.Mutex{}
+		self.answering[session.PaneID] = paneLock
+	}
+	self.mutex.Unlock()
+	paneLock.Lock()
+	defer paneLock.Unlock()
+	// Looked at again under the lock: an answer that held it may have
+	// answered this question already.
+	session, err = self.session(ctx, session.PaneID)
 	if err != nil {
 		return nil, err
 	}
@@ -1175,6 +1216,11 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 			return nil, fmt.Errorf("answering %s stopped partway; look at its screen: %w", session.named(), err)
 		}
 	}
+	self.mutex.Lock()
+	if appearance := self.appearances[session.PaneID]; appearance != nil && appearanceFingerprint(appearance) == question.QuestionFingerprint {
+		appearance.isAnswerPressed = true
+	}
+	self.mutex.Unlock()
 	time.Sleep(herdrAnswerSettle)
 	after, err := self.session(ctx, session.PaneID)
 	if err != nil {
@@ -1190,11 +1236,14 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 			}
 		}
 	}
-	// Some forms move the cursor to the number pressed and wait for enter
-	// (Codex's question whether to trust a folder), where most take the
-	// number as the answer. Still the same question, with the cursor on the
-	// option chosen, is one of the first kind.
-	if after.Question != nil && after.Question.QuestionFingerprint == question.QuestionFingerprint && !question.IsMultipleChoice &&
+	// Some of Codex's forms move the cursor to the number pressed and wait
+	// for enter (its question whether to trust a folder), where Claude
+	// Code's take the number as the answer. Still the same question, with
+	// the cursor on the option chosen, is one of the first kind. Claude
+	// Code's are left alone: one slow to redraw would have the enter land
+	// on whatever it asks next.
+	if session.CodingAgentKind == CodingAgentKindCodex && after.Question != nil &&
+		after.Question.QuestionFingerprint == question.QuestionFingerprint && !question.IsMultipleChoice &&
 		!question.IsFromTranscript && !question.IsNumberless && len(arguments.OptionNumbers) == 1 &&
 		after.Question.CursorOptionNumber == arguments.OptionNumbers[0] && strings.TrimSpace(arguments.FreeText) == "" {
 		if err := self.client.sendKeys(ctx, session.PaneID, []string{"enter"}); err == nil {
@@ -1222,19 +1271,19 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 func answerSteps(question *HerdrQuestion, optionNumbers []int, freeText string) ([]herdrStep, string, error) {
 	freeText = strings.TrimSpace(freeText)
 	byNumber := map[int]HerdrQuestionOption{}
-	freeTextOption := 0
+	freeTextOptionNumber := 0
 	for _, option := range question.Options {
 		byNumber[option.OptionNumber] = option
-		if option.HerdrOptionKind == HerdrOptionKindFreeText && freeTextOption == 0 {
-			freeTextOption = option.OptionNumber
+		if option.HerdrOptionKind == HerdrOptionKindFreeText && freeTextOptionNumber == 0 {
+			freeTextOptionNumber = option.OptionNumber
 		}
 	}
 	// Text alone means the option that takes text.
 	if len(optionNumbers) == 0 && freeText != "" {
-		if freeTextOption == 0 {
+		if freeTextOptionNumber == 0 {
 			return nil, "", errors.New("this question takes no typed answer; choose one of its options")
 		}
-		optionNumbers = []int{freeTextOption}
+		optionNumbers = []int{freeTextOptionNumber}
 	}
 	if len(optionNumbers) == 0 {
 		return nil, "", errors.New("choose an option, by its number")
@@ -1272,6 +1321,10 @@ func answerSteps(question *HerdrQuestion, optionNumbers []int, freeText string) 
 				labels = append(labels, option.OptionLabel)
 			}
 			typed = strings.Join(labels, ", ")
+		}
+		// The labels come from the history file, and are typed as they are.
+		if hasControlCharacters(typed, false) {
+			return nil, "", errors.New("the option holds control characters, which would press keys rather than type; answer it at the keyboard")
 		}
 		return []herdrStep{{text: typed}, {keys: []string{"enter"}}}, answeredWith, nil
 	}

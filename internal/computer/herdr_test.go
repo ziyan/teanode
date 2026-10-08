@@ -425,7 +425,14 @@ func TestAQuestionIsToldWhenItComesAndGoesAndAgainUntilAcknowledged(t *testing.T
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-single"))
 	listForTest(t, herdr)
 	listForTest(t, herdr)
+	// Gone for one look is not yet answered: the form may be redrawing.
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	listForTest(t, herdr)
+	mutex.Lock()
+	if len(told) != 1 {
+		t.Errorf("one look without the form told %d events", len(told))
+	}
+	mutex.Unlock()
 	listForTest(t, herdr)
 	stop()
 	mutex.Lock()
@@ -492,6 +499,8 @@ func TestAScreenThatCouldNotBeReadKeepsItsQuestion(t *testing.T) {
 	fake := startFakeHerdr(t, home)
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
 	herdr := NewHerdr(home)
+	var told []string
+	defer herdr.listen(func(event *HerdrEvent) { told = append(told, event.HerdrEventKind) })()
 	first := listForTest(t, herdr)[0].Question.QuestionFingerprint
 	// A screen that fails to read, then one read mid-redraw with no form.
 	herdr.mutex.Lock()
@@ -503,10 +512,16 @@ func TestAScreenThatCouldNotBeReadKeepsItsQuestion(t *testing.T) {
 		t.Errorf("an unread screen lost its question: %+v", unread.Question)
 	}
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
-	listForTest(t, herdr)
+	if missed := listForTest(t, herdr)[0]; missed.Question == nil || missed.HerdrSessionState != HerdrSessionStateAsking {
+		t.Errorf("a form missed for one look was no longer asking: %+v", missed)
+	}
 	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
 	if again := listForTest(t, herdr)[0].Question.QuestionFingerprint; again != first {
 		t.Error("a form missed for one look came back as another question")
+	}
+	// Asked once, and never said to be answered.
+	if !slices.Equal(told, []string{HerdrEventKindAsking}) {
+		t.Errorf("told %v", told)
 	}
 }
 
