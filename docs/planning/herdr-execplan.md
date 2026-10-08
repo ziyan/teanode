@@ -94,7 +94,7 @@ To see it working, on a computer running `teanode computer` with herdr running a
 - Observation: the secret check reads a file name ending in the shell suffix as a host name under that top-level domain.
   Evidence: `make lint-ci` failed on the hook script's name; the script is `teanode-herdr-hook`.
 
-- Observation: herdr's socket spells a read's source `recent_unwrapped`, where its command line says `recent-unwrapped`, and a request it cannot read is refused with an empty `id`.
+- Observation: herdr's socket spells a read's source `recent_unwrapped`, where its command line says `recent-unwrapped`, and a request it cannot read is refused with an empty `id`. A read given `lines` answers with no text at all, so the program reads the recent text whole and keeps its last lines itself.
   Evidence: the agent's `screen` with lines failed as "herdr did not answer agent.read: EOF" in the end-to-end test: the client waited for its own id and never saw the refusal.
 
 ## Decision Log

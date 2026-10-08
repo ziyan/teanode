@@ -642,15 +642,22 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 	if err != nil {
 		return nil, err
 	}
-	source, lineCount := "visible", 0
-	if arguments.LineCount > 0 {
-		source, lineCount = "recent_unwrapped", min(arguments.LineCount, herdrMostLineCount)
+	if arguments.LineCount <= 0 {
+		text, err := self.client.readAgent(ctx, session.PaneID, "visible", 0)
+		if err != nil {
+			return nil, err
+		}
+		return &HerdrScreenResult{HerdrSession: session, ScreenText: text}, nil
 	}
-	text, err := self.client.readAgent(ctx, session.PaneID, source, lineCount)
+	// The last lines are cut here: herdr given a count of lines answers
+	// with none.
+	text, err := self.client.readAgent(ctx, session.PaneID, "recent_unwrapped", 0)
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrScreenResult{HerdrSession: session, ScreenText: text}, nil
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	lines = lines[max(len(lines)-min(arguments.LineCount, herdrMostLineCount), 0):]
+	return &HerdrScreenResult{HerdrSession: session, ScreenText: strings.Join(lines, "\n")}, nil
 }
 
 func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrSendResult, error) {
