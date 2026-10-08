@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -404,6 +406,28 @@ func runComputerHerdrWatch(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// herdrDirectoryOf is a directory as typed, made one the computer reads the
+// same: a path relative to where the command runs ("." or "src/example")
+// is made whole, and said from the home directory when it is under it, so
+// it names the same place on another computer laid out alike. The computer
+// takes a relative path from the home directory, as the agent gives it.
+func herdrDirectoryOf(directory string) string {
+	directory = strings.TrimSpace(directory)
+	if directory == "" || directory == "~" || strings.HasPrefix(directory, "~/") || filepath.IsAbs(directory) {
+		return directory
+	}
+	whole, err := filepath.Abs(directory)
+	if err != nil {
+		return directory
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if relative, err := filepath.Rel(home, whole); err == nil && relative != ".." && !strings.HasPrefix(relative, "../") {
+			return filepath.Join("~", relative)
+		}
+	}
+	return whole
+}
+
 func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 2 {
 		return usage("which coding agent, and where? usage: teanode computer herdr open <claude|codex> <directory>")
@@ -414,7 +438,7 @@ func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
 	}
 	// Starting a coding agent takes a while.
 	connection.SetTimeout(2 * time.Minute)
-	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), command.Args().Get(1), command.Args().Get(0), command.String("name"), command.Bool("skip-permissions"))
+	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), herdrDirectoryOf(command.Args().Get(1)), command.Args().Get(0), command.String("name"), command.Bool("skip-permissions"))
 	if err != nil {
 		return describeError(command, err)
 	}

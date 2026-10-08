@@ -125,3 +125,23 @@ func TestAnAnswersLabelIsNotSplitOnItsCommas(test *testing.T) {
 		test.Errorf("%q", labels)
 	}
 }
+
+func TestARelativeDirectoryIsOpenedWhereTheCommandRuns(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	project := filepath.Join(home, "src", "example")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(project)
+	for typed, want := range map[string]string{
+		".":              "~/src/example",
+		"../example":     "~/src/example",
+		"~/src/example":  "~/src/example",
+		"/opt/somewhere": "/opt/somewhere",
+	} {
+		if directory := herdrDirectoryOf(typed); directory != want {
+			t.Errorf("%q: %q, want %q", typed, directory, want)
+		}
+	}
+}
