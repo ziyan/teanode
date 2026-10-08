@@ -40,8 +40,7 @@ the conduct.
 3. **The situation**, computed fresh: who the person is, what they may do,
    which mailboxes they have granted and what is on for each, which they have
    not granted, their time zone and language, the server and its version,
-   whether search by meaning exists, and the surface's line on where the turn
-   is happening.
+   whether search by meaning exists.
 4. **The person's instructions**, if any, in `<instructions>`.
 5. **Memories** — the top of what the agent remembers, said to be the top, with
    each id so the model can change one (`memory.md`).
@@ -50,13 +49,21 @@ the conduct.
 7. **More tools** — the deferred catalog, one line each, for `tool_search`.
 
 The situation deliberately carries the time *zone*, not the time: the clock
-would make the cacheable prefix change every minute.
+would make the cacheable prefix change every minute. For the same reason the
+line on where the turn is happening is an overlay, since a turn from the phone
+may follow one from the drawer, and the memories and the index of what the
+agent knows are read once per conversation and kept for half an hour
+(`personSnapshot`): the facts are ordered by when they were last used, and
+recall uses some every turn, so read afresh they changed the front of the
+prompt with each turn and the whole history behind it was sent uncached. What
+is learned within the half hour reaches the model through `<recalled>`.
 
 ## The overlays
 
 One system message after the history, rebuilt each round:
 
 - `<viewing>` — what the person has open, so "this" means it.
+- `<where>` — the surface's line on where the turn is happening.
 - `<suggested_replies>` and `<surface>` — what the surface wants. Each
   surface is one entry in `surface.go`: its line in the situation, its
   `<surface>` block, and whether it draws suggested replies. The dashboard
