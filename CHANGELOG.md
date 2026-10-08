@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.115.1] - 2026-10-08
+
+### Changed
+
+- Agent turns in an ongoing conversation start answering sooner: the front of the prompt stays the same from one turn to the next, so the provider serves the conversation from its cache instead of reading it all again. (#351)
+
 ## [0.115.0] - 2026-10-08
 
 ### Added
