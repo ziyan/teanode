@@ -13634,3 +13634,11 @@ button.herdr-question-head {
   margin: 0;
   font-size: var(--text-label);
 }
+
+/* Folded, the head keeps to two lines; opened, it says the whole. */
+.herdr-question-box.folded:not(.open) .herdr-question-head-asked {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

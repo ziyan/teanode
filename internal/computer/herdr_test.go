@@ -30,6 +30,8 @@ type fakeHerdr struct {
 	pressed    []string
 	typed      []string
 	prompted   []string
+	// created is what was opened, started and closed, in order.
+	created []string
 	// afterKeys, when set, changes the screens once keys are pressed.
 	afterKeys func(paneId string, keys []string)
 }
@@ -92,6 +94,16 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 		if self.afterKeys != nil {
 			self.afterKeys(target, keys)
 		}
+	case "workspace.create", "tab.create":
+		self.created = append(self.created, request.Method+" "+fmt.Sprint(request.Params["cwd"]))
+		result = map[string]any{"root_pane": map[string]any{"pane_id": "w9:p1"}}
+	case "agent.start":
+		self.created = append(self.created, "start "+fmt.Sprint(request.Params["kind"])+" "+fmt.Sprint(request.Params["name"]))
+		self.agents = append(self.agents, map[string]any{"pane_id": "w9:p1", "agent": request.Params["kind"], "agent_status": "idle", "name": request.Params["name"]})
+		self.screens["w9:p1"] = ""
+	case "pane.close":
+		self.created = append(self.created, "close "+fmt.Sprint(request.Params["pane_id"]))
+		self.agents = slices.DeleteFunc(self.agents, func(each map[string]any) bool { return each["pane_id"] == request.Params["pane_id"] })
 	case "pane.send_text":
 		self.typed = append(self.typed, request.Params["text"].(string))
 	case "agent.prompt":
@@ -757,5 +769,39 @@ func TestAPaneIsNamedAsThePersonFindsItInHerdr(t *testing.T) {
 	}
 	if _, err := RunHerdr(context.Background(), herdr, "herdr_send", &HerdrArguments{PaneID: "website", Text: "go on"}); err != nil {
 		t.Errorf("send by name: %v", err)
+	}
+}
+
+func TestASessionIsOpenedInItsDirectoryAndClosedWhenIdle(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	directory := filepath.Join(home, "src", "Example Repo")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	herdr := NewHerdr(home)
+	ctx := context.Background()
+	if _, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{Directory: "~/src/missing", CodingAgentKind: "claude"}); err == nil {
+		t.Error("a directory that is not there was opened")
+	}
+	if _, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{Directory: directory, CodingAgentKind: "vim"}); err == nil {
+		t.Error("a coding agent that is not one was started")
+	}
+	opened, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{Directory: "~/src/Example Repo", CodingAgentKind: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session := opened.(*HerdrSession); session.PaneID != "w9:p1" || session.CodingAgentKind != CodingAgentKindCodex {
+		t.Errorf("%+v", session)
+	}
+	if _, err := RunHerdr(ctx, herdr, "herdr_close", &HerdrArguments{PaneID: "w9:p1"}); err != nil {
+		t.Fatal(err)
+	}
+	fake.mutex.Lock()
+	created := slices.Clone(fake.created)
+	fake.mutex.Unlock()
+	want := []string{"workspace.create " + directory, "start codex example-repo", "close w9:p1"}
+	if !slices.Equal(created, want) {
+		t.Errorf("did %q, want %q", created, want)
 	}
 }

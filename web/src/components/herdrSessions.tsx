@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from './common'
 import { CheckIcon } from './icons'
-import { ConfirmDialog } from './dialog'
+import { ConfirmDialog, FormDialog } from './dialog'
 import { SettingsEmpty, SettingsSection } from './settingsList'
 import { Tabs } from './tabs'
 import { useToast } from './toast'
@@ -100,6 +100,12 @@ export const HERDR_DOCUMENTS = {
   }`,
   WatchAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $conversationId: String) {
     WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ${SESSION_FIELDS} }
+  }`,
+  OpenAgentHerdrSession: `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String) {
+    OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName) { ${SESSION_FIELDS} }
+  }`,
+  CloseAgentHerdrSession: `mutation ($computer: String, $paneId: String!) {
+    CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ${SESSION_FIELDS} }
   }`,
   SetUpAgentHerdrHooks: `mutation ($computer: String, $isRemoval: Boolean) {
     SetUpAgentHerdrHooks(computer: $computer, isRemoval: $isRemoval) { computer isInstalled settingsPath scriptPath backupPath hookEventNames }
@@ -401,6 +407,24 @@ function HerdrSessionDialog({
     }
   }
 
+  const [isClosing, setClosing] = useState(false)
+  const [isClosingBusy, setClosingBusy] = useState(false)
+  const close = async () => {
+    setClosingBusy(true)
+    try {
+      await graphql(HERDR_DOCUMENTS.CloseAgentHerdrSession, { computer: current.computer, paneId: current.paneId })
+      toast.done(t('herdr.closed', { pane: paneNameOf(current) }))
+      sharedList = null
+      onChanged()
+      onClose()
+    } catch (caught) {
+      toast.failure(caught, t('herdr.closeFailed'))
+      setClosing(false)
+    } finally {
+      setClosingBusy(false)
+    }
+  }
+
   const watch = async () => {
     try {
       // No conversation named: the server wakes the main one.
@@ -416,17 +440,48 @@ function HerdrSessionDialog({
     }
   }
 
+  if (isClosing) {
+    return (
+      <ConfirmDialog
+        title={t('herdr.closeTitle')}
+        body={
+          <p>
+            {t('herdr.closeBody', {
+              agent: codingAgentName(current.codingAgentKind),
+              pane: paneNameOf(current),
+              computer: current.computer,
+            })}
+          </p>
+        }
+        confirmLabel={t('herdr.closeSession')}
+        busy={isClosingBusy}
+        onConfirm={() => void close()}
+        onClose={() => setClosing(false)}
+      />
+    )
+  }
   return (
     <ConfirmDialog
       title={`${codingAgentName(current.codingAgentKind)} · ${paneNameOf(current)} · ${current.computer}`}
       wide
       onClose={onClose}
       otherAction={
-        current.isWatched ? undefined : (
-          <button type="button" onClick={() => void watch()}>
-            {t('herdr.watch')}
+        <div className="row-actions">
+          {current.isWatched ? null : (
+            <button type="button" onClick={() => void watch()}>
+              {t('herdr.watch')}
+            </button>
+          )}
+          <button
+            type="button"
+            className="danger"
+            disabled={current.herdrSessionState === 'working'}
+            title={current.herdrSessionState === 'working' ? t('herdr.closeWhileWorking') : undefined}
+            onClick={() => setClosing(true)}
+          >
+            {t('herdr.closeSession')}
           </button>
-        )
+        </div>
       }
       body={
         <div className="herdr-session">
@@ -577,6 +632,99 @@ function HerdrHooksDialog({ computerNames, onClose }: { computerNames: string[];
   )
 }
 
+// HerdrOpenDialog starts Claude Code or Codex in a new herdr pane, in a
+// directory on one of the person's computers.
+function HerdrOpenDialog({
+  computerNames,
+  onOpened,
+  onClose,
+}: {
+  computerNames: string[]
+  onOpened: (session: HerdrSession) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [computer, setComputer] = useState(computerNames[0] ?? '')
+  const [codingAgentKind, setCodingAgentKind] = useState<'claude' | 'codex'>('claude')
+  const [directory, setDirectory] = useState('')
+  const [agentName, setAgentName] = useState('')
+  const [isBusy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const open = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await graphql<{ OpenAgentHerdrSession: HerdrSession }>(HERDR_DOCUMENTS.OpenAgentHerdrSession, {
+        computer,
+        directory: directory.trim(),
+        codingAgentKind,
+        agentName: agentName.trim() || null,
+      })
+      sharedList = null
+      toast.done(t('herdr.opened', { pane: paneNameOf(response.OpenAgentHerdrSession) }))
+      onOpened(response.OpenAgentHerdrSession)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <FormDialog
+      title={t('herdr.openTitle')}
+      submitLabel={t('herdr.open')}
+      busy={isBusy}
+      error={error}
+      canSubmit={directory.trim() !== '' && computer !== ''}
+      onSubmit={() => void open()}
+      onClose={onClose}
+    >
+      {computerNames.length > 1 ? (
+        <label>
+          <span>{t('herdr.computer')}</span>
+          <select value={computer} onChange={(event) => setComputer(event.target.value)}>
+            {computerNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <label>
+        <span>{t('herdr.codingAgent')}</span>
+        <select
+          value={codingAgentKind}
+          onChange={(event) => setCodingAgentKind(event.target.value as 'claude' | 'codex')}
+        >
+          <option value="claude">Claude Code</option>
+          <option value="codex">Codex</option>
+        </select>
+      </label>
+      <label>
+        <span>{t('herdr.directory')}</span>
+        <input
+          type="text"
+          value={directory}
+          placeholder="~/src/example"
+          autoFocus
+          onChange={(event) => setDirectory(event.target.value)}
+        />
+      </label>
+      <label>
+        <span>{t('herdr.agentNameField')}</span>
+        <input
+          type="text"
+          value={agentName}
+          placeholder={t('herdr.agentNameHint')}
+          onChange={(event) => setAgentName(event.target.value)}
+        />
+      </label>
+    </FormDialog>
+  )
+}
+
 // HerdrSessionsCard is every session on every computer, for the agent page:
 // a row each, which opens it.
 export function HerdrSessionsCard() {
@@ -585,6 +733,7 @@ export function HerdrSessionsCard() {
   const { data, error, reload } = useQuery(() => listHerdrSessions(true), [])
   const [opened, setOpened] = useState<HerdrSession | null>(null)
   const [isSettingUp, setSettingUp] = useState(false)
+  const [isOpening, setOpening] = useState(false)
   useEffect(() => {
     if (error) toast.failure(error, t('herdr.listFailed'))
   }, [error, toast, t])
@@ -597,9 +746,14 @@ export function HerdrSessionsCard() {
       description={t('herdr.hint')}
       action={
         computerNames.length > 0 ? (
-          <button type="button" onClick={() => setSettingUp(true)}>
-            {t('herdr.hooks')}
-          </button>
+          <div className="row-actions">
+            <button type="button" className="primary" onClick={() => setOpening(true)}>
+              {t('herdr.open')}
+            </button>
+            <button type="button" onClick={() => setSettingUp(true)}>
+              {t('herdr.hooks')}
+            </button>
+          </div>
         ) : undefined
       }
     >
@@ -663,6 +817,17 @@ export function HerdrSessionsCard() {
         />
       ) : null}
       {isSettingUp ? <HerdrHooksDialog computerNames={computerNames} onClose={() => setSettingUp(false)} /> : null}
+      {isOpening ? (
+        <HerdrOpenDialog
+          computerNames={computerNames}
+          onOpened={(session) => {
+            setOpening(false)
+            void reload(true)
+            setOpened(session)
+          }}
+          onClose={() => setOpening(false)}
+        />
+      ) : null}
     </SettingsSection>
   )
 }

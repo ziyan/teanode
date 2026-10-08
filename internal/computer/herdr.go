@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -141,6 +142,12 @@ type HerdrArguments struct {
 	HerdrEventIDs []string `json:"herdrEventIds,omitempty"`
 	// IsRemoval takes the hooks out rather than putting them in.
 	IsRemoval bool `json:"isRemoval,omitempty"`
+	// Directory, CodingAgentKind and AgentName open a session: where, which
+	// coding agent ("claude" or "codex"), and what to call it; the
+	// directory's name when none is given.
+	Directory       string `json:"directory,omitempty"`
+	CodingAgentKind string `json:"codingAgentKind,omitempty"`
+	AgentName       string `json:"agentName,omitempty"`
 }
 
 // HerdrEvent is something the program says unasked: a question came, a
@@ -731,7 +738,8 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 		}
 		inTab := agentsOfTab[agent.TabID]
 		switch {
-		case strings.TrimSpace(agent.Name) != "":
+		// A name that only repeats the workspace's says nothing more.
+		case strings.TrimSpace(agent.Name) != "" && !strings.EqualFold(strings.TrimSpace(agent.Name), strings.TrimSpace(workspace.Label)):
 			parts = append(parts, strings.TrimSpace(agent.Name))
 		case len(inTab) > 1:
 			name := herdrAgentNames[agent.Agent]
@@ -792,6 +800,10 @@ func RunHerdr(ctx context.Context, herdr *Herdr, action string, arguments *Herdr
 		return herdr.watch(ctx, arguments)
 	case "herdr_acknowledge":
 		return herdr.acknowledge(arguments.HerdrEventIDs), nil
+	case "herdr_open":
+		return herdr.open(ctx, arguments)
+	case "herdr_close":
+		return herdr.close(ctx, arguments)
 	case "herdr_setup":
 		return setUpHooks(herdr.home, arguments.IsRemoval)
 	}
@@ -933,6 +945,108 @@ func hasControlCharacters(text string, isLineBreakAllowed bool) bool {
 		}
 	}
 	return false
+}
+
+// HerdrCloseResult says a session's pane was closed.
+type HerdrCloseResult struct {
+	HerdrSession *HerdrSession `json:"herdrSession"`
+	IsClosed     bool          `json:"isClosed"`
+}
+
+// herdrAgentNamePattern is what herdr takes as an agent's name.
+var herdrAgentNamePattern = regexp.MustCompile(`[^a-z0-9_-]+`)
+
+// open starts a coding agent in a pane of its own, in a directory of the
+// person's: a new tab of the workspace named after the directory when there
+// is one, a new workspace otherwise, so it is found where the person would
+// look. A coding agent that stops at a question as it starts (whether to
+// trust the folder) is open, and asking it.
+func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrSession, error) {
+	kind := strings.ToLower(strings.TrimSpace(arguments.CodingAgentKind))
+	if kind != CodingAgentKindClaude && kind != CodingAgentKindCodex {
+		return nil, fmt.Errorf("open which coding agent? %q is not claude or codex", arguments.CodingAgentKind)
+	}
+	directory := strings.TrimSpace(arguments.Directory)
+	if directory == "" {
+		return nil, errors.New("open it in which directory?")
+	}
+	directory = resolve(self.home, directory)
+	if info, err := os.Stat(directory); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory on this computer", directory)
+	}
+	label := strings.TrimSpace(arguments.AgentName)
+	if label == "" {
+		label = filepath.Base(directory)
+	}
+	workspaces, err := self.client.listWorkspaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var created struct {
+		RootPane struct {
+			PaneID string `json:"pane_id"`
+		} `json:"root_pane"`
+	}
+	workspaceId := ""
+	for _, workspace := range workspaces {
+		if strings.EqualFold(strings.TrimSpace(workspace.Label), filepath.Base(directory)) {
+			workspaceId = workspace.WorkspaceID
+			break
+		}
+	}
+	if workspaceId != "" {
+		err = self.client.call(ctx, "tab.create", map[string]any{"workspace_id": workspaceId, "cwd": directory, "label": label}, &created)
+	} else {
+		err = self.client.call(ctx, "workspace.create", map[string]any{"cwd": directory, "label": filepath.Base(directory)}, &created)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot open a pane in %s: %w", directory, err)
+	}
+	paneId := created.RootPane.PaneID
+	if paneId == "" {
+		return nil, errors.New("herdr opened a pane without saying which")
+	}
+	// A name of herdr's kind, not taken by another agent.
+	agents, err := self.client.listAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	isTaken := map[string]bool{}
+	for _, agent := range agents {
+		isTaken[agent.Name] = true
+	}
+	base := strings.Trim(herdrAgentNamePattern.ReplaceAllString(strings.ToLower(label), "-"), "-")
+	if base == "" || base[0] < 'a' || base[0] > 'z' {
+		base = kind + "-" + base
+	}
+	base = strings.Trim(firstCharacters(base, 28), "-…")
+	name := base
+	for index := 2; isTaken[name]; index++ {
+		name = base + "-" + strconv.Itoa(index)
+	}
+	err = self.client.call(ctx, "agent.start", map[string]any{"name": name, "kind": kind, "pane_id": paneId, "timeout_ms": 60000}, nil)
+	var refused *herdrError
+	if err != nil && !(errors.As(err, &refused) && refused.Code == "agent_not_ready") {
+		return nil, fmt.Errorf("cannot start %s in %s: %w", herdrAgentNames[kind], directory, err)
+	}
+	return self.session(ctx, paneId)
+}
+
+// close ends a session's coding agent and its pane. Not while it works:
+// a turn cut off halfway leaves its work half done.
+func (self *Herdr) close(ctx context.Context, arguments *HerdrArguments) (*HerdrCloseResult, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	if session.HerdrSessionState == HerdrSessionStateWorking {
+		return nil, fmt.Errorf("%s is working; wait for it to finish, or interrupt it at the keyboard, before closing it", session.named())
+	}
+	if err := self.client.call(ctx, "pane.close", map[string]any{"pane_id": session.PaneID}, nil); err != nil {
+		return nil, fmt.Errorf("cannot close %s: %w", session.named(), err)
+	}
+	_, _ = self.refresh(ctx)
+	return &HerdrCloseResult{HerdrSession: session, IsClosed: true}, nil
 }
 
 // herdrStep is one thing pressed into a pane while answering: keys, or text

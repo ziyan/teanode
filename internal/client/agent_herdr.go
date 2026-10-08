@@ -129,6 +129,12 @@ const (
 	DocumentWatchAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $conversationId: String) {
 		WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ` + HerdrSessionFields + ` }
 	}`
+	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String) {
+		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName) { ` + HerdrSessionFields + ` }
+	}`
+	DocumentCloseAgentHerdrSession = `mutation ($computer: String, $paneId: String!) {
+		CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ` + HerdrSessionFields + ` }
+	}`
 	DocumentSetUpAgentHerdrHooks = `mutation ($computer: String, $isRemoval: Boolean) {
 		SetUpAgentHerdrHooks(computer: $computer, isRemoval: $isRemoval) { computer isInstalled settingsPath scriptPath backupPath hookEventNames }
 	}`
@@ -250,6 +256,33 @@ func WatchAgentHerdrSession(ctx context.Context, connection *Client, computer, p
 		return nil, err
 	}
 	return result.WatchAgentHerdrSession, nil
+}
+
+// OpenAgentHerdrSession starts a coding agent, "claude" or "codex", in a new
+// herdr pane in a directory; agentName may be empty.
+func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string) (*AgentHerdrSession, error) {
+	var result struct {
+		OpenAgentHerdrSession *AgentHerdrSession `json:"OpenAgentHerdrSession"`
+	}
+	variables := herdrVariables(computer, map[string]any{"directory": directory, "codingAgentKind": codingAgentKind})
+	if agentName != "" {
+		variables["agentName"] = agentName
+	}
+	if err := connection.Execute(ctx, DocumentOpenAgentHerdrSession, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.OpenAgentHerdrSession, nil
+}
+
+// CloseAgentHerdrSession ends a session's coding agent and closes its pane.
+func CloseAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string) (*AgentHerdrSession, error) {
+	var result struct {
+		CloseAgentHerdrSession *AgentHerdrSession `json:"CloseAgentHerdrSession"`
+	}
+	if err := connection.Execute(ctx, DocumentCloseAgentHerdrSession, herdrVariables(computer, map[string]any{"paneId": paneId}), &result); err != nil {
+		return nil, err
+	}
+	return result.CloseAgentHerdrSession, nil
 }
 
 // SetUpAgentHerdrHooks puts TeaNode's reporting hooks in on a computer, or

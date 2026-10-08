@@ -93,6 +93,24 @@ func newComputerHerdrCommand() *cli.Command {
 				Action: runComputerHerdrWatch,
 			},
 			{
+				Name:      "open",
+				Usage:     "start Claude Code or Codex in a new herdr pane in a directory",
+				ArgsUsage: "<claude|codex> <directory>",
+				Flags: []cli.Flag{
+					computerFlag,
+					&cli.StringFlag{Name: "name", Usage: "what to call the session in herdr; the directory's name by default"},
+					JSONFlag(),
+				},
+				Action: runComputerHerdrOpen,
+			},
+			{
+				Name:      "close",
+				Usage:     "end a session's coding agent and close its pane; refused while it works",
+				ArgsUsage: "<pane>",
+				Flags:     []cli.Flag{computerFlag, JSONFlag()},
+				Action:    runComputerHerdrClose,
+			},
+			{
 				Name:   "setup",
 				Usage:  "put TeaNode's reporting hooks into Claude Code on a computer, beside what is there",
 				Flags:  []cli.Flag{computerFlag, &cli.BoolFlag{Name: "remove", Usage: "take them out again"}, JSONFlag()},
@@ -382,6 +400,48 @@ func runComputerHerdrWatch(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(session)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "watching %s; it is %s\n", herdrPaneWords(session), session.HerdrSessionState)
+	return nil
+}
+
+func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return usage("which coding agent, and where? usage: teanode computer herdr open <claude|codex> <directory>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	// Starting a coding agent takes a while.
+	connection.SetTimeout(2 * time.Minute)
+	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), command.Args().Get(1), command.Args().Get(0), command.String("name"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(session)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "opened %s; it is %s\n", herdrPaneWords(session), herdrStateWords(session))
+	printHerdrQuestion(command, session.Question, "")
+	return nil
+}
+
+func runComputerHerdrClose(ctx context.Context, command *cli.Command) error {
+	paneId, err := herdrPane(command, "close <pane>")
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	session, err := client.CloseAgentHerdrSession(ctx, connection, command.String("computer"), paneId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(session)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "closed %s\n", herdrPaneWords(session))
 	return nil
 }
 

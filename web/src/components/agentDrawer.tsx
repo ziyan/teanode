@@ -1919,6 +1919,56 @@ function herdrSummaryOf(text: string): { asked: string; who: string } {
   return { asked: asked || who, who: asked ? who : '' }
 }
 
+// questionFromSaid is a herdr question read back from the agent's words,
+// for one asked before its question was kept whole beside it: the quoted
+// lines are the question, the numbered ones its options.
+function questionFromSaid(
+  text: string,
+  question: { computer: string; paneId: string; questionFingerprint: string },
+): HerdrSession | undefined {
+  const lines = text.split('\n')
+  const options = lines
+    .map((line) => /^(\d+)\. (.*)$/.exec(line.trim()))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => {
+      const [label, ...rest] = match[2].split(': ')
+      const optionLabel = label.trim()
+      const herdrOptionKind: 'choice' | 'freeText' | 'chat' = optionLabel.startsWith('Chat about')
+        ? 'chat'
+        : optionLabel.startsWith('Type something') || optionLabel.startsWith('Tell Claude what to change')
+          ? 'freeText'
+          : 'choice'
+      return { optionNumber: Number(match[1]), optionLabel, optionDescription: rest.join(': ').trim(), herdrOptionKind }
+    })
+  if (options.length === 0) return undefined
+  const head = (lines[0] ?? '').replace(/\*\*/g, '')
+  const codingAgentKind = head.startsWith('Codex') ? 'codex' : 'claude'
+  return {
+    computer: question.computer,
+    paneId: question.paneId,
+    paneName: '',
+    codingAgentKind,
+    codingSessionId: '',
+    herdrSessionState: 'idle',
+    herdrAgentStatus: '',
+    paneTitle: '',
+    workingDirectory: '',
+    transcriptPath: '',
+    isWatched: false,
+    question: {
+      questionFingerprint: question.questionFingerprint,
+      herdrQuestionKind: 'question',
+      questionText: lines
+        .filter((line) => line.startsWith('> '))
+        .map((line) => line.slice(2))
+        .join('\n'),
+      isMultipleChoice: text.includes('You may choose several.'),
+      isFromTranscript: false,
+      options,
+    },
+  }
+}
+
 // HERDR_QUESTION_STALE_MS is how old a question with no word of its answer
 // is taken to be answered without asking its computer: a coding session
 // does not wait a day on one question.
@@ -1996,6 +2046,9 @@ function HerdrQuestionLine({
     if (answered.answerText) setAnswerText(answered.answerText)
   }, [answered])
   const summary = herdrSummaryOf(text)
+  // Kept whole beside it, or read back from the agent's words for a
+  // question asked before it was.
+  const shown = asked?.question ? asked : questionFromSaid(text, question)
   const title = asked?.question ? askingLineOf(asked.question.questionText) : summary.asked
   const who = asked
     ? [codingAgentName(asked.codingAgentKind), paneNameOf(asked), question.computer].join(' · ')
@@ -2051,10 +2104,10 @@ function HerdrQuestionLine({
         ) : null}
         {isFolded && isOpen ? (
           <div className="herdr-question-body">
-            {asked?.question ? (
+            {shown?.question ? (
               <HerdrQuestionAnswer
-                session={asked}
-                question={asked.question}
+                session={shown}
+                question={shown.question}
                 isQuestionShown={isWhole}
                 answeredWith={answerText}
               />

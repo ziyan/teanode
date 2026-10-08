@@ -321,6 +321,43 @@ func (self *Agent) WatchHerdrSession(ctx context.Context, agentId, computerName,
 	return &HerdrSession{ComputerName: attached.name, HerdrSession: session}, nil
 }
 
+// OpenHerdrSession starts a coding agent, "claude" or "codex", in a new
+// herdr pane in a directory of the person's on a computer.
+func (self *Agent) OpenHerdrSession(ctx context.Context, agentId, computerName, directory, codingAgentKind, agentName string) (*HerdrSession, error) {
+	attached, err := self.herdrComputer(agentId, computerName)
+	if err != nil {
+		return nil, err
+	}
+	// A coding agent takes a while to start: up to a minute is waited for.
+	session, err := askHerdr[computer.HerdrSession](ctx, attached, "herdr_open", &computer.HerdrArguments{
+		Directory: directory, CodingAgentKind: codingAgentKind, AgentName: agentName,
+	}, 90*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	return &HerdrSession{ComputerName: attached.name, HerdrSession: session}, nil
+}
+
+// HerdrClose says a session's pane was closed.
+type HerdrClose struct {
+	ComputerName string
+	*computer.HerdrCloseResult
+}
+
+// CloseHerdrSession ends a session's coding agent and its pane; refused
+// while it works.
+func (self *Agent) CloseHerdrSession(ctx context.Context, agentId, computerName, paneId string) (*HerdrClose, error) {
+	attached, err := self.herdrComputer(agentId, computerName)
+	if err != nil {
+		return nil, err
+	}
+	result, err := askHerdr[computer.HerdrCloseResult](ctx, attached, "herdr_close", &computer.HerdrArguments{PaneID: paneId}, herdrActionWait)
+	if err != nil {
+		return nil, err
+	}
+	return &HerdrClose{ComputerName: attached.name, HerdrCloseResult: result}, nil
+}
+
 // HerdrSetup says what setting up the hooks did, on which computer.
 type HerdrSetup struct {
 	ComputerName string

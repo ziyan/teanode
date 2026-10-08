@@ -56,6 +56,16 @@ type AgentHerdrMutation interface {
 	// a restart of teanode computer there. Needs agent:use.
 	WatchAgentHerdrSession(ctx context.Context, arguments WatchAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
 
+	// Start a coding agent, claude or codex, in a new herdr pane in a
+	// directory on a computer: a new tab of the workspace named after the
+	// directory, or a new workspace. One that stops at a question as it
+	// starts is open and asking it. Needs agent:use.
+	OpenAgentHerdrSession(ctx context.Context, arguments OpenAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
+
+	// End a session's coding agent and close its pane. Refused while it
+	// works. Needs agent:use.
+	CloseAgentHerdrSession(ctx context.Context, arguments CloseAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
+
 	// Put TeaNode's reporting hooks into Claude Code's settings on a
 	// computer, beside what is there, or take them out with isRemoval. They
 	// report what a session does as it does it, and decide nothing. Needs
@@ -115,6 +125,22 @@ type WatchAgentHerdrSessionArguments struct {
 	Computer       string `json:"computer" graphapi:"nullable"`
 	PaneID         string `json:"paneId"`
 	ConversationID string `json:"conversationId" graphapi:"nullable"`
+}
+
+// OpenAgentHerdrSessionArguments say where, and which coding agent.
+type OpenAgentHerdrSessionArguments struct {
+	Computer        string `json:"computer" graphapi:"nullable"`
+	Directory       string `json:"directory"`
+	CodingAgentKind string `json:"codingAgentKind"`
+	// AgentName is what the session is called in herdr; the directory's
+	// name when left out.
+	AgentName string `json:"agentName" graphapi:"nullable"`
+}
+
+// CloseAgentHerdrSessionArguments name a session.
+type CloseAgentHerdrSessionArguments struct {
+	Computer string `json:"computer" graphapi:"nullable"`
+	PaneID   string `json:"paneId"`
 }
 
 // SetUpAgentHerdrHooksArguments name a computer.
@@ -353,6 +379,38 @@ func (self *graph) WatchAgentHerdrSession(ctx context.Context, arguments WatchAg
 		return nil, err
 	}
 	return herdrSessionView(session.ComputerName, session.HerdrSession), nil
+}
+
+func (self *graph) OpenAgentHerdrSession(ctx context.Context, arguments OpenAgentHerdrSessionArguments) (*AgentHerdrSessionView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	session, err := worker.OpenHerdrSession(ctx, found.ID, arguments.Computer, arguments.Directory, arguments.CodingAgentKind, arguments.AgentName)
+	if err != nil {
+		return nil, err
+	}
+	return herdrSessionView(session.ComputerName, session.HerdrSession), nil
+}
+
+func (self *graph) CloseAgentHerdrSession(ctx context.Context, arguments CloseAgentHerdrSessionArguments) (*AgentHerdrSessionView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	closed, err := worker.CloseHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	return herdrSessionView(closed.ComputerName, closed.HerdrSession), nil
 }
 
 func (self *graph) SetUpAgentHerdrHooks(ctx context.Context, arguments SetUpAgentHerdrHooksArguments) (*AgentHerdrSetupView, error) {
