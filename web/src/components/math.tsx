@@ -1,4 +1,4 @@
-import { createElement } from 'react'
+import { createElement, useLayoutEffect, useMemo, useRef } from 'react'
 
 // A formula an answer wrote in TeX, \frac{a}{b} and the rest, drawn as
 // MathML, which every browser the dashboard runs in lays out itself.
@@ -566,12 +566,60 @@ function draw(drawn: MathNode, key: string): React.ReactElement {
 // Formula draws a formula written in TeX. One this cannot read is shown
 // as the TeX it was written in.
 export function Formula({ tex, isDisplay }: { tex: string; isDisplay: boolean }) {
-  let formula: MathNode
-  try {
-    formula = formulaOf(tex.trim(), isDisplay)
-  } catch {
-    return <code>{tex}</code>
-  }
+  const formula = useMemo(() => {
+    try {
+      return formulaOf(tex.trim(), isDisplay)
+    } catch {
+      return null
+    }
+  }, [tex, isDisplay])
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const drawnBox = box.current
+    if (!drawnBox || !drawnBox.querySelector('mtable') || typeof ResizeObserver === 'undefined') return
+    alignCells(drawnBox)
+    // The widths change once the math font has loaded, or the drawer is
+    // made wider.
+    const observer = new ResizeObserver(() => alignCells(drawnBox))
+    observer.observe(drawnBox)
+    return () => observer.disconnect()
+  }, [formula])
+  if (!formula) return <code>{tex}</code>
   const drawn = draw(formula, 'math')
-  return isDisplay ? <div className="markdown-formula">{drawn}</div> : drawn
+  return isDisplay ? (
+    <div className="markdown-formula" ref={box}>
+      {drawn}
+    </div>
+  ) : (
+    drawn
+  )
+}
+
+// A MathML element has a style in a browser, and none where there is no
+// layout, as in tests.
+type StyledElement = Element & { style?: CSSStyleDeclaration }
+
+// alignCells moves what is in each table cell to the right or the middle
+// of it, as its class says. Chrome lays the inside of a cell out from its
+// start whatever columnalign or text-align say, so the gap is measured and
+// given as a margin. Where a browser aligned the cell itself the gap is
+// none and nothing moves.
+function alignCells(drawnBox: HTMLElement) {
+  const cells = Array.from(drawnBox.querySelectorAll('mtd.formula-right, mtd.formula-center'))
+  const contents = cells.map((cell) => cell.firstElementChild as StyledElement | null)
+  for (const content of contents) if (content?.style) content.style.marginInlineStart = ''
+  const gaps = cells.map((cell, index) => {
+    const content = contents[index]
+    if (!content) return 0
+    const cellBox = cell.getBoundingClientRect()
+    const contentBox = content.getBoundingClientRect()
+    const cellStyle = getComputedStyle(cell)
+    const cellRight = cellBox.right - parseFloat(cellStyle.paddingRight)
+    if (cell.classList.contains('formula-right')) return cellRight - contentBox.right
+    const cellCenter = (cellBox.left + parseFloat(cellStyle.paddingLeft) + cellRight) / 2
+    return cellCenter - (contentBox.left + contentBox.right) / 2
+  })
+  contents.forEach((content, index) => {
+    if (content?.style && gaps[index] > 0.5) content.style.marginInlineStart = `${gaps[index]}px`
+  })
 }

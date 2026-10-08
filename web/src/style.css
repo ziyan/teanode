@@ -6711,7 +6711,13 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   overflow-y: hidden;
 }
 
+/* The math fonts each system ships, named, since the generic math family
+   finds none on some: without one a sum sign stays the size of a letter and
+   brackets do not stretch. */
 .markdown math {
+  font-family:
+    'STIX Two Math', 'Cambria Math', 'Noto Sans Math', 'Latin Modern Math', 'DejaVu Math TeX Gyre',
+    'TeX Gyre Pagella Math', math;
   font-size: 1.1em;
 }
 
