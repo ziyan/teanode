@@ -54,6 +54,13 @@ const FIRST_CLAUSE_LENGTH = 40
 
 const SENTENCE_END = /[.!?;:。！？；](?=["')\]]*(\s|$))|\n/g
 const FENCE = '```'
+// What is written for the screen and never said: a code block, and an HTML
+// comment such as the line of suggested replies the dashboard draws as
+// buttons.
+const UNSPOKEN = [
+  { opening: FENCE, closing: FENCE },
+  { opening: '<!--', closing: '-->' },
+]
 
 // AnswerSegmenter cuts the text of an answer, as it streams in, into the
 // pieces it is spoken in: whole sentences, code blocks left out.
@@ -84,18 +91,22 @@ export class AnswerSegmenter {
   private take(isFinal: boolean): string[] {
     const segments: string[] = []
     for (;;) {
-      // A code block is never read out: dropped whole once it is closed,
-      // and what follows an open one waits for its end.
-      const opening = this.pending.indexOf(FENCE)
+      // A code block or a comment is never read out: dropped whole once
+      // it is closed, and what follows an open one waits for its end.
       let readable = this.pending
-      if (opening >= 0) {
-        const closing = this.pending.indexOf(FENCE, opening + FENCE.length)
-        if (closing >= 0) {
-          this.pending = this.pending.slice(0, opening) + '\n' + this.pending.slice(closing + FENCE.length)
-          continue
+      let isDropped = false
+      for (const { opening, closing } of UNSPOKEN) {
+        const openedAt = this.pending.indexOf(opening)
+        if (openedAt < 0) continue
+        const closedAt = this.pending.indexOf(closing, openedAt + opening.length)
+        if (closedAt >= 0) {
+          this.pending = this.pending.slice(0, openedAt) + '\n' + this.pending.slice(closedAt + closing.length)
+          isDropped = true
+          break
         }
-        readable = this.pending.slice(0, opening)
+        if (openedAt < readable.length) readable = this.pending.slice(0, openedAt)
       }
+      if (isDropped) continue
       const shortest = this.hasSegment ? FOLLOWING_SEGMENT_LENGTH : 1
       let cut = -1
       SENTENCE_END.lastIndex = 0

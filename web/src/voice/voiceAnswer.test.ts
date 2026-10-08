@@ -50,6 +50,13 @@ describe('AnswerSegmenter', () => {
     expect(segmenter.flush()).toEqual(['It costs 3.50 a month.'])
   })
 
+  it('leaves out the suggested replies the screen draws as buttons', () => {
+    const segmenter = new AnswerSegmenter()
+    expect(segmenter.push('Shall I book it? <!--suggestions:["Yes, go ahead",')).toEqual(['Shall I book it?'])
+    expect(segmenter.push(' "Not now"]-->')).toEqual([])
+    expect(segmenter.flush()).toEqual([])
+  })
+
   it('leaves code out', () => {
     const segmenter = new AnswerSegmenter()
     expect(segmenter.push('Run this:\n```\nmake test')).toEqual(['Run this:'])
