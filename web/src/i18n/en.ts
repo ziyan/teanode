@@ -1661,6 +1661,8 @@ export const en = {
   'agentSettings.voiceProviderFirst': 'The first one',
   'agentSettings.voiceModel': 'Transcription model',
   'agentSettings.voiceSilence': 'Pause that ends a turn, ms (500)',
+  'agentSettings.voiceAskModel': 'Model for calls (provider:model)',
+  'agentSettings.voiceAskModelSame': 'The one typed turns use',
   'agentSettings.voiceSpeechModel': 'Speech model',
   'agentSettings.voiceSpeechVoice': 'Speech voice (marin)',
   'agentSettings.browser': 'Browser',

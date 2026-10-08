@@ -3,6 +3,8 @@ package agent
 import (
 	"strings"
 	"testing"
+
+	"github.com/ziyan/teanode/internal/config"
 )
 
 // Each surface says where the turn is, how to write for it, and whether
@@ -136,5 +138,21 @@ func TestPersonTextSaysHowMuchOfAnInterruptedAnswerWasHeard(t *testing.T) {
 	whole := &AskSettings{Message: "Thanks", InterruptedAnswer: &InterruptedAnswer{HeardText: "Done."}}
 	if got := personText(whole); got != "Thanks" {
 		t.Fatalf("nothing unheard: %q", got)
+	}
+}
+
+// A spoken turn is answered with the operator's model for calls, where one
+// is chosen; a typed turn never is.
+func TestASpokenTurnUsesTheCallModel(t *testing.T) {
+	configuration := &config.Configuration{}
+	if got := voiceModel(configuration, &AskSettings{Surface: "voice"}); got != "" {
+		t.Fatalf("none chosen: %q", got)
+	}
+	configuration.Agent.Voice.AskModel = " spoken:small "
+	if got := voiceModel(configuration, &AskSettings{Surface: "voice"}); got != "spoken:small" {
+		t.Fatalf("chosen: %q", got)
+	}
+	if got := voiceModel(configuration, &AskSettings{Surface: "drawer"}); got != "" {
+		t.Fatalf("a typed turn: %q", got)
 	}
 }

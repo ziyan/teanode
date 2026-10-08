@@ -1608,6 +1608,8 @@ export const zh: Catalog = {
   'agentSettings.voiceProviderFirst': '第一个',
   'agentSettings.voiceModel': '转写模型',
   'agentSettings.voiceSilence': '结束一轮的停顿（毫秒，500）',
+  'agentSettings.voiceAskModel': '通话所用模型（provider:model）',
+  'agentSettings.voiceAskModelSame': '与输入的轮次相同',
   'agentSettings.voiceSpeechModel': '语音合成模型',
   'agentSettings.voiceSpeechVoice': '说话的声音（marin）',
   'agentSettings.browser': '浏览器',

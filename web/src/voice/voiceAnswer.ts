@@ -48,6 +48,9 @@ export function speakableText(markdown: string): string {
 const FOLLOWING_SEGMENT_LENGTH = 80
 // The longest a piece waits for the end of its sentence.
 const LONGEST_SEGMENT_LENGTH = 320
+// A first sentence this long goes to be spoken at its first comma rather
+// than its end: the person hears the answer start that much sooner.
+const FIRST_CLAUSE_LENGTH = 40
 
 const SENTENCE_END = /[.!?;:。！？；](?=["')\]]*(\s|$))|\n/g
 const FENCE = '```'
@@ -105,6 +108,10 @@ export class AnswerSegmenter {
           cut = end
           break
         }
+      }
+      if (cut < 0 && !this.hasSegment) {
+        const comma = readable.indexOf(', ', FIRST_CLAUSE_LENGTH)
+        if (comma >= 0) cut = comma + 1
       }
       if (cut < 0 && readable.length > LONGEST_SEGMENT_LENGTH) {
         // No end of a sentence in sight: at the last pause or space.
@@ -202,6 +209,12 @@ const LONGEST_PAUSE_MS = 5000
 const ECHO_AFTER_MS = 2500
 // How far back the answer is remembered to recognize its echo.
 const ECHO_MEMORY_MS = 20000
+// How an answer starts after silence: this loud, rising to full over this
+// many seconds (fadeIn).
+const FADE_IN_GAIN = 0.35
+const FADE_IN_SECONDS = 1.2
+// How long after its first sound an answer counts as starting.
+const ANSWER_STARTING_MS = 1500
 // A conservative speaking rate, to guess how long a piece will be before
 // all of its audio has come.
 const CHARACTERS_PER_SECOND = 14
@@ -323,7 +336,27 @@ export class AnswerPlayer {
   }
 
   duck(isDucked: boolean) {
-    this.output.gain.setTargetAtTime(isDucked ? DUCKED_GAIN : 1, this.context.currentTime, 0.03)
+    this.isDucked = isDucked
+    const now = this.context.currentTime
+    this.output.gain.cancelScheduledValues(now)
+    this.output.gain.setTargetAtTime(isDucked ? DUCKED_GAIN : 1, now, 0.03)
+  }
+
+  // fadeIn starts an answer quiet, from its first sound, and brings it up:
+  // the phone's echo cancellation takes a moment to learn the answer each
+  // time it starts, and until it has, a loud answer is heard back loudly.
+  // Ducked, it rises only as far as ducked.
+  private fadeIn(startTime: number) {
+    const fullGain = this.isDucked ? DUCKED_GAIN : 1
+    this.output.gain.cancelScheduledValues(this.context.currentTime)
+    this.output.gain.setValueAtTime(Math.min(FADE_IN_GAIN, fullGain), startTime)
+    this.output.gain.linearRampToValueAtTime(fullGain, startTime + FADE_IN_SECONDS)
+  }
+
+  // isStarting says whether the answer has not yet sounded, or began to
+  // only a moment ago, when its echo is at its loudest.
+  isStarting(): boolean {
+    return this.soundingSince === undefined || performance.now() - this.soundingSince < ANSWER_STARTING_MS
   }
 
   // pause stops the sound where it is; resume goes on from there.
@@ -473,12 +506,22 @@ export class AnswerPlayer {
     const startTime = Math.max(this.nextStartTime, this.context.currentTime + 0.03)
     source.start(startTime)
     source.onended = () => this.pump()
+    if (this.isFadePending) {
+      this.isFadePending = false
+      this.fadeIn(startTime)
+      this.soundingSince = performance.now() + (startTime - this.context.currentTime) * 1000
+    }
     this.scheduled.push({ source, piece, startSample: piece.cursorSamples, sampleCount, startTime })
     this.nextStartTime = startTime + sampleCount / ANSWER_SAMPLE_RATE
     piece.cursorSamples = piece.sampleCount
   }
 
   private wasActive = false
+  private isDucked = false
+  // Whether the next audio scheduled is the first after silence, and when
+  // the first sounded (fadeIn, isStarting).
+  private isFadePending = false
+  private soundingSince?: number
 
   private setActive() {
     const isActive = this.isActive()
@@ -492,6 +535,10 @@ export class AnswerPlayer {
     }
     if (isActive !== this.wasActive) {
       this.wasActive = isActive
+      if (isActive) {
+        this.isFadePending = true
+        this.soundingSince = undefined
+      }
       this.onActive(isActive)
     }
   }
@@ -519,6 +566,9 @@ const SILENT_RMS = 0.006
 // How much louder than the answer's own echo the microphone must be for
 // speech heard while the answer plays to be the person.
 const DOUBLE_TALK_FACTOR = 2.5
+// The same, for the first moments of an answer, while the phone's echo
+// cancellation is still learning it and its echo is at its loudest.
+const DOUBLE_TALK_FACTOR_STARTING = 5
 // How long speech heard over the answer is listened to before deciding
 // whether it is the person.
 const GATE_WINDOW_MS = 400
@@ -558,9 +608,10 @@ export class EchoGate {
 
   // isPersonLouder says whether the microphone now is more than the echo
   // of the answer can account for.
-  isPersonLouder(microphoneRms: number, answerRms: number): boolean {
+  isPersonLouder(microphoneRms: number, answerRms: number, isAnswerStarting = false): boolean {
     const echoRms = this.echoRatio * answerRms
-    return microphoneRms > Math.max(SILENT_RMS * 2, DOUBLE_TALK_FACTOR * echoRms)
+    const factor = isAnswerStarting ? DOUBLE_TALK_FACTOR_STARTING : DOUBLE_TALK_FACTOR
+    return microphoneRms > Math.max(SILENT_RMS * 2, factor * echoRms)
   }
 }
 
@@ -593,7 +644,17 @@ export class AnswerVoice {
     private player: AnswerPlayer,
     private messages: { confirmationNeeded: string },
     private levels: AnswerLevels = () => ({ microphoneRms: 0, answerRms: 0 }),
+    // The person is heard over the answer: said once the speech is judged
+    // theirs, not the moment the provider hears something.
+    private onPersonHeard: () => void = () => undefined,
   ) {}
+
+  // isEchoUtterance says whether what is being heard is, or may yet turn
+  // out to be, the answer's own echo: nothing of it is shown as heard.
+  isEchoUtterance(utteranceId = ''): boolean {
+    if (this.utteranceVerdicts.get(utteranceId) === 'echo') return true
+    return this.judging?.utteranceId === utteranceId
+  }
 
   // follow reads one event of the conversation. A turn is spoken from its
   // start when voice mode saw it start, or from where it is when the
@@ -783,7 +844,7 @@ export class AnswerVoice {
     }
     if (!this.judging) return
     this.judging.frameCount += 1
-    if (this.gate.isPersonLouder(microphoneRms, answerRms)) this.judging.louderCount += 1
+    if (this.gate.isPersonLouder(microphoneRms, answerRms, this.player.isStarting())) this.judging.louderCount += 1
     if (performance.now() - this.judging.startedAt >= GATE_WINDOW_MS) this.decide()
   }
 
@@ -801,6 +862,7 @@ export class AnswerVoice {
       if (oldest !== undefined) this.utteranceVerdicts.delete(oldest)
     }
     if (!isPerson) return
+    this.onPersonHeard()
     this.isCandidate = true
     window.clearTimeout(this.resumeTimer)
     this.player.duck(true)

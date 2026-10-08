@@ -1652,6 +1652,8 @@ export const ja: Catalog = {
   'agentSettings.voiceProviderFirst': '最初のもの',
   'agentSettings.voiceModel': '文字起こしモデル',
   'agentSettings.voiceSilence': 'ターンを終える間（ミリ秒、500）',
+  'agentSettings.voiceAskModel': '通話のモデル（provider:model）',
+  'agentSettings.voiceAskModelSame': '入力したターンと同じ',
   'agentSettings.voiceSpeechModel': '音声合成モデル',
   'agentSettings.voiceSpeechVoice': '話す声（marin）',
   'agentSettings.browser': 'ブラウザ',

@@ -132,6 +132,14 @@ things stand against it:
 On a phone Safari is asked for its play-and-record audio session, so the
 answer comes out of the speaker. Headphones avoid the echo altogether.
 
+**A quick model, and a larger one for hard questions.** Where the operator
+set `agent.voice.askModel`, a spoken turn is answered by that model, which
+starts speaking sooner. It is offered `think_harder`: for a hard question,
+several steps of reasoning, advice, a calculation, code, it says a short line
+("Let me think about that properly"), which is spoken at once, and calls the
+tool; the next round, and the rest of the turn, is the model typed turns use,
+with the same conversation and tools.
+
 ## Configuration
 
 `agent.voice` in `docs/configuration.md`: on or off, which provider of kind
