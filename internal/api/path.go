@@ -24,6 +24,10 @@ const (
 	// over, for the server to have transcribed.
 	PathAgentVoice = Prefix + "/agent/voice"
 
+	// PathAgentVoiceSample is a few words in one of the voices, for a
+	// person choosing the one their answers are read in.
+	PathAgentVoiceSample = Prefix + "/agent/voice/sample"
+
 	// PathAgentComputer is the websocket `teanode computer` attaches the
 	// person's computer through.
 	PathAgentComputer = Prefix + "/agent/computer"

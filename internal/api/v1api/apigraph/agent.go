@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent"
 	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -209,6 +210,10 @@ type UpdateAgentArguments struct {
 	// destructive, granting, listed.
 	UnattendedAllowedRisks *[]string `json:"unattendedAllowedRisks"`
 	AskModel               *string   `json:"askModel"`
+
+	// SpeechVoice is the voice the person's answers are read aloud in, one
+	// of the provider's; empty is the server's.
+	SpeechVoice *string `json:"speechVoice"`
 
 	// DreamFrom and DreamUntil are the hours of this person's night, as
 	// "HH:MM" in their own zone. The nightly run happens between them and
@@ -553,6 +558,13 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 				return fmt.Errorf("%q is not one of the models the operator offers", choice)
 			}
 			agent.AskModel = choice
+		}
+		if arguments.SpeechVoice != nil {
+			speechVoice := strings.ToLower(strings.TrimSpace(*arguments.SpeechVoice))
+			if speechVoice != "" && !slices.Contains(config.VoiceSpeechVoices, speechVoice) {
+				return fmt.Errorf("%w: %q is not a voice; the voices are %s", api.ErrInvalidArguments, speechVoice, strings.Join(config.VoiceSpeechVoices, ", "))
+			}
+			agent.SpeechVoice = speechVoice
 		}
 		if arguments.DreamFrom != nil {
 			from, err := clockTime(*arguments.DreamFrom)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -134,4 +135,23 @@ func providerErrorMessage(body []byte) string {
 		return parsed.Error.Message
 	}
 	return strings.TrimSpace(string(body))
+}
+
+// WAV wraps mono 16-bit PCM at SampleRate in a WAV file's header, for a
+// browser to play as it is.
+func WAV(pcm []byte) []byte {
+	header := make([]byte, 44)
+	copy(header[0:], "RIFF")
+	binary.LittleEndian.PutUint32(header[4:], uint32(36+len(pcm)))
+	copy(header[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(header[16:], 16)
+	binary.LittleEndian.PutUint16(header[20:], 1)
+	binary.LittleEndian.PutUint16(header[22:], 1)
+	binary.LittleEndian.PutUint32(header[24:], SampleRate)
+	binary.LittleEndian.PutUint32(header[28:], SampleRate*2)
+	binary.LittleEndian.PutUint16(header[32:], 2)
+	binary.LittleEndian.PutUint16(header[34:], 16)
+	copy(header[36:], "data")
+	binary.LittleEndian.PutUint32(header[40:], uint32(len(pcm)))
+	return append(header, pcm...)
 }

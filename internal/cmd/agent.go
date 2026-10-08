@@ -191,6 +191,7 @@ func newAgentSettingsCommand() *cli.Command {
 				Usage:     "change your agent; turns it on the first time",
 				ArgsUsage: "key=value [key=value ...]",
 				Description: "Keys: enabled, name, instructions, language, knowledge-language, ask-model, confirm (comma list),\n" +
+					"speech-voice (the voice answers are read aloud in on a voice call, such as marin or cedar; empty for the server's),\n" +
 					"dream-from, dream-until (HH:MM in your zone: when it may dream),\n" +
 					"alerts (true|false: whether it tells you unasked what your mail says you should know now),\n" +
 					"alert-quiet-start, alert-quiet-end (HH:MM in your zone: its night, when only what cannot wait is said),\n" +
@@ -543,6 +544,7 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		Instructions       string     `json:"instructions"`
 		Language           string     `json:"language"`
 		AskModel           string     `json:"askModel"`
+		SpeechVoice        string     `json:"speechVoice"`
 		DreamFrom          string     `json:"dreamFrom"`
 		DreamUntil         string     `json:"dreamUntil"`
 		DreamedAt          *time.Time `json:"dreamedAt"`
@@ -576,6 +578,9 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		[2]string{"time zone", view.Timezone})
 	if agent.AskModel != "" {
 		fields = append(fields, [2]string{"model for conversations", agent.AskModel})
+	}
+	if agent.SpeechVoice != "" {
+		fields = append(fields, [2]string{"reads answers aloud in", agent.SpeechVoice})
 	}
 	// The hours the nightly run may work. Shown even when unset, because
 	// the default is a decision somebody should be able to see and
@@ -674,6 +679,8 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 			variables["knowledgeLanguage"] = value
 		case "ask-model":
 			variables["askModel"] = value
+		case "speech-voice":
+			variables["speechVoice"] = value
 		case "dream-from":
 			variables["dreamFrom"] = value
 		case "dream-until":

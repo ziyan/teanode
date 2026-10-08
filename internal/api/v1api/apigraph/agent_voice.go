@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -51,20 +53,106 @@ type AgentVoiceQuery interface {
 type AgentVoiceView struct {
 	IsVoiceAvailable bool `json:"isVoiceAvailable"`
 
+	// SpeechVoice is the voice the caller's answers are read in: their own
+	// choice, or the server's. SpeechVoices are the ones they may choose,
+	// and ServerSpeechVoice is the server's, which an empty choice means.
+	SpeechVoice       string   `json:"speechVoice"`
+	SpeechVoices      []string `json:"speechVoices"`
+	ServerSpeechVoice string   `json:"serverSpeechVoice"`
+
 	// SampleRate is the audio the socket takes: mono 16-bit PCM at this
 	// many samples a second.
 	SampleRate int `json:"sampleRate"`
 }
 
 func (self *graph) ReadAgentVoice(ctx context.Context) (*AgentVoiceView, error) {
-	if _, _, err := self.requireAgentPerson(ctx); err != nil {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
 		return nil, err
 	}
 	configuration := self.config.Current()
 	return &AgentVoiceView{
-		IsVoiceAvailable: configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil && self.agentWorker() != nil,
-		SampleRate:       voice.SampleRate,
+		IsVoiceAvailable:  configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil && self.agentWorker() != nil,
+		SampleRate:        voice.SampleRate,
+		SpeechVoice:       speechVoiceOf(configuration, found),
+		SpeechVoices:      config.VoiceSpeechVoices,
+		ServerSpeechVoice: configuration.Agent.Voice.EffectiveSpeechVoice(),
 	}, nil
+}
+
+// speechVoiceOf is the voice an agent's answers are read in: the person's
+// choice, or the server's.
+func speechVoiceOf(configuration *config.Configuration, found *models.Agent) string {
+	if found != nil && found.SpeechVoice != "" {
+		return found.SpeechVoice
+	}
+	return configuration.Agent.Voice.EffectiveSpeechVoice()
+}
+
+// voiceSampleView says a few words in the voice asked for, as a WAV file,
+// for a person choosing theirs. It is paid for like any speech.
+func (self *graph) voiceSampleView(response http.ResponseWriter, request *http.Request) {
+	_, found, ok := self.agentAttachmentPerson(response, request)
+	if !ok {
+		return
+	}
+	configuration := self.config.Current()
+	provider := configuration.Agent.VoiceProvider()
+	if !configuration.Agent.Voice.Enabled || provider == nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "voice is off on this server"})
+		return
+	}
+	speechVoice := strings.ToLower(strings.TrimSpace(request.URL.Query().Get("speechVoice")))
+	if speechVoice == "" {
+		speechVoice = speechVoiceOf(configuration, found)
+	}
+	if !slices.Contains(config.VoiceSpeechVoices, speechVoice) && speechVoice != configuration.Agent.Voice.EffectiveSpeechVoice() {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "not a voice"})
+		return
+	}
+	var owner *models.User
+	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+		if owner, err = tx.GetUser(found.UserID); err != nil || owner == nil {
+			return fmt.Errorf("sign in first")
+		}
+		return agent.RequireBudget(tx, configuration, found, owner, time.Now())
+	}); err != nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	settings := &voice.SpeechSettings{
+		BaseURL: provider.BaseURL, APIKey: provider.APIKey,
+		SpeechModel: configuration.Agent.Voice.EffectiveSpeechModel(),
+		SpeechVoice: speechVoice,
+	}
+	var pcm []byte
+	usage, err := voice.Speak(request.Context(), settings, voiceSampleText(found), func(piece []byte) error {
+		pcm = append(pcm, piece...)
+		return nil
+	})
+	if usage != nil {
+		agent.RecordUsage(self.database, found.ID, "", provider.Name+":"+settings.SpeechModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, CompletionTokens: usage.OutputTokens})
+	}
+	if err != nil {
+		writeJSON(response, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	response.Header().Set("Content-Type", "audio/wav")
+	response.Header().Set("Cache-Control", "private, max-age=3600")
+	_, _ = response.Write(voice.WAV(pcm))
+}
+
+// voiceSampleText is what a sample says, in the agent's language where
+// there are words for it.
+func voiceSampleText(found *models.Agent) string {
+	name := found.DisplayName()
+	switch strings.ToLower(found.Language) {
+	case "ja":
+		return "こんにちは、" + name + "です。回答を読み上げるときは、この声で話します。"
+	case "zh":
+		return "你好，我是" + name + "。朗读回答时，我会用这个声音。"
+	}
+	return "Hi, it's " + name + ". This is how I will sound when I read your answers aloud."
 }
 
 // voiceSocket is the drawer's websocket as both directions write to it.
@@ -228,7 +316,15 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 				speakingMutex.Unlock()
 				cancelSpeech()
 			}()
-			usage, err := voice.Speak(speechContext, speechSettings, answerText, func(pcm []byte) error {
+			// The person's voice as it is now: they may change it mid-call.
+			pieceSettings := *speechSettings
+			var current *models.Agent
+			_ = self.database.Transaction(func(tx db.Transaction) (err error) {
+				current, err = tx.GetAgent(found.ID)
+				return err
+			})
+			pieceSettings.SpeechVoice = speechVoiceOf(self.config.Current(), current)
+			usage, err := voice.Speak(speechContext, &pieceSettings, answerText, func(pcm []byte) error {
 				return socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudio, AnswerSegmentID: answerSegmentID, AnswerAudio: pcm})
 			})
 			if usage != nil {

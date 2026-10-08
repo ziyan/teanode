@@ -839,6 +839,10 @@ func (self *AgentVoice) EffectiveSpeechModel() string {
 	return strings.TrimSpace(self.SpeechModel)
 }
 
+// VoiceSpeechVoices are the provider's voices a person may choose for
+// their own answers.
+var VoiceSpeechVoices = []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"}
+
 // EffectiveSpeechVoice resolves the empty value.
 func (self *AgentVoice) EffectiveSpeechVoice() string {
 	if strings.TrimSpace(self.SpeechVoice) == "" {

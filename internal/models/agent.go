@@ -65,6 +65,10 @@ type Agent struct {
 	// operator's choices, or empty for the operator's ask model.
 	AskModel string `json:"askModel,omitempty" graphapi:"nullable"`
 
+	// SpeechVoice is the voice the person's answers are read aloud in on a
+	// voice call, one of the provider's; empty is the server's.
+	SpeechVoice string `json:"speechVoice,omitempty" graphapi:"nullable"`
+
 	// DailyTokens is this person's budget, set only by an operator; zero is
 	// the server's default.
 	DailyTokens int64 `json:"dailyTokens"`

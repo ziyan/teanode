@@ -109,6 +109,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathAgentMCP).Methods(http.MethodPost).HandlerFunc(self.mcpView)
 	router.Path(api.PathAgentTab).Methods(http.MethodGet).HandlerFunc(self.tabView)
 	router.Path(api.PathAgentVoice).Methods(http.MethodGet).HandlerFunc(self.voiceView)
+	router.Path(api.PathAgentVoiceSample).Methods(http.MethodGet).HandlerFunc(self.voiceSampleView)
 	router.Path(api.PathAgentComputer).Methods(http.MethodGet).HandlerFunc(self.computerView)
 	// Files for a draft go up as multipart bodies, not inside a query: a
 	// browser can stream them and show how far along each is.
