@@ -76,21 +76,22 @@ func init() {
 				Annotations: tools.LocalReadOnly(),
 				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is every session on every computer, with the state each is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
 				Parameters: tools.Object(map[string]any{
-					"action":               tools.EnumProperty("what to do", herdrToolActions()...),
-					"computer":             tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
-					"pane":                 tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it"),
-					"turn_count":           tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
-					"line_count":           tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
-					"text":                 tools.StringProperty("send: what to type; enter is pressed after it"),
-					"wait_seconds":         tools.IntegerProperty("wait: how long to wait at most, 30 by default, 600 at most"),
-					"question_fingerprint": tools.StringProperty("answer: the question's fingerprint, as list gave it"),
-					"option_numbers":       map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "answer: the numbers of the options the person chose"},
-					"option_labels":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "answer: the labels of those options, exactly as list gave them, one for each of option_numbers"},
-					"free_text":            tools.StringProperty("answer: what the person said to type, for an option that takes text"),
-					"is_removal":           tools.BooleanProperty("setup: take the hooks out rather than putting them in"),
-					"directory":            tools.StringProperty("open: the directory to start the coding agent in, on that computer; ~ is the person's home"),
-					"coding_agent":         tools.EnumProperty("open: which coding agent to start", "claude", "codex"),
-					"agent_name":           tools.StringProperty("open: what to call the session in herdr; the directory's name by default"),
+					"action":                  tools.EnumProperty("what to do", herdrToolActions()...),
+					"computer":                tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
+					"pane":                    tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it"),
+					"turn_count":              tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
+					"line_count":              tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
+					"text":                    tools.StringProperty("send: what to type; enter is pressed after it"),
+					"wait_seconds":            tools.IntegerProperty("wait: how long to wait at most, 30 by default, 600 at most"),
+					"question_fingerprint":    tools.StringProperty("answer: the question's fingerprint, as list gave it"),
+					"option_numbers":          map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "answer: the numbers of the options the person chose"},
+					"option_labels":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "answer: the labels of those options, exactly as list gave them, one for each of option_numbers"},
+					"free_text":               tools.StringProperty("answer: what the person said to type, for an option that takes text"),
+					"is_removal":              tools.BooleanProperty("setup: take the hooks out rather than putting them in"),
+					"directory":               tools.StringProperty("open: the directory to start the coding agent in, on that computer; ~ is the person's home"),
+					"coding_agent":            tools.EnumProperty("open: which coding agent to start", "claude", "codex"),
+					"agent_name":              tools.StringProperty("open: what to call the session in herdr; the directory's name by default"),
+					"should_skip_permissions": tools.BooleanProperty("open: start it without asking before it acts (Claude Code's --dangerously-skip-permissions, Codex's --yolo); only when the person asks for it"),
 				}, "action"),
 				Guidance: "herdr: list first, and read before you act on a session; start one with open only when the person wants a new session, and close only one they are done with. A question a session waits on is the person's: show it with its options, and answer only with what they chose, never your own pick. Before you send, say what you will type: the person may be typing in the same pane. After a send you will not wait on, watch the pane, end your turn, and you are woken when it finishes.",
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
@@ -153,21 +154,22 @@ func init() {
 }
 
 type herdrArguments struct {
-	Action              string   `json:"action"`
-	Computer            string   `json:"computer"`
-	Pane                string   `json:"pane"`
-	TurnCount           int      `json:"turn_count"`
-	LineCount           int      `json:"line_count"`
-	Text                string   `json:"text"`
-	WaitSeconds         int      `json:"wait_seconds"`
-	QuestionFingerprint string   `json:"question_fingerprint"`
-	OptionNumbers       []int    `json:"option_numbers"`
-	OptionLabels        []string `json:"option_labels"`
-	FreeText            string   `json:"free_text"`
-	IsRemoval           bool     `json:"is_removal"`
-	Directory           string   `json:"directory"`
-	CodingAgent         string   `json:"coding_agent"`
-	AgentName           string   `json:"agent_name"`
+	Action                string   `json:"action"`
+	Computer              string   `json:"computer"`
+	Pane                  string   `json:"pane"`
+	TurnCount             int      `json:"turn_count"`
+	LineCount             int      `json:"line_count"`
+	Text                  string   `json:"text"`
+	WaitSeconds           int      `json:"wait_seconds"`
+	QuestionFingerprint   string   `json:"question_fingerprint"`
+	OptionNumbers         []int    `json:"option_numbers"`
+	OptionLabels          []string `json:"option_labels"`
+	FreeText              string   `json:"free_text"`
+	IsRemoval             bool     `json:"is_removal"`
+	Directory             string   `json:"directory"`
+	CodingAgent           string   `json:"coding_agent"`
+	AgentName             string   `json:"agent_name"`
+	ShouldSkipPermissions bool     `json:"should_skip_permissions"`
 }
 
 // herdrWait is how long an action is waited for, beyond its own wait.
@@ -272,6 +274,7 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		note = "watching " + asked.PaneID
 	case "open":
 		asked.Directory, asked.CodingAgentKind, asked.AgentName = arguments.Directory, arguments.CodingAgent, arguments.AgentName
+		asked.ShouldSkipPermissions = arguments.ShouldSkipPermissions
 		wait = 90 * time.Second
 		note = "opened " + arguments.CodingAgent + " in " + arguments.Directory
 	case "close":

@@ -151,6 +151,9 @@ type HerdrArguments struct {
 	Directory       string `json:"directory,omitempty"`
 	CodingAgentKind string `json:"codingAgentKind,omitempty"`
 	AgentName       string `json:"agentName,omitempty"`
+	// ShouldSkipPermissions starts it without asking before it acts: Claude
+	// Code with --dangerously-skip-permissions, Codex with --yolo.
+	ShouldSkipPermissions bool `json:"shouldSkipPermissions,omitempty"`
 }
 
 // HerdrEvent is something the program says unasked: a question came, a
@@ -956,6 +959,10 @@ type HerdrCloseResult struct {
 	IsClosed     bool          `json:"isClosed"`
 }
 
+// herdrSkipPermissionsFlags start each coding agent without asking before
+// it acts.
+var herdrSkipPermissionsFlags = map[string]string{CodingAgentKindClaude: "--dangerously-skip-permissions", CodingAgentKindCodex: "--yolo"}
+
 // herdrAgentNamePattern is what herdr takes as an agent's name.
 var herdrAgentNamePattern = regexp.MustCompile(`[^a-z0-9_-]+`)
 
@@ -1027,7 +1034,11 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	for index := 2; isTaken[name]; index++ {
 		name = base + "-" + strconv.Itoa(index)
 	}
-	err = self.client.call(ctx, "agent.start", map[string]any{"name": name, "kind": kind, "pane_id": paneId, "timeout_ms": 60000}, nil)
+	start := map[string]any{"name": name, "kind": kind, "pane_id": paneId, "timeout_ms": 60000}
+	if arguments.ShouldSkipPermissions {
+		start["args"] = []string{herdrSkipPermissionsFlags[kind]}
+	}
+	err = self.client.call(ctx, "agent.start", start, nil)
 	// One that stopped at a question as it started is open, and asking it.
 	var refused *herdrError
 	isAsking := errors.As(err, &refused) && refused.Code == "agent_not_ready"

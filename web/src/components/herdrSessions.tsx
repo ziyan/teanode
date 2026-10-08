@@ -101,8 +101,8 @@ export const HERDR_DOCUMENTS = {
   WatchAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $conversationId: String) {
     WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ${SESSION_FIELDS} }
   }`,
-  OpenAgentHerdrSession: `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String) {
-    OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName) { ${SESSION_FIELDS} }
+  OpenAgentHerdrSession: `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String, $shouldSkipPermissions: Boolean) {
+    OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions) { ${SESSION_FIELDS} }
   }`,
   CloseAgentHerdrSession: `mutation ($computer: String, $paneId: String!) {
     CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ${SESSION_FIELDS} }
@@ -649,6 +649,7 @@ function HerdrOpenDialog({
   const [codingAgentKind, setCodingAgentKind] = useState<'claude' | 'codex'>('claude')
   const [directory, setDirectory] = useState('')
   const [agentName, setAgentName] = useState('')
+  const [shouldSkipPermissions, setShouldSkipPermissions] = useState(false)
   const [isBusy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const open = async () => {
@@ -660,6 +661,7 @@ function HerdrOpenDialog({
         directory: directory.trim(),
         codingAgentKind,
         agentName: agentName.trim() || null,
+        shouldSkipPermissions,
       })
       sharedList = null
       toast.done(t('herdr.opened', { pane: paneNameOf(response.OpenAgentHerdrSession) }))
@@ -720,6 +722,14 @@ function HerdrOpenDialog({
           placeholder={t('herdr.agentNameHint')}
           onChange={(event) => setAgentName(event.target.value)}
         />
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={shouldSkipPermissions}
+          onChange={(event) => setShouldSkipPermissions(event.target.checked)}
+        />
+        {codingAgentKind === 'codex' ? t('herdr.skipPermissionsCodex') : t('herdr.skipPermissionsClaude')}
       </label>
     </FormDialog>
   )

@@ -129,8 +129,8 @@ const (
 	DocumentWatchAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $conversationId: String) {
 		WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ` + HerdrSessionFields + ` }
 	}`
-	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String) {
-		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName) { ` + HerdrSessionFields + ` }
+	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String, $shouldSkipPermissions: Boolean) {
+		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions) { ` + HerdrSessionFields + ` }
 	}`
 	DocumentCloseAgentHerdrSession = `mutation ($computer: String, $paneId: String!) {
 		CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ` + HerdrSessionFields + ` }
@@ -259,12 +259,13 @@ func WatchAgentHerdrSession(ctx context.Context, connection *Client, computer, p
 }
 
 // OpenAgentHerdrSession starts a coding agent, "claude" or "codex", in a new
-// herdr pane in a directory; agentName may be empty.
-func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string) (*AgentHerdrSession, error) {
+// herdr pane in a directory; agentName may be empty. shouldSkipPermissions
+// starts it without asking before it acts.
+func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string, shouldSkipPermissions bool) (*AgentHerdrSession, error) {
 	var result struct {
 		OpenAgentHerdrSession *AgentHerdrSession `json:"OpenAgentHerdrSession"`
 	}
-	variables := herdrVariables(computer, map[string]any{"directory": directory, "codingAgentKind": codingAgentKind})
+	variables := herdrVariables(computer, map[string]any{"directory": directory, "codingAgentKind": codingAgentKind, "shouldSkipPermissions": shouldSkipPermissions})
 	if agentName != "" {
 		variables["agentName"] = agentName
 	}

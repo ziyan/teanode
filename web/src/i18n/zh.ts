@@ -1239,6 +1239,8 @@ export const zh: Catalog = {
   'herdr.typeAnswer': '输入回答',
   'herdr.sendAnswer': '回答',
   'herdr.questionDone': '已回答，或不再提问。',
+  'herdr.skipPermissionsClaude': '跳过权限确认 (--dangerously-skip-permissions)',
+  'herdr.skipPermissionsCodex': '跳过审批和沙箱 (--yolo)',
   'herdr.open': '打开会话',
   'herdr.openTitle': '打开编程会话',
   'herdr.codingAgent': '编程助手',

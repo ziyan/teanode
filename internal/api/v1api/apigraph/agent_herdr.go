@@ -135,6 +135,9 @@ type OpenAgentHerdrSessionArguments struct {
 	// AgentName is what the session is called in herdr; the directory's
 	// name when left out.
 	AgentName string `json:"agentName" graphapi:"nullable"`
+	// ShouldSkipPermissions starts it without asking before it acts:
+	// Claude Code with --dangerously-skip-permissions, Codex with --yolo.
+	ShouldSkipPermissions bool `json:"shouldSkipPermissions" graphapi:"nullable"`
 }
 
 // CloseAgentHerdrSessionArguments name a session.
@@ -390,7 +393,7 @@ func (self *graph) OpenAgentHerdrSession(ctx context.Context, arguments OpenAgen
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	session, err := worker.OpenHerdrSession(ctx, found.ID, arguments.Computer, arguments.Directory, arguments.CodingAgentKind, arguments.AgentName)
+	session, err := worker.OpenHerdrSession(ctx, found.ID, arguments.Computer, arguments.Directory, arguments.CodingAgentKind, arguments.AgentName, arguments.ShouldSkipPermissions)
 	if err != nil {
 		return nil, err
 	}

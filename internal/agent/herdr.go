@@ -323,14 +323,14 @@ func (self *Agent) WatchHerdrSession(ctx context.Context, agentId, computerName,
 
 // OpenHerdrSession starts a coding agent, "claude" or "codex", in a new
 // herdr pane in a directory of the person's on a computer.
-func (self *Agent) OpenHerdrSession(ctx context.Context, agentId, computerName, directory, codingAgentKind, agentName string) (*HerdrSession, error) {
+func (self *Agent) OpenHerdrSession(ctx context.Context, agentId, computerName, directory, codingAgentKind, agentName string, shouldSkipPermissions bool) (*HerdrSession, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
 	// A coding agent takes a while to start: up to a minute is waited for.
 	session, err := askHerdr[computer.HerdrSession](ctx, attached, "herdr_open", &computer.HerdrArguments{
-		Directory: directory, CodingAgentKind: codingAgentKind, AgentName: agentName,
+		Directory: directory, CodingAgentKind: codingAgentKind, AgentName: agentName, ShouldSkipPermissions: shouldSkipPermissions,
 	}, 90*time.Second)
 	if err != nil {
 		return nil, err

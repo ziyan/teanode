@@ -1276,6 +1276,8 @@ export const ja: Catalog = {
   'herdr.typeAnswer': '回答を入力',
   'herdr.sendAnswer': '答える',
   'herdr.questionDone': '回答済み、または取り下げられました。',
+  'herdr.skipPermissionsClaude': '権限の確認を省く (--dangerously-skip-permissions)',
+  'herdr.skipPermissionsCodex': '承認とサンドボックスを省く (--yolo)',
   'herdr.open': 'セッションを開く',
   'herdr.openTitle': 'コーディングセッションを開く',
   'herdr.codingAgent': 'コーディングエージェント',

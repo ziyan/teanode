@@ -1282,6 +1282,8 @@ export const en = {
   'herdr.typeAnswer': 'Type an answer',
   'herdr.sendAnswer': 'Answer',
   'herdr.questionDone': 'Answered, or no longer asked.',
+  'herdr.skipPermissionsClaude': 'Skip permission prompts (--dangerously-skip-permissions)',
+  'herdr.skipPermissionsCodex': 'Skip approvals and the sandbox (--yolo)',
   'herdr.open': 'Open a session',
   'herdr.openTitle': 'Open a coding session',
   'herdr.codingAgent': 'Coding agent',

@@ -99,6 +99,7 @@ func newComputerHerdrCommand() *cli.Command {
 				Flags: []cli.Flag{
 					computerFlag,
 					&cli.StringFlag{Name: "name", Usage: "what to call the session in herdr; the directory's name by default"},
+					&cli.BoolFlag{Name: "skip-permissions", Usage: "start it without asking before it acts: Claude Code with --dangerously-skip-permissions, Codex with --yolo"},
 					JSONFlag(),
 				},
 				Action: runComputerHerdrOpen,
@@ -413,7 +414,7 @@ func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
 	}
 	// Starting a coding agent takes a while.
 	connection.SetTimeout(2 * time.Minute)
-	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), command.Args().Get(1), command.Args().Get(0), command.String("name"))
+	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), command.Args().Get(1), command.Args().Get(0), command.String("name"), command.Bool("skip-permissions"))
 	if err != nil {
 		return describeError(command, err)
 	}
