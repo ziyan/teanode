@@ -75,7 +75,6 @@ export function SpeechVoiceChoice({
       <div className="form-narrow">
         <div className="row speech-voice-row">
           <label>
-            <span>{t('agent.speechVoice')}</span>
             <Select
               block
               value={speechVoice}

@@ -1649,7 +1649,8 @@ while it works on the first, as a typed follow-up would.
 through the same provider. Empty is `gpt-4o-mini-tts`.
 
 **`speechVoice`** — The provider's voice the answers are spoken in, such as
-`marin`, `cedar`, `alloy` or `coral`. Empty is `marin`.
+`marin`, `cedar`, `alloy` or `coral`. Empty is `marin`. Each person may choose
+their own on their agent's settings, which this is the default for.
 
 ### `agent.mcp`
 

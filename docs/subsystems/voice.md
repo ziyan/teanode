@@ -75,7 +75,10 @@ said, so only what they missed is spoken, and an event replayed after a
 reconnection is never spoken twice. A question card is read out; a
 confirmation card says it needs approving on screen. A turn is spoken when
 voice mode saw it start, or from the moment the person spoke into it. The
-speaker button in the panel turns reading aloud off on that device.
+speaker button in the panel turns reading aloud off on that device. Each
+person chooses the voice on their agent's settings, with a sample to listen
+to, or tells the agent mid-call (`agent_profile`, `speech_voice`); the next
+sentence is read in it. Empty is the server's `speechVoice`.
 
 **Cutting in.** When the provider says somebody started talking while an
 answer plays, the answer drops to a murmur at once and pauses where it is if

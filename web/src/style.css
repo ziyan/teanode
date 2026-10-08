@@ -6941,6 +6941,16 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   background: var(--leaf);
 }
 
+/* The voice and a button to hear it, side by side; the button as wide as
+   its words. */
+.speech-voice-row {
+  align-items: flex-end;
+}
+
+.speech-voice-row > .button {
+  flex: none;
+}
+
 .voice-meter.is-speaking .voice-meter-bar {
   background: var(--accent);
 }
