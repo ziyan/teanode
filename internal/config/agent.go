@@ -100,6 +100,11 @@ type Agent struct {
 	// Browser is a headless browser the operator runs beside the server.
 	Browser AgentBrowser `yaml:"browser"`
 
+	// Voice lets a person talk to their agent in the drawer: what they say
+	// is transcribed by a provider's realtime transcription as they say it,
+	// and each finished utterance is sent as an ordinary turn.
+	Voice AgentVoice `yaml:"voice"`
+
 	// MCP declares servers speaking the Model Context Protocol whose tools
 	// join the catalog.
 	MCP AgentMCP `yaml:"mcp"`
@@ -769,6 +774,98 @@ type AgentSkillSecret struct {
 // nothing and said so to nobody.
 var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer", "skills", "finance"}
 
+// AgentVoice is talking to the agent: the provider whose realtime
+// transcription hears it, and how a turn is told to have ended.
+type AgentVoice struct {
+	Enabled bool `yaml:"enabled"`
+
+	// Provider names the provider of kind openai whose key and address
+	// the transcription uses; empty is the first such provider.
+	Provider string `yaml:"provider,omitempty"`
+
+	// TranscriptionModel is the realtime transcription model. It has to be
+	// one that detects speech itself: the provider says when somebody
+	// starts and stops talking. Empty is gpt-4o-transcribe.
+	TranscriptionModel string `yaml:"transcriptionModel,omitempty"`
+
+	// SilenceMS is how long a pause ends what somebody is saying; zero is
+	// 500. Longer lets a person think mid-sentence; shorter answers
+	// sooner.
+	SilenceMS int `yaml:"silenceMS,omitempty"`
+
+	// SpeechModel is the text-to-speech model the answers are spoken
+	// with, through the same provider. Empty is gpt-4o-mini-tts.
+	SpeechModel string `yaml:"speechModel,omitempty"`
+
+	// SpeechVoice is the provider's voice the answers are spoken in. Empty
+	// is marin.
+	SpeechVoice string `yaml:"speechVoice,omitempty"`
+}
+
+// The defaults of the voice settings.
+const (
+	VoiceTranscriptionModelDefault = "gpt-4o-transcribe"
+	VoiceSilenceMSDefault          = 500
+	VoiceSpeechModelDefault        = "gpt-4o-mini-tts"
+	VoiceSpeechVoiceDefault        = "marin"
+)
+
+// voiceModelsWithoutSpeechDetection are transcription models that need the
+// application to say when a turn ends, which the voice settings do not
+// do: with one of these nobody would ever finish speaking.
+var voiceModelsWithoutSpeechDetection = []string{"gpt-live-transcribe", "gpt-realtime-whisper"}
+
+// EffectiveTranscriptionModel resolves the empty value.
+func (self *AgentVoice) EffectiveTranscriptionModel() string {
+	if strings.TrimSpace(self.TranscriptionModel) == "" {
+		return VoiceTranscriptionModelDefault
+	}
+	return strings.TrimSpace(self.TranscriptionModel)
+}
+
+// EffectiveSilenceMS resolves the zero value.
+func (self *AgentVoice) EffectiveSilenceMS() int {
+	if self.SilenceMS <= 0 {
+		return VoiceSilenceMSDefault
+	}
+	return self.SilenceMS
+}
+
+// EffectiveSpeechModel resolves the empty value.
+func (self *AgentVoice) EffectiveSpeechModel() string {
+	if strings.TrimSpace(self.SpeechModel) == "" {
+		return VoiceSpeechModelDefault
+	}
+	return strings.TrimSpace(self.SpeechModel)
+}
+
+// VoiceSpeechVoices are the provider's voices a person may choose for
+// their own answers.
+var VoiceSpeechVoices = []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"}
+
+// EffectiveSpeechVoice resolves the empty value.
+func (self *AgentVoice) EffectiveSpeechVoice() string {
+	if strings.TrimSpace(self.SpeechVoice) == "" {
+		return VoiceSpeechVoiceDefault
+	}
+	return strings.TrimSpace(self.SpeechVoice)
+}
+
+// VoiceProvider is the provider voice is transcribed through: the one it
+// names, or the first of kind openai; nil when there is none.
+func (self *Agent) VoiceProvider() *AgentProvider {
+	for index := range self.Providers {
+		provider := &self.Providers[index]
+		if provider.Kind != AgentProviderKindOpenAI || (provider.Enabled != nil && !*provider.Enabled) {
+			continue
+		}
+		if self.Voice.Provider == "" || provider.Name == self.Voice.Provider {
+			return provider
+		}
+	}
+	return nil
+}
+
 // AgentBrowser is a headless browser reached over the DevTools protocol.
 type AgentBrowser struct {
 	Enabled bool `yaml:"enabled"`
@@ -1300,6 +1397,23 @@ func (self *Configuration) validateAgent(validator *validator) {
 		validator.add("agent.search.kind", `must be "brave", or empty for no web search`)
 	}
 	validateAgentFinance(&agent.Finance, validator)
+	if agent.Voice.Enabled {
+		if agent.VoiceProvider() == nil {
+			if agent.Voice.Provider == "" {
+				validator.add("agent.voice.provider", "voice needs a provider of kind openai, whose realtime transcription hears it")
+			} else {
+				validator.add("agent.voice.provider", "%q is not an enabled provider of kind openai", agent.Voice.Provider)
+			}
+		}
+		for _, model := range voiceModelsWithoutSpeechDetection {
+			if agent.Voice.EffectiveTranscriptionModel() == model {
+				validator.add("agent.voice.transcriptionModel", "%s needs the application to end each turn; voice has the provider detect speech, so choose a model that does, such as %s", model, VoiceTranscriptionModelDefault)
+			}
+		}
+	}
+	if agent.Voice.SilenceMS < 0 || agent.Voice.SilenceMS > 5000 {
+		validator.add("agent.voice.silenceMS", "must be between 0 (the default, 500) and 5000")
+	}
 	if agent.Browser.Enabled && agent.Browser.CDPEndpoint == "" {
 		validator.add("agent.browser.cdpEndpoint", "required when the browser is enabled: host:port of the DevTools debugger, for example chrome:9222")
 	}

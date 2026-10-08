@@ -43,6 +43,7 @@ const settingsSelection = `{
 		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency embeddingTokensPerDay dreamShare ingestChunksPerRun maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
 		retention { runs corrections }
 		search { kind hasApiKey }
+		voice { enabled provider transcriptionModel silenceMS speechModel speechVoice }
 		tools { disabled confirm }
 		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
 		mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }

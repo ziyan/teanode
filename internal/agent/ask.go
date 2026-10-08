@@ -47,6 +47,10 @@ type AskSettings struct {
 	// Viewing is what they have open, when the drawer knows.
 	Viewing *Viewing
 
+	// InterruptedAnswer is how much of the agent's spoken answer the
+	// person heard before they talked over it, when they did.
+	InterruptedAnswer *InterruptedAnswer
+
 	// Attachments are the files that came with the message, uploaded
 	// already; References the threads the person pointed at.
 	Attachments []*models.AgentAttachment
@@ -170,6 +174,29 @@ type AskSettings struct {
 	// how to talk to somebody, and sorting runs on every message that
 	// arrives, so what the prompt costs is what sorting costs.
 	Short bool
+}
+
+// InterruptedAnswer is a spoken answer the person cut in on: what had
+// been played to them, and the rest, which was written but not heard.
+type InterruptedAnswer struct {
+	HeardText   string `json:"heardText"`
+	UnheardText string `json:"unheardText"`
+}
+
+// personText is the person's message as the model reads it: after a spoken
+// answer they cut in on, it says first how much of that answer they heard,
+// since the conversation keeps the whole of what was written.
+func personText(settings *AskSettings) string {
+	interrupted := settings.InterruptedAnswer
+	if interrupted == nil || strings.TrimSpace(interrupted.UnheardText) == "" {
+		return settings.Message
+	}
+	heard := strings.TrimSpace(interrupted.HeardText)
+	if heard == "" {
+		heard = "(nothing)"
+	}
+	return fmt.Sprintf("<interrupted>\nThey talked over your spoken answer, so they did not hear all of it. Heard: %q. Not heard: %q. Do not assume they know what they did not hear.\n</interrupted>\n\n%s",
+		heard, strings.TrimSpace(interrupted.UnheardText), settings.Message)
 }
 
 // Viewing is what the person has open in the dashboard.
@@ -853,7 +880,7 @@ func (self *AskRun) turn() error {
 	}); err != nil {
 		return err
 	}
-	history = append(history, userTurn(ctx, self.agent.settings.Storage, settings.Message, settings.Attachments, settings.Pictures, settings.References))
+	history = append(history, userTurn(ctx, self.agent.settings.Storage, personText(settings), settings.Attachments, settings.Pictures, settings.References))
 	history[len(history)-1].SourceID = savedTurn.ID
 
 	// The catalog as this person sees it, and what the connected servers

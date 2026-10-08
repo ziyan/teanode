@@ -75,6 +75,7 @@ type AgentSettings struct {
 	Search       *AgentSearchSettings        `json:"search"`
 	Tools        *AgentToolsSettings         `json:"tools"`
 	Browser      *AgentBrowserSettings       `json:"browser"`
+	Voice        *AgentVoiceSettings         `json:"voice"`
 	MCPServers   []*AgentMCPServerSettings   `json:"mcpServers"`
 	Finance      *AgentFinanceSettings       `json:"finance"`
 	Works        []string                    `json:"works"`
@@ -260,6 +261,18 @@ type AgentToolsSettings struct {
 	Catalog []*AgentToolView `json:"catalog"`
 }
 
+// AgentVoiceSettings is talking to the agent: whether it is on, which
+// provider transcribes it, the model, and the pause that ends a turn, zero
+// for the default.
+type AgentVoiceSettings struct {
+	Enabled            bool   `json:"enabled"`
+	Provider           string `json:"provider"`
+	TranscriptionModel string `json:"transcriptionModel"`
+	SilenceMS          int    `json:"silenceMS"`
+	SpeechModel        string `json:"speechModel"`
+	SpeechVoice        string `json:"speechVoice"`
+}
+
 // AgentBrowserSettings is the headless browser.
 type AgentBrowserSettings struct {
 	Enabled               bool     `json:"enabled"`
@@ -382,6 +395,14 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Confirm:  nonNil(agenttools.Rename(agent.Tools.Confirm)),
 			Catalog:  toolCatalog(),
 		},
+		Voice: &AgentVoiceSettings{
+			Enabled:            agent.Voice.Enabled,
+			Provider:           agent.Voice.Provider,
+			TranscriptionModel: agent.Voice.TranscriptionModel,
+			SilenceMS:          agent.Voice.SilenceMS,
+			SpeechModel:        agent.Voice.SpeechModel,
+			SpeechVoice:        agent.Voice.SpeechVoice,
+		},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
 			CDPEndpoint:           agent.Browser.CDPEndpoint,
@@ -493,6 +514,7 @@ type AgentParameters struct {
 	Search       *AgentSearchParameters         `json:"search"`
 	Tools        *AgentToolsParameters          `json:"tools"`
 	Browser      *AgentBrowserParameters        `json:"browser"`
+	Voice        *AgentVoiceParameters          `json:"voice"`
 	MCPServers   *[]*AgentMCPServerParameters   `json:"mcpServers"`
 	Finance      *AgentFinanceParameters        `json:"finance"`
 }
@@ -639,6 +661,16 @@ type AgentPlaidParameters struct {
 type AgentToolsParameters struct {
 	Disabled *[]string `json:"disabled"`
 	Confirm  *[]string `json:"confirm"`
+}
+
+// AgentVoiceParameters change the voice settings.
+type AgentVoiceParameters struct {
+	Enabled            *bool   `json:"enabled"`
+	Provider           *string `json:"provider"`
+	TranscriptionModel *string `json:"transcriptionModel"`
+	SilenceMS          *int    `json:"silenceMS"`
+	SpeechModel        *string `json:"speechModel"`
+	SpeechVoice        *string `json:"speechVoice"`
 }
 
 // AgentBrowserParameters change the headless browser.
@@ -907,6 +939,15 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		// on a page that lists the catalog.
 		agent.Tools.Disabled = agenttools.Rename(agent.Tools.Disabled)
 		agent.Tools.Confirm = agenttools.Rename(agent.Tools.Confirm)
+	}
+	if parameters.Voice != nil {
+		voice := &agent.Voice
+		applyBool(&voice.Enabled, parameters.Voice.Enabled)
+		applyString(&voice.Provider, parameters.Voice.Provider)
+		applyString(&voice.TranscriptionModel, parameters.Voice.TranscriptionModel)
+		applyInt(&voice.SilenceMS, parameters.Voice.SilenceMS)
+		applyString(&voice.SpeechModel, parameters.Voice.SpeechModel)
+		applyString(&voice.SpeechVoice, parameters.Voice.SpeechVoice)
 	}
 	if parameters.Browser != nil {
 		browser := &agent.Browser

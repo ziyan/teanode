@@ -143,3 +143,34 @@ func TestAlertMutesThroughTheAPI(t *testing.T) {
 		}
 	})
 }
+
+// A person chooses the voice their answers are read aloud in, one of the
+// provider's, and an empty choice goes back to the server's.
+func TestTheSpeakingVoiceIsThePersons(t *testing.T) {
+	database, resolver, principal, created := alertAPIFixture(t)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		view, err := resolver.UpdateAgent(asListener(principal, tx), UpdateAgentArguments{SpeechVoice: new(" Cedar ")})
+		if err != nil || view.Agent.SpeechVoice != "cedar" {
+			t.Fatalf("chosen: %+v %v", view, err)
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		stored, err := tx.GetAgent(created.ID)
+		if err != nil || stored.SpeechVoice != "cedar" {
+			t.Fatalf("kept: %+v %v", stored, err)
+		}
+		if _, err := resolver.UpdateAgent(asListener(principal, tx), UpdateAgentArguments{SpeechVoice: new("robot")}); err == nil {
+			t.Fatalf("a voice the provider does not have is refused")
+		}
+		view, err := resolver.UpdateAgent(asListener(principal, tx), UpdateAgentArguments{SpeechVoice: new("")})
+		if err != nil || view.Agent.SpeechVoice != "" {
+			t.Fatalf("back to the server's: %+v %v", view, err)
+		}
+	})
+	if got := speechVoiceOf(resolver.config.Current(), &models.Agent{SpeechVoice: "onyx"}); got != "onyx" {
+		t.Fatalf("the person's voice: %s", got)
+	}
+	if got := speechVoiceOf(resolver.config.Current(), &models.Agent{}); got != config.VoiceSpeechVoiceDefault {
+		t.Fatalf("the server's voice: %s", got)
+	}
+}
