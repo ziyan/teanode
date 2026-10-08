@@ -18,6 +18,14 @@ describe('speakableText', () => {
     expect(speakableText('Read more at https://example.com/a.')).toBe('Read more at.')
     expect(speakableText('a_variable_name stays')).toBe('a_variable_name stays')
   })
+
+  it('leaves inline formulas out but says prices and code', () => {
+    expect(speakableText('The rate \\(\\frac{a}{b}\\) is low.')).toBe('The rate is low.')
+    expect(speakableText('Take $x_i$ for each, at $5 or $10, between $3-$4.')).toBe(
+      'Take for each, at $5 or $10, between $3-$4.',
+    )
+    expect(speakableText('Run `$x_1$` and set $PATH=$HOME.')).toBe('Run $x_1$ and set $PATH=$HOME.')
+  })
 })
 
 describe('AnswerSegmenter', () => {
@@ -62,6 +70,13 @@ describe('AnswerSegmenter', () => {
     expect(segmenter.push('Run this:\n```\nmake test')).toEqual(['Run this:'])
     expect(segmenter.push('\n```\nIt takes a minute.')).toEqual([])
     expect(segmenter.flush()).toEqual(['It takes a minute.'])
+  })
+
+  it('waits for the end of an inline formula before saying the sentence around it', () => {
+    const segmenter = new AnswerSegmenter()
+    expect(segmenter.push('Here. The rate \\(\\frac{a}{b}, ')).toEqual(['Here.'])
+    expect(segmenter.push('c\\) is low.')).toEqual([])
+    expect(segmenter.flush()).toEqual(['The rate is low.'])
   })
 
   it('leaves a displayed formula out', () => {

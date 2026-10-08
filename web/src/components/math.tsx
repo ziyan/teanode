@@ -171,9 +171,13 @@ function restyle(styled: MathNode, style: string): MathNode {
 
 function tokenize(tex: string): Token[] {
   const tokens: Token[] = []
+  // Sticky, so each command is read where it starts rather than from a
+  // copy of the rest of the formula.
+  const commandWord = /\\([a-zA-Z]+)/y
   for (let at = 0; at < tex.length;) {
     if (tex[at] === '\\') {
-      const word = /^\\([a-zA-Z]+)/.exec(tex.slice(at))
+      commandWord.lastIndex = at
+      const word = commandWord.exec(tex)
       if (word) {
         tokens.push({ kind: 'command', name: word[1] })
         at += word[0].length
@@ -281,6 +285,8 @@ class FormulaParser {
     if (!base) return null
     let subscript: MathNode | undefined
     let superscript: MathNode | undefined
+    // Primes go first in the superscript, so y'^2 is y with ′2 above it.
+    const primes: MathNode[] = []
     for (;;) {
       const token = this.peek()
       if (isCharacter(token, '_') && !subscript) {
@@ -291,12 +297,12 @@ class FormulaParser {
         superscript = this.argument()
       } else if (isCharacter(token, "'")) {
         this.next()
-        const prime = operator('′')
-        superscript = superscript ? row([prime, superscript]) : prime
+        primes.push(operator('′'))
       } else {
         break
       }
     }
+    if (primes.length > 0) superscript = row(superscript ? [...primes, superscript] : primes)
     if (!subscript && !superscript) return base
     const isLimits = this.takesLimits.has(base)
     if (subscript && superscript) return node(isLimits ? 'munderover' : 'msubsup', [base, subscript, superscript])
@@ -584,26 +590,36 @@ export function Formula({ tex, isDisplay }: { tex: string; isDisplay: boolean })
       return null
     }
   }, [tex, isDisplay])
-  const box = useRef<HTMLDivElement>(null)
+  const displayBox = useRef<HTMLDivElement>(null)
+  const inlineBox = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
-    const drawnBox = box.current
+    const drawnBox = displayBox.current ?? inlineBox.current
     if (!drawnBox || !drawnBox.querySelector('mtable') || typeof ResizeObserver === 'undefined') return
     alignCells(drawnBox)
     // The widths change once the math font has loaded, or the drawer is
-    // made wider.
+    // made wider. The tables are watched as well: an inline box reports
+    // no size of its own to an observer.
     const observer = new ResizeObserver(() => alignCells(drawnBox))
     observer.observe(drawnBox)
+    for (const table of drawnBox.querySelectorAll('mtable')) observer.observe(table)
     return () => observer.disconnect()
   }, [formula])
   if (!formula) return <code>{tex}</code>
   const drawn = draw(formula, 'math')
   return isDisplay ? (
-    <div className="markdown-formula" ref={box}>
+    <div className="markdown-formula" ref={displayBox}>
       {drawn}
     </div>
   ) : (
-    drawn
+    <span ref={inlineBox}>{drawn}</span>
   )
+}
+
+// readsAsTex says whether what was written between two dollars is a
+// formula: a command, a script, a brace or a single letter. Anything else,
+// "between $a and b$" or "$PATH=$HOME", stays words.
+export function readsAsTex(written: string): boolean {
+  return /[\\^_{}]/.test(written) || /^[a-zA-Z]$/.test(written)
 }
 
 // A MathML element has a style in a browser, and none where there is no

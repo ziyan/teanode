@@ -167,3 +167,52 @@ it('draws a command it does not know as it was written, and survives broken TeX'
   const container = drawn('\\[ \\unknowncommand{x} + \\frac{1}{ \\left( 2 \\]')
   expect(container.querySelector('math')?.textContent).toContain('\\unknowncommand')
 })
+
+it('keeps the dollars in a code span as code', () => {
+  const container = drawn('Run `$HOME/$USER` now. Use `$x_1$` here.')
+  const codeSpans = container.querySelectorAll('code')
+  expect(codeSpans).toHaveLength(2)
+  expect(codeSpans[0].textContent).toBe('$HOME/$USER')
+  expect(codeSpans[1].textContent).toBe('$x_1$')
+  expect(container.querySelector('math')).toBeNull()
+})
+
+it('reads dollars around an assignment as words', () => {
+  const container = drawn('First set $PATH=$HOME later.')
+  expect(container.querySelector('math')).toBeNull()
+  expect(container.textContent).toBe('First set $PATH=$HOME later.')
+})
+
+it('puts primes before a superscript written after them', () => {
+  const root = drawn("\\[ \\sqrt{1 + y'^2} + f''(x) \\]").querySelector('msqrt msup')!
+  expect(root.children[0].textContent).toBe('y')
+  expect(root.children[1].textContent).toBe('′2')
+  expect(drawn("\\(y'\\)").querySelector('msup')?.textContent).toBe('y′')
+})
+
+it('draws the index of a root', () => {
+  const root = drawn('\\[ \\sqrt[n]{x} \\]').querySelector('mroot')!
+  expect(root.children[0].textContent).toBe('x')
+  expect(root.children[1].textContent).toBe('n')
+})
+
+it('reads a formula opening that never closes as words, and goes on', () => {
+  const dollars = drawn('$$$ saved each month\n\n## Next\n- item')
+  expect(dollars.querySelector('math')).toBeNull()
+  expect(dollars.querySelector('p')?.textContent).toBe('$$$ saved each month')
+  expect(dollars.querySelector('h4')?.textContent).toBe('Next')
+  expect(dollars.querySelector('li')?.textContent).toBe('item')
+
+  const fenced = drawn('Here:\n\\[ x^2\n```\nlet total = 1\n```\nthen \\] after')
+  expect(fenced.querySelector('math')).toBeNull()
+  expect(fenced.querySelector('pre')?.textContent).toBe('let total = 1')
+})
+
+it('wraps an inline formula with a table so its cells can be aligned', () => {
+  const formula = drawn('So \\(f = \\begin{cases} 1 & x > 0 \\\\ 0 & x \\le 0 \\end{cases}\\) holds.').querySelector(
+    'math',
+  )!
+  expect(formula.getAttribute('display')).toBe('inline')
+  expect(formula.parentElement?.tagName).toBe('SPAN')
+  expect(formula.querySelectorAll('mtd')).toHaveLength(4)
+})
