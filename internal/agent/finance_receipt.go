@@ -392,6 +392,98 @@ func receiptMatchCandidates(tx db.Transaction, agentId string, receipt *models.F
 	return finance.ProposeReceiptMatches(receipt, financeTransactions, accountMaskByFinanceAccountId, coverageByFinanceTransactionId), nil
 }
 
+// matchWaitingReceipts matches the receipts recorded before their charge
+// arrived, when a sync or a statement import brings it: each receipt
+// matched to nothing whose day of purchase the new charges could be of is
+// weighed again by the same rule as when it was recorded, over every
+// charge of its window. Only a charge among insertedFinanceTransactionIds
+// is matched, so a match the person took off is never put back; anything
+// less sure stays with the person. It answers how many it matched.
+func matchWaitingReceipts(tx db.Transaction, agentId string, insertedFinanceTransactionIds []string) (int, error) {
+	if len(insertedFinanceTransactionIds) == 0 {
+		return 0, nil
+	}
+	waiting, err := tx.ListFinanceReceipts(agentId, &db.FinanceReceiptFilter{IsUnmatched: true, Limit: 1})
+	if err != nil || len(waiting.FinanceReceipts) == 0 {
+		return 0, err
+	}
+	isInserted := map[string]bool{}
+	var earliestPostedOn, latestPostedOn string
+	for _, financeTransactionId := range insertedFinanceTransactionIds {
+		financeTransaction, err := tx.GetFinanceTransaction(agentId, financeTransactionId)
+		if err != nil {
+			return 0, err
+		}
+		if financeTransaction == nil || financeTransaction.PostedOn == "" {
+			continue
+		}
+		isInserted[financeTransaction.ID] = true
+		if earliestPostedOn == "" || financeTransaction.PostedOn < earliestPostedOn {
+			earliestPostedOn = financeTransaction.PostedOn
+		}
+		if latestPostedOn == "" || financeTransaction.PostedOn > latestPostedOn {
+			latestPostedOn = financeTransaction.PostedOn
+		}
+	}
+	if len(isInserted) == 0 {
+		return 0, nil
+	}
+	earliest, err := time.Parse(time.DateOnly, earliestPostedOn)
+	if err != nil {
+		return 0, err
+	}
+	latest, err := time.Parse(time.DateOnly, latestPostedOn)
+	if err != nil {
+		return 0, err
+	}
+	// A charge is a candidate from ReceiptMatchDaysBefore days before the
+	// day of purchase to ReceiptMatchDaysAfter after, so these are the
+	// days of purchase the new charges can explain.
+	filter := &db.FinanceReceiptFilter{
+		IsUnmatched: true, Limit: db.FinanceReceiptLimitMost,
+		From: earliest.AddDate(0, 0, -finance.ReceiptMatchDaysAfter).Format(time.DateOnly),
+		To:   latest.AddDate(0, 0, finance.ReceiptMatchDaysBefore).Format(time.DateOnly),
+	}
+	var receipts []*models.FinanceReceipt
+	for {
+		page, err := tx.ListFinanceReceipts(agentId, filter)
+		if err != nil {
+			return 0, err
+		}
+		receipts = append(receipts, page.FinanceReceipts...)
+		if page.NextCursor == "" {
+			break
+		}
+		filter.After = page.NextCursor
+	}
+	matchedCount := 0
+	for _, receipt := range receipts {
+		candidates, err := receiptMatchCandidates(tx, agentId, receipt)
+		if err != nil {
+			return matchedCount, err
+		}
+		for _, candidate := range candidates {
+			if !candidate.IsAutomatic || !isInserted[candidate.FinanceTransactionID] {
+				continue
+			}
+			isWritten, err := tx.PutFinanceReceiptMatch(agentId, &models.FinanceReceiptMatch{
+				ReceiptID: receipt.ID, FinanceTransactionID: candidate.FinanceTransactionID, MatchedAmount: candidate.MatchedAmount,
+				ReceiptMatchSource: models.ReceiptMatchSourceReceiptMatcher, MatchConfidence: candidate.MatchConfidence,
+			})
+			switch {
+			case err == nil && isWritten:
+				matchedCount++
+			case err == nil, isReceiptMatchRefusal(err):
+				// The person matched it in between, or another receipt took
+				// the charge: theirs to judge.
+			default:
+				return matchedCount, err
+			}
+		}
+	}
+	return matchedCount, nil
+}
+
 // ProposeReceiptMatches is the charges a stored receipt could explain, the
 // likeliest first, writing nothing.
 func (self *Agent) ProposeReceiptMatches(ctx context.Context, agentRow *models.Agent, receiptId string) ([]finance.ReceiptMatchCandidate, error) {

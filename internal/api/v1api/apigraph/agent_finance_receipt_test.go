@@ -435,3 +435,67 @@ func TestDeletingAConversationKeepsAReceiptsPhoto(test *testing.T) {
 		}
 	})
 }
+
+// A photo the person sends in a conversation is a receipt's source by the
+// id the conversation names it with: the agent records from that upload
+// without asking for it again. Another person's upload is not found,
+// whoever names its id.
+func TestRecordReceiptFromAPhotoSentInAConversation(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	_, _, transactions := fixture.seedFinanceSource(test)
+	grocer := transactions[0]
+	if grocer.Description != "CORNER GROCER 0412" {
+		grocer = transactions[1]
+	}
+	var photo, strangersPhoto *models.AgentAttachment
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: fixture.ownerAgent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if photo, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: fixture.ownerAgent.ID, Name: "photo.jpeg", ContentType: "image/jpeg", Size: 4}); err != nil {
+			test.Fatal(err)
+		}
+		if err := tx.ClaimAgentAttachments([]string{photo.ID}, conversation.ID, "message-invented"); err != nil {
+			test.Fatal(err)
+		}
+		strangersAgent, err := tx.GetAgentByUser(fixture.stranger.ID)
+		if err != nil || strangersAgent == nil {
+			test.Fatalf("GetAgentByUser: %v %v", strangersAgent, err)
+		}
+		if strangersPhoto, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: strangersAgent.ID, Name: "photo.jpeg", ContentType: "image/jpeg", Size: 4}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	fromPhoto := func(attachmentId string) RecordReceiptArguments {
+		arguments := inventedCornerGrocerReceipt()
+		arguments.GmailMessageID, arguments.AgentAttachmentID = "", attachmentId
+		return arguments
+	}
+	fixture.asAgent(test, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.RecordReceipt(ctx, fromPhoto(strangersPhoto.ID)); !errors.Is(err, api.ErrNotFound) {
+			test.Fatalf("another person's upload is not found: %v", err)
+		}
+		if _, err := fixture.resolver.RecordReceipt(ctx, fromPhoto("")); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Fatalf("a receipt from nowhere is refused: %v", err)
+		}
+	})
+	fixture.asAgent(test, func(ctx context.Context, tx db.Transaction) {
+		recorded, err := fixture.resolver.RecordReceipt(ctx, fromPhoto(photo.ID))
+		if err != nil {
+			test.Fatalf("RecordReceipt from the conversation's photo: %s", err)
+		}
+		stored := recorded.FinanceReceipt
+		if stored.ReceiptSourceKind != models.ReceiptSourceKindAttachment || stored.AgentAttachmentID != photo.ID {
+			test.Fatalf("the receipt names the photo it was read from: %+v", stored)
+		}
+		if len(stored.ReceiptMatches) != 1 || stored.ReceiptMatches[0].FinanceTransactionID != grocer.ID {
+			test.Fatalf("it is matched to the charge: %+v", stored.ReceiptMatches)
+		}
+	})
+	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.RecordReceipt(ctx, fromPhoto(photo.ID)); !errors.Is(err, api.ErrNotFound) {
+			test.Fatalf("the owner's photo is not found for another person: %v", err)
+		}
+	})
+}

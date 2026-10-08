@@ -213,6 +213,12 @@ type FinanceSyncApplied struct {
 	// provider category changed under a spending category the person did
 	// not choose.
 	FinanceTransactionIDsToCategorize []string
+
+	// InsertedFinanceTransactionIDs are the finance transactions seen for
+	// the first time, pending or posted, other than a posted one that
+	// became of a pending one already stored: receipts recorded before
+	// their charge arrived are matched against these.
+	InsertedFinanceTransactionIDs []string
 }
 
 // FinanceTransactionFilter narrows a listing of finance transactions.
@@ -889,7 +895,7 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 	isNewerBalanceKept := providerKind == string(finance.ProviderKindStatement)
 
 	applied := &FinanceSyncApplied{
-		InsertedFinanceAccountIDs: []string{}, CreatedAssetIDs: []string{}, FinanceTransactionIDsToCategorize: []string{},
+		InsertedFinanceAccountIDs: []string{}, CreatedAssetIDs: []string{}, FinanceTransactionIDsToCategorize: []string{}, InsertedFinanceTransactionIDs: []string{},
 	}
 	now := time.Now()
 
@@ -973,7 +979,8 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		}
 		// Before the pending one is removed below: Plaid names it on the
 		// posted one it became, in the same sync that removes it.
-		if added.PendingProviderTransactionID != "" && added.PendingProviderTransactionID != added.ProviderTransactionID {
+		isOfPending := added.PendingProviderTransactionID != "" && added.PendingProviderTransactionID != added.ProviderTransactionID
+		if isOfPending {
 			if err := self.carryPendingDecisions(agentId, sourceId, financeAccountId, added.ProviderTransactionID, added.PendingProviderTransactionID, now); err != nil {
 				return nil, err
 			}
@@ -988,6 +995,11 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		isInserted := written.CreatedAt.Equal(written.ModifiedAt)
 		if isInserted {
 			applied.InsertedTransactionCount++
+			// One that became of a pending charge brought that charge's
+			// receipt matches with it, or the person took them off.
+			if !isOfPending {
+				applied.InsertedFinanceTransactionIDs = append(applied.InsertedFinanceTransactionIDs, written.ID)
+			}
 		}
 		if !written.IsPending && isInserted {
 			insertedPostedIdsByFinanceAccountId[financeAccountId] = append(insertedPostedIdsByFinanceAccountId[financeAccountId], written.ID)

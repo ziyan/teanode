@@ -87,13 +87,19 @@ func ExtractAttachmentText(name, contentType string, content []byte) string {
 	return text
 }
 
-// describeAttachment is a file in a line: name, type and size.
+// describeAttachment is a file in a line: name, type, size and the id a
+// tool takes it by (the finance tool records a receipt photographed in
+// it as agent_attachment_id), so the model never has to ask for the file
+// again to act on it.
 func describeAttachment(attachment *models.AgentAttachment) string {
 	kind := attachment.ContentType
 	if kind == "" {
 		kind = "unknown type"
 	}
-	return fmt.Sprintf("%s (%s, %s)", attachment.Name, kind, formatBytes(attachment.Size))
+	if attachment.ID == "" {
+		return fmt.Sprintf("%s (%s, %s)", attachment.Name, kind, formatBytes(attachment.Size))
+	}
+	return fmt.Sprintf("%s (%s, %s, agent_attachment_id %s)", attachment.Name, kind, formatBytes(attachment.Size), attachment.ID)
 }
 
 func formatBytes(size int64) string {
@@ -201,7 +207,7 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 			images = append(images, llm.ContentPart{Type: "image", MediaType: attachment.ContentType, Data: content})
 			blocks = append(blocks, fmt.Sprintf("[picture attached: %s]", describeAttachment(attachment)))
 		case attachment.Text != "":
-			blocks = append(blocks, fmt.Sprintf("<attachment name=%q type=%q>\n%s\n</attachment>", attachment.Name, attachment.ContentType, attachment.Text))
+			blocks = append(blocks, fmt.Sprintf("<attachment name=%q type=%q agent_attachment_id=%q>\n%s\n</attachment>", attachment.Name, attachment.ContentType, attachment.ID, attachment.Text))
 		default:
 			named = append(named, *attachment)
 		}

@@ -32,7 +32,9 @@ func TestExtractAttachmentTextReadsTextOnly(t *testing.T) {
 
 // The turn the model is given: references first, the words, a text file
 // read out, a picture as an image part, and a video named with a line
-// saying it cannot be opened. Earlier turns name every file.
+// saying it cannot be opened. Earlier turns name every file. Every file
+// carries its agent_attachment_id, which a tool takes it by: a receipt
+// photographed in the chat is recorded from that upload.
 func TestUserTurnCarriesWhatTheModelCanRead(t *testing.T) {
 	store := &fakeFiles{files: map[string][]byte{"pic": {0x89, 'P', 'N', 'G'}}}
 	attachments := []*models.AgentAttachment{
@@ -42,7 +44,7 @@ func TestUserTurnCarriesWhatTheModelCanRead(t *testing.T) {
 	}
 	references := []models.AgentReference{{ItemID: "item1", ThreadID: "thread1", Subject: "Thursday?", From: "maria@example.net"}}
 	message := userTurn(context.Background(), store, "What do you make of these?", attachments, nil, references)
-	for _, want := range []string{"<references>", "item_id item1", `subject "Thursday?"`, "What do you make of these?", `<attachment name="notes.txt"`, "hello", "clip.mp4 (video/mp4, 1.0 MB)", "cannot open these kinds of file", "[picture attached: boat.png"} {
+	for _, want := range []string{"<references>", "item_id item1", `subject "Thursday?"`, "What do you make of these?", `<attachment name="notes.txt" type="text/plain" agent_attachment_id="txt">`, "hello", "clip.mp4 (video/mp4, 1.0 MB, agent_attachment_id vid)", "cannot open these kinds of file", "[picture attached: boat.png (image/png, 4 bytes, agent_attachment_id pic)]"} {
 		if !strings.Contains(message.Content, want) {
 			t.Fatalf("the turn lacks %q:\n%s", want, message.Content)
 		}
@@ -59,7 +61,7 @@ func TestUserTurnCarriesWhatTheModelCanRead(t *testing.T) {
 		stored.Attachments = append(stored.Attachments, *attachment)
 	}
 	history := historyTurn(stored)
-	for _, want := range []string{"<references>", "<attachments>", "boat.png (image/png, 4 bytes)", "notes.txt", "clip.mp4"} {
+	for _, want := range []string{"<references>", "<attachments>", "boat.png (image/png, 4 bytes, agent_attachment_id pic)", "notes.txt (text/plain, 5 bytes, agent_attachment_id txt)", "clip.mp4 (video/mp4, 1.0 MB, agent_attachment_id vid)"} {
 		if !strings.Contains(history, want) {
 			t.Fatalf("the history turn lacks %q:\n%s", want, history)
 		}
