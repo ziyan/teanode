@@ -573,10 +573,10 @@ export function HerdrSessionsCard() {
             <table className="herdr-sessions">
               <thead>
                 <tr>
-                  <th>{t('herdr.computer')}</th>
                   <th>{t('herdr.pane')}</th>
-                  <th>{t('herdr.agent')}</th>
                   <th>{t('herdr.stateHeading')}</th>
+                  <th>{t('herdr.agent')}</th>
+                  <th>{t('herdr.computer')}</th>
                   <th>{t('herdr.directory')}</th>
                   <th>{t('herdr.paneTitle')}</th>
                 </tr>
@@ -584,7 +584,6 @@ export function HerdrSessionsCard() {
               <tbody>
                 {data.sessions.map((session) => (
                   <tr key={`${session.computer}/${session.paneId}`}>
-                    <td>{session.computer}</td>
                     <td>
                       <button
                         /* link-button: names a session in a list, which opens it in place */
@@ -595,10 +594,11 @@ export function HerdrSessionsCard() {
                         {session.paneId}
                       </button>
                     </td>
-                    <td>{codingAgentName(session.codingAgentKind)}</td>
                     <td>
                       <HerdrStateTag session={session} />
                     </td>
+                    <td>{codingAgentName(session.codingAgentKind)}</td>
+                    <td>{session.computer}</td>
                     <td className="mono">{session.workingDirectory}</td>
                     <td>{session.paneTitle}</td>
                   </tr>

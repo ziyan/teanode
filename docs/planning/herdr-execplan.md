@@ -32,7 +32,7 @@ To see it working, on a computer running `teanode computer` with herdr running a
 - [x] (2026-10-08) Milestone 2: list, read, screen, send, wait, answer, watch and setup on the tool, the API, the dashboard and the command line; `TestHerdrParity` checks all four.
 - [x] (2026-10-08) Milestone 3: questions written into the main conversation under `[herdr question]` (drawer card with buttons, chat relay); watches wake the conversation under `[herdr session]`.
 - [x] (2026-10-08) Milestone 4: `setup` puts reporting hooks into Claude Code's settings; Codex needs none.
-- [ ] Milestone 5: decision record and docs written; code review, deploy and the end-to-end check remain.
+- [x] (2026-10-08) Milestone 5: decision record and docs; three review passes, each fixed; deployed to the server with the computer program on the development computer; end-to-end check in a scratch herdr workspace (below).
 
 ## Surprises & Discoveries
 
@@ -190,7 +190,16 @@ To see it working, on a computer running `teanode computer` with herdr running a
 
 ## Outcomes & Retrospective
 
-Milestones 0 to 4 are complete; the outcome is recorded after the end-to-end check.
+All milestones are done. Checked end to end against the deployed server, in a scratch herdr workspace with a Claude Code session:
+
+- The command line answered Claude Code's folder trust dialog (a form without numbers, answered with the arrows), typed an instruction, and listed the question it caused.
+- The question reached the drawer as a card under the agent's words; a tap on a phone-width page answered it in the pane, and the card turned to answered.
+- The agent's tool typed an instruction, waited, listed the question and answered it with the option the person named, with no confirmation card; and a watch woke its conversation with the session's last turns when a twenty-second task ended.
+- The Herdr sessions card was checked on desktop and phone, in light and dark.
+
+What the live run found that the tests had not: the socket's spelling `recent_unwrapped` and its refusals without an id; that a read given `lines` answers with nothing; that check-in lines are hidden unless working notes are shown, so the card belongs under the agent's words; that a tab out of sight never made its first look; and that a restart told waiting questions again. Each is fixed and noted above.
+
+Left for later: Codex's older "alt+↑ to answer" question is answered by typing the reply as the next message, which was not tried against that version.
 
 ## Context and Orientation
 

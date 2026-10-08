@@ -13432,8 +13432,16 @@ button.idea-history-title {
   resize: vertical;
 }
 
+/* One line a session, the pane first and how it stands beside it: on a
+   phone those two are what is in view before the table scrolls. */
 .herdr-sessions td {
   white-space: nowrap;
+  vertical-align: middle;
+}
+
+.herdr-sessions td > button.link {
+  padding: 0;
+  font: inherit;
 }
 
 .herdr-hooks table {
