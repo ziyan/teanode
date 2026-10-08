@@ -63,10 +63,17 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 		}
 	}
 
+	startedAt := time.Now()
 	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)
+	retrievedAt := time.Now()
 	self.writeRecalled(ctx, nodes, facts, sections)
+	writtenAt := time.Now()
 	self.recallLessons(ctx, words)
+	lessonsAt := time.Now()
 	self.recallFromKnowledge(ctx, words)
+	log.Infof("recall for %q: graph %s, writing %s, lessons %s, knowledge %s", self.settings.Owner.Username,
+		retrievedAt.Sub(startedAt).Round(time.Millisecond), writtenAt.Sub(retrievedAt).Round(time.Millisecond),
+		lessonsAt.Sub(writtenAt).Round(time.Millisecond), time.Since(lessonsAt).Round(time.Millisecond))
 }
 
 // recallLinkedPages is how many pages linked to the top page one hop
