@@ -80,6 +80,9 @@ const (
 	herdrWaitMost   = 600 * time.Second
 	herdrWaitEvery  = 2 * time.Second
 	herdrWaitUnseen = 10 * time.Second
+	// herdrOpenSettle is how long open waits for herdr to recognize the
+	// coding agent it started.
+	herdrOpenSettle = 15 * time.Second
 	// herdrWatchUnseen is how long a watched session that was never seen
 	// working is given before it is said to have finished: a turn shorter
 	// than a poll is not seen at all.
@@ -1031,7 +1034,20 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if err != nil && !isAsking {
 		return nil, fmt.Errorf("cannot start %s in %s: %w", herdrAgentNames[kind], directory, err)
 	}
-	return self.session(ctx, paneId)
+	// Herdr names the coding agent in a pane a moment after it starts;
+	// answered before, the session would read as nobody's, in no state.
+	deadline := time.Now().Add(herdrOpenSettle)
+	for {
+		session, err := self.session(ctx, paneId)
+		if (err == nil && session.CodingAgentKind != "") || time.Now().After(deadline) {
+			return session, err
+		}
+		select {
+		case <-ctx.Done():
+			return session, nil
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // close ends a session's coding agent and its pane. Not while it works:
