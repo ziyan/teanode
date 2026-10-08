@@ -12,6 +12,7 @@ import (
 type AgentHerdrSession struct {
 	Computer          string              `json:"computer"`
 	PaneID            string              `json:"paneId"`
+	PaneName          string              `json:"paneName"`
 	CodingAgentKind   string              `json:"codingAgentKind"`
 	CodingSessionID   string              `json:"codingSessionId"`
 	HerdrSessionState string              `json:"herdrSessionState"`
@@ -93,7 +94,7 @@ type AgentHerdrSetup struct {
 
 // HerdrSessionFields are a session's fields, with its question, for every
 // document that answers with one; the dashboard asks for the same.
-const HerdrSessionFields = `computer paneId codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
+const HerdrSessionFields = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
 	question { questionFingerprint herdrQuestionKind questionText isMultipleChoice isFromTranscript options { optionNumber optionLabel optionDescription herdrOptionKind } }`
 
 // The documents the command line sends, exported so a test can check them

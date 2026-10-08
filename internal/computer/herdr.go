@@ -95,7 +95,13 @@ const (
 
 // HerdrSession is one coding session in one of herdr's panes.
 type HerdrSession struct {
-	PaneID            string `json:"paneId"`
+	PaneID string `json:"paneId"`
+	// PaneName is the pane as the person finds it in herdr: its
+	// workspace's label, its tab's when the workspace has several, and the
+	// agent's name, or which agent it is, when a tab holds more than one.
+	// The id says nothing to a person; this is what is shown, and either
+	// names a pane to every action.
+	PaneName          string `json:"paneName"`
 	CodingAgentKind   string `json:"codingAgentKind"`
 	CodingSessionID   string `json:"codingSessionId"`
 	HerdrSessionState string `json:"herdrSessionState"`
@@ -415,11 +421,19 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 		return nil, err
 	}
 	reports := readHookReports(self.home)
+	names := self.paneNames(ctx, agents)
 	observed := make([]*HerdrSession, 0, len(agents))
 	for _, agent := range agents {
-		observed = append(observed, self.observe(ctx, agent, reports))
+		session := self.observe(ctx, agent, reports)
+		session.PaneName = names[agent.PaneID]
+		observed = append(observed, session)
 	}
-	sort.Slice(observed, func(left, right int) bool { return observed[left].PaneID < observed[right].PaneID })
+	sort.Slice(observed, func(left, right int) bool {
+		if observed[left].PaneName != observed[right].PaneName {
+			return observed[left].PaneName < observed[right].PaneName
+		}
+		return observed[left].PaneID < observed[right].PaneID
+	})
 
 	self.mutex.Lock()
 	var told []*HerdrEvent
@@ -624,21 +638,118 @@ func isWorkingOnScreen(screen string) bool {
 }
 
 // session looks at one pane now.
+// A pane is named by its id or by its name, which is matched whatever its
+// case; a name two panes share names neither.
 func (self *Herdr) session(ctx context.Context, paneId string) (*HerdrSession, error) {
 	paneId = strings.TrimSpace(paneId)
 	if paneId == "" {
-		return nil, errors.New("which pane? say paneId, as list gives it")
+		return nil, errors.New("which pane? name it as list gives it")
 	}
 	sessions, err := self.refresh(ctx)
 	if err != nil {
 		return nil, err
 	}
+	var named []*HerdrSession
 	for _, session := range sessions {
 		if session.PaneID == paneId {
 			return session, nil
 		}
+		if strings.EqualFold(session.PaneName, paneId) {
+			named = append(named, session)
+		}
 	}
-	return nil, fmt.Errorf("no coding agent is running in pane %s; list says which panes have one", paneId)
+	switch len(named) {
+	case 1:
+		return named[0], nil
+	case 0:
+		return nil, fmt.Errorf("no coding agent is running in %q; list says which panes have one", paneId)
+	}
+	ids := make([]string, 0, len(named))
+	for _, session := range named {
+		ids = append(ids, session.PaneID)
+	}
+	return nil, fmt.Errorf("%d panes are called %q; name one by its id: %s", len(named), paneId, strings.Join(ids, ", "))
+}
+
+// herdrAgentNames are what the coding agents are called to a person.
+var herdrAgentNames = map[string]string{CodingAgentKindClaude: "Claude Code", CodingAgentKindCodex: "Codex"}
+
+// paneNames names each pane with a coding agent in it as the person finds
+// it in herdr. Without herdr's labels, a pane is named by its id.
+func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[string]string {
+	workspaces, workspaceErr := self.client.listWorkspaces(ctx)
+	tabs, tabErr := self.client.listTabs(ctx)
+	names := map[string]string{}
+	if workspaceErr != nil || tabErr != nil {
+		for _, agent := range agents {
+			names[agent.PaneID] = agent.PaneID
+		}
+		return names
+	}
+	workspaceOf := map[string]*herdrWorkspace{}
+	for _, workspace := range workspaces {
+		workspaceOf[workspace.WorkspaceID] = workspace
+	}
+	tabOf := map[string]*herdrTab{}
+	for _, tab := range tabs {
+		tabOf[tab.TabID] = tab
+	}
+	// The agents of each tab, in pane order, to tell several apart.
+	agentsOfTab := map[string][]*herdrAgent{}
+	sorted := slices.Clone(agents)
+	sort.Slice(sorted, func(left, right int) bool { return sorted[left].PaneID < sorted[right].PaneID })
+	for _, agent := range sorted {
+		agentsOfTab[agent.TabID] = append(agentsOfTab[agent.TabID], agent)
+	}
+	for _, agent := range sorted {
+		workspace := workspaceOf[agent.WorkspaceID]
+		if workspace == nil || strings.TrimSpace(workspace.Label) == "" {
+			names[agent.PaneID] = agent.PaneID
+			continue
+		}
+		parts := []string{strings.TrimSpace(workspace.Label)}
+		if tab := tabOf[agent.TabID]; tab != nil && workspace.TabCount > 1 {
+			label := strings.TrimSpace(tab.Label)
+			if _, err := strconv.Atoi(label); err == nil || label == "" {
+				label = "tab " + label
+			}
+			parts = append(parts, strings.TrimSpace(label))
+		}
+		inTab := agentsOfTab[agent.TabID]
+		switch {
+		case strings.TrimSpace(agent.Name) != "":
+			parts = append(parts, strings.TrimSpace(agent.Name))
+		case len(inTab) > 1:
+			name := herdrAgentNames[agent.Agent]
+			if name == "" {
+				name = agent.Agent
+			}
+			sameKind, ordinal := 0, 0
+			// Those with a name of their own are told apart by it.
+			for _, other := range inTab {
+				if other.Agent == agent.Agent && strings.TrimSpace(other.Name) == "" {
+					sameKind++
+					if other.PaneID == agent.PaneID {
+						ordinal = sameKind
+					}
+				}
+			}
+			if sameKind > 1 {
+				name += " " + strconv.Itoa(ordinal)
+			}
+			parts = append(parts, name)
+		}
+		names[agent.PaneID] = strings.Join(parts, " › ")
+	}
+	return names
+}
+
+// named is how a session is called in what is said about it.
+func (self *HerdrSession) named() string {
+	if self.PaneName != "" && self.PaneName != self.PaneID {
+		return self.PaneName + " (" + self.PaneID + ")"
+	}
+	return self.PaneID
 }
 
 // RunHerdr does one herdr action.
@@ -679,7 +790,7 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 		return nil, err
 	}
 	if session.TranscriptPath == "" {
-		return nil, fmt.Errorf("pane %s has no history file to read yet; screen shows what it shows", session.PaneID)
+		return nil, fmt.Errorf("%s has no history file to read yet; screen shows what it shows", session.named())
 	}
 	turnCount := arguments.TurnCount
 	if turnCount <= 0 {
@@ -687,7 +798,7 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 	}
 	turns, isTruncated, err := readTranscriptTail(session.TranscriptPath, session.CodingAgentKind, min(turnCount, herdrMostTurnCount))
 	if err != nil {
-		return nil, fmt.Errorf("cannot read the history of pane %s: %w", session.PaneID, err)
+		return nil, fmt.Errorf("cannot read the history of %s: %w", session.named(), err)
 	}
 	return &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}, nil
 }
@@ -728,14 +839,14 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	}
 	switch {
 	case session.HerdrSessionState == HerdrSessionStateAsking:
-		return nil, fmt.Errorf("pane %s is asking a question; answer it first", session.PaneID)
+		return nil, fmt.Errorf("%s is asking a question; answer it first", session.named())
 	case session.HerdrSessionState == HerdrSessionStateWorking && !arguments.ShouldQueue:
-		return nil, fmt.Errorf("pane %s is working; wait for it, or queue the text to be read when it is done", session.PaneID)
+		return nil, fmt.Errorf("%s is working; wait for it, or queue the text to be read when it is done", session.named())
 	case session.HerdrAgentStatus == "blocked":
-		return nil, fmt.Errorf("pane %s shows something waiting for an answer that was not recognized; look at its screen", session.PaneID)
+		return nil, fmt.Errorf("%s shows something waiting for an answer that was not recognized; look at its screen", session.named())
 	}
 	if err := self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": arguments.Text}, nil); err != nil {
-		return nil, fmt.Errorf("the text may not have been typed into pane %s; look at its screen before sending again: %w", session.PaneID, err)
+		return nil, fmt.Errorf("the text may not have been typed into %s; look at its screen before sending again: %w", session.named(), err)
 	}
 	return &HerdrSendResult{HerdrSession: session, IsSent: true}, nil
 }
@@ -823,13 +934,13 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 	}
 	question := session.Question
 	if question == nil {
-		return nil, fmt.Errorf("pane %s is not asking anything now; this question was already answered or has changed", session.PaneID)
+		return nil, fmt.Errorf("%s is not asking anything now; this question was already answered or has changed", session.named())
 	}
 	if hasControlCharacters(arguments.FreeText, false) {
 		return nil, errors.New("the answer holds control characters, which would press keys in the form rather than type; send words")
 	}
 	if strings.TrimSpace(arguments.QuestionFingerprint) != question.QuestionFingerprint {
-		return nil, fmt.Errorf("this question was already answered or has changed; pane %s now asks %q", session.PaneID, firstCharacters(question.QuestionText, 120))
+		return nil, fmt.Errorf("this question was already answered or has changed; %s now asks %q", session.named(), firstCharacters(question.QuestionText, 120))
 	}
 	if len(arguments.OptionLabels) > 0 {
 		if len(arguments.OptionLabels) != len(arguments.OptionNumbers) {
@@ -839,7 +950,7 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 			if !slices.ContainsFunc(question.Options, func(option HerdrQuestionOption) bool {
 				return option.OptionNumber == number && option.OptionLabel == arguments.OptionLabels[index]
 			}) {
-				return nil, fmt.Errorf("option %d of the question in pane %s is not %q; list it again", number, session.PaneID, arguments.OptionLabels[index])
+				return nil, fmt.Errorf("option %d of the question in %s is not %q; list it again", number, session.named(), arguments.OptionLabels[index])
 			}
 		}
 	}
@@ -857,7 +968,7 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 			err = self.client.sendKeys(ctx, session.PaneID, step.keys)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("answering pane %s stopped partway; look at its screen: %w", session.PaneID, err)
+			return nil, fmt.Errorf("answering %s stopped partway; look at its screen: %w", session.named(), err)
 		}
 	}
 	time.Sleep(herdrAnswerSettle)

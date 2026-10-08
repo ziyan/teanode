@@ -526,6 +526,15 @@ func (self *Agent) writeHerdrQuestion(agentId, checkIn, said string) error {
 	return nil
 }
 
+// paneNameOf is a session's pane as the person knows it in herdr, or its
+// id where herdr gave it no name.
+func paneNameOf(session *computer.HerdrSession) string {
+	if name := strings.TrimSpace(session.PaneName); name != "" {
+		return name
+	}
+	return "pane " + session.PaneID
+}
+
 // codingAgentName is what a coding agent is called to the person.
 func codingAgentName(codingAgentKind string) string {
 	switch codingAgentKind {
@@ -549,8 +558,8 @@ func herdrQuestionCheckIn(computerName string, session *computer.HerdrSession) s
 		fmt.Fprintf(&asked, "%d. %s\n", option.OptionNumber, option.OptionLabel)
 	}
 	return fmt.Sprintf("%s %s %s %s\n", models.HerdrQuestionMarker, computerName, session.PaneID, question.QuestionFingerprint) +
-		fmt.Sprintf("Nobody asked for this: the %s session in pane %s on %s (%s) stopped to ask the person something, and you showed it to them, unasked. What it asked:\n",
-			codingAgentName(session.CodingAgentKind), session.PaneID, computerName, session.WorkingDirectory) +
+		fmt.Sprintf("Nobody asked for this: the %s session in %s (pane %s) on %s (%s) stopped to ask the person something, and you showed it to them, unasked. What it asked:\n",
+			codingAgentName(session.CodingAgentKind), paneNameOf(session), session.PaneID, computerName, session.WorkingDirectory) +
 		fenced(strings.TrimSpace(asked.String())) + "\n" +
 		fmt.Sprintf("If they answer, pass their choice on with the herdr tool's answer (computer %q, pane %q, question_fingerprint %q), with option_numbers and option_labels for the options they chose, or free_text for what they said to type. Never choose for them.",
 			computerName, session.PaneID, question.QuestionFingerprint)
@@ -581,8 +590,8 @@ func herdrQuestionSaid(computerName string, session *computer.HerdrSession) stri
 	if title := strings.TrimSpace(session.PaneTitle); title != "" {
 		where = title + ", " + where
 	}
-	fmt.Fprintf(&said, "**%s** in pane %s on %s (%s) %s:\n\n", codingAgentName(session.CodingAgentKind),
-		markdownLinkBreaker.Replace(session.PaneID), markdownLinkBreaker.Replace(computerName), markdownLinkBreaker.Replace(where), what)
+	fmt.Fprintf(&said, "**%s** in %s on %s (%s) %s:\n\n", codingAgentName(session.CodingAgentKind),
+		markdownLinkBreaker.Replace(paneNameOf(session)), markdownLinkBreaker.Replace(computerName), markdownLinkBreaker.Replace(where), what)
 	for _, line := range strings.Split(question.QuestionText, "\n") {
 		said.WriteString("> " + markdownLinkBreaker.Replace(line) + "\n")
 	}
@@ -648,8 +657,8 @@ func herdrSettledMessage(builder *strings.Builder, settlings []*herdrSettling) {
 	for _, settling := range settlings {
 		session := settling.event.HerdrSession
 		builder.WriteString("\n")
-		fmt.Fprintf(builder, "%s computer: %s\npane: %s\ncoding agent: %s\ndirectory: %s\nstate: %s\n", models.HerdrSessionMarker,
-			settling.computer.name, session.PaneID, codingAgentName(session.CodingAgentKind), session.WorkingDirectory, session.HerdrSessionState)
+		fmt.Fprintf(builder, "%s computer: %s\npane: %s (%s)\ncoding agent: %s\ndirectory: %s\nstate: %s\n", models.HerdrSessionMarker,
+			settling.computer.name, paneNameOf(session), session.PaneID, codingAgentName(session.CodingAgentKind), session.WorkingDirectory, session.HerdrSessionState)
 		var said strings.Builder
 		if session.Question != nil {
 			fmt.Fprintf(&said, "It is asking: %s\n", session.Question.QuestionText)
@@ -670,7 +679,7 @@ func herdrSettledMessage(builder *strings.Builder, settlings []*herdrSettling) {
 func herdrSettledLine(settlings []*herdrSettling) string {
 	described := make([]string, 0, len(settlings))
 	for _, settling := range settlings {
-		described = append(described, fmt.Sprintf("pane %s on %s, %s", settling.event.HerdrSession.PaneID, settling.computer.name, settling.event.HerdrSession.HerdrSessionState))
+		described = append(described, fmt.Sprintf("%s on %s, %s", paneNameOf(settling.event.HerdrSession), settling.computer.name, settling.event.HerdrSession.HerdrSessionState))
 	}
 	return "Herdr sessions finished: " + strings.Join(described, "; ")
 }

@@ -62,11 +62,17 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "herdr", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
-				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is every session on every computer, with the state each is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, refused while it asks a question, and while it works unless should_queue; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together.",
+				// Its risk differs by action, which would leave an MCP client
+				// to assume the worst and ask at every call, with no way to
+				// say "always". What it does is look at, type into and
+				// answer the person's own coding sessions, on their own
+				// machines: nothing it does destroys, or reaches the world.
+				Annotations: tools.LocalWrite(),
+				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is every session on every computer, with the state each is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, refused while it asks a question, and while it works unless should_queue; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
 				Parameters: tools.Object(map[string]any{
 					"action":               tools.EnumProperty("what to do", herdrToolActions()...),
 					"computer":             tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
-					"pane":                 tools.StringProperty("the pane, as list gives it, such as w1:p2; every action but list and setup needs it"),
+					"pane":                 tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it"),
 					"turn_count":           tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
 					"line_count":           tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
 					"text":                 tools.StringProperty("send: what to type; enter is pressed after it"),

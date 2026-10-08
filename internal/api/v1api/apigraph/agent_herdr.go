@@ -137,8 +137,11 @@ type AgentHerdrListView struct {
 
 // AgentHerdrSessionView is one coding session in one pane.
 type AgentHerdrSessionView struct {
-	Computer        string `json:"computer"`
-	PaneID          string `json:"paneId"`
+	Computer string `json:"computer"`
+	PaneID   string `json:"paneId"`
+	// PaneName is the pane as the person finds it in herdr: workspace, tab
+	// and agent; every argument that takes paneId takes it too.
+	PaneName        string `json:"paneName"`
 	CodingAgentKind string `json:"codingAgentKind"`
 	CodingSessionID string `json:"codingSessionId"`
 	// HerdrSessionState is idle, working, asking or unknown, as the
@@ -381,7 +384,7 @@ func herdrSessionView(computerName string, session *computer.HerdrSession) *Agen
 		return nil
 	}
 	view := &AgentHerdrSessionView{
-		Computer: computerName, PaneID: session.PaneID, CodingAgentKind: session.CodingAgentKind, CodingSessionID: session.CodingSessionID,
+		Computer: computerName, PaneID: session.PaneID, PaneName: session.PaneName, CodingAgentKind: session.CodingAgentKind, CodingSessionID: session.CodingSessionID,
 		HerdrSessionState: session.HerdrSessionState, HerdrAgentStatus: session.HerdrAgentStatus, PaneTitle: session.PaneTitle,
 		WorkingDirectory: session.WorkingDirectory, TranscriptPath: session.TranscriptPath, IsWatched: session.IsWatched,
 	}

@@ -211,6 +211,11 @@ them: the `herdr` tool, the Herdr sessions card on the agent page, and
 in `HerdrActions` and checked by `TestHerdrParity`. The decision is
 `docs/decisions/20261008-the-agent-works-in-the-persons-herdr-sessions.md`.
 
+A pane is shown by the name the person finds it under in herdr: the
+workspace's label, the tab's when the workspace has several, and the agent's
+name, or which agent it is, when a tab holds more than one. Every action takes
+that name or the pane's id.
+
 The program speaks to herdr's socket (`~/.config/herdr/herdr.sock`) and looks
 at every pane every three seconds. It decides each session's state itself, in
 this order: a question recognized on the screen (or one Codex asked in its

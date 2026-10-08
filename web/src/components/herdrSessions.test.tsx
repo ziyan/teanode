@@ -33,6 +33,7 @@ it('names each document after the operation it calls', () => {
 const session: HerdrSession = {
   computer: 'laptop',
   paneId: 'w1:p2',
+  paneName: 'example › Claude Code',
   codingAgentKind: 'claude',
   codingSessionId: 'example',
   herdrSessionState: 'asking',

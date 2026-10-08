@@ -60,6 +60,42 @@ type herdrAgent struct {
 	} `json:"agent_session"`
 }
 
+// herdrWorkspace and herdrTab are where a pane is, in herdr's own names:
+// the labels the person gave them, which is how they find a pane.
+type herdrWorkspace struct {
+	WorkspaceID string `json:"workspace_id"`
+	Label       string `json:"label"`
+	TabCount    int    `json:"tab_count"`
+}
+
+type herdrTab struct {
+	TabID       string `json:"tab_id"`
+	WorkspaceID string `json:"workspace_id"`
+	Label       string `json:"label"`
+}
+
+// listWorkspaces is every workspace.
+func (self *herdrClient) listWorkspaces(ctx context.Context) ([]*herdrWorkspace, error) {
+	var result struct {
+		Workspaces []*herdrWorkspace `json:"workspaces"`
+	}
+	if err := self.call(ctx, "workspace.list", map[string]any{}, &result); err != nil {
+		return nil, err
+	}
+	return result.Workspaces, nil
+}
+
+// listTabs is every tab of every workspace.
+func (self *herdrClient) listTabs(ctx context.Context) ([]*herdrTab, error) {
+	var result struct {
+		Tabs []*herdrTab `json:"tabs"`
+	}
+	if err := self.call(ctx, "tab.list", map[string]any{}, &result); err != nil {
+		return nil, err
+	}
+	return result.Tabs, nil
+}
+
 // herdrError is herdr refusing a request, in its own words.
 type herdrError struct {
 	Code    string `json:"code"`

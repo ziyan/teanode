@@ -22,12 +22,14 @@ import (
 // fakeHerdr answers herdr's socket from what a test sets, and records what
 // it was asked to press and type.
 type fakeHerdr struct {
-	mutex    sync.Mutex
-	agents   []map[string]any
-	screens  map[string]string
-	pressed  []string
-	typed    []string
-	prompted []string
+	mutex      sync.Mutex
+	agents     []map[string]any
+	workspaces []map[string]any
+	tabs       []map[string]any
+	screens    map[string]string
+	pressed    []string
+	typed      []string
+	prompted   []string
 	// afterKeys, when set, changes the screens once keys are pressed.
 	afterKeys func(paneId string, keys []string)
 }
@@ -75,6 +77,10 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 	switch request.Method {
 	case "agent.list":
 		result = map[string]any{"type": "agent_list", "agents": self.agents}
+	case "workspace.list":
+		result = map[string]any{"type": "workspace_list", "workspaces": self.workspaces}
+	case "tab.list":
+		result = map[string]any{"type": "tab_list", "tabs": self.tabs}
 	case "agent.read":
 		result = map[string]any{"type": "pane_read", "read": map[string]any{"pane_id": target, "text": self.screens[target]}}
 	case "agent.send_keys":
@@ -700,5 +706,58 @@ func TestAWatchOutlivesARestartAndSaysWhenItsSessionFinished(t *testing.T) {
 	}
 	if again := NewHerdr(home); len(again.watches) != 0 {
 		t.Errorf("a watch told was kept: %+v", again.watches)
+	}
+}
+
+func TestAPaneIsNamedAsThePersonFindsItInHerdr(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	place := func(paneId, workspaceId, tabId, codingAgentKind, name string) {
+		fake.setAgent(paneId, codingAgentKind, "idle", "", readHerdrFixture(t, "claude-idle"))
+		fake.mutex.Lock()
+		agent := fake.agents[len(fake.agents)-1]
+		agent["workspace_id"], agent["tab_id"] = workspaceId, tabId
+		if name != "" {
+			agent["name"] = name
+		}
+		fake.mutex.Unlock()
+	}
+	fake.workspaces = []map[string]any{
+		{"workspace_id": "w1", "label": "website", "tab_count": 1},
+		{"workspace_id": "w2", "label": "parser", "tab_count": 2},
+	}
+	fake.tabs = []map[string]any{
+		{"tab_id": "w1:t1", "workspace_id": "w1", "label": "1"},
+		{"tab_id": "w2:t1", "workspace_id": "w2", "label": "1"},
+		{"tab_id": "w2:t2", "workspace_id": "w2", "label": "review"},
+	}
+	place("w1:p1", "w1", "w1:t1", CodingAgentKindClaude, "")
+	place("w2:p1", "w2", "w2:t1", CodingAgentKindClaude, "")
+	place("w2:p2", "w2", "w2:t2", CodingAgentKindClaude, "")
+	place("w2:p3", "w2", "w2:t2", CodingAgentKindCodex, "")
+	place("w2:p4", "w2", "w2:t2", CodingAgentKindClaude, "fixer")
+	herdr := NewHerdr(home)
+	names := map[string]string{}
+	for _, session := range listForTest(t, herdr) {
+		names[session.PaneID] = session.PaneName
+	}
+	want := map[string]string{
+		"w1:p1": "website",
+		"w2:p1": "parser › tab 1",
+		"w2:p2": "parser › review › Claude Code",
+		"w2:p3": "parser › review › Codex",
+		"w2:p4": "parser › review › fixer",
+	}
+	for paneId, name := range want {
+		if names[paneId] != name {
+			t.Errorf("%s: %q, want %q", paneId, names[paneId], name)
+		}
+	}
+	// Either names a pane.
+	if _, err := RunHerdr(context.Background(), herdr, "herdr_screen", &HerdrArguments{PaneID: "Parser › Review › Codex"}); err != nil {
+		t.Errorf("by name: %v", err)
+	}
+	if _, err := RunHerdr(context.Background(), herdr, "herdr_send", &HerdrArguments{PaneID: "website", Text: "go on"}); err != nil {
+		t.Errorf("send by name: %v", err)
 	}
 }

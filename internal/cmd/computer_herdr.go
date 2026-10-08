@@ -27,7 +27,8 @@ func newComputerHerdrCommand() *cli.Command {
 			"'read' prints its last turns, 'screen' what its pane shows, 'send' types into it,\n" +
 			"'wait' waits for it to finish, 'answer' answers its question, 'watch' wakes a\n" +
 			"conversation when it finishes, and 'setup' puts TeaNode's reporting hooks into\n" +
-			"Claude Code there. A pane is named by its computer and its id, such as w1:p2.",
+			"Claude Code there. A pane is named as list names it, by workspace, tab and agent\n" +
+			"(\"website › review\"), or by its id; --computer says which computer when several run herdr.",
 		Commands: []*cli.Command{
 			{
 				Name:   "list",
@@ -101,6 +102,16 @@ func newComputerHerdrCommand() *cli.Command {
 	}
 }
 
+// herdrPaneWords is a session's pane as the person knows it in herdr, on
+// its computer.
+func herdrPaneWords(session *client.AgentHerdrSession) string {
+	name := session.PaneName
+	if name == "" {
+		name = session.PaneID
+	}
+	return name + " on " + session.Computer
+}
+
 // herdrStateWords is a session's state as the list says it, and whether
 // it is watched.
 func herdrStateWords(session *client.AgentHerdrSession) string {
@@ -163,15 +174,19 @@ func runComputerHerdrList(ctx context.Context, command *cli.Command) error {
 		return nil
 	}
 	writer := tabwriter.NewWriter(command.Writer, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "COMPUTER\tPANE\tAGENT\tSTATE\tDIRECTORY\tTITLE")
+	_, _ = fmt.Fprintln(writer, "NAME\tSTATE\tAGENT\tCOMPUTER\tDIRECTORY\tTITLE\tPANE")
 	for _, session := range listed.Sessions {
-		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", session.Computer, session.PaneID, session.CodingAgentKind,
-			herdrStateWords(session), forTerminal(session.WorkingDirectory), forTerminal(session.PaneTitle))
+		name := session.PaneName
+		if name == "" {
+			name = session.PaneID
+		}
+		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", forTerminal(name), herdrStateWords(session), session.CodingAgentKind,
+			session.Computer, forTerminal(session.WorkingDirectory), forTerminal(session.PaneTitle), session.PaneID)
 	}
 	_ = writer.Flush()
 	for _, session := range listed.Sessions {
 		if session.Question != nil {
-			_, _ = fmt.Fprintf(command.Writer, "\n%s %s asks:\n", session.Computer, session.PaneID)
+			_, _ = fmt.Fprintf(command.Writer, "\n%s asks:\n", herdrPaneWords(session))
 			printHerdrQuestion(command, session.Question, "")
 		}
 	}
@@ -213,7 +228,7 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
 	}
 	session := read.HerdrSession
-	_, _ = fmt.Fprintf(command.Writer, "%s %s: %s\n", session.Computer, session.PaneID, herdrStateWords(session))
+	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", herdrPaneWords(session), herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
 	return nil
 }
@@ -255,7 +270,7 @@ func runComputerHerdrSend(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(session)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "typed into %s %s\n", session.Computer, session.PaneID)
+	_, _ = fmt.Fprintf(command.Writer, "typed into %s\n", herdrPaneWords(session))
 	return nil
 }
 
@@ -280,10 +295,10 @@ func runComputerHerdrWait(ctx context.Context, command *cli.Command) error {
 	}
 	session := waited.HerdrSession
 	if waited.IsTimedOut {
-		_, _ = fmt.Fprintf(command.Writer, "%s %s is still working\n", session.Computer, session.PaneID)
+		_, _ = fmt.Fprintf(command.Writer, "%s is still working\n", herdrPaneWords(session))
 		return nil
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s %s: %s\n", session.Computer, session.PaneID, herdrStateWords(session))
+	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", herdrPaneWords(session), herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
 	return nil
 }
@@ -319,7 +334,7 @@ func runComputerHerdrAnswer(ctx context.Context, command *cli.Command) error {
 		}
 		var asking []*client.AgentHerdrSession
 		for _, session := range listed.Sessions {
-			if session.PaneID == paneId && session.Question != nil {
+			if (session.PaneID == paneId || strings.EqualFold(session.PaneName, paneId)) && session.Question != nil {
 				asking = append(asking, session)
 			}
 		}
@@ -327,7 +342,7 @@ func runComputerHerdrAnswer(ctx context.Context, command *cli.Command) error {
 		case 0:
 			return usage("pane " + paneId + " is not asking anything")
 		case 1:
-			_, _ = fmt.Fprintf(command.Writer, "%s %s asks:\n", asking[0].Computer, asking[0].PaneID)
+			_, _ = fmt.Fprintf(command.Writer, "%s asks:\n", herdrPaneWords(asking[0]))
 			printHerdrQuestion(command, asking[0].Question, "")
 			return usage("answer it with --computer " + asking[0].Computer + " --fingerprint " + asking[0].Question.QuestionFingerprint)
 		}
@@ -342,10 +357,10 @@ func runComputerHerdrAnswer(ctx context.Context, command *cli.Command) error {
 	}
 	session := answered.HerdrSession
 	if !answered.IsAnswerAccepted {
-		_, _ = fmt.Fprintf(command.Writer, "pressed %s in %s %s, but the question is still there; look at its screen\n", answered.AnsweredWith, session.Computer, session.PaneID)
+		_, _ = fmt.Fprintf(command.Writer, "pressed %s in %s, but the question is still there; look at its screen\n", answered.AnsweredWith, herdrPaneWords(session))
 		return nil
 	}
-	_, _ = fmt.Fprintf(command.Writer, "answered %s in %s %s; it is %s\n", answered.AnsweredWith, session.Computer, session.PaneID, herdrStateWords(session))
+	_, _ = fmt.Fprintf(command.Writer, "answered %s in %s; it is %s\n", answered.AnsweredWith, herdrPaneWords(session), herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
 	return nil
 }
@@ -366,7 +381,7 @@ func runComputerHerdrWatch(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(session)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "watching %s %s; it is %s\n", session.Computer, session.PaneID, session.HerdrSessionState)
+	_, _ = fmt.Fprintf(command.Writer, "watching %s; it is %s\n", herdrPaneWords(session), session.HerdrSessionState)
 	return nil
 }
 

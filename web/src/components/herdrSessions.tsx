@@ -43,6 +43,8 @@ export interface HerdrQuestion {
 export interface HerdrSession {
   computer: string
   paneId: string
+  // The pane as the person finds it in herdr: workspace, tab, agent.
+  paneName: string
   codingAgentKind: string
   codingSessionId: string
   herdrSessionState: HerdrSessionState
@@ -69,7 +71,7 @@ interface HerdrTurn {
 
 // The fields of a session, the same as the command line's
 // client.HerdrSessionFields.
-const SESSION_FIELDS = `computer paneId codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
+const SESSION_FIELDS = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
   question { questionFingerprint herdrQuestionKind questionText isMultipleChoice isFromTranscript options { optionNumber optionLabel optionDescription herdrOptionKind } }`
 
 export const HERDR_DOCUMENTS = {
@@ -122,6 +124,12 @@ export function listHerdrSessions(fresh = false): Promise<HerdrList> {
     if (sharedList?.answer === answer) sharedList = null
   })
   return answer
+}
+
+// paneNameOf is a pane as the person knows it in herdr, or its id where
+// herdr gave it no name.
+export function paneNameOf(session: HerdrSession): string {
+  return session.paneName || session.paneId
 }
 
 // codingAgentName is what a coding agent is called.
@@ -186,9 +194,9 @@ export function HerdrQuestionAnswer({
       })
       const answered = response.AnswerAgentHerdrQuestion
       if (answered.isAnswerAccepted) {
-        toast.done(t('herdr.answered', { answer: answered.answeredWith, pane: session.paneId }))
+        toast.done(t('herdr.answered', { answer: answered.answeredWith, pane: paneNameOf(session) }))
       } else {
-        toast.failure(null, t('herdr.answerStillThere', { pane: session.paneId }))
+        toast.failure(null, t('herdr.answerStillThere', { pane: paneNameOf(session) }))
       }
       sharedList = null
       onAnswered(answered.herdrSession)
@@ -347,7 +355,7 @@ function HerdrSessionDialog({
       })
       setCurrent(response.SendAgentHerdrSession)
       setText('')
-      toast.done(t('herdr.sent', { pane: current.paneId }))
+      toast.done(t('herdr.sent', { pane: paneNameOf(current) }))
       onChanged()
     } catch (caught) {
       toast.failure(caught, t('herdr.sendFailed'))
@@ -364,7 +372,7 @@ function HerdrSessionDialog({
         paneId: current.paneId,
       })
       setCurrent(response.WatchAgentHerdrSession)
-      toast.done(t('herdr.watching', { pane: current.paneId }))
+      toast.done(t('herdr.watching', { pane: paneNameOf(current) }))
       onChanged()
     } catch (caught) {
       toast.failure(caught, t('herdr.watchFailed'))
@@ -373,7 +381,7 @@ function HerdrSessionDialog({
 
   return (
     <ConfirmDialog
-      title={`${codingAgentName(current.codingAgentKind)} · ${current.paneId} · ${current.computer}`}
+      title={`${codingAgentName(current.codingAgentKind)} · ${paneNameOf(current)} · ${current.computer}`}
       wide
       onClose={onClose}
       otherAction={
@@ -589,9 +597,10 @@ export function HerdrSessionsCard() {
                         /* link-button: names a session in a list, which opens it in place */
                         type="button"
                         className="link"
+                        title={session.paneId}
                         onClick={() => setOpened(session)}
                       >
-                        {session.paneId}
+                        {paneNameOf(session)}
                       </button>
                     </td>
                     <td>
