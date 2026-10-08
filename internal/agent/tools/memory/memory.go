@@ -591,25 +591,9 @@ func renderLinks(node *models.AgentNode, edges []*models.AgentEdge, offset int) 
 			links = append(links, edge)
 		}
 	}
-	// In an order that holds from one get to the next, so that reading on
-	// from an offset neither repeats a link nor skips one: the page's own
-	// links first, then those pointing at it, each by relation and path.
-	isOutgoing := func(edge *models.AgentEdge) bool { return edge.FromPath == node.Path }
-	otherPath := func(edge *models.AgentEdge) string {
-		if isOutgoing(edge) {
-			return edge.ToPath
-		}
-		return edge.FromPath
-	}
-	sort.SliceStable(links, func(left, right int) bool {
-		if isOutgoing(links[left]) != isOutgoing(links[right]) {
-			return isOutgoing(links[left])
-		}
-		if links[left].Relation != links[right].Relation {
-			return links[left].Relation < links[right].Relation
-		}
-		return otherPath(links[left]) < otherPath(links[right])
-	})
+	// The order the API pages them in as well, so a get read on from an
+	// offset neither repeats a link nor skips one.
+	models.SortAgentEdgesFrom(node.Path, links)
 	if len(links) == 0 {
 		return ""
 	}
@@ -631,7 +615,7 @@ func renderLinks(node *models.AgentNode, edges []*models.AgentEdge, offset int) 
 			relation = "perhaps " + relation
 			guess = " (the agent's guess)"
 		}
-		if isOutgoing(edge) {
+		if edge.FromPath == node.Path {
 			builder.WriteString("\n→ " + relation + " " + edge.ToPath + guess)
 		} else {
 			builder.WriteString("\n← " + edge.FromPath + " " + relation + " this" + guess)
