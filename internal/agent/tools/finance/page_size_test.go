@@ -36,7 +36,7 @@ func transactionPage(test *testing.T, offset, rowCount, totalCount int) string {
 	return string(encoded)
 }
 
-// A listing of transactions with no limit asks for a page of twenty, its
+// A listing of transactions with no limit asks for a page of fifteen, its
 // rows carry only the fields that hold something, it says how many more
 // there are and the offset that reads them, and that offset carries on
 // where the page stopped.
@@ -48,16 +48,17 @@ func TestFinanceToolListsAPageThatFitsAndSaysHowToReadOn(test *testing.T) {
 	before := transactionPage(test, 0, 50, 60)
 	test.Logf("fifty rows as the API answers them: %d characters", len(before))
 
-	operations := &fakeOperations{answers: map[string]string{"FinanceTransactions": transactionPage(test, 0, 20, 60)}}
+	operations := &fakeOperations{answers: map[string]string{"FinanceTransactions": transactionPage(test, 0, 15, 60)}}
 	first, err := call(test, operations, `{"operation":"transactions"}`)
 	if err != nil {
 		test.Fatal(err)
 	}
 	test.Logf("the tool's first page: %d characters", len(first.Content))
-	if sent := operations.variables[0]; sent["limit"] != 20 {
-		test.Errorf("a listing with no limit asks for twenty: %v", sent)
+	if sent := operations.variables[0]; sent["limit"] != 15 {
+		test.Errorf("a listing with no limit asks for fifteen: %v", sent)
 	}
-	if len(first.Content) > 8000 {
+	// Within one part over MCP, its untrusted wrapper included.
+	if len(first.Content) > 7800 {
 		test.Errorf("a first page is %d characters", len(first.Content))
 	}
 	for _, empty := range []string{"transactedAt", "providerCategoryPrimary", "isPending", "categorizationConfidence", "duplicateOfTransactionId", "annotation", "receiptCount", "leftOutDuplicateCount"} {
@@ -68,42 +69,42 @@ func TestFinanceToolListsAPageThatFitsAndSaysHowToReadOn(test *testing.T) {
 	if !strings.Contains(first.Content, `"merchantName":"Invented Grocer"`) || !strings.Contains(first.Content, `"amount":"-12.50"`) {
 		test.Errorf("and keeps what holds something: %s", first.Content)
 	}
-	if !strings.Contains(first.Content, "rows 1 to 20 of 60 shown") || !strings.Contains(first.Content, "40 more, and offset 20 reads the next page") {
+	if !strings.Contains(first.Content, "rows 1 to 15 of 60 shown") || !strings.Contains(first.Content, "45 more, and offset 15 reads the next page") {
 		test.Fatalf("a page says how many more and how to read them: %s", first.Content)
 	}
 
-	operations.answers["FinanceTransactions"] = transactionPage(test, 20, 20, 60)
-	next, err := call(test, operations, `{"operation":"transactions","offset":20}`)
+	operations.answers["FinanceTransactions"] = transactionPage(test, 15, 15, 60)
+	next, err := call(test, operations, `{"operation":"transactions","offset":15}`)
 	if err != nil {
 		test.Fatal(err)
 	}
-	if sent := operations.variables[1]; sent["offset"] != 20 || sent["limit"] != 20 {
+	if sent := operations.variables[1]; sent["offset"] != 15 || sent["limit"] != 15 {
 		test.Errorf("the next page is asked for from where the first stopped: %v", sent)
 	}
-	if !strings.Contains(next.Content, "rows 21 to 40 of 60 shown") || !strings.Contains(next.Content, "offset 40 reads the next page") {
+	if !strings.Contains(next.Content, "rows 16 to 30 of 60 shown") || !strings.Contains(next.Content, "offset 30 reads the next page") {
 		test.Errorf("and says where to read on again: %s", next.Content)
 	}
 
-	operations.answers["FinanceTransactions"] = transactionPage(test, 0, 20, 60)
+	operations.answers["FinanceTransactions"] = transactionPage(test, 0, 15, 60)
 	cursor, err := call(test, operations, `{"operation":"transactions","after":"2030-03-14/01JTRANSACTION000000000000"}`)
 	if err != nil {
 		test.Fatal(err)
 	}
-	if !strings.Contains(cursor.Content, "and after 2030-03-14/01JTRANSACTION000000000020 reads the next page") {
+	if !strings.Contains(cursor.Content, "and after 2030-03-14/01JTRANSACTION000000000015 reads the next page") {
 		test.Errorf("a page read from a cursor names the cursor of the next: %s", cursor.Content)
 	}
 
-	// A limit of zero or less is none given: the page of twenty, and a
+	// A limit of zero or less is none given: the page of fifteen, and a
 	// hint that does not ask for a limit of zero.
 	for _, limit := range []string{"0", "-5"} {
 		unlimited, err := call(test, operations, `{"operation":"transactions","limit":`+limit+`}`)
 		if err != nil {
 			test.Fatal(err)
 		}
-		if sent := operations.variables[len(operations.variables)-1]; sent["limit"] != 20 {
-			test.Errorf("limit %s asks for twenty: %v", limit, sent)
+		if sent := operations.variables[len(operations.variables)-1]; sent["limit"] != 15 {
+			test.Errorf("limit %s asks for fifteen: %v", limit, sent)
 		}
-		if !strings.Contains(unlimited.Content, "offset 20 reads the next page") || strings.Contains(unlimited.Content, "with limit") {
+		if !strings.Contains(unlimited.Content, "offset 15 reads the next page") || strings.Contains(unlimited.Content, "with limit") {
 			test.Errorf("limit %s reads on by offset alone: %s", limit, unlimited.Content)
 		}
 	}

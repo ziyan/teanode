@@ -633,7 +633,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Dates are 2026-09-01, months 2026-09; amounts are decimals, money out negative. " +
 	"A holding in an investment account is an asset with a financeSecurity, and its valuations carry heldQuantity, unitPrice and costBasis; the account's own asset holds its cash. " +
 	"`trades` lists buys, sells and securities moved in or out, which are never spending or income; dividends, interest, fees, deposits and withdrawals are finance transactions. " +
-	"`transactions`, `trades` and `receipts` answer 20 rows when limit is left out, with totalCount and the offset of the next page in hint, and each row leaves out the fields that are empty, false or zero, and a providerCategoryPrimary that its providerCategoryDetailed begins with. " +
+	"`transactions`, `trades` and `receipts` answer 15 rows when limit is left out, with totalCount and the offset of the next page in hint, and each row leaves out the fields that are empty, false or zero, and a providerCategoryPrimary that its providerCategoryDetailed begins with. " +
 	"`assets` leaves the holdings out unless is_holding is true or finance_account_id is given, since each position is an asset and there can be hundreds; narrow it with asset_kind or text (words in the name). " +
 	"`transactions`, `trades`, `spending_summary`, `net_worth` and `cash_flow` take `month` as shorthand for that whole month; without a range they cover all of time (net_worth the last thirty days, cash_flow twelve months). " +
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
@@ -1354,8 +1354,9 @@ var pagedListKeys = map[string]string{"transactions": "financeTransactions", "tr
 
 // pageRows is how many rows a page of transactions, trades or receipts
 // holds when the model gives no limit. The API's own fifty came to thirty
-// thousand characters, which clients over MCP cut short without a word.
-const pageRows = 20
+// thousand characters, which clients over MCP cut short without a word, and
+// twenty of rows with real merchant names and memos still ran past one part.
+const pageRows = 15
 
 // withoutEmpty is rows with the fields that hold nothing left out: null,
 // an empty string or list, false and zero, in the rows and in what they
