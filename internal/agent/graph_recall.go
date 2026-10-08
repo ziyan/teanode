@@ -271,7 +271,7 @@ func (self *AskRun) linkedPages(ctx context.Context, page *models.AgentNode) []*
 
 // knowledgeLines are the two or three passages of the person's own files
 // and chat that this turn's words touch, to put in front of the model. The
-// two searches, by words and by meaning, run at once and within
+// two searches, by meaning and for every word, run at once and within
 // searchContext; what they found is then read within ctx.
 //
 // Only where they score well: a question about their own work should be
@@ -286,7 +286,7 @@ func (self *AskRun) knowledgeLines(ctx, searchContext context.Context, words str
 	go func() {
 		defer waitGroup.Done()
 		if err := self.agent.settings.Database.TransactionContext(searchContext, func(tx db.Transaction) (err error) {
-			byWords, err = tx.SearchAgentChunks(self.settings.Agent.ID, nil, words, recallChunks*4)
+			byWords, err = tx.SearchAgentChunksEveryWord(self.settings.Agent.ID, words, recallChunks*4)
 			return err
 		}); err != nil {
 			byWords = nil

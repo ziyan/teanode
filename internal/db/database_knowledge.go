@@ -125,6 +125,7 @@ type KnowledgeOperation interface {
 	// anything was read out of it.
 	HasAgentChunks(agentId, documentId string) (bool, error)
 	SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error)
+	SearchAgentChunksEveryWord(agentId string, query string, limit int) ([]*models.AgentChunk, error)
 
 	// ListAgentChunksWithoutVector is what is still waiting to be
 	// embedded, oldest first so a backlog drains in the order it arrived.
@@ -921,6 +922,28 @@ func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, q
 		ORDER BY ts_rank("search", `+AnyWord+`) DESC, "id" ASC LIMIT ?`,
 		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), query, limit)
 	return self.chunksFrom(statement)
+}
+
+// SearchAgentChunksEveryWord finds the passages holding every word of the
+// query that carries meaning, best match first: the narrow search a turn's
+// recall makes beside the one by meaning, which finds what is said in
+// other words. Any of the words matching is what SearchAgentChunks does,
+// and on millions of passages a question of common words matched hundreds
+// of thousands, every one of them ranked to pick forty; every word matches
+// few, and is answered from the index in milliseconds.
+func (self *transaction) SearchAgentChunksEveryWord(agentId string, query string, limit int) ([]*models.AgentChunk, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	query = SearchText(query)
+	return self.chunksFrom(self.tx.Raw(`
+		SELECT * FROM "agent_chunk"
+		WHERE "agent_id" = ? AND "search" @@ plainto_tsquery('simple', ?)
+		ORDER BY ts_rank("search", plainto_tsquery('simple', ?)) DESC, "id" ASC LIMIT ?`,
+		agentId, query, query, limit))
 }
 
 func (self *transaction) ListAgentChunksWithoutVector(agentId, model string, limit int) ([]*models.AgentChunk, error) {
