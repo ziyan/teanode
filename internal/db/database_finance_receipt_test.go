@@ -973,3 +973,136 @@ func TestDetachReceiptAttachmentsLeavesThePhotoToItsReceipt(t *testing.T) {
 		}
 	})
 }
+
+// A receipt read again with a lower total, or in another currency, keeps
+// the matches it still explains and drops the rest, saying why: the
+// oldest match is kept first, and a later one that no longer fits beside
+// it goes.
+func TestDropUnfittingFinanceReceiptMatchesKeepsWhatStillFits(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "robin")
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		byProvider := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		grocer, diner := byProvider["transaction-grocer"], byProvider["transaction-diner"]
+		receipt := putReceipt(t, tx, inventedGroceryReceipt(fixture.agentId, "mail-read-again"))
+		for _, match := range []struct{ financeTransactionId, matchedAmount string }{{diner.ID, "18.40"}, {grocer.ID, "23.77"}} {
+			if _, err := tx.PutFinanceReceiptMatch(fixture.agentId, &models.FinanceReceiptMatch{
+				ReceiptID: receipt.ID, FinanceTransactionID: match.financeTransactionId, MatchedAmount: match.matchedAmount,
+				ReceiptMatchSource: models.ReceiptMatchSourcePerson,
+			}); err != nil {
+				t.Fatalf("PutFinanceReceiptMatch: %s", err)
+			}
+		}
+		dropped, err := tx.DropUnfittingFinanceReceiptMatches(fixture.agentId, receipt.ID)
+		if err != nil || len(dropped) != 0 {
+			t.Fatalf("matches that fit are all kept: %+v %v", dropped, err)
+		}
+
+		lower := inventedGroceryReceipt(fixture.agentId, "mail-read-again")
+		lower.TotalAmount = "25.00"
+		putReceipt(t, tx, lower)
+		dropped, err = tx.DropUnfittingFinanceReceiptMatches(fixture.agentId, receipt.ID)
+		if err != nil || len(dropped) != 1 || dropped[0].ReceiptMatch.FinanceTransactionID != grocer.ID || dropped[0].DropReason == "" {
+			t.Fatalf("the later match no longer fits the lower total beside the earlier one: %+v %v", dropped, err)
+		}
+		stored, err := tx.GetFinanceReceipt(fixture.agentId, receipt.ID)
+		if err != nil || len(stored.ReceiptMatches) != 1 || stored.ReceiptMatches[0].FinanceTransactionID != diner.ID ||
+			!isSameDecimal(stored.ReceiptMatches[0].MatchedAmount, "18.40") {
+			t.Fatalf("the earlier match stays as it was: %+v %v", stored, err)
+		}
+
+		inEuros := inventedGroceryReceipt(fixture.agentId, "mail-read-again")
+		inEuros.CurrencyCode = "EUR"
+		putReceipt(t, tx, inEuros)
+		dropped, err = tx.DropUnfittingFinanceReceiptMatches(fixture.agentId, receipt.ID)
+		if err != nil || len(dropped) != 1 || dropped[0].ReceiptMatch.FinanceTransactionID != diner.ID {
+			t.Fatalf("a match in another currency is dropped: %+v %v", dropped, err)
+		}
+		if stored, _ := tx.GetFinanceReceipt(fixture.agentId, receipt.ID); len(stored.ReceiptMatches) != 0 {
+			t.Fatalf("nothing is left matched: %+v", stored.ReceiptMatches)
+		}
+	})
+}
+
+// An amount or a quantity larger than its column holds is refused as an
+// argument, not left to fail the statement.
+func TestPutFinanceReceiptRefusesWhatItsColumnsCannotHold(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "robin")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for name, broken := range map[string]func(*models.FinanceReceipt){
+			"a total of fifteen digits": func(receipt *models.FinanceReceipt) { receipt.TotalAmount = "1000000000000000" },
+			"a negative line amount":    func(receipt *models.FinanceReceipt) { receipt.ReceiptLines[2].LineAmount = "-1000000000000000.00" },
+			"a subtotal rounding up":    func(receipt *models.FinanceReceipt) { receipt.SubtotalAmount = "999999999999999.99999" },
+			"a unit price":              func(receipt *models.FinanceReceipt) { receipt.ReceiptLines[1].UnitPriceAmount = "5000000000000000" },
+			"a quantity":                func(receipt *models.FinanceReceipt) { receipt.ReceiptLines[1].Quantity = "10000000000000000" },
+			"a check difference": func(receipt *models.FinanceReceipt) {
+				receipt.ReceiptCheckState, receipt.CheckDifferenceAmount = models.ReceiptCheckStateUnbalanced, "2000000000000000"
+			},
+		} {
+			receipt := inventedGroceryReceipt(fixture.agentId, "mail-too-large")
+			broken(receipt)
+			if _, err := tx.PutFinanceReceipt(receipt); !errors.Is(err, db.ErrInvalidArguments) {
+				t.Errorf("%s too large is refused: %v", name, err)
+			}
+		}
+		largest := inventedGroceryReceipt(fixture.agentId, "mail-largest")
+		largest.TotalAmount, largest.ReceiptLines[1].Quantity = "999999999999999.9999", "9999999999999999.99999999"
+		if stored, err := tx.PutFinanceReceipt(largest); err != nil || stored.TotalAmount != "999999999999999.9999" {
+			t.Fatalf("the largest the columns hold is kept: %+v %v", stored, err)
+		}
+	})
+}
+
+// Two first reads of one source finishing together write one receipt:
+// the second waits for the first and replaces it, rather than failing on
+// the unique index.
+func TestPutFinanceReceiptFirstReadsOfOneSourceWriteOneReceipt(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "robin")
+	isFirstWritten, isFirstCommitting := make(chan struct{}), make(chan struct{})
+	firstDone, secondDone := make(chan error, 1), make(chan error, 1)
+	go func() {
+		firstDone <- database.Transaction(func(tx db.Transaction) error {
+			if _, err := tx.PutFinanceReceipt(inventedGroceryReceipt(fixture.agentId, "mail-read-twice")); err != nil {
+				return err
+			}
+			close(isFirstWritten)
+			<-isFirstCommitting
+			return nil
+		})
+	}()
+	<-isFirstWritten
+	go func() {
+		secondDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.PutFinanceReceipt(inventedGroceryReceipt(fixture.agentId, "mail-read-twice"))
+			return err
+		})
+	}()
+	for attempt := 0; dbtest.QueryString(t, database, `SELECT COUNT(*)::text FROM pg_stat_activity
+		WHERE datname = current_database() AND wait_event_type = 'Lock'`) == "0"; attempt++ {
+		if attempt > 1000 {
+			t.Fatal("the second read never waited on the first")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(isFirstCommitting)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("the first read: %s", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("the second read replaces the first: %s", err)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if listed, err := listReceipts(t, tx, fixture.agentId, nil); err != nil || len(listed) != 1 {
+			t.Fatalf("one receipt for one source: %d %v", len(listed), err)
+		}
+	})
+}

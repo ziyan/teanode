@@ -276,8 +276,9 @@ func (self *Agent) runReadReceipt(ctx context.Context, run *Run) error {
 	// Nobody is here to ask whether a receipt that does not add up should
 	// be kept, so it is kept, marked unbalanced for the person to see; nor
 	// whether one that cannot be matched to the charge it was uploaded to
-	// should be, so it is kept unmatched, the run saying why. The job is
-	// never retried, so refusing either would lose the reading for good.
+	// should be, so it is kept unmatched, the run saying why. A refusal
+	// ends the job without a retry, since reading again would read the
+	// same, so refusing either would lose the reading for good.
 	recorded, err := self.RecordReceipt(ctx, run.Agent, receipt, ReceiptRecording{
 		IsUnbalancedAccepted: true, FinanceTransactionID: source.financeTransactionId, IsRecordedWhenHandMatchRefused: true,
 	})
@@ -290,7 +291,11 @@ func (self *Agent) runReadReceipt(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	self.retitle(ctx, run, thinking.Conversation, receiptRunTitle(recorded))
+	title := receiptRunTitle(recorded)
+	if len(recorded.DroppedReceiptMatchReasons) > 0 {
+		title += "; " + strings.Join(recorded.DroppedReceiptMatchReasons, "; ")
+	}
+	self.retitle(ctx, run, thinking.Conversation, title)
 	return nil
 }
 

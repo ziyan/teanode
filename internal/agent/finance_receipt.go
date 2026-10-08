@@ -86,6 +86,11 @@ type RecordedReceipt struct {
 	// charge the recording named, when IsRecordedWhenHandMatchRefused let
 	// it be recorded anyway; "" otherwise.
 	HandMatchRefusalReason string
+
+	// DroppedReceiptMatchReasons say, one sentence each, which of the
+	// person's matches were taken off because the receipt as read again no
+	// longer fits them: a lower total, another currency.
+	DroppedReceiptMatchReasons []string
 }
 
 // ReceiptPreview is what recording a receipt would do, writing nothing.
@@ -143,8 +148,10 @@ func (self *Agent) PreviewReceipt(ctx context.Context, agentRow *models.Agent, r
 // same source before, and matches it: to the charge the recording names,
 // as the person's; else, when the person has not matched it, to the one
 // charge the matcher is sure of. The matcher's earlier matches are taken
-// off first and the person's are never touched. A receipt that does not
-// balance is refused unless the recording accepts it.
+// off first; the person's are kept while they still fit the receipt as
+// read now, and the ones that do not are taken off and said in
+// DroppedReceiptMatchReasons. A receipt that does not balance is refused
+// unless the recording accepts it.
 func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, receipt *models.FinanceReceipt, recording ReceiptRecording) (*RecordedReceipt, error) {
 	receiptCheckState, checkDifferenceAmount, err := finance.CheckReceipt(receipt)
 	if err != nil {
@@ -155,30 +162,50 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 	}
 	receipt.AgentID = agentRow.ID
 	receipt.ReceiptCheckState, receipt.CheckDifferenceAmount = receiptCheckState, checkDifferenceAmount
-	recorded := &RecordedReceipt{ReceiptMatchCandidates: []finance.ReceiptMatchCandidate{}}
+	recorded := &RecordedReceipt{ReceiptMatchCandidates: []finance.ReceiptMatchCandidate{}, DroppedReceiptMatchReasons: []string{}}
 	err = self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		existing, err := tx.FindFinanceReceiptBySource(agentRow.ID, receipt.ReceiptSourceKind, receiptSourceIdOf(receipt))
 		if err != nil {
 			return err
 		}
 		recorded.IsReplaced = existing != nil
+		// A dropped match is in the currency the receipt was read in before.
+		previousCurrencyCode := receipt.CurrencyCode
+		if existing != nil {
+			previousCurrencyCode = existing.CurrencyCode
+		}
 		stored, err := tx.PutFinanceReceipt(receipt)
 		if err != nil {
 			return err
 		}
-		personMatches := make([]*models.FinanceReceiptMatch, 0, len(stored.ReceiptMatches))
 		for _, match := range stored.ReceiptMatches {
 			if match.ReceiptMatchSource != models.ReceiptMatchSourcePerson {
 				if _, err := tx.DeleteFinanceReceiptMatch(agentRow.ID, stored.ID, match.FinanceTransactionID, models.ReceiptMatchSourceReceiptMatcher); err != nil {
 					return err
 				}
-				continue
 			}
-			personMatches = append(personMatches, match)
+		}
+		// The person matched the receipt as it read before; one that the
+		// new reading cannot explain (a lower total, another currency) is
+		// taken off and said, rather than kept where no match could be
+		// written now, or the whole reading refused.
+		dropped, err := tx.DropUnfittingFinanceReceiptMatches(agentRow.ID, stored.ID)
+		if err != nil {
+			return err
+		}
+		for _, droppedMatch := range dropped {
+			recorded.DroppedReceiptMatchReasons = append(recorded.DroppedReceiptMatchReasons, fmt.Sprintf(
+				"the person's match to charge %s for %s %s was taken off, since %s", droppedMatch.ReceiptMatch.FinanceTransactionID,
+				finance.FormatReceiptAmount(droppedMatch.ReceiptMatch.MatchedAmount, previousCurrencyCode), previousCurrencyCode,
+				strings.TrimSuffix(droppedMatch.DropReason, ".")))
 		}
 		// What the candidates are weighed against is what is left of the
-		// receipt once the matcher's earlier matches are gone.
-		stored.ReceiptMatches = personMatches
+		// receipt once the matcher's earlier matches and the person's that
+		// no longer fit are gone.
+		if stored, err = tx.GetFinanceReceipt(agentRow.ID, stored.ID); err != nil {
+			return err
+		}
+		personMatches := stored.ReceiptMatches
 		if strings.TrimSpace(recording.FinanceTransactionID) != "" {
 			err := matchReceiptByHand(tx, agentRow.ID, stored, recording.FinanceTransactionID, "")
 			switch {
@@ -203,13 +230,17 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 					candidates[index].IsAutomatic = false
 					continue
 				}
-				_, err := tx.PutFinanceReceiptMatch(agentRow.ID, &models.FinanceReceiptMatch{
+				isWritten, err := tx.PutFinanceReceiptMatch(agentRow.ID, &models.FinanceReceiptMatch{
 					ReceiptID: stored.ID, FinanceTransactionID: candidate.FinanceTransactionID, MatchedAmount: candidate.MatchedAmount,
 					ReceiptMatchSource: models.ReceiptMatchSourceReceiptMatcher, MatchConfidence: candidate.MatchConfidence,
 				})
 				switch {
-				case err == nil:
+				case err == nil && isWritten:
 					isAutomaticallyMatched = true
+				case err == nil:
+					// The person matched the receipt to the charge in between,
+					// and the matcher never replaces that.
+					candidates[index].IsAutomatic = false
 				case isReceiptMatchRefusal(err):
 					// Another receipt was matched to the charge after the
 					// candidates were read (two receipt jobs at once): the
@@ -321,14 +352,26 @@ func receiptMatchCandidates(tx db.Transaction, agentId string, receipt *models.F
 	if err != nil {
 		return []finance.ReceiptMatchCandidate{}, nil
 	}
-	page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{
+	// Every page of the window, since "the only exact amount" is only
+	// true of the whole of it: a busy account can post more charges in
+	// those days than one page holds.
+	var financeTransactions []*models.FinanceTransaction
+	filter := &db.FinanceTransactionFilter{
 		From: purchasedOn.AddDate(0, 0, -finance.ReceiptMatchDaysBefore).Format(time.DateOnly),
 		To:   purchasedOn.AddDate(0, 0, finance.ReceiptMatchDaysAfter).Format(time.DateOnly),
 		// Money out only: a charge is negative.
 		MaximumAmount: "0", IsDuplicateExcluded: true, Limit: db.FinanceTransactionLimitMost,
-	})
-	if err != nil {
-		return nil, err
+	}
+	for {
+		page, err := tx.ListFinanceTransactions(agentId, filter)
+		if err != nil {
+			return nil, err
+		}
+		financeTransactions = append(financeTransactions, page.FinanceTransactions...)
+		if page.NextCursor == "" {
+			break
+		}
+		filter.After = page.NextCursor
 	}
 	accounts, err := tx.ListFinanceAccounts(agentId, "")
 	if err != nil {
@@ -338,15 +381,15 @@ func receiptMatchCandidates(tx db.Transaction, agentId string, receipt *models.F
 	for _, account := range accounts {
 		accountMaskByFinanceAccountId[account.ID] = account.AccountMask
 	}
-	financeTransactionIds := make([]string, 0, len(page.FinanceTransactions))
-	for _, financeTransaction := range page.FinanceTransactions {
+	financeTransactionIds := make([]string, 0, len(financeTransactions))
+	for _, financeTransaction := range financeTransactions {
 		financeTransactionIds = append(financeTransactionIds, financeTransaction.ID)
 	}
 	coverageByFinanceTransactionId, err := tx.FinanceReceiptMatchCoverage(agentId, receipt.ID, financeTransactionIds)
 	if err != nil {
 		return nil, err
 	}
-	return finance.ProposeReceiptMatches(receipt, page.FinanceTransactions, accountMaskByFinanceAccountId, coverageByFinanceTransactionId), nil
+	return finance.ProposeReceiptMatches(receipt, financeTransactions, accountMaskByFinanceAccountId, coverageByFinanceTransactionId), nil
 }
 
 // ProposeReceiptMatches is the charges a stored receipt could explain, the

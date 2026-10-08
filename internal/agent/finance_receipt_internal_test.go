@@ -120,6 +120,37 @@ func TestRecordReceiptForAChargeAndUnbalanced(t *testing.T) {
 	}
 }
 
+// A receipt read again for less than the person matched it to is not
+// kept matched beyond its new total: the person's match is taken off and
+// the recording says so, and the receipt is left to be matched again.
+func TestRecordReceiptDropsThePersonsMatchTheNewReadingCannotExplain(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	fixture.applySync(t, &finance.SyncResult{
+		Accounts: []finance.Account{inventedAccount()},
+		Added:    []finance.Transaction{inventedTransaction("shipment-one", "2026-09-11", "-18.00", "SOMEWHERE ELSE", "", "")},
+	})
+	charge := fixture.transactions(t)["SOMEWHERE ELSE"]
+	recorded, err := fixture.worker.RecordReceipt(t.Context(), fixture.agent, inventedOrderReceipt("mail-order-one"), ReceiptRecording{FinanceTransactionID: charge.ID})
+	if err != nil || len(recorded.FinanceReceipt.ReceiptMatches) != 1 {
+		t.Fatalf("the receipt is matched to the charge by hand: %+v %v", recorded, err)
+	}
+	misread := inventedOrderReceipt("mail-order-one")
+	misread.SubtotalAmount, misread.TotalAmount = "", "10.00"
+	misread.ReceiptLines = misread.ReceiptLines[:1]
+	misread.ReceiptLines[0].LineAmount = "10.00"
+	again, err := fixture.worker.RecordReceipt(t.Context(), fixture.agent, misread, ReceiptRecording{})
+	if err != nil {
+		t.Fatalf("RecordReceipt again: %s", err)
+	}
+	if len(again.FinanceReceipt.ReceiptMatches) != 0 || len(again.DroppedReceiptMatchReasons) != 1 ||
+		!strings.Contains(again.DroppedReceiptMatchReasons[0], charge.ID) {
+		t.Fatalf("the match of 18.00 to a receipt of 10.00 is taken off and said: %+v", again)
+	}
+	if len(again.ReceiptMatchCandidates) != 1 || again.ReceiptMatchCandidates[0].FinanceTransactionID != charge.ID {
+		t.Fatalf("the charge is a candidate again, for the person: %+v", again.ReceiptMatchCandidates)
+	}
+}
+
 // lakesideBookReceipt is an invented one-line receipt of 45.50 from a
 // stored message.
 func lakesideBookReceipt(mailId string) *models.FinanceReceipt {

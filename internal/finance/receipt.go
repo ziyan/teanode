@@ -66,7 +66,7 @@ func FormatReceiptAmount(amount, currencyCode string) string {
 // not know, an item below zero, a discount above zero or of a line that is
 // not an item, and an amount with more places than the currency has. A
 // unit price may have more, since a weighed item is priced finer than a
-// cent. Then it answers whether the lines add up and by how much they
+// cent, up to AmountDecimalPlaces, as many as are stored. Then it answers whether the lines add up and by how much they
 // miss: every line against the total, then, when a subtotal is printed,
 // the items and discounts with the fees against it, or the items and
 // discounts alone, since a receipt prints its fees (shipping, delivery,
@@ -122,9 +122,14 @@ func CheckReceipt(receipt *models.FinanceReceipt) (models.ReceiptCheckState, str
 		if err != nil {
 			return "", "", err
 		}
-		if strings.TrimSpace(line.UnitPriceAmount) != "" {
-			if _, err := parseDecimal(strings.TrimSpace(normalization.NFKC.String(line.UnitPriceAmount))); err != nil {
+		if unitPriceText := strings.TrimSpace(normalization.NFKC.String(line.UnitPriceAmount)); unitPriceText != "" {
+			if _, err := parseDecimal(unitPriceText); err != nil {
 				return "", "", refuseReceipt("%s's unit price %q is not a decimal amount", label, line.UnitPriceAmount)
+			}
+			// A unit price is kept to AmountDecimalPlaces; a finer one would be
+			// rounded where it is stored, and no longer what was printed.
+			if _, fraction, hasPoint := strings.Cut(unitPriceText, "."); hasPoint && len(strings.TrimRight(fraction, "0")) > AmountDecimalPlaces {
+				return "", "", refuseReceipt("%s's unit price %s has more than %d places", label, unitPriceText, AmountDecimalPlaces)
 			}
 		}
 		switch line.ReceiptLineKind {
@@ -328,8 +333,9 @@ func merchantWords(text string) map[string]bool {
 // At most one is automatic: the one exact amount, or the one exact amount
 // on the receipt's account when it prints digits; and only when it is on
 // that account or shares a word of the merchant, since an amount alone is
-// a coincidence often enough, and only when no other receipt is matched
-// to it, since an order email and its shipping email, or a photo and the
+// a coincidence often enough, never when it is on an account whose known
+// digits are not the ones the receipt prints, and only when no other
+// receipt is matched to it, since an order email and its shipping email, or a photo and the
 // email of the same purchase, would otherwise both explain one charge.
 // Anything else is left for the person, never guessed. A receipt with no
 // day of purchase has no candidates.
@@ -349,6 +355,7 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 	receiptWords := merchantWords(receipt.MerchantName)
 	paymentAccountMask := strings.TrimSpace(receipt.PaymentAccountMask)
 	hasOtherReceipt := map[string]bool{}
+	isOnOtherAccount := map[string]bool{}
 	for _, candidate := range candidates {
 		if candidate == nil || candidate.DuplicateOfTransactionID != "" || !strings.EqualFold(candidate.CurrencyCode, receipt.CurrencyCode) {
 			continue
@@ -403,6 +410,9 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 		if dayDistance < 0 {
 			dayDistance = -dayDistance
 		}
+		// The receipt prints the digits of one card and the charge is on an
+		// account whose digits are known and are not them.
+		isOnOtherAccount[candidate.ID] = paymentAccountMask != "" && accountMask != "" && !isMaskMatch(accountMask, paymentAccountMask)
 		proposals = append(proposals, ReceiptMatchCandidate{
 			FinanceTransactionID: candidate.ID, MatchedAmount: FormatAmount(matchedAmount),
 			IsExactAmount:        chargedAmount.Cmp(totalAmount) == 0,
@@ -446,8 +456,10 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 		chosen := proposals[automaticIndex]
 		// Automatic only for the whole of the charge and of the receipt:
 		// one explained in part already is the person's to judge.
+		// Never on an account the receipt's digits say it was not paid
+		// with, however well the amount and the merchant agree.
 		if (!chosen.IsSameAccount && !chosen.IsMerchantNameShared) || hasOtherReceipt[chosen.FinanceTransactionID] ||
-			chosen.MatchedAmount != FormatAmount(totalAmount) {
+			isOnOtherAccount[chosen.FinanceTransactionID] || chosen.MatchedAmount != FormatAmount(totalAmount) {
 			automaticIndex = -1
 		}
 	}

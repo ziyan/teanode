@@ -169,6 +169,9 @@ func TestCheckReceiptRefusesWhatCannotBePrinted(t *testing.T) {
 		"no lines":          func(receipt *models.FinanceReceipt) { receipt.ReceiptLines = nil },
 		"no currency":       func(receipt *models.FinanceReceipt) { receipt.CurrencyCode = "" },
 		"a word for a unit": func(receipt *models.FinanceReceipt) { receipt.ReceiptLines[4].UnitPriceAmount = "cheap" },
+		"a unit price finer than is stored": func(receipt *models.FinanceReceipt) {
+			receipt.ReceiptLines[4].UnitPriceAmount = "1.59001"
+		},
 	} {
 		receipt := inventedGroceryReceipt()
 		broken(receipt)
@@ -293,6 +296,24 @@ func TestProposeReceiptMatchesWantsMoreThanTheAmount(t *testing.T) {
 	}, masks, nil)
 	if len(onTheCard) != 1 || !onTheCard[0].IsAutomatic || onTheCard[0].MatchConfidence != "0.85" {
 		t.Fatalf("the amount on the card the receipt prints is matched: %+v", onTheCard)
+	}
+}
+
+// The one exact amount sharing a word of the merchant is not matched
+// without asking when the receipt prints card digits and the charge is on
+// an account whose known digits differ: a candidate for the person only.
+// An account whose digits are not known says nothing either way.
+func TestProposeReceiptMatchesNeverTakesAnotherCardsCharge(t *testing.T) {
+	receipt := inventedGroceryReceipt()
+	receipt.CurrencyCode, receipt.PaymentAccountMask = "USD", "4821"
+	charges := []*models.FinanceTransaction{inventedCharge("charge-named", "account-other", "2026-09-10", "-16.97", "MAPLE STREET MKT")}
+	otherCard := ProposeReceiptMatches(receipt, charges, map[string]string{"account-other": "1111"}, nil)
+	if len(otherCard) != 1 || !otherCard[0].IsExactAmount || otherCard[0].IsSameAccount || otherCard[0].IsAutomatic {
+		t.Fatalf("the charge on another card is only a candidate: %+v", otherCard)
+	}
+	unknownCard := ProposeReceiptMatches(receipt, charges, map[string]string{}, nil)
+	if len(unknownCard) != 1 || !unknownCard[0].IsAutomatic || unknownCard[0].MatchConfidence != "0.85" {
+		t.Fatalf("on an account with no known digits, the merchant's word is enough: %+v", unknownCard)
 	}
 }
 

@@ -152,12 +152,15 @@ type ReceiptMatchCandidateView struct {
 // RecordedReceiptView is what recording a receipt did: the receipt as
 // stored, with its lines and matches; what its check found, in a sentence;
 // the charges it could explain when the matcher left them for the person;
-// and whether it took the place of the receipt read from the same source.
+// whether it took the place of the receipt read from the same source; and
+// which of the person's matches that receipt had were taken off, since
+// the receipt as read now cannot explain them, one sentence each.
 type RecordedReceiptView struct {
-	FinanceReceipt         *models.FinanceReceipt       `json:"financeReceipt"`
-	ReceiptCheckSummary    string                       `json:"receiptCheckSummary"`
-	ReceiptMatchCandidates []*ReceiptMatchCandidateView `json:"receiptMatchCandidates"`
-	IsReplaced             bool                         `json:"isReplaced"`
+	FinanceReceipt             *models.FinanceReceipt       `json:"financeReceipt"`
+	ReceiptCheckSummary        string                       `json:"receiptCheckSummary"`
+	ReceiptMatchCandidates     []*ReceiptMatchCandidateView `json:"receiptMatchCandidates"`
+	IsReplaced                 bool                         `json:"isReplaced"`
+	DroppedReceiptMatchReasons []string                     `json:"droppedReceiptMatchReasons"`
 }
 
 // ReceiptPreviewView is what recording a receipt would do, writing
@@ -433,6 +436,7 @@ func (self *graph) RecordReceipt(ctx context.Context, arguments RecordReceiptArg
 		FinanceReceipt:         stored,
 		ReceiptCheckSummary:    finance.ReceiptCheckSummary(stored.ReceiptCheckState, finance.FormatReceiptAmount(stored.CheckDifferenceAmount, stored.CurrencyCode), stored.CurrencyCode),
 		ReceiptMatchCandidates: candidates, IsReplaced: recorded.IsReplaced,
+		DroppedReceiptMatchReasons: recorded.DroppedReceiptMatchReasons,
 	}, nil
 }
 

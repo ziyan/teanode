@@ -387,7 +387,7 @@ func runFinanceRecordReceipt(ctx context.Context, command *cli.Command) error {
 	if recorded.IsReplaced {
 		line += "; replaced the receipt read from the same source"
 	}
-	lines := []string{line}
+	lines := append([]string{line}, recorded.DroppedReceiptMatchReasons...)
 	for _, match := range stored.ReceiptMatches {
 		lines = append(lines, fmt.Sprintf("matched to %s for %s, by %s", match.FinanceTransactionID,
 			money(match.MatchedAmount, stored.CurrencyCode), receiptMatchSourceWords[match.ReceiptMatchSource]))

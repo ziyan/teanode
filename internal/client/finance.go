@@ -731,6 +731,10 @@ type RecordedReceipt struct {
 	ReceiptCheckSummary    string                   `json:"receiptCheckSummary"`
 	ReceiptMatchCandidates []*ReceiptMatchCandidate `json:"receiptMatchCandidates"`
 	IsReplaced             bool                     `json:"isReplaced"`
+
+	// DroppedReceiptMatchReasons say which of the person's matches were
+	// taken off, since the receipt as read now cannot explain them.
+	DroppedReceiptMatchReasons []string `json:"droppedReceiptMatchReasons"`
 }
 
 // ReceiptPreview is what recording a receipt would do.
@@ -1023,7 +1027,7 @@ const (
 	DocumentProposeReceiptMatches = `query ($receiptId: String!) { ProposeReceiptMatches(receiptId: $receiptId) ` + receiptMatchCandidateFields + ` }`
 
 	DocumentRecordReceipt = `mutation ` + receiptVariables + ` {
-  RecordReceipt` + receiptArguments + ` { financeReceipt ` + financeReceiptFields + ` receiptCheckSummary receiptMatchCandidates ` + receiptMatchCandidateFields + ` isReplaced }
+  RecordReceipt` + receiptArguments + ` { financeReceipt ` + financeReceiptFields + ` receiptCheckSummary receiptMatchCandidates ` + receiptMatchCandidateFields + ` isReplaced droppedReceiptMatchReasons }
 }`
 
 	DocumentPreviewRecordReceipt = `query ` + receiptVariables + ` {

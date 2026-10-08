@@ -1,8 +1,11 @@
 package db
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -33,10 +36,21 @@ type FinanceReceiptOperation interface {
 	// PutFinanceReceipt writes a receipt with its lines. When the agent
 	// already holds a receipt read from the same source, this one takes
 	// its place under the same id: its lines are replaced and its matches
-	// kept, for the caller to match again. The check state and difference
+	// kept, for the caller to match again and to check with
+	// DropUnfittingFinanceReceiptMatches. The check state and difference
 	// are written as given. It answers the receipt as stored, with its
-	// lines and matches.
+	// lines and matches. ErrInvalidArguments for an amount or a quantity
+	// larger than its column holds.
 	PutFinanceReceipt(receipt *models.FinanceReceipt) (*models.FinanceReceipt, error)
+
+	// DropUnfittingFinanceReceiptMatches takes off a receipt the matches
+	// that no longer fit it, as PutFinanceReceiptMatch would refuse them
+	// now: after the receipt was read again with a lower total or in
+	// another currency, say. The oldest match is kept first, and each
+	// later one is weighed against those kept before it. It answers the
+	// matches taken off, each with why. ErrNotFound when the agent has no
+	// such receipt.
+	DropUnfittingFinanceReceiptMatches(agentId, receiptId string) ([]*FinanceReceiptMatchDropped, error)
 
 	// GetFinanceReceipt is one receipt of the agent with its lines and
 	// matches, or nil.
@@ -129,6 +143,13 @@ const (
 	FinanceReceiptLimitMost    = 200
 )
 
+// FinanceReceiptMatchDropped is a match DropUnfittingFinanceReceiptMatches
+// took off, and why it no longer fits, in words.
+type FinanceReceiptMatchDropped struct {
+	ReceiptMatch *models.FinanceReceiptMatch
+	DropReason   string
+}
+
 // FinanceReceiptDeleted is what one DeleteFinanceReceipt deleted: the
 // receipt as it was, and the uploaded file whose row went with it, whose
 // bytes the caller removes from storage. Empty when no file went.
@@ -146,6 +167,54 @@ const (
 	maximumReceiptSourceIDLength    = 200
 	maximumReceiptAccountMaskLength = 8
 )
+
+// What the receipt columns hold: an amount is numeric(19,4), fifteen
+// digits before the point, and a quantity numeric(24,8), sixteen. A model
+// can misread more; it is refused here, as an argument, rather than
+// failing the statement as an error the receipt job would retry.
+var (
+	maximumReceiptAmountBound   = new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(15), nil))
+	maximumReceiptQuantityBound = new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(16), nil))
+)
+
+// checkReceiptBound refuses a canonical amount or quantity whose size
+// reaches the bound its column holds.
+func checkReceiptBound(field, canonical string, bound *big.Rat) error {
+	parsed, isParsed := new(big.Rat).SetString(canonical)
+	if !isParsed {
+		return fmt.Errorf("%w: %s %q is not a decimal", ErrInvalidArguments, field, canonical)
+	}
+	if new(big.Rat).Abs(parsed).Cmp(bound) >= 0 {
+		return fmt.Errorf("%w: %s %s is larger than any receipt prints; read it again", ErrInvalidArguments, field, canonical)
+	}
+	return nil
+}
+
+// canonicalReceiptAmount is canonicalAmount for a receipt's amount,
+// refusing one larger than its column holds.
+func canonicalReceiptAmount(field, amount string) (string, error) {
+	canonical, err := canonicalAmount(field, amount)
+	if err != nil {
+		return "", err
+	}
+	if err := checkReceiptBound(field, canonical, maximumReceiptAmountBound); err != nil {
+		return "", err
+	}
+	return canonical, nil
+}
+
+// canonicalOptionalReceiptAmount is canonicalReceiptAmount for a nullable
+// column: nil for empty.
+func canonicalOptionalReceiptAmount(field, amount string) (*string, error) {
+	if strings.TrimSpace(amount) == "" {
+		return nil, nil
+	}
+	canonical, err := canonicalReceiptAmount(field, amount)
+	if err != nil {
+		return nil, err
+	}
+	return &canonical, nil
+}
 
 type agentFinanceReceiptModel struct {
 	ID                    string     `gorm:"column:id;primaryKey"`
@@ -396,17 +465,17 @@ func checkedReceiptRow(receipt *models.FinanceReceipt) (*agentFinanceReceiptMode
 	if err != nil {
 		return nil, err
 	}
-	totalAmount, err := canonicalAmount("the total", receipt.TotalAmount)
+	totalAmount, err := canonicalReceiptAmount("the total", receipt.TotalAmount)
 	if err != nil {
 		return nil, err
 	}
-	subtotalAmount, err := canonicalOptionalAmount("the subtotal", receipt.SubtotalAmount)
+	subtotalAmount, err := canonicalOptionalReceiptAmount("the subtotal", receipt.SubtotalAmount)
 	if err != nil {
 		return nil, err
 	}
 	checkDifferenceAmount := "0"
 	if strings.TrimSpace(receipt.CheckDifferenceAmount) != "" {
-		if checkDifferenceAmount, err = canonicalAmount("the check difference", receipt.CheckDifferenceAmount); err != nil {
+		if checkDifferenceAmount, err = canonicalReceiptAmount("the check difference", receipt.CheckDifferenceAmount); err != nil {
 			return nil, err
 		}
 	}
@@ -453,11 +522,11 @@ func checkedReceiptLines(receipt *models.FinanceReceipt) ([]*agentFinanceReceipt
 				return nil, nil, fmt.Errorf("%w: line %d is longer than %d characters", ErrInvalidArguments, line.LineNumber, maximumReceiptTextLength)
 			}
 		}
-		lineAmount, err := canonicalAmount(fmt.Sprintf("line %d's amount", line.LineNumber), line.LineAmount)
+		lineAmount, err := canonicalReceiptAmount(fmt.Sprintf("line %d's amount", line.LineNumber), line.LineAmount)
 		if err != nil {
 			return nil, nil, err
 		}
-		unitPriceAmount, err := canonicalOptionalAmount(fmt.Sprintf("line %d's unit price", line.LineNumber), line.UnitPriceAmount)
+		unitPriceAmount, err := canonicalOptionalReceiptAmount(fmt.Sprintf("line %d's unit price", line.LineNumber), line.UnitPriceAmount)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -467,8 +536,11 @@ func checkedReceiptLines(receipt *models.FinanceReceipt) ([]*agentFinanceReceipt
 			if !isParsed || strings.ContainsAny(line.Quantity, "eE/") {
 				return nil, nil, fmt.Errorf("%w: line %d's quantity %q is not a decimal", ErrInvalidArguments, line.LineNumber, line.Quantity)
 			}
-			written := canonical.FloatString(8)
-			quantity = &written
+			canonicalQuantity := canonical.FloatString(8)
+			if err := checkReceiptBound(fmt.Sprintf("line %d's quantity", line.LineNumber), canonicalQuantity, maximumReceiptQuantityBound); err != nil {
+				return nil, nil, err
+			}
+			quantity = &canonicalQuantity
 		}
 		if line.DiscountedLineNumber != 0 {
 			discountedByLineNumber[line.LineNumber] = line.DiscountedLineNumber
@@ -509,8 +581,16 @@ func (self *transaction) PutFinanceReceipt(receipt *models.FinanceReceipt) (*mod
 			return nil, ErrNotFound
 		}
 	}
-	// The source's receipt is locked before it is read, so two reads of
-	// one message finishing together write one receipt.
+	// The source is locked before its receipt is read, so two reads of one
+	// message finishing together write one receipt: a row lock alone takes
+	// nothing on the first read, when there is no row yet, and the second
+	// insert would fail on the unique index. Hash collisions only make
+	// unrelated receipts wait for each other.
+	digest := sha256.Sum256([]byte("agent_finance_receipt\x00" + receipt.AgentID + "\x00" + string(receipt.ReceiptSourceKind) + "\x00" + sourceId))
+	lockKey := int64(binary.BigEndian.Uint64(digest[:8]) & math.MaxInt64)
+	if err := self.tx.Exec("SELECT pg_advisory_xact_lock(?)", lockKey).Error; err != nil {
+		return nil, err
+	}
 	var existing []agentFinanceReceiptModel
 	if err := self.tx.Raw(`SELECT * FROM "agent_finance_receipt" WHERE "agent_id" = ? AND "`+receiptSourceColumn(receipt.ReceiptSourceKind)+`" = ? FOR UPDATE`,
 		receipt.AgentID, sourceId).Scan(&existing).Error; err != nil {
@@ -832,6 +912,10 @@ func (self *transaction) DeleteFinanceReceipt(agentId, receiptId string) (*Finan
 
 // --- matches --------------------------------------------------------------
 
+// errReceiptMatchNotWritten undoes the audit event of a match the guarded
+// statement did not write.
+var errReceiptMatchNotWritten = fmt.Errorf("db: the receipt match was not written")
+
 func (self *transaction) PutFinanceReceiptMatch(agentId string, match *models.FinanceReceiptMatch) (bool, error) {
 	if match == nil || !match.ReceiptMatchSource.IsValid() {
 		return false, fmt.Errorf("%w: a match needs what made it, receipt_matcher or person", ErrInvalidArguments)
@@ -881,10 +965,12 @@ func (self *transaction) PutFinanceReceiptMatch(agentId string, match *models.Fi
 	after = append(after, &models.FinanceReceiptMatch{
 		ReceiptID: receipt.ID, FinanceTransactionID: financeTransaction.ID, MatchedAmount: matchedAmount, ReceiptMatchSource: match.ReceiptMatchSource,
 	})
-	written := false
 	if err := self.applyMutation(models.AuditResourceFinanceReceipt, receipt.ID, models.AuditActionUpdate,
 		receiptMatchesAudit(receipt.ReceiptMatches), receiptMatchesAudit(after), func(tx *gorm.DB) error {
-			result := tx.Exec(`INSERT INTO "agent_finance_receipt_match" AS "existing" ("receipt_id", "finance_transaction_id", "agent_id",
+			// The person's match is checked again in the statement, so the
+			// matcher cannot replace one the person made in between; when it
+			// did not write, neither does the audit log.
+			inserted := tx.Exec(`INSERT INTO "agent_finance_receipt_match" AS "existing" ("receipt_id", "finance_transaction_id", "agent_id",
 					"matched_amount", "receipt_match_source", "match_confidence", "created_at")
 				VALUES (?, ?, ?, ?::numeric, ?, ?::numeric, ?)
 				ON CONFLICT ("receipt_id", "finance_transaction_id") DO UPDATE SET
@@ -892,12 +978,81 @@ func (self *transaction) PutFinanceReceiptMatch(agentId string, match *models.Fi
 					"match_confidence" = EXCLUDED."match_confidence"
 				WHERE "existing"."receipt_match_source" <> 'person' OR EXCLUDED."receipt_match_source" = 'person'`,
 				receipt.ID, financeTransaction.ID, agentId, matchedAmount, string(match.ReceiptMatchSource), matchConfidence, time.Now())
-			written = result.RowsAffected > 0
-			return result.Error
+			if inserted.Error != nil {
+				return inserted.Error
+			}
+			if inserted.RowsAffected == 0 {
+				return errReceiptMatchNotWritten
+			}
+			return nil
 		}); err != nil {
+		if errors.Is(err, errReceiptMatchNotWritten) {
+			return false, nil
+		}
 		return false, err
 	}
-	return written, nil
+	return true, nil
+}
+
+func (self *transaction) DropUnfittingFinanceReceiptMatches(agentId, receiptId string) ([]*FinanceReceiptMatchDropped, error) {
+	receipt, err := self.GetFinanceReceipt(agentId, receiptId)
+	if err != nil {
+		return nil, err
+	}
+	if receipt == nil {
+		return nil, ErrNotFound
+	}
+	dropped := []*FinanceReceiptMatchDropped{}
+	if len(receipt.ReceiptMatches) == 0 {
+		return dropped, nil
+	}
+	// Every match is taken off and each put back that fits, oldest first,
+	// so each is weighed against the receipt's total with only the ones
+	// kept before it, never with a later one that is about to go.
+	if err := self.tx.Where(`"agent_id" = ? AND "receipt_id" = ?`, agentId, receipt.ID).Delete(&agentFinanceReceiptMatchModel{}).Error; err != nil {
+		return nil, err
+	}
+	kept := make([]*models.FinanceReceiptMatch, 0, len(receipt.ReceiptMatches))
+	for _, match := range receipt.ReceiptMatches {
+		financeTransaction, err := self.GetFinanceTransaction(agentId, match.FinanceTransactionID)
+		if err != nil {
+			return nil, err
+		}
+		if financeTransaction == nil {
+			dropped = append(dropped, &FinanceReceiptMatchDropped{ReceiptMatch: match, DropReason: "that charge is no longer there"})
+			continue
+		}
+		if err := self.checkReceiptMatchFits(agentId, receipt, financeTransaction, match.MatchedAmount); err != nil {
+			if !errors.Is(err, ErrInvalidArguments) {
+				return nil, err
+			}
+			dropped = append(dropped, &FinanceReceiptMatchDropped{
+				ReceiptMatch: match, DropReason: strings.TrimPrefix(err.Error(), ErrInvalidArguments.Error()+": "),
+			})
+			continue
+		}
+		var matchConfidence *string
+		if match.MatchConfidence != "" {
+			matchConfidence = &match.MatchConfidence
+		}
+		if err := self.tx.Exec(`INSERT INTO "agent_finance_receipt_match" ("receipt_id", "finance_transaction_id", "agent_id",
+				"matched_amount", "receipt_match_source", "match_confidence", "created_at")
+			VALUES (?, ?, ?, ?::numeric, ?, ?::numeric, ?)`,
+			receipt.ID, financeTransaction.ID, agentId, match.MatchedAmount, string(match.ReceiptMatchSource),
+			matchConfidence, match.CreatedAt).Error; err != nil {
+			return nil, err
+		}
+		kept = append(kept, match)
+	}
+	if len(dropped) == 0 {
+		return dropped, nil
+	}
+	// The rows are already as they end; the mutation only records them.
+	if err := self.applyMutation(models.AuditResourceFinanceReceipt, receipt.ID, models.AuditActionUpdate,
+		receiptMatchesAudit(receipt.ReceiptMatches), receiptMatchesAudit(kept), func(*gorm.DB) error { return nil }); err != nil {
+		return nil, err
+	}
+	return dropped, nil
 }
 
 // checkReceiptMatchFits refuses a match that cannot be true of the charge
