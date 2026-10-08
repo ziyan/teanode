@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.120.1] - 2026-10-08
+
+### Fixed
+
+- On a voice call the agent no longer repeats what it is about to do before every lookup, and its last two messages no longer run together. (#356)
+- The agent stops searching for tools it already has. (#356)
+
 ## [0.120.0] - 2026-10-08
 
 ### Added
