@@ -82,7 +82,8 @@ func TestTheClientInThisRepositoryCanUseThisServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %s", err)
 	}
-	if len(listed) != 2 || listed[0].Name != "weather" {
+	// The two tools, and result_more after them, which this package adds.
+	if len(listed) != 3 || listed[0].Name != "weather" || listed[2].Name != resultMoreName {
 		t.Fatalf("the catalog came back as %+v", listed)
 	}
 	if listed[0].InputSchema["type"] != "object" {

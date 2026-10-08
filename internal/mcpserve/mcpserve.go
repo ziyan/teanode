@@ -8,6 +8,10 @@
 // not sampling. That is the half a harness wants and the half this server
 // has something to put in.
 //
+// A tool's text longer than ResultCharacters goes back a page at a time:
+// the first page, a line saying how to read on, and result_more, which this
+// package lists and answers itself, for the rest. See results.go.
+//
 // Nothing here knows about HTTP, about a database, or about what a tool
 // is: it takes one decoded JSON-RPC message and gives back the message to
 // send in reply, and asks a Tools for the catalog and for the work. A
@@ -51,12 +55,36 @@ type Server struct {
 	name    string
 	version string
 	tools   Tools
+
+	// results holds the rest of a long result for result_more, under
+	// holder, which is who the caller is.
+	results *ResultStore
+	holder  string
+
+	// resultCharacters is how much of a tool's text one answer carries.
+	resultCharacters int
 }
 
 // New builds a server that says it is called name, at version, offering
-// what tools holds.
+// what tools holds. It holds long results in a store of its own, which
+// lasts as long as it does; WithResults shares one across servers.
 func New(name, version string, tools Tools) *Server {
-	return &Server{name: name, version: version, tools: tools}
+	return &Server{
+		name: name, version: version, tools: tools,
+		results: NewResultStore(), resultCharacters: ResultCharacters,
+	}
+}
+
+// WithResults holds long results in results, for holder: a transport that
+// builds a server per request passes the same store to each, and the same
+// holder for the same caller, so that result_more on the next request
+// finds what this one held.
+func (self *Server) WithResults(results *ResultStore, holder string) *Server {
+	if results != nil {
+		self.results = results
+	}
+	self.holder = holder
+	return self
 }
 
 // Handle answers one message.
@@ -121,6 +149,7 @@ func (self *Server) list(ctx context.Context, request *mcp.Request) *mcp.Respons
 	if catalog == nil {
 		catalog = []mcp.Tool{}
 	}
+	catalog = append(catalog, resultMoreTool())
 	// No cursor: the whole catalog goes in one page. It is tens of tools,
 	// not thousands, and a client that asked for a page it cannot get is
 	// worse served by pagination than by the list.
@@ -143,13 +172,24 @@ func (self *Server) call(ctx context.Context, request *mcp.Request) *mcp.Respons
 	if len(parameters.Arguments) == 0 {
 		parameters.Arguments = json.RawMessage(`{}`)
 	}
-	text, err := self.tools.Call(ctx, parameters.Name, parameters.Arguments)
+	var text string
+	var err error
+	if parameters.Name == resultMoreName {
+		text, err = self.resultMore(parameters.Arguments)
+	} else {
+		text, err = self.tools.Call(ctx, parameters.Name, parameters.Arguments)
+	}
 	if err != nil {
 		// The tool failed, which is an answer, not a broken call.
 		return self.success(request, &mcp.CallResult{
-			Content: []mcp.Content{{Type: "text", Text: err.Error()}},
+			Content: []mcp.Content{{Type: "text", Text: self.paged(err.Error())}},
 			IsError: true,
 		})
+	}
+	// A page of result_more is already paged, and holding it again would
+	// only hand out a second id for the same text.
+	if parameters.Name != resultMoreName {
+		text = self.paged(text)
 	}
 	return self.success(request, &mcp.CallResult{
 		Content: []mcp.Content{{Type: "text", Text: text}},
