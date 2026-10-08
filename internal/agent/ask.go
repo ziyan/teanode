@@ -51,6 +51,10 @@ type AskSettings struct {
 	// person heard before they talked over it, when they did.
 	InterruptedAnswer *InterruptedAnswer
 
+	// isPastVoiceModel is a spoken turn handed from the model for calls to
+	// the larger one (think_harder).
+	isPastVoiceModel bool
+
 	// Attachments are the files that came with the message, uploaded
 	// already; References the threads the person pointed at.
 	Attachments []*models.AgentAttachment
@@ -345,6 +349,10 @@ type AskRun struct {
 	// loaded are the deferred tools loaded through tool_search this turn.
 	loaded  map[string]bool
 	offered []*Tool
+
+	// isThinkingHarder is set by think_harder, and read at the start of the
+	// next round.
+	isThinkingHarder atomic.Bool
 
 	// knowledgeRecalled is what the turn's search of the person's files and
 	// chat found, once it has (startKnowledgeRecall).
@@ -847,17 +855,7 @@ func (self *AskRun) turn() error {
 	if err != nil {
 		return err
 	}
-	modelName := registry.Configuration().Models.ForWork(config.AgentWorkAsk)
-	switch {
-	case settings.Model != "":
-		modelName = settings.Model
-	case settings.Work != "":
-		modelName = registry.Configuration().Models.ForWork(settings.Work)
-	case voiceModel(configuration, settings) != "":
-		modelName = voiceModel(configuration, settings)
-	case settings.Agent.AskModel != "":
-		modelName = settings.Agent.AskModel
-	}
+	modelName := self.askModelName(configuration, registry)
 	self.modelName = modelName
 	// The model's window is asked for only once the history passes what
 	// any window holds, which most runs never do.
@@ -957,6 +955,15 @@ func (self *AskRun) turn() error {
 		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
 		self.offered = append(self.offered, work)
 		self.loaded[work.Name] = true
+	}
+	// A spoken turn answered by the small model for calls may hand itself
+	// to the larger one, in the round from the start: the decision is the
+	// first thing the small model makes.
+	if spoken := voiceModel(configuration, settings); spoken != "" && spoken != self.typedModelName(configuration, registry) {
+		if thinkHarder := self.agent.thinkHarderTool(); !listed(configuration.Agent.Tools.Disabled, thinkHarder) {
+			self.offered = append(self.offered, thinkHarder)
+			self.loaded[thinkHarder.Name] = true
+		}
 	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor the person's own
@@ -1069,6 +1076,16 @@ func (self *AskRun) turn() error {
 	for round := 0; round < maximumRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// The small model for calls handed the turn to the larger one: the
+		// rounds from here are the larger model's.
+		if self.isThinkingHarder.Load() && !settings.isPastVoiceModel {
+			settings.isPastVoiceModel = true
+			if provider, model, err = self.chooseModel(configuration, registry); err != nil {
+				return err
+			}
+			modelName = self.askModelName(configuration, registry)
+			self.modelName = modelName
 		}
 		// What the person wrote since the last round, read before the
 		// model decides what to do next.
@@ -1337,12 +1354,38 @@ func historyLimit(contextLength int) int {
 }
 
 // voiceModel is the model a spoken turn is answered with, where the
-// operator chose one for calls; empty otherwise.
+// operator chose one for calls; empty otherwise, and once the turn has been
+// handed to the larger model (think_harder).
 func voiceModel(configuration *config.Configuration, settings *AskSettings) string {
-	if settings.Surface != "voice" {
+	if settings.Surface != "voice" || settings.isPastVoiceModel {
 		return ""
 	}
 	return strings.TrimSpace(configuration.Agent.Voice.AskModel)
+}
+
+// typedModelName is the model this turn would be answered with typed.
+func (self *AskRun) typedModelName(configuration *config.Configuration, registry *llm.Registry) string {
+	isPast := self.settings.isPastVoiceModel
+	self.settings.isPastVoiceModel = true
+	defer func() { self.settings.isPastVoiceModel = isPast }()
+	return self.askModelName(configuration, registry)
+}
+
+// askModelName is the name of the model this turn is answered with, as
+// chooseModel chooses it.
+func (self *AskRun) askModelName(configuration *config.Configuration, registry *llm.Registry) string {
+	settings := self.settings
+	switch {
+	case settings.Model != "":
+		return settings.Model
+	case settings.Work != "":
+		return registry.Configuration().Models.ForWork(settings.Work)
+	case voiceModel(configuration, settings) != "":
+		return voiceModel(configuration, settings)
+	case settings.Agent.AskModel != "":
+		return settings.Agent.AskModel
+	}
+	return registry.Configuration().Models.ForWork(config.AgentWorkAsk)
 }
 
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {

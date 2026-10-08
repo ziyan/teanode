@@ -1652,7 +1652,9 @@ through the same provider. Empty is `gpt-4o-mini-tts`.
 `provider:model`; empty is the one a typed turn uses. A call wants the first
 words soon, and on a long conversation a smaller model starts speaking a second
 or more before a larger one, even though it reads the conversation uncached
-the first time.
+the first time. When this model differs from the typed one, it is given
+`think_harder`: for a hard question it says a short line and hands the rest of
+the turn to the typed model, with the same conversation and tools.
 
 **`speechVoice`** — The provider's voice the answers are spoken in, such as
 `marin`, `cedar`, `alloy` or `coral`. Empty is `marin`. Each person may choose
