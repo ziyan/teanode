@@ -228,9 +228,10 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies f
 			// A dashboard URL carries a message identifier, so it is not sent
 			// to whatever a reader clicks through to.
 			response.Header().Set("Referrer-Policy", "no-referrer")
-			// The dashboard asks for none of these, so nothing it embeds gets
-			// to ask either.
-			response.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+			// The dashboard asks for none of these but the microphone, which
+			// the drawer listens to when the person talks to their agent, and
+			// only its own pages may ask: nothing it embeds gets to.
+			response.Header().Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=()")
 			handler.ServeHTTP(response, request)
 		})
 	}

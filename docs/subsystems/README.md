@@ -21,6 +21,7 @@ change with it.
 | `memory.md` | What an agent remembers, how it is recalled, and by what meaning |
 | `jobs-and-schedules.md` | The queue, claiming, retries, and work at a time somebody chose |
 | `devices.md` | A person's own computer and their own browser tab |
+| `voice.md` | Talking to the agent: the microphone, the provider's transcription, spoken turns |
 | `skills.md` | Tools installed from a signed registry, and how they are carried out |
 | `mcp.md` | The Model Context Protocol both ways: servers the agent connects to, and harnesses that use its tools |
 | `contacts.md` | The address book, CardDAV, and what a phone may do to a card |

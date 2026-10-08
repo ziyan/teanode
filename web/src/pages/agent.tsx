@@ -39,6 +39,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-route
 import { useTranslation } from '../i18n/i18n'
 import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
+import { SpeechVoiceChoice } from '../components/speechVoice'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 import {
   LIST_SOURCE_SECRETS,
@@ -106,6 +107,9 @@ export type Agent = {
   // when they are not there: outward, money, destructive, granting, listed.
   unattendedAllowedRisks?: string[]
   askModel?: string
+  // The voice answers are read aloud in on a voice call; empty is the
+  // server's.
+  speechVoice?: string
   dreamFrom?: string
   dreamUntil?: string
   dailyTokens: number
@@ -140,7 +144,7 @@ export type AgentView = {
 }
 
 const VIEW = `{
-  agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm unattendedAllowedRisks
+  agent { id name enabled instructions language knowledgeLanguage askModel speechVoice dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm unattendedAllowedRisks
     isMemoryCheckEnabled isIdeasEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
     voice { tone length greeting signoff }
     categories { name description }
@@ -160,12 +164,12 @@ export const READ_AGENT = `query { ReadAgent ${VIEW} }`
 const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
     $voice: AgentVoiceInput,
-    $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String,
+    $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String,
     $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean,
     $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
-      categories: $categories, notifications: $notifications, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel,
+      categories: $categories, notifications: $notifications, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, speechVoice: $speechVoice,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
       isIdeasEnabled: $isIdeasEnabled, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
       alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, forget: $forget) ${VIEW}
@@ -343,6 +347,7 @@ export function AgentPage() {
           <div className="card">
             <AboutForm agent={agent} view={view} busy={busy} onSave={update} />
             <VoiceForm agent={agent} busy={busy} onSave={update} />
+            <SpeechVoiceChoice speechVoice={agent.speechVoice ?? ''} busy={busy} onSave={update} />
           </div>
           <div className="card">
             <h3>{t('agent.advanced')}</h3>

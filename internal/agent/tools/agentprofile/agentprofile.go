@@ -16,6 +16,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -33,11 +34,12 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_profile", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. For the person's own name use account_update.",
+				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, the voice your answers are read aloud in on a voice call (speech_voice; warm and calm: marin, cedar; bright: coral, nova, shimmer; deeper: ash, onyx, echo; empty for the server's), or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. For the person's own name use account_update.",
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert", "unattended", "set_unattended"),
 					"agent_name":      tools.StringProperty("for set: what they want to call you"),
 					"language":        tools.StringProperty("for set: the language to talk to them in, as a tag: en, ja, zh"),
+					"speech_voice":    tools.StringProperty("for set: the voice to read your answers aloud in on a voice call, one of " + strings.Join(config.VoiceSpeechVoices, ", ") + "; \"default\" for the server's"),
 					"add_instruction": tools.StringProperty("for set: one line to add to your standing instructions, in their words: what they want help with, how they like to be written to"),
 					"alert_id":        tools.StringProperty("for mute_alert: the alert to mute from; the latest when left out"),
 					"mute_scope":      tools.EnumProperty("for mute_alert and unmute_alert: what to match; for mute_alert, left out, what the alert was about, or what mute_target reads as", string(models.AlertMuteSubjectKey), string(models.AlertMuteSender), string(models.AlertMuteDomain), string(models.AlertMuteKind), string(models.AlertMuteSpendingCategory)),
@@ -73,6 +75,9 @@ func init() {
 						}
 						if strings.TrimSpace(call.Language) != "" {
 							changing = append(changing, "talk in "+strings.TrimSpace(call.Language))
+						}
+						if strings.TrimSpace(call.SpeechVoice) != "" {
+							changing = append(changing, "speak in the voice "+strings.TrimSpace(call.SpeechVoice))
 						}
 						if strings.TrimSpace(call.AddInstruction) != "" {
 							changing = append(changing, "remember an instruction")
@@ -122,6 +127,7 @@ type arguments struct {
 	Action         string `json:"action"`
 	AgentName      string `json:"agent_name"`
 	Language       string `json:"language"`
+	SpeechVoice    string `json:"speech_voice"`
 	AddInstruction string `json:"add_instruction"`
 	AlertID        string `json:"alert_id"`
 	MuteScope      string `json:"mute_scope"`
@@ -310,6 +316,15 @@ func set(ctx context.Context, current tools.Run, agent *models.Agent, asked argu
 		variables["language"] = language
 		said = append(said, "you talk in "+language)
 	}
+	if speechVoice := strings.ToLower(strings.TrimSpace(asked.SpeechVoice)); speechVoice != "" {
+		if speechVoice == "default" {
+			variables["speechVoice"] = ""
+			said = append(said, "your answers are read aloud in the server's voice")
+		} else {
+			variables["speechVoice"] = speechVoice
+			said = append(said, "your answers are read aloud in the voice "+speechVoice+", from the next sentence")
+		}
+	}
 	if line := strings.TrimSpace(asked.AddInstruction); line != "" {
 		if runes := []rune(line); len(runes) > instructionMostRuneCount {
 			line = string(runes[:instructionMostRuneCount])
@@ -328,9 +343,9 @@ func set(ctx context.Context, current tools.Run, agent *models.Agent, asked argu
 		said = append(said, "the line is in your instructions")
 	}
 	if len(variables) == 0 {
-		return nil, fmt.Errorf("nothing to set: give agent_name, language or add_instruction")
+		return nil, fmt.Errorf("nothing to set: give agent_name, language, speech_voice or add_instruction")
 	}
-	if _, err := operator.Execute(ctx, `mutation ($name: String, $language: String, $instructions: String) { UpdateAgent(name: $name, language: $language, instructions: $instructions) { agent { id } } }`, variables); err != nil {
+	if _, err := operator.Execute(ctx, `mutation ($name: String, $language: String, $speechVoice: String, $instructions: String) { UpdateAgent(name: $name, language: $language, speechVoice: $speechVoice, instructions: $instructions) { agent { id } } }`, variables); err != nil {
 		return nil, err
 	}
 	return noted(strings.Join(said, "; ")), nil

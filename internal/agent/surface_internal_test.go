@@ -16,6 +16,7 @@ func TestSurfaces(t *testing.T) {
 	}{
 		{"drawer", true, "Markdown renders", true},
 		{"phone", true, "no tables", true},
+		{"voice", true, "listening, not reading", true},
 		{"cli", true, "A terminal", false},
 		{"api", true, "A terminal", false},
 		{"mail", true, "first line is its subject", false},
@@ -44,8 +45,16 @@ func TestSurfaces(t *testing.T) {
 			t.Errorf("%s: %q", name, overlay)
 		}
 	}
+	// Spoken turns are answered for the ear, and their transcription is not
+	// taken on trust.
+	voice := surfaceOf("voice")
+	for _, said := range []string{"No tables", "the answer first", "misheard"} {
+		if !strings.Contains(voice.overlay+voice.situationLine, said) {
+			t.Errorf("voice says %q: %q", said, voice.overlay)
+		}
+	}
 	// Only the dashboard's own drawer can be moved to a page of it.
-	for _, name := range []string{"drawer", "phone"} {
+	for _, name := range []string{"drawer", "phone", "voice"} {
 		if !surfaceOf(name).canShowPages {
 			t.Errorf("%s cannot show a page", name)
 		}
@@ -100,5 +109,32 @@ func TestThePromptNamesOnlyTheToolsTheRoundHas(t *testing.T) {
 		if !strings.Contains(waiting, "`knowledge`") || !strings.Contains(waiting, "`tool_search`") {
 			t.Errorf("short=%v: a deferred tool is named with how to load it", short)
 		}
+	}
+}
+
+// After a spoken answer the person cut in on, the model reads how much of
+// it was heard before what they said; otherwise their words as they are.
+func TestPersonTextSaysHowMuchOfAnInterruptedAnswerWasHeard(t *testing.T) {
+	plain := &AskSettings{Message: "And on Friday?"}
+	if got := personText(plain); got != "And on Friday?" {
+		t.Fatalf("no interruption: %q", got)
+	}
+	interrupted := &AskSettings{Message: "And on Friday?", InterruptedAnswer: &InterruptedAnswer{
+		HeardText:   "Tomorrow you have a dentist at nine.",
+		UnheardText: "Then lunch at noon.",
+	}}
+	got := personText(interrupted)
+	for _, part := range []string{"<interrupted>", `Heard: "Tomorrow you have a dentist at nine."`, `Not heard: "Then lunch at noon."`} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing %q in %q", part, got)
+		}
+	}
+	if !strings.HasSuffix(got, "\n\nAnd on Friday?") {
+		t.Fatalf("their own words come last: %q", got)
+	}
+	// Everything was heard: nothing to say.
+	whole := &AskSettings{Message: "Thanks", InterruptedAnswer: &InterruptedAnswer{HeardText: "Done."}}
+	if got := personText(whole); got != "Thanks" {
+		t.Fatalf("nothing unheard: %q", got)
 	}
 }

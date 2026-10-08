@@ -144,6 +144,7 @@ type agentModel struct {
 	// word that the agent may take when they are not there.
 	UnattendedAllowedRisks []byte     `gorm:"column:unattended_allowed_risks;type:jsonb"`
 	AskModel               string     `gorm:"column:ask_model"`
+	SpeechVoice            string     `gorm:"column:speech_voice"`
 	DailyTokens            int64      `gorm:"column:daily_tokens"`
 	DailyCost              float64    `gorm:"column:daily_cost"`
 	OperatorDisabledAt     *time.Time `gorm:"column:operator_disabled_at"`
@@ -232,6 +233,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		Confirm:                []string{},
 		UnattendedAllowedRisks: []models.UnattendedRisk{},
 		AskModel:               model.AskModel,
+		SpeechVoice:            model.SpeechVoice,
 		DailyTokens:            model.DailyTokens,
 		DailyCost:              model.DailyCost,
 		DreamFrom:              model.DreamFrom,
@@ -299,6 +301,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		Language:               agent.Language,
 		KnowledgeLanguage:      agent.KnowledgeLanguage,
 		AskModel:               agent.AskModel,
+		SpeechVoice:            agent.SpeechVoice,
 		DailyTokens:            agent.DailyTokens,
 		DailyCost:              agent.DailyCost,
 		OperatorDisabledAt:     agent.OperatorDisabledAt,
@@ -502,7 +505,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"modified_at": model.ModifiedAt, "name": model.Name, "enabled": model.Enabled,
 			"instructions": model.Instructions, "language": model.Language, "knowledge_language": model.KnowledgeLanguage,
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
-			"confirm": model.Confirm, "unattended_allowed_risks": model.UnattendedAllowedRisks, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
+			"confirm": model.Confirm, "unattended_allowed_risks": model.UnattendedAllowedRisks, "ask_model": model.AskModel, "speech_voice": model.SpeechVoice, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
 			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
 			"dreamed_at":              model.DreamedAt,
