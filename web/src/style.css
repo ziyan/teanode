@@ -13464,3 +13464,9 @@ button.idea-history-title {
 .agent-line.herdr-question-line .herdr-question-card {
   margin-top: 0;
 }
+
+/* A session's dialog holds a terminal's screen, drawn as the terminal drew
+   it: wider than other dialogs, as wide as the window allows. */
+.dialog-wide:has(.herdr-session) {
+  max-width: min(960px, 100%);
+}
