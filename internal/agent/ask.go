@@ -346,6 +346,10 @@ type AskRun struct {
 	loaded  map[string]bool
 	offered []*Tool
 
+	// knowledgeRecalled is what the turn's search of the person's files and
+	// chat found, once it has (startKnowledgeRecall).
+	knowledgeRecalled chan []string
+
 	// firstWordsAt is when the model's first words of this round came,
 	// for the log.
 	firstWordsAt time.Time
@@ -794,6 +798,9 @@ func (self *AskRun) loop() {
 			return
 		}
 	}
+	// The search of the person's files and chat needs nothing the depth
+	// judgement decides: begun now, it runs while the judgement does.
+	self.startKnowledgeRecall(self.ctx)
 	self.chooseDepth()
 	self.isGoalWaitingAtStart = self.isGoalWaiting()
 	if err := self.turn(); err != nil {
