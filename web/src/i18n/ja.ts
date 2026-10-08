@@ -3514,7 +3514,7 @@ export const ja: Catalog = {
   'finance.annotationSaved': '注記を保存しました。',
   'finance.annotationCleared': '注記を消去しました。',
   'finance.receipts': 'レシート',
-  'finance.receiptsHint': 'レシートの写真か、文字情報を含む PDF をアップロードしてください。',
+  'finance.receiptsHint': 'レシートの写真かスクリーンショットをアップロードしてください。',
   'finance.noReceipts': 'この取引に照合されたレシートはまだありません。',
   'finance.uploadReceipt': 'レシートをアップロード',
   'finance.matchReceipt': 'レシートを照合',
@@ -3528,7 +3528,10 @@ export const ja: Catalog = {
   'finance.receiptUnbalanced': '{amount} のずれ',
   'finance.receiptLinesLess': '明細の合計が印字より {amount} 少なくなっています。どこかの行を読み違えているかもしれません。',
   'finance.receiptLinesMore': '明細の合計が印字より {amount} 多くなっています。どこかの行を読み違えているかもしれません。',
-  'finance.uploadReceiptHint': '文字情報のないスキャン PDF は読み取れません。写真かスクリーンショットにしてください。',
+  'finance.uploadReceiptHint':
+    '読み取れるのは写真とスクリーンショットだけです。PDF はスクリーンショットにしてアップロードしてください。',
+  'finance.receiptReadNotMatched':
+    '{merchant} のレシートを読み取りましたが、この取引には照合できませんでした。レシート一覧に未照合のまま残っています。',
   'finance.onlyUndatedReceipts': '日付が印字されていないレシートのみ',
   'finance.noUndatedReceipts': '読み取ったレシートにはすべて購入日が印字されています。',
   'finance.receiptNoDay': '日付なし',

@@ -838,6 +838,7 @@ export function FinanceTransactionsSection() {
       ) : null}
       {detailed ? (
         <FinanceTransactionDialog
+          key={detailed.id}
           financeTransaction={detailed}
           financeAccount={accountList.find((candidate) => candidate.id === detailed.financeAccountId)}
           financeAccounts={accountList}

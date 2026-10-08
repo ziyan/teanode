@@ -3557,7 +3557,7 @@ export const en = {
   'finance.annotationSaved': 'Annotation saved.',
   'finance.annotationCleared': 'Annotation cleared.',
   'finance.receipts': 'Receipts',
-  'finance.receiptsHint': 'Upload a photo of the receipt, or a PDF with text in it.',
+  'finance.receiptsHint': 'Upload a photo or a screenshot of the receipt.',
   'finance.noReceipts': 'No receipt is matched to this charge yet.',
   'finance.uploadReceipt': 'Upload a receipt',
   'finance.matchReceipt': 'Match a receipt',
@@ -3571,7 +3571,10 @@ export const en = {
   'finance.receiptUnbalanced': 'Off by {amount}',
   'finance.receiptLinesLess': 'The lines come to {amount} less than printed, so a line may have been misread.',
   'finance.receiptLinesMore': 'The lines come to {amount} more than printed, so a line may have been misread.',
-  'finance.uploadReceiptHint': 'A scanned PDF without text cannot be read; take a photo or a screenshot of it instead.',
+  'finance.uploadReceiptHint':
+    'Only a photo or a screenshot can be read; for a PDF, upload a screenshot of it instead.',
+  'finance.receiptReadNotMatched':
+    'The receipt from {merchant} was read, but it could not be matched to this charge. It is in the receipts list, unmatched.',
   'finance.onlyUndatedReceipts': 'Only receipts that print no day',
   'finance.noUndatedReceipts': 'Every receipt read prints the day it was bought.',
   'finance.receiptNoDay': 'No day',

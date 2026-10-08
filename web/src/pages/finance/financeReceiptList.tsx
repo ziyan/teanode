@@ -154,14 +154,31 @@ export function FinanceReceiptListSection() {
   const totalCount = shownPage?.totalCount ?? 0
   const receipts = useMemo(() => shownPage?.financeReceipts ?? [], [shownPage])
 
-  // The charges the receipts shown explain, read by their ids in one ask,
-  // so each can be named in its row and opened.
+  const [opened, setOpened] = useState<Opened | null>(null)
+  // The opened receipt as last seen, kept for when it leaves the page: a
+  // receipt matched with only the unmatched ones listed is still open,
+  // and shows the charge it now explains.
+  const [lastOpenedReceipt, setLastOpenedReceipt] = useState<FinanceReceipt | null>(null)
+  const openedReceiptId = opened && opened.dialogKind !== 'transaction' ? opened.receiptId : ''
+  const pageOpenedReceipt = openedReceiptId ? receipts.find((receipt) => receipt.id === openedReceiptId) : undefined
+  useEffect(() => {
+    if (pageOpenedReceipt) setLastOpenedReceipt(pageOpenedReceipt)
+  }, [pageOpenedReceipt])
+  const openedReceipt =
+    pageOpenedReceipt ?? (openedReceiptId && lastOpenedReceipt?.id === openedReceiptId ? lastOpenedReceipt : undefined)
+
+  // The charges the receipts shown explain, and the opened receipt's, read
+  // by their ids in one ask, so each can be named in its row and opened.
   const matchedIds = useMemo(
     () =>
       [
-        ...new Set(receipts.flatMap((receipt) => receipt.receiptMatches.map((match) => match.financeTransactionId))),
+        ...new Set(
+          [...receipts, ...(lastOpenedReceipt ? [lastOpenedReceipt] : [])].flatMap((receipt) =>
+            receipt.receiptMatches.map((match) => match.financeTransactionId),
+          ),
+        ),
       ].slice(0, MAXIMUM_LISTED_TRANSACTION_COUNT),
-    [receipts],
+    [receipts, lastOpenedReceipt],
   )
   const matchedKey = matchedIds.join(',')
   const transactionsQuery = useQuery(
@@ -199,7 +216,6 @@ export function FinanceReceiptListSection() {
     return byId
   }, [transactionsQuery.data, openedTransactions, changed])
 
-  const [opened, setOpened] = useState<Opened | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [isCounting, setIsCounting] = useState(false)
   const [detailsRefreshCount, setDetailsRefreshCount] = useState(0)
@@ -212,7 +228,11 @@ export function FinanceReceiptListSection() {
   const unmatch = async (receipt: FinanceReceipt, financeTransactionId: string) => {
     setIsBusy(true)
     try {
-      await graphql(UNMATCH_RECEIPT, { receiptId: receipt.id, financeTransactionId })
+      const answer = await graphql<{ UnmatchReceipt?: FinanceReceipt | null }>(UNMATCH_RECEIPT, {
+        receiptId: receipt.id,
+        financeTransactionId,
+      })
+      if (answer?.UnmatchReceipt) setLastOpenedReceipt(answer.UnmatchReceipt)
       toast.done(t('finance.receiptUnmatched', { merchant: receiptName(receipt, fallbackName) }))
       await reload()
     } catch (caught) {
@@ -225,11 +245,14 @@ export function FinanceReceiptListSection() {
   const match = async (receipt: FinanceReceipt, candidate: ReceiptMatchCandidate) => {
     setIsBusy(true)
     try {
-      await graphql(MATCH_RECEIPT, {
+      const answer = await graphql<{ MatchReceipt?: FinanceReceipt | null }>(MATCH_RECEIPT, {
         receiptId: receipt.id,
         financeTransactionId: candidate.financeTransactionId,
         matchedAmount: candidate.matchedAmount || undefined,
       })
+      // What the server answers is the receipt as it is now, which the
+      // page may no longer list.
+      if (answer?.MatchReceipt) setLastOpenedReceipt(answer.MatchReceipt)
       toast.done(t('finance.receiptMatched', { merchant: receiptName(receipt, fallbackName) }))
       await reload()
       setOpened({ dialogKind: 'receipt', receiptId: receipt.id })
@@ -390,10 +413,6 @@ export function FinanceReceiptListSection() {
       { count: count.toLocaleString(language) },
     )
 
-  const openedReceipt =
-    opened && opened.dialogKind !== 'transaction'
-      ? receipts.find((receipt) => receipt.id === opened.receiptId)
-      : undefined
   const openedTransaction =
     opened?.dialogKind === 'transaction' ? transactionsById[opened.financeTransactionId] : undefined
 
@@ -434,6 +453,7 @@ export function FinanceReceiptListSection() {
     const returnReceiptId = opened.returnReceiptId
     dialog = (
       <FinanceTransactionDialog
+        key={openedTransaction.id}
         financeTransaction={openedTransaction}
         financeAccount={accountList.find((candidate) => candidate.id === openedTransaction.financeAccountId)}
         financeAccounts={accountList}

@@ -334,6 +334,7 @@ export function FinanceTransactionDialog({
             financeTransaction={financeTransaction}
             receipts={receipts.receipts}
             isLoading={receipts.isLoading}
+            hasError={receipts.hasError}
             isBusy={receipts.isBusy}
             isReading={receipts.isReading}
             onUpload={(file) => void receipts.upload(file)}

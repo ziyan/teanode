@@ -114,10 +114,27 @@ async function readTransactionReceipts(financeTransactionId: string): Promise<Fi
   return answer?.FinanceReceipts ?? { financeReceipts: [], totalCount: 0 }
 }
 
+// findUnmatchedReceipt looks for the receipt read from an upload among the
+// receipts matched to no charge: where the receipt job leaves it when the
+// charge it was uploaded to refuses it (other receipts already explain the
+// charge, another currency, money in). The server lists receipts newest
+// purchase first and cannot be asked for one by its upload, so this is the
+// first page of the unmatched ones, which is where a receipt just read and
+// left unmatched is in practice.
+async function findUnmatchedReceipt(agentAttachmentId: string): Promise<FinanceReceipt | undefined> {
+  const answer = await graphql<{ FinanceReceipts?: FinanceReceiptPage | null }>(FINANCE_RECEIPTS, {
+    isUnmatched: true,
+    limit: MAXIMUM_LISTED_RECEIPT_COUNT,
+  })
+  return answer?.FinanceReceipts?.financeReceipts.find((receipt) => receipt.agentAttachmentId === agentAttachmentId)
+}
+
 // useTransactionReceipts reads the receipts matched to one finance
 // transaction and does what can be done to them, each with a toast. After
 // an upload it reads them again every few seconds until the receipt job
 // has read the photo, or gives up after a couple of minutes and says so.
+// A photo read but refused by the charge is left unmatched, and that is
+// said too, rather than waiting for it to show on the charge.
 // onTransactionChanged hands the list what changed on the transaction:
 // its annotation, or how many receipts it has.
 export function useTransactionReceipts(
@@ -136,6 +153,14 @@ export function useTransactionReceipts(
   })
   const receipts = query.data?.financeReceipts ?? []
   const fallbackName = t('finance.receiptWithoutMerchant')
+
+  // A failed read is said once, in a toast; the section then says nothing
+  // about what is matched, since it does not know.
+  useEffect(() => {
+    if (query.error) toast.failure(query.error, t('finance.failed'))
+    // Once per failure, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.error])
 
   // Read again after a change, and the count handed to the list.
   const reload = async () => {
@@ -161,6 +186,13 @@ export function useTransactionReceipts(
           changedRef.current?.({ receiptCount: read.totalCount })
           await query.reload(true)
           toast.done(t('finance.receiptRead', { merchant: receiptName(found, fallbackName) }))
+          return
+        }
+        const unmatched = await findUnmatchedReceipt(readingAttachmentId)
+        if (isStopped) return
+        if (unmatched) {
+          setReadingAttachmentId('')
+          toast.failed(t('finance.receiptReadNotMatched', { merchant: receiptName(unmatched, fallbackName) }))
           return
         }
       } catch {
@@ -273,7 +305,7 @@ export function useTransactionReceipts(
   return {
     receipts,
     isLoading: query.loading && !query.data,
-    error: query.error,
+    hasError: Boolean(query.error),
     isBusy,
     isReading: readingAttachmentId !== '',
     upload,
@@ -544,6 +576,7 @@ export function FinanceReceiptsSection({
   financeTransaction,
   receipts,
   isLoading,
+  hasError,
   isBusy,
   isReading,
   onUpload,
@@ -554,6 +587,7 @@ export function FinanceReceiptsSection({
   financeTransaction: FinanceTransaction
   receipts: FinanceReceipt[]
   isLoading: boolean
+  hasError: boolean
   isBusy: boolean
   isReading: boolean
   onUpload: (file: File) => void
@@ -575,7 +609,7 @@ export function FinanceReceiptsSection({
       </div>
       <p className="muted field-hint">{t('finance.receiptsHint')}</p>
       {isLoading ? <Loading /> : null}
-      {!isLoading && receipts.length === 0 ? <p className="muted">{t('finance.noReceipts')}</p> : null}
+      {!isLoading && !hasError && receipts.length === 0 ? <p className="muted">{t('finance.noReceipts')}</p> : null}
       {receipts.map((receipt) => {
         const name = receiptName(receipt, fallbackName)
         const matchedAmount = matchedAmountFor(receipt, financeTransaction.id)
@@ -668,7 +702,7 @@ export function FinanceReceiptsSection({
       <input
         ref={picker}
         type="file"
-        accept="image/*,application/pdf,.pdf"
+        accept="image/*"
         hidden
         data-testid="receipt-file"
         onChange={(event) => {
@@ -714,7 +748,9 @@ export function ReceiptMatchChooser({
           limit: 50,
         })
         const unmatched = answer?.FinanceReceipts?.financeReceipts ?? []
-        const found = await Promise.all(
+        // One receipt that cannot be asked about leaves the others offered,
+        // and one toast says some were left out.
+        const settled = await Promise.allSettled(
           unmatched.map(async (receipt) => {
             const proposed = await graphql<{ ProposeReceiptMatches?: ReceiptMatchCandidate[] | null }>(
               PROPOSE_RECEIPT_MATCHES,
@@ -726,7 +762,13 @@ export function ReceiptMatchChooser({
             return candidate ? { receipt, candidate } : null
           }),
         )
-        if (!isCancelled) setProposals(found.filter((each): each is Proposal => each !== null))
+        if (isCancelled) return
+        const proposed = settled.flatMap((outcome) =>
+          outcome.status === 'fulfilled' && outcome.value ? [outcome.value] : [],
+        )
+        setProposals(proposed)
+        const rejected = settled.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
+        if (rejected) toast.failure(rejected.reason, t('finance.failed'))
       } catch (caught) {
         if (isCancelled) return
         setProposals([])

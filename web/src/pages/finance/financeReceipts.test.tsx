@@ -447,6 +447,64 @@ describe('what can be done to receipts', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
+  it('says when the photo was read but the charge refused it, without waiting out the poll', async () => {
+    let isRead = false
+    const refusedReceipt = {
+      ...misreadReceipt,
+      id: 'receipt-refused',
+      receiptSourceKind: 'attachment' as const,
+      mailId: undefined,
+      mailboxItemId: undefined,
+      agentAttachmentId: 'attachment-refused',
+      receiptMatches: [],
+    }
+    // Never matched to this charge: only the unmatched receipts list it.
+    answer({ receipts: () => [], unmatched: [] })
+    const played = execute.getMockImplementation()!
+    execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+      if (document.includes('FinanceReceipts(') && variables?.isUnmatched) {
+        const listed = isRead ? [refusedReceipt] : []
+        return { FinanceReceipts: { financeReceipts: listed, nextCursor: '', totalCount: listed.length } }
+      }
+      return played(document, variables)
+    })
+    upload.mockReturnValue({
+      promise: Promise.resolve({ attachments: [{ id: 'attachment-refused' }] }),
+      cancel: vi.fn(),
+    })
+    renderDialog({ ...charge, receiptCount: 0 })
+    await screen.findByText('finance.noReceipts')
+    fireEvent.change(screen.getByTestId('receipt-file'), {
+      target: { files: [new File(['invented'], 'receipt.jpg', { type: 'image/jpeg' })] },
+    })
+    await waitFor(() => expect(toast.done).toHaveBeenCalledWith('finance.receiptReading'))
+    isRead = true
+    await waitFor(() =>
+      expect(toast.failed).toHaveBeenCalledWith('finance.receiptReadNotMatched {"merchant":"Copper Kettle Bakery"}'),
+    )
+    expect(calledWith('FinanceReceipts')).toContainEqual({ isUnmatched: true, limit: 200 })
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(toast.done).not.toHaveBeenCalledWith('finance.receiptStillReading')
+  })
+
+  it('takes only photos', async () => {
+    answer({ receipts: () => [] })
+    renderDialog()
+    expect(screen.getByTestId('receipt-file').getAttribute('accept')).toBe('image/*')
+  })
+
+  it('says once when the receipts cannot be read, and not that none is matched', async () => {
+    const refusal = new Error('the server is away')
+    execute.mockImplementation(async (document: string) => {
+      if (document.includes('FinanceReceipts(')) throw refusal
+      return { FinanceTransactions: { financeTransactions: [], totalCount: 0, leftOutDuplicateCount: 0 } }
+    })
+    renderDialog()
+    await waitFor(() => expect(toast.failure).toHaveBeenCalledWith(refusal, 'finance.failed'))
+    expect(toast.failure).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('finance.noReceipts')).toBeNull()
+  })
+
   it('refuses a photo too large to read, before uploading it', async () => {
     answer({ receipts: () => [] })
     renderDialog()
@@ -507,6 +565,40 @@ describe('what can be done to receipts', () => {
     // Back to the details.
     await waitFor(() => expect(screen.queryByRole('alertdialog', { name: 'finance.matchReceiptTitle' })).toBeNull())
     expect(screen.getByRole('article', { name: 'Maple Lane Grocer' })).toBeTruthy()
+  })
+
+  it('offers the receipts that could be asked about when asking about one fails', async () => {
+    const bakeryReceipt = { ...misreadReceipt, receiptMatches: [] }
+    const brokenReceipt = { ...misreadReceipt, id: 'receipt-broken', merchantName: 'Quill and Ink', receiptMatches: [] }
+    answer({ unmatched: [bakeryReceipt, brokenReceipt] })
+    const played = execute.getMockImplementation()!
+    const refusal = new Error('could not weigh the receipt')
+    execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+      if (document.includes('ProposeReceiptMatches(')) {
+        if (variables?.receiptId === 'receipt-broken') throw refusal
+        return {
+          ProposeReceiptMatches: [
+            {
+              financeTransactionId: 'transaction-grocer',
+              matchedAmount: '2.6000',
+              isExactAmount: false,
+              isSameAccount: true,
+              isMerchantNameShared: false,
+              dayDistanceCount: 1,
+              isAutomatic: false,
+            },
+          ],
+        }
+      }
+      return played(document, variables)
+    })
+    renderDialog()
+    await screen.findByRole('article', { name: 'Maple Lane Grocer' })
+    fireEvent.click(screen.getByRole('button', { name: 'finance.matchReceipt' }))
+    expect(await screen.findByRole('button', { name: /Copper Kettle Bakery: finance\.matchThisReceipt/ })).toBeTruthy()
+    expect(screen.queryByText('Quill and Ink')).toBeNull()
+    expect(toast.failure).toHaveBeenCalledTimes(1)
+    expect(toast.failure).toHaveBeenCalledWith(refusal, 'finance.failed')
   })
 
   it('says when no unmatched receipt could explain the charge', async () => {

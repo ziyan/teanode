@@ -3,6 +3,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
+import { uploadFiles } from '../../upload'
 import { FinanceReceipt, FinanceTransaction, ReceiptMatchCandidate } from './financeApi'
 import { FinanceReceiptListSection } from './financeReceiptList'
 
@@ -17,11 +18,14 @@ vi.mock('../../i18n/i18n', () => ({
   }),
 }))
 vi.mock('../../components/toast', () => ({ useToast: () => toast }))
+vi.mock('../../upload', () => ({ uploadFiles: vi.fn() }))
 const execute = vi.mocked(graphql)
+const upload = vi.mocked(uploadFiles)
 
 afterEach(() => {
   cleanup()
   execute.mockReset()
+  upload.mockReset()
   toast.done.mockReset()
   toast.failed.mockReset()
   toast.failure.mockReset()
@@ -52,6 +56,16 @@ const florist: FinanceTransaction = {
   description: 'PETAL AND STEM 0099',
   merchantName: 'Petal and Stem',
   receiptCount: 0,
+}
+
+// A second copy of the hardware charge on another invented account, the
+// counted one being the first.
+const hardwareCopy: FinanceTransaction = {
+  ...hardwareCharge,
+  id: 'transaction-hardware-copy',
+  financeAccountId: 'account-other',
+  providerTransactionId: 'provider-hardware-copy',
+  duplicateOfTransactionId: 'transaction-hardware',
 }
 
 // An invented receipt matched to the hardware charge, read from a photo.
@@ -138,13 +152,14 @@ function answer(receipts: () => FinanceReceipt[]) {
     if (document.includes('ProposeReceiptMatches(')) return { ProposeReceiptMatches: [floristCandidate] }
     if (document.includes('MatchReceipt(') || document.includes('UnmatchReceipt(')) return {}
     if (document.includes('DeleteReceipt(')) return { DeleteReceipt: true }
+    if (document.includes('ReadReceipt(')) return { ReadReceipt: { agentJobId: 'job-invented' } }
     if (document.includes('FinanceAccounts')) return { FinanceAccounts: [] }
     if (document.includes('SpendingCategories')) return { SpendingCategories: [] }
     if (document.includes('FinanceTransactions(')) {
       const ids = (variables?.financeTransactionIds as string[] | undefined) ?? []
       return {
         FinanceTransactions: {
-          financeTransactions: [hardwareCharge, florist].filter((charge) => ids.includes(charge.id)),
+          financeTransactions: [hardwareCharge, florist, hardwareCopy].filter((charge) => ids.includes(charge.id)),
           totalCount: 0,
           leftOutDuplicateCount: 0,
         },
@@ -383,6 +398,73 @@ describe('the Receipts section', () => {
     expect(
       await within(matched).findByRole('button', { name: /^finance\.receiptMatchedCharge .*Petal and Stem.*\}$/ }),
     ).toBeTruthy()
+  })
+
+  it('keeps a receipt open once matched, though only the unmatched are listed', async () => {
+    let isMatched = false
+    const matchedFlorist: FinanceReceipt = {
+      ...floristReceipt,
+      receiptMatches: [
+        {
+          receiptId: 'receipt-florist',
+          financeTransactionId: 'transaction-florist',
+          matchedAmount: '8.2500',
+          receiptMatchSource: 'person',
+          createdAt: '2026-06-05T12:00:00Z',
+        },
+      ],
+    }
+    answer(() => [isMatched ? matchedFlorist : floristReceipt])
+    const played = execute.getMockImplementation()!
+    execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+      if (document.includes('MatchReceipt(') && !document.includes('UnmatchReceipt(')) {
+        return { MatchReceipt: matchedFlorist }
+      }
+      return played(document, variables)
+    })
+    renderSection('/finance/receipts?unmatched=1')
+    fireEvent.click(await screen.findByRole('row', { name: /finance\.receiptDetailsOf .*Petal and Stem/ }))
+    const receipt = await screen.findByRole('alertdialog', { name: 'Petal and Stem' })
+    fireEvent.click(within(receipt).getByRole('button', { name: 'finance.matchReceiptToCharge' }))
+    const chooser = await screen.findByRole('alertdialog', { name: /finance\.matchChargeTitle/ })
+    await within(chooser).findByText(/finance\.candidateExactAmount/)
+    isMatched = true
+    fireEvent.click(within(chooser).getByRole('button', { name: 'Petal and Stem: finance.matchToThisCharge' }))
+    await waitFor(() => expect(toast.done).toHaveBeenCalledWith('finance.receiptMatched {"merchant":"Petal and Stem"}'))
+    // Gone from the list, still open, naming the charge it now explains.
+    expect(await screen.findByText('finance.noUnmatchedReceipts')).toBeTruthy()
+    const matched = await screen.findByRole('alertdialog', { name: 'Petal and Stem' })
+    expect(
+      await within(matched).findByRole('button', { name: /^finance\.receiptMatchedCharge .*Petal and Stem.*\}$/ }),
+    ).toBeTruthy()
+  })
+
+  it('opens another copy of a charge in fresh details', async () => {
+    const copyReceipt: FinanceReceipt = {
+      ...hardwareReceipt,
+      id: 'receipt-hardware-copy',
+      receiptMatches: [{ ...hardwareReceipt.receiptMatches[0], financeTransactionId: 'transaction-hardware-copy' }],
+    }
+    answer(() => [copyReceipt])
+    upload.mockReturnValue({
+      promise: Promise.resolve({ attachments: [{ id: 'attachment-invented' }] }),
+      cancel: vi.fn(),
+    })
+    renderSection()
+    fireEvent.click(
+      await screen.findByRole('button', { name: /^finance\.receiptMatchedCharge .*Birch Street Hardware.*\}$/ }),
+    )
+    await screen.findByText('finance.duplicateOf')
+    fireEvent.change(screen.getByTestId('receipt-file'), {
+      target: { files: [new File(['invented'], 'receipt.jpg', { type: 'image/jpeg' })] },
+    })
+    await waitFor(() => expect(toast.done).toHaveBeenCalledWith('finance.receiptReading'))
+    expect(screen.getByRole('status').textContent).toBe('finance.receiptReadingNow')
+    // The counted copy opens in its own details, not waiting on the photo
+    // uploaded to the other copy.
+    fireEvent.click(await screen.findByRole('button', { name: /^finance\.copyOnAccount / }))
+    await waitFor(() => expect(screen.queryByText('finance.duplicateOf')).toBeNull())
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('takes a receipt off a charge', async () => {
