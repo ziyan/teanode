@@ -33,6 +33,16 @@ describe('AnswerSegmenter', () => {
     expect(segmenter.flush()).toEqual(['And'])
   })
 
+  it('starts a long first sentence at its first comma', () => {
+    const segmenter = new AnswerSegmenter()
+    expect(segmenter.push('Tomorrow morning you have the dentist at nine, then')).toEqual([
+      'Tomorrow morning you have the dentist at nine',
+    ])
+    // A short one waits for its end, and only the first is cut so.
+    const short = new AnswerSegmenter()
+    expect(short.push('Sure, at nine')).toEqual([])
+  })
+
   it('waits for the end of a sentence, even after a full stop in a number', () => {
     const segmenter = new AnswerSegmenter()
     expect(segmenter.push('It costs 3.50')).toEqual([])

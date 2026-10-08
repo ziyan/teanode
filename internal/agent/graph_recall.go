@@ -40,11 +40,19 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 		return
 	}
 	startedAt := time.Now()
-	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)
+	var found *graphRecall
+	if self.graphRecalled != nil {
+		// A spoken turn began these with the turn (startGraphRecall).
+		found = <-self.graphRecalled
+	} else {
+		found = self.searchGraphAndLessons(ctx, words)
+	}
 	retrievedAt := time.Now()
-	self.writeRecalled(ctx, nodes, facts, sections)
+	self.writeRecalled(ctx, found.nodes, found.facts, found.sections)
 	writtenAt := time.Now()
-	self.recallLessons(ctx, words)
+	if len(found.lessonLines) > 0 {
+		self.Recall(lessonsHeading + "\n" + strings.Join(found.lessonLines, "\n"))
+	}
 	lessonsAt := time.Now()
 	// The knowledge search began with the turn (startKnowledgeRecall);
 	// what it found by now is taken, last, as it always was.
@@ -59,6 +67,37 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	log.Infof("recall for %q: graph %s, writing %s, lessons %s, knowledge waited for %s", self.settings.Owner.Username,
 		retrievedAt.Sub(startedAt).Round(time.Millisecond), writtenAt.Sub(retrievedAt).Round(time.Millisecond),
 		lessonsAt.Sub(writtenAt).Round(time.Millisecond), time.Since(lessonsAt).Round(time.Millisecond))
+}
+
+// graphRecall is what the graph and the lessons gave a turn's words.
+type graphRecall struct {
+	nodes       []*models.AgentNode
+	facts       []*models.AgentFact
+	sections    map[string]string
+	lessonLines []string
+}
+
+// searchGraphAndLessons searches the graph, with the turn's retrieval
+// plan, and the lessons for the turn's words.
+func (self *AskRun) searchGraphAndLessons(ctx context.Context, words string) *graphRecall {
+	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)
+	return &graphRecall{nodes: nodes, facts: facts, sections: sections, lessonLines: self.lessonLines(ctx, words)}
+}
+
+// startGraphRecall begins a spoken turn's search of the graph and the
+// lessons as the turn begins, beside the knowledge search: a spoken turn
+// is not judged, so there is no retrieval plan to wait for, and what the
+// searches cost is felt as a pause on the call.
+func (self *AskRun) startGraphRecall(ctx context.Context) {
+	words := self.recallWords()
+	if words == "" {
+		return
+	}
+	found := make(chan *graphRecall, 1)
+	self.graphRecalled = found
+	go func() {
+		found <- self.searchGraphAndLessons(ctx, words)
+	}()
 }
 
 // recallWords are the words a turn recalls by: what the person said and

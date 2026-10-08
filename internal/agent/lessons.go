@@ -504,15 +504,6 @@ func cosineOf(first, second []float32) float64 {
 	return dot / (math.Sqrt(firstNorm) * math.Sqrt(secondNorm))
 }
 
-// recallLessons puts the lessons nearest the turn's words in front of the
-// model, apart from the rest of recall and under a budget of their own:
-// what worked the last time this kind of work came up.
-func (self *AskRun) recallLessons(ctx context.Context, words string) {
-	if lines := self.lessonLines(ctx, words); len(lines) > 0 {
-		self.Recall(lessonsHeading + "\n" + strings.Join(lines, "\n"))
-	}
-}
-
 // lessonsHeading is what the lessons a turn is shown are introduced with.
 const lessonsHeading = "Lessons from earlier work, each borne out by a command that worked:"
 

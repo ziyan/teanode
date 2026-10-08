@@ -48,6 +48,9 @@ export function speakableText(markdown: string): string {
 const FOLLOWING_SEGMENT_LENGTH = 80
 // The longest a piece waits for the end of its sentence.
 const LONGEST_SEGMENT_LENGTH = 320
+// A first sentence this long goes to be spoken at its first comma rather
+// than its end: the person hears the answer start that much sooner.
+const FIRST_CLAUSE_LENGTH = 40
 
 const SENTENCE_END = /[.!?;:。！？；](?=["')\]]*(\s|$))|\n/g
 const FENCE = '```'
@@ -105,6 +108,10 @@ export class AnswerSegmenter {
           cut = end
           break
         }
+      }
+      if (cut < 0 && !this.hasSegment) {
+        const comma = readable.indexOf(', ', FIRST_CLAUSE_LENGTH)
+        if (comma >= 0) cut = comma + 1
       }
       if (cut < 0 && readable.length > LONGEST_SEGMENT_LENGTH) {
         // No end of a sentence in sight: at the last pause or space.
