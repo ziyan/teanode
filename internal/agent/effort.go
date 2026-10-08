@@ -74,6 +74,13 @@ func (self *AskRun) chooseDepth() {
 	if settings.Headless || settings.Surface == backgroundSurface || settings.Effort != "" || settings.Research {
 		return
 	}
+	// A spoken turn is answered as it comes. The judgement is a second
+	// a turn before the model is asked anything, and what it is for is
+	// deciding when to dig, which takes minutes a person on a call does
+	// not want to wait through.
+	if settings.Surface == "voice" {
+		return
+	}
 	switch setting := self.agent.settings.Configuration().Agent.Effort; setting {
 	case "":
 		return

@@ -60,3 +60,14 @@ func TestABackgroundWakeIsNotJudged(t *testing.T) {
 		t.Fatalf("a background wake was judged: %+v", run.settings)
 	}
 }
+
+// A spoken turn is not judged either: it is answered as it comes, without
+// the second the judgement takes before the model is asked anything.
+func TestASpokenTurnIsNotJudged(t *testing.T) {
+	// No agent: a judgement would reach for its fast model and fail.
+	run := &AskRun{settings: &AskSettings{Surface: "voice"}}
+	run.chooseDepth()
+	if run.hasDepthNote || run.settings.Effort != "" || run.settings.Research || run.plan != nil {
+		t.Fatalf("a spoken turn was judged: %+v", run.settings)
+	}
+}
