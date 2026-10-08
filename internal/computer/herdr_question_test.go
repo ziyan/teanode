@@ -112,3 +112,20 @@ func TestTheSameQuestionHasTheSameFingerprintAndAnotherDoesNot(t *testing.T) {
 		t.Error("two questions share a fingerprint")
 	}
 }
+
+func TestAFormWithoutNumbersIsAnsweredWithTheArrows(t *testing.T) {
+	question := recognizeQuestion(CodingAgentKindClaude, readHerdrFixture(t, "claude-trust"))
+	if question == nil {
+		t.Fatal("no question recognized")
+	}
+	if got := strings.Join(optionLabels(question), " | "); got != "No, exit | Yes, I trust this folder" || question.CursorOptionNumber != 1 || !question.IsNumberless {
+		t.Fatalf("%s, cursor on %d", got, question.CursorOptionNumber)
+	}
+	if !strings.Contains(question.QuestionText, "Is this a project you created or one you trust?") {
+		t.Errorf("question text %q", question.QuestionText)
+	}
+	steps, answeredWith, err := answerSteps(question, []int{2}, "")
+	if err != nil || len(steps) != 1 || strings.Join(steps[0].keys, " ") != "down enter" || answeredWith != "2. Yes, I trust this folder" {
+		t.Errorf("%+v %q %v", steps, answeredWith, err)
+	}
+}

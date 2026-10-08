@@ -874,6 +874,20 @@ func answerSteps(question *HerdrQuestion, optionNumbers []int, freeText string) 
 		}
 		return []herdrStep{{text: typed}, {keys: []string{"enter"}}}, answeredWith, nil
 	}
+	if question.IsNumberless {
+		if len(chosen) != 1 || chosen[0].HerdrOptionKind != HerdrOptionKindChoice {
+			return nil, "", errors.New("this question takes one of its options")
+		}
+		key, distance := "down", chosen[0].OptionNumber-question.CursorOptionNumber
+		if distance < 0 {
+			key, distance = "up", -distance
+		}
+		var keys []string
+		for range distance {
+			keys = append(keys, key)
+		}
+		return []herdrStep{{keys: append(keys, "enter")}}, answeredWith, nil
+	}
 	for _, option := range chosen {
 		if option.OptionNumber > 9 {
 			return nil, "", fmt.Errorf("option %d cannot be chosen by its number; answer it at the keyboard", option.OptionNumber)

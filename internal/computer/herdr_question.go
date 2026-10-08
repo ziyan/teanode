@@ -56,6 +56,11 @@ type HerdrQuestion struct {
 	// IsFromTranscript says the question was read from the history file,
 	// not from a form on the screen, and is answered by typing.
 	IsFromTranscript bool `json:"isFromTranscript,omitempty"`
+	// IsNumberless says the form's options have no numbers on screen: they
+	// are numbered here, top down, and chosen with the arrows from the one
+	// CursorOptionNumber names.
+	IsNumberless       bool `json:"isNumberless,omitempty"`
+	CursorOptionNumber int  `json:"cursorOptionNumber,omitempty"`
 }
 
 // HerdrQuestionOption is one option of a question, numbered as the form
@@ -92,12 +97,85 @@ var herdrFormFooters = []string{
 }
 
 // recognizeQuestion finds the form a coding agent waits on at the bottom of
-// its screen.
+// its screen: one with numbered options, or one whose options have no
+// numbers, such as Claude Code's question whether to trust a folder.
 func recognizeQuestion(codingAgentKind, screenText string) *HerdrQuestion {
 	lines := strings.Split(strings.ReplaceAll(screenText, "\r", ""), "\n")
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 		lines = lines[:len(lines)-1]
 	}
+	if question := recognizeNumbered(lines); question != nil {
+		return question
+	}
+	return recognizeNumberless(lines)
+}
+
+// herdrCursorPattern is an option line of a form without numbers: the
+// cursor or the cursor's room, then the label.
+var herdrCursorPattern = regexp.MustCompile(`^(\s*)([❯›>]?)(\s+)(\S.*)$`)
+
+// recognizeNumberless finds a form whose options have no numbers: a block
+// of lines one of which carries the cursor, right above the form's footer.
+// Its options are numbered here, top down, and answered with the arrows.
+func recognizeNumberless(lines []string) *HerdrQuestion {
+	footer := -1
+	for index := len(lines) - 1; index >= max(len(lines)-3, 0); index-- {
+		if hasNumberlessFooter(lines[index]) {
+			footer = index
+			break
+		}
+	}
+	if footer < 0 {
+		return nil
+	}
+	last := footer - 1
+	for last >= 0 && strings.TrimSpace(lines[last]) == "" {
+		last--
+	}
+	first, labelColumn, cursorIndex := -1, -1, -1
+	for index := last; index >= 0; index-- {
+		match := herdrCursorPattern.FindStringSubmatch(lines[index])
+		if match == nil || strings.TrimSpace(lines[index]) == "" {
+			break
+		}
+		column := len([]rune(match[1] + match[2] + match[3]))
+		if labelColumn >= 0 && column != labelColumn {
+			break
+		}
+		labelColumn, first = column, index
+		if match[2] != "" {
+			if cursorIndex >= 0 {
+				return nil
+			}
+			cursorIndex = index
+		}
+	}
+	if first < 0 || cursorIndex < 0 || last-first < 1 || last-first > 8 {
+		return nil
+	}
+	question := &HerdrQuestion{HerdrQuestionKind: HerdrQuestionKindQuestion, IsNumberless: true}
+	for index := first; index <= last; index++ {
+		label := strings.TrimSpace(herdrCursorPattern.FindStringSubmatch(lines[index])[4])
+		question.Options = append(question.Options, HerdrQuestionOption{OptionNumber: index - first + 1, OptionLabel: label, HerdrOptionKind: HerdrOptionKindChoice})
+		if index == cursorIndex {
+			question.CursorOptionNumber = index - first + 1
+		}
+	}
+	question.QuestionText = questionTextAbove(lines, first)
+	question.QuestionFingerprint = questionFingerprint(question)
+	return question
+}
+
+// hasNumberlessFooter says a line is the footer of a form without numbers,
+// which says how to confirm it: a composer's own line never does.
+func hasNumberlessFooter(line string) bool {
+	collapsed := strings.Join(strings.Fields(line), " ")
+	return strings.Contains(collapsed, "Enter to confirm") || strings.Contains(collapsed, "enter to confirm") ||
+		strings.Contains(collapsed, "Enter to select") || strings.Contains(collapsed, "enter continue")
+}
+
+// recognizeNumbered finds a form whose options are numbered.
+func recognizeNumbered(lines []string) *HerdrQuestion {
 	// The last option line, and the block of options it ends.
 	last := -1
 	for index := len(lines) - 1; index >= 0; index-- {

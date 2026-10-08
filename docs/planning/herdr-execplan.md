@@ -181,6 +181,10 @@ To see it working, on a computer running `teanode computer` with herdr running a
   Rationale: the dashboard has no conversation of its own to wake.
   Date/Author: 2026-10-08, agent.
 
+- Decision: `answer` is write risk, as `send` is, so neither raises a confirmation card. This reverses the earlier decision that made it granting.
+  Rationale: the person found a card for every answer too many and asked for sending and answering to go through. The model still answers only with the person's choice: the guidance says so, the call must carry the chosen options' labels, and the fingerprint must still be the question on screen.
+  Date/Author: 2026-10-08, the person.
+
 ## Outcomes & Retrospective
 
 Milestones 0 to 4 are complete; the outcome is recorded after the end-to-end check.

@@ -28,9 +28,11 @@ as buttons and goes on to their chat apps. Their answer is pressed into the
 pane for them. Whoever answers first wins: each answer carries the
 fingerprint of the question as it was shown, and the program on the computer
 reads the screen again and refuses an answer whose question has gone or
-changed. The agent's `herdr` tool may carry the person's choice, but its
-`answer` is granting risk, so a confirmation card says exactly what will be
-pressed and the agent cannot choose on its own.
+changed. The agent's `herdr` tool carries the person's choice, with the
+chosen options' labels, which must match the form. Sending and answering are
+write risk and raise no confirmation card: a card for every answer was more
+than the person wanted. A person who wants one can still list the tool in
+their confirm list.
 
 The program on the computer decides each session's state itself rather than
 taking herdr's: herdr reads mostly the window title and reported a Claude Code

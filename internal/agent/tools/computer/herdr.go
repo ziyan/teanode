@@ -61,7 +61,7 @@ func init() {
 	tools.Register(func() []*tools.Tool {
 		return []*tools.Tool{
 			{
-				Name: "herdr", Family: tools.FamilyComputer, Risk: tools.RiskGranting,
+				Name: "herdr", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
 				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is every session on every computer, with the state each is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, refused while it asks a question, and while it works unless should_queue; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together.",
 				Parameters: tools.Object(map[string]any{
 					"action":               tools.EnumProperty("what to do", herdrToolActions()...),
@@ -82,17 +82,18 @@ func init() {
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call herdrArguments
 					if err := json.Unmarshal(arguments, &call); err != nil {
-						return tools.RiskGranting
+						return tools.RiskWrite
 					}
 					switch strings.ToLower(strings.TrimSpace(call.Action)) {
 					case "list", "read", "screen", "wait", "watch":
 						return tools.RiskRead
-					case "send", "setup":
-						return tools.RiskWrite
 					}
-					// An answer approves what a coding agent does as the
-					// person on their machine.
-					return tools.RiskGranting
+					// A send and an answer go to the person's own sessions
+					// without a card each time, at their asking: they found
+					// one per answer too many. What keeps an answer theirs is
+					// the guidance, the option labels it must carry, and the
+					// fingerprint of the question they were shown.
+					return tools.RiskWrite
 				},
 				Preview: func(arguments json.RawMessage) string {
 					var call herdrArguments
