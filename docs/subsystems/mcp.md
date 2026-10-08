@@ -197,11 +197,14 @@ computer's file read do, fits, and its own way to read on survives.
 Past that, `internal/mcpserve` pages any text longer than
 `mcpserve.ResultCharacters` (8,000): the first part, cut at a line or a
 character, then a line such as `[N more characters: call result_more with
-result_id "…" and offset M]`. `result_more` is listed with the other tools,
-marked read-only, and returns the next part the same way. The whole text is
-held in memory for the caller (the account and the program), eight results at
-a time, for 30 minutes, within 64 MB for everybody; an unknown or expired id
-says to make the original call again.
+result_id "…" and offset M]` (N counts characters; M is a byte position to
+pass back as it is). `result_more` is listed with the other tools, marked
+read-only, and returns the next part the same way. Each page of text from
+outside is wrapped in `<untrusted-content>` on its own, and each page of a
+failure carries `isError`. The whole text is held in memory for the caller
+(the account and the program): eight results and 16 MB per caller, the
+caller's oldest going first, for 30 minutes, within 64 MB for everybody. An
+unknown or expired id says to make the original call again.
 
 ### Asking the agent
 

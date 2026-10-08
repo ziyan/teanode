@@ -30,12 +30,12 @@ func (self *catalog) List(ctx context.Context) ([]mcp.Tool, error) {
 	}, nil
 }
 
-func (self *catalog) Call(ctx context.Context, name string, arguments json.RawMessage) (string, error) {
+func (self *catalog) Call(ctx context.Context, name string, arguments json.RawMessage) (Answer, error) {
 	self.called, self.arguments = name, string(arguments)
 	if name == "broken" {
-		return "", errors.New("the roof fell in")
+		return Answer{}, errors.New("the roof fell in")
 	}
-	return "raining in " + name, nil
+	return Answer{Text: "raining in " + name}, nil
 }
 
 // pipe carries the client's messages straight into the server, so that the

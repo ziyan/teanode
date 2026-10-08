@@ -47,7 +47,17 @@ const (
 // not.
 type Tools interface {
 	List(ctx context.Context) ([]mcp.Tool, error)
-	Call(ctx context.Context, name string, arguments json.RawMessage) (string, error)
+	Call(ctx context.Context, name string, arguments json.RawMessage) (Answer, error)
+}
+
+// Answer is what a tool said.
+type Answer struct {
+	Text string
+
+	// IsUntrusted is text that came from outside. The server wraps it as
+	// data, and wraps each page of it on its own when it is paged, so that
+	// a page read on with result_more is marked as the first one was.
+	IsUntrusted bool
 }
 
 // Server answers one client's messages.
@@ -172,27 +182,22 @@ func (self *Server) call(ctx context.Context, request *mcp.Request) *mcp.Respons
 	if len(parameters.Arguments) == 0 {
 		parameters.Arguments = json.RawMessage(`{}`)
 	}
+	// A failed tool is an answer, not a broken call, and so is a page of a
+	// failure read on with result_more; both carry isError.
 	var text string
-	var err error
+	var isError bool
 	if parameters.Name == resultMoreName {
-		text, err = self.resultMore(parameters.Arguments)
+		// Already a page, and holding it again would only hand out a
+		// second id for the same text.
+		text, isError = self.resultMore(parameters.Arguments)
+	} else if answer, err := self.tools.Call(ctx, parameters.Name, parameters.Arguments); err != nil {
+		text, isError = self.paged(Answer{Text: err.Error()}, true), true
 	} else {
-		text, err = self.tools.Call(ctx, parameters.Name, parameters.Arguments)
-	}
-	if err != nil {
-		// The tool failed, which is an answer, not a broken call.
-		return self.success(request, &mcp.CallResult{
-			Content: []mcp.Content{{Type: "text", Text: self.paged(err.Error())}},
-			IsError: true,
-		})
-	}
-	// A page of result_more is already paged, and holding it again would
-	// only hand out a second id for the same text.
-	if parameters.Name != resultMoreName {
-		text = self.paged(text)
+		text = self.paged(answer, false)
 	}
 	return self.success(request, &mcp.CallResult{
 		Content: []mcp.Content{{Type: "text", Text: text}},
+		IsError: isError,
 	})
 }
 
