@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -47,6 +48,17 @@ import (
 // speaking 1 says so rather than failing obscurely.
 const Protocol = 2
 
+// pingEvery is how often the program pings the server, which answers each
+// ping; silentMost is how long nothing may arrive before the connection is
+// taken as dead. A connection can die in one direction only: the program's
+// pings still leave, so the server goes on thinking it is attached, while
+// its requests never arrive and every one waits out its full time. Vars,
+// so a test can shorten them.
+var (
+	pingEvery  = 30 * time.Second
+	silentMost = 3 * pingEvery
+)
+
 // The bounds of one request.
 const (
 	defaultTimeout = 120 * time.Second
@@ -59,7 +71,6 @@ const (
 	searchEntries  = 200
 	grepMatches    = 200
 	grepLineChars  = 300
-	pingEvery      = 30 * time.Second
 	welcomeWait    = 15 * time.Second
 )
 
@@ -241,6 +252,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	welcome := make(chan message, 1)
 	readErrors := make(chan error, 1)
 	requests := make(chan message, 16)
+	// When anything last arrived, in Unix nanoseconds.
+	var receivedAt atomic.Int64
+	receivedAt.Store(time.Now().UnixNano())
 	go func() {
 		for {
 			var received message
@@ -248,6 +262,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 				readErrors <- err
 				return
 			}
+			receivedAt.Store(time.Now().UnixNano())
 			switch received.Type {
 			case "welcome", "refused":
 				welcome <- received
@@ -335,6 +350,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 				_ = write(answer)
 			}()
 		case <-pings.C:
+			if silent := time.Since(time.Unix(0, receivedAt.Load())); silent > silentMost {
+				return fmt.Errorf("nothing came from the server for %s, not even an answer to a ping; reconnecting", silent.Round(time.Second))
+			}
 			if err := write(message{Type: "ping"}); err != nil {
 				return err
 			}
