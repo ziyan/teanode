@@ -1,6 +1,7 @@
 package apigraph
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,7 +44,21 @@ func TestTheVoiceSocketTranscribesForThePersonsAgent(t *testing.T) {
 	// The provider: accepts the session, and once audio arrives says it
 	// heard one utterance.
 	var configured map[string]any
+	var spoken map[string]any
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// Its text-to-speech: the audio in two pieces, then what it cost.
+		if strings.HasSuffix(request.URL.Path, "/audio/speech") {
+			_ = json.NewDecoder(request.Body).Decode(&spoken)
+			writer.Header().Set("Content-Type", "text/event-stream")
+			for _, line := range []string{
+				`{"type":"speech.audio.delta","audio":"AQACAA=="}`,
+				`{"type":"speech.audio.delta","audio":"AwAEAA=="}`,
+				`{"type":"speech.audio.done","usage":{"input_tokens":12,"output_tokens":30}}`,
+			} {
+				_, _ = writer.Write([]byte("data: " + line + "\n\n"))
+			}
+			return
+		}
 		conn, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
 		if err != nil {
 			return
@@ -152,6 +167,33 @@ func TestTheVoiceSocketTranscribesForThePersonsAgent(t *testing.T) {
 	if strings.Join(heard, "|") != "speechStarted:|transcriptFinal:What is on tomorrow?" {
 		t.Fatalf("heard %v", heard)
 	}
+
+	// An answer read aloud: its audio comes back in pieces, then done.
+	_ = conn.WriteJSON(map[string]any{"voiceEvent": "speakAnswer", "answerSegmentId": "answer-1", "answerText": "You have a dentist at nine."})
+	var audio []byte
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		var said voice.Event
+		if err := conn.ReadJSON(&said); err != nil {
+			t.Fatalf("spoken %v, then %s", audio, err)
+		}
+		if said.AnswerSegmentID != "answer-1" {
+			t.Fatalf("a piece of another answer: %+v", said)
+		}
+		if said.VoiceEvent == voice.EventAnswerAudioDone {
+			break
+		}
+		if said.VoiceEvent != voice.EventAnswerAudio {
+			t.Fatalf("speaking: %+v", said)
+		}
+		audio = append(audio, said.AnswerAudio...)
+	}
+	if string(audio) != "\x01\x00\x02\x00\x03\x00\x04\x00" {
+		t.Fatalf("the answer's audio: %v", audio)
+	}
+	if spoken["model"] != config.VoiceSpeechModelDefault || spoken["voice"] != config.VoiceSpeechVoiceDefault || spoken["input"] != "You have a dentist at nine." || spoken["response_format"] != "pcm" {
+		t.Fatalf("what the provider was asked to speak: %v", spoken)
+	}
 	_ = conn.WriteJSON(map[string]any{"voiceEvent": "stop"})
 
 	transcription := configured["session"].(map[string]any)["audio"].(map[string]any)["input"].(map[string]any)["transcription"].(map[string]any)
@@ -164,11 +206,11 @@ func TestTheVoiceSocketTranscribesForThePersonsAgent(t *testing.T) {
 		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 			totals, err = tx.SumAgentUsage(agentId, time.Now().Add(-time.Hour))
 		})
-		if err == nil && totals.PromptTokens == 40 {
+		if err == nil && totals.PromptTokens == 52 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the transcription is paid for: %+v %v", totals, err)
+			t.Fatalf("the transcription and the speech are paid for: %+v %v", totals, err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

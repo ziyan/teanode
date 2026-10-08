@@ -1622,11 +1622,12 @@ The proxy requires a password that only this server and its Chrome know.
 
 ### `agent.voice`
 
-Talking to the agent in the drawer. The person presses the microphone beside
+Talking to the agent in the drawer. The person presses the telephone beside
 send; what they say streams through this server to the provider's realtime
 transcription as they say it, the provider says when they start and stop
 talking, and each finished utterance is sent as an ordinary turn, the same as
-if they had typed it. Off by default.
+if they had typed it. The answer is spoken back through the provider's
+text-to-speech, and stops when the person starts talking. Off by default.
 
 **`enabled`** — Whether the drawer offers the microphone.
 
@@ -1643,6 +1644,12 @@ milliseconds, up to 5000. Zero is 500. Longer lets a person think in the
 middle of a sentence; shorter answers sooner. A pause longer than this in the
 middle of one request sends it as two turns, the second reaching the agent
 while it works on the first, as a typed follow-up would.
+
+**`speechModel`** — The text-to-speech model the answers are spoken with,
+through the same provider. Empty is `gpt-4o-mini-tts`.
+
+**`speechVoice`** — The provider's voice the answers are spoken in, such as
+`marin`, `cedar`, `alloy` or `coral`. Empty is `marin`.
 
 ### `agent.mcp`
 

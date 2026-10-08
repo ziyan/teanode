@@ -46,6 +46,12 @@ const (
 	EventTranscriptFinal  = "transcriptFinal"
 	EventTranscriptFailed = "transcriptFailed"
 	EventError            = "error"
+
+	// A spoken answer's audio, a piece at a time; that it is all there;
+	// that it could not be spoken.
+	EventAnswerAudio       = "answerAudio"
+	EventAnswerAudioDone   = "answerAudioDone"
+	EventAnswerAudioFailed = "answerAudioFailed"
 )
 
 // Event is one thing the drawer is told.
@@ -66,6 +72,12 @@ type Event struct {
 
 	// SampleRate is the audio the session takes, on ready.
 	SampleRate int `json:"sampleRate,omitempty"`
+
+	// AnswerSegmentID is the piece of a spoken answer the drawer asked for,
+	// in its own name; AnswerAudio some of its audio, mono 16-bit PCM at
+	// SampleRate.
+	AnswerSegmentID string `json:"answerSegmentId,omitempty"`
+	AnswerAudio     []byte `json:"answerAudio,omitempty"`
 }
 
 // Settings are how a session reaches its provider and what it asks for.

@@ -792,12 +792,22 @@ type AgentVoice struct {
 	// 500. Longer lets a person think mid-sentence; shorter answers
 	// sooner.
 	SilenceMS int `yaml:"silenceMS,omitempty"`
+
+	// SpeechModel is the text-to-speech model the answers are spoken
+	// with, through the same provider. Empty is gpt-4o-mini-tts.
+	SpeechModel string `yaml:"speechModel,omitempty"`
+
+	// SpeechVoice is the provider's voice the answers are spoken in. Empty
+	// is marin.
+	SpeechVoice string `yaml:"speechVoice,omitempty"`
 }
 
 // The defaults of the voice settings.
 const (
 	VoiceTranscriptionModelDefault = "gpt-4o-transcribe"
 	VoiceSilenceMSDefault          = 500
+	VoiceSpeechModelDefault        = "gpt-4o-mini-tts"
+	VoiceSpeechVoiceDefault        = "marin"
 )
 
 // voiceModelsWithoutSpeechDetection are transcription models that need the
@@ -819,6 +829,22 @@ func (self *AgentVoice) EffectiveSilenceMS() int {
 		return VoiceSilenceMSDefault
 	}
 	return self.SilenceMS
+}
+
+// EffectiveSpeechModel resolves the empty value.
+func (self *AgentVoice) EffectiveSpeechModel() string {
+	if strings.TrimSpace(self.SpeechModel) == "" {
+		return VoiceSpeechModelDefault
+	}
+	return strings.TrimSpace(self.SpeechModel)
+}
+
+// EffectiveSpeechVoice resolves the empty value.
+func (self *AgentVoice) EffectiveSpeechVoice() string {
+	if strings.TrimSpace(self.SpeechVoice) == "" {
+		return VoiceSpeechVoiceDefault
+	}
+	return strings.TrimSpace(self.SpeechVoice)
 }
 
 // VoiceProvider is the provider voice is transcribed through: the one it

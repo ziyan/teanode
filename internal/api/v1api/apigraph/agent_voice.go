@@ -22,13 +22,18 @@ import (
 // Voice: a person talking to their agent in the drawer. The drawer streams
 // the microphone over a websocket; this server streams it on to the
 // provider's realtime transcription, which detects speech and ends each
-// utterance itself, and says back what it heard (internal/voice). The
-// socket only transcribes: the drawer sends each final transcript as an
-// ordinary turn, the way it sends what was typed, so a spoken turn is a
-// typed one in everything the agent does with it.
+// utterance itself, and says back what it heard (internal/voice). It also
+// reads the answers aloud, a piece at a time as the drawer asks. It starts
+// no turn: the drawer sends each final transcript as an ordinary turn, the
+// way it sends what was typed, so a spoken turn is a typed one in
+// everything the agent does with it.
 
 // voiceSessionLongest bounds one session, which the drawer opens again.
 const voiceSessionLongest = 30 * time.Minute
+
+// answerSegmentsAtOnce bounds the pieces of an answer being spoken at
+// once: the one playing and the next few, made while it plays.
+const answerSegmentsAtOnce = 4
 
 // voiceSilenceLongest is how long the drawer may send nothing at all; it
 // sends audio continuously while listening, silence included.
@@ -196,6 +201,60 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		_ = conn.Close()
 	}()
 
+	// The answers are spoken here too, a piece at a time as the drawer asks,
+	// with the same key; each piece is paid for like a transcription.
+	speechSettings := &voice.SpeechSettings{
+		BaseURL: provider.BaseURL, APIKey: provider.APIKey,
+		SpeechModel: configuration.Agent.Voice.EffectiveSpeechModel(),
+		SpeechVoice: configuration.Agent.Voice.EffectiveSpeechVoice(),
+	}
+	speechUsageModel := provider.Name + ":" + speechSettings.SpeechModel
+	var speakingMutex sync.Mutex
+	speaking := map[string]context.CancelFunc{}
+	speak := func(answerSegmentID, answerText string) {
+		speakingMutex.Lock()
+		if _, isSpeaking := speaking[answerSegmentID]; isSpeaking || answerSegmentID == "" || len(speaking) >= answerSegmentsAtOnce {
+			speakingMutex.Unlock()
+			_ = socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudioFailed, AnswerSegmentID: answerSegmentID, ErrorMessage: "too many pieces of an answer at once"})
+			return
+		}
+		speechContext, cancelSpeech := context.WithCancel(ctx)
+		speaking[answerSegmentID] = cancelSpeech
+		speakingMutex.Unlock()
+		go func() {
+			defer func() {
+				speakingMutex.Lock()
+				delete(speaking, answerSegmentID)
+				speakingMutex.Unlock()
+				cancelSpeech()
+			}()
+			usage, err := voice.Speak(speechContext, speechSettings, answerText, func(pcm []byte) error {
+				return socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudio, AnswerSegmentID: answerSegmentID, AnswerAudio: pcm})
+			})
+			if usage != nil {
+				agent.RecordUsage(self.database, found.ID, "", speechUsageModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, CompletionTokens: usage.OutputTokens})
+			}
+			switch {
+			case speechContext.Err() != nil:
+				// Cancelled: the drawer has moved on and wants nothing more.
+			case err != nil:
+				log.Warningf("%s's answer could not be spoken: %s", username, err)
+				_ = socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudioFailed, AnswerSegmentID: answerSegmentID, ErrorMessage: err.Error()})
+			default:
+				_ = socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudioDone, AnswerSegmentID: answerSegmentID})
+			}
+		}()
+	}
+	cancelSpeaking := func(answerSegmentIDs []string) {
+		speakingMutex.Lock()
+		defer speakingMutex.Unlock()
+		for _, answerSegmentID := range answerSegmentIDs {
+			if cancelSpeech, isSpeaking := speaking[answerSegmentID]; isSpeaking {
+				cancelSpeech()
+			}
+		}
+	}
+
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(voiceSilenceLongest))
 		messageType, data, err := conn.ReadMessage()
@@ -210,10 +269,21 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 			continue
 		}
 		var said struct {
-			VoiceEvent string `json:"voiceEvent"`
+			VoiceEvent       string   `json:"voiceEvent"`
+			AnswerSegmentID  string   `json:"answerSegmentId"`
+			AnswerText       string   `json:"answerText"`
+			AnswerSegmentIDs []string `json:"answerSegmentIds"`
 		}
-		if json.Unmarshal(data, &said) == nil && said.VoiceEvent == "stop" {
+		if json.Unmarshal(data, &said) != nil {
+			continue
+		}
+		switch said.VoiceEvent {
+		case "stop":
 			return
+		case "speakAnswer":
+			speak(said.AnswerSegmentID, said.AnswerText)
+		case "cancelAnswer":
+			cancelSpeaking(said.AnswerSegmentIDs)
 		}
 	}
 }

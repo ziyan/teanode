@@ -269,6 +269,8 @@ type AgentVoiceSettings struct {
 	Provider           string `json:"provider"`
 	TranscriptionModel string `json:"transcriptionModel"`
 	SilenceMS          int    `json:"silenceMS"`
+	SpeechModel        string `json:"speechModel"`
+	SpeechVoice        string `json:"speechVoice"`
 }
 
 // AgentBrowserSettings is the headless browser.
@@ -398,6 +400,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Provider:           agent.Voice.Provider,
 			TranscriptionModel: agent.Voice.TranscriptionModel,
 			SilenceMS:          agent.Voice.SilenceMS,
+			SpeechModel:        agent.Voice.SpeechModel,
+			SpeechVoice:        agent.Voice.SpeechVoice,
 		},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
@@ -665,6 +669,8 @@ type AgentVoiceParameters struct {
 	Provider           *string `json:"provider"`
 	TranscriptionModel *string `json:"transcriptionModel"`
 	SilenceMS          *int    `json:"silenceMS"`
+	SpeechModel        *string `json:"speechModel"`
+	SpeechVoice        *string `json:"speechVoice"`
 }
 
 // AgentBrowserParameters change the headless browser.
@@ -940,6 +946,8 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&voice.Provider, parameters.Voice.Provider)
 		applyString(&voice.TranscriptionModel, parameters.Voice.TranscriptionModel)
 		applyInt(&voice.SilenceMS, parameters.Voice.SilenceMS)
+		applyString(&voice.SpeechModel, parameters.Voice.SpeechModel)
+		applyString(&voice.SpeechVoice, parameters.Voice.SpeechVoice)
 	}
 	if parameters.Browser != nil {
 		browser := &agent.Browser

@@ -193,3 +193,41 @@ func TestTheRealtimeAddressFollowsTheProvidersAddress(t *testing.T) {
 		t.Error("an address that is not http is refused")
 	}
 }
+
+// Speak streams the audio as it comes, says what it cost, and says what a
+// refusal said.
+func TestSpeakStreamsTheAnswer(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var asked map[string]any
+		_ = json.NewDecoder(request.Body).Decode(&asked)
+		if asked["voice"] == "nobody" {
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write([]byte(`{"error":{"message":"no such voice"}}`))
+			return
+		}
+		if request.Header.Get("Authorization") != "Bearer test-key" || asked["stream_format"] != "sse" || asked["instructions"] == nil {
+			writer.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"type\":\"speech.audio.delta\",\"audio\":\"" + base64.StdEncoding.EncodeToString([]byte{1, 0, 2, 0}) + "\"}\n\n"))
+		_, _ = writer.Write([]byte("data: {\"type\":\"speech.audio.done\",\"usage\":{\"input_tokens\":5,\"output_tokens\":7}}\n\n"))
+	}))
+	defer provider.Close()
+	settings := &SpeechSettings{BaseURL: provider.URL + "/v1", APIKey: "test-key", SpeechModel: "gpt-4o-mini-tts", SpeechVoice: "marin"}
+	var audio []byte
+	usage, err := Speak(context.Background(), settings, "Hello there.", func(pcm []byte) error {
+		audio = append(audio, pcm...)
+		return nil
+	})
+	if err != nil || usage == nil || usage.InputTokens != 5 || usage.OutputTokens != 7 || string(audio) != "\x01\x00\x02\x00" {
+		t.Fatalf("spoken %v %+v %v", audio, usage, err)
+	}
+	settings.SpeechVoice = "nobody"
+	if _, err := Speak(context.Background(), settings, "Hello.", func([]byte) error { return nil }); err == nil || !strings.Contains(err.Error(), "no such voice") {
+		t.Fatalf("a refusal says why: %v", err)
+	}
+	if _, err := Speak(context.Background(), settings, strings.Repeat("a", MaximumAnswerTextLength+1), func([]byte) error { return nil }); err == nil {
+		t.Fatalf("a piece too long is refused")
+	}
+}
