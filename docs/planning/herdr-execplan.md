@@ -204,6 +204,8 @@ All milestones are done. Checked end to end against the deployed server, in a sc
 
 What the live run found that the tests had not: the socket's spelling `recent_unwrapped` and its refusals without an id; that a read given `lines` answers with nothing; that check-in lines are hidden unless working notes are shown, so the card belongs under the agent's words; that a tab out of sight never made its first look; and that a restart told waiting questions again. Each is fixed and noted above.
 
+Then the agent led a small build on its own: given one goal (a command-line tool with tests, built by a Claude Code session, reviewed by a Codex session, fixed, committed), it brought both sessions' folder trust prompts to the person, briefed the builder, read its work, briefed the reviewer, carried the one finding back, and had the builder commit, waking on each session's finish. The tool works and its six tests pass. Two faults it found are fixed: Codex's trust prompt wants enter after the number, and a deploy that restarted the program lost the watch on the review, so watches are now kept across restarts. The person nudged it once, for the watch that was lost.
+
 Left for later: Codex's older "alt+↑ to answer" question is answered by typing the reply as the next message, which was not tried against that version.
 
 ## Context and Orientation
