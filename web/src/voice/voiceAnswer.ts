@@ -7,6 +7,8 @@
 // the agent how much of it was heard, or the answer heard back through the
 // microphone, which is dropped and the answer goes on.
 
+import { readsAsTex } from '../components/math'
+
 // AnswerRunEvent is the part of a conversation event an answer is made of.
 export type AnswerRunEvent = {
   kind: string
@@ -22,13 +24,22 @@ export type InterruptedAnswer = { heardText: string; unheardText: string }
 
 // speakableText is a piece of a Markdown answer as it is said: the marks
 // that only mean something on a screen go, links say their words, and
-// addresses nobody wants read out are left out.
+// addresses nobody wants read out are left out, as are inline formulas,
+// which the Markdown draws and which read aloud as their TeX. A formula
+// is recognized as the Markdown recognizes it, so a price stays said.
 export function speakableText(markdown: string): string {
   return markdown
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/<?https?:\/\/[^\s>)]*[^\s>).,!?;:]>?/g, '')
-    .replace(/`([^`]*)`/g, '$1')
+    .replace(
+      /`([^`]*)`|\\\((.+?)\\\)|(^|[^\\$\w`])\$(?=[^\s$\d])([^$\n]*?[^\s$\\])\$(?!\d)/g,
+      (written, codeSpan?: string, inlineFormula?: string, beforeDollarFormula?: string, dollarFormula?: string) => {
+        if (codeSpan !== undefined) return codeSpan
+        if (inlineFormula !== undefined) return ''
+        return readsAsTex(dollarFormula!) ? beforeDollarFormula! : written
+      },
+    )
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
     .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, '')
@@ -54,11 +65,13 @@ const FIRST_CLAUSE_LENGTH = 40
 
 const SENTENCE_END = /[.!?;:。！？；](?=["')\]]*(\s|$))|\n/g
 const FENCE = '```'
-// What is written for the screen and never said: a code block, and an HTML
-// comment such as the line of suggested replies the dashboard draws as
-// buttons.
+// What is written for the screen and never said: a code block, a displayed
+// formula, and an HTML comment such as the line of suggested replies the
+// dashboard draws as buttons.
 const UNSPOKEN = [
   { opening: FENCE, closing: FENCE },
+  { opening: '\\[', closing: '\\]' },
+  { opening: '$$', closing: '$$' },
   { opening: '<!--', closing: '-->' },
 ]
 
@@ -107,6 +120,12 @@ export class AnswerSegmenter {
         if (openedAt < readable.length) readable = this.pending.slice(0, openedAt)
       }
       if (isDropped) continue
+      // An inline formula still being written waits for its end, so it is
+      // left out whole rather than half said.
+      const inlineFormulaOpenedAt = readable.lastIndexOf('\\(')
+      if (!isFinal && inlineFormulaOpenedAt >= 0 && readable.indexOf('\\)', inlineFormulaOpenedAt) < 0) {
+        readable = readable.slice(0, inlineFormulaOpenedAt)
+      }
       const shortest = this.hasSegment ? FOLLOWING_SEGMENT_LENGTH : 1
       let cut = -1
       SENTENCE_END.lastIndex = 0

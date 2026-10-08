@@ -4,6 +4,7 @@ import { framedDrawer } from '../api'
 
 import { CodeBlock } from './codeBlock'
 import { mailPath, memoryPath } from './dashboardPath'
+import { Formula, readsAsTex } from './math'
 
 // The part of Markdown a changelog and an agent's answer are written in.
 //
@@ -104,10 +105,14 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
   // No lookbehind: what precedes an italic run is captured and put back,
   // since a lookbehind is a syntax error for a browser that predates it and
-  // takes the whole bundle down with it. A picture comes first, linked or
-  // not, so its brackets are not read as a link's.
+  // takes the whole bundle down with it. A code span comes first, so the
+  // dollars in `$HOME/$USER` stay code. A picture comes next, linked or
+  // not, so its brackets are not read as a link's. A formula is \(inline\),
+  // \[displayed\] or $$displayed$$, or $inline$ where it reads as TeX and
+  // not as two prices: no space inside either dollar, no digit after the
+  // first or the last.
   const pattern =
-    /\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)|!\[([^\]]*)\]\(([^)\s]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
+    /`([^`]+)`|\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)|!\[([^\]]*)\]\(([^)\s]+)\)|\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|(^|[^\\$\w`])\$(?=[^\s$\d])([^$\n]*?[^\s$\\])\$(?!\d)|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
   let index = 0
   let match: RegExpExecArray | null
   let count = 0
@@ -119,27 +124,41 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
     const key = `${keyPrefix}-${count++}`
     const [
       ,
+      codeSpan,
       linkedAlt,
       linkedPicture,
       pictureHref,
       alt,
       picture,
-      codeSpan,
+      inlineFormula,
+      displayedFormula,
+      dollarsFormula,
+      beforeDollarFormula,
+      dollarFormula,
       bold,
       beforeItalic,
       italic,
       linkText,
       linkAddress,
     ] = match
-    if (linkedPicture !== undefined || picture !== undefined) {
+    if (codeSpan !== undefined) {
+      nodes.push(<code key={key}>{codeSpan}</code>)
+    } else if (linkedPicture !== undefined || picture !== undefined) {
       // A picture whose address is not http or https is its words.
       const address = webAddress(linkedPicture ?? picture)
       const href = pictureHref !== undefined ? webAddress(pictureHref) : ''
       nodes.push(
         address ? <Picture key={key} address={address} alt={linkedAlt ?? alt} href={href} /> : (linkedAlt ?? alt),
       )
-    } else if (codeSpan !== undefined) {
-      nodes.push(<code key={key}>{codeSpan}</code>)
+    } else if (inlineFormula !== undefined) {
+      nodes.push(<Formula key={key} tex={inlineFormula} isDisplay={false} />)
+    } else if (displayedFormula !== undefined || dollarsFormula !== undefined) {
+      nodes.push(<Formula key={key} tex={displayedFormula ?? dollarsFormula} isDisplay={true} />)
+    } else if (dollarFormula !== undefined) {
+      if (beforeDollarFormula) nodes.push(beforeDollarFormula)
+      nodes.push(
+        readsAsTex(dollarFormula) ? <Formula key={key} tex={dollarFormula} isDisplay={false} /> : `$${dollarFormula}$`,
+      )
     } else if (bold !== undefined) {
       // What is inside is read the same way: a link or code in bold is a
       // link or code, not its brackets.
@@ -186,6 +205,7 @@ type Block =
   | { kind: 'list'; ordered: boolean; items: string[] }
   | { kind: 'paragraph'; text: string }
   | { kind: 'code'; language: string; text: string }
+  | { kind: 'formula'; tex: string }
   | { kind: 'quote'; text: string }
   | { kind: 'rule' }
   | { kind: 'table'; header: string[]; rows: string[][] }
@@ -261,6 +281,48 @@ function parse(source: string): Block[] {
       endAll()
       code = { language: fence[1].toLowerCase(), lines: [] }
       continue
+    }
+
+    // A displayed formula: \[ or $$ to \] or $$, on one line or several.
+    // A [ and a ] on lines of their own around TeX are one too: that is
+    // how a formula reads once something has eaten its backslashes. The
+    // closing is looked for up to a blank line or a code fence, neither of
+    // which TeX has in it; with none, the opening line is a paragraph, and
+    // an answer that writes "$$$" does not lose everything after it.
+    const formulaOpening = /^\s*(\\\[|\$\$|\[\s*$)(.*)$/.exec(line)
+    if (formulaOpening) {
+      const closing = formulaOpening[1] === '$$' ? '$$' : formulaOpening[1] === '\\[' ? '\\]' : ']'
+      const isBare = closing === ']'
+      let end = -1
+      let closedAt = -1
+      for (let following = at; following < lines.length; following++) {
+        if (following > at && (lines[following].trim() === '' || /^\s*```/.test(lines[following]))) break
+        const searched = following === at ? formulaOpening[2] : lines[following]
+        const found = isBare ? (following > at && searched.trim() === ']' ? 0 : -1) : searched.indexOf(closing)
+        if (found >= 0) {
+          end = following
+          closedAt = found
+          break
+        }
+      }
+      const texLines =
+        end < 0
+          ? []
+          : end === at
+            ? [formulaOpening[2].slice(0, closedAt)]
+            : [formulaOpening[2], ...lines.slice(at + 1, end), isBare ? '' : lines[end].slice(0, closedAt)]
+      const tex = texLines.join('\n').trim()
+      const after = end < 0 ? '' : (end === at ? formulaOpening[2] : lines[end]).slice(closedAt + closing.length).trim()
+      // A bare bracket is a formula only around TeX, and a formula opened
+      // and closed on one line with words after it is part of a paragraph.
+      const isFormula = end >= 0 && (isBare ? end > at && /\\[a-zA-Z]/.test(tex) : end !== at || after === '')
+      if (isFormula) {
+        endAll()
+        blocks.push({ kind: 'formula', tex })
+        at = end
+        if (after) paragraph = [after]
+        continue
+      }
     }
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(line.trim())
@@ -377,6 +439,8 @@ function MarkdownBlocks({ text }: { text: string }) {
           }
           case 'code':
             return <CodeBlock key={index} text={block.text} language={block.language || undefined} />
+          case 'formula':
+            return <Formula key={index} tex={block.tex} isDisplay={true} />
           case 'quote':
             return <blockquote key={index}>{inline(block.text, `q${index}`)}</blockquote>
           case 'rule':
