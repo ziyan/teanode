@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  AnswerPlayer,
   AnswerSegmenter,
   AnswerVoice,
   EchoGate,
   heardSplit,
   isLikelyEcho,
   speakableText,
-  type AnswerPlayer,
   type InterruptedAnswer,
 } from './voiceAnswer'
 
@@ -107,16 +107,95 @@ describe('heardSplit', () => {
   })
 })
 
+describe('AnswerPlayer', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('fades an answer in from its first sound, not from when it was asked for', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
+    const { context, gainCalls } = fakeContext()
+    const requested: string[] = []
+    const player = new AnswerPlayer(
+      context as unknown as AudioContext,
+      { request: (answerSegmentId) => requested.push(answerSegmentId), cancel: () => undefined },
+      () => undefined,
+    )
+    player.enqueue(['Sure.'])
+    expect(gainCalls).toEqual([])
+    expect(player.isStarting()).toBe(true)
+    // The audio comes a while later: the fade starts with it.
+    vi.advanceTimersByTime(800)
+    context.currentTime = 0.8
+    player.accept(requested[0], new Int16Array(2400))
+    expect(gainCalls.find((call) => call.method === 'setValueAtTime')).toMatchObject({ gain: 0.35 })
+    expect(gainCalls.find((call) => call.method === 'setValueAtTime')!.time).toBeGreaterThanOrEqual(0.8)
+    expect(gainCalls.find((call) => call.method === 'linearRampToValueAtTime')).toMatchObject({ gain: 1 })
+    expect(player.isStarting()).toBe(true)
+    vi.advanceTimersByTime(1600)
+    expect(player.isStarting()).toBe(false)
+    player.close()
+  })
+
+  it('fades in only as far as ducked', () => {
+    const { context, gainCalls } = fakeContext()
+    const requested: string[] = []
+    const player = new AnswerPlayer(
+      context as unknown as AudioContext,
+      { request: (answerSegmentId) => requested.push(answerSegmentId), cancel: () => undefined },
+      () => undefined,
+    )
+    player.duck(true)
+    player.enqueue(['Sure.'])
+    player.accept(requested[0], new Int16Array(2400))
+    const ramp = gainCalls.find((call) => call.method === 'linearRampToValueAtTime')
+    expect(ramp!.gain).toBeLessThan(0.35)
+    player.close()
+  })
+})
+
+// An audio context that records what is done to the answer's gain.
+function fakeContext() {
+  const gainCalls: { method: string; gain: number; time: number }[] = []
+  const record = (method: string) => (gain: number, time: number) => gainCalls.push({ method, gain, time })
+  const context = {
+    currentTime: 0,
+    destination: {},
+    createGain: () => ({
+      connect: () => undefined,
+      gain: {
+        cancelScheduledValues: () => undefined,
+        setTargetAtTime: () => undefined,
+        setValueAtTime: record('setValueAtTime'),
+        linearRampToValueAtTime: record('linearRampToValueAtTime'),
+      },
+    }),
+    createAnalyser: () => ({ fftSize: 0, connect: () => undefined, getFloatTimeDomainData: () => undefined }),
+    createBuffer: (_channelCount: number, sampleCount: number) => ({
+      getChannelData: () => new Float32Array(sampleCount),
+    }),
+    createBufferSource: () => ({
+      buffer: null,
+      onended: null,
+      connect: () => undefined,
+      start: () => undefined,
+      stop: () => undefined,
+    }),
+  }
+  return { context, gainCalls }
+}
+
 // A player that records what it is asked, for the policy above it.
 function fakePlayer() {
   const enqueued: string[] = []
   let isActive = false
+  let soundingSince = 0
   const player = {
     enqueue: (texts: string[]) => {
       enqueued.push(...texts)
+      if (texts.length > 0 && !isActive) soundingSince = performance.now()
       if (texts.length > 0) isActive = true
     },
     isActive: () => isActive,
+    isStarting: () => performance.now() - soundingSince < 1500,
     wasRecentlyActive: () => isActive,
     recentText: () => enqueued.join(' '),
     duck: vi.fn(),

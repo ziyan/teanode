@@ -213,6 +213,8 @@ const ECHO_MEMORY_MS = 20000
 // many seconds (fadeIn).
 const FADE_IN_GAIN = 0.35
 const FADE_IN_SECONDS = 1.2
+// How long after its first sound an answer counts as starting.
+const ANSWER_STARTING_MS = 1500
 // A conservative speaking rate, to guess how long a piece will be before
 // all of its audio has come.
 const CHARACTERS_PER_SECOND = 14
@@ -334,19 +336,27 @@ export class AnswerPlayer {
   }
 
   duck(isDucked: boolean) {
+    this.isDucked = isDucked
     const now = this.context.currentTime
     this.output.gain.cancelScheduledValues(now)
     this.output.gain.setTargetAtTime(isDucked ? DUCKED_GAIN : 1, now, 0.03)
   }
 
-  // fadeIn starts an answer quiet and brings it up: the phone's echo
-  // cancellation takes a moment to learn the answer each time it starts,
-  // and until it has, a loud answer is heard back loudly.
-  private fadeIn() {
-    const now = this.context.currentTime
-    this.output.gain.cancelScheduledValues(now)
-    this.output.gain.setValueAtTime(FADE_IN_GAIN, now)
-    this.output.gain.linearRampToValueAtTime(1, now + FADE_IN_SECONDS)
+  // fadeIn starts an answer quiet, from its first sound, and brings it up:
+  // the phone's echo cancellation takes a moment to learn the answer each
+  // time it starts, and until it has, a loud answer is heard back loudly.
+  // Ducked, it rises only as far as ducked.
+  private fadeIn(startTime: number) {
+    const fullGain = this.isDucked ? DUCKED_GAIN : 1
+    this.output.gain.cancelScheduledValues(this.context.currentTime)
+    this.output.gain.setValueAtTime(Math.min(FADE_IN_GAIN, fullGain), startTime)
+    this.output.gain.linearRampToValueAtTime(fullGain, startTime + FADE_IN_SECONDS)
+  }
+
+  // isStarting says whether the answer has not yet sounded, or began to
+  // only a moment ago, when its echo is at its loudest.
+  isStarting(): boolean {
+    return this.soundingSince === undefined || performance.now() - this.soundingSince < ANSWER_STARTING_MS
   }
 
   // pause stops the sound where it is; resume goes on from there.
@@ -496,12 +506,22 @@ export class AnswerPlayer {
     const startTime = Math.max(this.nextStartTime, this.context.currentTime + 0.03)
     source.start(startTime)
     source.onended = () => this.pump()
+    if (this.isFadePending) {
+      this.isFadePending = false
+      this.fadeIn(startTime)
+      this.soundingSince = performance.now() + (startTime - this.context.currentTime) * 1000
+    }
     this.scheduled.push({ source, piece, startSample: piece.cursorSamples, sampleCount, startTime })
     this.nextStartTime = startTime + sampleCount / ANSWER_SAMPLE_RATE
     piece.cursorSamples = piece.sampleCount
   }
 
   private wasActive = false
+  private isDucked = false
+  // Whether the next audio scheduled is the first after silence, and when
+  // the first sounded (fadeIn, isStarting).
+  private isFadePending = false
+  private soundingSince?: number
 
   private setActive() {
     const isActive = this.isActive()
@@ -515,7 +535,10 @@ export class AnswerPlayer {
     }
     if (isActive !== this.wasActive) {
       this.wasActive = isActive
-      if (isActive) this.fadeIn()
+      if (isActive) {
+        this.isFadePending = true
+        this.soundingSince = undefined
+      }
       this.onActive(isActive)
     }
   }
@@ -546,8 +569,6 @@ const DOUBLE_TALK_FACTOR = 2.5
 // The same, for the first moments of an answer, while the phone's echo
 // cancellation is still learning it and its echo is at its loudest.
 const DOUBLE_TALK_FACTOR_STARTING = 5
-// How long an answer counts as starting.
-const ANSWER_STARTING_MS = 1500
 // How long speech heard over the answer is listened to before deciding
 // whether it is the person.
 const GATE_WINDOW_MS = 400
@@ -611,7 +632,6 @@ export class AnswerVoice {
   private resumeTimer?: number
   private gate = new EchoGate()
   private gateTimer?: number
-  private answerStartedAt = 0
   // Whether the provider says somebody is talking now.
   private isHearing = false
   // What each utterance heard over the answer was judged to be.
@@ -745,7 +765,6 @@ export class AnswerVoice {
   // answering says the answer started or stopped playing: the levels are
   // compared only while it plays.
   answering(isAnswering: boolean) {
-    if (isAnswering) this.answerStartedAt = performance.now()
     window.clearInterval(this.gateTimer)
     this.gateTimer = isAnswering ? window.setInterval(() => this.sample(), GATE_SAMPLE_MS) : undefined
   }
@@ -825,8 +844,7 @@ export class AnswerVoice {
     }
     if (!this.judging) return
     this.judging.frameCount += 1
-    const isAnswerStarting = performance.now() - this.answerStartedAt < ANSWER_STARTING_MS
-    if (this.gate.isPersonLouder(microphoneRms, answerRms, isAnswerStarting)) this.judging.louderCount += 1
+    if (this.gate.isPersonLouder(microphoneRms, answerRms, this.player.isStarting())) this.judging.louderCount += 1
     if (performance.now() - this.judging.startedAt >= GATE_WINDOW_MS) this.decide()
   }
 
