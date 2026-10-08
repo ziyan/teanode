@@ -83,6 +83,9 @@ const (
 	// herdrOpenSettle is how long open waits for herdr to recognize the
 	// coding agent it started.
 	herdrOpenSettle = 15 * time.Second
+	// herdrStartWait is how long open retries starting the coding agent
+	// while the new pane's shell is still starting.
+	herdrStartWait = 10 * time.Second
 	// herdrWatchUnseen is how long a watched session that was never seen
 	// working is given before it is said to have finished: a turn shorter
 	// than a poll is not seen at all.
@@ -699,6 +702,10 @@ func (self *Herdr) session(ctx context.Context, paneId string) (*HerdrSession, e
 }
 
 // herdrAgentNames are what the coding agents are called to a person.
+// herdrStartEvery is how often open tries again to start a coding agent in
+// a pane whose shell is still starting; a variable so a test need not wait.
+var herdrStartEvery = 500 * time.Millisecond
+
 var herdrAgentNames = map[string]string{CodingAgentKindClaude: "Claude Code", CodingAgentKindCodex: "Codex"}
 
 // paneNames names each pane with a coding agent in it as the person finds
@@ -988,6 +995,12 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if label == "" {
 		label = filepath.Base(directory)
 	}
+	// A tab in the directory's workspace says which agent it holds; the
+	// workspace already says the directory.
+	tabLabel := strings.TrimSpace(arguments.AgentName)
+	if tabLabel == "" {
+		tabLabel = herdrAgentNames[kind]
+	}
 	workspaces, err := self.client.listWorkspaces(ctx)
 	if err != nil {
 		return nil, err
@@ -1005,7 +1018,7 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		}
 	}
 	if workspaceId != "" {
-		err = self.client.call(ctx, "tab.create", map[string]any{"workspace_id": workspaceId, "cwd": directory, "label": label}, &created)
+		err = self.client.call(ctx, "tab.create", map[string]any{"workspace_id": workspaceId, "cwd": directory, "label": tabLabel}, &created)
 	} else {
 		err = self.client.call(ctx, "workspace.create", map[string]any{"cwd": directory, "label": filepath.Base(directory)}, &created)
 	}
@@ -1016,6 +1029,14 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if paneId == "" {
 		return nil, errors.New("herdr opened a pane without saying which")
 	}
+	// A pane whose agent never started is closed, not left as a stray
+	// shell in the person's herdr.
+	isStarted := false
+	defer func() {
+		if !isStarted {
+			_ = self.client.call(context.WithoutCancel(ctx), "pane.close", map[string]any{"pane_id": paneId}, nil)
+		}
+	}()
 	// A name of herdr's kind, not taken by another agent.
 	agents, err := self.client.listAgents(ctx)
 	if err != nil {
@@ -1038,13 +1059,27 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if arguments.ShouldSkipPermissions {
 		start["args"] = []string{herdrSkipPermissionsFlags[kind]}
 	}
-	err = self.client.call(ctx, "agent.start", start, nil)
+	// A pane just opened refuses an agent until its shell is up.
+	startDeadline := time.Now().Add(herdrStartWait)
+	for {
+		err = self.client.call(ctx, "agent.start", start, nil)
+		var refused *herdrError
+		if err == nil || !errors.As(err, &refused) || refused.Code != "agent_pane_busy" || time.Now().After(startDeadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(herdrStartEvery):
+		}
+	}
 	// One that stopped at a question as it started is open, and asking it.
 	var refused *herdrError
 	isAsking := errors.As(err, &refused) && refused.Code == "agent_not_ready"
 	if err != nil && !isAsking {
 		return nil, fmt.Errorf("cannot start %s in %s: %w", herdrAgentNames[kind], directory, err)
 	}
+	isStarted = true
 	// Herdr names the coding agent in a pane a moment after it starts;
 	// answered before, the session would read as nobody's, in no state.
 	deadline := time.Now().Add(herdrOpenSettle)

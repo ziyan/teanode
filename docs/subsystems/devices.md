@@ -237,6 +237,14 @@ enter for one that takes text, and the answer typed as the next message for a
 question Codex asked in its history. It carries the question's fingerprint and
 is refused when the question on screen is no longer that one.
 
+`open` starts Claude Code or Codex in a directory: in a new tab of the
+workspace named after the directory when there is one, labeled with the
+agent, or in a new workspace. A new pane refuses an agent until its shell is
+up, so the start is tried again for ten seconds, and a pane whose agent never
+started is closed. Asked to, it starts the agent without its permission
+prompts (`--dangerously-skip-permissions`, `--yolo`). `close` closes a
+session's pane, never while it works.
+
 `setup` puts a script into `~/.local/share/teanode/` and registers it in
 `~/.claude/settings.json` for six events, beside what is there; it appends
 each event to `~/.local/state/teanode/herdr-events.jsonl` and decides

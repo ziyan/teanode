@@ -32,6 +32,9 @@ type fakeHerdr struct {
 	prompted   []string
 	// created is what was opened, started and closed, in order.
 	created []string
+	// startRefusals are the codes agent.start is refused with, one a call,
+	// before it starts the agent.
+	startRefusals []string
 	// afterKeys, when set, changes the screens once keys are pressed.
 	afterKeys func(paneId string, keys []string)
 }
@@ -98,6 +101,15 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 		self.created = append(self.created, request.Method+" "+fmt.Sprint(request.Params["cwd"]))
 		result = map[string]any{"root_pane": map[string]any{"pane_id": "w9:p1"}}
 	case "agent.start":
+		if len(self.startRefusals) > 0 {
+			self.created = append(self.created, "refused "+self.startRefusals[0])
+			refusal := map[string]any{"id": request.ID, "error": map[string]any{"code": self.startRefusals[0], "message": "refused"}}
+			self.startRefusals = self.startRefusals[1:]
+			self.mutex.Unlock()
+			data, _ := json.Marshal(refusal)
+			_, _ = connection.Write(append(data, '\n'))
+			return
+		}
 		self.created = append(self.created, "start "+fmt.Sprint(request.Params["kind"])+" "+fmt.Sprint(request.Params["name"]))
 		self.agents = append(self.agents, map[string]any{"pane_id": "w9:p1", "agent": request.Params["kind"], "agent_status": "idle", "name": request.Params["name"]})
 		self.screens["w9:p1"] = ""
@@ -801,6 +813,41 @@ func TestASessionIsOpenedInItsDirectoryAndClosedWhenIdle(t *testing.T) {
 	created := slices.Clone(fake.created)
 	fake.mutex.Unlock()
 	want := []string{"workspace.create " + directory, "start codex example-repo", "close w9:p1"}
+	if !slices.Equal(created, want) {
+		t.Errorf("did %q, want %q", created, want)
+	}
+}
+
+func TestAPaneIsStartedOnceItsShellIsUpAndClosedWhenItNeverIs(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	directory := filepath.Join(home, "src", "example")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before := herdrStartEvery
+	herdrStartEvery = 10 * time.Millisecond
+	t.Cleanup(func() { herdrStartEvery = before })
+	herdr := NewHerdr(home)
+	ctx := context.Background()
+	fake.mutex.Lock()
+	fake.startRefusals = []string{"agent_pane_busy", "agent_pane_busy"}
+	fake.mutex.Unlock()
+	if _, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{Directory: directory, CodingAgentKind: "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	fake.mutex.Lock()
+	fake.agents = nil
+	fake.created = nil
+	fake.startRefusals = []string{"agent_missing"}
+	fake.mutex.Unlock()
+	if _, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{Directory: directory, CodingAgentKind: "claude"}); err == nil {
+		t.Error("an agent that was refused was said to be open")
+	}
+	fake.mutex.Lock()
+	created := slices.Clone(fake.created)
+	fake.mutex.Unlock()
+	want := []string{"workspace.create " + directory, "refused agent_missing", "close w9:p1"}
 	if !slices.Equal(created, want) {
 		t.Errorf("did %q, want %q", created, want)
 	}

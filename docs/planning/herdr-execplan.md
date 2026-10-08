@@ -97,6 +97,9 @@ To see it working, on a computer running `teanode computer` with herdr running a
 - Observation: herdr's socket spells a read's source `recent_unwrapped`, where its command line says `recent-unwrapped`, and a request it cannot read is refused with an empty `id`. A read given `lines` answers with no text at all, so the program reads the recent text whole and keeps its last lines itself.
   Evidence: the agent's `screen` with lines failed as "herdr did not answer agent.read: EOF" in the end-to-end test: the client waited for its own id and never saw the refusal.
 
+- Observation: `agent.start` sent at once after `workspace.create` or `tab.create` is refused with `agent_pane_busy` ("is not an available shell"), and the empty pane stays. `open` tries again for ten seconds and closes the pane when the agent never starts.
+  Evidence: the first `open` over the MCP failed in a tenth of a second and left an empty workspace; the same two calls from a script reproduce the refusal.
+
 ## Decision Log
 
 - Decision: TeaNode works only through the person's own herdr panes. It never starts a headless run (`claude -p`, `codex exec`, or a second process resuming the same session).
