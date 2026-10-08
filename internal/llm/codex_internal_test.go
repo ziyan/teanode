@@ -464,6 +464,24 @@ func TestAModelThatMustReasonSaysSoInTheStream(test *testing.T) {
 		test.Errorf("it asked %v", asked)
 	}
 
+	// An error that speaks of reasoning but refuses something else is not
+	// asked again, and changes nothing for the model.
+	var otherAskedCount int
+	other, otherServer := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		mutex.Lock()
+		otherAskedCount++
+		mutex.Unlock()
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: "+`{"type":"error","error":{"message":"Item of type 'reasoning' was provided without its required following item.","param":"input"}}`+"\n\n")
+	})
+	defer otherServer.Close()
+	if _, err := other.Chat(context.Background(), &ChatRequest{Model: "relaxed", Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}}}); err == nil || otherAskedCount != 1 {
+		test.Errorf("another reasoning error was asked %d times: %v", otherAskedCount, err)
+	}
+	if _, isRefused := other.noReasoningRefusedModels.Load("relaxed"); isRefused {
+		test.Errorf("another reasoning error marked the model")
+	}
+
 	// Another refusal in the stream is said in its own words.
 	busy, refusing := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")

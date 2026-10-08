@@ -310,16 +310,18 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 			if event.Response != nil && event.Response.Error != nil && event.Response.Error.Message != "" {
 				message = event.Response.Error.Message
 			}
+			param := ""
 			if event.Error != nil && event.Error.Message != "" {
 				message = event.Error.Message
-				if event.Error.Param != "" {
-					message += " (" + event.Error.Param + ")"
+				param = event.Error.Param
+				if param != "" {
+					message += " (" + param + ")"
 				}
 			}
 			if message == "" {
 				message = "the service ended the answer without saying why"
 			}
-			events <- StreamEvent{Kind: StreamError, Err: &APIError{Status: http.StatusBadGateway, Message: message}}
+			events <- StreamEvent{Kind: StreamError, Err: &APIError{Status: http.StatusBadGateway, Message: message, Param: param}}
 			return
 		}
 	}

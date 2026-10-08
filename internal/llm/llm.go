@@ -25,6 +25,10 @@ var log = logging.MustGetLogger("llm")
 type APIError struct {
 	Status  int
 	Message string
+
+	// Param is the field of the request the provider says it refused,
+	// such as reasoning.effort, when it says.
+	Param string
 }
 
 func (self *APIError) Error() string {

@@ -207,13 +207,21 @@ func (self *codex) unaskedEffort(model string) string {
 // that asked for no reasoning, which is then asked again with the least
 // the model takes.
 func (self *codex) isNoReasoningRefusal(request *ChatRequest, err error) bool {
-	if err == nil || request.ReasoningEffort != "" {
+	// The keyed endpoint is never sent an effort nobody asked for, so
+	// asking it again would ask the same thing.
+	if err == nil || request.ReasoningEffort != "" || self.doesTakeOutputLimit {
 		return false
 	}
 	if _, isRefused := self.noReasoningRefusedModels.Load(request.Model); isRefused {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "reasoning")
+	// Only a refusal of the effort itself: other errors speak of reasoning
+	// too, such as a reasoning item sent without the one that follows it.
+	var refusal *APIError
+	if errors.As(err, &refusal) && refusal.Param != "" {
+		return refusal.Param == "reasoning.effort"
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "reasoning.effort")
 }
 
 // encodeAndPost sends a conversation, asking again with low reasoning
@@ -517,6 +525,7 @@ func (self *codex) refused(answer *http.Response) error {
 		Error  struct {
 			Type     string `json:"type"`
 			Message  string `json:"message"`
+			Param    string `json:"param"`
 			ResetsAt int64  `json:"resets_at"`
 		} `json:"error"`
 	}
@@ -531,5 +540,5 @@ func (self *codex) refused(answer *http.Response) error {
 			}
 		}
 	}
-	return &APIError{Status: answer.StatusCode, Message: text}
+	return &APIError{Status: answer.StatusCode, Message: text, Param: body.Error.Param}
 }
