@@ -23,6 +23,8 @@ const operator = (text: string, attributes?: Record<string, string>) => node('mo
 const space = (width: string) => node('mspace', [], { width })
 const row = (children: MathNode[]): MathNode => (children.length === 1 ? children[0] : node('mrow', children))
 
+const SIGNS = new Set(['−', '+', '±', '∓'])
+
 // The function application mark after sin or log, which gives the thin
 // space TeX puts between a function's name and what it is applied to.
 const APPLY_FUNCTION = '⁡'
@@ -260,7 +262,16 @@ class FormulaParser {
         continue
       }
       const scripted = this.scripted()
-      if (scripted) nodes.push(scripted)
+      if (!scripted) continue
+      // A sign that starts a row or follows an operator belongs to what
+      // comes after it, "= −2", and takes no space of its own.
+      const previous = nodes[nodes.length - 1]
+      const isAfterOperator = !previous || (previous.tag === 'mo' && !')]}|⟩'.includes(String(previous.children[0])))
+      if (scripted.tag === 'mo' && SIGNS.has(String(scripted.children[0])) && isAfterOperator) {
+        nodes.push(operator(String(scripted.children[0]), { form: 'prefix' }))
+      } else {
+        nodes.push(scripted)
+      }
     }
     return nodes
   }

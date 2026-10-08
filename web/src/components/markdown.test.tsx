@@ -157,6 +157,12 @@ it('lays out matrices, aligned rows and cases as tables', () => {
   expect(tables[1].querySelector('mtd')?.getAttribute('class')).toContain('formula-right')
 })
 
+it('gives a sign after an operator no space of its own', () => {
+  const signs = drawn('\\[ x = -2 - y \\]').querySelectorAll('mo')
+  expect(signs[1].getAttribute('form')).toBe('prefix')
+  expect(signs[2].getAttribute('form')).toBeNull()
+})
+
 it('draws a command it does not know as it was written, and survives broken TeX', () => {
   const container = drawn('\\[ \\unknowncommand{x} + \\frac{1}{ \\left( 2 \\]')
   expect(container.querySelector('math')?.textContent).toContain('\\unknowncommand')
