@@ -382,6 +382,8 @@ type agentFinanceTransactionModel struct {
 	CategorizeAttemptedAt        *time.Time `gorm:"column:categorize_attempted_at"`
 	DuplicateOfTransactionID     *string    `gorm:"column:duplicate_of_transaction_id"`
 	DuplicateDecidedBy           string     `gorm:"column:duplicate_decided_by"`
+	Annotation                   string     `gorm:"column:annotation"`
+	AnnotatedBy                  string     `gorm:"column:annotated_by"`
 	CreatedAt                    time.Time  `gorm:"column:created_at"`
 	ModifiedAt                   time.Time  `gorm:"column:modified_at"`
 }
@@ -400,6 +402,7 @@ func (self *agentFinanceTransactionModel) toModel() *models.FinanceTransaction {
 		SpendingCategoryID: optionalString(self.SpendingCategoryID), CategorizedBy: models.CategorizedBy(self.CategorizedBy),
 		CategorizationConfidence: optionalString(self.CategorizationConfidence),
 		DuplicateOfTransactionID: optionalString(self.DuplicateOfTransactionID), DuplicateDecidedBy: models.DuplicateDecidedBy(self.DuplicateDecidedBy),
+		Annotation: self.Annotation, AnnotatedBy: models.AnnotatedBy(self.AnnotatedBy),
 		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
@@ -1091,65 +1094,193 @@ const carriedDecisions = `
 const hasDecisionToCarry = `(("pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person')
 	OR ("pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'))`
 
-// carryPendingDecisions gives a posted finance transaction what the person
-// decided about the pending one of the same finance source it names, which
-// the provider is about to remove: the spending category they chose,
-// transfer or not, would otherwise be lost as soon as the charge posted.
+// pendingPostedPair is a pending finance transaction and the posted one
+// that takes its place.
+type pendingPostedPair struct {
+	PendingID string `gorm:"column:pending_id"`
+	PostedID  string `gorm:"column:posted_id"`
+}
+
+// carryPendingDecisions gives a posted finance transaction what was decided
+// about the pending one of the same finance source it names, which the
+// provider is about to remove: the spending category the person chose,
+// transfer or not, the annotation, and the receipts matched to it would
+// otherwise be lost as soon as the charge posted.
 func (self *transaction) carryPendingDecisions(agentId, sourceId, financeAccountId, postedProviderTransactionId, pendingProviderTransactionId string, now time.Time) error {
-	return self.tx.Exec(`UPDATE "agent_finance_transaction" AS "posted" SET `+carriedDecisions+`
-		FROM "agent_finance_transaction" AS "pending"
+	var pairs []pendingPostedPair
+	if err := self.tx.Raw(`SELECT "pending"."id" AS "pending_id", "posted"."id" AS "posted_id"
+		FROM "agent_finance_transaction" AS "posted", "agent_finance_transaction" AS "pending"
 		WHERE "posted"."agent_id" = @agent_id AND "posted"."finance_account_id" = @finance_account_id
 		  AND "posted"."provider_transaction_id" = @posted_provider_transaction_id
 		  AND "pending"."agent_id" = @agent_id AND "pending"."id" <> "posted"."id"
 		  AND "pending"."provider_transaction_id" = @pending_provider_transaction_id
-		  AND "pending"."finance_account_id" IN (SELECT "id" FROM "agent_finance_account" WHERE "agent_id" = @agent_id AND "source_id" = @source_id)
-		  AND `+hasDecisionToCarry,
+		  AND "pending"."finance_account_id" IN (SELECT "id" FROM "agent_finance_account" WHERE "agent_id" = @agent_id AND "source_id" = @source_id)`,
 		map[string]any{
-			"agent_id": agentId, "source_id": sourceId, "finance_account_id": financeAccountId, "modified_at": now,
+			"agent_id": agentId, "source_id": sourceId, "finance_account_id": financeAccountId,
 			"posted_provider_transaction_id": postedProviderTransactionId, "pending_provider_transaction_id": pendingProviderTransactionId,
-		}).Error
+		}).Scan(&pairs).Error; err != nil {
+		return err
+	}
+	return self.carryPendingToPosted(agentId, pairs, now)
 }
 
 // carryReplacedPendingDecisions is carryPendingDecisions for a provider
 // that does not say which posted transaction a pending one became
 // (SimpleFIN): before the pending ones of a finance account that this sync
-// replaced are deleted, each the person decided about hands its decisions
-// to a posted one this sync inserted for the same account, with the same
-// amount and currency, posted within a few days of it. Charges post in
-// the order they were made, so among equal amounts the first pending one
-// goes to the first posted one, the second to the second, and so on; a
-// pair further apart than a few days is not taken.
+// replaced are deleted, each that holds something worth keeping (a
+// decision of the person's, an annotation, a matched receipt or an
+// uploaded receipt photo) hands it to a posted one this sync inserted for
+// the same account, with the same amount and currency, posted within a few
+// days of it. Charges post in the order they were made, so among equal
+// amounts the first pending one goes to the first posted one, the second
+// to the second, and so on; a pair further apart than a few days is not
+// taken.
 func (self *transaction) carryReplacedPendingDecisions(agentId, financeAccountId, replacedFrom string, keptProviderTransactionIds, insertedPostedIds []string, now time.Time) error {
 	if len(insertedPostedIds) == 0 {
 		return nil
 	}
-	return self.tx.Exec(`WITH "replaced" AS (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY "amount", "currency_code" ORDER BY "posted_on", "id") AS "amount_rank"
-			FROM "agent_finance_transaction"
-			WHERE "agent_id" = @agent_id AND "finance_account_id" = @finance_account_id AND "is_pending"
-			  AND "posted_on" >= CAST(@replaced_from AS date) AND "provider_transaction_id" <> ALL(CAST(@kept AS text[]))
-			  AND "categorized_by" = 'person'
+	var pairs []pendingPostedPair
+	if err := self.tx.Raw(`WITH "replaced" AS (
+			SELECT "candidate"."id", "candidate"."amount", "candidate"."currency_code", "candidate"."posted_on",
+				ROW_NUMBER() OVER (PARTITION BY "candidate"."amount", "candidate"."currency_code"
+					ORDER BY "candidate"."posted_on", "candidate"."id") AS "amount_rank"
+			FROM "agent_finance_transaction" AS "candidate"
+			WHERE "candidate"."agent_id" = @agent_id AND "candidate"."finance_account_id" = @finance_account_id AND "candidate"."is_pending"
+			  AND "candidate"."posted_on" >= CAST(@replaced_from AS date)
+			  AND "candidate"."provider_transaction_id" <> ALL(CAST(@kept AS text[]))
+			  AND ("candidate"."categorized_by" = 'person' OR "candidate"."duplicate_decided_by" = 'person' OR "candidate"."annotation" <> ''
+			    OR EXISTS (SELECT 1 FROM "agent_finance_receipt_match" AS "match" WHERE "match"."finance_transaction_id" = "candidate"."id")
+			    OR EXISTS (SELECT 1 FROM "agent_attachment" AS "attachment" WHERE "attachment"."finance_transaction_id" = "candidate"."id"))
 		), "arrived" AS (
 			SELECT "id", "amount", "currency_code", "posted_on",
 				ROW_NUMBER() OVER (PARTITION BY "amount", "currency_code" ORDER BY "posted_on", "id") AS "amount_rank"
 			FROM "agent_finance_transaction"
 			WHERE "agent_id" = @agent_id AND "finance_account_id" = @finance_account_id AND NOT "is_pending"
 			  AND "id" = ANY(CAST(@inserted AS text[]))
-			  AND "categorized_by" <> 'person'
 		)
-		UPDATE "agent_finance_transaction" AS "posted" SET `+carriedDecisions+`
+		SELECT "pending"."id" AS "pending_id", "arrived"."id" AS "posted_id"
 		FROM "arrived" JOIN "replaced" AS "pending"
 		  ON "pending"."amount" = "arrived"."amount" AND "pending"."currency_code" = "arrived"."currency_code"
 		 AND "pending"."amount_rank" = "arrived"."amount_rank"
 		 AND "arrived"."posted_on" BETWEEN "pending"."posted_on" - CAST(@posting_days AS integer)
 		                               AND "pending"."posted_on" + CAST(@posting_days AS integer)
-		WHERE "posted"."id" = "arrived"."id" AND "posted"."agent_id" = @agent_id
-		  AND `+hasDecisionToCarry,
+		ORDER BY "pending"."posted_on", "pending"."id"`,
 		map[string]any{
 			"agent_id": agentId, "finance_account_id": financeAccountId, "replaced_from": replacedFrom,
 			"kept": pq.Array(keptProviderTransactionIds), "inserted": pq.Array(insertedPostedIds),
-			"posting_days": pendingPostingDays, "modified_at": now,
-		}).Error
+			"posting_days": pendingPostingDays,
+		}).Scan(&pairs).Error; err != nil {
+		return err
+	}
+	return self.carryPendingToPosted(agentId, pairs, now)
+}
+
+// carryPendingToPosted moves to each posted finance transaction what is
+// kept on the pending one it replaces, inside the sync's transaction and
+// before the pending one is deleted:
+//   - the person's decisions (carriedDecisions);
+//   - the annotation and who wrote it, unless the posted one has its own;
+//   - every receipt match, keeping its source, confidence and matched
+//     amount, except that a receipt matcher's match of one receipt to one
+//     charge for the whole pending amount is changed to the whole posted
+//     amount when the charge posts for a different amount (a tip added, a
+//     hold released for less), but never to more than the receipt's
+//     total, since a receipt explains at most what it printed; a match the
+//     posted one already has to the same receipt stays, unless only the
+//     pending one's is the person's;
+//   - the receipt photos and files uploaded to the pending charge;
+//
+// and then keeps the matches within what the posted charge took
+// (capCarriedReceiptMatches).
+func (self *transaction) carryPendingToPosted(agentId string, pairs []pendingPostedPair, now time.Time) error {
+	for _, pair := range pairs {
+		arguments := map[string]any{"agent_id": agentId, "pending_id": pair.PendingID, "posted_id": pair.PostedID, "modified_at": now}
+		if err := self.tx.Exec(`UPDATE "agent_finance_transaction" AS "posted" SET `+carriedDecisions+`
+			FROM "agent_finance_transaction" AS "pending"
+			WHERE "posted"."agent_id" = @agent_id AND "posted"."id" = @posted_id
+			  AND "pending"."agent_id" = @agent_id AND "pending"."id" = @pending_id
+			  AND `+hasDecisionToCarry, arguments).Error; err != nil {
+			return err
+		}
+		if err := self.tx.Exec(`UPDATE "agent_finance_transaction" AS "posted"
+			SET "annotation" = "pending"."annotation", "annotated_by" = "pending"."annotated_by", "modified_at" = @modified_at
+			FROM "agent_finance_transaction" AS "pending"
+			WHERE "posted"."agent_id" = @agent_id AND "posted"."id" = @posted_id AND "posted"."annotation" = ''
+			  AND "pending"."agent_id" = @agent_id AND "pending"."id" = @pending_id AND "pending"."annotation" <> ''`, arguments).Error; err != nil {
+			return err
+		}
+		if err := self.tx.Exec(`INSERT INTO "agent_finance_receipt_match" AS "existing" ("receipt_id", "finance_transaction_id", "agent_id",
+				"matched_amount", "receipt_match_source", "match_confidence", "created_at")
+			SELECT "match"."receipt_id", "posted"."id", "match"."agent_id",
+				CASE WHEN "match"."receipt_match_source" = 'receipt_matcher' AND "match"."matched_amount" = ABS("pending"."amount")
+					AND "posted"."amount" <> 0 AND ABS("posted"."amount") <> ABS("pending"."amount")
+					AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt_match" AS "other"
+						WHERE "other"."receipt_id" = "match"."receipt_id" AND "other"."finance_transaction_id" <> "match"."finance_transaction_id")
+					AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt_match" AS "other"
+						WHERE "other"."finance_transaction_id" = "match"."finance_transaction_id" AND "other"."receipt_id" <> "match"."receipt_id")
+				THEN LEAST(ABS("posted"."amount"), "receipt"."total_amount") ELSE "match"."matched_amount" END,
+				"match"."receipt_match_source", "match"."match_confidence", "match"."created_at"
+			FROM "agent_finance_receipt_match" AS "match"
+			JOIN "agent_finance_transaction" AS "pending" ON "pending"."id" = "match"."finance_transaction_id"
+			JOIN "agent_finance_transaction" AS "posted" ON "posted"."id" = @posted_id AND "posted"."agent_id" = @agent_id
+			JOIN "agent_finance_receipt" AS "receipt" ON "receipt"."id" = "match"."receipt_id"
+			WHERE "match"."agent_id" = @agent_id AND "match"."finance_transaction_id" = @pending_id AND "pending"."agent_id" = @agent_id
+			ON CONFLICT ("receipt_id", "finance_transaction_id") DO UPDATE SET
+				"matched_amount" = EXCLUDED."matched_amount", "receipt_match_source" = EXCLUDED."receipt_match_source",
+				"match_confidence" = EXCLUDED."match_confidence"
+			WHERE "existing"."receipt_match_source" <> 'person' AND EXCLUDED."receipt_match_source" = 'person'`, arguments).Error; err != nil {
+			return err
+		}
+		if err := self.tx.Exec(`DELETE FROM "agent_finance_receipt_match" WHERE "agent_id" = @agent_id AND "finance_transaction_id" = @pending_id`,
+			arguments).Error; err != nil {
+			return err
+		}
+		if err := self.capCarriedReceiptMatches(arguments); err != nil {
+			return err
+		}
+		if err := self.tx.Exec(`UPDATE "agent_attachment" SET "finance_transaction_id" = @posted_id
+			WHERE "agent_id" = @agent_id AND "finance_transaction_id" = @pending_id`, arguments).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// receiptMatchesInCapOrder are the posted charge's receipt matches with
+// what the matches before each explain, the person's first and then the
+// oldest, for capping them to the charge.
+const receiptMatchesInCapOrder = `WITH "ordered" AS (
+		SELECT "match"."receipt_id", "match"."matched_amount", ABS("posted"."amount") AS "charged_amount",
+			COALESCE(SUM("match"."matched_amount") OVER (
+				ORDER BY ("match"."receipt_match_source" = 'person') DESC, "match"."created_at", "match"."receipt_id"
+				ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS "explained_before"
+		FROM "agent_finance_receipt_match" AS "match"
+		JOIN "agent_finance_transaction" AS "posted" ON "posted"."id" = "match"."finance_transaction_id"
+		WHERE "match"."agent_id" = @agent_id AND "match"."finance_transaction_id" = @posted_id
+	)`
+
+// capCarriedReceiptMatches keeps the receipt matches carried to a posted
+// charge within what it took, when it posted for less than its pending
+// charge (a hold released for less): taken in order, the person's
+// matches first, each explains at most what the ones before it left, and
+// one that would explain nothing is taken off, its receipt left for the
+// matcher or the person to match again.
+func (self *transaction) capCarriedReceiptMatches(arguments map[string]any) error {
+	if err := self.tx.Exec(receiptMatchesInCapOrder+`
+		DELETE FROM "agent_finance_receipt_match" AS "match" USING "ordered"
+		WHERE "match"."agent_id" = @agent_id AND "match"."finance_transaction_id" = @posted_id
+		  AND "match"."receipt_id" = "ordered"."receipt_id" AND "ordered"."explained_before" >= "ordered"."charged_amount"`,
+		arguments).Error; err != nil {
+		return err
+	}
+	return self.tx.Exec(receiptMatchesInCapOrder+`
+		UPDATE "agent_finance_receipt_match" AS "match"
+		SET "matched_amount" = "ordered"."charged_amount" - "ordered"."explained_before"
+		FROM "ordered"
+		WHERE "match"."agent_id" = @agent_id AND "match"."finance_transaction_id" = @posted_id
+		  AND "match"."receipt_id" = "ordered"."receipt_id"
+		  AND "ordered"."explained_before" + "ordered"."matched_amount" > "ordered"."charged_amount"`,
+		arguments).Error
 }
 
 // upsertFinanceAccount writes one finance account as the provider reported
@@ -1464,7 +1595,11 @@ func (self *transaction) GetFinanceTransaction(agentId, financeTransactionId str
 	if len(found) == 0 {
 		return nil, nil
 	}
-	return found[0].toModel(), nil
+	financeTransaction := found[0].toModel()
+	if err := self.fillReceiptCounts(agentId, []*models.FinanceTransaction{financeTransaction}); err != nil {
+		return nil, err
+	}
+	return financeTransaction, nil
 }
 
 func (self *transaction) GetFinanceTransactions(agentId string, financeTransactionIds []string) ([]*models.FinanceTransaction, error) {
@@ -1478,6 +1613,9 @@ func (self *transaction) GetFinanceTransactions(agentId string, financeTransacti
 	financeTransactions := make([]*models.FinanceTransaction, 0, len(found))
 	for index := range found {
 		financeTransactions = append(financeTransactions, found[index].toModel())
+	}
+	if err := self.fillReceiptCounts(agentId, financeTransactions); err != nil {
+		return nil, err
 	}
 	return financeTransactions, nil
 }
@@ -1633,6 +1771,11 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 	}
 	for index := range found {
 		page.FinanceTransactions = append(page.FinanceTransactions, found[index].toModel())
+	}
+	if !filter.ShouldReadIDsOnly {
+		if err := self.fillReceiptCounts(agentId, page.FinanceTransactions); err != nil {
+			return nil, err
+		}
 	}
 	return page, nil
 }

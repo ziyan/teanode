@@ -877,6 +877,11 @@ func (self *graph) DeleteAgentConversation(ctx context.Context, arguments Delete
 	if worker := self.agentWorker(); worker != nil {
 		worker.StopConversation(conversation.ID)
 	}
+	// A photo a receipt was read from stays with the receipt, which would
+	// go with it otherwise; deleting the receipt deletes it.
+	if err := tx.DetachReceiptAttachments(found.ID, conversation.ID); err != nil {
+		return false, err
+	}
 	attachments, err := tx.ListAgentAttachments(found.ID, conversation.ID)
 	if err != nil {
 		return false, err

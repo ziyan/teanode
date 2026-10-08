@@ -878,3 +878,14 @@ export function InfoIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// ReceiptIcon is a slip of paper with a torn foot and printed lines: a
+// receipt kept with a charge.
+export function ReceiptIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5-2 1.5-2.5-1.5L5 21z" />
+      <path d="M9 8h6M9 12h6M9 16h4" />
+    </Icon>
+  )
+}

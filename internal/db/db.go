@@ -183,6 +183,7 @@ type Transaction interface {
 	WatchedItemOperation
 	AlertOperation
 	FinanceOperation
+	FinanceReceiptOperation
 	ExchangeRateOperation
 	NetWorthOperation
 	BudgetOperation

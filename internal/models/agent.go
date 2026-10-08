@@ -609,6 +609,14 @@ const (
 	// tells them what came of it. Its subject is the message.
 	AgentJobStatementImport AgentJobKind = "statement_import"
 
+	// AgentJobReadReceipt reads a receipt out of a message sorting called
+	// one, or out of a photo or a text file uploaded to a finance
+	// transaction, records it and matches it to the charge it explains.
+	// Its subject is the stored message (with its mailbox) or the
+	// uploaded file, which names the finance transaction it was uploaded
+	// to, when there is one.
+	AgentJobReadReceipt AgentJobKind = "read_receipt"
+
 	// AgentJobWatch is one look by one watch of an installed skill: it
 	// lists what arrived since the last look through the skill's own
 	// tools, judges each new item and makes alert candidates of what

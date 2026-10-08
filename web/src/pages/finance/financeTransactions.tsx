@@ -6,6 +6,7 @@ import { ErrorMessage, Tag } from '../../components/common'
 import { usePageInAddress } from '../../components/pager'
 import { Column, DataTable, Range } from '../../components/dataTable'
 import { ConfirmDialog } from '../../components/dialog'
+import { ReceiptIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsSection } from '../../components/settingsList'
 import { useIsDesktop } from '../../components/sidebar'
@@ -34,13 +35,7 @@ import {
   UNDO_COUNT_TRANSACTION,
   formatDay,
 } from './financeApi'
-import {
-  Money,
-  accountLabel,
-  spendingCategoryLabel,
-  spendingCategoryOptions,
-  useFinanceWords,
-} from './financeCommon'
+import { Money, accountLabel, spendingCategoryLabel, spendingCategoryOptions, useFinanceWords } from './financeCommon'
 import { FinanceTransactionDialog } from './financeTransactionDialog'
 import { FinanceSelectionToolbar, chunks, confirmedSpendingRules } from './financeTransactionSelection'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
@@ -318,9 +313,7 @@ export function FinanceTransactionsSection() {
     [shownPage, changed],
   )
   const accountList = accounts.data?.FinanceAccounts ?? []
-  const detailedRow = detailedId
-    ? (rows.find((row) => row.id === detailedId) ?? opened[detailedId])
-    : undefined
+  const detailedRow = detailedId ? (rows.find((row) => row.id === detailedId) ?? opened[detailedId]) : undefined
   const detailed = detailedRow && changed[detailedRow.id] ? { ...detailedRow, ...changed[detailedRow.id] } : detailedRow
   const categoryList = categories.data?.SpendingCategories ?? []
   // categoryLabelOf is a spending category's label by its id, empty for
@@ -563,29 +556,49 @@ export function FinanceTransactionsSection() {
     {
       key: 'description',
       header: t('finance.description'),
-      value: (row) => [row.merchantName, row.description].filter(Boolean).join(' · '),
+      value: (row) => [row.merchantName, row.description, row.annotation].filter(Boolean).join(' · '),
       render: (row) => (
-        <span
-          className={row.duplicateOfTransactionId ? 'finance-description muted' : 'finance-description'}
-          title={[row.merchantName, row.description].filter(Boolean).join(' · ')}
-        >
-          {row.merchantName || row.description}
-          {row.merchantName && row.description !== row.merchantName ? (
-            <span className="muted"> · {row.description}</span>
+        <>
+          <span
+            className={row.duplicateOfTransactionId ? 'finance-description muted' : 'finance-description'}
+            title={[row.merchantName, row.description].filter(Boolean).join(' · ')}
+          >
+            {row.merchantName || row.description}
+            {row.merchantName && row.description !== row.merchantName ? (
+              <span className="muted"> · {row.description}</span>
+            ) : null}
+            {(row.receiptCount ?? 0) > 0 ? (
+              <>
+                {' '}
+                <span
+                  className="finance-receipt-mark"
+                  role="img"
+                  aria-label={t('finance.hasReceipt')}
+                  title={t('finance.hasReceipt')}
+                >
+                  <ReceiptIcon size={14} />
+                </span>
+              </>
+            ) : null}
+            {row.isPending ? (
+              <>
+                {' '}
+                <Tag value={t('finance.pending')} />
+              </>
+            ) : null}
+            {row.duplicateOfTransactionId ? (
+              <>
+                {' '}
+                <Tag value={t('finance.duplicate')} />
+              </>
+            ) : null}
+          </span>
+          {row.annotation ? (
+            <span className="finance-annotation-line" title={row.annotation}>
+              {row.annotation}
+            </span>
           ) : null}
-          {row.isPending ? (
-            <>
-              {' '}
-              <Tag value={t('finance.pending')} />
-            </>
-          ) : null}
-          {row.duplicateOfTransactionId ? (
-            <>
-              {' '}
-              <Tag value={t('finance.duplicate')} />
-            </>
-          ) : null}
-        </span>
+        </>
       ),
     },
     {
@@ -619,7 +632,12 @@ export function FinanceTransactionsSection() {
             value={row.spendingCategoryId ?? ''}
             label={t('finance.spendingCategory')}
             placeholder={t('finance.uncategorized')}
-            options={spendingCategoryOptions(categoryList, categoryName, row.spendingCategoryId, t('finance.transferGroup'))}
+            options={spendingCategoryOptions(
+              categoryList,
+              categoryName,
+              row.spendingCategoryId,
+              t('finance.transferGroup'),
+            )}
             onChange={(value) => void categorize(row, value)}
           />
         </span>
@@ -697,7 +715,12 @@ export function FinanceTransactionsSection() {
             label={t('finance.spendingCategory')}
             options={[
               { value: '', label: t('finance.allSpendingCategories') },
-              ...spendingCategoryOptions(categoryList, categoryName, filters.spendingCategoryId, t('finance.transferGroup')),
+              ...spendingCategoryOptions(
+                categoryList,
+                categoryName,
+                filters.spendingCategoryId,
+                t('finance.transferGroup'),
+              ),
             ]}
             // A spending category and "only those without one" cannot both
             // hold, so choosing one lets go of the other.
@@ -733,9 +756,7 @@ export function FinanceTransactionsSection() {
         <input
           type="checkbox"
           checked={filters.isDuplicateIncluded}
-          onChange={(event) =>
-            setFilters((previous) => ({ ...previous, isDuplicateIncluded: event.target.checked }))
-          }
+          onChange={(event) => setFilters((previous) => ({ ...previous, isDuplicateIncluded: event.target.checked }))}
         />
         {t('finance.showDuplicates')}
       </label>
@@ -817,10 +838,16 @@ export function FinanceTransactionsSection() {
       ) : null}
       {detailed ? (
         <FinanceTransactionDialog
+          key={detailed.id}
           financeTransaction={detailed}
           financeAccount={accountList.find((candidate) => candidate.id === detailed.financeAccountId)}
           financeAccounts={accountList}
-          categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId, t('finance.transferGroup'))}
+          categoryOptions={spendingCategoryOptions(
+            categoryList,
+            categoryName,
+            detailed.spendingCategoryId,
+            t('finance.transferGroup'),
+          )}
           isCounting={isCounting}
           refreshCount={detailsRefreshCount}
           onCategorize={(value) => void categorize(detailed, value)}
@@ -830,6 +857,9 @@ export function FinanceTransactionsSection() {
             setOpened((previous) => ({ ...previous, [financeTransaction.id]: financeTransaction }))
             setDetailedId(financeTransaction.id)
           }}
+          onTransactionChanged={(changes) =>
+            setChanged((previous) => ({ ...previous, [detailed.id]: { ...previous[detailed.id], ...changes } }))
+          }
           onClose={closeDetails}
         />
       ) : null}

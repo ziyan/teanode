@@ -141,6 +141,27 @@ type FinanceQuery interface {
 	// its id, or a new one), the rows it does not hold yet and those it
 	// does, and what was checked. Refused as the import would be.
 	PreviewImportTransactions(ctx context.Context, arguments ImportTransactionsArguments) (*TransactionRowsPreviewView, error)
+
+	// One page of the caller's receipts, each with its lines and matches,
+	// the newest purchase first and those that print no day last: those
+	// matched to one finance transaction, purchased within a range of
+	// days, printing no day, or matched to none.
+	FinanceReceipts(ctx context.Context, arguments FinanceReceiptsArguments) (*FinanceReceiptPageView, error)
+
+	// One receipt with its lines and its matches.
+	FinanceReceipt(ctx context.Context, arguments ReceiptArguments) (*models.FinanceReceipt, error)
+
+	// The charges a stored receipt could explain, the likeliest first:
+	// money out in its currency posted from three days before its day of
+	// purchase to seven after, not a mirrored copy, the exact amount, the
+	// card whose last digits it prints and a merchant sharing a word
+	// first. Nothing is matched.
+	ProposeReceiptMatches(ctx context.Context, arguments ReceiptArguments) ([]*ReceiptMatchCandidateView, error)
+
+	// What RecordReceipt would do with the same arguments, writing
+	// nothing: whether the lines add up, the charges it could explain,
+	// and whether it would replace the receipt read from the same source.
+	PreviewRecordReceipt(ctx context.Context, arguments RecordReceiptArguments) (*ReceiptPreviewView, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -270,6 +291,41 @@ type FinanceMutation interface {
 	// Take back CountTransaction: mirror detection decides again at once
 	// whether the finance transaction is a duplicate.
 	UndoCountTransaction(ctx context.Context, arguments CountTransactionArguments) (*models.FinanceTransaction, error)
+
+	// Write what the person, or their agent, says about a finance
+	// transaction; empty takes it away. The agent never changes what the
+	// person wrote.
+	AnnotateTransaction(ctx context.Context, arguments AnnotateTransactionArguments) (*models.FinanceTransaction, error)
+
+	// Record a receipt read line by line, as printed, from a message, a
+	// Gmail message or an uploaded photo or PDF: checked so its lines add
+	// up to its printed totals (refused when they do not, unless
+	// isUnbalancedAccepted), stored in place of any receipt read from the
+	// same source, and matched: to the charge named, as the person's, or
+	// to the one charge of the exact amount the matcher is sure of. The
+	// matcher never guesses between charges, and never replaces a match
+	// the person made.
+	RecordReceipt(ctx context.Context, arguments RecordReceiptArguments) (*RecordedReceiptView, error)
+
+	// Match a receipt to a finance transaction by hand, with how much of
+	// the charge it explains; the matcher never removes it. A receipt may
+	// be matched to several charges, and a charge to several receipts.
+	MatchReceipt(ctx context.Context, arguments MatchReceiptArguments) (*models.FinanceReceipt, error)
+
+	// Take a receipt off a finance transaction.
+	UnmatchReceipt(ctx context.Context, arguments UnmatchReceiptArguments) (*models.FinanceReceipt, error)
+
+	// Queue the receipt job to read a receipt out of a photo or a text
+	// file uploaded to the agent's attachments, or out of a message in a
+	// mailbox the agent is granted, and record and match it as
+	// RecordReceipt does; an upload given a finance transaction is matched
+	// to that one by hand. A PDF with no text the server can read is
+	// refused.
+	ReadReceipt(ctx context.Context, arguments ReadReceiptArguments) (*ReceiptReadingView, error)
+
+	// Delete a receipt with its lines and matches, and the photo or PDF it
+	// was read from.
+	DeleteReceipt(ctx context.Context, arguments ReceiptArguments) (bool, error)
 
 	// Set a spending category's monthly budget from a month on.
 	SetBudget(ctx context.Context, arguments SetBudgetArguments) (*models.Budget, error)

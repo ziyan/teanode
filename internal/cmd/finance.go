@@ -336,6 +336,7 @@ func NewFinanceCommand() *cli.Command {
 			},
 		},
 	}
+	finance.Commands = append(finance.Commands, financeReceiptCommands()...)
 	for _, subcommand := range finance.Commands {
 		if operation := financeSubcommandOperations[subcommand.Name]; operation != "" {
 			subcommand.Metadata = map[string]any{financeOperationKey: operation}
@@ -370,6 +371,9 @@ var financeSubcommandOperations = map[string]string{
 	"close-savings-target": "CloseSavingsTarget", "import-statement": "ImportStatement", "statement-import": "StatementImport",
 	"regenerate-statement-import-address": "RegenerateStatementImportAddress", "import-transactions": "ImportTransactions",
 	"rename-statement-account": "RenameStatementAccount", "delete-statement-account": "DeleteStatementAccount",
+	"annotate-transaction": "AnnotateTransaction", "receipts": "FinanceReceipts", "receipt": "FinanceReceipt",
+	"record-receipt": "RecordReceipt", "propose-receipt-matches": "ProposeReceiptMatches", "match-receipt": "MatchReceipt",
+	"unmatch-receipt": "UnmatchReceipt", "delete-receipt": "DeleteReceipt", "read-receipt": "ReadReceipt",
 }
 
 // operationOf is the finance operation a subcommand calls.

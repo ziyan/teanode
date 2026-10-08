@@ -11070,11 +11070,26 @@ main.content:has(> .knowledge-frame) {
    is narrow enough that it sits over the content rather than beside it.
    Only where it is needed: on a wide window the button is clear of the
    column it would otherwise cover. Up to the 900px breakpoint, since at
-   820 the button still sat on the end of a panel's last line. */
+   820 the button still sat on the end of a panel's last line.
+
+   That room is only reached by scrolling to the end, and a page a little
+   taller than the window rests with its last line under the button: the
+   next-page arrow of a list's pager, at the right end of the foot, was the
+   one control covered. So a pager in the page keeps the button's corner
+   clear as well, its width and margin less the page's own padding; one in
+   a dialog sits above the button and needs none. */
 @media (max-width: 900px) {
   main.content,
   .table-surface {
     padding-bottom: 84px;
+  }
+
+  main.content .table-pagination {
+    padding-right: 52px;
+  }
+
+  main.content .dialog .table-pagination {
+    padding-right: 0;
   }
 }
 
@@ -12869,6 +12884,14 @@ button.idea-history-title {
   margin-bottom: var(--space-4);
 }
 
+/* The fields come in two lists, the receipts between them, so the label
+   column is given one floor in both and their values line up. */
+@media (min-width: 601px) {
+  .finance-transaction-details .properties {
+    grid-template-columns: minmax(10rem, max-content) 1fr;
+  }
+}
+
 .finance-transaction-details .properties dd {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -12926,6 +12949,295 @@ button.idea-history-title {
    the browser's white square, which showed in dark mode. */
 .finance-metadata::-webkit-scrollbar-corner {
   background: var(--field);
+}
+
+/* The annotation, edited where it is shown in a transaction's details.
+   Its label sits level with the first line in the box, as a label does
+   beside a field, rather than on a baseline the box and the buttons under
+   it share, which put it halfway down: the box's border and padding are
+   the 8 pixels it is lowered by. */
+.finance-annotation-field {
+  width: 100%;
+  min-height: 0;
+  resize: vertical;
+}
+
+.properties .finance-annotation-term,
+.properties .finance-annotation-value {
+  align-self: start;
+}
+
+.properties .finance-annotation-term {
+  padding-top: 8px;
+}
+
+@media (max-width: 600px) {
+  .properties .finance-annotation-term {
+    padding-top: 0;
+  }
+}
+
+/* A word or two of buttons under what they act on, wrapping on a phone. */
+.finance-receipt-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* The receipts matched to a transaction, under its fields: each one a
+   bordered block with its head (merchant, day, check, actions), how much of
+   the charge it explains, and its lines. */
+.finance-receipts {
+  margin-bottom: var(--space-4);
+}
+
+.finance-receipt {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+}
+
+.finance-receipt-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.finance-receipt-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.finance-receipt-detail {
+  margin: 2px 0 var(--space-2);
+  font-size: var(--text-label);
+}
+
+/* The lines stay a table on a phone: the description wraps, the quantity
+   and amount keep their line, and a table wider than the dialog scrolls
+   sideways inside it rather than being restacked. */
+/* The description takes what the quantity and the amount leave and wraps
+   in it: max-width 0 keeps a long description from setting the column's
+   width (the same trick as td.truncate), so the amount is never pushed
+   past the edge of a phone. It stays a table there, and wraps, where every
+   other table becomes a block of lines that do not: a description run off
+   the edge took the quantity and the amount with it. */
+.finance-receipt-lines {
+  display: table;
+  width: 100%;
+  white-space: normal;
+}
+
+.finance-receipt-lines thead th:first-child,
+.finance-receipt-lines tbody td:first-child {
+  width: 100%;
+  max-width: 0;
+  white-space: normal;
+}
+
+.finance-receipt-lines-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.finance-receipt-lines {
+  font-size: 13px;
+}
+
+
+.finance-receipt-lines th,
+.finance-receipt-lines td {
+  padding: 3px 6px;
+}
+
+.finance-receipt-lines th:first-child,
+.finance-receipt-lines td:first-child {
+  padding-left: 0;
+}
+
+.finance-receipt-lines th:last-child,
+.finance-receipt-lines td:last-child {
+  padding-right: 0;
+}
+
+.finance-receipt-lines thead th {
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: normal;
+}
+
+.finance-receipt-lines td:first-child {
+  overflow-wrap: anywhere;
+}
+
+.finance-receipt-lines td:not(:first-child),
+.finance-receipt-lines th:not(:first-child) {
+  white-space: nowrap;
+}
+
+.finance-receipt-lines .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A discount sits indented under the item it takes money off, its amount
+   in the color of money saved. */
+.finance-receipt-discount td:first-child {
+  padding-left: var(--space-4);
+}
+
+.finance-receipt-discount td.numeric {
+  color: var(--good);
+}
+
+/* Taxes, fees and tips are muted and set apart from the items above. */
+.finance-receipt-tax td,
+.finance-receipt-fee td,
+.finance-receipt-tip td {
+  color: var(--muted);
+}
+
+.finance-receipt-item + .finance-receipt-tax td,
+.finance-receipt-item + .finance-receipt-fee td,
+.finance-receipt-item + .finance-receipt-tip td,
+.finance-receipt-discount + .finance-receipt-tax td,
+.finance-receipt-discount + .finance-receipt-fee td,
+.finance-receipt-discount + .finance-receipt-tip td {
+  border-top: 1px solid var(--border-strong);
+}
+
+/* The kind of a line that is not an item, before what it says. */
+.finance-receipt-kind {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.finance-receipt-lines tfoot th,
+.finance-receipt-lines .finance-receipt-subtotal th {
+  font-weight: normal;
+  color: var(--muted);
+  text-align: right;
+}
+
+.finance-receipt-lines tfoot td,
+.finance-receipt-lines .finance-receipt-subtotal td {
+  font-weight: 550;
+}
+
+.finance-receipt-lines tbody tr:last-child td,
+.finance-receipt-lines tfoot tr:last-child th,
+.finance-receipt-lines tfoot tr:last-child td {
+  border-bottom: 0;
+}
+
+/* What of the charge no matched receipt explains. */
+.finance-receipt-unexplained {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--warn);
+  border-radius: var(--radius-1);
+  color: var(--warn);
+  font-weight: 550;
+}
+
+.finance-receipt-reading {
+  margin: 0 0 var(--space-2);
+}
+
+/* The receipts that could explain a charge, one a line, each with the
+   icon that matches it. */
+.finance-receipt-candidates {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finance-receipt-candidates li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.finance-receipt-candidates li:last-child {
+  border-bottom: 0;
+}
+
+/* On the Receipts section: the charges a receipt explains, one to a line
+   in its cell, each a link to the charge's details. */
+.finance-receipt-matched {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finance-receipt-matched .link {
+  text-align: start;
+}
+
+/* On a phone the Receipts table keeps its day, merchant, total and check
+   on the screen: the merchant takes two lines at most in a narrow column
+   and the cells pad less, and the columns after the check scroll sideways. */
+@media (max-width: 600px) {
+  .finance-receipts-table .table-surface th,
+  .finance-receipts-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-receipt-merchant {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    max-width: 6rem;
+    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+}
+
+.finance-receipt-details .finance-receipt-lines-scroll {
+  margin-top: var(--space-3);
+}
+
+/* In the transactions list: the mark of a row with a receipt, and the
+   annotation under the description, one line cut short. */
+.finance-receipt-mark {
+  display: inline-flex;
+  vertical-align: middle;
+  color: var(--muted);
+}
+
+.finance-annotation-line {
+  display: block;
+  max-width: 28rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+@media (max-width: 600px) {
+  .finance-annotation-line {
+    max-width: 14rem;
+  }
 }
 
 @media (max-width: 600px) {

@@ -77,6 +77,12 @@ type MailboxOperation interface {
 	// says who may read it.
 	ListItemsByMail(mailId string) ([]*models.MailboxItem, error)
 
+	// FirstOwnedItemIDsByMail is, for each of these stored messages, the
+	// first item holding it in a mailbox the user owns, by mail id: where
+	// each is now for that user, in one statement. A message the user
+	// holds nowhere is left out.
+	FirstOwnedItemIDsByMail(userId string, mailIds []string) (map[string]string, error)
+
 	// MailIsInMailbox says whether a message is already filed in a mailbox,
 	// anywhere but its Sent and Drafts folders. Asked on every delivery, so
 	// it is one existence query rather than a list of everything.
@@ -1851,6 +1857,29 @@ func (self *transaction) ListItemsByMail(mailId string) ([]*models.MailboxItem, 
 		items = append(items, itemFromModel(&rows[index]))
 	}
 	return items, nil
+}
+
+func (self *transaction) FirstOwnedItemIDsByMail(userId string, mailIds []string) (map[string]string, error) {
+	itemIdByMailId := map[string]string{}
+	if userId == "" || len(mailIds) == 0 {
+		return itemIdByMailId, nil
+	}
+	var rows []struct {
+		MailID string `gorm:"column:mail_id"`
+		ItemID string `gorm:"column:item_id"`
+	}
+	if err := self.tx.Raw(`SELECT DISTINCT ON ("item"."mail_id") "item"."mail_id", "item"."id" AS "item_id"
+		FROM "mailbox_item" AS "item"
+		JOIN "mailbox_folder" AS "folder" ON "folder"."id" = "item"."folder_id"
+		JOIN "mailbox" ON "mailbox"."id" = "folder"."mailbox_id"
+		WHERE "item"."mail_id" IN ? AND "mailbox"."user_id" = ?
+		ORDER BY "item"."mail_id", "item"."id"`, mailIds, userId).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		itemIdByMailId[row.MailID] = row.ItemID
+	}
+	return itemIdByMailId, nil
 }
 
 func (self *transaction) ListExpunged(folderId string, sinceModSeq uint64) ([]*models.MailboxFolderExpunge, error) {
