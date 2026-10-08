@@ -67,6 +67,9 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "answer",
 				Usage:     "answer the question a session waits on",
 				ArgsUsage: "<pane>",
+				// A label holds commas ("Yes, and do not ask again"), so a
+				// repeated flag is one value each time, never split.
+				DisableSliceFlagSeparator: true,
 				Flags: []cli.Flag{
 					computerFlag,
 					&cli.StringFlag{Name: "fingerprint", Usage: "the question's fingerprint, as list prints it; an answer to a question that has changed is refused"},

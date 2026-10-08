@@ -1911,7 +1911,6 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
         </Link>
       ) : null}
       {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
-      {origin === 'herdrQuestion' && herdrQuestionOf(text) ? <HerdrQuestionCard {...herdrQuestionOf(text)!} /> : null}
     </div>
   )
 }
@@ -4068,7 +4067,24 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     {dayLabel(at, t('agentDrawer.today'), t('agentDrawer.yesterday'))}
                   </div>
                 ) : null
-              const drawn = drawLine(line)
+              let drawn = drawLine(line)
+              // A coding session's question, as the agent said it, takes
+              // its options under it while it still waits. Which question
+              // is named by the line it was written under, which is kept
+              // in the list even where working notes are not shown.
+              const asked = line.kind === 'assistant' && index > 0 ? lines[index - 1] : undefined
+              const herdrQuestion =
+                asked?.kind === 'checkin' && asked.origin === 'herdrQuestion' ? herdrQuestionOf(asked.text) : null
+              if (herdrQuestion) {
+                drawn = (
+                  <Fragment key={`${line.key}-herdr`}>
+                    {drawn}
+                    <div className="agent-line herdr-question-line">
+                      <HerdrQuestionCard {...herdrQuestion} />
+                    </div>
+                  </Fragment>
+                )
+              }
               return divider ? (
                 <Fragment key={`day-${line.key}`}>
                   {divider}

@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	toolcomputer "github.com/ziyan/teanode/internal/agent/tools/computer"
@@ -94,5 +97,31 @@ func TestHerdrParity(test *testing.T) {
 		if !listedSubcommands[subcommand] {
 			test.Errorf("teanode computer herdr %s is on no other surface", subcommand)
 		}
+	}
+}
+
+// A label holds commas, and is taken whole.
+func TestAnAnswersLabelIsNotSplitOnItsCommas(test *testing.T) {
+	test.Parallel()
+	var answer *cli.Command
+	for _, subcommand := range NewComputerCommand().Commands {
+		if subcommand.Name == "herdr" {
+			for _, each := range subcommand.Commands {
+				if each.Name == "answer" {
+					answer = each
+				}
+			}
+		}
+	}
+	var labels []string
+	answer.Action = func(_ context.Context, command *cli.Command) error {
+		labels = command.StringSlice("label")
+		return nil
+	}
+	if err := answer.Run(context.Background(), []string{"answer", "w1:p1", "--option", "2", "--label", "Yes, I trust this folder"}); err != nil {
+		test.Fatal(err)
+	}
+	if len(labels) != 1 || labels[0] != "Yes, I trust this folder" {
+		test.Errorf("%q", labels)
 	}
 }

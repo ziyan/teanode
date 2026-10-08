@@ -556,13 +556,13 @@ func herdrQuestionCheckIn(computerName string, session *computer.HerdrSession) s
 			computerName, session.PaneID, question.QuestionFingerprint)
 }
 
-// markdownEscaper takes the meaning out of what markdown would read as
-// emphasis, code, a link or a picture: what a coding agent drew on its
-// screen is shown as it was drawn, and an option label shaped as a picture
-// fetches nothing when the drawer or a chat app renders it, since a link
-// cannot open without its bracket. Only these four, which are all a chat
-// app's markdown takes an escape for; any other shows its backslash.
-var markdownEscaper = strings.NewReplacer("`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[")
+// markdownLinkBreaker takes the link out of what a coding agent drew on its
+// screen: a "](" is the one thing that turns text into a link or a
+// picture, which the drawer or a chat app would follow or fetch. It is
+// broken with a space rather than escaped, since the drawer's markdown and
+// a chat app's read escapes differently and one of them would show the
+// backslash.
+var markdownLinkBreaker = strings.NewReplacer("](", "] (")
 
 // herdrQuestionSaid is the question as the person reads it, in the drawer
 // and in their chat apps. Everything in it that came from the screen is
@@ -582,15 +582,15 @@ func herdrQuestionSaid(computerName string, session *computer.HerdrSession) stri
 		where = title + ", " + where
 	}
 	fmt.Fprintf(&said, "**%s** in pane %s on %s (%s) %s:\n\n", codingAgentName(session.CodingAgentKind),
-		markdownEscaper.Replace(session.PaneID), markdownEscaper.Replace(computerName), markdownEscaper.Replace(where), what)
+		markdownLinkBreaker.Replace(session.PaneID), markdownLinkBreaker.Replace(computerName), markdownLinkBreaker.Replace(where), what)
 	for _, line := range strings.Split(question.QuestionText, "\n") {
-		said.WriteString("> " + markdownEscaper.Replace(line) + "\n")
+		said.WriteString("> " + markdownLinkBreaker.Replace(line) + "\n")
 	}
 	said.WriteString("\n")
 	for _, option := range question.Options {
-		fmt.Fprintf(&said, "%d. %s", option.OptionNumber, markdownEscaper.Replace(option.OptionLabel))
+		fmt.Fprintf(&said, "%d. %s", option.OptionNumber, markdownLinkBreaker.Replace(option.OptionLabel))
 		if option.OptionDescription != "" {
-			said.WriteString(": " + markdownEscaper.Replace(option.OptionDescription))
+			said.WriteString(": " + markdownLinkBreaker.Replace(option.OptionDescription))
 		}
 		said.WriteString("\n")
 	}

@@ -146,10 +146,13 @@ export function HerdrStateTag({ session }: { session: HerdrSession }) {
 export function HerdrQuestionAnswer({
   session,
   question,
+  isQuestionShown = true,
   onAnswered,
 }: {
   session: HerdrSession
   question: HerdrQuestion
+  // Left out under the agent's words in the drawer, which say it already.
+  isQuestionShown?: boolean
   onAnswered: (after: HerdrSession | null) => void
 }) {
   const { t } = useTranslation()
@@ -200,10 +203,14 @@ export function HerdrQuestionAnswer({
 
   return (
     <div className="herdr-question">
-      <p className="herdr-question-kind muted">
-        {t(`herdr.kind.${question.herdrQuestionKind}` as 'herdr.kind.question')}
-      </p>
-      <pre className="herdr-question-text">{question.questionText}</pre>
+      {isQuestionShown ? (
+        <>
+          <p className="herdr-question-kind muted">
+            {t(`herdr.kind.${question.herdrQuestionKind}` as 'herdr.kind.question')}
+          </p>
+          <pre className="herdr-question-text">{question.questionText}</pre>
+        </>
+      ) : null}
       <div className="herdr-question-options">
         {choices.map((option) =>
           question.isMultipleChoice ? (
@@ -688,6 +695,7 @@ export function HerdrQuestionCard({
       <HerdrQuestionAnswer
         session={found.session}
         question={found.question}
+        isQuestionShown={false}
         onAnswered={() => setLookCount((count) => count + 1)}
       />
     </div>

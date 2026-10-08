@@ -13446,11 +13446,13 @@ button.idea-history-title {
   gap: var(--space-2);
 }
 
-/* Under a check-in line, which is small and muted and shrinks to its
-   words, the question takes the drawer's width and its own text: the
-   options are read and tapped on a phone. */
-.agent-line.checkin > .herdr-question-card {
+/* Under the agent's words that say what a coding session asks: its
+   options, the drawer's width, to read and tap on a phone. */
+.agent-line.herdr-question-line {
   align-self: stretch;
-  color: var(--text);
-  font-size: var(--text-body);
+  max-width: 100%;
+}
+
+.agent-line.herdr-question-line .herdr-question-card {
+  margin-top: 0;
 }

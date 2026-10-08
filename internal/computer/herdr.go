@@ -519,6 +519,10 @@ func (self *Herdr) observe(ctx context.Context, agent *herdrAgent, reports map[s
 	if session.WorkingDirectory == "" {
 		session.WorkingDirectory = agent.Cwd
 	}
+	// Under the home directory, from ~, as a terminal's prompt says it.
+	if rest, isUnderHome := strings.CutPrefix(session.WorkingDirectory, self.home); isUnderHome && (rest == "" || strings.HasPrefix(rest, "/")) {
+		session.WorkingDirectory = "~" + rest
+	}
 	if agent.AgentSession != nil {
 		session.CodingSessionID = agent.AgentSession.Value
 		session.TranscriptPath = findTranscript(self.home, agent.Agent, session.CodingSessionID)
