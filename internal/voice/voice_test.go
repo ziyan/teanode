@@ -231,3 +231,22 @@ func TestSpeakStreamsTheAnswer(t *testing.T) {
 		t.Fatalf("a piece too long is refused")
 	}
 }
+
+// Something the provider minded and went on after is told as a problem,
+// which the drawer shows without ending the call; and a piece cut short is
+// counted from its words.
+func TestAProviderErrorIsAProblemNotTheEnd(t *testing.T) {
+	var order utteranceOrder
+	minded := providerEvent{Type: "error"}
+	minded.Error = &struct {
+		Message string `json:"message"`
+		Code    string `json:"code"`
+	}{Message: "the buffer was empty"}
+	told := order.translate(&minded)
+	if len(told) != 1 || told[0].VoiceEvent != EventProblem || told[0].ErrorMessage != "the buffer was empty" {
+		t.Fatalf("told %+v", told)
+	}
+	if usage := EstimateSpeechUsage("twenty characters ok"); usage.InputTokens != 6 || usage.OutputTokens != 32 {
+		t.Fatalf("estimated %+v", usage)
+	}
+}

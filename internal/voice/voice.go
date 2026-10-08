@@ -46,6 +46,9 @@ const (
 	EventTranscriptFinal  = "transcriptFinal"
 	EventTranscriptFailed = "transcriptFailed"
 	EventError            = "error"
+	// EventProblem is something to tell the person that does not end the
+	// call.
+	EventProblem = "problem"
 
 	// A spoken answer's audio, a piece at a time; that it is all there;
 	// that it could not be spoken.
@@ -336,7 +339,9 @@ func (self *utteranceOrder) translate(event *providerEvent) []*Event {
 		self.finished[event.ItemID] = &Event{VoiceEvent: EventTranscriptFailed, UtteranceID: event.ItemID, ErrorMessage: event.errorMessage()}
 		return self.release()
 	case "error":
-		return []*Event{{VoiceEvent: EventError, ErrorMessage: event.errorMessage()}}
+		// Something the provider did not like, which it goes on after;
+		// what ends the session ends the connection, and Read says so.
+		return []*Event{{VoiceEvent: EventProblem, ErrorMessage: event.errorMessage()}}
 	}
 	return nil
 }

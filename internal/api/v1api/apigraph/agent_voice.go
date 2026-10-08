@@ -33,6 +33,9 @@ import (
 // voiceSessionLongest bounds one session, which the drawer opens again.
 const voiceSessionLongest = 30 * time.Minute
 
+// voiceBudgetRecheck is how often a call checks the agent's day again.
+const voiceBudgetRecheck = 2 * time.Minute
+
 // answerSegmentsAtOnce bounds the pieces of an answer being spoken at
 // once: the one playing and the next few, made while it plays.
 const answerSegmentsAtOnce = 4
@@ -210,7 +213,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 			SampleRate       any `json:"sampleRate"`
 		} `json:"captureSettings"`
 	}
-	if messageType, data, err := conn.ReadMessage(); err != nil || messageType != websocket.TextMessage || json.Unmarshal(data, &hello) != nil || hello.VoiceEvent != "hello" {
+	if messageType, helloBytes, err := conn.ReadMessage(); err != nil || messageType != websocket.TextMessage || json.Unmarshal(helloBytes, &hello) != nil || hello.VoiceEvent != "hello" {
 		refuse("the first message says hello")
 		return
 	}
@@ -297,8 +300,19 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		SpeechVoice: configuration.Agent.Voice.EffectiveSpeechVoice(),
 	}
 	speechUsageModel := provider.Name + ":" + speechSettings.SpeechModel
+	// requireBudget checks the agent's day again: a call outlasts the check
+	// made when it began, and each piece spoken and each minute heard is
+	// paid for from the same day.
+	requireBudget := func() error {
+		return self.database.Transaction(func(tx db.Transaction) error {
+			return agent.RequireBudget(tx, self.config.Current(), found, owner, time.Now())
+		})
+	}
+	type speakingPiece struct {
+		cancel context.CancelFunc
+	}
 	var speakingMutex sync.Mutex
-	speaking := map[string]context.CancelFunc{}
+	speaking := map[string]*speakingPiece{}
 	speak := func(answerSegmentID, answerText string) {
 		speakingMutex.Lock()
 		if _, isSpeaking := speaking[answerSegmentID]; isSpeaking || answerSegmentID == "" || len(speaking) >= answerSegmentsAtOnce {
@@ -307,15 +321,24 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 			return
 		}
 		speechContext, cancelSpeech := context.WithCancel(ctx)
-		speaking[answerSegmentID] = cancelSpeech
+		piece := &speakingPiece{cancel: cancelSpeech}
+		speaking[answerSegmentID] = piece
 		speakingMutex.Unlock()
 		go func() {
 			defer func() {
 				speakingMutex.Lock()
-				delete(speaking, answerSegmentID)
+				// Unless a cancellation already let it go, and the id was
+				// asked for again since.
+				if speaking[answerSegmentID] == piece {
+					delete(speaking, answerSegmentID)
+				}
 				speakingMutex.Unlock()
 				cancelSpeech()
 			}()
+			if err := requireBudget(); err != nil {
+				_ = socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudioFailed, AnswerSegmentID: answerSegmentID, ErrorMessage: err.Error()})
+				return
+			}
 			// The person's voice as it is now: they may change it mid-call.
 			pieceSettings := *speechSettings
 			var current *models.Agent
@@ -327,6 +350,11 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 			usage, err := voice.Speak(speechContext, &pieceSettings, answerText, func(pcm []byte) error {
 				return socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudio, AnswerSegmentID: answerSegmentID, AnswerAudio: pcm})
 			})
+			if usage == nil && speechContext.Err() != nil {
+				// Cut short, the provider says nothing of what it cost, and
+				// charges for it all the same: counted from its words.
+				usage = voice.EstimateSpeechUsage(answerText)
+			}
 			if usage != nil {
 				agent.RecordUsage(self.database, found.ID, "", speechUsageModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, CompletionTokens: usage.OutputTokens})
 			}
@@ -345,20 +373,31 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		speakingMutex.Lock()
 		defer speakingMutex.Unlock()
 		for _, answerSegmentID := range answerSegmentIDs {
-			if cancelSpeech, isSpeaking := speaking[answerSegmentID]; isSpeaking {
-				cancelSpeech()
+			if piece, isSpeaking := speaking[answerSegmentID]; isSpeaking {
+				piece.cancel()
+				// Its room is free now, not when its request gives up: the
+				// pieces of the next answer come at once.
+				delete(speaking, answerSegmentID)
 			}
 		}
 	}
 
+	budgetCheckedAt := time.Now()
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(voiceSilenceLongest))
-		messageType, data, err := conn.ReadMessage()
+		messageType, messageBytes, err := conn.ReadMessage()
 		if err != nil {
 			return
 		}
 		if messageType == websocket.BinaryMessage {
-			if err := session.Append(data); err != nil {
+			if time.Since(budgetCheckedAt) > voiceBudgetRecheck {
+				budgetCheckedAt = time.Now()
+				if err := requireBudget(); err != nil {
+					_ = socket.say(&voice.Event{VoiceEvent: voice.EventError, ErrorMessage: err.Error()})
+					return
+				}
+			}
+			if err := session.Append(messageBytes); err != nil {
 				_ = socket.say(&voice.Event{VoiceEvent: voice.EventError, ErrorMessage: err.Error()})
 				return
 			}
@@ -370,7 +409,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 			AnswerText       string   `json:"answerText"`
 			AnswerSegmentIDs []string `json:"answerSegmentIds"`
 		}
-		if json.Unmarshal(data, &said) != nil {
+		if json.Unmarshal(messageBytes, &said) != nil {
 			continue
 		}
 		switch said.VoiceEvent {

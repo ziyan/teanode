@@ -155,3 +155,12 @@ func WAV(pcm []byte) []byte {
 	binary.LittleEndian.PutUint32(header[40:], uint32(len(pcm)))
 	return append(header, pcm...)
 }
+
+// EstimateSpeechUsage is what speaking answerText costs, for a piece cut
+// short before the provider said: a token for every four characters read,
+// and the audio at the rate the provider counts it, about eight tokens for
+// every five characters.
+func EstimateSpeechUsage(answerText string) *Usage {
+	characterCount := len([]rune(answerText))
+	return &Usage{InputTokens: characterCount/4 + 1, OutputTokens: characterCount * 8 / 5}
+}
