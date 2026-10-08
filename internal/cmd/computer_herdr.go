@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -81,7 +82,7 @@ func newComputerHerdrCommand() *cli.Command {
 				ArgsUsage: "<pane>",
 				Flags: []cli.Flag{
 					computerFlag,
-					&cli.StringFlag{Name: "conversation", Usage: "the conversation to wake, by id", Required: true},
+					&cli.StringFlag{Name: "conversation", Usage: "the conversation to wake, by id; your main conversation by default"},
 					JSONFlag(),
 				},
 				Action: runComputerHerdrWatch,
@@ -96,8 +97,8 @@ func newComputerHerdrCommand() *cli.Command {
 	}
 }
 
-// herdrStateWords is a session's state as the list says it, with herdr's
-// own when the two differ.
+// herdrStateWords is a session's state as the list says it, and whether
+// it is watched.
 func herdrStateWords(session *client.AgentHerdrSession) string {
 	words := session.HerdrSessionState
 	if session.IsWatched {
@@ -143,8 +144,14 @@ func runComputerHerdrList(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(listed)
 	}
+	for _, failed := range listed.FailedComputerNames {
+		_, _ = fmt.Fprintf(command.ErrWriter, "%s did not answer; its sessions are not listed\n", failed)
+	}
 	if len(listed.ComputerNames) == 0 {
 		_, _ = fmt.Fprintln(command.Writer, "no attached computer watches herdr; run a current 'teanode computer start' where herdr runs")
+		return nil
+	}
+	if len(listed.Sessions) == 0 && len(listed.FailedComputerNames) > 0 {
 		return nil
 	}
 	if len(listed.Sessions) == 0 {
@@ -170,6 +177,11 @@ func runComputerHerdrList(ctx context.Context, command *cli.Command) error {
 func herdrPane(command *cli.Command, what string) (string, error) {
 	if command.Args().Len() < 1 || strings.TrimSpace(command.Args().Get(0)) == "" {
 		return "", usage("which pane? usage: teanode computer herdr " + what)
+	}
+	for _, name := range []string{"turns", "lines", "seconds"} {
+		if command.Int(name) < 0 {
+			return "", usage("--" + name + " is a number, and not below zero")
+		}
 	}
 	return strings.TrimSpace(command.Args().Get(0)), nil
 }
@@ -197,7 +209,7 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
 	}
 	session := read.HerdrSession
-	_, _ = fmt.Fprintf(command.ErrWriter, "%s %s: %s\n", session.Computer, session.PaneID, herdrStateWords(session))
+	_, _ = fmt.Fprintf(command.Writer, "%s %s: %s\n", session.Computer, session.PaneID, herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
 	return nil
 }
@@ -223,7 +235,7 @@ func runComputerHerdrScreen(ctx context.Context, command *cli.Command) error {
 }
 
 func runComputerHerdrSend(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 {
+	if command.Args().Len() < 2 || strings.TrimSpace(command.Args().Get(0)) == "" {
 		return usage("what to type, and where? usage: teanode computer herdr send <pane> <text>")
 	}
 	paneId := strings.TrimSpace(command.Args().Get(0))
@@ -252,6 +264,9 @@ func runComputerHerdrWait(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	// A wait runs as long as it was asked to, past the minute a request is
+	// otherwise given.
+	connection.SetTimeout(time.Duration(max(command.Int("seconds"), 30)+60) * time.Second)
 	waited, err := client.WaitAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("seconds")))
 	if err != nil {
 		return describeError(command, err)
@@ -294,15 +309,23 @@ func runComputerHerdrAnswer(ctx context.Context, command *cli.Command) error {
 		if err != nil {
 			return describeError(command, err)
 		}
+		var asking []*client.AgentHerdrSession
 		for _, session := range listed.Sessions {
 			if session.PaneID == paneId && session.Question != nil {
-				printHerdrQuestion(command, session.Question, "")
-				return usage("answer it with --fingerprint " + session.Question.QuestionFingerprint)
+				asking = append(asking, session)
 			}
 		}
-		return usage("pane " + paneId + " is not asking anything")
+		switch len(asking) {
+		case 0:
+			return usage("pane " + paneId + " is not asking anything")
+		case 1:
+			_, _ = fmt.Fprintf(command.Writer, "%s %s asks:\n", asking[0].Computer, asking[0].PaneID)
+			printHerdrQuestion(command, asking[0].Question, "")
+			return usage("answer it with --computer " + asking[0].Computer + " --fingerprint " + asking[0].Question.QuestionFingerprint)
+		}
+		return usage("pane " + paneId + " asks something on several computers; say which with --computer")
 	}
-	answered, err := client.AnswerAgentHerdrQuestion(ctx, connection, command.String("computer"), paneId, fingerprint, optionNumbers, freeText)
+	answered, err := client.AnswerAgentHerdrQuestion(ctx, connection, command.String("computer"), paneId, fingerprint, optionNumbers, nil, freeText)
 	if err != nil {
 		return describeError(command, err)
 	}

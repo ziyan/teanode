@@ -1306,6 +1306,9 @@ export const en = {
   'herdr.hooksInstalled': 'Hooks installed on {computer}, in {path}',
   'herdr.hooksRemoved': 'Hooks removed on {computer}, from {path}',
   'herdr.hooksFailed': 'The hooks could not be changed.',
+  'herdr.hooksRemoveTitle': 'Remove the reporting hooks?',
+  'herdr.hooksRemoveBody': 'This takes TeaNode\'s hooks out of Claude Code\'s settings on {computer}, and leaves every other hook there as it is.',
+  'herdr.notAnswering': '{computers} did not answer, so their sessions are not listed.',
   'backgroundWork.title': 'Work in the background',
   'backgroundWork.hint':
     'Surveys and subagents your agent started without waiting for them, and surveys started from the command line. The conversation that started one hears when it finishes.',

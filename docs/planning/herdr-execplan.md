@@ -27,12 +27,12 @@ To see it working, on a computer running `teanode computer` with herdr running a
 
 - [x] (2026-10-08) Researched herdr 0.8.2 on the development computer (command line, socket protocol, event subscription, detection rules), the history files of both coding agents, live question screens of both, Claude Code's documented hooks, and the TeaNode code this touches. Wrote this plan.
 - [x] (2026-10-08) Revised after review by the person: the tool is named `herdr`; questions and approvals are shown to the person so they can answer remotely; herdr's own state is not trusted alone; strict parity across the tool, the dashboard and the command line.
-- [ ] Milestone 0 (prototype): in a throwaway herdr session, confirm the hook events, the screen shapes and the key sequences that answer each kind of question.
-- [ ] Milestone 1: the computer program talks to herdr, keeps its own state for each session, reads history and screens, and recognizes questions.
-- [ ] Milestone 2: the actions list, read, screen, send, wait and answer on all three surfaces, with the parity test.
-- [ ] Milestone 3: questions reach the person (drawer card, dashboard, chat apps) and finished work wakes the conversation that sent it.
-- [ ] Milestone 4: reporting hooks, installed by `setup`, for the state herdr gets wrong.
-- [ ] Milestone 5: decision record, documentation, changelog, deploy, end-to-end check.
+- [x] (2026-10-08) Milestone 0: probed a headless `herdr --session teanode-probe server` with Claude Code and Codex panes; fixtures in `internal/computer/testdata/herdr/`; key sequences and hook payloads recorded below.
+- [x] (2026-10-08) Milestone 1: the computer program (`internal/computer/herdr*.go`), with tests against a fake herdr socket. A read-only run against the real herdr recognized both questions the person had left waiting, including the Claude Code one herdr called idle.
+- [x] (2026-10-08) Milestone 2: list, read, screen, send, wait, answer, watch and setup on the tool, the API, the dashboard and the command line; `TestHerdrParity` checks all four.
+- [x] (2026-10-08) Milestone 3: questions written into the main conversation under `[herdr question]` (drawer card with buttons, chat relay); watches wake the conversation under `[herdr session]`.
+- [x] (2026-10-08) Milestone 4: `setup` puts reporting hooks into Claude Code's settings; Codex needs none.
+- [ ] Milestone 5: decision record and docs written; code review, deploy and the end-to-end check remain.
 
 ## Surprises & Discoveries
 
@@ -78,6 +78,21 @@ To see it working, on a computer running `teanode computer` with herdr running a
 
 - Observation: another coding session switched the shared checkout's branch while this plan was being written.
   Evidence: a session in a different pane ran `git checkout` and a rebase in the same working tree; the untracked plan file survived. It is also an argument for this feature, since TeaNode could have seen it happen. In the meantime, implement this in a checkout no other session works in.
+
+- Observation: in Claude Code, every form is answered by the option's number. A question that takes one answer is answered by the digit alone; one that takes several ticks an option per digit, then `right` moves to the next question or to a review ("Ready to submit your answers?", answered with `1`); "Type something" takes its digit, then the text (herdr's `pane.send_text`), then `enter`. Tool, edit and plan approvals take a digit. Codex approvals take a digit too.
+  Evidence: tried each in the probe session.
+
+- Observation: Codex 0.161 draws a `request_user_input_async` question as plain text, with no form and no "alt+↑ to answer"; 0.156 put it under "Queued follow-up inputs". Both write it to the history file, and the person's next message answers it.
+  Evidence: the probe pane, and the person's own pane read without touching it.
+
+- Observation: a coding agent's startup dialogs are forms too, and herdr reports them idle. Text sent to a Codex session at its "Update available" dialog chose "Update now" and ran `npm install -g @openai/codex` on the development computer.
+  Evidence: the probe pane. This is why `send` reads the screen first and refuses while anything is asked.
+
+- Observation: Claude Code's hooks fire as hoped. `PreToolUse` for `AskUserQuestion` carries `tool_input.questions[]` (question, header, options with label and description, multiSelect) before the form draws; `PermissionRequest` fires for it as well; `Notification` with `permission_prompt` follows; `PostToolUse` carries the answers; `Stop` ends the turn. Every input has `session_id`, and `HERDR_PANE_ID` is in the hook's environment.
+  Evidence: a per-session `--settings` file in the probe, so the person's own settings were not touched.
+
+- Observation: the secret check reads a file name ending in the shell suffix as a host name under that top-level domain.
+  Evidence: `make lint-ci` failed on the hook script's name; the script is `teanode-herdr-hook`.
 
 ## Decision Log
 
@@ -142,9 +157,33 @@ To see it working, on a computer running `teanode computer` with herdr running a
   Rationale: the server refuses any computer program whose `Protocol` differs from its own, so a bump would lock out programs not yet upgraded. Feature strings exist so that a new capability does not need one.
   Date/Author: 2026-10-08, agent.
 
+- Decision: the program polls every pane every three seconds rather than subscribing to herdr's events.
+  Rationale: herdr's state is not trusted, so the screen is read anyway, and a poll needs no per-pane subscription or reconnect logic. Fifteen panes take about 0.4 seconds.
+  Date/Author: 2026-10-08, agent.
+
+- Decision: Codex gets no hooks. Its history file records turns and questions as they happen.
+  Rationale: each Codex hook must be trusted by its hash in `config.toml`, a second thing to keep right, for nothing the file does not already say.
+  Date/Author: 2026-10-08, agent.
+
+- Decision: the hooks append to one file, `~/.local/state/teanode/herdr-events.jsonl`, cut to its end past 4 MB, rather than a file per session.
+  Rationale: the script then needs nothing that reads JSON, and the program reads one tail per look.
+  Date/Author: 2026-10-08, agent.
+
+- Decision: the tool's `answer` carries the chosen options' labels, and the program refuses an answer whose labels differ from the options on screen.
+  Rationale: a card can only show the call's arguments; with the labels in them, what the person confirms is exactly what is pressed.
+  Date/Author: 2026-10-08, agent.
+
+- Decision: the logic lives in the program on the computer; the tool asks it directly, the API through the worker, and both get the same refusals. The person runs herdr on several computers, so every action names a computer, and list covers all of them.
+  Rationale: the person asked for parity and for several computers.
+  Date/Author: 2026-10-08, the person and agent.
+
+- Decision: the dashboard's watch wakes the person's main conversation.
+  Rationale: the dashboard has no conversation of its own to wake.
+  Date/Author: 2026-10-08, agent.
+
 ## Outcomes & Retrospective
 
-Nothing yet: no milestone is complete.
+Milestones 0 to 4 are complete; the outcome is recorded after the end-to-end check.
 
 ## Context and Orientation
 
@@ -463,7 +502,7 @@ Proof:
 
 At the end of this milestone, a session's state comes from the coding agent itself when the person has installed TeaNode's hooks.
 
-The action `setup` (tool), `SetUpAgentHerdrHooks` (API) and `teanode computer herdr setup` (command) install, on the computer, a script `~/.local/share/teanode/herdr-hook.sh`. The script reads the hook input and appends one line, with the event name, the session identifier, the pane (`HERDR_PANE_ID`) and the hook input, to `~/.local/state/teanode/herdr-events/<session id>.jsonl`. It prints nothing and exits 0.
+The action `setup` (tool), `SetUpAgentHerdrHooks` (API) and `teanode computer herdr setup` (command) install, on the computer, a script `~/.local/share/teanode/teanode-herdr-hook`. The script reads the hook input and appends one line, with the event name, the session identifier, the pane (`HERDR_PANE_ID`) and the hook input, to `~/.local/state/teanode/herdr-events.jsonl`. It prints nothing and exits 0.
 
 `setup` then registers the script beside herdr's own entries. Each entry carries a marker comment, so `setup` can find and replace its own entries and leave every other entry alone.
 
@@ -554,5 +593,7 @@ At the end of Milestone 2:
 - `internal/agent/tools/computer/herdr.go` has the `herdr` tool and `herdrActions`.
 
 At the end of Milestone 3, `internal/agent/herdr.go` has `ComputerHerdrChanged`, and `internal/models/insight.go` has `HerdrQuestionMarker`.
+
+Revision note (2026-10-08, implementation): recorded the probe's findings, the key sequences and the hook payloads, and the decisions the build made: polling, no Codex hooks, one events file, option labels in the tool's answer, logic on the computer, several computers.
 
 Revision note (2026-10-08): renamed the tool from `coding_session` to `herdr`, at the person's request. Reversed "TeaNode never answers a question" into "the person answers questions from anywhere, through TeaNode". Replaced trust in herdr's state with TeaNode's own state, after a live test where herdr called a question form idle and the person reported the same. Added the prototype milestone, the hooks milestone and the parity table and test.

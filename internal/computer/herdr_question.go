@@ -281,11 +281,14 @@ func questionTextAbove(lines []string, first int) string {
 }
 
 // questionFingerprint names a question by what it asks and offers.
+// Every space is left out, since where a pane breaks a line depends on how
+// wide it is, and a pane resized must not make the same question another.
 func questionFingerprint(question *HerdrQuestion) string {
+	withoutSpaces := func(text string) string { return strings.Join(strings.Fields(text), "") }
 	hash := sha256.New()
-	hash.Write([]byte(question.HerdrQuestionKind + "\n" + question.QuestionText + "\n"))
+	hash.Write([]byte(question.HerdrQuestionKind + "\n" + withoutSpaces(question.QuestionText) + "\n"))
 	for _, option := range question.Options {
-		hash.Write([]byte(strconv.Itoa(option.OptionNumber) + ". " + option.OptionLabel + "\n"))
+		hash.Write([]byte(strconv.Itoa(option.OptionNumber) + "." + withoutSpaces(option.OptionLabel) + "\n"))
 	}
 	return hex.EncodeToString(hash.Sum(nil))[:16]
 }

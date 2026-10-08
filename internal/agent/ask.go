@@ -8,6 +8,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/browser"
+	"github.com/ziyan/teanode/internal/computer"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -675,6 +676,17 @@ func (self *AskRun) AttachedComputers() []tools.Computer {
 	}
 	return computers
 }
+
+// hasHerdrComputer says a computer whose program watches herdr is attached.
+func (self *AskRun) hasHerdrComputer() bool {
+	for _, attached := range self.AttachedComputers() {
+		if holder, ok := attached.(tools.FeatureHolder); ok && holder.HasFeature(computer.FeatureHerdr) {
+			return true
+		}
+	}
+	return false
+}
+
 func (self *AskRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
@@ -1011,6 +1023,18 @@ func (self *AskRun) turn() error {
 				self.loaded[tool.Name] = true
 			}
 		}
+	}
+	// The herdr tool goes only where a computer whose program watches herdr
+	// is attached: without one it can do nothing, and every turn would
+	// carry its definition for nothing.
+	if !self.hasHerdrComputer() {
+		withoutHerdr := self.offered[:0:0]
+		for _, tool := range self.offered {
+			if tool.Name != "herdr" {
+				withoutHerdr = append(withoutHerdr, tool)
+			}
+		}
+		self.offered = withoutHerdr
 	}
 	// The finance tool goes on a server that offers no provider, unless
 	// the person already holds finance data to read. For a person who does

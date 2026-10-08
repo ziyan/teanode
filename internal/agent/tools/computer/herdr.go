@@ -67,14 +67,14 @@ func init() {
 					"action":               tools.EnumProperty("what to do", herdrToolActions()...),
 					"computer":             tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
 					"pane":                 tools.StringProperty("the pane, as list gives it, such as w1:p2; every action but list and setup needs it"),
-					"turns":                tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
-					"lines":                tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
+					"turn_count":           tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
+					"line_count":           tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
 					"text":                 tools.StringProperty("send: what to type; enter is pressed after it"),
 					"should_queue":         tools.BooleanProperty("send: type it even while the session works, for it to read when its turn ends"),
-					"seconds":              tools.IntegerProperty("wait: how long to wait at most, 30 by default, 600 at most"),
+					"wait_seconds":         tools.IntegerProperty("wait: how long to wait at most, 30 by default, 600 at most"),
 					"question_fingerprint": tools.StringProperty("answer: the question's fingerprint, as list gave it"),
-					"options":              map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "answer: the numbers of the options the person chose"},
-					"option_labels":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "answer: the labels of those options, exactly as list gave them, one for each number"},
+					"option_numbers":       map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "answer: the numbers of the options the person chose"},
+					"option_labels":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "answer: the labels of those options, exactly as list gave them, one for each of option_numbers"},
 					"free_text":            tools.StringProperty("answer: what the person said to type, for an option that takes text"),
 					"is_removal":           tools.BooleanProperty("setup: take the hooks out rather than putting them in"),
 				}, "action"),
@@ -106,7 +106,7 @@ func init() {
 						return fmt.Sprintf("Type into the coding session in %s: %s", where, shorten(call.Text, 120))
 					case "answer":
 						var chosen []string
-						for index, number := range call.Options {
+						for index, number := range call.OptionNumbers {
 							label := ""
 							if index < len(call.OptionLabels) {
 								label = " " + call.OptionLabels[index]
@@ -137,13 +137,13 @@ type herdrArguments struct {
 	Action              string   `json:"action"`
 	Computer            string   `json:"computer"`
 	Pane                string   `json:"pane"`
-	Turns               int      `json:"turns"`
-	Lines               int      `json:"lines"`
+	TurnCount           int      `json:"turn_count"`
+	LineCount           int      `json:"line_count"`
 	Text                string   `json:"text"`
 	ShouldQueue         bool     `json:"should_queue"`
-	Seconds             int      `json:"seconds"`
+	WaitSeconds         int      `json:"wait_seconds"`
 	QuestionFingerprint string   `json:"question_fingerprint"`
-	Options             []int    `json:"options"`
+	OptionNumbers       []int    `json:"option_numbers"`
 	OptionLabels        []string `json:"option_labels"`
 	FreeText            string   `json:"free_text"`
 	IsRemoval           bool     `json:"is_removal"`
@@ -220,23 +220,23 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	note := ""
 	switch action {
 	case "read":
-		asked.TurnCount = arguments.Turns
+		asked.TurnCount = arguments.TurnCount
 		note = "read the coding session in " + asked.PaneID
 	case "screen":
-		asked.LineCount = arguments.Lines
+		asked.LineCount = arguments.LineCount
 		note = "looked at the screen of " + asked.PaneID
 	case "send":
 		asked.Text, asked.ShouldQueue = arguments.Text, arguments.ShouldQueue
 		note = "typed into " + asked.PaneID + ": " + shorten(arguments.Text, 40)
 	case "wait":
-		asked.WaitSeconds = arguments.Seconds
-		wait += time.Duration(max(arguments.Seconds, 30)) * time.Second
+		asked.WaitSeconds = arguments.WaitSeconds
+		wait += time.Duration(max(arguments.WaitSeconds, 30)) * time.Second
 		note = "waited for " + asked.PaneID
 	case "answer":
 		asked.QuestionFingerprint, asked.OptionNumbers, asked.OptionLabels, asked.FreeText =
-			arguments.QuestionFingerprint, arguments.Options, arguments.OptionLabels, arguments.FreeText
-		if len(arguments.Options) > 0 && len(arguments.OptionLabels) != len(arguments.Options) {
-			return nil, errors.New("answer needs option_labels, one for each number in options, exactly as list gave them")
+			arguments.QuestionFingerprint, arguments.OptionNumbers, arguments.OptionLabels, arguments.FreeText
+		if len(arguments.OptionNumbers) > 0 && len(arguments.OptionLabels) != len(arguments.OptionNumbers) {
+			return nil, errors.New("answer needs option_labels, one for each of option_numbers, exactly as list gave them")
 		}
 		note = "answered the question in " + asked.PaneID
 	case "watch":

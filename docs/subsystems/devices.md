@@ -201,6 +201,44 @@ somebody is watching, the prompt says so while one is attached: the agent is
 told to say what it is about to type before it types it, and never to close
 the terminal, since it is theirs.
 
+## Herdr
+
+Herdr is a terminal workspace manager for coding agents. When the person runs
+it, the program on each of their computers watches it (`internal/computer/herdr.go`)
+and the agent works in the Claude Code and Codex sessions in its panes, beside
+them: the `herdr` tool, the Herdr sessions card on the agent page, and
+`teanode computer herdr` do the same things through the same actions, listed
+in `HerdrActions` and checked by `TestHerdrParity`. The decision is
+`docs/decisions/20261008-the-agent-works-in-the-persons-herdr-sessions.md`.
+
+The program speaks to herdr's socket (`~/.config/herdr/herdr.sock`) and looks
+at every pane every three seconds. It decides each session's state itself, in
+this order: a question recognized on the screen (or one Codex asked in its
+history file and nobody has answered), TeaNode's own hooks when the person put
+them in, Codex's history file, the screen's "esc to interrupt", and herdr's
+state last. A session is `asking` exactly when a question was recognized.
+
+When a question comes or goes, or a watched session finishes, the program
+says so unasked (`type: herdr`), and says it again after every reconnect until
+the server acknowledges it, as background commands' endings are. A question is
+written into the person's main conversation under `[herdr question]`, which
+opens the drawer, shows its options as buttons, and goes on to their chat
+apps; a finished watch wakes the conversation that watched, under
+`[herdr session]`, through the same waker and bounds as background commands.
+
+An answer is pressed as the person would: the option's number for a form, the
+numbers then right for one that takes several, the number then the text then
+enter for one that takes text, and the answer typed as the next message for a
+question Codex asked in its history. It carries the question's fingerprint and
+is refused when the question on screen is no longer that one.
+
+`setup` puts a script into `~/.local/share/teanode/` and registers it in
+`~/.claude/settings.json` for six events, beside what is there; it appends
+each event to `~/.local/state/teanode/herdr-events.jsonl` and decides
+nothing. A copy of the settings is kept as `settings.json.before-teanode` the
+first time. Codex has no hooks here: its history file says the same as it
+happens.
+
 ## The attached tab
 
 A Chrome extension the person installs. They sign in through the same
@@ -291,6 +329,13 @@ disabled or confirm lists, and a person can add either to their own.
 - **`teanode terminal` attaches under its own name** (`--name`, the host name by
   default); running it on a machine that also runs `teanode computer` under
   the same name replaces that attachment. Give one of them a name.
+- **Herdr's own state can be wrong**; `herdr agent explain <pane>` says which
+  of its rules decided it. The state shown here is the program's own, with
+  herdr's beside it as `herdrAgentStatus`.
+- **A question is recognized from the layouts the coding agents draw now.** A
+  form drawn differently is not recognized, and the session shows idle or
+  unknown with its screen still readable.
+- **A herdr watch does not survive a restart** of the program on the computer.
 - A server on the computer is as available as the computer is: gone when the
   person stops the program, back when they start it. With several computers
   attached it runs on the first by name; there is no way yet to say which.

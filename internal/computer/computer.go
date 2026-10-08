@@ -306,8 +306,10 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			// goes on pinging and reading whatever the requests do.
 			go func() {
 				// Asked every few seconds while the person looks, and said
-				// nothing about, like the background commands' list.
-				if strings.HasPrefix(request.Action, "background_") || strings.HasPrefix(request.Action, "herdr_") {
+				// nothing about, like the background commands' list. What
+				// types into a pane or changes settings is said, as any
+				// other request is.
+				if strings.HasPrefix(request.Action, "background_") || quietHerdrActions[request.Action] {
 					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
@@ -346,6 +348,11 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// quietHerdrActions are the herdr actions that only look.
+var quietHerdrActions = map[string]bool{
+	"herdr_list": true, "herdr_read": true, "herdr_screen": true, "herdr_wait": true, "herdr_acknowledge": true,
 }
 
 // ErrTerminalEnded is how Serve ends when the shell the person attached

@@ -58,7 +58,11 @@ const question: HerdrQuestion = {
 
 it('answers with the option tapped and the question it was shown', async () => {
   execute.mockResolvedValue({
-    AnswerAgentHerdrQuestion: { herdrSession: { ...session, question: null }, isAnswerAccepted: true, answeredWith: '2. Banana' },
+    AnswerAgentHerdrQuestion: {
+      herdrSession: { ...session, question: null },
+      isAnswerAccepted: true,
+      answeredWith: '2. Banana',
+    },
   })
   const answered = vi.fn()
   render(<HerdrQuestionAnswer session={session} question={question} onAnswered={answered} />)
@@ -69,6 +73,7 @@ it('answers with the option tapped and the question it was shown', async () => {
     paneId: 'w1:p2',
     questionFingerprint: 'abc123',
     optionNumbers: [2],
+    optionLabels: ['Banana'],
     freeText: null,
   })
   expect(notices.done).toHaveBeenCalled()

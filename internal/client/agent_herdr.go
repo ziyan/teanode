@@ -43,8 +43,9 @@ type AgentHerdrQuestionOption struct {
 
 // AgentHerdrList is every session, and the computers that were asked.
 type AgentHerdrList struct {
-	ComputerNames []string             `json:"computerNames"`
-	Sessions      []*AgentHerdrSession `json:"sessions"`
+	ComputerNames       []string             `json:"computerNames"`
+	FailedComputerNames []string             `json:"failedComputerNames"`
+	Sessions            []*AgentHerdrSession `json:"sessions"`
 }
 
 // AgentHerdrTurn is one thing said or done in a session.
@@ -99,7 +100,7 @@ const HerdrSessionFields = `computer paneId codingAgentKind codingSessionId herd
 // against the schema.
 const (
 	DocumentListAgentHerdrSessions = `query ($computer: String) {
-		ListAgentHerdrSessions(computer: $computer) { computerNames sessions { ` + HerdrSessionFields + ` } }
+		ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ` + HerdrSessionFields + ` } }
 	}`
 	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int) {
 		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
@@ -114,17 +115,17 @@ const (
 	DocumentSendAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $text: String!, $shouldQueue: Boolean) {
 		SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, shouldQueue: $shouldQueue) { ` + HerdrSessionFields + ` }
 	}`
-	DocumentWaitAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $waitSeconds: Int) {
+	DocumentWaitAgentHerdrSession = `query ($computer: String, $paneId: String!, $waitSeconds: Int) {
 		WaitAgentHerdrSession(computer: $computer, paneId: $paneId, waitSeconds: $waitSeconds) {
 			herdrSession { ` + HerdrSessionFields + ` } isTimedOut
 		}
 	}`
-	DocumentAnswerAgentHerdrQuestion = `mutation ($computer: String, $paneId: String!, $questionFingerprint: String!, $optionNumbers: [Int!], $freeText: String) {
-		AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, freeText: $freeText) {
+	DocumentAnswerAgentHerdrQuestion = `mutation ($computer: String, $paneId: String!, $questionFingerprint: String!, $optionNumbers: [Int!], $optionLabels: [String!], $freeText: String) {
+		AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, optionLabels: $optionLabels, freeText: $freeText) {
 			herdrSession { ` + HerdrSessionFields + ` } isAnswerAccepted answeredWith
 		}
 	}`
-	DocumentWatchAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $conversationId: String!) {
+	DocumentWatchAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $conversationId: String) {
 		WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ` + HerdrSessionFields + ` }
 	}`
 	DocumentSetUpAgentHerdrHooks = `mutation ($computer: String, $isRemoval: Boolean) {
@@ -211,14 +212,18 @@ func WaitAgentHerdrSession(ctx context.Context, connection *Client, computer, pa
 	return result.WaitAgentHerdrSession, nil
 }
 
-// AnswerAgentHerdrQuestion answers the question with this fingerprint.
-func AnswerAgentHerdrQuestion(ctx context.Context, connection *Client, computer, paneId, questionFingerprint string, optionNumbers []int, freeText string) (*AgentHerdrAnswer, error) {
+// AnswerAgentHerdrQuestion answers the question with this fingerprint;
+// optionLabels, when given, must be the labels of the options chosen.
+func AnswerAgentHerdrQuestion(ctx context.Context, connection *Client, computer, paneId, questionFingerprint string, optionNumbers []int, optionLabels []string, freeText string) (*AgentHerdrAnswer, error) {
 	var result struct {
 		AnswerAgentHerdrQuestion *AgentHerdrAnswer `json:"AnswerAgentHerdrQuestion"`
 	}
 	variables := herdrVariables(computer, map[string]any{"paneId": paneId, "questionFingerprint": questionFingerprint})
 	if len(optionNumbers) > 0 {
 		variables["optionNumbers"] = optionNumbers
+	}
+	if len(optionLabels) > 0 {
+		variables["optionLabels"] = optionLabels
 	}
 	if freeText != "" {
 		variables["freeText"] = freeText
@@ -230,12 +235,15 @@ func AnswerAgentHerdrQuestion(ctx context.Context, connection *Client, computer,
 }
 
 // WatchAgentHerdrSession has a conversation woken when a session next
-// finishes.
+// finishes: the one named, or the main conversation when none is.
 func WatchAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId, conversationId string) (*AgentHerdrSession, error) {
 	var result struct {
 		WatchAgentHerdrSession *AgentHerdrSession `json:"WatchAgentHerdrSession"`
 	}
-	variables := herdrVariables(computer, map[string]any{"paneId": paneId, "conversationId": conversationId})
+	variables := herdrVariables(computer, map[string]any{"paneId": paneId})
+	if conversationId != "" {
+		variables["conversationId"] = conversationId
+	}
 	if err := connection.Execute(ctx, DocumentWatchAgentHerdrSession, variables, &result); err != nil {
 		return nil, err
 	}

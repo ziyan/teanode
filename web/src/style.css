@@ -13445,3 +13445,12 @@ button.idea-history-title {
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* Under a check-in line, which is small and muted and shrinks to its
+   words, the question takes the drawer's width and its own text: the
+   options are read and tapped on a phone. */
+.agent-line.checkin > .herdr-question-card {
+  align-self: stretch;
+  color: var(--text);
+  font-size: var(--text-body);
+}

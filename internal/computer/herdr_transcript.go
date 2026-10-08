@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -309,11 +310,50 @@ type codexLifecycle struct {
 	question  *HerdrQuestion
 }
 
+// codexLifecycleRead is a lifecycle read from a file as it stood, kept so
+// that a file that has not changed since is not read again at every look.
+type codexLifecycleRead struct {
+	byteCount  int64
+	modifiedAt time.Time
+	lifecycle  *codexLifecycle
+}
+
+var (
+	codexLifecycleMutex sync.Mutex
+	codexLifecycleReads = map[string]*codexLifecycleRead{}
+)
+
 // readCodexLifecycle reads it from the end of the file. A question is
-// waiting when Codex asked one with request_user_input and the person has
-// said nothing since: the turn ends at the question, and the answer is the
-// person's next message.
+// waiting when Codex asked one with request_user_input, the call was taken
+// to wait for the person ({"accepted":true}), and the person has said
+// nothing since: the turn ends at the question, and the answer is the
+// person's next message. A call answered with anything else (refused in
+// this mode, or answered in a picker in the terminal) waits on nobody.
 func readCodexLifecycle(path string) (*codexLifecycle, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	codexLifecycleMutex.Lock()
+	cached := codexLifecycleReads[path]
+	codexLifecycleMutex.Unlock()
+	if cached != nil && cached.byteCount == info.Size() && cached.modifiedAt.Equal(info.ModTime()) {
+		return cached.lifecycle, nil
+	}
+	lifecycle, err := readCodexLifecycleNow(path)
+	if err != nil {
+		return nil, err
+	}
+	codexLifecycleMutex.Lock()
+	if len(codexLifecycleReads) > 256 {
+		codexLifecycleReads = map[string]*codexLifecycleRead{}
+	}
+	codexLifecycleReads[path] = &codexLifecycleRead{byteCount: info.Size(), modifiedAt: info.ModTime(), lifecycle: lifecycle}
+	codexLifecycleMutex.Unlock()
+	return lifecycle, nil
+}
+
+func readCodexLifecycleNow(path string) (*codexLifecycle, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -328,14 +368,17 @@ func readCodexLifecycle(path string) (*codexLifecycle, error) {
 		return nil, err
 	}
 	lifecycle := &codexLifecycle{}
+	questionCallId := ""
 	for _, line := range lines {
 		var record struct {
 			Type    string `json:"type"`
 			Payload struct {
-				Type      string `json:"type"`
-				Role      string `json:"role"`
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
+				Type      string          `json:"type"`
+				Role      string          `json:"role"`
+				Name      string          `json:"name"`
+				Arguments string          `json:"arguments"`
+				CallID    string          `json:"call_id"`
+				Output    json.RawMessage `json:"output"`
 				Content   []struct {
 					Text string `json:"text"`
 				} `json:"content"`
@@ -352,6 +395,15 @@ func readCodexLifecycle(path string) (*codexLifecycle, error) {
 			lifecycle.isWorking = false
 		case record.Type == "response_item" && payload.Type == "function_call" && strings.HasPrefix(payload.Name, "request_user_input"):
 			lifecycle.question = codexQuestionOf(payload.Arguments)
+			questionCallId = payload.CallID
+		case record.Type == "response_item" && payload.Type == "function_call_output" && payload.CallID != "" && payload.CallID == questionCallId:
+			var output string
+			if json.Unmarshal(payload.Output, &output) != nil {
+				output = string(payload.Output)
+			}
+			if !strings.Contains(strings.Join(strings.Fields(output), ""), `"accepted":true`) {
+				lifecycle.question = nil
+			}
 		case record.Type == "response_item" && payload.Type == "message" && payload.Role == "user":
 			for _, content := range payload.Content {
 				if !codexInjected.MatchString(content.Text) {

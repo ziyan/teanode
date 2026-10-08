@@ -53,7 +53,7 @@ const (
 
 // HerdrSession is one coding session on one of a person's computers.
 type HerdrSession struct {
-	Computer string
+	ComputerName string
 	*computer.HerdrSession
 }
 
@@ -97,7 +97,11 @@ func (self *Agent) herdrComputer(agentId, computerName string) (*attachedCompute
 	watching := self.herdrComputers(agentId)
 	switch len(watching) {
 	case 0:
-		return nil, fmt.Errorf("the program on %s is too old for herdr; update teanode there and restart it", attached[0].name)
+		names := make([]string, 0, len(attached))
+		for _, one := range attached {
+			names = append(names, one.name)
+		}
+		return nil, fmt.Errorf("no attached computer watches herdr; the program on %s is too old for herdr, or herdr is not set up there: update teanode and restart it", strings.Join(names, ", "))
 	case 1:
 		return watching[0], nil
 	}
@@ -122,13 +126,14 @@ func askHerdr[Result any](ctx context.Context, attached *attachedComputer, actio
 }
 
 // HerdrSessions are the coding sessions on a person's computers, every
-// computer's or one's, by computer and pane.
-func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName string) ([]*HerdrSession, error) {
+// computer's or one's, by computer and pane, and the computers that did not
+// answer: a computer left out of the list is not one whose questions went.
+func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName string) ([]*HerdrSession, []string, error) {
 	var asked []*attachedComputer
 	if strings.TrimSpace(computerName) != "" {
 		attached, err := self.herdrComputer(agentId, computerName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		asked = []*attachedComputer{attached}
 	} else {
@@ -137,6 +142,7 @@ func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName stri
 	// Every computer is asked at once, and one that does not answer, or
 	// runs no herdr, is left out rather than taking the others with it.
 	answers := make([][]*HerdrSession, len(asked))
+	failures := make([]bool, len(asked))
 	var waitGroup sync.WaitGroup
 	for index, one := range asked {
 		waitGroup.Add(1)
@@ -145,19 +151,48 @@ func (self *Agent) HerdrSessions(ctx context.Context, agentId, computerName stri
 			sessions, err := askHerdr[[]*computer.HerdrSession](ctx, one, "herdr_list", &computer.HerdrArguments{}, herdrListWait)
 			if err != nil {
 				log.Debugf("cannot list the herdr sessions on %q: %s", one.name, err)
+				failures[index] = true
 				return
 			}
 			for _, session := range *sessions {
-				answers[index] = append(answers[index], &HerdrSession{Computer: one.name, HerdrSession: session})
+				answers[index] = append(answers[index], &HerdrSession{ComputerName: one.name, HerdrSession: session})
 			}
 		}()
 	}
 	waitGroup.Wait()
-	listed := []*HerdrSession{}
-	for _, sessions := range answers {
+	listed, failedComputerNames := []*HerdrSession{}, []string{}
+	for index, sessions := range answers {
 		listed = append(listed, sessions...)
+		if failures[index] {
+			failedComputerNames = append(failedComputerNames, asked[index].name)
+		}
 	}
-	return listed, nil
+	return listed, failedComputerNames, nil
+}
+
+// HerdrWakeConversation is the conversation a watch from the dashboard or
+// the command line wakes: the one named, when it is the person's own and one
+// a turn can be woken in, or their main conversation.
+func (self *Agent) HerdrWakeConversation(ctx context.Context, agentId, conversationId string) (string, error) {
+	var found *models.AgentConversation
+	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if conversationId = strings.TrimSpace(conversationId); conversationId != "" {
+			found, err = tx.GetAgentConversation(conversationId)
+			if err != nil {
+				return err
+			}
+			if found == nil || found.AgentID != agentId || found.Kind == models.AgentConversationRun {
+				return fmt.Errorf("there is no conversation %q of yours to wake", conversationId)
+			}
+			return nil
+		}
+		found, err = scheduleConversation(tx, agentId, "")
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return found.ID, nil
 }
 
 // HerdrComputerNames are the names of a person's computers whose program
@@ -172,7 +207,7 @@ func (self *Agent) HerdrComputerNames(agentId string) []string {
 
 // HerdrRead is a session's last turns.
 type HerdrRead struct {
-	Computer string
+	ComputerName string
 	*computer.HerdrReadResult
 }
 
@@ -186,12 +221,12 @@ func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, 
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrRead{Computer: attached.name, HerdrReadResult: result}, nil
+	return &HerdrRead{ComputerName: attached.name, HerdrReadResult: result}, nil
 }
 
 // HerdrScreen is a session's screen.
 type HerdrScreen struct {
-	Computer string
+	ComputerName string
 	*computer.HerdrScreenResult
 }
 
@@ -205,7 +240,7 @@ func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, p
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrScreen{Computer: attached.name, HerdrScreenResult: result}, nil
+	return &HerdrScreen{ComputerName: attached.name, HerdrScreenResult: result}, nil
 }
 
 // SendHerdrSession types text into a session, followed by enter.
@@ -218,12 +253,12 @@ func (self *Agent) SendHerdrSession(ctx context.Context, agentId, computerName, 
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrSession{Computer: attached.name, HerdrSession: result.HerdrSession}, nil
+	return &HerdrSession{ComputerName: attached.name, HerdrSession: result.HerdrSession}, nil
 }
 
 // HerdrWait is a session once it stopped working, or when the wait ran out.
 type HerdrWait struct {
-	Computer string
+	ComputerName string
 	*computer.HerdrWaitResult
 }
 
@@ -239,29 +274,29 @@ func (self *Agent) WaitHerdrSession(ctx context.Context, agentId, computerName, 
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrWait{Computer: attached.name, HerdrWaitResult: result}, nil
+	return &HerdrWait{ComputerName: attached.name, HerdrWaitResult: result}, nil
 }
 
 // HerdrAnswer says whether a question took its answer.
 type HerdrAnswer struct {
-	Computer string
+	ComputerName string
 	*computer.HerdrAnswerResult
 }
 
 // AnswerHerdrQuestion answers the question a session waits on, if it is
 // still the one with this fingerprint.
-func (self *Agent) AnswerHerdrQuestion(ctx context.Context, agentId, computerName, paneId, questionFingerprint string, optionNumbers []int, freeText string) (*HerdrAnswer, error) {
+func (self *Agent) AnswerHerdrQuestion(ctx context.Context, agentId, computerName, paneId, questionFingerprint string, optionNumbers []int, optionLabels []string, freeText string) (*HerdrAnswer, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
 	result, err := askHerdr[computer.HerdrAnswerResult](ctx, attached, "herdr_answer", &computer.HerdrArguments{
-		PaneID: paneId, QuestionFingerprint: questionFingerprint, OptionNumbers: optionNumbers, FreeText: freeText,
+		PaneID: paneId, QuestionFingerprint: questionFingerprint, OptionNumbers: optionNumbers, OptionLabels: optionLabels, FreeText: freeText,
 	}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrAnswer{Computer: attached.name, HerdrAnswerResult: result}, nil
+	return &HerdrAnswer{ComputerName: attached.name, HerdrAnswerResult: result}, nil
 }
 
 // WatchHerdrSession has a conversation woken when a session next finishes.
@@ -281,12 +316,12 @@ func (self *Agent) WatchHerdrSession(ctx context.Context, agentId, computerName,
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrSession{Computer: attached.name, HerdrSession: session}, nil
+	return &HerdrSession{ComputerName: attached.name, HerdrSession: session}, nil
 }
 
 // HerdrSetup says what setting up the hooks did, on which computer.
 type HerdrSetup struct {
-	Computer string
+	ComputerName string
 	*computer.HerdrSetupResult
 }
 
@@ -301,7 +336,7 @@ func (self *Agent) SetUpHerdrHooks(ctx context.Context, agentId, computerName st
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrSetup{Computer: attached.name, HerdrSetupResult: result}, nil
+	return &HerdrSetup{ComputerName: attached.name, HerdrSetupResult: result}, nil
 }
 
 // ComputerHerdrChanged is a computer saying, unasked, that a question came
@@ -365,43 +400,62 @@ func herdrToldKey(computerName string, event *computer.HerdrEvent) string {
 // and goes on to their chat apps. A question said again after a reconnect
 // is written once.
 func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer, event *computer.HerdrEvent) {
-	defer self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 	session := event.HerdrSession
 	if session.Question == nil {
+		self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 		return
 	}
+	// Each question is held here while it is written, as a zero time, and
+	// as when it was written once it is. One said again meanwhile waits
+	// for the first; one already written is acknowledged again.
 	key := herdrToldKey(attached.name, event)
 	self.backgroundMutex.Lock()
 	if self.herdrTold == nil {
 		self.herdrTold = map[string]time.Time{}
 	}
 	for each, at := range self.herdrTold {
-		if time.Since(at) > 24*time.Hour {
+		if !at.IsZero() && time.Since(at) > 24*time.Hour {
 			delete(self.herdrTold, each)
 		}
 	}
-	_, isTold := self.herdrTold[key]
-	self.herdrTold[key] = time.Now()
+	toldAt, isKnown := self.herdrTold[key]
+	if !isKnown {
+		self.herdrTold[key] = time.Time{}
+	}
 	self.backgroundMutex.Unlock()
-	if isTold {
+	if isKnown {
+		if !toldAt.IsZero() {
+			self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
+		}
 		return
 	}
 	checkIn, said := herdrQuestionCheckIn(attached.name, session), herdrQuestionSaid(attached.name, session)
-	for try := 0; try < herdrQuestionTries; try++ {
-		err := self.writeHerdrQuestion(agentId, checkIn, said)
-		if err == nil {
-			return
+	err := errTurnRunning
+	for try := 0; try < herdrQuestionTries && errors.Is(err, errTurnRunning); try++ {
+		if try > 0 {
+			select {
+			case <-self.ctx.Done():
+				err = self.ctx.Err()
+				continue
+			case <-time.After(herdrQuestionRetry):
+			}
 		}
-		if !errors.Is(err, errTurnRunning) {
-			log.Warningf("cannot tell the person of the herdr question in %s on %q: %s", session.PaneID, attached.name, err)
-			return
-		}
-		select {
-		case <-self.ctx.Done():
-			return
-		case <-time.After(herdrQuestionRetry):
-		}
+		err = self.writeHerdrQuestion(agentId, checkIn, said)
 	}
+	self.backgroundMutex.Lock()
+	if err == nil {
+		self.herdrTold[key] = time.Now()
+	} else {
+		delete(self.herdrTold, key)
+	}
+	self.backgroundMutex.Unlock()
+	if err != nil {
+		// Not acknowledged: the computer says it again when it next
+		// connects, and it is tried again then.
+		log.Warningf("cannot tell the person of the herdr question in %s on %q yet: %s", session.PaneID, attached.name, err)
+		return
+	}
+	self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 }
 
 // writeHerdrQuestion writes the two messages into the main conversation,
@@ -468,12 +522,20 @@ func herdrQuestionCheckIn(computerName string, session *computer.HerdrSession) s
 		fmt.Sprintf("Nobody asked for this: the %s session in pane %s on %s (%s) stopped to ask the person something, and you showed it to them, unasked. What it asked:\n",
 			codingAgentName(session.CodingAgentKind), session.PaneID, computerName, session.WorkingDirectory) +
 		fenced(strings.TrimSpace(asked.String())) + "\n" +
-		fmt.Sprintf("If they answer, pass their choice on with the herdr tool's answer (computer %q, pane %q, question_fingerprint %q) and the option numbers or the text they chose. Never choose for them.",
+		fmt.Sprintf("If they answer, pass their choice on with the herdr tool's answer (computer %q, pane %q, question_fingerprint %q), with option_numbers and option_labels for the options they chose, or free_text for what they said to type. Never choose for them.",
 			computerName, session.PaneID, question.QuestionFingerprint)
 }
 
+// markdownEscaper takes the meaning out of what markdown would read as
+// emphasis, code, a link or a picture: what a coding agent drew on its
+// screen is shown as it was drawn, and an option label shaped as a picture
+// fetches nothing when the drawer or a chat app renders it. Only these,
+// since a chat app's markdown shows any other escape as a backslash.
+var markdownEscaper = strings.NewReplacer("\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]")
+
 // herdrQuestionSaid is the question as the person reads it, in the drawer
-// and in their chat apps.
+// and in their chat apps. Everything in it that came from the screen is
+// escaped.
 func herdrQuestionSaid(computerName string, session *computer.HerdrSession) string {
 	question := session.Question
 	var said strings.Builder
@@ -488,15 +550,16 @@ func herdrQuestionSaid(computerName string, session *computer.HerdrSession) stri
 	if title := strings.TrimSpace(session.PaneTitle); title != "" {
 		where = title + ", " + where
 	}
-	fmt.Fprintf(&said, "**%s** in pane %s on %s (%s) %s:\n\n", codingAgentName(session.CodingAgentKind), session.PaneID, computerName, where, what)
+	fmt.Fprintf(&said, "**%s** in pane %s on %s (%s) %s:\n\n", codingAgentName(session.CodingAgentKind),
+		markdownEscaper.Replace(session.PaneID), markdownEscaper.Replace(computerName), markdownEscaper.Replace(where), what)
 	for _, line := range strings.Split(question.QuestionText, "\n") {
-		said.WriteString("> " + line + "\n")
+		said.WriteString("> " + markdownEscaper.Replace(line) + "\n")
 	}
 	said.WriteString("\n")
 	for _, option := range question.Options {
-		fmt.Fprintf(&said, "%d. %s", option.OptionNumber, option.OptionLabel)
+		fmt.Fprintf(&said, "%d. %s", option.OptionNumber, markdownEscaper.Replace(option.OptionLabel))
 		if option.OptionDescription != "" {
-			said.WriteString(": " + option.OptionDescription)
+			said.WriteString(": " + markdownEscaper.Replace(option.OptionDescription))
 		}
 		said.WriteString("\n")
 	}

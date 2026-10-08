@@ -2,6 +2,8 @@ package computer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -68,8 +71,12 @@ const (
 	// herdrKeyGap is the pause between keys pressed into a form, which
 	// redraws after each.
 	herdrKeyGap = 250 * time.Millisecond
-	// herdrWaitMost bounds a wait.
-	herdrWaitMost = 600 * time.Second
+	// herdrWaitMost bounds a wait, herdrWaitEvery is how often it looks,
+	// and herdrWaitUnseen is how long it waits for a turn to show before it
+	// takes a session that never looked busy as finished.
+	herdrWaitMost   = 600 * time.Second
+	herdrWaitEvery  = 2 * time.Second
+	herdrWaitUnseen = 10 * time.Second
 	// herdrWatchUnseen is how long a watched session that was never seen
 	// working is given before it is said to have finished: a turn shorter
 	// than a poll is not seen at all.
@@ -77,8 +84,8 @@ const (
 	// mostHerdrEventsKept bounds what waits for the server's
 	// acknowledgement.
 	mostHerdrEventsKept = 128
-	// herdrScreenLines is how many lines of recent output screen gives
-	// when lines are asked for and none are said.
+	// How many turns read gives when none are asked for, and at most, and
+	// the most lines screen gives.
 	herdrDefaultTurnCount = 10
 	herdrMostTurnCount    = 100
 	herdrMostLineCount    = 2000
@@ -184,13 +191,23 @@ type Herdr struct {
 
 	mutex    sync.Mutex
 	sessions map[string]*HerdrSession
-	watches  map[string][]*herdrWatch
-	events   []*HerdrEvent
-	notify   func(*HerdrEvent)
-	listener int64
+	// appearances are the questions waiting, by pane: the same question
+	// asked again later is another appearance, with another fingerprint,
+	// so it is told to the person again, and an answer to the first is not
+	// pressed into the second.
+	appearances map[string]*herdrAppearance
+	watches     map[string][]*herdrWatch
+	events      []*HerdrEvent
+	notify      func(*HerdrEvent)
+	listener    int64
 
 	cancel context.CancelFunc
 	done   chan struct{}
+}
+
+type herdrAppearance struct {
+	questionFingerprint string
+	appearanceID        string
 }
 
 type herdrWatch struct {
@@ -202,7 +219,8 @@ type herdrWatch struct {
 // NewHerdr is the view of the herdr running for the person whose home
 // directory this is. Start watches it.
 func NewHerdr(home string) *Herdr {
-	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{}, watches: map[string][]*herdrWatch{}}
+	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
+		appearances: map[string]*herdrAppearance{}, watches: map[string][]*herdrWatch{}}
 }
 
 // Start looks at every pane from now until Close.
@@ -239,11 +257,24 @@ func (self *Herdr) listen(notify func(*HerdrEvent)) func() {
 	self.listener++
 	listener := self.listener
 	self.notify = notify
+	// A question that came and was answered while no server listened is
+	// not told: it would reach the person already answered.
+	answered := map[string]bool{}
+	for _, event := range self.events {
+		if !event.isAcknowledged && event.HerdrEventKind == HerdrEventKindAnswered && event.HerdrSession.Question != nil {
+			answered[event.HerdrSession.PaneID+"\x00"+event.HerdrSession.Question.QuestionFingerprint] = true
+		}
+	}
 	var unheard []*HerdrEvent
 	for _, event := range self.events {
-		if !event.isAcknowledged {
-			unheard = append(unheard, event)
+		if event.isAcknowledged {
+			continue
 		}
+		if event.HerdrEventKind == HerdrEventKindAsking && answered[event.HerdrSession.PaneID+"\x00"+event.HerdrSession.Question.QuestionFingerprint] {
+			event.isAcknowledged = true
+			continue
+		}
+		unheard = append(unheard, event)
 	}
 	self.mutex.Unlock()
 	for _, event := range unheard {
@@ -298,9 +329,10 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 	if err != nil {
 		return nil, err
 	}
+	reports := readHookReports(self.home)
 	observed := make([]*HerdrSession, 0, len(agents))
 	for _, agent := range agents {
-		observed = append(observed, self.observe(ctx, agent))
+		observed = append(observed, self.observe(ctx, agent, reports))
 	}
 	sort.Slice(observed, func(left, right int) bool { return observed[left].PaneID < observed[right].PaneID })
 
@@ -326,6 +358,7 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 		}
 		delete(self.watches, paneId)
 		delete(self.sessions, paneId)
+		delete(self.appearances, paneId)
 	}
 	notify := self.notify
 	for _, session := range observed {
@@ -342,6 +375,20 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 
 // recordLocked keeps what was seen of one pane and queues what it changed.
 func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
+	if session.Question == nil {
+		delete(self.appearances, session.PaneID)
+	} else {
+		// The question as recognized names what it asks; the fingerprint
+		// handed out names this appearance of it.
+		question := *session.Question
+		appearance := self.appearances[session.PaneID]
+		if appearance == nil || appearance.questionFingerprint != question.QuestionFingerprint {
+			appearance = &herdrAppearance{questionFingerprint: question.QuestionFingerprint, appearanceID: security.NewULID()}
+			self.appearances[session.PaneID] = appearance
+		}
+		question.QuestionFingerprint = appearanceFingerprint(appearance)
+		session.Question = &question
+	}
 	before := self.sessions[session.PaneID]
 	self.sessions[session.PaneID] = session
 	var beforeFingerprint, nowFingerprint string
@@ -383,8 +430,14 @@ func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
 	}
 }
 
+// appearanceFingerprint is the fingerprint of one appearance of a question.
+func appearanceFingerprint(appearance *herdrAppearance) string {
+	hash := sha256.Sum256([]byte(appearance.questionFingerprint + "\n" + appearance.appearanceID))
+	return hex.EncodeToString(hash[:])[:16]
+}
+
 // observe decides one pane's state from everything there is to look at.
-func (self *Herdr) observe(ctx context.Context, agent *herdrAgent) *HerdrSession {
+func (self *Herdr) observe(ctx context.Context, agent *herdrAgent, reports map[string]*hookReport) *HerdrSession {
 	session := &HerdrSession{
 		PaneID: agent.PaneID, CodingAgentKind: agent.Agent, HerdrAgentStatus: agent.AgentStatus,
 		PaneTitle: agent.TerminalTitleStripped, WorkingDirectory: agent.ForegroundCwd,
@@ -408,7 +461,7 @@ func (self *Herdr) observe(ctx context.Context, agent *herdrAgent) *HerdrSession
 	if session.Question == nil && lifecycle != nil && lifecycle.question != nil && !lifecycle.isWorking {
 		session.Question = lifecycle.question
 	}
-	hook := readHookState(self.home, session.CodingSessionID)
+	hook := hookStateOf(reports, session.CodingSessionID, time.Now())
 	switch {
 	case session.Question != nil:
 		session.HerdrSessionState = HerdrSessionStateAsking
@@ -525,6 +578,9 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if strings.TrimSpace(arguments.Text) == "" {
 		return nil, errors.New("send needs text")
 	}
+	if hasControlCharacters(arguments.Text, true) {
+		return nil, errors.New("the text holds control characters, which would press keys rather than type; send words")
+	}
 	session, err := self.session(ctx, arguments.PaneID)
 	if err != nil {
 		return nil, err
@@ -548,13 +604,19 @@ func (self *Herdr) wait(ctx context.Context, arguments *HerdrArguments) (*HerdrW
 	if wait <= 0 {
 		wait = 30 * time.Second
 	}
-	deadline := time.Now().Add(min(wait, herdrWaitMost))
+	started := time.Now()
+	deadline := started.Add(min(wait, herdrWaitMost))
+	hasSeenWorking := false
 	for {
 		session, err := self.session(ctx, arguments.PaneID)
 		if err != nil {
 			return nil, err
 		}
-		if session.HerdrSessionState != HerdrSessionStateWorking {
+		// Right after a send the session may not show its turn yet; a wait
+		// that returned then would say it finished before it started.
+		if session.HerdrSessionState == HerdrSessionStateWorking {
+			hasSeenWorking = true
+		} else if hasSeenWorking || session.HerdrSessionState == HerdrSessionStateAsking || time.Since(started) >= herdrWaitUnseen {
 			return &HerdrWaitResult{HerdrSession: session}, nil
 		}
 		if time.Now().After(deadline) {
@@ -563,7 +625,7 @@ func (self *Herdr) wait(ctx context.Context, arguments *HerdrArguments) (*HerdrW
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(time.Second):
+		case <-time.After(herdrWaitEvery):
 		}
 	}
 }
@@ -581,8 +643,26 @@ func (self *Herdr) watch(ctx context.Context, arguments *HerdrArguments) (*Herdr
 		origin: arguments.Origin, since: time.Now(), hasSeenWorking: session.HerdrSessionState == HerdrSessionStateWorking,
 	})
 	self.mutex.Unlock()
-	session.IsWatched = true
-	return session, nil
+	// A copy: the one looked at is the one kept, which an event may be
+	// carrying to the server now.
+	watched := *session
+	watched.IsWatched = true
+	return &watched, nil
+}
+
+// hasControlCharacters says text holds a character a terminal reads as a
+// key: escape, carriage return, a control letter. A line break is allowed
+// where it is typed as text, in a message.
+func hasControlCharacters(text string, isLineBreakAllowed bool) bool {
+	for _, character := range text {
+		if character == '\n' && isLineBreakAllowed || character == '\t' {
+			continue
+		}
+		if unicode.IsControl(character) {
+			return true
+		}
+	}
+	return false
 }
 
 // herdrStep is one thing pressed into a pane while answering: keys, or text
@@ -600,6 +680,9 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 	question := session.Question
 	if question == nil {
 		return nil, fmt.Errorf("pane %s is not asking anything now; this question was already answered or has changed", session.PaneID)
+	}
+	if hasControlCharacters(arguments.FreeText, false) {
+		return nil, errors.New("the answer holds control characters, which would press keys in the form rather than type; send words")
 	}
 	if strings.TrimSpace(arguments.QuestionFingerprint) != question.QuestionFingerprint {
 		return nil, fmt.Errorf("this question was already answered or has changed; pane %s now asks %q", session.PaneID, firstCharacters(question.QuestionText, 120))

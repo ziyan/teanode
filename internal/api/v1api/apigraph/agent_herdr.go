@@ -29,6 +29,12 @@ type AgentHerdrQuery interface {
 	// One session's screen as it stands, or its last lineCount lines.
 	// Needs agent:use.
 	ReadAgentHerdrScreen(ctx context.Context, arguments ReadAgentHerdrScreenArguments) (*AgentHerdrScreenView, error)
+
+	// Wait for a session to stop working, waitSeconds at most, 30 by
+	// default and 600 at most. A query, though it waits: it changes
+	// nothing, and a query holds no transaction open while it waits.
+	// Needs agent:use.
+	WaitAgentHerdrSession(ctx context.Context, arguments WaitAgentHerdrSessionArguments) (*AgentHerdrWaitView, error)
 }
 
 // AgentHerdrMutation acts in them.
@@ -38,19 +44,16 @@ type AgentHerdrMutation interface {
 	// shouldQueue. Needs agent:use.
 	SendAgentHerdrSession(ctx context.Context, arguments SendAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
 
-	// Wait for a session to stop working, waitSeconds at most, 30 by
-	// default and 600 at most. Needs agent:use.
-	WaitAgentHerdrSession(ctx context.Context, arguments WaitAgentHerdrSessionArguments) (*AgentHerdrWaitView, error)
-
 	// Answer the question a session waits on with the options chosen, or
 	// with text. Refused when the question is no longer the one with this
-	// fingerprint: answered at the keyboard already, or changed. Needs
+	// fingerprint: answered at the keyboard already, or changed; and, when
+	// optionLabels are given, when the options are not labeled so. Needs
 	// agent:use.
 	AnswerAgentHerdrQuestion(ctx context.Context, arguments AnswerAgentHerdrQuestionArguments) (*AgentHerdrAnswerView, error)
 
 	// Wake a conversation of the caller's when a session next finishes
-	// its turn. Watches end when teanode computer restarts there. Needs
-	// agent:use.
+	// its turn: the one named, or their main conversation. Watches end when
+	// teanode computer restarts there. Needs agent:use.
 	WatchAgentHerdrSession(ctx context.Context, arguments WatchAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
 
 	// Put TeaNode's reporting hooks into Claude Code's settings on a
@@ -101,7 +104,10 @@ type AnswerAgentHerdrQuestionArguments struct {
 	PaneID              string `json:"paneId"`
 	QuestionFingerprint string `json:"questionFingerprint"`
 	OptionNumbers       []int  `json:"optionNumbers" graphapi:"nullable"`
-	FreeText            string `json:"freeText" graphapi:"nullable"`
+	// OptionLabels are the labels of the options chosen, as they were
+	// shown, one for each number.
+	OptionLabels []string `json:"optionLabels" graphapi:"nullable"`
+	FreeText     string   `json:"freeText" graphapi:"nullable"`
 }
 
 // WatchAgentHerdrSessionArguments name a session and the conversation to
@@ -109,7 +115,7 @@ type AnswerAgentHerdrQuestionArguments struct {
 type WatchAgentHerdrSessionArguments struct {
 	Computer       string `json:"computer" graphapi:"nullable"`
 	PaneID         string `json:"paneId"`
-	ConversationID string `json:"conversationId"`
+	ConversationID string `json:"conversationId" graphapi:"nullable"`
 }
 
 // SetUpAgentHerdrHooksArguments name a computer.
@@ -122,8 +128,11 @@ type SetUpAgentHerdrHooksArguments struct {
 type AgentHerdrListView struct {
 	// ComputerNames are the attached computers whose program watches
 	// herdr; one that runs no herdr has no sessions.
-	ComputerNames []string                 `json:"computerNames"`
-	Sessions      []*AgentHerdrSessionView `json:"sessions"`
+	ComputerNames []string `json:"computerNames"`
+	// FailedComputerNames are the ones that did not answer, whose sessions
+	// are not in the list.
+	FailedComputerNames []string                 `json:"failedComputerNames"`
+	Sessions            []*AgentHerdrSessionView `json:"sessions"`
 }
 
 // AgentHerdrSessionView is one coding session in one pane.
@@ -212,15 +221,16 @@ func (self *graph) ListAgentHerdrSessions(ctx context.Context, arguments ListAge
 	if err != nil {
 		return nil, err
 	}
-	view := &AgentHerdrListView{ComputerNames: []string{}, Sessions: []*AgentHerdrSessionView{}}
+	view := &AgentHerdrListView{ComputerNames: []string{}, FailedComputerNames: []string{}, Sessions: []*AgentHerdrSessionView{}}
 	worker := self.agentWorker()
 	if worker == nil {
 		return view, nil
 	}
-	sessions, err := worker.HerdrSessions(ctx, found.ID, arguments.Computer)
+	sessions, failedComputerNames, err := worker.HerdrSessions(ctx, found.ID, arguments.Computer)
 	if err != nil {
 		return nil, err
 	}
+	view.FailedComputerNames = failedComputerNames
 	view.ComputerNames = worker.HerdrComputerNames(found.ID)
 	if name := strings.TrimSpace(arguments.Computer); name != "" {
 		view.ComputerNames = []string{}
@@ -231,7 +241,7 @@ func (self *graph) ListAgentHerdrSessions(ctx context.Context, arguments ListAge
 		}
 	}
 	for _, session := range sessions {
-		view.Sessions = append(view.Sessions, herdrSessionView(session.Computer, session.HerdrSession))
+		view.Sessions = append(view.Sessions, herdrSessionView(session.ComputerName, session.HerdrSession))
 	}
 	return view, nil
 }
@@ -249,7 +259,7 @@ func (self *graph) ReadAgentHerdrSession(ctx context.Context, arguments ReadAgen
 	if err != nil {
 		return nil, err
 	}
-	view := &AgentHerdrReadView{HerdrSession: herdrSessionView(read.Computer, read.HerdrSession), Turns: []*AgentHerdrTurnView{}, IsTruncated: read.IsTruncated}
+	view := &AgentHerdrReadView{HerdrSession: herdrSessionView(read.ComputerName, read.HerdrSession), Turns: []*AgentHerdrTurnView{}, IsTruncated: read.IsTruncated}
 	for _, turn := range read.Turns {
 		view.Turns = append(view.Turns, &AgentHerdrTurnView{HerdrTurnRole: turn.HerdrTurnRole, TurnText: turn.TurnText, TurnAt: turn.TurnAt})
 	}
@@ -269,7 +279,7 @@ func (self *graph) ReadAgentHerdrScreen(ctx context.Context, arguments ReadAgent
 	if err != nil {
 		return nil, err
 	}
-	return &AgentHerdrScreenView{HerdrSession: herdrSessionView(screen.Computer, screen.HerdrSession), ScreenText: screen.ScreenText}, nil
+	return &AgentHerdrScreenView{HerdrSession: herdrSessionView(screen.ComputerName, screen.HerdrSession), ScreenText: screen.ScreenText}, nil
 }
 
 func (self *graph) SendAgentHerdrSession(ctx context.Context, arguments SendAgentHerdrSessionArguments) (*AgentHerdrSessionView, error) {
@@ -285,7 +295,7 @@ func (self *graph) SendAgentHerdrSession(ctx context.Context, arguments SendAgen
 	if err != nil {
 		return nil, err
 	}
-	return herdrSessionView(session.Computer, session.HerdrSession), nil
+	return herdrSessionView(session.ComputerName, session.HerdrSession), nil
 }
 
 func (self *graph) WaitAgentHerdrSession(ctx context.Context, arguments WaitAgentHerdrSessionArguments) (*AgentHerdrWaitView, error) {
@@ -301,7 +311,7 @@ func (self *graph) WaitAgentHerdrSession(ctx context.Context, arguments WaitAgen
 	if err != nil {
 		return nil, err
 	}
-	return &AgentHerdrWaitView{HerdrSession: herdrSessionView(waited.Computer, waited.HerdrSession), IsTimedOut: waited.IsTimedOut}, nil
+	return &AgentHerdrWaitView{HerdrSession: herdrSessionView(waited.ComputerName, waited.HerdrSession), IsTimedOut: waited.IsTimedOut}, nil
 }
 
 func (self *graph) AnswerAgentHerdrQuestion(ctx context.Context, arguments AnswerAgentHerdrQuestionArguments) (*AgentHerdrAnswerView, error) {
@@ -313,12 +323,12 @@ func (self *graph) AnswerAgentHerdrQuestion(ctx context.Context, arguments Answe
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	answered, err := worker.AnswerHerdrQuestion(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.QuestionFingerprint, arguments.OptionNumbers, arguments.FreeText)
+	answered, err := worker.AnswerHerdrQuestion(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.QuestionFingerprint, arguments.OptionNumbers, arguments.OptionLabels, arguments.FreeText)
 	if err != nil {
 		return nil, err
 	}
 	return &AgentHerdrAnswerView{
-		HerdrSession: herdrSessionView(answered.Computer, answered.HerdrSession), IsAnswerAccepted: answered.IsAnswerAccepted, AnsweredWith: answered.AnsweredWith,
+		HerdrSession: herdrSessionView(answered.ComputerName, answered.HerdrSession), IsAnswerAccepted: answered.IsAnswerAccepted, AnsweredWith: answered.AnsweredWith,
 	}, nil
 }
 
@@ -331,12 +341,16 @@ func (self *graph) WatchAgentHerdrSession(ctx context.Context, arguments WatchAg
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	session, err := worker.WatchHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID,
-		tools.BackgroundOrigin{AgentID: found.ID, ConversationID: strings.TrimSpace(arguments.ConversationID)})
+	conversationId, err := worker.HerdrWakeConversation(ctx, found.ID, arguments.ConversationID)
 	if err != nil {
 		return nil, err
 	}
-	return herdrSessionView(session.Computer, session.HerdrSession), nil
+	session, err := worker.WatchHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID,
+		tools.BackgroundOrigin{AgentID: found.ID, ConversationID: conversationId})
+	if err != nil {
+		return nil, err
+	}
+	return herdrSessionView(session.ComputerName, session.HerdrSession), nil
 }
 
 func (self *graph) SetUpAgentHerdrHooks(ctx context.Context, arguments SetUpAgentHerdrHooksArguments) (*AgentHerdrSetupView, error) {
@@ -357,7 +371,7 @@ func (self *graph) SetUpAgentHerdrHooks(ctx context.Context, arguments SetUpAgen
 		hookEventNames = []string{}
 	}
 	return &AgentHerdrSetupView{
-		Computer: setup.Computer, IsInstalled: setup.IsInstalled, SettingsPath: setup.SettingsPath,
+		Computer: setup.ComputerName, IsInstalled: setup.IsInstalled, SettingsPath: setup.SettingsPath,
 		ScriptPath: setup.ScriptPath, BackupPath: setup.BackupPath, HookEventNames: hookEventNames,
 	}, nil
 }

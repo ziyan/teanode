@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { graphql } from '../api'
-import { Loading, Tag } from './common'
+import { ErrorMessage, Loading, Tag } from './common'
 import { ConfirmDialog } from './dialog'
 import { SettingsEmpty, SettingsSection } from './settingsList'
 import { Tabs } from './tabs'
@@ -56,6 +56,8 @@ export interface HerdrSession {
 
 interface HerdrList {
   computerNames: string[]
+  // The computers that did not answer, whose sessions are not listed.
+  failedComputerNames: string[]
   sessions: HerdrSession[]
 }
 
@@ -72,7 +74,7 @@ const SESSION_FIELDS = `computer paneId codingAgentKind codingSessionId herdrSes
 
 export const HERDR_DOCUMENTS = {
   ListAgentHerdrSessions: `query ($computer: String) {
-    ListAgentHerdrSessions(computer: $computer) { computerNames sessions { ${SESSION_FIELDS} } }
+    ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ${SESSION_FIELDS} } }
   }`,
   ReadAgentHerdrSession: `query ($computer: String, $paneId: String!, $turnCount: Int) {
     ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
@@ -85,23 +87,21 @@ export const HERDR_DOCUMENTS = {
   SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String!, $shouldQueue: Boolean) {
     SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, shouldQueue: $shouldQueue) { ${SESSION_FIELDS} }
   }`,
-  WaitAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $waitSeconds: Int) {
+  WaitAgentHerdrSession: `query ($computer: String, $paneId: String!, $waitSeconds: Int) {
     WaitAgentHerdrSession(computer: $computer, paneId: $paneId, waitSeconds: $waitSeconds) { herdrSession { ${SESSION_FIELDS} } isTimedOut }
   }`,
-  AnswerAgentHerdrQuestion: `mutation ($computer: String, $paneId: String!, $questionFingerprint: String!, $optionNumbers: [Int!], $freeText: String) {
-    AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, freeText: $freeText) {
+  AnswerAgentHerdrQuestion: `mutation ($computer: String, $paneId: String!, $questionFingerprint: String!, $optionNumbers: [Int!], $optionLabels: [String!], $freeText: String) {
+    AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, optionLabels: $optionLabels, freeText: $freeText) {
       herdrSession { ${SESSION_FIELDS} } isAnswerAccepted answeredWith
     }
   }`,
-  WatchAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $conversationId: String!) {
+  WatchAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $conversationId: String) {
     WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ${SESSION_FIELDS} }
   }`,
   SetUpAgentHerdrHooks: `mutation ($computer: String, $isRemoval: Boolean) {
     SetUpAgentHerdrHooks(computer: $computer, isRemoval: $isRemoval) { computer isInstalled settingsPath scriptPath backupPath hookEventNames }
   }`,
 } as const
-
-const MAIN_CONVERSATION = `query { ListAgentConversations(archived: false) { id kind } }`
 
 // SHARED_LIST_MS is how long one list of the sessions answers every card
 // that asks: a conversation with many questions in it asks once, not once
@@ -158,7 +158,11 @@ export function HerdrQuestionAnswer({
   const [freeText, setFreeText] = useState('')
   const [isBusy, setBusy] = useState(false)
   const freeTextOption = question.options.find((option) => option.herdrOptionKind === 'freeText')
-  const choices = question.options.filter((option) => option.herdrOptionKind !== 'freeText')
+  // A question that takes several answers takes only its choices: the way
+  // out into a conversation is one answer on its own.
+  const choices = question.options.filter((option) =>
+    question.isMultipleChoice ? option.herdrOptionKind === 'choice' : option.herdrOptionKind !== 'freeText',
+  )
 
   const answer = async (optionNumbers: number[], text: string) => {
     setBusy(true)
@@ -170,6 +174,11 @@ export function HerdrQuestionAnswer({
         paneId: session.paneId,
         questionFingerprint: question.questionFingerprint,
         optionNumbers,
+        // The labels as shown, so a question that changed under the same
+        // numbers is refused rather than answered.
+        optionLabels: optionNumbers.map(
+          (number) => question.options.find((option) => option.optionNumber === number)?.optionLabel ?? '',
+        ),
         freeText: text || null,
       })
       const answered = response.AnswerAgentHerdrQuestion
@@ -297,6 +306,7 @@ function HerdrSessionDialog({
             HERDR_DOCUMENTS.ReadAgentHerdrSession,
             { computer: session.computer, paneId: session.paneId, turnCount: 20 },
           ).then((response) => ({
+            view: 'turns',
             session: response.ReadAgentHerdrSession.herdrSession,
             turns: response.ReadAgentHerdrSession.turns,
             screen: '',
@@ -305,6 +315,7 @@ function HerdrSessionDialog({
             HERDR_DOCUMENTS.ReadAgentHerdrScreen,
             { computer: session.computer, paneId: session.paneId },
           ).then((response) => ({
+            view: 'screen',
             session: response.ReadAgentHerdrScreen.herdrSession,
             turns: [],
             screen: response.ReadAgentHerdrScreen.screenText,
@@ -314,7 +325,9 @@ function HerdrSessionDialog({
   useEffect(() => {
     if (read?.session) setCurrent(read.session)
   }, [read])
-  const isSendable = current.herdrSessionState === 'idle' || current.herdrSessionState === 'working'
+  // What the program on the computer allows: anything but a session that
+  // asks, which is answered first.
+  const isSendable = current.herdrSessionState !== 'asking'
 
   const send = async () => {
     setSending(true)
@@ -338,13 +351,10 @@ function HerdrSessionDialog({
 
   const watch = async () => {
     try {
-      const conversations = await graphql<{ ListAgentConversations: { id: string; kind: string }[] }>(MAIN_CONVERSATION)
-      const main = conversations.ListAgentConversations.find((conversation) => conversation.kind === 'main')
-      if (!main) throw new Error(t('herdr.noMainConversation'))
+      // No conversation named: the server wakes the main one.
       const response = await graphql<{ WatchAgentHerdrSession: HerdrSession }>(HERDR_DOCUMENTS.WatchAgentHerdrSession, {
         computer: current.computer,
         paneId: current.paneId,
-        conversationId: main.id,
       })
       setCurrent(response.WatchAgentHerdrSession)
       toast.done(t('herdr.watching', { pane: current.paneId }))
@@ -394,10 +404,10 @@ function HerdrSessionDialog({
             active={view}
             onSelect={(id) => setView(id as 'turns' | 'screen')}
           />
-          {read === null && !readError ? (
+          {readError ? (
+            <ErrorMessage error={readError} />
+          ) : read === null || read.view !== view ? (
             <Loading />
-          ) : readError ? (
-            <p className="muted">{readError instanceof Error ? readError.message : String(readError)}</p>
           ) : view === 'screen' ? (
             <pre className="herdr-screen">{read?.screen}</pre>
           ) : (
@@ -442,9 +452,12 @@ function HerdrSessionDialog({
 function HerdrHooksDialog({ computerNames, onClose }: { computerNames: string[]; onClose: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const [busy, setBusy] = useState('')
+  const [busyComputerName, setBusyComputerName] = useState('')
+  // Taking the hooks out rewrites the person's settings, so it is asked
+  // first; putting them in keeps a copy of the file.
+  const [removingComputerName, setRemovingComputerName] = useState('')
   const setUp = async (computer: string, isRemoval: boolean) => {
-    setBusy(computer)
+    setBusyComputerName(computer)
     try {
       const response = await graphql<{
         SetUpAgentHerdrHooks: { computer: string; isInstalled: boolean; settingsPath: string; backupPath: string }
@@ -458,8 +471,20 @@ function HerdrHooksDialog({ computerNames, onClose }: { computerNames: string[];
     } catch (caught) {
       toast.failure(caught, t('herdr.hooksFailed'))
     } finally {
-      setBusy('')
+      setBusyComputerName('')
     }
+  }
+  if (removingComputerName) {
+    return (
+      <ConfirmDialog
+        title={t('herdr.hooksRemoveTitle')}
+        body={<p>{t('herdr.hooksRemoveBody', { computer: removingComputerName })}</p>}
+        confirmLabel={t('herdr.hooksRemove')}
+        busy={busyComputerName !== ''}
+        onConfirm={() => void setUp(removingComputerName, true).then(() => setRemovingComputerName(''))}
+        onClose={() => setRemovingComputerName('')}
+      />
+    )
   }
   return (
     <ConfirmDialog
@@ -474,14 +499,18 @@ function HerdrHooksDialog({ computerNames, onClose }: { computerNames: string[];
                 <tr key={computer}>
                   <td>{computer}</td>
                   <td className="herdr-hooks-actions">
-                    <button type="button" disabled={busy !== ''} onClick={() => void setUp(computer, false)}>
+                    <button
+                      type="button"
+                      disabled={busyComputerName !== ''}
+                      onClick={() => void setUp(computer, false)}
+                    >
                       {t('herdr.hooksInstall')}
                     </button>
                     <button
                       type="button"
                       className="danger"
-                      disabled={busy !== ''}
-                      onClick={() => void setUp(computer, true)}
+                      disabled={busyComputerName !== ''}
+                      onClick={() => setRemovingComputerName(computer)}
                     >
                       {t('herdr.hooksRemove')}
                     </button>
@@ -508,6 +537,7 @@ export function HerdrSessionsCard() {
     if (error) toast.failure(error, t('herdr.listFailed'))
   }, [error, toast, t])
   const computerNames = data?.computerNames ?? []
+  const failedComputerNames = data?.failedComputerNames ?? []
   return (
     <SettingsSection
       card
@@ -521,50 +551,55 @@ export function HerdrSessionsCard() {
         ) : undefined
       }
     >
-      {data === null && !error ? (
+      {data === null && error ? null : data === null ? (
         <Loading />
       ) : computerNames.length === 0 ? (
         <SettingsEmpty>{t('herdr.noComputer')}</SettingsEmpty>
-      ) : data?.sessions.length === 0 ? (
+      ) : data.sessions.length === 0 && failedComputerNames.length === 0 ? (
         <SettingsEmpty>{t('herdr.none', { computers: computerNames.join(', ') })}</SettingsEmpty>
       ) : (
-        <div className="table-wrap">
-          <table className="herdr-sessions">
-            <thead>
-              <tr>
-                <th>{t('herdr.computer')}</th>
-                <th>{t('herdr.pane')}</th>
-                <th>{t('herdr.agent')}</th>
-                <th>{t('herdr.stateHeading')}</th>
-                <th>{t('herdr.directory')}</th>
-                <th>{t('herdr.paneTitle')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.sessions ?? []).map((session) => (
-                <tr key={`${session.computer}/${session.paneId}`}>
-                  <td>{session.computer}</td>
-                  <td>
-                    <button
-                      /* link-button: names a session in a list, which opens it in place */
-                      type="button"
-                      className="link"
-                      onClick={() => setOpened(session)}
-                    >
-                      {session.paneId}
-                    </button>
-                  </td>
-                  <td>{codingAgentName(session.codingAgentKind)}</td>
-                  <td>
-                    <HerdrStateTag session={session} />
-                  </td>
-                  <td className="mono">{session.workingDirectory}</td>
-                  <td>{session.paneTitle}</td>
+        <>
+          {failedComputerNames.length > 0 ? (
+            <p className="muted">{t('herdr.notAnswering', { computers: failedComputerNames.join(', ') })}</p>
+          ) : null}
+          <div className="table-wrap">
+            <table className="herdr-sessions">
+              <thead>
+                <tr>
+                  <th>{t('herdr.computer')}</th>
+                  <th>{t('herdr.pane')}</th>
+                  <th>{t('herdr.agent')}</th>
+                  <th>{t('herdr.stateHeading')}</th>
+                  <th>{t('herdr.directory')}</th>
+                  <th>{t('herdr.paneTitle')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data.sessions.map((session) => (
+                  <tr key={`${session.computer}/${session.paneId}`}>
+                    <td>{session.computer}</td>
+                    <td>
+                      <button
+                        /* link-button: names a session in a list, which opens it in place */
+                        type="button"
+                        className="link"
+                        onClick={() => setOpened(session)}
+                      >
+                        {session.paneId}
+                      </button>
+                    </td>
+                    <td>{codingAgentName(session.codingAgentKind)}</td>
+                    <td>
+                      <HerdrStateTag session={session} />
+                    </td>
+                    <td className="mono">{session.workingDirectory}</td>
+                    <td>{session.paneTitle}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       {opened ? (
         <HerdrSessionDialog
@@ -582,8 +617,13 @@ export function HerdrSessionsCard() {
 // HerdrQuestionCard is a question as the drawer shows it under the line it
 // was written under: its options while the session still asks it, and the
 // word that it was answered once it does not. QUESTION_EVERY is how often
-// it looks again while it waits.
+// it looks again while it waits; a question is called answered only when
+// its computer answered the list twice in a row without it, so one slow
+// computer or one screen read mid-redraw does not take the buttons away.
+// A computer that is not attached is looked for QUESTION_ABSENT_LOOKS
+// times, then left: an old line in a long transcript asks nothing more.
 const QUESTION_EVERY = 5_000
+const QUESTION_ABSENT_LOOKS = 6
 
 export function HerdrQuestionCard({
   computer,
@@ -596,22 +636,33 @@ export function HerdrQuestionCard({
 }) {
   const { t } = useTranslation()
   const [found, setFound] = useState<{ session: HerdrSession; question: HerdrQuestion } | null>(null)
-  const [isAnswered, setAnswered] = useState(false)
+  const [questionState, setQuestionState] = useState<'waiting' | 'answered' | 'unreachable'>('waiting')
   const [lookCount, setLookCount] = useState(0)
+  const missCount = useRef(0)
+  const absentCount = useRef(0)
   useEffect(() => {
-    if (isAnswered) return
+    if (questionState !== 'waiting') return
     let isStopped = false
     const look = (fresh: boolean) => {
       if (document.hidden && !fresh) return
       listHerdrSessions(fresh)
         .then((listed) => {
           if (isStopped) return
+          if (!listed.computerNames.includes(computer)) {
+            absentCount.current += 1
+            if (absentCount.current >= QUESTION_ABSENT_LOOKS) setQuestionState('unreachable')
+            return
+          }
+          absentCount.current = 0
+          if (listed.failedComputerNames.includes(computer)) return
           const session = listed.sessions.find((each) => each.computer === computer && each.paneId === paneId)
           if (session?.question?.questionFingerprint === questionFingerprint) {
+            missCount.current = 0
             setFound({ session, question: session.question })
-          } else if (listed.computerNames.includes(computer)) {
-            setAnswered(true)
+            return
           }
+          missCount.current += 1
+          if (missCount.current >= 2) setQuestionState('answered')
         })
         .catch(() => undefined)
     }
@@ -621,9 +672,9 @@ export function HerdrQuestionCard({
       isStopped = true
       window.clearInterval(every)
     }
-  }, [computer, paneId, questionFingerprint, isAnswered, lookCount])
-  if (isAnswered) return <p className="herdr-question-done muted">{t('herdr.questionDone')}</p>
-  if (!found) return null
+  }, [computer, paneId, questionFingerprint, questionState, lookCount])
+  if (questionState === 'answered') return <p className="herdr-question-done muted">{t('herdr.questionDone')}</p>
+  if (questionState === 'unreachable' || !found) return null
   return (
     <div className="herdr-question-card">
       <HerdrQuestionAnswer

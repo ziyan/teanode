@@ -29,10 +29,10 @@ import (
 
 // The files the hooks use, under the person's home directory.
 var (
-	hookScriptPath   = filepath.Join(".local", "share", "teanode", "teanode-herdr-hook")
-	hookEventsPath   = filepath.Join(".local", "state", "teanode", "herdr-events.jsonl")
-	claudeSettings   = filepath.Join(".claude", "settings.json")
-	hookBackupSuffix = ".before-teanode"
+	hookScriptPath     = filepath.Join(".local", "share", "teanode", "teanode-herdr-hook")
+	hookEventsPath     = filepath.Join(".local", "state", "teanode", "herdr-events.jsonl")
+	claudeSettingsPath = filepath.Join(".claude", "settings.json")
+	hookBackupSuffix   = ".before-teanode"
 )
 
 // The bounds of the events file.
@@ -44,9 +44,10 @@ const (
 	// end.
 	hookEventsMostBytes = 4 << 20
 	// hookWorkingFresh is how long a report that a turn runs is believed
-	// without another: a session killed in the middle of a turn never says
-	// it stopped.
-	hookWorkingFresh = 30 * time.Minute
+	// without another. A turn reports at every tool call; one the person
+	// stopped with Esc, or one killed, never says it stopped, and after
+	// this the screen and herdr decide again.
+	hookWorkingFresh = 2 * time.Minute
 )
 
 // hookEventNames are the events the hooks report, and the arguments the
@@ -60,12 +61,20 @@ const (
 	hookStateIdle    = "idle"
 )
 
+// hookScript keeps only the event, the session and the time: what a hook
+// is given holds the person's prompts and their tools' output, which is
+// nobody's business here. The line is written in one write, so lines from
+// sessions reporting at once do not interleave, to a file only the person
+// can read.
 const hookScript = `#!/bin/sh
 # TeaNode's herdr hook: it reports what Claude Code does, and decides
 # nothing. Installed by "teanode computer herdr setup".
+umask 077
 directory="$HOME/.local/state/teanode"
 mkdir -p "$directory" 2>/dev/null
-{ printf '{"hookEventName":"%s","paneId":"%s","reportedAt":%s,"input":' "$1" "${HERDR_PANE_ID:-}" "$(date +%s)"; tr -d '\n'; printf '}\n'; } >> "$directory/herdr-events.jsonl" 2>/dev/null
+session=$(tr -d '\n' | sed -n 's/.*"session_id" *: *"\([A-Za-z0-9-]*\)".*/\1/p')
+line=$(printf '{"hookEventName":"%s","sessionId":"%s","reportedAt":%s}' "$1" "$session" "$(date +%s)")
+printf '%s\n' "$line" >> "$directory/herdr-events.jsonl" 2>/dev/null
 exit 0
 `
 
@@ -81,50 +90,55 @@ type HerdrSetupResult struct {
 // hookReport is one line of the events file.
 type hookReport struct {
 	HookEventName string `json:"hookEventName"`
+	SessionID     string `json:"sessionId"`
 	ReportedAt    int64  `json:"reportedAt"`
-	Input         struct {
-		SessionID string `json:"session_id"`
-		ToolName  string `json:"tool_name"`
-	} `json:"input"`
 }
 
-// readHookState is what the latest report of a session says, if the hooks
-// are installed and it reported anything.
-func readHookState(home, codingSessionId string) string {
-	if codingSessionId == "" {
-		return hookStateNone
-	}
+// readHookReports is the latest report of each session, read from the end
+// of the events file once for every pane; empty when the hooks are not
+// installed.
+func readHookReports(home string) map[string]*hookReport {
+	latest := map[string]*hookReport{}
 	file, err := os.Open(filepath.Join(home, hookEventsPath))
 	if err != nil {
-		return hookStateNone
+		return latest
 	}
 	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil {
-		return hookStateNone
+		return latest
 	}
 	lines, _, err := tailLines(file, info.Size(), hookEventsReadBytes)
 	if err != nil {
-		return hookStateNone
+		return latest
 	}
-	for index := len(lines) - 1; index >= 0; index-- {
+	for _, line := range lines {
 		var report hookReport
-		if json.Unmarshal(lines[index], &report) != nil || report.Input.SessionID != codingSessionId {
+		if json.Unmarshal(line, &report) != nil || report.SessionID == "" {
 			continue
 		}
-		switch report.HookEventName {
-		case "Stop":
-			return hookStateIdle
-		case "UserPromptSubmit", "PreToolUse", "PostToolUse":
-			if time.Since(time.Unix(report.ReportedAt, 0)) > hookWorkingFresh {
-				return hookStateNone
-			}
-			return hookStateWorking
-		}
-		// A permission prompt or a notification says the screen has a
-		// form, which the screen says better.
+		latest[report.SessionID] = &report
+	}
+	return latest
+}
+
+// hookStateOf is what a session's latest report says.
+func hookStateOf(reports map[string]*hookReport, codingSessionId string, now time.Time) string {
+	report := reports[codingSessionId]
+	if codingSessionId == "" || report == nil {
 		return hookStateNone
 	}
+	switch report.HookEventName {
+	case "Stop":
+		return hookStateIdle
+	case "UserPromptSubmit", "PreToolUse", "PostToolUse":
+		if now.Sub(time.Unix(report.ReportedAt, 0)) > hookWorkingFresh {
+			return hookStateNone
+		}
+		return hookStateWorking
+	}
+	// A permission prompt or a notification says the screen has a form,
+	// which the screen says better.
 	return hookStateNone
 }
 
@@ -144,14 +158,17 @@ func trimHookEvents(home string) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, bytes.Join(lines, []byte("\n")), 0o600)
+	// Into a file beside it, then over it: a hook that appends meanwhile
+	// loses its line, which the next one makes up for, rather than the
+	// file being left half written.
+	_ = writeFileAtomically(path, bytes.Join(lines, []byte("\n")))
 }
 
 // setUpHooks puts TeaNode's hooks into Claude Code's settings, or takes
 // them out, leaving every other entry as it was.
 func setUpHooks(home string, isRemoval bool) (*HerdrSetupResult, error) {
 	scriptPath := filepath.Join(home, hookScriptPath)
-	settingsPath := filepath.Join(home, claudeSettings)
+	settingsPath := filepath.Join(home, claudeSettingsPath)
 	result := &HerdrSetupResult{SettingsPath: settingsPath, ScriptPath: scriptPath, HookEventNames: []string{}}
 
 	settings := &orderedObject{values: map[string]json.RawMessage{}}
@@ -175,17 +192,24 @@ func setUpHooks(home string, isRemoval bool) (*HerdrSetupResult, error) {
 		}
 	}
 	for _, eventName := range hookEventNames {
-		var groups []map[string]any
+		var groups []json.RawMessage
 		if raw, ok := hooks.values[eventName]; ok {
 			if err := json.Unmarshal(raw, &groups); err != nil {
 				return nil, fmt.Errorf("the %s hooks in %s are not JSON this can change safely: %w", eventName, settingsPath, err)
 			}
 		}
-		groups = withoutOurHooks(groups, scriptPath)
+		groups, err = withoutOurHooks(groups, scriptPath)
+		if err != nil {
+			return nil, fmt.Errorf("the %s hooks in %s are not JSON this can change safely: %w", eventName, settingsPath, err)
+		}
 		if !isRemoval {
-			groups = append(groups, map[string]any{"hooks": []any{map[string]any{
+			ours, err := marshalPlain(map[string]any{"hooks": []any{map[string]any{
 				"type": "command", "command": "sh '" + scriptPath + "' " + eventName, "timeout": 5,
 			}}})
+			if err != nil {
+				return nil, err
+			}
+			groups = append(groups, ours)
 			result.HookEventNames = append(result.HookEventNames, eventName)
 		}
 		if len(groups) == 0 {
@@ -260,27 +284,50 @@ func marshalPlain(value any) ([]byte, error) {
 }
 
 // withoutOurHooks is a list of hook groups with TeaNode's own taken out,
-// and any group that held only TeaNode's dropped.
-func withoutOurHooks(groups []map[string]any, scriptPath string) []map[string]any {
-	kept := []map[string]any{}
-	for _, group := range groups {
-		listed, _ := group["hooks"].([]any)
-		var others []any
+// and any group that held only TeaNode's dropped. A group with none of
+// TeaNode's is kept as it was written.
+func withoutOurHooks(groups []json.RawMessage, scriptPath string) ([]json.RawMessage, error) {
+	kept := []json.RawMessage{}
+	for _, raw := range groups {
+		group := &orderedObject{values: map[string]json.RawMessage{}}
+		if err := group.UnmarshalJSON(raw); err != nil {
+			return nil, err
+		}
+		var listed []json.RawMessage
+		if rawHooks, ok := group.values["hooks"]; ok {
+			if err := json.Unmarshal(rawHooks, &listed); err != nil {
+				return nil, err
+			}
+		}
+		others := []json.RawMessage{}
 		for _, hook := range listed {
-			entry, _ := hook.(map[string]any)
-			command, _ := entry["command"].(string)
-			if strings.Contains(command, scriptPath) {
+			var entry struct {
+				Command string `json:"command"`
+			}
+			if json.Unmarshal(hook, &entry) == nil && strings.Contains(entry.Command, scriptPath) {
 				continue
 			}
 			others = append(others, hook)
 		}
-		if len(others) == 0 && len(listed) > 0 {
+		switch {
+		case len(others) == len(listed):
+			kept = append(kept, raw)
+			continue
+		case len(others) == 0:
 			continue
 		}
-		group["hooks"] = others
-		kept = append(kept, group)
+		encoded, err := marshalPlain(others)
+		if err != nil {
+			return nil, err
+		}
+		group.set("hooks", encoded)
+		changed, err := group.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		kept = append(kept, changed)
 	}
-	return kept
+	return kept, nil
 }
 
 // writeFileAtomically writes a file whole or not at all, keeping its mode.

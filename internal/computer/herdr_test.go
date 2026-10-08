@@ -9,7 +9,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -152,8 +154,8 @@ func TestAClaudeQuestionHerdrCallsIdleIsAsking(t *testing.T) {
 const codexHistoryAsking = `{"type":"event_msg","payload":{"type":"task_started"}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>cwd</environment_context>"}]}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Pick a fruit for the example."}]}}
-{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Which fruit should we pick?\",\"options\":[\"Apple\",\"Banana\"]}]}"}}
-{"type":"response_item","payload":{"type":"function_call_output","output":"{\"accepted\":true}"}}
+{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","call_id":"call-1","arguments":"{\"questions\":[{\"title\":\"Which fruit should we pick?\",\"options\":[\"Apple\",\"Banana\"]}]}"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"{\"accepted\":true}"}}
 {"type":"event_msg","payload":{"type":"task_complete"}}
 `
 
@@ -205,6 +207,16 @@ func TestACodexQuestionTheyAnsweredIsNoLongerWaiting(t *testing.T) {
 	fake.setAgent("w1:p1", CodingAgentKindCodex, "idle", "0000-bbbb", readHerdrFixture(t, "codex-idle"))
 	if session := listForTest(t, NewHerdr(home))[0]; session.Question != nil || session.HerdrSessionState != HerdrSessionStateIdle {
 		t.Errorf("%+v", session)
+	}
+}
+
+func TestACodexQuestionItsToolRefusedIsNotWaiting(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	writeCodexHistory(t, home, "0000-cccc", strings.Replace(codexHistoryAsking, `"output":"{\"accepted\":true}"`, `"output":"request_user_input is unavailable in this mode"`, 1))
+	fake.setAgent("w1:p1", CodingAgentKindCodex, "idle", "0000-cccc", readHerdrFixture(t, "codex-idle"))
+	if session := listForTest(t, NewHerdr(home))[0]; session.Question != nil {
+		t.Errorf("%+v", session.Question)
 	}
 }
 
@@ -287,6 +299,9 @@ func TestTheKeysThatAnswerEachKindOfQuestion(t *testing.T) {
 			}
 		}
 		return strings.Join(said, " ")
+	}
+	if hasControlCharacters("one\ntwo", true) || !hasControlCharacters("one\ntwo", false) || !hasControlCharacters("go\x1b[A", true) {
+		t.Error("control characters are told apart wrongly")
 	}
 	cases := []struct {
 		question      *HerdrQuestion
@@ -389,22 +404,60 @@ func TestAQuestionIsToldWhenItComesAndGoesAndAgainUntilAcknowledged(t *testing.T
 		told[1].HerdrSession.Question.QuestionFingerprint != told[0].HerdrSession.Question.QuestionFingerprint {
 		t.Fatalf("told %+v", told)
 	}
-	first := told[0].HerdrEventID
+	answeredId := told[1].HerdrEventID
 	told = nil
 	mutex.Unlock()
 
-	// A reconnect hears both again; once one is acknowledged, only the
-	// other.
+	// A reconnect hears again what was not acknowledged, but not a question
+	// that was answered while nobody listened; once acknowledged, nothing.
 	again := []string{}
 	herdr.listen(func(event *HerdrEvent) { again = append(again, event.HerdrEventKind) })()
-	if !slices.Equal(again, []string{HerdrEventKindAsking, HerdrEventKindAnswered}) {
+	if !slices.Equal(again, []string{HerdrEventKindAnswered}) {
 		t.Errorf("said again %v", again)
 	}
-	herdr.acknowledge([]string{first})
+	herdr.acknowledge([]string{answeredId})
 	again = []string{}
 	herdr.listen(func(event *HerdrEvent) { again = append(again, event.HerdrEventKind) })()
-	if !slices.Equal(again, []string{HerdrEventKindAnswered}) {
+	if len(again) != 0 {
 		t.Errorf("after the acknowledgement %v", again)
+	}
+}
+
+func TestAnUnacknowledgedQuestionIsSaidAgainOnReconnect(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-single"))
+	herdr := NewHerdr(home)
+	listForTest(t, herdr)
+	again := []string{}
+	herdr.listen(func(event *HerdrEvent) { again = append(again, event.HerdrEventKind) })()
+	if !slices.Equal(again, []string{HerdrEventKindAsking}) {
+		t.Errorf("said again %v", again)
+	}
+}
+
+func TestTheSameQuestionAskedAgainIsAnotherQuestion(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
+	herdr := NewHerdr(home)
+	first := listForTest(t, herdr)[0].Question.QuestionFingerprint
+	if again := listForTest(t, herdr)[0].Question.QuestionFingerprint; again != first {
+		t.Fatal("a question still waiting changed its fingerprint")
+	}
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	listForTest(t, herdr)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-tool"))
+	second := listForTest(t, herdr)[0].Question.QuestionFingerprint
+	if second == first {
+		t.Fatal("the same approval asked again kept the first one's fingerprint")
+	}
+	_, err := RunHerdr(context.Background(), herdr, "herdr_answer", &HerdrArguments{PaneID: "w1:p1", QuestionFingerprint: first, OptionNumbers: []int{1}})
+	if err == nil {
+		t.Error("an answer to the first approval was pressed into the second")
+	}
+	if pressed, _, _ := fake.recorded(); len(pressed) != 0 {
+		t.Errorf("pressed %v", pressed)
 	}
 }
 
@@ -497,16 +550,45 @@ func TestTheHooksReportDecidesWorkingAndIdle(t *testing.T) {
 	}
 	now := time.Now().Unix()
 	report := func(eventName, codingSessionId string, at int64) string {
-		return fmt.Sprintf(`{"hookEventName":%q,"paneId":"w1:p1","reportedAt":%d,"input":{"session_id":%q}}`+"\n", eventName, at, codingSessionId)
+		return fmt.Sprintf(`{"hookEventName":%q,"sessionId":%q,"reportedAt":%d}`+"\n", eventName, codingSessionId, at)
 	}
 	lines := report("UserPromptSubmit", "one", now) + report("Stop", "two", now) + report("PreToolUse", "one", now) +
 		report("UserPromptSubmit", "old", now-int64(hookWorkingFresh.Seconds())-60)
 	if err := os.WriteFile(path, []byte(lines), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	reports := readHookReports(home)
 	for codingSessionId, want := range map[string]string{"one": hookStateWorking, "two": hookStateIdle, "old": hookStateNone, "none": hookStateNone} {
-		if got := readHookState(home, codingSessionId); got != want {
+		if got := hookStateOf(reports, codingSessionId, time.Now()); got != want {
 			t.Errorf("%s: %q, want %q", codingSessionId, got, want)
 		}
+	}
+}
+
+func TestTheHookScriptReportsOnlyTheEventAndTheSession(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the hook is a shell script")
+	}
+	home := t.TempDir()
+	if _, err := setUpHooks(home, false); err != nil {
+		t.Fatal(err)
+	}
+	input := "{\n  \"session_id\": \"0000-dddd\",\n  \"prompt\": \"a secret prompt\",\n  \"tool_input\": {\"command\": \"echo \\\"session_id\\\": \\\"other\\\"\"}\n}\n"
+	command := exec.Command("sh", filepath.Join(home, hookScriptPath), "UserPromptSubmit")
+	command.Env = append(os.Environ(), "HOME="+home)
+	command.Stdin = strings.NewReader(input)
+	if output, err := command.CombinedOutput(); err != nil || len(output) != 0 {
+		t.Fatalf("the hook said %q: %v", output, err)
+	}
+	path := filepath.Join(home, hookEventsPath)
+	written, _ := os.ReadFile(path)
+	if strings.Contains(string(written), "secret") {
+		t.Errorf("the hook kept what it was given: %s", written)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("the events file is not the person's alone: %v", info.Mode())
+	}
+	if got := hookStateOf(readHookReports(home), "0000-dddd", time.Now()); got != hookStateWorking {
+		t.Errorf("%q from %s", got, written)
 	}
 }

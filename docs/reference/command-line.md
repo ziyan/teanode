@@ -494,6 +494,14 @@ program answers every request as it comes, however many are running.
 | `teanode computer background list [--conversation ID]` | the commands the agent's shell left running in the background on your computers, and the ones that ended lately, newest first: one line each with its id, the computer, where it stands (`running`, `exit N`, `stopped`, or `stopped after 24 hours` when it ran as long as a background command may), when it started in your local time, and the command. `--conversation` keeps to the ones one conversation started |
 | `teanode computer background read <computer> <id> [--tail BYTES]` | the last of what one of them wrote: its output on standard output, then its errors on standard error, with a line saying when either was cut and a last line saying where it stands. `--tail` is how much of the end of each stream to print, 64 KiB by default and 256 KiB at most |
 | `teanode computer background stop <computer> <id>` | end one of them. The agent that started it hears that it ended, as it does of any ending it did not ask for |
+| `teanode computer herdr list [--computer NAME]` | the Claude Code and Codex sessions in herdr on your computers: the computer, the pane, the coding agent, its state (`idle`, `working`, `asking`, `unknown`, as the program on the computer decides it), the directory and the title, then each question waiting with its fingerprint and numbered options |
+| `teanode computer herdr read <pane> [--computer NAME] [--turns N]` | a session's last turns from its history file, 10 by default and 100 at most |
+| `teanode computer herdr screen <pane> [--computer NAME] [--lines N]` | what the pane shows now, or its last `--lines` lines |
+| `teanode computer herdr send <pane> <text> [--computer NAME] [--queue]` | type the text into the pane and press enter. Refused while the session asks a question, and while it works unless `--queue` |
+| `teanode computer herdr wait <pane> [--computer NAME] [--seconds N]` | wait for the session to stop working, 30 seconds by default and 600 at most |
+| `teanode computer herdr answer <pane> --fingerprint F --option N [--option N] [--text TEXT]` | answer the question the session waits on, with the options' numbers, or `--text` for the option that takes text. Refused when the question is no longer the one with that fingerprint. Without `--fingerprint` it prints the question and its fingerprint |
+| `teanode computer herdr watch <pane> --conversation ID` | wake that conversation when the session next finishes its turn |
+| `teanode computer herdr setup [--computer NAME] [--remove]` | put TeaNode's reporting hooks into Claude Code's settings on that computer, beside the ones there, or take them out |
 
 The operator can keep computers off for the whole server with
 `agent.features.computer`.
