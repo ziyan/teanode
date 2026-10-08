@@ -149,9 +149,9 @@ export function codingAgentName(codingAgentKind: string): string {
 // HerdrStateTag is a session's state as a word.
 export function HerdrStateTag({ session }: { session: HerdrSession }) {
   const { t } = useTranslation()
-  const state = session.herdrSessionState
-  const tone = state === 'asking' ? 'warn' : state === 'working' ? 'good' : undefined
-  return <Tag value={t(`herdr.state.${state}` as 'herdr.state.idle')} tone={tone} />
+  const herdrSessionState = session.herdrSessionState
+  const tone = herdrSessionState === 'asking' ? 'warn' : herdrSessionState === 'working' ? 'good' : undefined
+  return <Tag value={t(`herdr.state.${herdrSessionState}` as 'herdr.state.idle')} tone={tone} />
 }
 
 // HerdrQuestionAnswer is a question with its options as buttons: a tap
@@ -323,6 +323,15 @@ export function HerdrQuestionAnswer({
   )
 }
 
+// isListed says an answer of several, joined by ", ", holds one item whole.
+// An item's own commas ("Yes, and don't ask again") are kept: the item is
+// looked for, rather than the answer split.
+function isListed(answer: string, item: string): boolean {
+  return (
+    answer === item || answer.startsWith(`${item}, `) || answer.endsWith(`, ${item}`) || answer.includes(`, ${item}, `)
+  )
+}
+
 // chosenOf reads an answer back onto a question's options: the ones it
 // names, by label or as "number. label", and what was typed, when it names
 // none.
@@ -331,10 +340,9 @@ function chosenOf(question: HerdrQuestion, answeredWith: string): { chosenNumber
   if (!answer) return { chosenNumbers: [], typedAnswer: '' }
   const chosenNumbers = question.options
     .filter((option) => option.herdrOptionKind !== 'freeText')
-    .filter((option) =>
-      answer
-        .split(', ')
-        .some((part) => part === option.optionLabel || part === `${option.optionNumber}. ${option.optionLabel}`),
+    .filter(
+      (option) =>
+        isListed(answer, option.optionLabel) || isListed(answer, `${option.optionNumber}. ${option.optionLabel}`),
     )
     .map((option) => option.optionNumber)
   return { chosenNumbers, typedAnswer: chosenNumbers.length > 0 ? '' : answer.replace(/^"(.*)"$/, '$1') }

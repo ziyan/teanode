@@ -99,3 +99,18 @@ it('says so when the question was answered elsewhere first', async () => {
   await waitFor(() => expect(notices.failure).toHaveBeenCalled())
   expect(answered).toHaveBeenCalledWith(null)
 })
+
+it('marks the option answered even when its label holds a comma', () => {
+  const approval: HerdrQuestion = {
+    ...question,
+    questionText: 'Do you want to proceed?',
+    options: [
+      { optionNumber: 1, optionLabel: 'Yes', optionDescription: '', herdrOptionKind: 'choice' },
+      { optionNumber: 2, optionLabel: "Yes, and don't ask again", optionDescription: '', herdrOptionKind: 'choice' },
+      { optionNumber: 3, optionLabel: 'No', optionDescription: '', herdrOptionKind: 'choice' },
+    ],
+  }
+  render(<HerdrQuestionAnswer session={session} question={approval} answeredWith="2. Yes, and don't ask again" />)
+  const pressed = screen.getAllByRole('button').filter((button) => button.getAttribute('aria-pressed') === 'true')
+  expect(pressed.map((button) => button.textContent)).toEqual(["2. Yes, and don't ask again"])
+})
