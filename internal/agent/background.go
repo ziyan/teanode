@@ -69,12 +69,13 @@ type backgroundEnding struct {
 }
 
 // backgroundWake is what a conversation has waiting to wake it -- ended
-// commands and finished background work -- and how many times waking it
-// has failed.
+// commands, finished background work and watched herdr sessions that
+// finished -- and how many times waking it has failed.
 type backgroundWake struct {
 	agentId      string
 	endings      []backgroundEnding
 	works        []*models.AgentBackgroundWork
+	settlings    []*herdrSettling
 	isQueued     bool
 	attemptCount int
 }
@@ -203,7 +204,7 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	wake := self.backgroundWakes[conversationId]
 	delete(self.backgroundWakes, conversationId)
 	self.backgroundMutex.Unlock()
-	if wake == nil || (len(wake.endings) == 0 && len(wake.works) == 0) {
+	if wake == nil || (len(wake.endings) == 0 && len(wake.works) == 0 && len(wake.settlings) == 0) {
 		return
 	}
 	err := self.tryWakeForBackground(conversationId, wake)
@@ -213,10 +214,11 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	if err != nil && wake.attemptCount+1 < backgroundWakeAttempts && self.ctx.Err() == nil {
 		log.Warningf("cannot wake conversation %q for background work or a command that ended, trying again in %s: %s", conversationId, backgroundWakeRetry, err)
 		// What ended while this one failed joins it.
-		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, works: wake.works, attemptCount: wake.attemptCount + 1}
+		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, works: wake.works, settlings: wake.settlings, attemptCount: wake.attemptCount + 1}
 		if waiting := self.backgroundWakes[conversationId]; waiting != nil {
 			retry.endings = append(retry.endings, waiting.endings...)
 			retry.works = append(retry.works, waiting.works...)
+			retry.settlings = append(retry.settlings, waiting.settlings...)
 			retry.isQueued = waiting.isQueued
 		}
 		self.backgroundWakes[conversationId] = retry
@@ -233,6 +235,9 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	for _, work := range wake.works {
 		delete(self.backgroundInFlight, backgroundWorkInFlight(work.ID))
 	}
+	for _, settling := range wake.settlings {
+		delete(self.backgroundInFlight, herdrInFlight(settling.event.HerdrEventID))
+	}
 }
 
 // tryWakeForBackground starts the turn that tells the agent, then
@@ -248,6 +253,9 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	acknowledge := func() {
 		for _, ending := range wake.endings {
 			self.acknowledgeBackground(self.currentComputer(wake.agentId, ending.computer), ending.status.ID)
+		}
+		for _, settling := range wake.settlings {
+			self.acknowledgeHerdr(self.currentComputer(wake.agentId, settling.computer), settling.event.HerdrEventID)
 		}
 		if len(wake.works) == 0 {
 			return
@@ -312,7 +320,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		if deferral != nil {
 			reason = deferral.Reason
 		}
-		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works), reason)
+		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works, wake.settlings), reason)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversationId, Role: models.AgentMessageNote, Content: note})
 			return err
@@ -329,7 +337,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
-		Message: backgroundWakeMessage(wake.endings, wake.works), Surface: backgroundSurface,
+		Message: backgroundWakeMessage(wake.endings, wake.works, wake.settlings), Surface: backgroundSurface,
 		UsageKind: backgroundSurface,
 		// In a goal's conversation nobody is there to answer a card: what
 		// the person allows the agent to do alone applies instead.
@@ -423,9 +431,13 @@ func (self *Agent) releaseBackgroundWorkWakes(works []*models.AgentBackgroundWor
 // because what a command printed is data from the machine, and what a
 // survey or a subagent answered was made from what it read, and neither
 // is ever an instruction.
-func backgroundWakeMessage(endings []backgroundEnding, works []*models.AgentBackgroundWork) string {
+func backgroundWakeMessage(endings []backgroundEnding, works []*models.AgentBackgroundWork, settlings []*herdrSettling) string {
 	var builder strings.Builder
 	switch {
+	case len(endings) == 0 && len(works) == 0 && len(settlings) == 1:
+		builder.WriteString(models.HerdrSessionMarker + " A herdr coding session you watched has finished its turn. This is not the person speaking; they may not be watching.\n")
+	case len(endings) == 0 && len(works) == 0:
+		fmt.Fprintf(&builder, "%s %d herdr coding sessions you watched have finished their turns. This is not the person speaking; they may not be watching.\n", models.HerdrSessionMarker, len(settlings))
 	case len(endings) == 1:
 		builder.WriteString(models.BackgroundCommandMarker + " A command you left running in the background has ended. This is not the person speaking; they may not be watching.\n")
 	case len(endings) > 1:
@@ -469,9 +481,13 @@ func backgroundWakeMessage(endings []backgroundEnding, works []*models.AgentBack
 		}
 		builder.WriteString(fenced(shown) + "\n")
 	}
+	herdrSettledMessage(&builder, settlings)
 	builder.WriteString("\nCarry on with what you started it for: act on how it ended, and tell the person what came of it.")
 	if len(endings) > 0 {
 		builder.WriteString(" shell with action read and the id gives more of the output.")
+	}
+	if len(settlings) > 0 {
+		builder.WriteString(" herdr with action read or screen shows more of a session; a session that is asking waits for the person's answer, not yours.")
 	}
 	if len(works) > 0 {
 		builder.WriteString(" background_work with action read and the id gives the whole of a result.")
@@ -496,7 +512,7 @@ func backgroundOutcome(status *computer.BackgroundStatus) string {
 
 // backgroundEndedLine is the endings and the finished work in a line,
 // for a note.
-func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgroundWork) string {
+func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgroundWork, settlings []*herdrSettling) string {
 	var said []string
 	if len(endings) > 0 {
 		described := make([]string, 0, len(endings))
@@ -511,6 +527,9 @@ func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgr
 			described = append(described, fmt.Sprintf("%s (%s), %s", backgroundWorkWhat(work), work.ID, backgroundWorkOutcome(work)))
 		}
 		said = append(said, "Background work finished: "+strings.Join(described, "; "))
+	}
+	if len(settlings) > 0 {
+		said = append(said, herdrSettledLine(settlings))
 	}
 	return strings.Join(said, ". ")
 }

@@ -91,6 +91,11 @@ type Options struct {
 	// time. When nil, the program does not offer background commands.
 	Background *BackgroundCommands
 
+	// Herdr watches the person's herdr sessions across connections, as
+	// Background holds commands. When nil, the program does not offer
+	// them.
+	Herdr *Herdr
+
 	// Token is the person's, from `teanode auth login`.
 	Token string
 	// Name is what the computer is called to the agent; the host name by
@@ -213,6 +218,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		hello.Features = append(hello.Features, FeatureBackground)
 	}
 	hello.Features = append(hello.Features, FeatureAuthorizationForward)
+	if options.Herdr != nil {
+		hello.Features = append(hello.Features, FeatureHerdr)
+	}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
 	// a dead pty until they find the key that kills it.
@@ -269,6 +277,17 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		}
 		_ = write(message{Type: "background", Session: status.ID, Event: "ended", Code: status.ExitCode, Data: data})
 	})()
+	// What came and went in herdr is told the same way, and said again
+	// until acknowledged.
+	if options.Herdr != nil {
+		defer options.Herdr.listen(func(event *HerdrEvent) {
+			data, err := json.Marshal(event)
+			if err != nil {
+				return
+			}
+			_ = write(message{Type: "herdr", Event: event.HerdrEventKind, Data: data})
+		})()
+	}
 	// A request belongs to the connection that asked it. When the
 	// connection ends -- the server restarted, the network went -- its
 	// answer has nowhere to go, and a scan left running took the computer
@@ -286,7 +305,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			// decides how much it can take, not a count here, and the loop
 			// goes on pinging and reading whatever the requests do.
 			go func() {
-				if strings.HasPrefix(request.Action, "background_") {
+				// Asked every few seconds while the person looks, and said
+				// nothing about, like the background commands' list.
+				if strings.HasPrefix(request.Action, "background_") || strings.HasPrefix(request.Action, "herdr_") {
 					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
@@ -430,6 +451,14 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = background.acknowledge(&arguments)
+	case "herdr_list", "herdr_read", "herdr_screen", "herdr_send", "herdr_wait", "herdr_answer", "herdr_watch", "herdr_acknowledge", "herdr_setup":
+		var arguments HerdrArguments
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &arguments); err != nil {
+				return nil, fmt.Errorf("the request is not readable: %w", err)
+			}
+		}
+		result, err = RunHerdr(ctx, options.Herdr, action, &arguments)
 	case "http":
 		var arguments HTTPArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

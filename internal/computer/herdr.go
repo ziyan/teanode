@@ -1,0 +1,740 @@
+package computer
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ziyan/teanode/internal/util/security"
+)
+
+// The person's herdr sessions: the Claude Code and Codex sessions they keep
+// open in herdr's panes, which their agent works in beside them.
+//
+// The agent reads what a session said and did, looks at its screen, types
+// an instruction into it in view of the person, and answers the question a
+// session waits on with the option the person chose, from wherever they
+// are. Nothing here starts a coding agent of its own: there is one process,
+// one history and one screen, which the person and their agent share.
+//
+// What state a session is in is decided here, not taken from herdr: herdr
+// reads mostly the window title and called a Claude Code question form
+// idle. In order, a question recognized on the screen (or, for Codex, one
+// waiting in its history file), TeaNode's own hooks when the person
+// installed them, Codex's history file, the screen's own "esc to
+// interrupt", and herdr's state last.
+//
+// The program watches every pane, and says without being asked when a
+// question comes and goes, and when a session someone watches finishes.
+// What it has said is said again after a reconnect until the server
+// acknowledges it, as background commands' endings are. A person runs herdr
+// on each of their computers, and each computer's program speaks for its
+// own.
+
+// FeatureHerdr is the person's herdr sessions on this computer: the herdr_*
+// actions, and the herdr messages the program sends unasked.
+const FeatureHerdr = "herdr"
+
+// The states of a herdr session, as this program decides them.
+const (
+	HerdrSessionStateIdle    = "idle"
+	HerdrSessionStateWorking = "working"
+	HerdrSessionStateAsking  = "asking"
+	HerdrSessionStateUnknown = "unknown"
+)
+
+// The events the program says unasked.
+const (
+	HerdrEventKindAsking   = "asking"
+	HerdrEventKindAnswered = "answered"
+	HerdrEventKindSettled  = "settled"
+)
+
+// The bounds of watching herdr.
+const (
+	// herdrPollEvery is how often every pane is looked at. Herdr's own
+	// state is not enough to look only when it changes.
+	herdrPollEvery = 3 * time.Second
+	// herdrAnswerSettle is how long a form is given to go away once its
+	// answer is pressed.
+	herdrAnswerSettle = 1500 * time.Millisecond
+	// herdrKeyGap is the pause between keys pressed into a form, which
+	// redraws after each.
+	herdrKeyGap = 250 * time.Millisecond
+	// herdrWaitMost bounds a wait.
+	herdrWaitMost = 600 * time.Second
+	// herdrWatchUnseen is how long a watched session that was never seen
+	// working is given before it is said to have finished: a turn shorter
+	// than a poll is not seen at all.
+	herdrWatchUnseen = 30 * time.Second
+	// mostHerdrEventsKept bounds what waits for the server's
+	// acknowledgement.
+	mostHerdrEventsKept = 128
+	// herdrScreenLines is how many lines of recent output screen gives
+	// when lines are asked for and none are said.
+	herdrDefaultTurnCount = 10
+	herdrMostTurnCount    = 100
+	herdrMostLineCount    = 2000
+)
+
+// HerdrSession is one coding session in one of herdr's panes.
+type HerdrSession struct {
+	PaneID            string `json:"paneId"`
+	CodingAgentKind   string `json:"codingAgentKind"`
+	CodingSessionID   string `json:"codingSessionId"`
+	HerdrSessionState string `json:"herdrSessionState"`
+	// HerdrAgentStatus is what herdr itself said, for when the two
+	// disagree.
+	HerdrAgentStatus string `json:"herdrAgentStatus"`
+	PaneTitle        string `json:"paneTitle"`
+	WorkingDirectory string `json:"workingDirectory"`
+	TranscriptPath   string `json:"transcriptPath,omitempty"`
+	// IsWatched says somebody asked to be told when it next finishes.
+	IsWatched bool           `json:"isWatched,omitempty"`
+	Question  *HerdrQuestion `json:"question,omitempty"`
+}
+
+// HerdrArguments are what every herdr action may be given.
+type HerdrArguments struct {
+	PaneID              string `json:"paneId,omitempty"`
+	TurnCount           int    `json:"turnCount,omitempty"`
+	LineCount           int    `json:"lineCount,omitempty"`
+	Text                string `json:"text,omitempty"`
+	ShouldQueue         bool   `json:"shouldQueue,omitempty"`
+	WaitSeconds         int    `json:"waitSeconds,omitempty"`
+	QuestionFingerprint string `json:"questionFingerprint,omitempty"`
+	OptionNumbers       []int  `json:"optionNumbers,omitempty"`
+	// OptionLabels, when given, are the labels of the options chosen, as
+	// the person was shown them: an answer whose labels differ is
+	// refused, so what they confirmed is what is pressed.
+	OptionLabels []string `json:"optionLabels,omitempty"`
+	FreeText     string   `json:"freeText,omitempty"`
+	// Origin is the server's own note of who watches, handed back when
+	// the session finishes.
+	Origin json.RawMessage `json:"origin,omitempty"`
+	// HerdrEventIDs are the events the server acknowledges.
+	HerdrEventIDs []string `json:"herdrEventIds,omitempty"`
+	// IsRemoval takes the hooks out rather than putting them in.
+	IsRemoval bool `json:"isRemoval,omitempty"`
+}
+
+// HerdrEvent is something the program says unasked: a question came, a
+// question went, a watched session finished.
+type HerdrEvent struct {
+	HerdrEventID   string          `json:"herdrEventId"`
+	HerdrEventKind string          `json:"herdrEventKind"`
+	HerdrSession   *HerdrSession   `json:"herdrSession"`
+	Origin         json.RawMessage `json:"origin,omitempty"`
+	EventAt        time.Time       `json:"eventAt"`
+	isAcknowledged bool
+}
+
+// HerdrReadResult is the last turns of a session.
+type HerdrReadResult struct {
+	HerdrSession *HerdrSession `json:"herdrSession"`
+	Turns        []*HerdrTurn  `json:"turns"`
+	IsTruncated  bool          `json:"isTruncated"`
+}
+
+// HerdrScreenResult is a session's screen.
+type HerdrScreenResult struct {
+	HerdrSession *HerdrSession `json:"herdrSession"`
+	ScreenText   string        `json:"screenText"`
+}
+
+// HerdrSendResult says the text was typed.
+type HerdrSendResult struct {
+	HerdrSession *HerdrSession `json:"herdrSession"`
+	IsSent       bool          `json:"isSent"`
+}
+
+// HerdrWaitResult is a session once it stopped working, or when the wait
+// ran out.
+type HerdrWaitResult struct {
+	HerdrSession *HerdrSession `json:"herdrSession"`
+	IsTimedOut   bool          `json:"isTimedOut"`
+}
+
+// HerdrAnswerResult says whether the question went once the answer was
+// pressed.
+type HerdrAnswerResult struct {
+	HerdrSession     *HerdrSession `json:"herdrSession"`
+	IsAnswerAccepted bool          `json:"isAnswerAccepted"`
+	// AnsweredWith is what was chosen, in words.
+	AnsweredWith string `json:"answeredWith"`
+}
+
+// Herdr is this program's view of the person's herdr, held across its
+// connections to the server.
+type Herdr struct {
+	client *herdrClient
+	home   string
+
+	// refreshes is held while the panes are looked at, so that two looks
+	// do not record what they saw out of order and say a question came and
+	// went that never did.
+	refreshes sync.Mutex
+
+	mutex    sync.Mutex
+	sessions map[string]*HerdrSession
+	watches  map[string][]*herdrWatch
+	events   []*HerdrEvent
+	notify   func(*HerdrEvent)
+	listener int64
+
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+type herdrWatch struct {
+	origin         json.RawMessage
+	since          time.Time
+	hasSeenWorking bool
+}
+
+// NewHerdr is the view of the herdr running for the person whose home
+// directory this is. Start watches it.
+func NewHerdr(home string) *Herdr {
+	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{}, watches: map[string][]*herdrWatch{}}
+}
+
+// Start looks at every pane from now until Close.
+func (self *Herdr) Start(ctx context.Context) {
+	ctx, self.cancel = context.WithCancel(ctx)
+	self.done = make(chan struct{})
+	go func() {
+		defer close(self.done)
+		ticker := time.NewTicker(herdrPollEvery)
+		defer ticker.Stop()
+		for {
+			_, _ = self.refresh(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+// Close stops watching.
+func (self *Herdr) Close() {
+	if self.cancel != nil {
+		self.cancel()
+		<-self.done
+	}
+}
+
+// listen makes notify the way events are told, and says again every one
+// not yet acknowledged. It returns what undoes it.
+func (self *Herdr) listen(notify func(*HerdrEvent)) func() {
+	self.mutex.Lock()
+	self.listener++
+	listener := self.listener
+	self.notify = notify
+	var unheard []*HerdrEvent
+	for _, event := range self.events {
+		if !event.isAcknowledged {
+			unheard = append(unheard, event)
+		}
+	}
+	self.mutex.Unlock()
+	for _, event := range unheard {
+		notify(event)
+	}
+	return func() {
+		self.mutex.Lock()
+		if self.listener == listener {
+			self.notify = nil
+		}
+		self.mutex.Unlock()
+	}
+}
+
+// acknowledge marks events the server has heard.
+func (self *Herdr) acknowledge(ids []string) *SessionResult {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	kept := self.events[:0]
+	for _, event := range self.events {
+		for _, id := range ids {
+			if event.HerdrEventID == id {
+				event.isAcknowledged = true
+			}
+		}
+		if !event.isAcknowledged {
+			kept = append(kept, event)
+		}
+	}
+	self.events = kept
+	return &SessionResult{OK: true}
+}
+
+// tellLocked queues an event and tells the server, when one is connected.
+// Called with the lock held; the telling happens after it is let go.
+func (self *Herdr) tellLocked(kind string, session *HerdrSession, origin json.RawMessage, told *[]*HerdrEvent) {
+	event := &HerdrEvent{HerdrEventID: security.NewULID(), HerdrEventKind: kind, HerdrSession: session, Origin: origin, EventAt: time.Now()}
+	self.events = append(self.events, event)
+	if len(self.events) > mostHerdrEventsKept {
+		self.events = self.events[len(self.events)-mostHerdrEventsKept:]
+	}
+	*told = append(*told, event)
+}
+
+// refresh looks at every pane, records what it finds, and says what
+// changed: a question that came or went, a watched session that finished.
+func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
+	self.refreshes.Lock()
+	defer self.refreshes.Unlock()
+	trimHookEvents(self.home)
+	agents, err := self.client.listAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	observed := make([]*HerdrSession, 0, len(agents))
+	for _, agent := range agents {
+		observed = append(observed, self.observe(ctx, agent))
+	}
+	sort.Slice(observed, func(left, right int) bool { return observed[left].PaneID < observed[right].PaneID })
+
+	self.mutex.Lock()
+	var told []*HerdrEvent
+	seen := map[string]bool{}
+	for _, session := range observed {
+		seen[session.PaneID] = true
+		self.recordLocked(session, &told)
+	}
+	for paneId, before := range self.sessions {
+		if seen[paneId] {
+			continue
+		}
+		// The pane closed, or the agent in it ended.
+		gone := *before
+		gone.HerdrSessionState, gone.Question = HerdrSessionStateUnknown, nil
+		if before.Question != nil {
+			self.tellLocked(HerdrEventKindAnswered, before, nil, &told)
+		}
+		for _, watch := range self.watches[paneId] {
+			self.tellLocked(HerdrEventKindSettled, &gone, watch.origin, &told)
+		}
+		delete(self.watches, paneId)
+		delete(self.sessions, paneId)
+	}
+	notify := self.notify
+	for _, session := range observed {
+		session.IsWatched = len(self.watches[session.PaneID]) > 0
+	}
+	self.mutex.Unlock()
+	if notify != nil {
+		for _, event := range told {
+			notify(event)
+		}
+	}
+	return observed, nil
+}
+
+// recordLocked keeps what was seen of one pane and queues what it changed.
+func (self *Herdr) recordLocked(session *HerdrSession, told *[]*HerdrEvent) {
+	before := self.sessions[session.PaneID]
+	self.sessions[session.PaneID] = session
+	var beforeFingerprint, nowFingerprint string
+	if before != nil && before.Question != nil {
+		beforeFingerprint = before.Question.QuestionFingerprint
+	}
+	if session.Question != nil {
+		nowFingerprint = session.Question.QuestionFingerprint
+	}
+	if beforeFingerprint != nowFingerprint {
+		if beforeFingerprint != "" {
+			// Said with the question that went, so its card can be found.
+			answered := *session
+			answered.Question = before.Question
+			self.tellLocked(HerdrEventKindAnswered, &answered, nil, told)
+		}
+		if nowFingerprint != "" {
+			self.tellLocked(HerdrEventKindAsking, session, nil, told)
+		}
+	}
+	watches := self.watches[session.PaneID]
+	var kept []*herdrWatch
+	for _, watch := range watches {
+		if session.HerdrSessionState == HerdrSessionStateWorking {
+			watch.hasSeenWorking = true
+			kept = append(kept, watch)
+			continue
+		}
+		if !watch.hasSeenWorking && time.Since(watch.since) < herdrWatchUnseen {
+			kept = append(kept, watch)
+			continue
+		}
+		self.tellLocked(HerdrEventKindSettled, session, watch.origin, told)
+	}
+	if len(kept) == 0 {
+		delete(self.watches, session.PaneID)
+	} else {
+		self.watches[session.PaneID] = kept
+	}
+}
+
+// observe decides one pane's state from everything there is to look at.
+func (self *Herdr) observe(ctx context.Context, agent *herdrAgent) *HerdrSession {
+	session := &HerdrSession{
+		PaneID: agent.PaneID, CodingAgentKind: agent.Agent, HerdrAgentStatus: agent.AgentStatus,
+		PaneTitle: agent.TerminalTitleStripped, WorkingDirectory: agent.ForegroundCwd,
+		HerdrSessionState: HerdrSessionStateUnknown,
+	}
+	if session.WorkingDirectory == "" {
+		session.WorkingDirectory = agent.Cwd
+	}
+	if agent.AgentSession != nil {
+		session.CodingSessionID = agent.AgentSession.Value
+		session.TranscriptPath = findTranscript(self.home, agent.Agent, session.CodingSessionID)
+	}
+	screen, err := self.client.readAgent(ctx, agent.PaneID, "visible", 0)
+	if err == nil {
+		session.Question = recognizeQuestion(agent.Agent, screen)
+	}
+	var lifecycle *codexLifecycle
+	if agent.Agent == CodingAgentKindCodex && session.TranscriptPath != "" {
+		lifecycle, _ = readCodexLifecycle(session.TranscriptPath)
+	}
+	if session.Question == nil && lifecycle != nil && lifecycle.question != nil && !lifecycle.isWorking {
+		session.Question = lifecycle.question
+	}
+	hook := readHookState(self.home, session.CodingSessionID)
+	switch {
+	case session.Question != nil:
+		session.HerdrSessionState = HerdrSessionStateAsking
+	case hook == hookStateWorking:
+		session.HerdrSessionState = HerdrSessionStateWorking
+	case hook == hookStateIdle:
+		session.HerdrSessionState = HerdrSessionStateIdle
+	case lifecycle != nil && lifecycle.isWorking:
+		session.HerdrSessionState = HerdrSessionStateWorking
+	case err == nil && isWorkingOnScreen(screen):
+		session.HerdrSessionState = HerdrSessionStateWorking
+	case agent.AgentStatus == "working":
+		session.HerdrSessionState = HerdrSessionStateWorking
+	case agent.AgentStatus == "idle" || agent.AgentStatus == "done":
+		session.HerdrSessionState = HerdrSessionStateIdle
+	}
+	return session
+}
+
+// isWorkingOnScreen says the agent shows a turn running: both say "esc to
+// interrupt" while they work, in the lines above their composer.
+func isWorkingOnScreen(screen string) bool {
+	lines := strings.Split(strings.TrimRight(screen, "\n "), "\n")
+	tail := strings.Join(lines[max(len(lines)-14, 0):], " ")
+	return strings.Contains(tail, "esc to interrupt")
+}
+
+// session looks at one pane now.
+func (self *Herdr) session(ctx context.Context, paneId string) (*HerdrSession, error) {
+	paneId = strings.TrimSpace(paneId)
+	if paneId == "" {
+		return nil, errors.New("which pane? say paneId, as list gives it")
+	}
+	sessions, err := self.refresh(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, session := range sessions {
+		if session.PaneID == paneId {
+			return session, nil
+		}
+	}
+	return nil, fmt.Errorf("no coding agent is running in pane %s; list says which panes have one", paneId)
+}
+
+// RunHerdr does one herdr action.
+func RunHerdr(ctx context.Context, herdr *Herdr, action string, arguments *HerdrArguments) (any, error) {
+	if herdr == nil {
+		return nil, errors.New("this program does not watch herdr")
+	}
+	switch action {
+	case "herdr_list":
+		sessions, err := herdr.refresh(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return sessions, nil
+	case "herdr_read":
+		return herdr.read(ctx, arguments)
+	case "herdr_screen":
+		return herdr.screen(ctx, arguments)
+	case "herdr_send":
+		return herdr.send(ctx, arguments)
+	case "herdr_wait":
+		return herdr.wait(ctx, arguments)
+	case "herdr_answer":
+		return herdr.answer(ctx, arguments)
+	case "herdr_watch":
+		return herdr.watch(ctx, arguments)
+	case "herdr_acknowledge":
+		return herdr.acknowledge(arguments.HerdrEventIDs), nil
+	case "herdr_setup":
+		return setUpHooks(herdr.home, arguments.IsRemoval)
+	}
+	return nil, fmt.Errorf("%q is not something this program does", action)
+}
+
+func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrReadResult, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	if session.TranscriptPath == "" {
+		return nil, fmt.Errorf("pane %s has no history file to read yet; screen shows what it shows", session.PaneID)
+	}
+	turnCount := arguments.TurnCount
+	if turnCount <= 0 {
+		turnCount = herdrDefaultTurnCount
+	}
+	turns, isTruncated, err := readTranscriptTail(session.TranscriptPath, session.CodingAgentKind, min(turnCount, herdrMostTurnCount))
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the history of pane %s: %w", session.PaneID, err)
+	}
+	return &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}, nil
+}
+
+func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*HerdrScreenResult, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	source, lineCount := "visible", 0
+	if arguments.LineCount > 0 {
+		source, lineCount = "recent-unwrapped", min(arguments.LineCount, herdrMostLineCount)
+	}
+	text, err := self.client.readAgent(ctx, session.PaneID, source, lineCount)
+	if err != nil {
+		return nil, err
+	}
+	return &HerdrScreenResult{HerdrSession: session, ScreenText: text}, nil
+}
+
+func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrSendResult, error) {
+	if strings.TrimSpace(arguments.Text) == "" {
+		return nil, errors.New("send needs text")
+	}
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case session.HerdrSessionState == HerdrSessionStateAsking:
+		return nil, fmt.Errorf("pane %s is asking a question; answer it first", session.PaneID)
+	case session.HerdrSessionState == HerdrSessionStateWorking && !arguments.ShouldQueue:
+		return nil, fmt.Errorf("pane %s is working; wait for it, or queue the text to be read when it is done", session.PaneID)
+	case session.HerdrAgentStatus == "blocked":
+		return nil, fmt.Errorf("pane %s shows something waiting for an answer that was not recognized; look at its screen", session.PaneID)
+	}
+	if err := self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": arguments.Text}, nil); err != nil {
+		return nil, fmt.Errorf("the text may not have been typed into pane %s; look at its screen before sending again: %w", session.PaneID, err)
+	}
+	return &HerdrSendResult{HerdrSession: session, IsSent: true}, nil
+}
+
+func (self *Herdr) wait(ctx context.Context, arguments *HerdrArguments) (*HerdrWaitResult, error) {
+	wait := time.Duration(arguments.WaitSeconds) * time.Second
+	if wait <= 0 {
+		wait = 30 * time.Second
+	}
+	deadline := time.Now().Add(min(wait, herdrWaitMost))
+	for {
+		session, err := self.session(ctx, arguments.PaneID)
+		if err != nil {
+			return nil, err
+		}
+		if session.HerdrSessionState != HerdrSessionStateWorking {
+			return &HerdrWaitResult{HerdrSession: session}, nil
+		}
+		if time.Now().After(deadline) {
+			return &HerdrWaitResult{HerdrSession: session, IsTimedOut: true}, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func (self *Herdr) watch(ctx context.Context, arguments *HerdrArguments) (*HerdrSession, error) {
+	if len(arguments.Origin) == 0 {
+		return nil, errors.New("watch needs to know whom to tell")
+	}
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	self.mutex.Lock()
+	self.watches[session.PaneID] = append(self.watches[session.PaneID], &herdrWatch{
+		origin: arguments.Origin, since: time.Now(), hasSeenWorking: session.HerdrSessionState == HerdrSessionStateWorking,
+	})
+	self.mutex.Unlock()
+	session.IsWatched = true
+	return session, nil
+}
+
+// herdrStep is one thing pressed into a pane while answering: keys, or text
+// typed.
+type herdrStep struct {
+	keys []string
+	text string
+}
+
+func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*HerdrAnswerResult, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	question := session.Question
+	if question == nil {
+		return nil, fmt.Errorf("pane %s is not asking anything now; this question was already answered or has changed", session.PaneID)
+	}
+	if strings.TrimSpace(arguments.QuestionFingerprint) != question.QuestionFingerprint {
+		return nil, fmt.Errorf("this question was already answered or has changed; pane %s now asks %q", session.PaneID, firstCharacters(question.QuestionText, 120))
+	}
+	if len(arguments.OptionLabels) > 0 {
+		if len(arguments.OptionLabels) != len(arguments.OptionNumbers) {
+			return nil, errors.New("give one label for each option chosen")
+		}
+		for index, number := range arguments.OptionNumbers {
+			if !slices.ContainsFunc(question.Options, func(option HerdrQuestionOption) bool {
+				return option.OptionNumber == number && option.OptionLabel == arguments.OptionLabels[index]
+			}) {
+				return nil, fmt.Errorf("option %d of the question in pane %s is not %q; list it again", number, session.PaneID, arguments.OptionLabels[index])
+			}
+		}
+	}
+	steps, answeredWith, err := answerSteps(question, arguments.OptionNumbers, arguments.FreeText)
+	if err != nil {
+		return nil, err
+	}
+	for index, step := range steps {
+		if index > 0 {
+			time.Sleep(herdrKeyGap)
+		}
+		if step.text != "" {
+			err = self.client.sendText(ctx, session.PaneID, step.text)
+		} else {
+			err = self.client.sendKeys(ctx, session.PaneID, step.keys)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("answering pane %s stopped partway; look at its screen: %w", session.PaneID, err)
+		}
+	}
+	time.Sleep(herdrAnswerSettle)
+	after, err := self.session(ctx, session.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	// Several answers are reviewed before they are sent; the person chose
+	// them already, so the review is submitted for them.
+	if question.IsMultipleChoice && after.Question != nil && strings.Contains(after.Question.QuestionText, "Ready to submit your answers?") {
+		if err := self.client.sendKeys(ctx, session.PaneID, []string{"1"}); err == nil {
+			time.Sleep(herdrAnswerSettle)
+			if again, err := self.session(ctx, session.PaneID); err == nil {
+				after = again
+			}
+		}
+	}
+	isAccepted := after.Question == nil || after.Question.QuestionFingerprint != question.QuestionFingerprint
+	return &HerdrAnswerResult{HerdrSession: after, IsAnswerAccepted: isAccepted, AnsweredWith: answeredWith}, nil
+}
+
+// answerSteps are the keys that answer a question with the options chosen,
+// or with text, as the coding agents take them: a form's option is chosen
+// by its number, one of several is ticked by its number and the choice
+// moved on from with right, typed text goes after its option's number and
+// before enter, and a question Codex asked in its history is answered by
+// typing the answer as the person's next message.
+func answerSteps(question *HerdrQuestion, optionNumbers []int, freeText string) ([]herdrStep, string, error) {
+	freeText = strings.TrimSpace(freeText)
+	byNumber := map[int]HerdrQuestionOption{}
+	freeTextOption := 0
+	for _, option := range question.Options {
+		byNumber[option.OptionNumber] = option
+		if option.HerdrOptionKind == HerdrOptionKindFreeText && freeTextOption == 0 {
+			freeTextOption = option.OptionNumber
+		}
+	}
+	// Text alone means the option that takes text.
+	if len(optionNumbers) == 0 && freeText != "" {
+		if freeTextOption == 0 {
+			return nil, "", errors.New("this question takes no typed answer; choose one of its options")
+		}
+		optionNumbers = []int{freeTextOption}
+	}
+	if len(optionNumbers) == 0 {
+		return nil, "", errors.New("choose an option, by its number")
+	}
+	var chosen []HerdrQuestionOption
+	for _, number := range optionNumbers {
+		option, ok := byNumber[number]
+		if !ok {
+			return nil, "", fmt.Errorf("the question has no option %d", number)
+		}
+		if option.HerdrOptionKind == HerdrOptionKindFreeText && freeText == "" {
+			return nil, "", fmt.Errorf("option %d takes text; say what to type", number)
+		}
+		chosen = append(chosen, option)
+	}
+	described := make([]string, 0, len(chosen))
+	for _, option := range chosen {
+		if option.HerdrOptionKind == HerdrOptionKindFreeText {
+			described = append(described, strconv.Quote(freeText))
+			continue
+		}
+		described = append(described, strconv.Itoa(option.OptionNumber)+". "+option.OptionLabel)
+	}
+	answeredWith := strings.Join(described, ", ")
+
+	if question.IsFromTranscript {
+		typed := freeText
+		if chosen[0].HerdrOptionKind != HerdrOptionKindFreeText || typed == "" {
+			labels := make([]string, 0, len(chosen))
+			for _, option := range chosen {
+				if option.HerdrOptionKind == HerdrOptionKindFreeText {
+					labels = append(labels, freeText)
+					continue
+				}
+				labels = append(labels, option.OptionLabel)
+			}
+			typed = strings.Join(labels, ", ")
+		}
+		return []herdrStep{{text: typed}, {keys: []string{"enter"}}}, answeredWith, nil
+	}
+	for _, option := range chosen {
+		if option.OptionNumber > 9 {
+			return nil, "", fmt.Errorf("option %d cannot be chosen by its number; answer it at the keyboard", option.OptionNumber)
+		}
+	}
+	if question.IsMultipleChoice {
+		var steps []herdrStep
+		for _, option := range chosen {
+			if option.HerdrOptionKind != HerdrOptionKindChoice {
+				return nil, "", errors.New("a question that takes several answers is answered with its options only")
+			}
+			steps = append(steps, herdrStep{keys: []string{strconv.Itoa(option.OptionNumber)}})
+		}
+		return append(steps, herdrStep{keys: []string{"right"}}), answeredWith, nil
+	}
+	if len(chosen) != 1 {
+		return nil, "", errors.New("this question takes one answer")
+	}
+	option := chosen[0]
+	if option.HerdrOptionKind == HerdrOptionKindFreeText {
+		return []herdrStep{{keys: []string{strconv.Itoa(option.OptionNumber)}}, {text: freeText}, {keys: []string{"enter"}}}, answeredWith, nil
+	}
+	return []herdrStep{{keys: []string{strconv.Itoa(option.OptionNumber)}}}, answeredWith, nil
+}

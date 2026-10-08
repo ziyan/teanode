@@ -21,6 +21,7 @@ import {
   BackgroundOutputDialog,
   useBackgroundCommands,
 } from '../components/backgroundCommands'
+import { HerdrSessionsCard } from '../components/herdrSessions'
 import { BackgroundWorkCard } from '../components/backgroundWork'
 import { AlertsCard } from '../components/agentAlerts'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
@@ -474,6 +475,7 @@ export function AgentPage() {
           <SkillSecretsCard />
           <ReachCard />
           <BackgroundCommandsCard />
+          <HerdrSessionsCard />
           <ChatAppsCard />
         </>
       ) : null}

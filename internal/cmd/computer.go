@@ -87,6 +87,7 @@ func NewComputerCommand() *cli.Command {
 				Action: runComputerStop,
 			},
 			newComputerBackgroundCommand(),
+			newComputerHerdrCommand(),
 		},
 	}
 }
@@ -127,6 +128,14 @@ func runComputerDaemon(ctx context.Context, command *cli.Command) error {
 	// and ends when the program does.
 	options.Background = computer.NewBackgroundCommands()
 	defer options.Background.Close()
+	// The person's herdr sessions, watched for the life of the program, so
+	// a question that comes while the connection is down is told when it
+	// is back.
+	if home, err := os.UserHomeDir(); err == nil {
+		options.Herdr = computer.NewHerdr(home)
+		options.Herdr.Start(ctx)
+		defer options.Herdr.Close()
+	}
 	// What it was asked and how long that took, beside where it connected.
 	// A daemon that logs only its connections leaves the server's "did
 	// not answer within ten minutes" with nothing to check it against.

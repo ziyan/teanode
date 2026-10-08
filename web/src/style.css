@@ -13272,3 +13272,176 @@ button.idea-history-title {
   color: var(--muted);
   font-weight: normal;
 }
+
+/* The person's herdr sessions: a question with its options as buttons, a
+   session's last turns or its screen, and a box to type into it. The same
+   question card is drawn in the drawer, under the line it was written under,
+   and in the session's dialog on the agent page. */
+.herdr-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.herdr-question-card {
+  margin-top: var(--space-2);
+}
+
+.herdr-question-kind {
+  margin: 0;
+  font-size: var(--text-label);
+}
+
+/* What the coding agent asked, as it drew it: a plan or a command keeps
+   its lines. */
+.herdr-question-text {
+  max-height: 14em;
+  margin: 0;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: var(--text-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* One option a button, the whole width, its label and under it what the
+   coding agent said of it: a tap on a phone needs the room. */
+.herdr-question-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.herdr-question-option.tick {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.herdr-question-option .muted {
+  font-size: var(--text-label);
+}
+
+.herdr-question-free {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.herdr-question-free input {
+  flex: 1;
+  min-width: 0;
+}
+
+.herdr-question-done {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-label);
+}
+
+.herdr-session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.herdr-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The pane as it stands: kept as drawn, so its forms line up, and scrolled
+   sideways in its own box rather than the dialog's. */
+.herdr-screen {
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.herdr-turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.herdr-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.herdr-turn-role {
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.herdr-turn-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.herdr-turn.tool .herdr-turn-text {
+  color: var(--muted);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.herdr-send {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.herdr-send textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+}
+
+.herdr-sessions td {
+  white-space: nowrap;
+}
+
+.herdr-hooks table {
+  width: 100%;
+}
+
+.herdr-hooks-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

@@ -39,6 +39,11 @@ func (self *attachedComputer) HasBackground() bool {
 	return slices.Contains(self.features, computer.FeatureBackground)
 }
 
+// HasFeature says the program offers a feature beyond its protocol.
+func (self *attachedComputer) HasFeature(name string) bool {
+	return slices.Contains(self.features, name)
+}
+
 // AttachedTerminal is the session id of the terminal the person attached
 // with `teanode terminal`, or empty. The person is in it too: what the
 // agent types there, they see typed.

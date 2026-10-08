@@ -327,7 +327,7 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker}
 
 // SpeakFirstMarker begins the message a turn the agent starts on its own
 // is given: an introduction, a memory check, an idea. Nobody wrote it; the
@@ -344,6 +344,16 @@ const AlertMarker = "[alert]"
 // then its title. The agent's sentence saying what it needs comes after,
 // as an alert's words do. It is the only thing a goal says there.
 const GoalNeedsYouMarker = "[goal needs you]"
+
+// HerdrQuestionMarker begins the line a question from one of the person's
+// herdr coding sessions is written under in the main conversation, followed
+// by the computer, the pane and the question's fingerprint, so the drawer
+// can show its options and the next turn can pass the person's answer on.
+const HerdrQuestionMarker = "[herdr question]"
+
+// HerdrSessionMarker begins the message the agent is woken with when a
+// herdr coding session it watched has finished.
+const HerdrSessionMarker = "[herdr session]"
 
 // GoalRelayMarker begins the message the person's answer is written into a
 // goal's conversation as, when they gave it in the main conversation: their

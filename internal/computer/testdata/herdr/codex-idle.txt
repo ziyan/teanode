@@ -1,0 +1,13 @@
+• Which fruit should we pick?
+
+  • Apple
+  • Banana
+  • Cherry
+
+  Worked for 5s • 11:05 AM
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol low · ~/src/example
+  ← for agents · ? for shortcuts

@@ -63,6 +63,7 @@ import {
   ExternalIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
+import { HerdrQuestionCard } from './herdrSessions'
 import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
@@ -165,6 +166,18 @@ const ALERT_SURFACE = 'alert'
 const GOAL_NEEDS_YOU_MARKER = '[goal needs you]'
 const GOAL_NEEDS_YOU_SURFACE = 'goal_needs_you'
 
+// The marker a question from one of the person's herdr coding sessions is
+// written under in the main conversation, followed by the computer, the
+// pane and the question's fingerprint, which is models.HerdrQuestionMarker
+// on the server. Its surface opens the drawer as an alert's does, and its
+// line carries the question's options for the person to answer.
+const HERDR_QUESTION_MARKER = '[herdr question]'
+const HERDR_QUESTION_SURFACE = 'herdr_question'
+
+// The marker a turn begins with when a herdr coding session the agent
+// watched has finished, which is models.HerdrSessionMarker on the server.
+const HERDR_SESSION_MARKER = '[herdr session]'
+
 // What a question card answers when the person would rather talk than
 // pick, which is askuser.ChatAboutIt on the server: the same in every
 // language, so the tool can tell it from an answer.
@@ -183,6 +196,8 @@ type CheckInOrigin =
   | 'schedule'
   | 'speakFirst'
   | 'alert'
+  | 'herdrQuestion'
+  | 'herdrSession'
   | 'approved'
   | 'declined'
 
@@ -202,6 +217,8 @@ function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
   if (text.startsWith(ALERT_MARKER)) return 'alert'
+  if (text.startsWith(HERDR_QUESTION_MARKER)) return 'herdrQuestion'
+  if (text.startsWith(HERDR_SESSION_MARKER)) return 'herdrSession'
   if (text.startsWith(APPROVED_MARKER)) return 'approved'
   if (text.startsWith(DECLINED_MARKER)) return 'declined'
   return null
@@ -1832,12 +1849,15 @@ const CHECK_IN_LABEL = {
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
   alert: 'agentDrawer.alertTurn',
+  herdrQuestion: 'agentDrawer.herdrQuestionTurn',
+  herdrSession: 'agentDrawer.herdrSessionTurn',
   approved: 'agentDrawer.approvedLater',
   declined: 'agentDrawer.declinedLater',
 } as const
 
 function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
-  if (origin === 'background') return <TerminalIcon size={12} />
+  if (origin === 'background' || origin === 'herdrSession') return <TerminalIcon size={12} />
+  if (origin === 'herdrQuestion') return <WarningIcon size={12} />
   if (origin === 'backgroundWork') return <ListIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
@@ -1851,6 +1871,18 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
 // the marker.
 function goalIdOf(text: string): string {
   return text.slice(GOAL_NEEDS_YOU_MARKER.length).trim().split(/\s+/)[0] ?? ''
+}
+
+// herdrQuestionOf is the question a "[herdr question]" line names: the
+// computer, which may hold spaces, then the pane and the fingerprint.
+function herdrQuestionOf(text: string): { computer: string; paneId: string; questionFingerprint: string } | null {
+  const words = (text.slice(HERDR_QUESTION_MARKER.length).split('\n')[0] ?? '').trim().split(/\s+/)
+  if (words.length < 3) return null
+  return {
+    computer: words.slice(0, -2).join(' '),
+    paneId: words[words.length - 2],
+    questionFingerprint: words[words.length - 1],
+  }
 }
 
 // CheckInLine is one turn of the agent's own -- toward the goal, on
@@ -1879,6 +1911,7 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
         </Link>
       ) : null}
       {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
+      {origin === 'herdrQuestion' && herdrQuestionOf(text) ? <HerdrQuestionCard {...herdrQuestionOf(text)!} /> : null}
     </div>
   )
 }
@@ -2462,7 +2495,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (
           stopped ||
           event.kind !== 'asked' ||
-          !(note.startsWith(SPEAK_FIRST_SURFACE) || note === ALERT_SURFACE || note === GOAL_NEEDS_YOU_SURFACE)
+          !(
+            note.startsWith(SPEAK_FIRST_SURFACE) ||
+            note === ALERT_SURFACE ||
+            note === GOAL_NEEDS_YOU_SURFACE ||
+            note === HERDR_QUESTION_SURFACE
+          )
         )
           return
         void loadConversations()
