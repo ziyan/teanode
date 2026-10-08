@@ -195,7 +195,8 @@ All milestones are done. Checked end to end against the deployed server, in a sc
 - The command line answered Claude Code's folder trust dialog (a form without numbers, answered with the arrows), typed an instruction, and listed the question it caused.
 - The question reached the drawer as a card under the agent's words; a tap on a phone-width page answered it in the pane, and the card turned to answered.
 - The agent's tool typed an instruction, waited, listed the question and answered it with the option the person named, with no confirmation card; and a watch woke its conversation with the session's last turns when a twenty-second task ended.
-- The Herdr sessions card was checked on desktop and phone, in light and dark.
+- The Herdr sessions card, the session dialog (its question, last turns and screen), the drawer card and the hooks dialog were checked at 1400, 820 and 390 pixels wide, in light and dark; the page never scrolls sideways, and the table and a terminal's screen scroll within their own boxes.
+- Behavior, not only names, is the same on every surface: sending into a pane that asks, and answering with a stale fingerprint, were refused with the same words by the command line, the dashboard's own documents and the agent's tool, and nothing was typed.
 
 What the live run found that the tests had not: the socket's spelling `recent_unwrapped` and its refusals without an id; that a read given `lines` answers with nothing; that check-in lines are hidden unless working notes are shown, so the card belongs under the agent's words; that a tab out of sight never made its first look; and that a restart told waiting questions again. Each is fixed and noted above.
 
