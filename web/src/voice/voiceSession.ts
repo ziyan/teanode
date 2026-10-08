@@ -1,5 +1,6 @@
 import { authorization } from '../api'
 import { AnswerPlayer, AnswerVoice, type AnswerRunEvent, type InterruptedAnswer } from './voiceAnswer'
+import { Backchannel, BackchannelTiming, withoutBackchannel } from './voiceBackchannel'
 
 // Voice: the person talking to their agent in the drawer. The microphone
 // streams to the server over a websocket as they speak; the server has it
@@ -96,6 +97,9 @@ export class VoiceSession {
   private analyser?: AnalyserNode
   private samples?: Float32Array<ArrayBuffer>
   private answers?: AnswerVoice
+  private backchannel?: Backchannel
+  private backchannelTiming = new BackchannelTiming()
+  private backchannelTimer?: number
   private isMuted = false
   private isEnded = false
   private isReady = false
@@ -224,13 +228,26 @@ export class VoiceSession {
       switch (event.voiceEvent) {
         case 'answerAudio':
           if (event.answerSegmentId && event.answerAudio) {
-            answers.accept(event.answerSegmentId, pcmOf(event.answerAudio))
+            if (this.backchannel?.owns(event.answerSegmentId)) {
+              this.backchannel.accept(event.answerSegmentId, pcmOf(event.answerAudio))
+            } else {
+              answers.accept(event.answerSegmentId, pcmOf(event.answerAudio))
+            }
           }
           return
         case 'answerAudioDone':
-          if (event.answerSegmentId) answers.complete(event.answerSegmentId, false)
+          if (event.answerSegmentId && this.backchannel?.owns(event.answerSegmentId)) {
+            this.backchannel.complete(event.answerSegmentId)
+          } else if (event.answerSegmentId) {
+            answers.complete(event.answerSegmentId, false)
+          }
           return
         case 'answerAudioFailed':
+          // A sound that could not be made is simply not made.
+          if (event.answerSegmentId && this.backchannel?.owns(event.answerSegmentId)) {
+            this.backchannel.complete(event.answerSegmentId)
+            return
+          }
           if (event.answerSegmentId) answers.complete(event.answerSegmentId, true)
           // Said once a session, not once a sentence.
           if (!hasToldAnswerFailure) {
@@ -241,6 +258,7 @@ export class VoiceSession {
         case 'ready':
           this.isReady = true
           this.callbacks.onListening()
+          this.startBackchannel(context)
           return
         case 'problem':
           // Something the provider minded, which the call goes on after.
@@ -251,6 +269,8 @@ export class VoiceSession {
           this.end(event.errorMessage ?? this.messages.connectionLost)
           return
       }
+      if (event.voiceEvent === 'speechStarted') this.backchannelTiming.speechStarted(performance.now())
+      if (event.voiceEvent === 'speechStopped') this.backchannelTiming.speechStopped()
       if (event.voiceEvent === 'speechStarted') {
         // Over an answer it is shown as heard only once it is judged the
         // person's (onPersonHeard), not the answer's own echo.
@@ -265,10 +285,15 @@ export class VoiceSession {
       if (changed.captionText !== undefined && !answers.isEchoUtterance(event.utteranceId)) {
         this.callbacks.onCaption(changed.captionText)
       }
-      if (changed.transcriptText) {
-        const verdict = answers.transcript(changed.transcriptText, event.utteranceId)
+      // A sound made while they talked, heard back, is not their words.
+      const transcriptText =
+        changed.transcriptText && this.backchannelTiming.takeSounded()
+          ? withoutBackchannel(changed.transcriptText)
+          : changed.transcriptText
+      if (transcriptText) {
+        const verdict = answers.transcript(transcriptText, event.utteranceId)
         // The answer heard back through the microphone is not the person.
-        if (!verdict.isEcho) this.callbacks.onTranscript(changed.transcriptText, verdict.interruptedAnswer)
+        if (!verdict.isEcho) this.callbacks.onTranscript(transcriptText, verdict.interruptedAnswer)
       } else if (event.voiceEvent === 'transcriptFinal' || changed.isNotHeard) {
         answers.notHeard(event.utteranceId)
       }
@@ -343,7 +368,22 @@ export class VoiceSession {
     this.callbacks.onEnded()
   }
 
+  // startBackchannel has the sounds spoken once, and listens for where one
+  // fits while the person talks: not while an answer plays, and not when
+  // answers are not read aloud.
+  private startBackchannel(context: AudioContext) {
+    if (this.backchannel) return
+    this.backchannel = new Backchannel(context, (answerSegmentId, answerText) =>
+      this.sendJSON({ voiceEvent: 'speakAnswer', answerSegmentId, answerText }),
+    )
+    this.backchannelTimer = window.setInterval(() => {
+      if (this.isMuted || this.answers?.isSpeaking()) return
+      if (this.backchannelTiming.isTime(performance.now(), this.microphoneRms())) this.backchannel?.play()
+    }, 50)
+  }
+
   private release() {
+    window.clearInterval(this.backchannelTimer)
     this.socket?.close()
     this.stream?.getTracks().forEach((track) => track.stop())
     void this.context?.close().catch(() => undefined)
