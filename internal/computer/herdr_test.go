@@ -650,3 +650,31 @@ func TestARequestHerdrCannotReadIsRefusedInHerdrsWords(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestAFormThatWaitsForEnterAfterTheNumberGetsIt(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindCodex, "blocked", "", readHerdrFixture(t, "codex-trust"))
+	idle := readHerdrFixture(t, "codex-idle")
+	// The number only moves the cursor; enter answers.
+	fake.afterKeys = func(paneId string, keys []string) {
+		if slices.Equal(keys, []string{"enter"}) {
+			fake.screens[paneId] = idle
+		}
+	}
+	herdr := NewHerdr(home)
+	question := listForTest(t, herdr)[0].Question
+	if question == nil || question.CursorOptionNumber != 1 {
+		t.Fatalf("%+v", question)
+	}
+	answer, err := RunHerdr(context.Background(), herdr, "herdr_answer", &HerdrArguments{PaneID: "w1:p1", QuestionFingerprint: question.QuestionFingerprint, OptionNumbers: []int{1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pressed, _, _ := fake.recorded(); !slices.Equal(pressed, []string{"1", "enter"}) {
+		t.Errorf("pressed %v", pressed)
+	}
+	if !answer.(*HerdrAnswerResult).IsAnswerAccepted {
+		t.Error("not accepted")
+	}
+}

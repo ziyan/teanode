@@ -58,7 +58,8 @@ type HerdrQuestion struct {
 	IsFromTranscript bool `json:"isFromTranscript,omitempty"`
 	// IsNumberless says the form's options have no numbers on screen: they
 	// are numbered here, top down, and chosen with the arrows from the one
-	// CursorOptionNumber names.
+	// CursorOptionNumber names, which is the option the cursor is on in
+	// any form.
 	IsNumberless       bool `json:"isNumberless,omitempty"`
 	CursorOptionNumber int  `json:"cursorOptionNumber,omitempty"`
 }
@@ -228,6 +229,7 @@ func recognizeNumbered(lines []string) *HerdrQuestion {
 		label       []string
 		detail      []string
 		isTicked    bool
+		hasCursor   bool
 		labelColumn int
 	}
 	var options []*parsed
@@ -241,7 +243,7 @@ func recognizeNumbered(lines []string) *HerdrQuestion {
 		if match := herdrOptionPattern.FindStringSubmatch(line); match != nil {
 			number, _ := strconv.Atoi(match[4])
 			options = append(options, &parsed{number: number, label: []string{strings.TrimSpace(match[6])},
-				isTicked: match[5] != "", labelColumn: optionLabelColumn(match)})
+				isTicked: match[5] != "", hasCursor: match[2] != "", labelColumn: optionLabelColumn(match)})
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
@@ -277,6 +279,9 @@ func recognizeNumbered(lines []string) *HerdrQuestion {
 		}
 		if option.isTicked {
 			question.IsMultipleChoice = true
+		}
+		if option.hasCursor {
+			question.CursorOptionNumber = option.number
 		}
 		question.Options = append(question.Options, HerdrQuestionOption{
 			OptionNumber: option.number, OptionLabel: label,

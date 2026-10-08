@@ -819,6 +819,20 @@ func (self *Herdr) answer(ctx context.Context, arguments *HerdrArguments) (*Herd
 			}
 		}
 	}
+	// Some forms move the cursor to the number pressed and wait for enter
+	// (Codex's question whether to trust a folder), where most take the
+	// number as the answer. Still the same question, with the cursor on the
+	// option chosen, is one of the first kind.
+	if after.Question != nil && after.Question.QuestionFingerprint == question.QuestionFingerprint && !question.IsMultipleChoice &&
+		!question.IsFromTranscript && !question.IsNumberless && len(arguments.OptionNumbers) == 1 &&
+		after.Question.CursorOptionNumber == arguments.OptionNumbers[0] && strings.TrimSpace(arguments.FreeText) == "" {
+		if err := self.client.sendKeys(ctx, session.PaneID, []string{"enter"}); err == nil {
+			time.Sleep(herdrAnswerSettle)
+			if again, err := self.session(ctx, session.PaneID); err == nil {
+				after = again
+			}
+		}
+	}
 	isAccepted := after.Question == nil || after.Question.QuestionFingerprint != question.QuestionFingerprint
 	return &HerdrAnswerResult{HerdrSession: after, IsAnswerAccepted: isAccepted, AnsweredWith: answeredWith}, nil
 }
