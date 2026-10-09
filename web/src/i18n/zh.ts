@@ -3533,6 +3533,7 @@ export const zh: Catalog = {
   'finance.unexplained': '未说明的金额',
   'finance.openReceiptMessage': '打开邮件',
   'finance.openReceiptFile': '打开照片或文件',
+  'finance.zoomReceiptPhoto': '放大照片',
   'finance.receiptMessageGone': '读取自一封已不在你邮箱中的邮件',
   'finance.receiptFromGmail': '读取自一封 Gmail 邮件',
   'finance.unmatchReceipt': '从这笔费用上移除',

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { Loading, Tag, formatMoney } from '../../components/common'
+import { ZoomablePicture } from '../../components/lightbox'
 import { ConfirmDialog } from '../../components/dialog'
 import { LinkIcon, MailIcon, PictureIcon, TrashIcon, UnlinkIcon } from '../../components/icons'
 import { useToast } from '../../components/toast'
@@ -537,6 +538,28 @@ export function ReceiptSource({ receipt, name }: { receipt: FinanceReceipt; name
   return null
 }
 
+// ReceiptPhoto is the photo a receipt was read from, shown above its lines
+// so the two can be compared, and opened over the page to zoom and pan on a
+// tap. A receipt does not say whether its file is a photo or a PDF, so the
+// picture is tried and, when it does not load, nothing is shown here: the
+// file is still a click away in ReceiptSource.
+export function ReceiptPhoto({ receipt, name }: { receipt: FinanceReceipt; name: string }) {
+  const { t } = useTranslation()
+  const [isUnreadable, setIsUnreadable] = useState(false)
+  if (receipt.receiptSourceKind !== 'attachment' || !receipt.agentAttachmentId || isUnreadable) return null
+  return (
+    <div className="finance-receipt-photo">
+      <ZoomablePicture
+        source={`${AGENT_ATTACHMENTS_PATH}/${encodeURIComponent(receipt.agentAttachmentId)}`}
+        name={name}
+        imageClassName="finance-receipt-photo-image"
+        openTitle={t('finance.zoomReceiptPhoto')}
+        onUnreadable={() => setIsUnreadable(true)}
+      />
+    </div>
+  )
+}
+
 // useReceiptSourceNote is the words for a source that cannot be opened:
 // a Gmail message, or a message no longer in the mailbox.
 export function useReceiptSourceNote(): (receipt: FinanceReceipt) => string {
@@ -673,6 +696,7 @@ export function FinanceReceiptsSection({
                 .filter(Boolean)
                 .join(' · ')}
             </p>
+            <ReceiptPhoto receipt={receipt} name={name} />
             <ReceiptLines receipt={receipt} />
           </article>
         )

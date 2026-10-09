@@ -209,6 +209,7 @@ function answer({ receipts = () => [grocerReceipt], unmatched = [], candidates =
 
 function renderDialog(financeTransaction: FinanceTransaction = charge) {
   const onTransactionChanged = vi.fn()
+  const onClose = vi.fn()
   render(
     <MemoryRouter>
       <FinanceTransactionDialog
@@ -221,11 +222,11 @@ function renderDialog(financeTransaction: FinanceTransaction = charge) {
         onUndoCount={vi.fn()}
         onOpenTransaction={vi.fn()}
         onTransactionChanged={onTransactionChanged}
-        onClose={vi.fn()}
+        onClose={onClose}
       />
     </MemoryRouter>,
   )
-  return { onTransactionChanged }
+  return { onTransactionChanged, onClose }
 }
 
 function calledWith(operation: string) {
@@ -351,6 +352,37 @@ describe('the receipts section', () => {
     expect(photo.getAttribute('href')).toBe('/api/v1/agent/attachments/attachment-grocer')
     // Twenty charged, 16.97 explained.
     expect(screen.getByText('finance.unexplained').parentElement?.textContent).toMatch(/3\.03/)
+  })
+
+  it('shows the photo above the lines, opens it to zoom, and steps aside for a file that is no picture', async () => {
+    answer({})
+    renderDialog()
+    const receipt = await screen.findByRole('article', { name: 'Maple Lane Grocer' })
+    const picture = within(receipt).getByRole('img', { name: 'Maple Lane Grocer' })
+    expect(picture.getAttribute('src')).toBe('/api/v1/agent/attachments/attachment-grocer')
+    expect(
+      picture.compareDocumentPosition(within(receipt).getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    fireEvent.click(within(receipt).getByRole('link', { name: 'Maple Lane Grocer' }))
+    const lightbox = await screen.findByRole('dialog', { name: 'Maple Lane Grocer' })
+    expect(within(lightbox).getByText('lightbox.fit')).toBeTruthy()
+    fireEvent.click(within(lightbox).getByRole('button', { name: 'common.close' }))
+    // A PDF does not load as a picture: the inline view goes, and the file
+    // is still a click away.
+    fireEvent.error(within(receipt).getByRole('img', { name: 'Maple Lane Grocer' }))
+    expect(within(receipt).queryByRole('img', { name: 'Maple Lane Grocer' })).toBeNull()
+    expect(within(receipt).getByRole('link', { name: /finance\.openReceiptFile/ })).toBeTruthy()
+  })
+
+  it('closes the photo on Escape and leaves the charge it was opened from open', async () => {
+    answer({})
+    const { onClose } = renderDialog()
+    const receipt = await screen.findByRole('article', { name: 'Maple Lane Grocer' })
+    fireEvent.click(within(receipt).getByRole('link', { name: 'Maple Lane Grocer' }))
+    await screen.findByRole('dialog', { name: 'Maple Lane Grocer' })
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Maple Lane Grocer' })).toBeNull())
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('puts a fee printed after the subtotal with the taxes', async () => {

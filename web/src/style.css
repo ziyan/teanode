@@ -13071,6 +13071,24 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* The photo a receipt was read from, above its lines: tall enough to make
+   out the merchant and the totals, short enough that the lines are still
+   in view below it. Reading it closely is the lightbox's job. */
+.finance-receipt-photo {
+  margin: 0 0 var(--space-2);
+}
+
+.finance-receipt-photo-image {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--field);
+}
+
 /* Every line of a receipt is one line high, the way the receipt prints
    it, so the rows are even: the description takes what the quantity and
    the amount leave and is cut with an ellipsis there, its whole text on

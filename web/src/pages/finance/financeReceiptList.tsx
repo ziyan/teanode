@@ -40,6 +40,7 @@ import {
   DeleteReceiptConfirmation,
   ReceiptCheckTag,
   ReceiptLines,
+  ReceiptPhoto,
   ReceiptSource,
   receiptName,
   useCandidateAgreement,
@@ -689,6 +690,7 @@ function FinanceReceiptDialog({
               })}
             </ul>
           )}
+          <ReceiptPhoto receipt={receipt} name={name} />
           <ReceiptLines receipt={receipt} />
           <div className="finance-receipt-buttons">
             <button type="button" disabled={isBusy} onClick={onMatch}>
