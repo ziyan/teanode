@@ -41,18 +41,23 @@ const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'ta
   // is still there. Kept in memory only, it was forgotten whenever the
   // worker stopped, and the agent was told there was no tab while the one
   // it had opened sat in front of the person.
+  //
+  // Each is looked at again after the wait for the tab: the person may
+  // have attached another tab meanwhile, the click that started the
+  // worker, and that one is what the actions go to and what is kept.
   if (tabId && attached.tabId === null) {
     await chrome.tabs.get(tabId).then(() => {
-      attached.tabId = tabId
-    }).catch(() => chrome.storage.session.remove('tabId'))
+      if (attached.tabId === null) attached.tabId = tabId
+    }).catch(() => attached.tabId === null && chrome.storage.session.remove('tabId'))
   }
   // The person's own tab, if they had attached one before the worker was
   // stopped, and it is still there.
   if (ownTabId && attached.ownTabId === null) {
     await chrome.tabs.get(ownTabId).then(() => {
+      if (attached.ownTabId !== null) return
       attached.ownTabId = ownTabId
       if (attached.tabId === null) attached.tabId = ownTabId
-    }).catch(() => chrome.storage.session.remove('ownTabId'))
+    }).catch(() => attached.ownTabId === null && chrome.storage.session.remove('ownTabId'))
   }
 })
 const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
