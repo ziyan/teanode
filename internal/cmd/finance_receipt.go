@@ -41,6 +41,7 @@ func financeReceiptCommands() []*cli.Command {
 				&cli.StringFlag{Name: "finance-transaction", Usage: "only the receipts of this transaction, by id"},
 				&cli.BoolFlag{Name: "is-unmatched", Usage: "only the receipts matched to no transaction"},
 				&cli.BoolFlag{Name: "is-undated", Usage: "only the receipts that print no day of purchase; not with a range"},
+				&cli.StringFlag{Name: "text", Usage: "only those whose merchant, receipt number or a line's description contains this"},
 				&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 50},
 				&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page or one further on"},
 				&cli.StringFlag{Name: "after", Usage: "the next page: the cursor the page before printed"},
@@ -148,6 +149,7 @@ func runFinanceReceipts(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "finance-transaction", "financeTransactionId")
 	setBool(command, variables, "is-unmatched", "isUnmatched")
 	setBool(command, variables, "is-undated", "isUndated")
+	setString(command, variables, "text", "text")
 	setString(command, variables, "after", "after")
 	var page *client.FinanceReceiptPage
 	if err := financeCall(ctx, command, operationOf(command), variables, &page); err != nil {

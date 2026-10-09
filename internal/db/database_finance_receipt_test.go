@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -1103,6 +1104,57 @@ func TestPutFinanceReceiptFirstReadsOfOneSourceWriteOneReceipt(t *testing.T) {
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if listed, err := listReceipts(t, tx, fixture.agentId, nil); err != nil || len(listed) != 1 {
 			t.Fatalf("one receipt for one source: %d %v", len(listed), err)
+		}
+	})
+}
+
+// Text finds a receipt by its merchant, its receipt number or a word of
+// any line, in any case, counted the same; a percent sign is a percent
+// sign, not a wildcard; another agent's receipts are never found.
+func TestFinanceReceiptsFindByText(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "sparrow")
+	stranger := createFinanceFixture(t, database, "wren")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		grocery := inventedGroceryReceipt(fixture.agentId, "mail-text-grocery")
+		grocery.MerchantReceiptNumber = "R-4471"
+		putReceipt(t, tx, grocery)
+		hardware := inventedGroceryReceipt(fixture.agentId, "mail-text-hardware")
+		hardware.MerchantName = "Hilltop Hardware"
+		hardware.ReceiptLines[3].Description = "WOOD GLUE"
+		putReceipt(t, tx, hardware)
+		putReceipt(t, tx, inventedGroceryReceipt(stranger.agentId, "mail-text-stranger"))
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := func(text string) []string {
+			t.Helper()
+			page, err := tx.ListFinanceReceipts(fixture.agentId, &db.FinanceReceiptFilter{Text: text, ShouldCountTotal: true})
+			if err != nil {
+				t.Fatalf("ListFinanceReceipts %q: %s", text, err)
+			}
+			if page.TotalCount != len(page.FinanceReceipts) {
+				t.Fatalf("%q counts %d but lists %d", text, page.TotalCount, len(page.FinanceReceipts))
+			}
+			names := []string{}
+			for _, receipt := range page.FinanceReceipts {
+				names = append(names, receipt.MerchantName)
+			}
+			sort.Strings(names)
+			return names
+		}
+		for text, want := range map[string]string{
+			"hilltop":   "Hilltop Hardware",
+			"r-4471":    "Corner Grocer",
+			"wood glue": "Hilltop Hardware",
+			"dish soap": "Corner Grocer",
+			"bag fee":   "Corner Grocer,Hilltop Hardware",
+			"100%":      "",
+		} {
+			if got := strings.Join(found(text), ","); got != want {
+				t.Fatalf("%q finds %q, want %q", text, got, want)
+			}
 		}
 	})
 }

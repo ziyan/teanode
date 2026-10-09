@@ -1016,8 +1016,8 @@ const (
   AnnotateTransaction(financeTransactionId: $financeTransactionId, annotation: $annotation, isAskedByPerson: $isAskedByPerson) ` + financeTransactionFields + `
 }`
 
-	DocumentFinanceReceipts = `query ($financeTransactionId: String, $from: String, $to: String, $isUndated: Boolean, $isUnmatched: Boolean, $limit: Int, $after: String, $offset: Int) {
-  FinanceReceipts(financeTransactionId: $financeTransactionId, from: $from, to: $to, isUndated: $isUndated, isUnmatched: $isUnmatched, limit: $limit, after: $after, offset: $offset) {
+	DocumentFinanceReceipts = `query ($financeTransactionId: String, $from: String, $to: String, $isUndated: Boolean, $isUnmatched: Boolean, $text: String, $limit: Int, $after: String, $offset: Int) {
+  FinanceReceipts(financeTransactionId: $financeTransactionId, from: $from, to: $to, isUndated: $isUndated, isUnmatched: $isUnmatched, text: $text, limit: $limit, after: $after, offset: $offset) {
     financeReceipts ` + financeReceiptFields + ` nextCursor totalCount
   }
 }`
