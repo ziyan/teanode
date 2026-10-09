@@ -164,9 +164,12 @@ func readFromOf(checkout *codingCheckout, request *CodingRequest) string {
 	readHead := shortCommit(checkout.readHead)
 	switch {
 	case checkout.isReadElsewhere:
-		where := "Memory of this project was read from its checkout at " + checkout.readDirectory
-		if checkout.readComputer != "" {
-			where += " on " + checkout.readComputer
+		where := "Memory of this project was read from another checkout of it"
+		if checkout.readDirectory != "" {
+			where = "Memory of this project was read from its checkout at " + checkout.readDirectory
+			if checkout.readComputer != "" {
+				where += " on " + checkout.readComputer
+			}
 		}
 		if readHead != "" {
 			where += " (commit " + readHead + ")"
@@ -458,20 +461,24 @@ func checkoutByRemote(tx db.Transaction, agentId string, request *CodingRequest,
 		root = directory
 	}
 	checkout := &codingCheckout{directory: root, readHead: profiledCommitOf(holding[0]), isReadElsewhere: true}
-	// Where the profile read it: the checkout line written in the same
-	// pass, which carries the same commit.
 	lines, err := tx.ListAgentFactsStartingWith(agentId, checkoutLinePrefix, 0)
 	if err != nil {
 		return nil, err
 	}
+	// Where the profile read it: the checkout line written in the same
+	// pass, which carries the same commit, else one on the same page.
+	var samePage *models.AgentFact
 	for _, line := range lines {
 		if checkout.readHead != "" && profiledCommitOf(line) == checkout.readHead {
-			checkout.readDirectory, checkout.readComputer, _ = checkoutLocationOf(line.Text)
+			samePage = line
 			break
 		}
+		if samePage == nil && line.NodeID == holding[0].NodeID {
+			samePage = line
+		}
 	}
-	if checkout.readDirectory == "" {
-		checkout.readDirectory = "another path"
+	if samePage != nil {
+		checkout.readDirectory, checkout.readComputer, _ = checkoutLocationOf(samePage.Text)
 	}
 	if err := checkout.addProjects(tx, agentId, holding, repository); err != nil || len(checkout.projects) == 0 {
 		return nil, err
