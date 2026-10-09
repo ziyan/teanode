@@ -163,6 +163,7 @@ export function SeriesChart({
   selectedKey,
   onSelectKey,
   headAction,
+  tooltipNote,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -178,6 +179,10 @@ export function SeriesChart({
   label: string
   selectedKey?: string | null
   onSelectKey?: (key: string) => void
+  // A line under the series in the tooltip, for what the reader would
+  // otherwise work out from them: how far one series is from another on
+  // that key. Null leaves it out for that key.
+  tooltipNote?: (index: number) => { label: string; text: string } | null
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [holder, width] = useWidth()
@@ -232,6 +237,7 @@ export function SeriesChart({
               value: one.values[hovered] ?? null,
             }))}
             format={format}
+            note={tooltipNote?.(hovered) ?? null}
           />
         ) : null}
       </div>
@@ -516,6 +522,7 @@ function SeriesTooltip({
   axisWidth,
   lines,
   format,
+  note,
 }: {
   title: string
   index: number
@@ -524,6 +531,7 @@ function SeriesTooltip({
   axisWidth: number
   lines: { id: string; label: string; tone: SeriesTone; value: number | null }[]
   format: (value: number) => string
+  note: { label: string; text: string } | null
 }) {
   const slot = (width - axisWidth) / Math.max(1, count)
   const center = axisWidth + index * slot + slot / 2
@@ -543,6 +551,13 @@ function SeriesTooltip({
           <strong>{line.value === null ? '—' : format(line.value)}</strong>
         </div>
       ))}
+      {note ? (
+        <div className="usage-chart-tooltip-line usage-chart-tooltip-note">
+          <i className="usage-chart-swatch none" />
+          <span>{note.label}</span>
+          <strong>{note.text}</strong>
+        </div>
+      ) : null}
     </div>
   )
 }
