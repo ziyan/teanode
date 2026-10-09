@@ -1132,7 +1132,6 @@ export const zh: Catalog = {
   'agentDrawer.voiceCutAnswer': '点按以打断回答',
   'agentDrawer.voiceMute': '将麦克风静音',
   'agentDrawer.voiceUnmute': '取消麦克风静音',
-  'agentDrawer.voiceMicrophoneMuted': '麦克风已静音，智能体听不到你。',
   'agentDrawer.voiceConfirmationNeeded': '需要你在屏幕上批准：',
   'agentDrawer.voiceAnswerNotSpoken': '回答无法朗读。',
   'agentDrawer.voiceEnd': '挂断',

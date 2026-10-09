@@ -1174,7 +1174,6 @@ export const en = {
   'agentDrawer.voiceCutAnswer': 'Tap to cut the answer short',
   'agentDrawer.voiceMute': 'Mute the microphone',
   'agentDrawer.voiceUnmute': 'Unmute the microphone',
-  'agentDrawer.voiceMicrophoneMuted': 'Microphone muted: the agent does not hear you.',
   'agentDrawer.voiceConfirmationNeeded': 'I need your approval on screen:',
   'agentDrawer.voiceAnswerNotSpoken': 'The answer could not be read aloud.',
   'agentDrawer.voiceEnd': 'Hang up',

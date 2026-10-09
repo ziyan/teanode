@@ -4484,15 +4484,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 {voiceState === 'starting'
                   ? t('agentDrawer.voiceStarting')
                   : voiceCaption ||
-                    (isMicrophoneMuted
-                      ? t('agentDrawer.voiceMicrophoneMuted')
-                      : isVoiceHearing
+                    (isVoiceHearing
                       ? t('agentDrawer.voiceHearing')
                       : isVoiceSpeaking
                         ? t('agentDrawer.voiceSpeaking')
                         : running
                           ? t('agentDrawer.voiceWorking')
-                          : t('agentDrawer.voiceListening'))}
+                          : isMicrophoneMuted
+                            ? ''
+                            : t('agentDrawer.voiceListening'))}
               </p>
               {running && (
                 <Tooltip label={t('agentDrawer.stop')}>

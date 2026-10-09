@@ -1168,7 +1168,6 @@ export const ja: Catalog = {
   'agentDrawer.voiceCutAnswer': 'タップして回答を止める',
   'agentDrawer.voiceMute': 'マイクをミュート',
   'agentDrawer.voiceUnmute': 'マイクのミュートを解除',
-  'agentDrawer.voiceMicrophoneMuted': 'マイクはミュート中です。エージェントには聞こえていません。',
   'agentDrawer.voiceConfirmationNeeded': '画面で承認してください：',
   'agentDrawer.voiceAnswerNotSpoken': '回答を読み上げられませんでした。',
   'agentDrawer.voiceEnd': '電話を切る',
