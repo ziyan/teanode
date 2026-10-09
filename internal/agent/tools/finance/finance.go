@@ -751,7 +751,7 @@ func init() {
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones that need a spending category, not decided yet (a transfer has the transfer category, one that fits nothing the other category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
 					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
-					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 20 when left out and at most 200"),
+					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 15 when left out and at most 200"),
 					"offset":                      tools.IntegerProperty("for transactions, trades and receipts: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
 					"after":                       tools.StringProperty("for transactions, trades and receipts: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
@@ -1423,7 +1423,7 @@ func withoutRepeatedProviderCategory(rows []any) {
 }
 
 // pageHint says which rows of how many a page of transactions, trades or
-// receipts holds, so the answer can say "20 of 1,234" rather than leave
+// receipts holds, so the answer can say "15 of 1,234" rather than leave
 // the rest unmentioned, and how to read the next page. Empty when the
 // page holds every row.
 func pageHint(name string, variables map[string]any, answered any) string {

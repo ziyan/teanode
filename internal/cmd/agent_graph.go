@@ -741,6 +741,8 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 // flags that read the next part, the limit among them. Empty when every
 // link is shown.
 func linkPageNote(shownCount, linkOffset, linkLimit, linkCount, nextLinkOffset int) string {
+	// A negative flag is not sent, so the page is read from the start.
+	linkOffset, linkLimit = max(linkOffset, 0), max(linkLimit, 0)
 	if linkOffset == 0 && linkLimit == 0 {
 		return ""
 	}

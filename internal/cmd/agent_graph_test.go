@@ -358,6 +358,9 @@ func TestTheLinkPageNoteSaysHowToReadOn(t *testing.T) {
 		{20, 280, 40, 300, 0, "note: links 281 to 300 of 300"},
 		{0, 400, 40, 300, 0, "note: --link-offset 400 is past the end, the page has 300 links"},
 		{300, 0, 0, 300, 0, ""},
+		// A negative flag is not sent: every link, and nothing to say.
+		{10, -1, 0, 10, 0, ""},
+		{0, -1, -5, 0, 0, ""},
 	} {
 		if got := linkPageNote(each.shownCount, each.linkOffset, each.linkLimit, each.linkCount, each.nextLinkOffset); got != each.want {
 			t.Errorf("%+v: %q, want %q", each, got, each.want)

@@ -37,6 +37,9 @@ func TestTheIdeaPageNoteRepeatsTheLimit(t *testing.T) {
 		{3, 20, 5, 23, 0, "note: 21 to 23 of 23"},
 		{0, 40, 5, 23, 0, "note: --offset 40 is past the end, there are 23 in all"},
 		{23, 0, 0, 23, 0, ""},
+		// A negative flag is not sent: the whole list, and nothing to say.
+		{23, -1, 0, 23, 0, ""},
+		{0, -1, -5, 0, 0, ""},
 	} {
 		if got := ideaPageNote(each.shownCount, each.offset, each.limit, each.totalCount, each.nextOffset); got != each.want {
 			t.Errorf("%+v: %q, want %q", each, got, each.want)

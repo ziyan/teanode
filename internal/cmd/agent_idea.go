@@ -117,6 +117,8 @@ func runAgentIdeaList(ctx context.Context, command *cli.Command) error {
 // that the next page is as long as this one. Empty when the page holds
 // every idea.
 func ideaPageNote(shownCount, offset, limit, totalCount, nextOffset int) string {
+	// A negative flag is not sent, so the page is read from the start.
+	offset, limit = max(offset, 0), max(limit, 0)
 	if nextOffset == 0 && offset == 0 {
 		return ""
 	}
