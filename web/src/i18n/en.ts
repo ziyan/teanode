@@ -3596,6 +3596,8 @@ export const en = {
   'finance.to': 'To',
   'finance.allAccounts': 'All finance accounts',
   'finance.searchText': 'Merchant or description',
+  'finance.receiptSearchText': 'Merchant, number or item',
+  'finance.noReceiptsWithText': 'No receipt mentions {text}.',
   'finance.onlyUncategorized': 'Needs a category',
   'finance.postedOn': 'Date',
   'finance.description': 'Merchant and description',

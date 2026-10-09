@@ -3553,6 +3553,8 @@ export const ja: Catalog = {
   'finance.to': '終了',
   'finance.allAccounts': 'すべての金融口座',
   'finance.searchText': '加盟店または内容',
+  'finance.receiptSearchText': '店名、番号、品目',
+  'finance.noReceiptsWithText': '{text} を含むレシートはありません。',
   'finance.onlyUncategorized': '分類待ち',
   'finance.postedOn': '日付',
   'finance.description': '加盟店と内容',

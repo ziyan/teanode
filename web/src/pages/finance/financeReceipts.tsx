@@ -398,7 +398,8 @@ export function ReceiptLines({ receipt }: { receipt: FinanceReceipt }) {
     const kindLabel = KIND_LABELS[line.receiptLineKind]
     return (
       <tr key={line.id} className={`finance-receipt-line finance-receipt-${line.receiptLineKind}`}>
-        <td>
+        {/* Cut to one line; the whole of it on hover. */}
+        <td title={[line.description, line.taxClassCode].filter(Boolean).join(' ')}>
           {kindLabel ? <span className="finance-receipt-kind">{t(kindLabel)}</span> : null}
           {line.description}
           {line.taxClassCode ? <span className="muted finance-receipt-tax-mark"> {line.taxClassCode}</span> : null}

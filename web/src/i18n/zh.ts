@@ -3463,6 +3463,8 @@ export const zh: Catalog = {
   'finance.to': '到',
   'finance.allAccounts': '所有财务账户',
   'finance.searchText': '商户或描述',
+  'finance.receiptSearchText': '商家、编号或商品',
+  'finance.noReceiptsWithText': '没有提到 {text} 的收据。',
   'finance.onlyUncategorized': '待分类',
   'finance.postedOn': '日期',
   'finance.description': '商户和描述',

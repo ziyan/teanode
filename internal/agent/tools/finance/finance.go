@@ -260,7 +260,7 @@ var operations = map[string]*financeOperation{
 	},
 	"receipts": {
 		graphqlOperation: "FinanceReceipts", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
-		arguments: append([]string{"finance_transaction_id", "is_unmatched", "is_undated", "limit", "offset", "after"}, rangeArguments...),
+		arguments: append([]string{"finance_transaction_id", "is_unmatched", "is_undated", "text", "limit", "offset", "after"}, rangeArguments...),
 	},
 	"receipt": {graphqlOperation: "FinanceReceipt", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"receipt_id"}, required: []string{"receipt_id"}},
 	"propose_receipt_matches": {
@@ -695,7 +695,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"The server checks every line comes to the total and the items and discounts to the subtotal, the fees counted in it or after it as the receipt prints them, to the cent; a receipt that does not add up is refused, naming the difference: read it again, and give is_unbalanced_accepted true only when the person says to record it as it is. " +
 	"Recording the same message again replaces its receipt. It is matched to the one charge of its exact amount (or the one on the card it prints) posted from three days before to seven after the purchase, when that charge is on the printed card or shares a word of the merchant and no other receipt explains it; a charge other receipts explain in full is no candidate. Anything less sure is left unmatched with candidates, never guessed: ask, then `match_receipt` (matched_amount for an order charged in parts, one call per charge; a match beyond what the charge took, in another currency, or to money in is refused). " +
 	"`read_receipt` has the receipt job read the receipt in a message (mailbox_item_id) in the background, record it and match it, as when sorting files a message as a receipt. " +
-	"`receipts` pages like `transactions` (limit, offset or after, and totalCount); with no range it lists every receipt, those that print no day last, and is_undated lists only those. " +
+	"`receipts` pages like `transactions` (limit, offset or after, and totalCount); with no range it lists every receipt, those that print no day last, and is_undated lists only those; text finds receipts by merchant, receipt number or a word of what was bought on any line. " +
 	"`preview_record_receipt` says what recording would do, writing nothing; `receipt` reads one line by line; `propose_receipt_matches` lists the charges a stored one could explain; `unmatch_receipt` takes one off a charge; `delete_receipt` deletes it."
 
 func init() {
@@ -742,7 +742,7 @@ func init() {
 					"finance_security_id":         tools.StringProperty("for trades: a security, by the financeSecurityId an asset or a trade gives"),
 					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01; for receipts, the first day of purchase"),
 					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30; for receipts, the last day of purchase"),
-					"text":                        tools.StringProperty("for transactions: words within the description or merchant; for assets: words within the asset's name"),
+					"text":                        tools.StringProperty("for transactions: words within the description or merchant; for assets: words within the asset's name; for receipts: words within the merchant, the receipt number or a line's description, as what was bought"),
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
