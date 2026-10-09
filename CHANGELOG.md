@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.123.1] - 2026-10-09
+
+### Fixed
+
+- A receipt paid with a phone's wallet is matched to its charge when the amount and the merchant agree, and four card digits alone never match one. (#367)
+
 ## [0.123.0] - 2026-10-09
 
 ### Added
