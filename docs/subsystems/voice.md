@@ -38,7 +38,8 @@ agent, checks the agent's budget, opens the provider's session with the
 operator's key, which never leaves the server, and relays both ways. Each
 transcription's usage is recorded against the agent with the kind `voice`, so
 it counts toward the day like any model call. A session lasts at most 30
-minutes and ends after a minute without audio.
+minutes and ends after a minute in which the drawer sends nothing; a muted
+microphone sends `stillHere` every 20 seconds instead of audio.
 
 **The drawer sends the turn.** A final transcript goes through the drawer's
 own `send`, with what the person is viewing, exactly as if typed, except that
@@ -74,8 +75,7 @@ next few while one plays. The stored `message` event repeats what the deltas
 said, so only what they missed is spoken, and an event replayed after a
 reconnection is never spoken twice. A question card is read out; a
 confirmation card says it needs approving on screen. A turn is spoken when
-voice mode saw it start, or from the moment the person spoke into it. The
-speaker button in the panel turns reading aloud off on that device. Each
+voice mode saw it start, or from the moment the person spoke into it. Each
 person chooses the voice on their agent's settings, with a sample to listen
 to, or tells the agent mid-call (`agent_profile`, `speech_voice`); the next
 sentence is read in it. Empty is the server's `speechVoice`.
@@ -98,10 +98,18 @@ stop button stops it.
 voice mode: the box is replaced by a meter of five bars that follows how loud
 the microphone or the answer is, green while the provider says it hears speech,
 in the accent while the answer plays, and breathing slowly while the agent
-works; beside it the words heard so far, stop for a running turn, the speaker
-button, and the red handset that hangs up. The conversation stays visible above it. The box comes back only
+works; beside it the words heard so far, stop for a running turn, the
+microphone button, and the red handset that hangs up. The conversation stays visible above it. The box comes back only
 when the person hangs up, or listening stops on its own (a lost
 connection, a refused microphone).
+
+**Muting the microphone.** The microphone button lets the person say a word
+to somebody else without the agent hearing it. The microphone's track is
+disabled, so nothing of them is heard, drawn on the meter, or taken for
+speaking over an answer, and answers go on being read aloud. Silence is sent
+for six seconds, longer than the longest `silenceMS` allowed, so that what
+was being said ends there as an utterance; after that no audio is sent, so
+nothing is transcribed or counted. The mute lasts for that call only.
 
 **Safari on a phone.** The audio context is made and resumed in the same tap
 that asks for the microphone, before anything is waited on, and the capture
@@ -142,7 +150,7 @@ round of a long turn. While the person talks at length, the drawer itself
 makes the small sounds a listener makes: "mm-hmm" and "uh-huh", spoken once at
 the start of the call in the agent's voice, played quietly at a pause after
 four seconds of talking and at most every six seconds, never over an answer or
-with answers muted. A sound the microphone hears back is taken out of the
+with the microphone muted. A sound the microphone hears back is taken out of the
 transcript. The line of suggested replies the dashboard draws as buttons is
 never read out.
 

@@ -41,7 +41,8 @@ const voiceBudgetRecheck = 2 * time.Minute
 const answerSegmentsAtOnce = 4
 
 // voiceSilenceLongest is how long the drawer may send nothing at all; it
-// sends audio continuously while listening, silence included.
+// sends audio continuously while listening, silence included, and
+// stillHere while the person has the microphone muted.
 const voiceSilenceLongest = time.Minute
 
 // AgentVoiceQuery says whether the caller may talk to their agent.
@@ -419,6 +420,8 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 			speak(said.AnswerSegmentID, said.AnswerText)
 		case "cancelAnswer":
 			cancelSpeaking(said.AnswerSegmentIDs)
+		case "stillHere":
+			// A muted microphone: reading it was all it was for.
 		}
 	}
 }

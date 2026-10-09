@@ -47,10 +47,10 @@ import {
   GlobeIcon,
   InboxIcon,
   ListIcon,
+  MicrophoneIcon,
+  MicrophoneOffIcon,
   PhoneHangUpIcon,
   PhoneIcon,
-  SpeakerIcon,
-  SpeakerOffIcon,
   PaperclipIcon,
   PencilIcon,
   StarIcon,
@@ -481,7 +481,6 @@ const AGENT = `
   }`
 
 // READ_VOICE says whether the drawer offers the microphone.
-const VOICE_MUTED_KEY = 'teanode.agent.voiceMuted'
 const READ_VOICE = `query { ReadAgentVoice { isVoiceAvailable sampleRate } }`
 
 const TAB = `
@@ -3368,8 +3367,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [voiceCaption, setVoiceCaption] = useState('')
   const [isVoiceHearing, setVoiceHearing] = useState(false)
   const [isVoiceSpeaking, setVoiceSpeaking] = useState(false)
-  // Whether answers are read aloud, remembered on this device.
-  const [isVoiceMuted, setVoiceMuted] = useState(() => remembered(VOICE_MUTED_KEY) === '1')
+  // Whether the agent hears the person: muted for a word with somebody
+  // else, for this call only.
+  const [isMicrophoneMuted, setMicrophoneMuted] = useState(false)
   const voiceSession = useRef<VoiceSession | null>(null)
   const voiceLevel = useCallback(() => voiceSession.current?.level() ?? 0, [])
   const sendLatest = useRef(send)
@@ -3406,6 +3406,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           if (voiceSession.current === session) voiceSession.current = null
           setVoiceState('off')
           setVoiceCaption('')
+          setMicrophoneMuted(false)
         },
       },
       {
@@ -3416,18 +3417,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         answerNotSpoken: t('agentDrawer.voiceAnswerNotSpoken'),
       },
     )
-    session.setMuted(isVoiceMuted)
     voiceSession.current = session
     void session.start(voiceSampleRate).catch((caught) => {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
       session.stop()
     })
   }
-  const toggleVoiceMuted = () => {
-    const isMuted = !isVoiceMuted
-    setVoiceMuted(isMuted)
-    remember(VOICE_MUTED_KEY, isMuted ? '1' : '')
-    voiceSession.current?.setMuted(isMuted)
+  const toggleMicrophoneMuted = () => {
+    const isMuted = !isMicrophoneMuted
+    setMicrophoneMuted(isMuted)
+    voiceSession.current?.setMicrophoneMuted(isMuted)
   }
   // The call ends when the person moves to another conversation, but not
   // when a new one is given its id by the call's own first turn.
@@ -4491,7 +4490,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                         ? t('agentDrawer.voiceSpeaking')
                         : running
                           ? t('agentDrawer.voiceWorking')
-                          : t('agentDrawer.voiceListening'))}
+                          : isMicrophoneMuted
+                            ? ''
+                            : t('agentDrawer.voiceListening'))}
               </p>
               {running && (
                 <Tooltip label={t('agentDrawer.stop')}>
@@ -4505,15 +4506,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   </button>
                 </Tooltip>
               )}
-              <Tooltip label={isVoiceMuted ? t('agentDrawer.voiceUnmute') : t('agentDrawer.voiceMute')}>
+              <Tooltip label={isMicrophoneMuted ? t('agentDrawer.voiceUnmute') : t('agentDrawer.voiceMute')}>
                 <button
                   type="button"
                   className="icon-button agent-voice-mute"
-                  aria-label={isVoiceMuted ? t('agentDrawer.voiceUnmute') : t('agentDrawer.voiceMute')}
-                  aria-pressed={isVoiceMuted}
-                  onClick={toggleVoiceMuted}
+                  aria-label={t('agentDrawer.voiceMute')}
+                  aria-pressed={isMicrophoneMuted}
+                  onClick={toggleMicrophoneMuted}
                 >
-                  {isVoiceMuted ? <SpeakerOffIcon size={16} /> : <SpeakerIcon size={16} />}
+                  {isMicrophoneMuted ? <MicrophoneOffIcon size={16} /> : <MicrophoneIcon size={16} />}
                 </button>
               </Tooltip>
               <Tooltip label={t('agentDrawer.voiceEnd')}>

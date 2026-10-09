@@ -6956,8 +6956,9 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   color: #fff;
 }
 
+/* A muted microphone is shown plainly: the person must not forget it. */
 .agent-drawer-voice-mode .agent-voice-mute[aria-pressed='true'] {
-  color: var(--muted);
+  color: var(--bad);
 }
 
 .voice-meter {

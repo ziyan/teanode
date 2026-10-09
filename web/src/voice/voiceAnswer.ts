@@ -656,7 +656,6 @@ export type TranscriptVerdict = { isEcho: boolean; interruptedAnswer?: Interrupt
 export class AnswerVoice {
   private runs = new Map<string, FollowedRun>()
   private seenSequences = new Map<string, number>()
-  private isMuted = false
   private isCandidate = false
   private pauseTimer?: number
   private resumeTimer?: number
@@ -701,7 +700,6 @@ export class AnswerVoice {
     if (event.sequence <= run.lastSequence) return
     run.lastSequence = event.sequence
     run.lastEventAt = performance.now()
-    if (this.isMuted && event.kind !== 'done') return
     switch (event.kind) {
       case 'text':
         if (run.isSkippingMessage) return
@@ -740,7 +738,7 @@ export class AnswerVoice {
         this.player.enqueue([`${this.messages.confirmationNeeded} ${speakableText(event.note ?? '')}`])
         return
       case 'done':
-        if (!this.isMuted && !run.isSkippingMessage) this.player.enqueue(run.segmenter.flush())
+        if (!run.isSkippingMessage) this.player.enqueue(run.segmenter.flush())
         this.runs.delete(event.runId)
         return
     }
@@ -769,11 +767,6 @@ export class AnswerVoice {
     for (const [runId, run] of this.runs) {
       if (now - run.lastEventAt > QUIET_RUN_FORGOTTEN_MS) this.runs.delete(runId)
     }
-  }
-
-  setMuted(isMuted: boolean) {
-    this.isMuted = isMuted
-    if (isMuted) this.cutIn()
   }
 
   accept(answerSegmentId: string, pcm: Int16Array) {
