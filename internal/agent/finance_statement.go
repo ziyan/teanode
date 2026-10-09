@@ -733,7 +733,7 @@ type statementBuild struct {
 func (self *Agent) importStatements(ctx context.Context, agentRow *models.Agent, owner *models.User, source *models.AgentKnowledgeSource,
 	result *models.FinanceStatementImport, failures []string, builds []statementBuild, mailId string) (*models.FinanceStatementImport, error) {
 	today := time.Now().In(Location(owner)).Format(time.DateOnly)
-	merged := &db.FinanceSyncApplied{FinanceTransactionIDsToCategorize: []string{}}
+	merged := &db.FinanceSyncApplied{FinanceTransactionIDsToCategorize: []string{}, InsertedFinanceTransactionIDs: []string{}}
 	isImported := false
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		locked, err := tx.LockAgentSource(agentRow.ID, source.ID)
@@ -800,6 +800,7 @@ func (self *Agent) importStatements(ctx context.Context, agentRow *models.Agent,
 			result.UnchangedTransactionCount += added - applied.WrittenTransactionCount - applied.SkippedTransactionCount + statementImport.PresentTransactionCount
 			result.TransactionWithoutFITIDCount += statementImport.GeneratedIDCount
 			merged.FinanceTransactionIDsToCategorize = append(merged.FinanceTransactionIDsToCategorize, applied.FinanceTransactionIDsToCategorize...)
+			merged.InsertedFinanceTransactionIDs = append(merged.InsertedFinanceTransactionIDs, applied.InsertedFinanceTransactionIDs...)
 			accountProviderIds = append(accountProviderIds, statementImport.SyncResult.Accounts[0].ProviderAccountID)
 		}
 		if len(accountProviderIds) > 0 {

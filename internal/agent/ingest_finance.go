@@ -233,7 +233,8 @@ func (self *Agent) financeCredential(ctx context.Context, source *models.AgentKn
 // spending categories for an agent that has none, transfer detection over
 // the last week (or the whole history when isWholeHistory), the person's
 // spending rules, the provider category mapping for what is still
-// uncategorized, a categorize job for what is left, and budget alert
+// uncategorized, a categorize job for what is left, the receipts that
+// were waiting for a charge the sync brought, and budget alert
 // candidates.
 func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, applied *db.FinanceSyncApplied, syncedOn string, isWholeHistory, isRemappingDue bool) error {
 	agentId := source.AgentID
@@ -275,6 +276,18 @@ func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *model
 		return nil
 	}); err != nil {
 		return err
+	}
+	// In a transaction of its own: a receipt left unmatched is no reason
+	// to undo what the sync categorized, and the next sync tries again
+	// only for the charges it brings.
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		matchedCount, err := matchWaitingReceipts(tx, agentId, applied.InsertedFinanceTransactionIDs)
+		if matchedCount > 0 {
+			log.Infof("matched %d waiting receipts to charges a sync brought for agent %q", matchedCount, agentId)
+		}
+		return err
+	}); err != nil {
+		log.Warningf("cannot match waiting receipts for agent %q: %s", agentId, err)
 	}
 	return self.noteBudgetCandidates(ctx, run, time.Now())
 }
