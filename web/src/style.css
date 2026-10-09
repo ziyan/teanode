@@ -1781,6 +1781,11 @@ input[type='datetime-local'] {
   min-width: 0;
   max-width: 100%;
   text-align: start;
+  /* As tall as a text field beside it: one line, the padding and the
+     border. Chrome pads the date's own editor a pixel above and below, so
+     a date sat two pixels taller than the search box next to it in a row
+     of filters. */
+  height: calc(1lh + 16px);
 }
 
 label {
@@ -13066,15 +13071,14 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
-/* The lines stay a table on a phone: the description wraps, the quantity
-   and amount keep their line, and a table wider than the dialog scrolls
-   sideways inside it rather than being restacked. */
-/* The description takes what the quantity and the amount leave and wraps
-   in it: max-width 0 keeps a long description from setting the column's
+/* Every line of a receipt is one line high, the way the receipt prints
+   it, so the rows are even: the description takes what the quantity and
+   the amount leave and is cut with an ellipsis there, its whole text on
+   hover. max-width 0 keeps a long description from setting the column's
    width (the same trick as td.truncate), so the amount is never pushed
-   past the edge of a phone. It stays a table there, and wraps, where every
-   other table becomes a block of lines that do not: a description run off
-   the edge took the quantity and the amount with it. */
+   past the edge of a phone. It stays a table there rather than becoming a
+   block of lines like other tables: a description run off the edge took
+   the quantity and the amount with it. */
 .finance-receipt-lines {
   display: table;
   width: 100%;
@@ -13085,7 +13089,17 @@ button.idea-history-title {
 .finance-receipt-lines tbody td:first-child {
   width: 100%;
   max-width: 0;
-  white-space: normal;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* One height for every row, whether or not a kind tag sits in it. */
+.finance-receipt-lines th,
+.finance-receipt-lines td {
+  height: 26px;
+  line-height: 20px;
+  vertical-align: middle;
 }
 
 .finance-receipt-lines-scroll {
@@ -13117,10 +13131,6 @@ button.idea-history-title {
   color: var(--muted);
   font-size: var(--text-label);
   font-weight: normal;
-}
-
-.finance-receipt-lines td:first-child {
-  overflow-wrap: anywhere;
 }
 
 .finance-receipt-lines td:not(:first-child),
@@ -13168,6 +13178,8 @@ button.idea-history-title {
   border-radius: var(--radius-1);
   font-size: 11px;
   font-weight: 550;
+  line-height: 16px;
+  vertical-align: 1px;
   color: var(--muted);
 }
 
@@ -13260,6 +13272,12 @@ button.idea-history-title {
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+}
+
+/* What it is matched to is its own part of the receipt, set apart from
+   the date and total line above it. */
+.finance-receipt-details > .finance-metadata-head {
+  margin-top: var(--space-3);
 }
 
 .finance-receipt-details .finance-receipt-lines-scroll {

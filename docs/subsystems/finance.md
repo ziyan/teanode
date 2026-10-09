@@ -619,6 +619,9 @@ before, answering `{ financeReceipts, nextCursor, totalCount }`. The newest
 purchase comes first and receipts that print no day come after every dated
 one, so with no range every receipt is reached; `isUndated` lists only those,
 and cannot go with `from` or `to`, which leave them out.
+`text` keeps the receipts whose merchant, receipt number or any line's
+description holds the words, in any case, so a receipt is found by what was
+bought on it.
 
 A receipt's photo or PDF is an ordinary agent attachment. Every file a
 conversation turn carries is named to the model with its

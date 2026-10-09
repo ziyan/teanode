@@ -116,6 +116,10 @@ type FinanceReceiptsArguments struct {
 	// IsUnmatched keeps the receipts matched to no finance transaction.
 	IsUnmatched *bool `json:"isUnmatched" graphapi:"nullable"`
 
+	// Text keeps the receipts whose merchant, receipt number or any line's
+	// description holds it.
+	Text string `json:"text" graphapi:"nullable"`
+
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
 	// page before; Offset is how many to pass over, for a page by its
 	// number, counted from After when both are given.
@@ -467,6 +471,7 @@ func (self *graph) FinanceReceipts(ctx context.Context, arguments FinanceReceipt
 		FinanceTransactionID: strings.TrimSpace(arguments.FinanceTransactionID),
 		IsUndated:            arguments.IsUndated != nil && *arguments.IsUndated,
 		IsUnmatched:          arguments.IsUnmatched != nil && *arguments.IsUnmatched,
+		Text:                 strings.TrimSpace(arguments.Text),
 		After:                strings.TrimSpace(arguments.After),
 	}
 	if filter.From, err = dayArgument("from", arguments.From, ""); err != nil {

@@ -122,6 +122,9 @@ type FinanceReceiptFilter struct {
 	// ShouldSkipLeftToPerson leaves out the receipts a match was taken off
 	// by hand, which the receipt matcher no longer matches on its own.
 	ShouldSkipLeftToPerson bool
+	// Text keeps the receipts whose merchant, receipt number or any line's
+	// description holds it, matched case-insensitively.
+	Text string
 
 	// Limit is at most FinanceReceiptLimitMost; zero is
 	// FinanceReceiptLimitDefault.
@@ -754,6 +757,13 @@ func (self *transaction) financeReceiptQuery(agentId string, filter *FinanceRece
 	}
 	if filter.ShouldSkipLeftToPerson {
 		query = query.Where(`NOT "is_left_to_person"`)
+	}
+	if text := strings.TrimSpace(filter.Text); text != "" {
+		pattern := "%" + escapeLike(text) + "%"
+		query = query.Where(`("merchant_name" ILIKE ? OR "merchant_receipt_number" ILIKE ?
+			OR EXISTS (SELECT 1 FROM "agent_finance_receipt_line" AS "line"
+				WHERE "line"."receipt_id" = "agent_finance_receipt"."id" AND "line"."description" ILIKE ?))`,
+			pattern, pattern, pattern)
 	}
 	return query, nil
 }
