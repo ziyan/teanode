@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { SeriesChart } from './seriesChart'
@@ -108,4 +108,41 @@ it('draws two columns a key and a line below zero, and still chooses a key', () 
   expect(slots[1].getAttribute('aria-label')).toBe('2031-02: Income 400, Spending 450, Left over -50')
   fireEvent.click(slots[0])
   expect(onSelectKey).toHaveBeenCalledWith('2031-01')
+})
+
+// pointAt moves a pointer over the drawing, measured as wide as its holder.
+// jsdom has no PointerEvent, and the stand-in testing-library falls back to
+// drops the pointer's position.
+function pointAt(element: Element, clientX: number) {
+  vi.spyOn(SVGElement.prototype, 'getBoundingClientRect').mockReturnValue(HTMLElement.prototype.getBoundingClientRect())
+  act(() => {
+    element.dispatchEvent(new MouseEvent('pointermove', { clientX, bubbles: true }))
+  })
+}
+
+// The tooltip carries a line under the series for a key that has one, and
+// none for a key that has not.
+it('adds the note under the series in the tooltip', () => {
+  render(
+    <SeriesChart
+      label="Spending by day"
+      keys={keys}
+      keyLabel={(key) => key}
+      format={(value) => String(value)}
+      series={[
+        { id: 'month', label: 'This month', tone: 'output', shape: 'column', values: [10, 30, 70] },
+        { id: 'compare', label: 'Month before', tone: 'cached', shape: 'line', values: [20, 25, null] },
+      ]}
+      tooltipNote={(index) => (index === 1 ? { label: 'Difference', text: '5 more' } : null)}
+    />,
+  )
+  const drawing = screen.getByRole('img')
+  // Three slots across 600 pixels less the axis: the middle of the drawing
+  // is the middle slot, and its right edge the last.
+  pointAt(drawing, 330)
+  const tooltip = screen.getByRole('status')
+  expect(tooltip.textContent).toContain('Difference')
+  expect(tooltip.textContent).toContain('5 more')
+  pointAt(drawing, 595)
+  expect(screen.getByRole('status').textContent).not.toContain('Difference')
 })

@@ -9104,6 +9104,18 @@ button.with-icon {
   font-variant-numeric: tabular-nums;
 }
 
+/* What the reader would otherwise work out from the lines above, set off
+   under them by a rule; the empty swatch keeps its words in their column. */
+.usage-chart-tooltip-note {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.usage-chart-swatch.none {
+  background: transparent;
+}
+
 .usage-chart-ranked {
   display: grid;
   gap: 8px;
