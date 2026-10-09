@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"time"
 
 	"github.com/ziyan/teanode/internal/browser"
 )
@@ -19,7 +21,18 @@ type Browsing interface {
 
 	// TabsAllowed says whether the operator lets people attach a tab.
 	TabsAllowed() bool
+
+	// ReconnectedTab waits up to wait for the person's browser to connect
+	// again after the connection behind dropped went, and is the new one,
+	// or nil when none came. It only waits: connecting again is the
+	// extension's own doing.
+	ReconnectedTab(ctx context.Context, dropped Tab, wait time.Duration) Tab
 }
+
+// ErrDeviceDetached is a device's connection ending while a request to it
+// was open, or before the request could be sent: whether the device did
+// what it was asked is not known.
+var ErrDeviceDetached = errors.New("was detached")
 
 // Tab is a person's attached browser tab as the tool drives it.
 type Tab interface {

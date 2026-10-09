@@ -665,6 +665,10 @@ func (self *AskRun) AttachedTab() tools.Tab {
 	}
 	return nil
 }
+func (self *AskRun) ReconnectedTab(ctx context.Context, dropped tools.Tab, wait time.Duration) tools.Tab {
+	return self.agent.reconnectedTab(ctx, self.settings.Agent.ID, dropped, wait)
+}
+
 func (self *AskRun) TabsAllowed() bool {
 	attach := self.agent.settings.Configuration().Agent.Browser.AttachTabs
 	return attach == nil || *attach

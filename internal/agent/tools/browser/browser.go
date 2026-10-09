@@ -347,7 +347,7 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	default:
 		return nil, fmt.Errorf("%q is not an action a tab does", arguments.Action)
 	}
-	data, err := tab.Ask(ctx, arguments.Action, arguments)
+	data, err := askTab(ctx, run, tab, arguments.Action, arguments)
 	if err != nil {
 		return nil, err
 	}
