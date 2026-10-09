@@ -154,6 +154,18 @@ func TestASessionOutsideAnyCheckoutIsShownNothing(t *testing.T) {
 func TestAPromptRecallsOnlyItsProject(t *testing.T) {
 	world := newCodingWorld(t)
 	world.page(t, "projects/greenhouse", "greenhouse", "Another project.", "The greenhouse tests need a database container too.")
+	// A colleague linked to the project is the person's business, not the
+	// coding tool's, even where the prompt's words hit their page.
+	colleague := world.page(t, "people/bob-example", "Bob Example", "A colleague.", "Bob keeps the database container images.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		colleague.Kind = models.NodePerson
+		if _, err := tx.PutAgentNode(colleague); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		if err := tx.PutAgentEdge(&models.AgentEdge{AgentID: world.agent.ID, FromID: colleague.ID, ToID: world.project.ID, Relation: models.EdgeWorksOn, Status: models.EdgeStated}); err != nil {
+			t.Fatalf("PutAgentEdge: %s", err)
+		}
+	})
 	request := &CodingRequest{Directory: "/srv/alice/code/seedling", ComputerName: "workbench", HomeDirectory: "/srv/alice",
 		Prompt: "which database container do the tests need?"}
 
@@ -164,8 +176,8 @@ func TestAPromptRecallsOnlyItsProject(t *testing.T) {
 	if !strings.Contains(shown.Text, "The tests need a database container running.") {
 		t.Fatalf("the project's fact is recalled:\n%s", shown.Text)
 	}
-	if strings.Contains(shown.Text, "greenhouse") {
-		t.Fatalf("another project is not:\n%s", shown.Text)
+	if strings.Contains(shown.Text, "greenhouse") || strings.Contains(shown.Text, "Bob") {
+		t.Fatalf("another project, and a colleague linked to this one, are not:\n%s", shown.Text)
 	}
 
 	request.ShownPaths = shown.ShownPaths

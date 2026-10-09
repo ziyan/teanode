@@ -427,10 +427,18 @@ func cleanDirectory(directory, homeDirectory string) string {
 	return path.Clean(directory)
 }
 
+// isCodingKind is the kinds of page linked to a project that a coding
+// session may be shown: other work, not people, months or the person's own
+// page. A colleague's page linked to a project holds what they do at work,
+// which is not the coding tool's business, and the first live session
+// recalled exactly that.
+var isCodingKind = map[models.AgentNodeKind]bool{
+	models.NodeProject: true, models.NodeTopic: true, models.NodeThing: true, models.NodeFolder: true,
+}
+
 // codingScope is the pages a coding session's recall may carry: the
-// project's page and those under it, the pages linked to it either way,
-// and the lessons. Never the person's own page, which holds their life
-// rather than their work.
+// projects' pages and those under them, the work pages linked to them
+// either way, and the lessons.
 func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode) (func(string) bool, error) {
 	var linkedIds []string
 	for _, project := range projects {
@@ -453,7 +461,7 @@ func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode
 			return nil, err
 		}
 		for _, node := range nodes {
-			if node.Kind != models.NodeSelf {
+			if isCodingKind[node.Kind] {
 				linked[node.Path] = true
 			}
 		}

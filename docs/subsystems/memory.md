@@ -1060,8 +1060,8 @@ it is what was said, and it is there as soon as the transcript is read.
 
 **When a prompt is typed** it gets the same recall a turn does, with one
 difference made while recall chooses rather than after: only the project's
-page, the pages under it, the pages linked to it (never `self`) and lessons
-may be carried, so a prompt about a build does not carry mail or finance into
+page, the pages under it, the projects, topics, things and folders linked to
+it (never a person, a month or `self`) and lessons may be carried, so a prompt about a build does not carry mail or finance into
 a coding tool's context, and pages left out do not spend the budget. A page
 the session was shown in its last five prompts is left out (the hook keeps
 that count in the user's cache directory), a prompt under three words or a
