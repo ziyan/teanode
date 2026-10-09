@@ -85,7 +85,7 @@ func (self *Agent) nearestInGraphTo(ctx context.Context, agentId string, questio
 // searchChunksByMeaning is the vector search itself, given a question
 // already embedded, so that a turn (which embeds once and keeps it) and a
 // search from outside one (which does not) run the same query.
-func (self *Agent) searchChunksByMeaning(ctx context.Context, agentId string, question *meaning, sourceIds []string, limit int) ([]*models.AgentChunk, bool) {
+func (self *Agent) searchChunksByMeaning(ctx context.Context, agentId string, question *meaning, sourceIds []string, documentPrefix string, limit int) ([]*models.AgentChunk, bool) {
 	if question == nil || !self.settings.Database.VectorIndexing() {
 		return nil, false
 	}
@@ -93,6 +93,11 @@ func (self *Agent) searchChunksByMeaning(ctx context.Context, agentId string, qu
 	if len(sourceIds) > 0 {
 		narrow.Where = append(narrow.Where, `"source_id" = ANY(?)`)
 		narrow.Arguments = append(narrow.Arguments, pq.Array(sourceIds))
+	}
+	if documentPrefix != "" {
+		narrow.Where = append(narrow.Where, `EXISTS (SELECT 1 FROM "agent_chunk" JOIN "agent_document" ON "agent_document"."id" = "agent_chunk"."document_id"`+
+			` WHERE "agent_chunk"."id" = "agent_chunk_vector"."chunk_id" AND "agent_document"."external_id" LIKE ?)`)
+		narrow.Arguments = append(narrow.Arguments, db.LikePrefix(documentPrefix))
 	}
 	var chunks []*models.AgentChunk
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {

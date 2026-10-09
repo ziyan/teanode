@@ -2946,6 +2946,14 @@ export const ja: Catalog = {
   'knowledge.recall.placeholder': 'Alice は何に取り組んでいますか？',
   'knowledge.recall.ask': '持ち込む内容を見る',
   'knowledge.recall.nothing': 'この質問は何も持ち込みません。エージェントは会話だけを頼りに答えることになります。',
+  'knowledge.recall.directory': 'チェックアウト内で（任意）',
+  'knowledge.recall.directoryPlaceholder': '~/code/project',
+  'knowledge.recall.directoryHint':
+    'あるコンピューター上のディレクトリ：teanode hook がそこの Claude Code や Codex のセッションに見せる内容を表示します。質問がなければ、そこで始まるセッションが見る内容です。',
+  'knowledge.recall.computer': 'コンピューター（任意）',
+  'knowledge.recall.coding': 'セッションに見せる内容',
+  'knowledge.recall.codingNothing':
+    '何もありません。エージェントはそのディレクトリを含むチェックアウトを知らないか、質問がそのプロジェクトから何も思い出しません。',
   'knowledge.documents.title': '読んだ内容を検索',
   'knowledge.documents.button': '文書',
   'knowledge.documents.hint':
@@ -2953,6 +2961,10 @@ export const ja: Catalog = {
   'knowledge.documents.query': '探したい言葉',
   'knowledge.documents.placeholder': '失敗した移行',
   'knowledge.documents.source': 'ソース',
+  'knowledge.documents.directory': 'ディレクトリ内で（任意）',
+  'knowledge.documents.where': '見つかった場所',
+  'knowledge.documents.whereOne': '{directory} の中を検索',
+  'knowledge.documents.passageCount': '{count} 件',
   'knowledge.documents.anySource': 'すべてのソース',
   'knowledge.documents.search': '検索',
   'knowledge.documents.nothing': '取り込まれたものの中に、それに関するものはありません。',

@@ -85,13 +85,25 @@ const RECALL = `query ($question: String!) {
   }
 }`
 
+// What a coding session (Claude Code, Codex) in a checkout is shown by the
+// hooks teanode hook installs: with a prompt, what the prompt recalls from
+// the checkout's project; without one, what a session starting there sees.
+const CODING_RECALL = `query ($prompt: String!, $directory: String!, $computerName: String) {
+  RecallAgentCodingMemory(prompt: $prompt, directory: $directory, computerName: $computerName) { projectPath text }
+}`
+
+const CODING_START = `query ($directory: String!, $computerName: String) {
+  ReadAgentCodingContext(directory: $directory, computerName: $computerName) { projectPath text }
+}`
+
 // What the sources indexed, searched the way the agent's own knowledge
 // tool searches it. The graph above is what the agent made of what it
 // read; this is what it read.
-const DOCUMENT_SEARCH = `query ($query: String!, $first: Int, $offset: Int, $sourceId: String) {
-  SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId) {
+const DOCUMENT_SEARCH = `query ($query: String!, $first: Int, $offset: Int, $sourceId: String, $directory: String) {
+  SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId, directory: $directory) {
     passages { documentId externalId title kind author sourceId source happenedAt number text }
     definitions { symbol kind line documentId externalId title }
+    directories { directory sourceId source passageCount }
     meaningful moreCount isMoreCountLowerBound nextOffset
   }
 }`
@@ -265,6 +277,7 @@ type Definition = {
 type FoundDocuments = {
   passages: Passage[]
   definitions: Definition[]
+  directories: { directory: string; sourceId: string; source: string; passageCount: number }[]
   meaningful: boolean
   moreCount: number
   isMoreCountLowerBound: boolean
@@ -1356,24 +1369,43 @@ function SearchResults({
 function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void; onClose: () => void }) {
   const { t } = useTranslation()
   const [question, setQuestion] = useState('')
+  const [directory, setDirectory] = useState('')
+  const [computerName, setComputerName] = useState('')
   // The question the pages in hand answer, so that typing on after an
   // answer puts the old one away rather than leaving it under a question
-  // it no longer belongs to.
+  // it no longer belongs to. With a directory it is the question asked
+  // from that checkout, and what came back is the text a session is shown.
   const [asked, setAsked] = useState<string | null>(null)
   const [pages, setPages] = useState<RecalledPage[]>([])
+  const [codingText, setCodingText] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const wanted = question.trim()
+  const wantedDirectory = directory.trim()
+  const askedKey = `${wanted}\n${wantedDirectory}\n${computerName.trim()}`
 
   const ask = () => {
-    if (wanted === '' || busy) return
+    if ((wanted === '' && wantedDirectory === '') || busy) return
     setBusy(true)
     setProblem(null)
     void (async () => {
       try {
-        const answer = await graphql<{ RecallAgentMemory: { pages: RecalledPage[] } }>(RECALL, { question: wanted })
-        setPages(answer.RecallAgentMemory.pages)
-        setAsked(wanted)
+        if (wantedDirectory !== '') {
+          const place: Record<string, unknown> = { directory: wantedDirectory }
+          if (computerName.trim() !== '') place.computerName = computerName.trim()
+          if (wanted !== '') {
+            const answer = await graphql<{ RecallAgentCodingMemory: { text: string } }>(CODING_RECALL, { ...place, prompt: wanted })
+            setCodingText(answer.RecallAgentCodingMemory.text)
+          } else {
+            const answer = await graphql<{ ReadAgentCodingContext: { text: string } }>(CODING_START, place)
+            setCodingText(answer.ReadAgentCodingContext.text)
+          }
+        } else {
+          const answer = await graphql<{ RecallAgentMemory: { pages: RecalledPage[] } }>(RECALL, { question: wanted })
+          setPages(answer.RecallAgentMemory.pages)
+          setCodingText(null)
+        }
+        setAsked(askedKey)
       } catch (caught) {
         setProblem(messageOf(caught))
         setAsked(null)
@@ -1389,7 +1421,7 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
       submitLabel={t('knowledge.recall.ask')}
       busy={busy}
       error={problem}
-      canSubmit={wanted !== ''}
+      canSubmit={wanted !== '' || wantedDirectory !== ''}
       // Nothing is changed by asking, so the way out is Close: Cancel
       // would name something that is not being cancelled.
       closeLabel={t('common.close')}
@@ -1405,7 +1437,31 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
           onChange={(event) => setQuestion(event.target.value)}
         />
       </label>
-      {asked !== null && asked === wanted ? (
+      <label>
+        <span>{t('knowledge.recall.directory')}</span>
+        <input
+          value={directory}
+          placeholder={t('knowledge.recall.directoryPlaceholder')}
+          onChange={(event) => setDirectory(event.target.value)}
+        />
+      </label>
+      {wantedDirectory === '' ? null : (
+        <label>
+          <span>{t('knowledge.recall.computer')}</span>
+          <input value={computerName} onChange={(event) => setComputerName(event.target.value)} />
+        </label>
+      )}
+      <p className="muted">{t('knowledge.recall.directoryHint')}</p>
+      {asked !== null && asked === askedKey && codingText !== null ? (
+        codingText === '' ? (
+          <p className="muted">{t('knowledge.recall.codingNothing')}</p>
+        ) : (
+          <>
+            <p className="muted document-section">{t('knowledge.recall.coding')}</p>
+            <div className="document-read-text">{codingText}</div>
+          </>
+        )
+      ) : asked !== null && asked === askedKey ? (
         pages.length === 0 ? (
           // Carrying nothing is an ordinary answer -- a question about
           // something it has never been told -- so it is said quietly
@@ -1450,10 +1506,12 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [sourceId, setSourceId] = useState('')
-  // The search the passages in hand answer -- the words and the source --
-  // so that typing on, or narrowing to another source, puts the old answer
-  // away rather than leaving it under a question it no longer belongs to.
-  const [asked, setAsked] = useState<{ words: string; sourceId: string } | null>(null)
+  const [directory, setDirectory] = useState('')
+  // The search the passages in hand answer -- the words, the source and
+  // the directory -- so that typing on, or narrowing to another source,
+  // puts the old answer away rather than leaving it under a question it
+  // no longer belongs to.
+  const [asked, setAsked] = useState<{ words: string; sourceId: string; directory: string } | null>(null)
   const [found, setFound] = useState<FoundDocuments | null>(null)
   // The document being read, and null while the results are what is shown.
   const [reading, setReading] = useState<DocumentExtract | null>(null)
@@ -1475,8 +1533,17 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
     ...(sources.data?.ListAgentKnowledgeSources ?? []).map((source) => ({ value: source.id, label: source.name })),
   ]
 
-  const search = () => {
+  // A directory the results name is searched inside at once, the way a
+  // person narrowing a large tree to where the hits cluster means it, and
+  // in the source it was found in: two computers may have the same path.
+  const search = (inside?: { directory: string; sourceId: string }) => {
     if (wanted === '' || busy) return
+    const narrowedTo = (inside?.directory ?? directory).trim()
+    const narrowedSourceId = inside?.sourceId ?? sourceId
+    if (inside !== undefined) {
+      setDirectory(inside.directory)
+      setSourceId(inside.sourceId)
+    }
     setBusy(true)
     setProblem(null)
     void (async () => {
@@ -1484,10 +1551,11 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
         // The source is left out of the variables rather than sent empty:
         // any source is the absence of a filter, not a filter on nothing.
         const variables: Record<string, unknown> = { query: wanted, first: DOCUMENT_PASSAGES }
-        if (sourceId !== '') variables.sourceId = sourceId
+        if (narrowedSourceId !== '') variables.sourceId = narrowedSourceId
+        if (narrowedTo !== '') variables.directory = narrowedTo
         const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
         setFound(answer.SearchAgentDocuments)
-        setAsked({ words: wanted, sourceId })
+        setAsked({ words: wanted, sourceId: narrowedSourceId, directory: narrowedTo })
         setPageIndex(0)
       } catch (caught) {
         setProblem(messageOf(caught))
@@ -1508,6 +1576,7 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
     const variables: Record<string, unknown> = { query: asked.words, first: DOCUMENT_PASSAGES }
     if (nextPageIndex > 0) variables.offset = nextPageIndex * DOCUMENT_PASSAGES
     if (asked.sourceId !== '') variables.sourceId = asked.sourceId
+    if (asked.directory !== '') variables.directory = asked.directory
     void (async () => {
       try {
         const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
@@ -1592,7 +1661,10 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
   // What is shown is only ever the answer to what is typed. An answer to
   // an older question is kept -- it costs nothing and comes back if the
   // words come back -- and not drawn under the new one.
-  const showing = asked !== null && asked.words === wanted && asked.sourceId === sourceId ? found : null
+  const showing =
+    asked !== null && asked.words === wanted && asked.sourceId === sourceId && asked.directory === directory.trim()
+      ? found
+      : null
 
   const results = (
     <>
@@ -1617,6 +1689,14 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
           onChange={setSourceId}
         />
       </label>
+      <label>
+        <span>{t('knowledge.documents.directory')}</span>
+        <input
+          value={directory}
+          placeholder={t('knowledge.recall.directoryPlaceholder')}
+          onChange={(event) => setDirectory(event.target.value)}
+        />
+      </label>
       {showing === null ? null : showing.passages.length === 0 && showing.definitions.length === 0 ? (
         // Finding nothing is an ordinary answer -- a question about
         // something no source has read -- so it is said quietly here
@@ -1632,6 +1712,26 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
                   <li key={`${definition.documentId}:${definition.symbol}:${definition.line}`}>
                     <span className="mono">{definition.symbol}</span> · {definition.kind} ·{' '}
                     {documentName({ title: definition.title, externalId: definition.externalId })}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {(showing.directories ?? []).length > 0 ? (
+            <>
+              <p className="muted document-section">{t('knowledge.documents.where')}</p>
+              <ul className="document-definitions">
+                {showing.directories.map((hits) => (
+                  <li key={`${hits.sourceId}:${hits.directory}`}>
+                    <button /* link-button: searches inside the directory */
+                      type="button"
+                      className="link"
+                      aria-label={t('knowledge.documents.whereOne', { directory: hits.directory })}
+                      onClick={() => search({ directory: hits.directory, sourceId: hits.sourceId })}
+                    >
+                      {hits.directory}
+                    </button>{' '}
+                    · {t('knowledge.documents.passageCount', { count: hits.passageCount })} · {hits.source}
                   </li>
                 ))}
               </ul>
@@ -1728,7 +1828,7 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
         )
       }
       onClose={onClose}
-      onSubmit={reading === null ? search : readOn}
+      onSubmit={reading === null ? () => search() : readOn}
     >
       {reading === null ? results : reader}
     </FormDialog>

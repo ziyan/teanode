@@ -326,7 +326,7 @@ func (self *Agent) ExplainRecall(ctx context.Context, found *models.Agent, owner
 	if !plan.isEmpty() {
 		explanation.RetrievalMode, explanation.Plan = RetrievalModePlanned, plan
 	}
-	pages, err := self.recallForQuestion(ctx, found, owner, question, plan, explanation)
+	pages, err := self.recallForQuestion(ctx, found, owner, question, plan, explanation, nil)
 	if err != nil {
 		return nil, nil, err
 	}

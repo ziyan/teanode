@@ -36,6 +36,23 @@ type KnowledgeOperation interface {
 	// read from, as directories relative to the source: where each of its
 	// files belongs, since a file does not say.
 	ListAgentSourceCheckouts(sourceId string) ([]string, error)
+
+	// ListAgentCodingDocuments is the newest chat units a coding tool's
+	// session in a directory was filed as, newest first: the documents
+	// whose metadata names that working directory and an assistant.
+	// Where sourceIds is not empty, only theirs.
+	ListAgentCodingDocuments(agentId, directory string, sourceIds []string, limit int) ([]*models.AgentDocument, error)
+
+	// RequestAgentSourceRun makes an enabled source due at a moment and
+	// records the request, touching nothing else: unlike PutAgentSource it
+	// leaves the generation alone, so a pass already running is not
+	// abandoned as if the source had been edited under it, and the request
+	// outlives that pass writing its next time (see run_requested_at).
+	RequestAgentSourceRun(sourceId string, at time.Time) error
+
+	// ClearAgentSourceRunRequest forgets a request made at or before the
+	// moment a pass started, which that pass answers.
+	ClearAgentSourceRunRequest(sourceId string, passStarted time.Time) error
 	ListAgentSources(agentId string) ([]*models.AgentKnowledgeSource, error)
 	DeleteAgentSource(agentId, sourceId string) error
 
@@ -124,7 +141,7 @@ type KnowledgeOperation interface {
 	// HasAgentChunks says whether a document has any passages: whether
 	// anything was read out of it.
 	HasAgentChunks(agentId, documentId string) (bool, error)
-	SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error)
+	SearchAgentChunks(agentId string, sourceIds []string, documentPrefix string, query string, limit int) ([]*models.AgentChunk, error)
 	SearchAgentChunksEveryWord(agentId string, query string, limit int) ([]*models.AgentChunk, error)
 
 	// ListAgentChunksWithoutVector is what is still waiting to be
@@ -217,6 +234,7 @@ type agentSourceModel struct {
 	Instance       string     `gorm:"column:instance"`
 	LastRunAt      *time.Time `gorm:"column:last_run_at"`
 	NextRunAt      *time.Time `gorm:"column:next_run_at"`
+	RunRequestedAt *time.Time `gorm:"column:run_requested_at"`
 	LastError      string     `gorm:"column:last_error"`
 	DocumentCount  int        `gorm:"column:document_count"`
 	ChunkCount     int        `gorm:"column:chunk_count"`
@@ -310,7 +328,7 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 		Kind: string(written.Kind), Name: written.Name, Specification: specification,
 		RootPath: written.RootPath, Enabled: written.Enabled, Cron: written.Cron,
 		Cursor: cursor, Instance: written.Instance, Generation: written.Generation,
-		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, LastError: written.LastError,
+		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, RunRequestedAt: written.RunRequestedAt, LastError: written.LastError,
 		DocumentCount: written.DocumentCount, ChunkCount: written.ChunkCount,
 		RefusedCount: written.RefusedCount, More: written.More,
 		CheckoutsKeptToProfile: written.CheckoutsKeptToProfile,
@@ -354,7 +372,7 @@ func (self *agentSourceModel) toModel() (*models.AgentKnowledgeSource, error) {
 		ID: self.ID, AgentID: self.AgentID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Kind: models.AgentKnowledgeKind(self.Kind), Name: self.Name, RootPath: self.RootPath,
 		Enabled: self.Enabled, Cron: self.Cron, Instance: self.Instance, Generation: self.Generation,
-		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, LastError: self.LastError,
+		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, RunRequestedAt: self.RunRequestedAt, LastError: self.LastError,
 		DocumentCount: self.DocumentCount, ChunkCount: self.ChunkCount,
 		RefusedCount: self.RefusedCount, More: self.More,
 		CheckoutsKeptToProfile: self.CheckoutsKeptToProfile,
@@ -412,6 +430,31 @@ func (self *transaction) ListAgentSourceCheckouts(sourceId string) ([]string, er
 		WHERE "source_id" = ? AND "kind" = 'commit' AND COALESCE("metadata"->>'checkout', '') <> ''`, sourceId).
 		Scan(&checkouts).Error
 	return checkouts, err
+}
+
+func (self *transaction) ListAgentCodingDocuments(agentId, directory string, sourceIds []string, limit int) ([]*models.AgentDocument, error) {
+	if limit <= 0 {
+		limit = 40
+	}
+	return self.documentsFrom(self.tx.
+		Where(`"agent_id" = ? AND "kind" = 'chat' AND "metadata"->>'directory' = ? AND COALESCE("metadata"->>'assistant', '') <> ''`, agentId, directory).
+		Where(`? OR "source_id" = ANY(?)`, len(sourceIds) == 0, pq.Array(sourceIds)).
+		Order(`"happened_at" DESC NULLS LAST, "id" DESC`).Limit(limit))
+}
+
+func (self *transaction) RequestAgentSourceRun(sourceId string, at time.Time) error {
+	// The request is recorded even when the source is already due: a pass
+	// may be on its first page, and have read the files already.
+	return self.tx.Model(&agentSourceModel{}).Where(`"id" = ? AND "enabled"`, sourceId).
+		Updates(map[string]any{
+			"next_run_at":      gorm.Expr(`CASE WHEN "next_run_at" IS NOT NULL AND "next_run_at" <= ? THEN "next_run_at" ELSE ? END`, at, at),
+			"run_requested_at": at,
+		}).Error
+}
+
+func (self *transaction) ClearAgentSourceRunRequest(sourceId string, passStarted time.Time) error {
+	return self.tx.Model(&agentSourceModel{}).Where(`"id" = ? AND "run_requested_at" <= ?`, sourceId, passStarted).
+		Updates(map[string]any{"run_requested_at": nil}).Error
 }
 
 func (self *transaction) GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error) {
@@ -905,7 +948,7 @@ func (self *transaction) ListAgentChunks(agentId, documentId string) ([]*models.
 // the same come back in the same order every time: a search read a page
 // at a time asks for more of the same list, and the shorter list has to
 // be the start of the longer one.
-func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error) {
+func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, documentPrefix string, query string, limit int) ([]*models.AgentChunk, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil
 	}
@@ -919,9 +962,18 @@ func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, q
 		SELECT * FROM "agent_chunk"
 		WHERE "agent_id" = ? AND "search" @@ `+AnyWord+`
 		  AND (? OR "source_id" = ANY(?))
+		  AND (? = '' OR "document_id" IN (SELECT "id" FROM "agent_document" WHERE "agent_id" = ? AND (? OR "source_id" = ANY(?)) AND "external_id" LIKE ?))
 		ORDER BY ts_rank("search", `+AnyWord+`) DESC, "id" ASC LIMIT ?`,
-		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), query, limit)
+		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), documentPrefix, agentId, len(sourceIds) == 0, pq.Array(sourceIds), LikePrefix(documentPrefix), query, limit)
 	return self.chunksFrom(statement)
+}
+
+// LikePrefix is a LIKE pattern matching what starts with prefix, its own
+// % and _ taken literally. Backslash is LIKE's escape by default, and no
+// ESCAPE clause is written: with one, PostgreSQL will not use an index
+// for the prefix.
+func LikePrefix(prefix string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(prefix) + "%"
 }
 
 // SearchAgentChunksEveryWord finds the passages holding every word of the

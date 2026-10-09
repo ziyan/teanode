@@ -283,6 +283,10 @@ type AgentDocumentSearch struct {
 	Definitions []*AgentDefinition `json:"definitions"`
 	Meaningful  bool               `json:"meaningful"`
 
+	// Directories are where the passages ranked fall in a tree of files,
+	// the most first; a search with Directory looks inside one.
+	Directories []*AgentDirectoryHits `json:"directories"`
+
 	// MoreCount is how many more passages the search found past these, at
 	// least that many where IsMoreCountLowerBound says so, and NextOffset
 	// the offset that reads them; zero is the last page.
@@ -446,10 +450,11 @@ const (
 	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String, $readEveryCheckout: Boolean, $commitsPerPass: Int, $ownCommitsAtLeast: Int, $type: String, $settings: JSON) {
 		SaveAgentKnowledgeSource(type: $type, settings: $settings, sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId, readEveryCheckout: $readEveryCheckout, commitsPerPass: $commitsPerPass, ownCommitsAtLeast: $ownCommitsAtLeast) ` + sourceFields + `
 	}`
-	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $offset: Int, $sourceId: String) {
-		SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId) {
+	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $offset: Int, $sourceId: String, $directory: String, $computerName: String) {
+		SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId, directory: $directory, computerName: $computerName) {
 			passages ` + passageFields + `
 			definitions { symbol kind line documentId externalId title }
+			directories { directory sourceId source passageCount }
 			meaningful moreCount isMoreCountLowerBound nextOffset
 		}
 	}`
@@ -760,16 +765,38 @@ func DeleteAgentKnowledgeSource(ctx context.Context, connection *Client, sourceI
 	return connection.Execute(ctx, DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, &result)
 }
 
+// AgentDirectoryHits is a directory a search's passages are in.
+type AgentDirectoryHits struct {
+	Directory    string `json:"directory"`
+	SourceID     string `json:"sourceId"`
+	Source       string `json:"source"`
+	PassageCount int    `json:"passageCount"`
+}
+
+// AgentDocumentQuery is what to search for, and where.
+type AgentDocumentQuery struct {
+	Words         string
+	First, Offset int
+	SourceID      string
+
+	// Directory narrows to what a source of files read under it, on
+	// ComputerName where several have the path.
+	Directory    string
+	ComputerName string
+}
+
 // SearchAgentDocuments finds passages in what the sources indexed: the
 // same search the agent's own knowledge tool runs, past the first offset
 // passages of its ranking.
-func SearchAgentDocuments(ctx context.Context, connection *Client, query string, first, offset int, sourceId string) (*AgentDocumentSearch, error) {
+func SearchAgentDocuments(ctx context.Context, connection *Client, query *AgentDocumentQuery) (*AgentDocumentSearch, error) {
 	var result struct {
 		SearchAgentDocuments *AgentDocumentSearch `json:"SearchAgentDocuments"`
 	}
-	variables := map[string]any{"query": query, "first": first, "offset": offset}
-	if sourceId != "" {
-		variables["sourceId"] = sourceId
+	variables := map[string]any{"query": query.Words, "first": query.First, "offset": query.Offset}
+	for name, value := range map[string]string{"sourceId": query.SourceID, "directory": query.Directory, "computerName": query.ComputerName} {
+		if value != "" {
+			variables[name] = value
+		}
 	}
 	if err := connection.Execute(ctx, DocumentSearchAgentDocuments, variables, &result); err != nil {
 		return nil, err

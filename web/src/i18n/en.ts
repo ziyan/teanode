@@ -2973,6 +2973,18 @@ export const en = {
   'knowledge.recall.placeholder': 'What is Alice working on?',
   'knowledge.recall.ask': 'Show what it carries',
   'knowledge.recall.nothing': 'That question carries nothing. Your agent would answer it from the conversation alone.',
+  // The same question asked from a checkout, the way the hooks in Claude
+  // Code and Codex ask it (teanode hook install): kept to that checkout's
+  // project, and with no question, what a session starting there is shown.
+  'knowledge.recall.directory': 'In a checkout (optional)',
+  'knowledge.recall.directoryPlaceholder': '~/code/project',
+  'knowledge.recall.directoryHint':
+    'A directory on a computer: shows what a Claude Code or Codex session there is shown by teanode hook. ' +
+    'With no question, what a session starting there sees.',
+  'knowledge.recall.computer': 'Computer (optional)',
+  'knowledge.recall.coding': 'What the session is shown',
+  'knowledge.recall.codingNothing':
+    'Nothing: your agent knows no checkout holding that directory, or the question recalls nothing from its project.',
   // What the sources actually read, as against what the agent made of it.
   // The graph is the conclusions and this is the evidence, which is what
   // somebody disagreeing with a fact needs to see.
@@ -2984,6 +2996,10 @@ export const en = {
   'knowledge.documents.query': 'Words to look for',
   'knowledge.documents.placeholder': 'the migration that failed',
   'knowledge.documents.source': 'Source',
+  'knowledge.documents.directory': 'In a directory (optional)',
+  'knowledge.documents.where': 'Where these are',
+  'knowledge.documents.whereOne': 'Search inside {directory}',
+  'knowledge.documents.passageCount': '{count} passages',
   'knowledge.documents.anySource': 'Any source',
   'knowledge.documents.search': 'Search',
   'knowledge.documents.nothing': 'Nothing that has been indexed is about that.',

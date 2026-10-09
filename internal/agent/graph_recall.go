@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -195,7 +196,8 @@ const recallLinkedPages = 5
 // where each page and fact stood in each list, and where the fusion put it.
 func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *RetrievalPlan) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
 	explanation := self.explanation
-	message := self.searchGraph(ctx, words, recallCandidates)
+	candidates := self.recallCandidateCount()
+	message := self.searchGraph(ctx, words, candidates)
 	pageLists, factLists := message.lists(RecallQueryMessage)
 	explanation.explainQuery(&RecallQuery{QueryID: RecallQueryMessage, QueryKind: RecallQueryMessage, QueryText: words}, pageLists, factLists)
 	if plan.isEmpty() {
@@ -216,7 +218,7 @@ func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *R
 	var hopFrom *models.AgentNode
 	for index, search := range plan.Searches {
 		queryId := RecallQueryPlanned + "-" + strconv.Itoa(index+1)
-		planned := self.searchGraph(ctx, search, recallCandidates)
+		planned := self.searchGraph(ctx, search, candidates)
 		if hopFrom == nil && len(planned.nodes) > 0 {
 			hopFrom = planned.nodes[0]
 		}
@@ -254,7 +256,7 @@ func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *R
 			explanation.IsBroadNoteCarried = true
 		}
 	}
-	nodes, facts := fuseNodes(recallCandidates, nodeLists...), fuseFacts(recallCandidates, factFusion...)
+	nodes, facts := fuseNodes(candidates, nodeLists...), fuseFacts(candidates, factFusion...)
 	explanation.explainPages(nodes, allPageLists)
 	if explanation != nil {
 		explanation.fusedFacts = facts
@@ -334,7 +336,7 @@ func (self *AskRun) knowledgeLines(ctx, searchContext context.Context, words str
 	}()
 	go func() {
 		defer waitGroup.Done()
-		byMeaning, indexed = self.SearchKnowledgeByMeaning(searchContext, nil, words, recallChunks*2)
+		byMeaning, indexed = self.SearchKnowledgeByMeaning(searchContext, nil, "", words, recallChunks*2)
 	}()
 	waitGroup.Wait()
 	// Cut short, what either search found in time still counts.
@@ -597,6 +599,10 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	// longer says, and only this side knows to leave them out. Carrying
 	// one inside a page block would put words in the page's mouth that
 	// a person reading the page would not find there.
+	if self.isInRecallScope != nil {
+		nodes = slices.DeleteFunc(slices.Clone(nodes), func(node *models.AgentNode) bool { return !self.isInRecallScope(node.Path) })
+		facts = slices.DeleteFunc(slices.Clone(facts), func(fact *models.AgentFact) bool { return !self.isInRecallScope(paths[fact.NodeID]) })
+	}
 	hitOnPage := map[string][]*models.AgentFact{}
 	for _, fact := range facts {
 		if stillStands(fact) {
@@ -941,19 +947,33 @@ type RecalledPage struct {
 // changed importance and decay as it ran would be measuring its own last
 // pass.
 func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, error) {
-	return self.recallForQuestion(ctx, found, owner, question, nil, nil)
+	return self.recallForQuestion(ctx, found, owner, question, nil, nil, nil)
 }
 
 // RecallForQuestionPlanned is RecallForQuestion following a retrieval plan,
 // as a live turn follows its depth judgement's, without asking any model
 // for one.
 func (self *Agent) RecallForQuestionPlanned(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan) ([]*RecalledPage, error) {
-	return self.recallForQuestion(ctx, found, owner, question, plan, nil)
+	return self.recallForQuestion(ctx, found, owner, question, plan, nil, nil)
+}
+
+// scopedRecallCandidates is how many rows each search offers when recall
+// is kept to some pages: the scope is applied to what the searches found,
+// and twenty from the whole graph were often twenty from outside it.
+const scopedRecallCandidates = recallCandidates * 5
+
+// recallCandidateCount is how many rows each search offers this recall.
+func (self *AskRun) recallCandidateCount() int {
+	if self.isInRecallScope != nil {
+		return scopedRecallCandidates
+	}
+	return recallCandidates
 }
 
 // recallForQuestion is RecallForQuestion, recording why into the
-// explanation where one is given.
-func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan, explanation *RecallExplanation) ([]*RecalledPage, error) {
+// explanation where one is given, and kept to the pages isInScope
+// accepts where it is set.
+func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan, explanation *RecallExplanation, isInScope func(path string) bool) ([]*RecalledPage, error) {
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
 	}
@@ -962,10 +982,11 @@ func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, o
 		return []*RecalledPage{}, nil
 	}
 	run := &AskRun{
-		agent:          self,
-		settings:       &AskSettings{Agent: found, Owner: owner, Message: words},
-		promptMemories: map[string]bool{},
-		explanation:    explanation,
+		agent:           self,
+		settings:        &AskSettings{Agent: found, Owner: owner, Message: words},
+		promptMemories:  map[string]bool{},
+		explanation:     explanation,
+		isInRecallScope: isInScope,
 	}
 	run.ctx = ctx
 	// The index a turn would have carried, built and thrown away.
@@ -981,7 +1002,12 @@ func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, o
 	//
 	// It costs what the index costs, which is a read of the top pages, and
 	// it is the price of the number meaning what it says.
-	_ = run.carryIndex(ctx, indexTokens)
+	//
+	// A scoped recall is for a reader with no index in front of it (a
+	// coding tool's session), so it carries every page's opening.
+	if isInScope == nil {
+		_ = run.carryIndex(ctx, indexTokens)
+	}
 	nodes, facts, sections := run.retrieveFromGraph(ctx, words, plan)
 	var blocks []*recalledBlock
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {

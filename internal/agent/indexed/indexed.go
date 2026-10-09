@@ -11,6 +11,10 @@ package indexed
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,7 +66,7 @@ type Meaning interface {
 	// SearchKnowledgeByMeaning is the passages nearest the words, and
 	// whether the database ranked them itself. False means the caller
 	// should fall back to re-ranking what the words found.
-	SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool)
+	SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool)
 
 	// RankChunksByMeaning puts a set the words found into the order the
 	// meaning wants.
@@ -85,7 +89,30 @@ type Query struct {
 	// Offset is how many passages of the ranking to pass over, to read
 	// the page after one already shown; zero is the first page.
 	Offset int
+
+	// Directory narrows the search to what a source read under one
+	// directory, written as the source's path joined with a folder in it
+	// ("~/code/seedling/cmd"), the way Directories names them; the
+	// source whose path holds it most closely is searched, on
+	// ComputerName where that is given.
+	Directory    string
+	ComputerName string
 }
+
+// DirectoryHits is a directory the passages a search found are in, and
+// how many: where they cluster, before any of them is read.
+type DirectoryHits struct {
+	// Directory is the source's path joined with the folder, which is
+	// what Query.Directory takes to search inside it.
+	Directory    string `json:"directory"`
+	SourceID     string `json:"sourceId"`
+	Source       string `json:"source"`
+	PassageCount int    `json:"passageCount"`
+}
+
+// ErrNoSourceHoldsDirectory is a directory no source of the person's
+// reads.
+var ErrNoSourceHoldsDirectory = errors.New("no source reads that directory")
 
 // Passage is one passage a search found, with everything needed to cite
 // the document it came from without reading that document.
@@ -147,6 +174,12 @@ type Found struct {
 	Passages    []*Passage    `json:"passages"`
 	Definitions []*Definition `json:"definitions"`
 
+	// Directories are where what the search ranked is, the most first:
+	// the directories of a tree of files its passages fall in, so a large
+	// tree can be searched one directory at a time. Empty where they all
+	// fall in one.
+	Directories []*DirectoryHits `json:"directories"`
+
 	// Meaningful says the passages were ranked by what they mean as well
 	// as by the words in them. False is a deployment with no embedding
 	// model, or one whose database cannot rank vectors: what the words
@@ -207,7 +240,7 @@ type Extract struct {
 // in a turn.
 func Search(ctx context.Context, tx db.Transaction, meaning Meaning, agentId string, query Query) (*Found, error) {
 	words := strings.TrimSpace(query.Words)
-	found := &Found{Passages: []*Passage{}, Definitions: []*Definition{}}
+	found := &Found{Passages: []*Passage{}, Definitions: []*Definition{}, Directories: []*DirectoryHits{}}
 	if words == "" {
 		return found, nil
 	}
@@ -232,11 +265,26 @@ func Search(ctx context.Context, tx db.Transaction, meaning Meaning, agentId str
 	// Ranked past this page by another page's worth, so that the line
 	// saying what is left can say how many rather than only that there
 	// is more.
-	ordered, isComplete, meaningful, err := findChunks(ctx, tx, meaning, agentId, query.SourceIds, words, offset+limit*2)
+	sources, err := tx.ListAgentSources(agentId)
+	if err != nil {
+		return nil, err
+	}
+	sourceIds, documentPrefix := query.SourceIds, ""
+	if strings.TrimSpace(query.Directory) != "" {
+		source, prefix := sourceOfDirectory(sources, query.SourceIds, query.Directory, query.ComputerName)
+		if source == nil {
+			return nil, fmt.Errorf("%w: %s", ErrNoSourceHoldsDirectory, query.Directory)
+		}
+		sourceIds, documentPrefix = []string{source.ID}, prefix
+	}
+	ordered, isComplete, meaningful, err := findChunks(ctx, tx, meaning, agentId, sourceIds, documentPrefix, words, offset+limit*2)
 	if err != nil {
 		return nil, err
 	}
 	found.Meaningful = meaningful
+	if found.Directories, err = directoriesOf(tx, agentId, sources, ordered); err != nil {
+		return nil, err
+	}
 	if offset >= len(ordered) {
 		return found, nil
 	}
@@ -255,9 +303,9 @@ func Search(ctx context.Context, tx db.Transaction, meaning Meaning, agentId str
 	if err != nil {
 		return nil, err
 	}
-	sources, err := sourceNames(tx, agentId)
-	if err != nil {
-		return nil, err
+	names := map[string]string{}
+	for _, source := range sources {
+		names[source.ID] = source.Name
 	}
 	for _, scored := range ranked {
 		document := documents[scored.chunk.DocumentID]
@@ -270,7 +318,7 @@ func Search(ctx context.Context, tx db.Transaction, meaning Meaning, agentId str
 		found.Passages = append(found.Passages, &Passage{
 			DocumentID: document.ID, ExternalID: document.ExternalID, Title: document.Cite(),
 			URL: document.URL, Kind: string(document.Kind), Author: document.Author(),
-			SourceID: document.SourceID, Source: sources[document.SourceID],
+			SourceID: document.SourceID, Source: names[document.SourceID],
 			HappenedAt: document.HappenedAt, Private: document.Private,
 			Number: scored.chunk.Number, Text: scored.chunk.Text, Score: scored.score,
 		})
@@ -362,14 +410,14 @@ type scored struct {
 // could repeat what the page before showed or skip what it did not; a
 // round is ranked from lists of a fixed depth whatever page is asked for,
 // so every page is a slice of one list.
-func findChunks(ctx context.Context, tx db.Transaction, meaning Meaning, agentId string, sourceIds []string, words string, wanted int) ([]*scored, bool, bool, error) {
+func findChunks(ctx context.Context, tx db.Transaction, meaning Meaning, agentId string, sourceIds []string, documentPrefix string, words string, wanted int) ([]*scored, bool, bool, error) {
 	var ordered []*scored
 	seen := map[string]bool{}
 	isMeaningful := false
 	for round := 0; ; round++ {
 		wordsDepth := wordsPoolFirst << round
 		meaningDepth := meaningPoolFirst << round
-		byWords, err := tx.SearchAgentChunks(agentId, sourceIds, words, wordsDepth)
+		byWords, err := tx.SearchAgentChunks(agentId, sourceIds, documentPrefix, words, wordsDepth)
 		if err != nil {
 			return nil, false, false, err
 		}
@@ -378,7 +426,7 @@ func findChunks(ctx context.Context, tx db.Transaction, meaning Meaning, agentId
 		// no deeper read would bring back either.
 		isComplete := len(byWords) < wordsDepth
 		var ranked []*scored
-		switch byMeaning, hasVectorIndex := searchByMeaning(ctx, meaning, sourceIds, words, meaningDepth); {
+		switch byMeaning, hasVectorIndex := searchByMeaning(ctx, meaning, sourceIds, documentPrefix, words, meaningDepth); {
 		case meaning == nil:
 			ranked = rank(byWords)
 		case !hasVectorIndex:
@@ -404,11 +452,11 @@ func findChunks(ctx context.Context, tx db.Transaction, meaning Meaning, agentId
 }
 
 // searchByMeaning is the meaning's own list, where there is a meaning.
-func searchByMeaning(ctx context.Context, meaning Meaning, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
+func searchByMeaning(ctx context.Context, meaning Meaning, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {
 	if meaning == nil {
 		return nil, false
 	}
-	return meaning.SearchKnowledgeByMeaning(ctx, sourceIds, words, limit)
+	return meaning.SearchKnowledgeByMeaning(ctx, sourceIds, documentPrefix, words, limit)
 }
 
 // rank scores a single list by position, on the same scale the fusion
@@ -540,18 +588,98 @@ func documentsOf(tx db.Transaction, agentId string, ranked []*scored) (map[strin
 	return byId, nil
 }
 
-// sourceNames is what each source is called, so a hit can say where it
-// came from in the words the person named it with.
-func sourceNames(tx db.Transaction, agentId string) (map[string]string, error) {
-	sources, err := tx.ListAgentSources(agentId)
+// directoryHitsShown is the most directories a search names.
+const directoryHitsShown = 8
+
+// sourceOfDirectory is the source that reads a directory and the prefix
+// of the names it gave what it read there: of the sources on the computer
+// (where one is named) whose path holds the directory, the one whose path
+// is longest. A source's path is matched as the person wrote it, so
+// "~/code/seedling" finds a source at "~/code".
+func sourceOfDirectory(sources []*models.AgentKnowledgeSource, sourceIds []string, directory, computerName string) (*models.AgentKnowledgeSource, string) {
+	directory = cleanPath(directory)
+	var best *models.AgentKnowledgeSource
+	bestPrefix, bestLength := "", -1
+	for _, source := range sources {
+		root := cleanPath(source.Specification.Path)
+		if root == "" || (len(sourceIds) > 0 && !slices.Contains(sourceIds, source.ID)) {
+			continue
+		}
+		if computerName != "" && source.Specification.Computer != computerName {
+			continue
+		}
+		var prefix string
+		switch {
+		case directory == root:
+		case strings.HasPrefix(directory, root+"/"):
+			prefix = strings.TrimPrefix(directory, root+"/") + "/"
+		default:
+			continue
+		}
+		if len(root) > bestLength {
+			best, bestPrefix, bestLength = source, prefix, len(root)
+		}
+	}
+	return best, bestPrefix
+}
+
+func cleanPath(directory string) string {
+	directory = strings.TrimSpace(directory)
+	if directory == "" {
+		return ""
+	}
+	return path.Clean(directory)
+}
+
+// directoriesOf is where the ranked passages are, by the directory their
+// document is in under its source, the directory with the most first.
+// Only a source of files has directories worth naming; an archive's names
+// are its own bookkeeping.
+func directoriesOf(tx db.Transaction, agentId string, sources []*models.AgentKnowledgeSource, ranked []*scored) ([]*DirectoryHits, error) {
+	documents, err := documentsOf(tx, agentId, ranked)
 	if err != nil {
 		return nil, err
 	}
-	names := make(map[string]string, len(sources))
+	sourceById := map[string]*models.AgentKnowledgeSource{}
 	for _, source := range sources {
-		names[source.ID] = source.Name
+		sourceById[source.ID] = source
 	}
-	return names, nil
+	byDirectory := map[string]*DirectoryHits{}
+	var order []string
+	for _, found := range ranked {
+		document := documents[found.chunk.DocumentID]
+		if document == nil {
+			continue
+		}
+		source := sourceById[document.SourceID]
+		if source == nil || source.Specification.Path == "" || (source.Specification.Format != models.FormatFiles && source.Specification.Format != "") {
+			continue
+		}
+		directory := cleanPath(source.Specification.Path)
+		if folder := path.Dir(document.ExternalID); folder != "." && folder != "/" {
+			directory += "/" + folder
+		}
+		hits := byDirectory[directory]
+		if hits == nil {
+			hits = &DirectoryHits{Directory: directory, SourceID: source.ID, Source: source.Name}
+			byDirectory[directory] = hits
+			order = append(order, directory)
+		}
+		hits.PassageCount++
+	}
+	if len(order) < 2 {
+		return []*DirectoryHits{}, nil
+	}
+	// The most passages first; of two with as many, the one whose best
+	// passage ranked higher, which is the one met first.
+	sort.SliceStable(order, func(left, right int) bool {
+		return byDirectory[order[left]].PassageCount > byDirectory[order[right]].PassageCount
+	})
+	directories := []*DirectoryHits{}
+	for _, directory := range order[:min(len(order), directoryHitsShown)] {
+		directories = append(directories, byDirectory[directory])
+	}
+	return directories, nil
 }
 
 // Cite is how one passage is named where a citation has to be one line:

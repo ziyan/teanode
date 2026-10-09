@@ -230,7 +230,13 @@ type AgentKnowledgeSource struct {
 
 	LastRunAt *time.Time `json:"lastRunAt,omitempty"`
 	NextRunAt *time.Time `json:"nextRunAt,omitempty"`
-	LastError string     `json:"lastError,omitempty"`
+
+	// RunRequestedAt is when somebody last asked for it to be read now and
+	// no pass has started since: a pass ending with it set runs again at
+	// once, since it may have read the files before what was asked for
+	// was written. See db.RequestAgentSourceRun.
+	RunRequestedAt *time.Time `json:"-"`
+	LastError      string     `json:"lastError,omitempty"`
 
 	DocumentCount int `json:"documentCount"`
 	ChunkCount    int `json:"chunkCount"`

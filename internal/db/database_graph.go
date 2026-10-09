@@ -140,6 +140,12 @@ type GraphOperation interface {
 	// first, for a reader that has room for only some of them.
 	ListAgentFactsLively(agentId, nodeId string, limit int) ([]*models.AgentFact, error)
 
+	// ListAgentFactsStartingWith is every live fact whose text starts with
+	// a prefix, on whatever page it now sits: the lines a checkout's
+	// profile writes ("The checkout is at <directory> on <computer>.",
+	// "Lives at <remote>.") are how a coding session finds its project.
+	ListAgentFactsStartingWith(agentId, prefix string, limit int) ([]*models.AgentFact, error)
+
 	// ListAgentFactsOfKindNewestFirst is a page's live facts of one kind,
 	// the most recently filed first.
 	ListAgentFactsOfKindNewestFirst(agentId, nodeId string, factKind models.AgentFactKind, limit int) ([]*models.AgentFact, error)
@@ -1201,6 +1207,26 @@ func (self *transaction) ListAgentFactsLively(agentId, nodeId string, limit int)
 	}
 	return self.factsFrom(self.tx.Where(`"agent_id" = ? AND "node_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL`, agentId, nodeId).
 		Order(`"used_at" DESC NULLS LAST, "modified_at" DESC`).Limit(limit))
+}
+
+// factLineStart is how much of a fact agent_fact_line_start indexes; the
+// expression in the query must be the index's own for it to be used, so
+// changing it means changing left("text", 24) in the query and in
+// migration 0158 with it.
+const factLineStart = 24
+
+func (self *transaction) ListAgentFactsStartingWith(agentId, prefix string, limit int) ([]*models.AgentFact, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	query := self.tx.Where(`"agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL AND "text" LIKE ?`, agentId, LikePrefix(prefix))
+	// Through agent_fact_line_start (migration 0158), which holds the
+	// first factLineStart characters of each live fact.
+	if runes := []rune(prefix); len(runes) <= factLineStart {
+		query = query.Where(`left("text", 24) LIKE ?`, LikePrefix(prefix))
+	}
+	return self.factsFrom(query.
+		Order(`"modified_at" DESC`).Limit(limit))
 }
 
 func (self *transaction) ListAgentFactsForAudience(agentId string, audience models.AgentAudience, limit int) ([]*models.AgentFact, error) {

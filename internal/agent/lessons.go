@@ -511,6 +511,11 @@ const lessonsHeading = "Lessons from earlier work, each borne out by a command t
 // each, within their budget: the same for a turn and for an evaluation
 // that answers as a turn would.
 func (self *AskRun) lessonLines(ctx context.Context, words string) []string {
+	return self.lessonLinesAbove(ctx, words, meaningFloorGraph)
+}
+
+// lessonLinesAbove is lessonLines for lessons at least floor alike.
+func (self *AskRun) lessonLinesAbove(ctx context.Context, words string, floor float64) []string {
 	question := self.meaningOfQuestion(ctx, "recall", words)
 	if question == nil {
 		return nil
@@ -519,7 +524,7 @@ func (self *AskRun) lessonLines(ctx context.Context, words string) []string {
 	var lines []string
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		scores, err := tx.Nearest(db.AgentFactTable, agentId, question.ModelName, question.Vector, recallLessons, db.VectorQuery{
-			Floor: meaningFloorGraph,
+			Floor: floor,
 			Where: []string{`EXISTS (SELECT 1 FROM "agent_fact" WHERE "agent_fact"."id" = "agent_fact_vector"."fact_id"` +
 				` AND "agent_fact"."kind" = 'lesson' AND NOT "agent_fact"."dormant" AND COALESCE("agent_fact"."superseded_by", '') = '')`},
 		})

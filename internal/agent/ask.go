@@ -330,6 +330,12 @@ type AskRun struct {
 	recalled       []string
 	promptMemories map[string]bool
 
+	// isInRecallScope keeps recall to some pages, where it is set: a
+	// coding session's recall to the checkout's project and what it
+	// links to. Checked while recall chooses, not after, so that pages
+	// left out do not spend the budget the ones kept could have had.
+	isInRecallScope func(path string) bool
+
 	// cardSlot is held by whichever call has a card up in this run's
 	// conversation, so that the calls of a round running together put
 	// their questions one at a time. See takeCardSlot.

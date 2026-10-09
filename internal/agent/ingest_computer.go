@@ -85,7 +85,14 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	if name := source.Specification.Computer; source.Kind == models.SourceComputer && name != "" {
 		waited := time.Now()
 		for {
-			turn := self.claimComputer(name, source.ID)
+			// A source somebody asked to read now goes first, every page
+			// of the pass that answers the request: it is a coding
+			// session that just answered asking to be read in
+			// (CaptureCodingSession), and behind four sources each part
+			// way through a long pass a capture waited the better part of
+			// an hour. Urgent on its first page only, it still waited that
+			// long, a page at a time. A scheduled pass takes its turn.
+			turn := self.claimComputer(name, source.ID, source.RunRequestedAt)
 			if turn.isFree {
 				break
 			}
@@ -270,6 +277,18 @@ func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.Agent
 // it last asked.
 type computerWait struct {
 	since, asked time.Time
+
+	// isRequested is a source somebody asked to read now, which goes
+	// before every source that was not.
+	isRequested bool
+}
+
+// goesBefore says whether this wait has the computer before another.
+func (self computerWait) goesBefore(other computerWait) bool {
+	if self.isRequested != other.isRequested {
+		return self.isRequested
+	}
+	return self.since.Before(other.since)
 }
 
 const (
@@ -307,11 +326,15 @@ type computerTurn struct {
 // which asks again within seconds, have the computer every time, while one
 // starting a pass asked every few minutes and waited behind them all
 // evening.
-func (self *Agent) claimComputer(computer, sourceId string) computerTurn {
-	return self.claimComputerAt(computer, sourceId, time.Now())
+//
+// A source asked to read now (requestedAt set) goes ahead of every source
+// that was not, though never ahead of the one reading now; two that were
+// go in the order they were asked.
+func (self *Agent) claimComputer(computer, sourceId string, requestedAt *time.Time) computerTurn {
+	return self.claimComputerAt(computer, sourceId, time.Now(), requestedAt)
 }
 
-func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time) computerTurn {
+func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time, requestedAt *time.Time) computerTurn {
 	self.readingMutex.Lock()
 	defer self.readingMutex.Unlock()
 	if self.computersBusy == nil {
@@ -329,6 +352,10 @@ func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time) com
 	if !found || now.Sub(mine.asked) > computerWaitForgotten {
 		mine.since = now
 	}
+	mine.isRequested = requestedAt != nil
+	if mine.isRequested {
+		mine.since = *requestedAt
+	}
 	mine.asked = now
 	waiting[sourceId] = mine
 
@@ -336,7 +363,7 @@ func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time) com
 		return computerTurn{other: other, isReading: true}
 	}
 	for other, wait := range waiting {
-		if other != sourceId && now.Sub(wait.asked) <= computerWaitAsking && wait.since.Before(mine.since) {
+		if other != sourceId && now.Sub(wait.asked) <= computerWaitAsking && wait.goesBefore(mine) {
 			return computerTurn{other: other}
 		}
 	}

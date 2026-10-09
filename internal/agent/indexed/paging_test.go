@@ -39,7 +39,7 @@ func (self *nearMeaning) near() []*models.AgentChunk {
 	return near
 }
 
-func (self *nearMeaning) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
+func (self *nearMeaning) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {
 	if !self.hasVectorIndex {
 		return nil, false
 	}

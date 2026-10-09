@@ -143,6 +143,9 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"GetSettings": client.DocumentGetSettings,
 		// What syncing, switching and deleting a finance source send.
 		"SyncAgentKnowledgeSource":   client.DocumentSyncAgentKnowledgeSource,
+		"ReadAgentCodingContext":     client.DocumentReadAgentCodingContext,
+		"RecallAgentCodingMemory":    client.DocumentRecallAgentCodingMemory,
+		"CaptureAgentCodingSession":  client.DocumentCaptureAgentCodingSession,
 		"DeleteAgentKnowledgeSource": client.DocumentDeleteAgentKnowledgeSource,
 	}
 	// The finance area, one document per operation, which teanode finance
