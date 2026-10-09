@@ -8,8 +8,8 @@ A person who codes with Claude Code or Codex starts every session from nothing. 
 
 After this change the person runs `teanode hook install claude-code` (or `codex`) once on a computer. From then on, every session of that tool on that computer:
 
-1. starts with a short block about the checkout it was opened in: the project's page summary and its most useful facts, the lessons that apply, and where the last session in that directory stopped;
-2. gets, before each prompt the person types, the memory that prompt recalls, kept to the checkout's project and what it links to, within a token budget, and never the same page twice in a few prompts;
+1. starts with a short block about the checkout it was opened in: each project page the checkout is filed on, with its summary and liveliest facts, and where the last session in that directory stopped;
+2. gets, before each prompt the person types, the memory that prompt recalls and any lesson close to it, kept to the checkout's project and the work pages linked to it, within a token budget, and never the same page twice in a few prompts;
 3. is read into TeaNode within about a minute of each answer, rather than at the source's nightly pass, so the next session sees this one.
 
 Separately, a knowledge search over indexed code can be narrowed to a directory and says which directories its hits cluster in, so an agent can look at the right part of a large tree first and then search inside it.
@@ -19,11 +19,13 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
 ## Progress
 
 - [x] (2026-10-09 15:40Z) Researched the hooks of both tools and how transcripts, checkouts and lessons are stored today (see Context and Orientation).
-- [ ] Milestone 1: the agent and API side: finding a checkout's project page from a directory, the session-start block, scoped prompt recall, capture.
-- [ ] Milestone 2: the command line: `teanode hook claude-code|codex`, `teanode hook install|uninstall`, `teanode agent memory checkout`.
-- [ ] Milestone 3: directory-first knowledge search on every surface.
-- [ ] Milestone 4: the dashboard preview and the agent's memory tool.
-- [ ] Milestone 5: end to end in real Claude Code and Codex sessions on the development computer, and a measured comparison with and without the hooks.
+- [x] (2026-10-09 16:30Z) Milestone 1: the agent and API side: finding a checkout's project pages from a directory, the session-start block, scoped prompt recall, capture; migration 0156 for the directory lookup.
+- [x] (2026-10-09 16:30Z) Milestone 2: the command line: `teanode hook claude-code|codex`, `teanode hook install|uninstall`, `teanode agent memory checkout`.
+- [x] (2026-10-09 16:45Z) Milestone 3: directory-first knowledge search on the knowledge tool, `SearchAgentDocuments`, `teanode agent knowledge search --directory` and the documents dialog.
+- [x] (2026-10-09 16:50Z) Milestone 4: the Recall dialog's checkout field and the memory tool's `checkout` action (also reachable over MCP).
+- [x] (2026-10-09 17:10Z) Deployed and run live: the session-start block and a prompt's recall checked on the development checkout; three fixes from what the live output showed (every project page the checkout is filed on, linked people and months kept out, lessons only above a stricter similarity).
+- [x] (2026-10-09 17:15Z) Real hooks in real sessions: `codex exec` and `claude -p` both answered "what was the last session here about" from the block, in one turn with no tool call; a Stop event set the claude-code source due at once.
+- [ ] Milestone 5: the measured comparison with and without the hooks (running), and capture going ahead of long passes on the same computer (committed, deploy after the trial).
 
 ## Surprises & Discoveries
 
@@ -31,6 +33,15 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
   Evidence: a query over `agent_fact` for that text found it on `projects/teanode/operations` and `projects/teanode/agent/teanode-development-and-repository`, with superseded copies beside them.
 - Observation: most units filed from coding sessions hold one post, because a long answer fills the 3000-character window alone, and the dream reads a chat unit only when it has two posts or more.
   Evidence: the three newest Claude Code documents in production each carry `"posts": 1`.
+
+- Observation: both tools keep what a hook adds out of what the transcript sources read. Claude Code writes it as an `attachment` line of type `hook_additional_context` (the claude-code type reads only queued commands among attachments); Codex writes it as a `developer` message (the codex type reads only `user` and `assistant`). No change to the source types was needed for the injected block not to be filed back as something the person said.
+  Evidence: a probe hook's text appeared once in each transcript, on those line types, and nowhere the types read.
+- Observation: a capture's pass waited behind four other sources on the same computer, each part way through a long pass (chat, mail, a code tree, the other tool's transcripts); the server gives a computer to one source at a time, the longest waiter first.
+  Evidence: the claude-code source said "waiting its turn on gen7, which is reading chat" for over ten minutes after a Stop event made it due.
+- Observation: the first live session start resolved the development checkout to the profile's own page (`projects/<name>-<parent>`), which held three facts, and left out the older page the night had grown around it, which held almost everything; the one lesson matched to the whole project was about downloading photos; and a prompt's recall carried a colleague's page and a month page through their links to the project.
+  Evidence: the output of `teanode agent memory checkout .` before and after the fixes in commits 8f29f220, 27cc3bdc and da9a97c9.
+- Observation: a memory fact can be about a neighbouring part of the system and still read as an answer. Asked which GraphQL calls the command-line client retries, memory offered the dashboard client's rule (a read-only query once); with the hooks both tools still checked the code and answered for the command line correctly.
+  Evidence: the trial's "retries" answers in both arms.
 
 ## Decision Log
 
@@ -48,6 +59,13 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
   Date/Author: 2026-10-09, agent.
 - Decision: the hook never blocks or fails the coding tool. Any error prints nothing and exits 0.
   Rationale: memory is a help; a server that is down must not stop the person typing.
+  Date/Author: 2026-10-09, agent.
+
+- Decision: show every project page a checkout is filed on, the profile's own first; keep linked pages to projects, topics, things and folders; show lessons only for a prompt, above a similarity of 0.45.
+  Rationale: what the first live runs showed (see Surprises). People and months linked to a project are the person's business, not a coding tool's, and the lessons on file are about the agent's own errands.
+  Date/Author: 2026-10-09, agent.
+- Decision: a coding tool's transcripts starting a pass go ahead of other sources waiting for the same computer, never ahead of the one reading now.
+  Rationale: the pass is a session asking to be read in and takes seconds; without it a capture waited behind hours of other sources' pages. Only the first page of a pass is urgent, so a long first read of the whole store still takes turns.
   Date/Author: 2026-10-09, agent.
 
 ## Outcomes & Retrospective

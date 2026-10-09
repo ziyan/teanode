@@ -1072,7 +1072,11 @@ asked to read again now (`CaptureCodingSession`), setting only its next run
 time, so a pass already under way is not abandoned as if the source had
 been edited. A pass that finishes after such a request keeps it rather than
 writing its scheduled time over it (`markSource`): it may have read the
-transcript before the answer was written.
+transcript before the answer was written. A computer is read by one source
+at a time, the longest waiter first, and a coding tool's transcripts
+starting a pass count as having waited longest (`claimComputer`): behind
+other sources part way through long passes, a capture otherwise waited the
+better part of an hour.
 
 What a session is shown is wrapped in `<teanode-memory>`, so it can be told
 apart from what the person said. The same blocks are on the memory tool's
