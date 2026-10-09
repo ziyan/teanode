@@ -63,9 +63,23 @@ const agentIdeaFields = `{ id ideaKey ideaKind ideaCategory emoji headline body 
   evidence { evidenceKind evidenceId evidenceSummary } suggestionReason ideaStatus expiredReason startedConversationId
   createdAt shownAt startedAt closedAt expiresAt }`
 
+// agentIdeaHeadlineFields are an idea in a listing the agent reads: what it
+// is and what became of it, without the body, the opening request and the
+// evidence, which reading the one idea gives.
+const agentIdeaHeadlineFields = `{ id ideaKind ideaCategory emoji headline neededToolNames suggestionReason ideaStatus
+  expiredReason startedConversationId createdAt startedAt closedAt expiresAt }`
+
 const (
-	DocumentListAgentIdeas = `query ($ideaStatuses: [String!], $ideaKinds: [String!]) {
-  ListAgentIdeas(ideaStatuses: $ideaStatuses, ideaKinds: $ideaKinds) { ideas ` + agentIdeaFields + ` ideaCategories { ideaCategory emojis } }
+	DocumentListAgentIdeas = `query ($ideaStatuses: [String!], $ideaKinds: [String!], $ideaIds: [String!], $limit: Int, $offset: Int) {
+  ListAgentIdeas(ideaStatuses: $ideaStatuses, ideaKinds: $ideaKinds, ideaIds: $ideaIds, limit: $limit, offset: $offset) {
+    ideas ` + agentIdeaFields + ` ideaCategories { ideaCategory emojis } totalCount nextOffset }
+}`
+
+	// DocumentListAgentIdeaHeadlines is the same listing in the fields a
+	// page of many ideas needs, and without the areas.
+	DocumentListAgentIdeaHeadlines = `query ($ideaStatuses: [String!], $ideaKinds: [String!], $limit: Int, $offset: Int) {
+  ListAgentIdeas(ideaStatuses: $ideaStatuses, ideaKinds: $ideaKinds, limit: $limit, offset: $offset) {
+    ideas ` + agentIdeaHeadlineFields + ` totalCount nextOffset }
 }`
 
 	DocumentProposeAgentIdea = `mutation ($ideaCategory: String!, $emoji: String!, $headline: String!, $body: String!, $openingRequest: String!,
@@ -83,24 +97,50 @@ const (
 }`
 )
 
-// ListAgentIdeas is the ideas in the statuses and kinds given, or in all.
-func ListAgentIdeas(ctx context.Context, connection *Client, statuses, kinds []string) ([]*AgentIdea, error) {
+// AgentIdeaListing narrows a listing of ideas: the statuses, kinds and
+// ideas given, or all; Limit of them from Offset, or every one when Limit
+// is zero.
+type AgentIdeaListing struct {
+	Statuses []string
+	Kinds    []string
+	IdeaIDs  []string
+	Limit    int
+	Offset   int
+}
+
+// AgentIdeaPage is a page of ideas, how many match on every page, and the
+// offset of the next page, zero on the last.
+type AgentIdeaPage struct {
+	Ideas      []*AgentIdea `json:"ideas"`
+	TotalCount int          `json:"totalCount"`
+	NextOffset int          `json:"nextOffset"`
+}
+
+// ListAgentIdeas is a page of the ideas the listing asks for.
+func ListAgentIdeas(ctx context.Context, connection *Client, listing AgentIdeaListing) (*AgentIdeaPage, error) {
 	var result struct {
-		ListAgentIdeas struct {
-			Ideas []*AgentIdea `json:"ideas"`
-		} `json:"ListAgentIdeas"`
+		ListAgentIdeas *AgentIdeaPage `json:"ListAgentIdeas"`
 	}
 	variables := map[string]any{}
-	if len(statuses) > 0 {
-		variables["ideaStatuses"] = statuses
+	if len(listing.Statuses) > 0 {
+		variables["ideaStatuses"] = listing.Statuses
 	}
-	if len(kinds) > 0 {
-		variables["ideaKinds"] = kinds
+	if len(listing.Kinds) > 0 {
+		variables["ideaKinds"] = listing.Kinds
+	}
+	if len(listing.IdeaIDs) > 0 {
+		variables["ideaIds"] = listing.IdeaIDs
+	}
+	if listing.Limit > 0 {
+		variables["limit"] = listing.Limit
+	}
+	if listing.Offset > 0 {
+		variables["offset"] = listing.Offset
 	}
 	if err := connection.Execute(ctx, DocumentListAgentIdeas, variables, &result); err != nil {
 		return nil, err
 	}
-	return result.ListAgentIdeas.Ideas, nil
+	return result.ListAgentIdeas, nil
 }
 
 // ProposeAgentIdea keeps an idea, once it passes the check every idea

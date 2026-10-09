@@ -32,7 +32,7 @@ type AgentGraphQuery interface {
 
 	// One page with its facts, its links and what is under it. Needs
 	// agent:use.
-	AgentGraphPage(ctx context.Context, arguments AgentGraphPageArguments) (*AgentGraphPageResult, error)
+	AgentGraphPage(ctx context.Context, arguments AgentGraphPageReadArguments) (*AgentGraphPageResult, error)
 
 	// The pages directly under one, a page at a time, most important
 	// first, with the total. Needs agent:use.
@@ -210,6 +210,15 @@ type AgentGraphIndexArguments struct {
 
 type AgentGraphPageArguments struct {
 	Path string `json:"path"`
+}
+
+// AgentGraphPageReadArguments is the page to read, and which of its links:
+// every one when neither is given, or LinkLimit of them past LinkOffset,
+// in the order models.SortAgentEdgesFrom puts them.
+type AgentGraphPageReadArguments struct {
+	Path       string `json:"path"`
+	LinkOffset int    `json:"linkOffset" graphapi:"nullable"`
+	LinkLimit  int    `json:"linkLimit" graphapi:"nullable"`
 }
 
 type AgentGraphChildrenArguments struct {
@@ -535,6 +544,12 @@ type AgentGraphPageResult struct {
 	Edges    []*models.AgentEdge `json:"edges"`
 	Children []*models.AgentNode `json:"children"`
 
+	// LinkCount is how many links the page has, whichever of them Edges
+	// holds, and NextLinkOffset the linkOffset of the next part of them,
+	// zero when Edges reaches the last.
+	LinkCount      int `json:"linkCount"`
+	NextLinkOffset int `json:"nextLinkOffset"`
+
 	// Folded is what the page used to say and no longer states: a fact
 	// the agent decided repeated another, standing behind the one that
 	// absorbed it. Kept out of Facts so the page reads as what it says
@@ -780,7 +795,7 @@ func (self *graph) AgentGraphIndex(ctx context.Context, arguments AgentGraphInde
 	return tx.ListAgentNodesUnder(found.ID, "", limit)
 }
 
-func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageArguments) (*AgentGraphPageResult, error) {
+func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageReadArguments) (*AgentGraphPageResult, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
@@ -810,6 +825,10 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageA
 	if result.Edges, err = tx.ListAgentEdges(found.ID, node.ID); err != nil {
 		return nil, err
 	}
+	if arguments.LinkOffset < 0 || arguments.LinkLimit < 0 {
+		return nil, fmt.Errorf("%w: linkOffset and linkLimit cannot be negative", api.ErrInvalidArguments)
+	}
+	result.Edges, result.LinkCount, result.NextLinkOffset = pageOfLinks(node.Path, result.Edges, arguments.LinkOffset, arguments.LinkLimit)
 	if result.Attachments, err = self.attachmentsCitedBy(tx, found.ID, result.Facts); err != nil {
 		return nil, err
 	}
@@ -1052,6 +1071,23 @@ func firstLine(text string) string {
 // with three hundred children is a folder, and a folder is browsed as a
 // list; the explorer shows the first few and says how many there are.
 const neighbourLimit = 24
+
+// pageOfLinks is a page's links from offset, limit of them or every one
+// past offset when limit is zero, how many there are, and the offset of
+// the next part. With neither given they are every link as they were
+// read, which is what a page answered before links were paged.
+func pageOfLinks(path string, edges []*models.AgentEdge, offset, limit int) ([]*models.AgentEdge, int, int) {
+	linkCount := len(edges)
+	if offset == 0 && limit == 0 {
+		return edges, linkCount, 0
+	}
+	models.SortAgentEdgesFrom(path, edges)
+	edges = edges[min(offset, linkCount):]
+	if limit > 0 && len(edges) > limit {
+		return edges[:limit], linkCount, offset + limit
+	}
+	return edges, linkCount, 0
+}
 
 func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGraphPageArguments) (*AgentGraphNeighboursResult, error) {
 	_, found, err := self.requireAgentPerson(ctx)
