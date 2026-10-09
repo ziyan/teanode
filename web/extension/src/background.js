@@ -34,13 +34,22 @@ const groups = new Map()
 // close. Kept in the session's storage, so that a worker started again
 // still knows them; a tab the person moved into the group is not one.
 const opened = new Set()
-const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId']).then(({ opened: kept, groups: keptGroups, ownTabId }) => {
+const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'tabId']).then(async ({ opened: kept, groups: keptGroups, ownTabId, tabId }) => {
   for (const id of kept || []) opened.add(id)
   for (const [windowId, groupId] of keptGroups || []) groups.set(Number(windowId), groupId)
+  // The tab the actions went to, if the worker was stopped with one and it
+  // is still there. Kept in memory only, it was forgotten whenever the
+  // worker stopped, and the agent was told there was no tab while the one
+  // it had opened sat in front of the person.
+  if (tabId && attached.tabId === null) {
+    await chrome.tabs.get(tabId).then(() => {
+      attached.tabId = tabId
+    }).catch(() => chrome.storage.session.remove('tabId'))
+  }
   // The person's own tab, if they had attached one before the worker was
   // stopped, and it is still there.
   if (ownTabId && attached.ownTabId === null) {
-    return chrome.tabs.get(ownTabId).then(() => {
+    await chrome.tabs.get(ownTabId).then(() => {
       attached.ownTabId = ownTabId
       if (attached.tabId === null) attached.tabId = ownTabId
     }).catch(() => chrome.storage.session.remove('ownTabId'))
@@ -49,6 +58,12 @@ const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId']).th
 const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
 const rememberGroups = () => chrome.storage.session.set({ groups: [...groups] })
 const rememberOwn = () => chrome.storage.session.set({ ownTabId: attached.ownTabId })
+// useTab makes a tab, or none, the one the actions go to, and keeps that
+// beside ownTabId for a worker started again.
+const useTab = (tabId) => {
+  attached.tabId = tabId
+  return chrome.storage.session.set({ tabId })
+}
 let pings = null
 // attempt counts the connections that did not last, for waiting longer
 // before each next one; retry is the timer that makes it.
@@ -114,7 +129,7 @@ async function attach(tab) {
     return
   }
   attached.ownTabId = tab.id
-  attached.tabId = tab.id
+  await useTab(tab.id)
   attached.title = tab.title || ''
   attached.url = tab.url || ''
   await rememberOwn()
@@ -139,7 +154,7 @@ async function detach() {
   await rememberOwn()
   if (attached.tabId === own) {
     const mine = await agentTabs()
-    attached.tabId = mine.length > 0 ? mine[mine.length - 1].id : null
+    await useTab(mine.length > 0 ? mine[mine.length - 1].id : null)
   }
   await current().catch(() => {})
   showState()
@@ -162,7 +177,7 @@ function disconnect() {
   }
   clearInterval(pings)
   attached.ownTabId = null
-  attached.tabId = null
+  void useTab(null)
   void rememberOwn()
   setBadge('')
   tellPanels()
@@ -195,7 +210,7 @@ function connect(origin, secret) {
         attached.title = found.title || ''
         attached.url = found.url || ''
       } else {
-        attached.tabId = null
+        await useTab(null)
       }
     }
     opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null }))
@@ -233,7 +248,10 @@ function connect(origin, secret) {
     }
     if (message.type === 'act') {
       const answer = await act(message.action, message.args || {})
-      socket?.send(JSON.stringify({ type: 'result', id: message.id, ...answer }))
+      // On the socket the request came on, or not at all: the server
+      // numbers a request for the connection it sent it on, and a late
+      // answer sent on a newer one is nobody's.
+      if (opening.readyState === WebSocket.OPEN) opening.send(JSON.stringify({ type: 'result', id: message.id, ...answer }))
     }
   }
   opening.onclose = () => {
@@ -491,7 +509,7 @@ async function act(action, args) {
       opened.add(made.id)
       await rememberOpened()
       await groupFor(windowId, made.id)
-      attached.tabId = made.id
+      await useTab(made.id)
       await waitForLoad(made.id)
       return { ok: true, data: await current() }
     }
@@ -522,7 +540,7 @@ async function act(action, args) {
       const wanted = await pickTab(args, attached.ownTabId)
       if (!wanted) return { ok: false, error: 'not a tab of this conversation: the person\'s own, or one you opened; tabs lists them' }
       await chrome.tabs.update(wanted, { active: true })
-      attached.tabId = wanted
+      await useTab(wanted)
       return { ok: true, data: await current() }
     }
     if (action === 'close') {
@@ -538,7 +556,7 @@ async function act(action, args) {
       if (attached.tabId === wanted) {
         // Back to the person's own tab, or the last one opened, or none.
         const left = await agentTabs()
-        attached.tabId = attached.ownTabId !== null ? attached.ownTabId : left.length > 0 ? left[left.length - 1].id : null
+        await useTab(attached.ownTabId !== null ? attached.ownTabId : left.length > 0 ? left[left.length - 1].id : null)
         if (attached.tabId !== null) await chrome.tabs.update(attached.tabId, { active: true })
       }
       return { ok: true, data: await current() }
@@ -865,8 +883,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   // A tab the agent opened, closed by the person: back to their own, or to
   // the last one it opened, or to none.
   if (attached.tabId === tabId) {
-    void agentTabs().then((left) => {
-      attached.tabId = attached.ownTabId !== null ? attached.ownTabId : left.length > 0 ? left[left.length - 1].id : null
+    void agentTabs().then(async (left) => {
+      await useTab(attached.ownTabId !== null ? attached.ownTabId : left.length > 0 ? left[left.length - 1].id : null)
       return current()
     }).catch(() => {})
   }
