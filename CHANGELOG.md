@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.122.0] - 2026-10-09
+
+### Added
+
+- Find receipts by merchant, receipt number or anything bought on them, on the Receipts page, in the CLI and through your agent. (#365)
+
+### Changed
+
+- Every line of a receipt is one line high; a long description is cut short and shown whole on hover. (#365)
+
 ## [0.121.1] - 2026-10-09
 
 ### Fixed
