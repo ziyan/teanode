@@ -225,7 +225,7 @@ func (self *transaction) ListAgentIdeas(agentId string, statuses []models.AgentI
 		query = query.Where(`"idea_kind" IN ?`, kinds)
 	}
 	var found []agentIdeaModel
-	if err := query.Order(`"rank_score" DESC, "created_at" DESC`).Find(&found).Error; err != nil {
+	if err := query.Order(`"rank_score" DESC, "created_at" DESC, "id" ASC`).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	ideas := make([]*models.AgentIdea, 0, len(found))

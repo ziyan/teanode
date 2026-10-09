@@ -19,10 +19,11 @@ func newAgentSkillCommand() *cli.Command {
 		Usage: "tools installed from the skill registry, for everyone on this server",
 		Commands: []*cli.Command{
 			{
-				Name:   "list",
-				Usage:  "what is installed here, and what each brings",
-				Flags:  []cli.Flag{JSONFlag()},
-				Action: runAgentSkillList,
+				Name:      "list",
+				Usage:     "what is installed here, and what each brings; with a name, that skill's tools and what each does",
+				ArgsUsage: "[name]",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentSkillList,
 			},
 			{
 				Name:      "search",
@@ -106,6 +107,14 @@ func runAgentSkillList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
+	if name := strings.ToLower(strings.TrimSpace(command.Args().First())); name != "" {
+		for _, skill := range installed {
+			if skill.Name == name {
+				return printAgentSkillTools(command, skill)
+			}
+		}
+		return fmt.Errorf("no skill named %q is installed; 'teanode agent skill list' says which are", name)
+	}
 	if command.Bool("json") {
 		return PrintJSON(installed)
 	}
@@ -187,6 +196,24 @@ func describeSkillTools(skill *client.AgentSkill) string {
 		names = append(names, name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// printAgentSkillTools is one skill's tools and what each does, which the
+// listing of every skill names without describing.
+func printAgentSkillTools(command *cli.Command, skill *client.AgentSkill) error {
+	if command.Bool("json") {
+		return PrintJSON(skill)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s %s: %s\n\n", skill.Name, skill.Version, skill.Description)
+	rows := make([][]string, 0, len(skill.Tools))
+	for _, tool := range skill.Tools {
+		name := tool.Name
+		if tool.NeedsComputer {
+			name += "*"
+		}
+		rows = append(rows, []string{name, tool.Kind, tool.Description})
+	}
+	return printTable([]string{"tool", "kind", "what it does"}, rows)
 }
 
 func runAgentSkillSearch(ctx context.Context, command *cli.Command) error {

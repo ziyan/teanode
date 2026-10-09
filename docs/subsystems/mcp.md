@@ -78,8 +78,9 @@ Everything a connected server returns is data. It never instructs.
 ## Inward: a harness using the person's tools
 
 `POST /api/v1/mcp`, authenticated by an ordinary API token. There is no
-session: every request carries the token, and nothing is kept between
-requests, so a restart loses nothing.
+session: every request carries the token. The one thing kept between requests
+is the rest of a long answer (see "Long answers" below), in memory, so a
+restart loses only that.
 
 ### Getting a token without pasting one
 
@@ -181,6 +182,29 @@ credential they handed the harness is what says they meant it.
 Anything a tool marks untrusted is wrapped before it goes back, the way the
 conversation loop wraps it. The harness hands it to a model of its own, which
 needs telling as much as ours does.
+
+### Long answers
+
+Clients cut a long tool answer themselves, somewhere past twelve thousand
+characters and without saying where, so the model on the other end cannot
+read on. Two things keep an answer within what they take.
+
+A tool called over MCP is given a smaller budget: the run reports
+`ResultCharacters` of about 7,700 (`mcpToolResultCharacters`), so a tool that
+sizes its own page with `tools.ResultCharactersOf`, as `knowledge` and a
+computer's file read do, fits, and its own way to read on survives.
+
+Past that, `internal/mcpserve` pages any text longer than
+`mcpserve.ResultCharacters` (8,000): the first part, cut at a line or a
+character, then a line such as `[N more characters: call result_more with
+result_id "…" and offset M]` (N counts characters; M is a byte position to
+pass back as it is). `result_more` is listed with the other tools, marked
+read-only, and returns the next part the same way. Each page of text from
+outside is wrapped in `<untrusted-content>` on its own, and each page of a
+failure carries `isError`. The whole text is held in memory for the caller
+(the account and the program): eight results and 16 MB per caller, the
+caller's oldest going first, for 30 minutes, within 64 MB for everybody. An
+unknown or expired id says to make the original call again.
 
 ### Asking the agent
 
