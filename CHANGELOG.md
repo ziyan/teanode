@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.120.3] - 2026-10-09
+
+### Fixed
+
+- The agent's memory, idea, skill and finance tools answer in pages that fit what connected chat apps keep, and each page says how to read the next. (#361)
+
 ## [0.120.2] - 2026-10-09
 
 ### Fixed
