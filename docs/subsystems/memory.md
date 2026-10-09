@@ -1066,8 +1066,9 @@ it is what was said, and it is there as soon as the transcript is read.
 
 **When a prompt is typed** it gets the same recall a turn does, with one
 difference made while recall chooses rather than after: only the project's
-page, the pages under it, the projects, topics, things and folders linked to
-it by a link somebody stated (never a person, a month or `self`, and not a
+page, the pages under it, the projects, things and folders linked to it by
+a link somebody stated, and the topics the project links to (never a
+person, a month or `self`, a broad topic that links to the project, or a
 dream's guess) may be carried, with any lesson close to the prompt beside
 them, so a prompt about a build does not carry mail or finance into
 a coding tool's context, and pages left out do not spend the budget. A page

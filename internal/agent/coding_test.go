@@ -22,7 +22,7 @@ type codingWorld struct {
 
 // newCodingWorld makes a checkout at ~/code/seedling on the computer
 // "workbench", whose project page is projects/seedling, with the line
-// saying where it is moved onto a page under it, as the night does.
+// saying where it is moved onto a page under it, as dreams do.
 func newCodingWorld(t *testing.T) *codingWorld {
 	t.Helper()
 	world := &codingWorld{recallWorld: newRecallWorld(t)}
@@ -103,7 +103,7 @@ func TestASessionStartsWithItsCheckoutAndTheLastSessionThere(t *testing.T) {
 }
 
 // A checkout filed on two project pages -- the profile's own and an older
-// one the night grew around it -- shows both, and a prompt recalls from
+// one dreams grew around it -- shows both, and a prompt recalls from
 // either.
 func TestACheckoutFiledOnTwoPagesShowsBoth(t *testing.T) {
 	world := newCodingWorld(t)
@@ -271,6 +271,17 @@ func TestAPromptRecallsOnlyItsProject(t *testing.T) {
 			t.Fatalf("PutAgentEdge: %s", err)
 		}
 	})
+	// A broad topic that links to the project is not the project's either.
+	career := world.page(t, "self/career", "career", "Everything the person has worked on.", "The interview asked which database container the tests need.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		career.Kind = models.NodeTopic
+		if _, err := tx.PutAgentNode(career); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		if err := tx.PutAgentEdge(&models.AgentEdge{AgentID: world.agent.ID, FromID: career.ID, ToID: world.project.ID, Relation: models.EdgeRelatedTo, Status: models.EdgeStated}); err != nil {
+			t.Fatalf("PutAgentEdge: %s", err)
+		}
+	})
 	request := &CodingRequest{Directory: "/srv/alice/code/seedling", ComputerName: "workbench", HomeDirectory: "/srv/alice",
 		Prompt: "which database container do the tests need?"}
 
@@ -281,8 +292,8 @@ func TestAPromptRecallsOnlyItsProject(t *testing.T) {
 	if !strings.Contains(shown.Text, "The tests need a database container running.") {
 		t.Fatalf("the project's fact is recalled:\n%s", shown.Text)
 	}
-	if strings.Contains(shown.Text, "greenhouse") || strings.Contains(shown.Text, "Bob") {
-		t.Fatalf("another project, and a colleague linked to this one, are not:\n%s", shown.Text)
+	if strings.Contains(shown.Text, "greenhouse") || strings.Contains(shown.Text, "Bob") || strings.Contains(shown.Text, "interview") {
+		t.Fatalf("another project, a colleague and a broad topic linked to this one, are not:\n%s", shown.Text)
 	}
 
 	request.ShownPaths = shown.ShownPaths

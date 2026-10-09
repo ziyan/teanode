@@ -391,7 +391,7 @@ func (self *AskRun) CodingMemory(ctx context.Context, directory, computerName, p
 // to the line its profile wrote about where it lives.
 //
 // The same checkout may be filed on more than one project page (the
-// profile's own, and an older page the night grew around it), and every
+// profile's own, and an older page dreams grew around it), and every
 // one of them is kept.
 func checkoutOfDirectory(tx db.Transaction, agentId string, request *CodingRequest) (*codingCheckout, error) {
 	directory := cleanDirectory(request.Directory, request.HomeDirectory)
@@ -617,7 +617,14 @@ func cleanDirectory(directory, homeDirectory string) string {
 // which is not the coding tool's business, and the first live session
 // recalled exactly that.
 var isCodingKind = map[models.AgentNodeKind]bool{
-	models.NodeProject: true, models.NodeTopic: true, models.NodeThing: true, models.NodeFolder: true,
+	models.NodeProject: true, models.NodeThing: true, models.NodeFolder: true,
+}
+
+// A topic is shown only when the project links to it. A topic that links
+// to the project is usually broader than it, such as the person's whole
+// working life, and a prompt's common word finds its way into that.
+func isCodingLink(node *models.AgentNode, isLinkedFromProject bool) bool {
+	return isCodingKind[node.Kind] || (node.Kind == models.NodeTopic && isLinkedFromProject)
 }
 
 // codingScope is the pages a coding session's recall may carry: the
@@ -626,19 +633,21 @@ var isCodingKind = map[models.AgentNodeKind]bool{
 // match than recall's.
 func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode) (func(string) bool, error) {
 	var linkedIds []string
+	isLinkedFromProject := map[string]bool{}
 	for _, project := range projects {
 		edges, err := tx.ListAgentEdges(agentId, project.ID)
 		if err != nil {
 			return nil, err
 		}
 		for _, edge := range edges {
-			// A link the night guessed is a guess, and a page it reaches
+			// A link a dream guessed is a guess, and a page it reaches
 			// is not the project's business until somebody says so.
 			if edge.Status == models.EdgeProposed {
 				continue
 			}
 			if edge.FromID == project.ID {
 				linkedIds = append(linkedIds, edge.ToID)
+				isLinkedFromProject[edge.ToID] = true
 			} else {
 				linkedIds = append(linkedIds, edge.FromID)
 			}
@@ -651,7 +660,7 @@ func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode
 			return nil, err
 		}
 		for _, node := range nodes {
-			if isCodingKind[node.Kind] {
+			if isCodingLink(node, isLinkedFromProject[node.ID]) {
 				linked[node.Path] = true
 			}
 		}

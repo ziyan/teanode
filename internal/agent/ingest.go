@@ -297,7 +297,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 					// request made in that second, perhaps after the pass
 					// had read the transcript, stands: it costs at most one
 					// pass more, where clearing it could leave an answer
-					// unread until the night.
+					// unread until the next dream.
 					return tx.ClearAgentSourceRunRequest(source.ID, clearedBefore)
 				}); err != nil {
 					log.Warningf("cannot clear the request to read source %q: %s", source.ID, err)

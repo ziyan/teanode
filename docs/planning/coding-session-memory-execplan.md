@@ -10,7 +10,7 @@ After this change the person runs `teanode hook install claude-code` (or `codex`
 
 1. starts with a short block about the checkout it was opened in: each project page the checkout is filed on, with its summary and liveliest facts, and where the last session in that directory stopped;
 2. gets, before each prompt the person types, the memory that prompt recalls and any lesson close to it, kept to the checkout's project and the work pages linked to it, within a token budget, and never the same page twice in a few prompts;
-3. is read into TeaNode within about a minute of each answer, rather than at the source's nightly pass, so the next session sees this one.
+3. is read into TeaNode within about a minute of each answer, rather than at the source's daily pass, so the next session sees this one.
 
 Separately, a knowledge search over indexed code can be narrowed to a directory and says which directories its hits cluster in, so an agent can look at the right part of a large tree first and then search inside it.
 
@@ -40,7 +40,7 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
   Evidence: a probe hook's text appeared once in each transcript, on those line types, and nowhere the types read.
 - Observation: a capture's pass waited behind four other sources on the same computer, each part way through a long pass (chat, mail, a code tree, the other tool's transcripts); the server gives a computer to one source at a time, the longest waiter first.
   Evidence: the claude-code source said "waiting its turn on <computer>, which is reading chat" for over ten minutes after a Stop event made it due.
-- Observation: the first live session start resolved the development checkout to the profile's own page (`projects/<name>-<parent>`), which held three facts, and left out the older page the night had grown around it, which held almost everything; the one lesson matched to the whole project was about downloading photos; and a prompt's recall carried a colleague's page and a month page through their links to the project.
+- Observation: the first live session start resolved the development checkout to the profile's own page (`projects/<name>-<parent>`), which held three facts, and left out the older page dreams had grown around it, which held almost everything; the one lesson matched to the whole project was about downloading photos; and a prompt's recall carried a colleague's page and a month page through their links to the project.
   Evidence: the output of `teanode agent memory checkout .` before and after the fixes in commits 8f29f220, 27cc3bdc and da9a97c9.
 - Observation: a memory fact can be about a neighbouring part of the system and still read as an answer. Asked which GraphQL calls the command-line client retries, memory offered the dashboard client's rule (a read-only query once); with the hooks both tools still checked the code and answered for the command line correctly.
   Evidence: the trial's "retries" answers in both arms.
@@ -63,7 +63,7 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
   Rationale: memory is a help; a server that is down must not stop the person typing.
   Date/Author: 2026-10-09, agent.
 
-- Decision: show every project page a checkout is filed on, the profile's own first; keep linked pages to projects, topics, things and folders; show lessons only for a prompt, above a similarity of 0.45.
+- Decision: show every project page a checkout is filed on, the profile's own first; keep linked pages to projects, things and folders, and topics only where the project links to them (a topic linking to the project, such as the person's whole working life, let a prompt's common word recall an unrelated job interview); show lessons only for a prompt, above a similarity of 0.45.
   Rationale: what the first live runs showed (see Surprises). People and months linked to a project are the person's business, not a coding tool's, and the lessons on file are about the agent's own errands.
   Date/Author: 2026-10-09, agent.
 - Decision: a coding tool's transcripts starting a pass go ahead of other sources waiting for the same computer, never ahead of the one reading now.
@@ -94,7 +94,7 @@ TeaNode is a Go server with a command line (`cmd/teanode`, commands in `internal
 
 Recall is the step that picks which pages and facts a question carries into a model's prompt: `Agent.RecallForQuestion` in `internal/agent/graph_recall.go` runs a word search and a vector search over pages, facts and passages, fuses them, and chooses blocks under a token budget (1200 tokens by default). It moves no `used_at`, so asking it changes nothing. The API exposes it as the query `RecallAgentMemory`, and `teanode agent memory recall` prints it.
 
-A knowledge source is something a computer attached with `teanode computer` reads for the agent (`agent_source`, `models.AgentKnowledgeSource`). Two installed source types, `claude-code` and `codex` (`internal/sources/testdata/registry/claude-code.md` and `codex.md`), run `jq` over the tools' transcripts on the computer and send what was said, cut into chat units of at most 40 posts or 3000 characters. Each unit is a document (`agent_document`) whose `external_id` is the transcript file path under `~/.claude` or `~/.codex` followed by `#` and the first post's id, and whose metadata carries `directory` (the session's working directory), `branch`, `assistant` and `channel` (the session title). The text is lines of the form `15:04 <author>: <words>`, where the person's author has been replaced by their username. A source runs on its cron (nightly by default), or at once when its `next_run_at` is set to now, which is what `SyncAgentKnowledgeSource` does; the server looks for due sources every 15 seconds.
+A knowledge source is something a computer attached with `teanode computer` reads for the agent (`agent_source`, `models.AgentKnowledgeSource`). Two installed source types, `claude-code` and `codex` (`internal/sources/testdata/registry/claude-code.md` and `codex.md`), run `jq` over the tools' transcripts on the computer and send what was said, cut into chat units of at most 40 posts or 3000 characters. Each unit is a document (`agent_document`) whose `external_id` is the transcript file path under `~/.claude` or `~/.codex` followed by `#` and the first post's id, and whose metadata carries `directory` (the session's working directory), `branch`, `assistant` and `channel` (the session title). The text is lines of the form `15:04 <author>: <words>`, where the person's author has been replaced by their username. A source runs on its cron (once a day by default), or at once when its `next_run_at` is set to now, which is what `SyncAgentKnowledgeSource` does; the server looks for due sources every 15 seconds.
 
 A checkout (a git working copy) under a `files` source is profiled into a project page, `<root>/<name>`, and a fact "The checkout is at <directory> on <computer>." is filed on it. The dream may later move that fact to a page under the project. There is no other link from a directory to a page.
 
