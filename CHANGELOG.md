@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.123.0] - 2026-10-09
+
+### Added
+
+- A receipt read from a photo shows the photo next to its lines, and a tap opens it to zoom and pan. (#363)
+
+### Fixed
+
+- A receipt photo sent to your agent in a conversation is recorded from that photo instead of being refused, and a receipt recorded before its charge arrives is matched when the charge syncs. (#362)
+
 ## [0.122.0] - 2026-10-09
 
 ### Added
