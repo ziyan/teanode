@@ -34,6 +34,10 @@ const groups = new Map()
 // close. Kept in the session's storage, so that a worker started again
 // still knows them; a tab the person moved into the group is not one.
 const opened = new Set()
+// isStoredTabOverruled says the person signed out or let their tab go
+// while the worker was still reading what it had before it stopped: what
+// it read is from before, and is not put back.
+let isStoredTabOverruled = false
 const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'tabId']).then(async ({ opened: kept, groups: keptGroups, ownTabId, tabId }) => {
   for (const id of kept || []) opened.add(id)
   for (const [windowId, groupId] of keptGroups || []) groups.set(Number(windowId), groupId)
@@ -45,16 +49,16 @@ const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'ta
   // Each is looked at again after the wait for the tab: the person may
   // have attached another tab meanwhile, the click that started the
   // worker, and that one is what the actions go to and what is kept.
-  if (tabId && attached.tabId === null) {
+  if (tabId && attached.tabId === null && !isStoredTabOverruled) {
     await chrome.tabs.get(tabId).then(() => {
-      if (attached.tabId === null) attached.tabId = tabId
+      if (attached.tabId === null && !isStoredTabOverruled) attached.tabId = tabId
     }).catch(() => attached.tabId === null && chrome.storage.session.remove('tabId'))
   }
   // The person's own tab, if they had attached one before the worker was
   // stopped, and it is still there.
-  if (ownTabId && attached.ownTabId === null) {
+  if (ownTabId && attached.ownTabId === null && !isStoredTabOverruled) {
     await chrome.tabs.get(ownTabId).then(() => {
-      if (attached.ownTabId !== null) return
+      if (attached.ownTabId !== null || isStoredTabOverruled) return
       attached.ownTabId = ownTabId
       if (attached.tabId === null) attached.tabId = ownTabId
     }).catch(() => attached.ownTabId === null && chrome.storage.session.remove('ownTabId'))
@@ -150,6 +154,7 @@ async function attach(tab) {
 // detach gives the person's tab back. The connection stays: the agent can
 // still open a tab of its own when one is wanted.
 async function detach() {
+  isStoredTabOverruled = true
   const own = attached.ownTabId
   if (own === null) return
   // The protocol goes with the tab: otherwise Chrome's own "is debugging
@@ -168,6 +173,7 @@ async function detach() {
 
 // disconnect closes the connection for good, as signing out does.
 function disconnect() {
+  isStoredTabOverruled = true
   clearTimeout(retry)
   retry = null
   letEveryDebuggerGo()
