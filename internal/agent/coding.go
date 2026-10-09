@@ -81,6 +81,16 @@ type CodingRequest struct {
 	// session being resumed is not reported as the one before it.
 	SessionID string
 
+	// RemoteURLs, Head and CheckoutRoot are what git says about the
+	// checkout the session runs in, where it is one: where it is pushed,
+	// the commit it is at, and its top directory. A checkout on another
+	// computer is the same project only when it is the same repository,
+	// whatever its path, and memory read at another commit may not say
+	// what is here.
+	RemoteURLs   []string
+	Head         string
+	CheckoutRoot string
+
 	// Prompt is what the person typed, for a prompt's recall.
 	Prompt string
 
@@ -100,6 +110,13 @@ type CodingContext struct {
 	// directory is in no checkout memory knows.
 	ProjectPath       string
 	CheckoutDirectory string
+
+	// ReadFrom says where and at which commit memory read the project,
+	// where that is not the session's own checkout as it stands: another
+	// computer's copy of the repository, or this one at an older commit.
+	// Empty where they are the same, or where the session's commit is not
+	// known.
+	ReadFrom string
 
 	// Pages are the pages shown and the facts shown from each.
 	Pages []*RecalledPage
@@ -130,10 +147,42 @@ type CodingSession struct {
 }
 
 // codingCheckout is the checkout a directory is in and the project pages
-// it is filed on, the one whose line was written last first.
+// it is filed on, the one whose line was written last first; and the
+// checkout memory read it from, which is another computer's where the
+// session's own was never profiled.
 type codingCheckout struct {
 	projects  []*models.AgentNode
 	directory string
+
+	readDirectory, readComputer, readHead string
+	isReadElsewhere                       bool
+}
+
+// readFromOf says where memory read a checkout, where that is not the
+// session's own as it stands.
+func readFromOf(checkout *codingCheckout, request *CodingRequest) string {
+	readHead := shortCommit(checkout.readHead)
+	switch {
+	case checkout.isReadElsewhere:
+		where := "Memory of this project was read from its checkout at " + checkout.readDirectory
+		if checkout.readComputer != "" {
+			where += " on " + checkout.readComputer
+		}
+		if readHead != "" {
+			where += " (commit " + readHead + ")"
+		}
+		return where + ", not this one, which may be at another commit or branch: what it says about the code may not match what is here."
+	case readHead != "" && request.Head != "" && !strings.HasPrefix(request.Head, checkout.readHead) && !strings.HasPrefix(checkout.readHead, request.Head):
+		return "Memory last read this checkout at commit " + readHead + "; it is now at " + shortCommit(request.Head) + ", so what it says about the code may be out of date."
+	}
+	return ""
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 10 {
+		return commit[:10]
+	}
+	return commit
 }
 
 // CodingSessionStart is what a coding session starting in a directory is
@@ -151,6 +200,7 @@ func (self *Agent) CodingSessionStart(ctx context.Context, found *models.Agent, 
 			return err
 		}
 		result.ProjectPath, result.CheckoutDirectory = checkout.projects[0].Path, checkout.directory
+		result.ReadFrom = readFromOf(checkout, request)
 		spent := 0
 		for index, project := range checkout.projects {
 			facts, err := tx.ListAgentFactsLively(found.ID, project.ID, 60)
@@ -319,36 +369,42 @@ func (self *AskRun) CodingMemory(ctx context.Context, directory, computerName, p
 	return self.agent.codingMemory(ctx, self.settings.Agent, self.settings.Owner, directory, computerName, prompt)
 }
 
-// checkoutOfDirectory is the checkout a directory is in, from the lines
-// that say where each checkout is, and the project pages it is filed on;
-// nil where no checkout holds the directory.
+// checkoutOfDirectory is the checkout a directory is in, and the project
+// pages it is filed on; nil where memory knows no checkout holding it.
 //
-// Of the checkouts that hold it the deepest wins, and of the same
-// directory recorded on several computers the one named. The same
-// checkout may be filed on more than one project page (the profile's own,
-// and an older page the night grew around it), and every one of them is
-// kept. The line is often no longer on the project's own page, which the
-// night moves sentences off, so each page is found from where its line is:
-// the nearest page above it named for the checkout's folder, else the
-// highest project above it.
+// First by path, from the lines that say where each checkout is, on the
+// session's own computer (on any, where none is named): of the checkouts
+// that hold the directory the deepest wins. A path on another computer
+// proves nothing -- the same path may hold another repository, or this one
+// at another commit -- so a checkout this computer never profiled is found
+// by its repository instead: the remote git says it is pushed to, matched
+// to the line its profile wrote about where it lives.
+//
+// The same checkout may be filed on more than one project page (the
+// profile's own, and an older page the night grew around it), and every
+// one of them is kept.
 func checkoutOfDirectory(tx db.Transaction, agentId string, request *CodingRequest) (*codingCheckout, error) {
 	directory := cleanDirectory(request.Directory, request.HomeDirectory)
 	if directory == "" {
 		return nil, nil
 	}
-	facts, err := tx.ListAgentCheckoutFacts(agentId, 0)
+	checkout, err := checkoutByPath(tx, agentId, request, directory)
+	if err != nil || checkout != nil {
+		return checkout, err
+	}
+	return checkoutByRemote(tx, agentId, request, directory)
+}
+
+func checkoutByPath(tx db.Transaction, agentId string, request *CodingRequest, directory string) (*codingCheckout, error) {
+	facts, err := tx.ListAgentFactsStartingWith(agentId, checkoutLinePrefix, 0)
 	if err != nil {
 		return nil, err
 	}
-	type located struct {
-		fact         *models.AgentFact
-		isOnComputer bool
-	}
-	var holding []located
-	bestDirectory, isAnyOnComputer := "", false
+	var holding []*models.AgentFact
+	bestDirectory, readComputer := "", ""
 	for _, fact := range facts {
 		where, computerName, isCheckout := checkoutLocationOf(fact.Text)
-		if !isCheckout {
+		if !isCheckout || (request.ComputerName != "" && computerName != request.ComputerName) {
 			continue
 		}
 		where = cleanDirectory(where, request.HomeDirectory)
@@ -356,31 +412,132 @@ func checkoutOfDirectory(tx db.Transaction, agentId string, request *CodingReque
 			continue
 		}
 		if len(where) > len(bestDirectory) {
-			holding, bestDirectory, isAnyOnComputer = nil, where, false
+			holding, bestDirectory = nil, where
 		}
-		isOnComputer := computerName == request.ComputerName
-		isAnyOnComputer = isAnyOnComputer || isOnComputer
-		holding = append(holding, located{fact: fact, isOnComputer: isOnComputer})
+		holding = append(holding, fact)
+		readComputer = computerName
 	}
-	checkout := &codingCheckout{directory: bestDirectory}
-	isKept := map[string]bool{}
-	for _, candidate := range holding {
-		if isAnyOnComputer && !candidate.isOnComputer {
-			continue
+	if len(holding) == 0 {
+		return nil, nil
+	}
+	checkout := &codingCheckout{directory: bestDirectory, readDirectory: bestDirectory, readComputer: readComputer, readHead: profiledCommitOf(holding[0])}
+	if err := checkout.addProjects(tx, agentId, holding, path.Base(bestDirectory)); err != nil || len(checkout.projects) == 0 {
+		return nil, err
+	}
+	return checkout, nil
+}
+
+func checkoutByRemote(tx db.Transaction, agentId string, request *CodingRequest, directory string) (*codingCheckout, error) {
+	wanted := map[string]bool{}
+	for _, remote := range request.RemoteURLs {
+		if normalized := normalizeRemote(remote); normalized != "" {
+			wanted[normalized] = true
 		}
-		project, err := projectOfCheckoutLine(tx, agentId, candidate.fact, path.Base(bestDirectory))
+	}
+	if len(wanted) == 0 {
+		return nil, nil
+	}
+	facts, err := tx.ListAgentFactsStartingWith(agentId, remoteLinePrefix, 0)
+	if err != nil {
+		return nil, err
+	}
+	var holding []*models.AgentFact
+	repository := ""
+	for _, fact := range facts {
+		remote := strings.TrimSuffix(strings.TrimPrefix(fact.Text, remoteLinePrefix), ".")
+		if normalized := normalizeRemote(remote); wanted[normalized] {
+			holding = append(holding, fact)
+			repository = path.Base(normalized)
+		}
+	}
+	if len(holding) == 0 {
+		return nil, nil
+	}
+	root := cleanDirectory(request.CheckoutRoot, request.HomeDirectory)
+	if root == "" {
+		root = directory
+	}
+	checkout := &codingCheckout{directory: root, readHead: profiledCommitOf(holding[0]), isReadElsewhere: true}
+	// Where the profile read it: the checkout line written in the same
+	// pass, which carries the same commit.
+	lines, err := tx.ListAgentFactsStartingWith(agentId, checkoutLinePrefix, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range lines {
+		if checkout.readHead != "" && profiledCommitOf(line) == checkout.readHead {
+			checkout.readDirectory, checkout.readComputer, _ = checkoutLocationOf(line.Text)
+			break
+		}
+	}
+	if checkout.readDirectory == "" {
+		checkout.readDirectory = "another path"
+	}
+	if err := checkout.addProjects(tx, agentId, holding, repository); err != nil || len(checkout.projects) == 0 {
+		return nil, err
+	}
+	return checkout, nil
+}
+
+// addProjects adds the project page each line is on, once each.
+func (self *codingCheckout) addProjects(tx db.Transaction, agentId string, lines []*models.AgentFact, folder string) error {
+	isKept := map[string]bool{}
+	for _, line := range lines {
+		project, err := projectOfCheckoutLine(tx, agentId, line, folder)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if project != nil && !isKept[project.ID] {
 			isKept[project.ID] = true
-			checkout.projects = append(checkout.projects, project)
+			self.projects = append(self.projects, project)
 		}
 	}
-	if len(checkout.projects) == 0 {
-		return nil, nil
+	return nil
+}
+
+// The beginnings of the lines a checkout's profile writes about where it
+// is and where it is pushed (checkoutLine, and the "remote" line).
+const (
+	checkoutLinePrefix = "The checkout is at "
+	remoteLinePrefix   = "Lives at "
+)
+
+// profiledCommitOf is the commit a checkout's profile read when it wrote
+// a line, which it keeps as the line's evidence.
+func profiledCommitOf(fact *models.AgentFact) string {
+	for _, evidence := range fact.Evidence {
+		if evidence.Kind == models.EvidenceRepository && evidence.ID != "" {
+			return evidence.ID
+		}
 	}
-	return checkout, nil
+	return ""
+}
+
+// normalizeRemote is a git remote written so that the ways of spelling
+// one repository compare equal: ssh://git@host:22/group/name.git,
+// git@host:group/name and https://host/group/name are all
+// "host/group/name".
+func normalizeRemote(remote string) string {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
+		return ""
+	}
+	if scheme := strings.Index(remote, "://"); scheme >= 0 {
+		remote = remote[scheme+3:]
+	} else if colon := strings.Index(remote, ":"); colon > 0 && !strings.Contains(remote[:colon], "/") {
+		// The scp form, host:path.
+		remote = remote[:colon] + "/" + remote[colon+1:]
+	}
+	if at := strings.Index(remote, "@"); at >= 0 && at < strings.Index(remote+"/", "/") {
+		remote = remote[at+1:]
+	}
+	host, rest, _ := strings.Cut(remote, "/")
+	host, _, _ = strings.Cut(host, ":")
+	rest = strings.TrimSuffix(strings.TrimSuffix(rest, "/"), ".git")
+	if host == "" || rest == "" {
+		return ""
+	}
+	return strings.ToLower(host) + "/" + rest
 }
 
 // projectOfCheckoutLine is the project page a checkout line belongs to:
@@ -656,6 +813,9 @@ func renderCodingStart(result *CodingContext) string {
 	var text strings.Builder
 	if result.ProjectPath != "" {
 		fmt.Fprintf(&text, "TeaNode, the person's agent, remembers this about the checkout at %s (page %s). Facts are cited as page#number; its memory tool reads a page whole.\n", result.CheckoutDirectory, result.ProjectPath)
+		if result.ReadFrom != "" {
+			text.WriteString(result.ReadFrom + "\n")
+		}
 		writeCodingPages(&text, result.Pages)
 	}
 	writeCodingLessons(&text, result.Lessons)

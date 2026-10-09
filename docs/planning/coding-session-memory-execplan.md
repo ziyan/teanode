@@ -70,6 +70,10 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
   Rationale: the pass is a session asking to be read in and its pages are quick; without it a capture waited behind hours of other sources' pages. At first only a pass's first page was urgent, and a capture then waited behind the other sources one page at a time; every page is urgent now, which a long first read of the whole store also gets, once.
   Date/Author: 2026-10-09, agent.
 
+- Decision: a checkout is matched by path only on the computer that profiled it; elsewhere, by its git remote, and the session is told where and at which commit memory read the project.
+  Rationale: the person pointed out that a path on another computer may hold another repository, or the same one unpulled. The first version matched any computer's path, which only worked because the paths happened to agree.
+  Date/Author: 2026-10-09, the person and agent.
+
 ## Outcomes & Retrospective
 
 Six questions about the development checkout, each asked twice with and twice without the hooks, in Claude Code (`claude -p`) and Codex (`codex exec`), with the person's own settings left out of both arms and no session saved. Four questions have answers in the code and in memory, one only in memory, one only in the last session's transcript. Both arms answered every question right once one question's grading was corrected (it expected a fact memory holds about the dashboard's client, and both arms rightly answered for the command line's); the difference is what it cost.

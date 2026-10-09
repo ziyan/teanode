@@ -55,6 +55,13 @@ type ReadAgentCodingContextArguments struct {
 	// SessionID is the coding tool's id for the session, so that a
 	// session being resumed is not reported as the one before it.
 	SessionID string `json:"sessionId" graphapi:"nullable"`
+	// RemoteURLs, Head and CheckoutRoot are what git says about the
+	// checkout: where it is pushed, its commit and its top directory. A
+	// checkout this computer never profiled is found by its remote, and
+	// the answer says when memory read it elsewhere or at another commit.
+	RemoteURLs   []string `json:"remoteUrls" graphapi:"nullable"`
+	Head         string   `json:"head" graphapi:"nullable"`
+	CheckoutRoot string   `json:"checkoutRoot" graphapi:"nullable"`
 }
 
 // RecallAgentCodingMemoryArguments is a prompt and where it was typed.
@@ -69,6 +76,13 @@ type RecallAgentCodingMemoryArguments struct {
 	// IsEverywhere recalls from the whole graph rather than the checkout's
 	// project and what it links to.
 	IsEverywhere *bool `json:"isEverywhere" graphapi:"nullable"`
+	// RemoteURLs, Head and CheckoutRoot are what git says about the
+	// checkout: where it is pushed, its commit and its top directory. A
+	// checkout this computer never profiled is found by its remote, and
+	// the answer says when memory read it elsewhere or at another commit.
+	RemoteURLs   []string `json:"remoteUrls" graphapi:"nullable"`
+	Head         string   `json:"head" graphapi:"nullable"`
+	CheckoutRoot string   `json:"checkoutRoot" graphapi:"nullable"`
 }
 
 // CaptureAgentCodingSessionArguments is which coding tool answered, and
@@ -87,6 +101,9 @@ type AgentCodingContext struct {
 	// no checkout holding the directory.
 	ProjectPath       string `json:"projectPath" graphapi:"nullable"`
 	CheckoutDirectory string `json:"checkoutDirectory" graphapi:"nullable"`
+	// ReadFrom says where and at which commit memory read the project,
+	// where that is not the session's checkout as it stands.
+	ReadFrom string `json:"readFrom" graphapi:"nullable"`
 	// Pages are the pages shown and the facts shown from each.
 	Pages []*RecalledAgentPage `json:"pages"`
 	// Lessons are the lessons shown, a line each.
@@ -118,7 +135,10 @@ func (self *graph) ReadAgentCodingContext(ctx context.Context, arguments ReadAge
 	if err != nil {
 		return nil, err
 	}
-	request := &agent.CodingRequest{Directory: arguments.Directory, ComputerName: arguments.ComputerName, HomeDirectory: arguments.HomeDirectory, SessionID: arguments.SessionID}
+	request := &agent.CodingRequest{
+		Directory: arguments.Directory, ComputerName: arguments.ComputerName, HomeDirectory: arguments.HomeDirectory, SessionID: arguments.SessionID,
+		RemoteURLs: arguments.RemoteURLs, Head: arguments.Head, CheckoutRoot: arguments.CheckoutRoot,
+	}
 	return self.codingContext(ctx, principal, found, request, false)
 }
 
@@ -130,6 +150,7 @@ func (self *graph) RecallAgentCodingMemory(ctx context.Context, arguments Recall
 	request := &agent.CodingRequest{
 		Directory: arguments.Directory, ComputerName: arguments.ComputerName, HomeDirectory: arguments.HomeDirectory,
 		Prompt: arguments.Prompt, ShownPaths: arguments.ShownPaths, IsEverywhere: arguments.IsEverywhere != nil && *arguments.IsEverywhere,
+		RemoteURLs: arguments.RemoteURLs, Head: arguments.Head, CheckoutRoot: arguments.CheckoutRoot,
 	}
 	return self.codingContext(ctx, principal, found, request, true)
 }
@@ -168,7 +189,7 @@ func (self *graph) codingContext(ctx context.Context, principal *api.Principal, 
 
 func codingContextOf(shown *agent.CodingContext) *AgentCodingContext {
 	result := &AgentCodingContext{
-		ProjectPath: shown.ProjectPath, CheckoutDirectory: shown.CheckoutDirectory,
+		ProjectPath: shown.ProjectPath, CheckoutDirectory: shown.CheckoutDirectory, ReadFrom: shown.ReadFrom,
 		Pages: make([]*RecalledAgentPage, 0, len(shown.Pages)), Lessons: shown.Lessons, ShownPaths: shown.ShownPaths, Text: shown.Text,
 	}
 	for _, page := range shown.Pages {

@@ -2781,8 +2781,7 @@ func runAgentGraphCheckout(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	home, _ := os.UserHomeDir()
-	place := &client.AgentCodingPlace{Directory: directory, ComputerName: computerNameOf(command), HomeDirectory: home}
+	place := codingPlaceAt(ctx, command, directory, "")
 	var shown *client.AgentCodingContext
 	if prompt := command.String("prompt"); prompt != "" {
 		shown, err = client.RecallAgentCodingMemory(ctx, connection, place, prompt, nil, command.Bool("everywhere"))

@@ -9,18 +9,18 @@ import (
 // memory, for the hooks `teanode hook` runs in those tools.
 
 const (
-	agentCodingContextSelection = `projectPath checkoutDirectory
+	agentCodingContextSelection = `projectPath checkoutDirectory readFrom
 			pages { path summary overview facts { number text } }
 			lessons shownPaths text
 			lastSession { title assistant lastActiveAt requests lastAnswer }`
 
-	DocumentReadAgentCodingContext = `query ($directory: String!, $computerName: String, $homeDirectory: String, $sessionId: String) {
-		ReadAgentCodingContext(directory: $directory, computerName: $computerName, homeDirectory: $homeDirectory, sessionId: $sessionId) {
+	DocumentReadAgentCodingContext = `query ($directory: String!, $computerName: String, $homeDirectory: String, $sessionId: String, $remoteUrls: [String!], $head: String, $checkoutRoot: String) {
+		ReadAgentCodingContext(directory: $directory, computerName: $computerName, homeDirectory: $homeDirectory, sessionId: $sessionId, remoteUrls: $remoteUrls, head: $head, checkoutRoot: $checkoutRoot) {
 			` + agentCodingContextSelection + `
 		}
 	}`
-	DocumentRecallAgentCodingMemory = `query ($prompt: String!, $directory: String!, $computerName: String, $homeDirectory: String, $shownPaths: [String!], $isEverywhere: Boolean) {
-		RecallAgentCodingMemory(prompt: $prompt, directory: $directory, computerName: $computerName, homeDirectory: $homeDirectory, shownPaths: $shownPaths, isEverywhere: $isEverywhere) {
+	DocumentRecallAgentCodingMemory = `query ($prompt: String!, $directory: String!, $computerName: String, $homeDirectory: String, $shownPaths: [String!], $isEverywhere: Boolean, $remoteUrls: [String!], $head: String, $checkoutRoot: String) {
+		RecallAgentCodingMemory(prompt: $prompt, directory: $directory, computerName: $computerName, homeDirectory: $homeDirectory, shownPaths: $shownPaths, isEverywhere: $isEverywhere, remoteUrls: $remoteUrls, head: $head, checkoutRoot: $checkoutRoot) {
 			` + agentCodingContextSelection + `
 		}
 	}`
@@ -35,12 +35,19 @@ type AgentCodingPlace struct {
 	ComputerName  string
 	HomeDirectory string
 	SessionID     string
+
+	// RemoteURLs, Head and CheckoutRoot are what git says about the
+	// checkout the directory is in, where it is one.
+	RemoteURLs   []string
+	Head         string
+	CheckoutRoot string
 }
 
 // AgentCodingContext is what a coding session is shown.
 type AgentCodingContext struct {
 	ProjectPath       string               `json:"projectPath"`
 	CheckoutDirectory string               `json:"checkoutDirectory"`
+	ReadFrom          string               `json:"readFrom"`
 	Pages             []*AgentRecalledPage `json:"pages"`
 	Lessons           []string             `json:"lessons"`
 	ShownPaths        []string             `json:"shownPaths"`
@@ -64,6 +71,15 @@ func codingPlaceVariables(place *AgentCodingPlace) map[string]any {
 	}
 	if place.HomeDirectory != "" {
 		variables["homeDirectory"] = place.HomeDirectory
+	}
+	if len(place.RemoteURLs) > 0 {
+		variables["remoteUrls"] = place.RemoteURLs
+	}
+	if place.Head != "" {
+		variables["head"] = place.Head
+	}
+	if place.CheckoutRoot != "" {
+		variables["checkoutRoot"] = place.CheckoutRoot
 	}
 	return variables
 }

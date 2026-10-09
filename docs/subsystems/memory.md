@@ -1039,9 +1039,15 @@ put it there at three moments, and `internal/agent/coding.go` decides what.
 **Which checkout.** The only link from a directory to a page is the line a
 checkout's profile files, "The checkout is at <directory> on <computer>.",
 and the dream moves sentences off a page, so that line is often on a page
-under the project's. `checkoutOfDirectory` reads every such line, keeps the
-deepest directory holding the session's, prefers the computer the session
-runs on, and walks up from wherever the line now is to the page named for the
+under the project's. `checkoutOfDirectory` reads every such line on the
+computer the session runs on and keeps the deepest directory holding the
+session's. A path on another computer proves nothing (the same path may hold
+another repository, or this one at another commit), so a checkout this
+computer never profiled is found by its repository instead: the hook sends
+the remotes git reports, matched to the "Lives at" line the profile wrote,
+and the session is told where and at which commit memory read the project.
+On its own computer at another commit than the one profiled, it is told
+memory may be out of date. From the line it walks up from wherever the line now is to the page named for the
 checkout's folder, else the highest project above it. A checkout filed on
 more than one project page (the profile's own, and an older page the dream
 grew around it) keeps all of them. Lessons wait for a prompt: matched against

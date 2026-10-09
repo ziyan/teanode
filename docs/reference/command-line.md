@@ -440,7 +440,10 @@ was installed, with the profile and `--computer` it was given.
 | a prompt is typed | what the prompt recalls, and the lessons it brings up, kept to the checkout's project, the pages under it and linked to it, and lessons (`--everywhere` on install for all of memory); a page shown in the last five prompts is not shown again, and a prompt of fewer than three words, or a slash command, recalls nothing |
 | an answer ends, the session is compacted or ends | the computer's `claude-code` or `codex` source is asked to read again now, so the session is searchable within a minute and the next one knows where this stopped |
 
-A hook that cannot reach the server shows nothing and never stops the tool;
+A checkout this computer's sources never profiled is matched by its git
+remote, not its path, and the session is told where and at which commit
+memory read the project. A hook that cannot reach the server shows nothing
+and never stops the tool;
 what went wrong is in `hook.log` under the user's cache directory
 (`~/.cache/teanode/hooks` on Linux). Codex runs hooks only with `hooks = true`
 under `[features]` in `~/.codex/config.toml`, and asks you to trust a new hook

@@ -133,6 +133,66 @@ func TestACheckoutFiledOnTwoPagesShowsBoth(t *testing.T) {
 	}
 }
 
+// A checkout another computer never profiled is the project only when it
+// is the same repository: the same path there proves nothing. Found by its
+// remote, the session is told memory read the project elsewhere; on the
+// computer that profiled it, at a newer commit, it is told memory may be
+// out of date.
+func TestACheckoutElsewhereIsKnownByItsRemote(t *testing.T) {
+	world := newCodingWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := putKeyedRepositoryFact(tx, world.agent.ID, world.project.ID, "remote", "Lives at ssh://git@git.example.com:22/garden/seedling.git.", "0123456"); err != nil {
+			t.Fatalf("putKeyedRepositoryFact: %s", err)
+		}
+	})
+	start := func(request *CodingRequest) *CodingContext {
+		shown, err := world.run.agent.CodingSessionStart(context.Background(), world.agent, world.run.settings.Owner, request)
+		if err != nil {
+			t.Fatalf("CodingSessionStart: %s", err)
+		}
+		return shown
+	}
+
+	samePath := start(&CodingRequest{Directory: "/srv/alice/code/seedling", ComputerName: "laptop", HomeDirectory: "/srv/alice",
+		RemoteURLs: []string{"git@git.example.com:garden/another.git"}})
+	if samePath.ProjectPath != "" {
+		t.Fatalf("the same path on another computer, holding another repository, is not the project: %q", samePath.ProjectPath)
+	}
+
+	elsewhere := start(&CodingRequest{Directory: "/work/checkouts/seedling-copy/cmd", ComputerName: "laptop", HomeDirectory: "/srv/alice",
+		RemoteURLs: []string{"https://git.example.com/garden/seedling"}, Head: "89abcdef", CheckoutRoot: "/work/checkouts/seedling-copy"})
+	if elsewhere.ProjectPath != "projects/seedling" || elsewhere.CheckoutDirectory != "/work/checkouts/seedling-copy" {
+		t.Fatalf("the same repository anywhere is the project: %q at %q", elsewhere.ProjectPath, elsewhere.CheckoutDirectory)
+	}
+	if !strings.Contains(elsewhere.Text, "read from its checkout at ~/code/seedling on workbench (commit 0123456), not this one") {
+		t.Fatalf("the session is told where memory read it:\n%s", elsewhere.Text)
+	}
+
+	behind := start(&CodingRequest{Directory: "/srv/alice/code/seedling", ComputerName: "workbench", HomeDirectory: "/srv/alice", Head: "fedcba98"})
+	if !strings.Contains(behind.Text, "last read this checkout at commit 0123456; it is now at fedcba98") {
+		t.Fatalf("a checkout at another commit is told memory may be out of date:\n%s", behind.Text)
+	}
+	same := start(&CodingRequest{Directory: "/srv/alice/code/seedling", ComputerName: "workbench", HomeDirectory: "/srv/alice", Head: "0123456"})
+	if same.ReadFrom != "" {
+		t.Fatalf("at the commit memory read, nothing is said: %q", same.ReadFrom)
+	}
+}
+
+func TestRemotesAreComparedAsRepositories(t *testing.T) {
+	for remote, want := range map[string]string{
+		"ssh://git@git.example.com:22/garden/seedling.git": "git.example.com/garden/seedling",
+		"git@git.example.com:garden/seedling.git":          "git.example.com/garden/seedling",
+		"https://Git.Example.com/garden/seedling/":         "git.example.com/garden/seedling",
+		"git.example.com:garden/seedling":                  "git.example.com/garden/seedling",
+		"/srv/mirrors/seedling.git":                        "", // a path names nothing on another computer
+		"":                                                 "",
+	} {
+		if got := normalizeRemote(remote); got != want {
+			t.Fatalf("normalizeRemote(%q) = %q, want %q", remote, got, want)
+		}
+	}
+}
+
 // A directory no checkout holds is shown nothing, rather than the whole
 // of memory.
 func TestASessionOutsideAnyCheckoutIsShownNothing(t *testing.T) {

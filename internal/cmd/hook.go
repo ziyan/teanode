@@ -54,6 +54,10 @@ const (
 	// waiting on is not held up for memory.
 	hookPromptWait = 10 * time.Second
 	hookStartWait  = 20 * time.Second
+
+	// hookGitWait is how long asking git about the checkout may take: a
+	// checkout on a slow disk is not worth holding a prompt for.
+	hookGitWait = 2 * time.Second
 )
 
 // NewHookCommand is `teanode hook`.
@@ -158,9 +162,37 @@ func answerHook(ctx context.Context, command *cli.Command, tool string, input io
 	return nil
 }
 
-func codingPlaceOf(command *cli.Command, event *hookEvent) *client.AgentCodingPlace {
+func codingPlaceOf(ctx context.Context, command *cli.Command, event *hookEvent) *client.AgentCodingPlace {
+	return codingPlaceAt(ctx, command, event.Directory, event.SessionID)
+}
+
+// codingPlaceAt is a directory on this computer and what git says about
+// the checkout it is in: its remotes, its commit and its top directory.
+// The server finds a checkout this computer never profiled by its remote,
+// since another computer's checkout at the same path may be another
+// repository, or this one at another commit.
+func codingPlaceAt(ctx context.Context, command *cli.Command, directory, sessionId string) *client.AgentCodingPlace {
 	home, _ := os.UserHomeDir()
-	return &client.AgentCodingPlace{Directory: event.Directory, ComputerName: computerNameOf(command), HomeDirectory: home, SessionID: event.SessionID}
+	place := &client.AgentCodingPlace{Directory: directory, ComputerName: computerNameOf(command), HomeDirectory: home, SessionID: sessionId}
+	gitContext, cancel := context.WithTimeout(ctx, hookGitWait)
+	defer cancel()
+	git := func(arguments ...string) []string {
+		output, err := exec.CommandContext(gitContext, "git", append([]string{"-C", directory}, arguments...)...).Output()
+		if err != nil {
+			return nil
+		}
+		return strings.Fields(string(output))
+	}
+	if words := git("rev-parse", "--show-toplevel", "HEAD"); len(words) == 2 {
+		place.CheckoutRoot, place.Head = words[0], words[1]
+	}
+	for index, word := range git("config", "--get-regexp", `^remote\..*\.url$`) {
+		// Name, value, name, value.
+		if index%2 == 1 {
+			place.RemoteURLs = append(place.RemoteURLs, word)
+		}
+	}
+	return place
 }
 
 func computerNameOf(command *cli.Command) string {
@@ -177,7 +209,7 @@ func showSessionStart(ctx context.Context, command *cli.Command, event *hookEven
 		return err
 	}
 	connection.SetTimeout(hookStartWait)
-	shown, err := client.ReadAgentCodingContext(ctx, connection, codingPlaceOf(command, event))
+	shown, err := client.ReadAgentCodingContext(ctx, connection, codingPlaceOf(ctx, command, event))
 	if err != nil {
 		return err
 	}
@@ -198,7 +230,7 @@ func showPromptRecall(ctx context.Context, command *cli.Command, event *hookEven
 		return err
 	}
 	connection.SetTimeout(hookPromptWait)
-	shown, err := client.RecallAgentCodingMemory(ctx, connection, codingPlaceOf(command, event), event.Prompt, state.recentlyShown(), command.Bool("everywhere"))
+	shown, err := client.RecallAgentCodingMemory(ctx, connection, codingPlaceOf(ctx, command, event), event.Prompt, state.recentlyShown(), command.Bool("everywhere"))
 	if err != nil {
 		return err
 	}
