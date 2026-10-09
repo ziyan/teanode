@@ -1210,7 +1210,9 @@ func (self *transaction) ListAgentFactsLively(agentId, nodeId string, limit int)
 }
 
 // factLineStart is how much of a fact agent_fact_line_start indexes; the
-// expression in the query must be the index's own for it to be used.
+// expression in the query must be the index's own for it to be used, so
+// changing it means changing left("text", 24) in the query and in
+// migration 0158 with it.
 const factLineStart = 24
 
 func (self *transaction) ListAgentFactsStartingWith(agentId, prefix string, limit int) ([]*models.AgentFact, error) {

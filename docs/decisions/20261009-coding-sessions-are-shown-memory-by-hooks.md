@@ -11,8 +11,8 @@ inward MCP server, but only by deciding to call a tool, which they rarely
 do. A session therefore started without what TeaNode had read about the
 checkout: what was decided, what failed before, where the last session
 stopped. Both tools run hooks at points in a session's life and add what a
-hook prints to the model's context. Recall had become fast enough (no model,
-milliseconds) to run on every prompt.
+hook prints to the model's context. Recall had become fast enough (no model call
+beyond embedding the prompt, tens of milliseconds) to run on every prompt.
 
 ## Decision
 

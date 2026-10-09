@@ -31,10 +31,10 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
 
 ## Surprises & Discoveries
 
-- Observation: the line that ties a checkout to a page is a fact, "The checkout is at <directory> on <computer>.", and the dream moves such facts onto subpages: the development checkout's line sits on `projects/teanode/operations`, not on `projects/teanode`.
-  Evidence: a query over `agent_fact` for that text found it on `projects/teanode/operations` and `projects/teanode/agent/teanode-development-and-repository`, with superseded copies beside them.
+- Observation: the line that ties a checkout to a page is a fact, "The checkout is at <directory> on <computer>.", and the dream moves such facts onto subpages: a checkout's line often sits on a page under the project's, not on the project page itself.
+  Evidence: a query over `agent_fact` for that text found it on two pages under the project's, with superseded copies beside them.
 - Observation: most units filed from coding sessions hold one post, because a long answer fills the 3000-character window alone, and the dream reads a chat unit only when it has two posts or more.
-  Evidence: the three newest Claude Code documents in production each carry `"posts": 1`.
+  Evidence: the three newest Claude Code documents each carried `"posts": 1`.
 
 - Observation: both tools keep what a hook adds out of what the transcript sources read. Claude Code writes it as an `attachment` line of type `hook_additional_context` (the claude-code type reads only queued commands among attachments); Codex writes it as a `developer` message (the codex type reads only `user` and `assistant`). No change to the source types was needed for the injected block not to be filed back as something the person said.
   Evidence: a probe hook's text appeared once in each transcript, on those line types, and nowhere the types read.
@@ -102,15 +102,15 @@ Claude Code and Codex both run hooks: commands named in `~/.claude/settings.json
 
 ## Plan of Work
 
-Milestone 1 adds `internal/agent/coding.go`. `Agent.CheckoutPage(ctx, found, directory, computerName, homeDirectory)` lists the live checkout facts of the agent (a new database method, `ListAgentCheckoutFacts`, selecting facts whose text starts with "The checkout is at " and are neither superseded nor dormant), reads each back with `checkoutLocationOf`, expands a leading `~` with the given home directory, and keeps those whose directory is the given one or an ancestor of it, on the given computer when one matches, else on any. The longest directory wins. From the fact's page it walks up the parents to the highest page of kind `project` below the root and returns that path with the checkout directory.
+Milestone 1 adds `internal/agent/coding.go`. `checkoutOfDirectory(tx, agentId, request)` lists the live checkout facts of the agent (a new database method, `ListAgentFactsStartingWith`, selecting facts whose text starts with "The checkout is at " and are neither superseded nor dormant, through the index of migration 0158), reads each back with `checkoutLocationOf`, expands a leading `~` with the given home directory, and keeps those whose directory is the given one or an ancestor of it, on the given computer only; elsewhere it matches the checkout by the remote git reports against the profile's "Lives at" line. The longest directory wins. From each fact's page it walks up to the page named for the folder, else the highest page of kind `project`, and keeps every project page the checkout is filed on.
 
 `Agent.CodingSessionStart(ctx, found, owner, request)` builds the session-start block: the project page's name and summary, its first facts (the most lively, up to eight, within 600 tokens), up to two lessons for a question made of the project's name and summary, and the last session in that directory: documents of kind chat from a `claude-code` or `codex` source whose metadata `directory` is the session's directory, newest first, skipping the session being started (its id appears in the external id). It shows that session's title and age, the person's last three requests and the assistant's last answer, each cut to a few hundred characters. A new database method `ListAgentCodingDocuments(agentId, directory, limit)` reads those documents.
 
 `Agent.CodingPromptRecall(ctx, found, owner, request)` runs `RecallForQuestion` on the prompt, keeps the pages in scope (the project page, pages under it, pages it is linked to by an edge either way, and `lessons/`), drops pages in the request's list of pages shown recently, adds the lessons for the prompt, and renders it. A prompt of fewer than three words, or one that starts with `/`, recalls nothing.
 
-`Agent.CaptureCodingSession(ctx, found, computerName, assistant)` sets `next_run_at` to now on the enabled sources of type `claude-code` (or `codex`) on that computer, unless the source is already due or ran in the last 30 seconds.
+`CaptureCodingSession(tx, agentId, computerName, assistant)` asks the enabled sources of type `claude-code` (or `codex`) on that computer to read now (`RequestAgentSourceRun`: `next_run_at` and `run_requested_at` set to now), even when one is already due, since a pass under way may have read the transcript before the answer was written. The request is cleared when a pass that began after it finishes.
 
-The API gets `internal/api/v1api/apigraph/agent_coding.go` with the queries `CodingSessionContext` and `RecallCodingMemory` (both added to `isModelBackedQuery`, since they embed) and the mutation `CaptureCodingSession`. Each returns the rendered text and its parts (project path, pages and facts shown, lessons, last session), so the command line prints the text and the dashboard shows the parts.
+The API gets `internal/api/v1api/apigraph/agent_coding.go` with the queries `ReadAgentCodingContext` and `RecallAgentCodingMemory` (both added to `isModelBackedQuery`, since they embed) and the mutation `CaptureAgentCodingSession`. Each returns the rendered text and its parts (project path, pages and facts shown, lessons, last session), so the command line prints the text and the dashboard shows the parts.
 
 Milestone 2 adds `internal/cmd/hook.go`: `teanode hook claude-code` and `teanode hook codex` read the event from standard input and act on `hook_event_name`. `SessionStart` prints the session-start block; `UserPromptSubmit` prints the prompt's recall and records the pages shown in `~/.cache/teanode/hooks/<session id>.json`, so the next five prompts skip them; `Stop`, `PreCompact` and `SessionEnd` start a detached `teanode hook capture` and return at once. The block is wrapped in `<teanode-memory>` so the source types can leave it out of what they read. `teanode hook install claude-code|codex` adds these hooks to the tool's file, keeping every other hook, and `uninstall` removes only TeaNode's. `teanode agent memory checkout [directory] [--prompt words] [--computer name]` prints what a session would see.
 
@@ -136,7 +136,7 @@ From the repository root:
 
 ## Idempotence and Recovery
 
-`hook install` run twice leaves one set of hooks; `uninstall` removes only commands that start with the TeaNode hook command. The cache under `~/.cache/teanode/hooks` may be deleted at any time. No migration is needed; the new database methods only read.
+`hook install` run twice leaves one set of hooks; `uninstall` removes only commands that start with the TeaNode hook command. The cache under `~/.cache/teanode/hooks` may be deleted at any time. Migrations 0156 to 0158 add two indexes and the column `agent_source.run_requested_at`; each has a reverse file, and nothing reads the column but the capture.
 
 ## Artifacts and Notes
 

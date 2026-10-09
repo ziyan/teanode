@@ -1078,15 +1078,18 @@ slash command or something the tool sends on its own (a finished task
 arrives as a prompt wrapped in a tag) recalls nothing, and nothing is marked as used.
 
 **When an answer ends** the computer's `claude-code` or `codex` source is
-asked to read again now (`CaptureCodingSession`), setting only its next run
-time, so a pass already under way is not abandoned as if the source had
-been edited. A pass that finishes after such a request keeps it rather than
+asked to read again now (`CaptureCodingSession`), setting its next run
+time and the time of the request (`run_requested_at`) but not its
+generation, so a pass already under way is not abandoned as if the source
+had been edited. A pass that finishes after such a request keeps it rather than
 writing its scheduled time over it (`markSource`): it may have read the
 transcript before the answer was written. A computer is read by one source
-at a time, the longest waiter first, and a coding tool's transcripts count
-as having waited longest on every page of their pass (`claimComputer`): behind
-other sources part way through long passes, a capture otherwise waited the
-better part of an hour.
+at a time, the longest waiter first, and a source asked to read now goes
+before the others, the earliest request first, on every page of its pass
+(`claimComputer`), though never ahead of the source reading at that
+moment: behind other sources part way through long passes, a capture
+otherwise waited the better part of an hour. A source's scheduled pass
+waits its turn like any other.
 
 What a session is shown is wrapped in `<teanode-memory>`, so it can be told
 apart from what the person said. The same blocks are on the memory tool's

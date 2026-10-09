@@ -196,6 +196,7 @@ func (self *Agent) CodingSessionStart(ctx context.Context, found *models.Agent, 
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
 	}
+	self.fillHomeDirectory(found, request)
 	result := &CodingContext{Pages: []*RecalledPage{}, Lessons: []string{}, ShownPaths: []string{}}
 	var checkout *codingCheckout
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -266,6 +267,7 @@ func (self *Agent) CodingPromptRecall(ctx context.Context, found *models.Agent, 
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
 	}
+	self.fillHomeDirectory(found, request)
 	result := &CodingContext{Pages: []*RecalledPage{}, Lessons: []string{}, ShownPaths: []string{}}
 	prompt := strings.TrimSpace(request.Prompt)
 	// A command to the tool, or a word of assent, is not a question, and
@@ -346,6 +348,20 @@ func CaptureCodingSession(tx db.Transaction, agentId, computerName, assistant st
 		isAsked = true
 	}
 	return isAsked, nil
+}
+
+// fillHomeDirectory gives a request that came without one the home
+// directory of the computer it names, where that computer is attached: a
+// checkout's line may say ~/..., and the transcripts name absolute
+// directories, so without it the dashboard's preview of a checkout would
+// not match what the hook on that computer is shown.
+func (self *Agent) fillHomeDirectory(found *models.Agent, request *CodingRequest) {
+	if request.HomeDirectory != "" {
+		return
+	}
+	if attached := self.computerNamed(found.ID, request.ComputerName); attached != nil {
+		request.HomeDirectory = attached.Home()
+	}
 }
 
 // codingMemory is the memory tool's checkout: what a coding session in a
@@ -717,10 +733,10 @@ type codingPost struct {
 	text   string
 }
 
-// lastCodingSession is the newest session held in a directory on a
-// computer other than the one asking, with the person's last requests and the
-// assistant's last answer read from its newest units; nil where there was
-// none.
+// lastCodingSession is the newest session held in a directory on the
+// asking computer, other than the session asking, with the person's last
+// requests and the assistant's last answer read from its newest units; nil
+// where there was none.
 func lastCodingSession(tx db.Transaction, agentId string, owner *models.User, directory, computerName, sessionId string) (*CodingSession, error) {
 	if directory == "" {
 		return nil, nil
