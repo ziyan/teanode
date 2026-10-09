@@ -3666,6 +3666,7 @@ export const en = {
   'finance.unexplained': 'Unexplained',
   'finance.openReceiptMessage': 'Open the message',
   'finance.openReceiptFile': 'Open the photo or file',
+  'finance.zoomReceiptPhoto': 'Zoom into the photo',
   'finance.receiptMessageGone': 'Read from a message that is no longer in your mailbox',
   'finance.receiptFromGmail': 'Read from a Gmail message',
   'finance.unmatchReceipt': 'Take off this charge',

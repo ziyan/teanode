@@ -425,10 +425,15 @@ export function ZoomablePicture({
   where,
   imageClassName,
   openTitle,
+  onUnreadable,
 }: {
   source: string
   name: string
   where?: string
+  // Called when the file does not load as a picture, for a site that
+  // cannot tell a photo from a PDF before trying and shows something else
+  // instead.
+  onUnreadable?: () => void
   // The class the picture is drawn small with, which differs by where it is
   // shown: a fact's evidence is wider than a file under a turn in the
   // drawer.
@@ -462,7 +467,7 @@ export function ZoomablePicture({
             intersects anything, and the picture is never asked for. That
             shipped twice, and left a blank where every screenshot should
             be. */}
-          <img className={imageClassName} src={source} alt={name} />
+          <img className={imageClassName} src={source} alt={name} onError={onUnreadable} />
         </a>
       </Tooltip>
       {open ? (

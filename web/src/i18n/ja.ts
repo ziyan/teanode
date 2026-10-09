@@ -3623,6 +3623,7 @@ export const ja: Catalog = {
   'finance.unexplained': '説明のない金額',
   'finance.openReceiptMessage': 'メッセージを開く',
   'finance.openReceiptFile': '写真またはファイルを開く',
+  'finance.zoomReceiptPhoto': '写真を拡大する',
   'finance.receiptMessageGone': 'メールボックスにもうないメッセージから読み取りました',
   'finance.receiptFromGmail': 'Gmail のメッセージから読み取りました',
   'finance.unmatchReceipt': 'この取引から外す',

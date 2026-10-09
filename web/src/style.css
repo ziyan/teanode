@@ -13054,6 +13054,24 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* The photo a receipt was read from, above its lines: tall enough to make
+   out the merchant and the totals, short enough that the lines are still
+   in view below it. Reading it closely is the lightbox's job. */
+.finance-receipt-photo {
+  margin: 0 0 var(--space-2);
+}
+
+.finance-receipt-photo-image {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--field);
+}
+
 /* The lines stay a table on a phone: the description wraps, the quantity
    and amount keep their line, and a table wider than the dialog scrolls
    sideways inside it rather than being restacked. */

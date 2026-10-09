@@ -353,6 +353,26 @@ describe('the receipts section', () => {
     expect(screen.getByText('finance.unexplained').parentElement?.textContent).toMatch(/3\.03/)
   })
 
+  it('shows the photo above the lines, opens it to zoom, and steps aside for a file that is no picture', async () => {
+    answer({})
+    renderDialog()
+    const receipt = await screen.findByRole('article', { name: 'Maple Lane Grocer' })
+    const picture = within(receipt).getByRole('img', { name: 'Maple Lane Grocer' })
+    expect(picture.getAttribute('src')).toBe('/api/v1/agent/attachments/attachment-grocer')
+    expect(
+      picture.compareDocumentPosition(within(receipt).getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    fireEvent.click(within(receipt).getByRole('link', { name: 'Maple Lane Grocer' }))
+    const lightbox = await screen.findByRole('dialog', { name: 'Maple Lane Grocer' })
+    expect(within(lightbox).getByText('lightbox.fit')).toBeTruthy()
+    fireEvent.click(within(lightbox).getByRole('button', { name: 'common.close' }))
+    // A PDF does not load as a picture: the inline view goes, and the file
+    // is still a click away.
+    fireEvent.error(within(receipt).getByRole('img', { name: 'Maple Lane Grocer' }))
+    expect(within(receipt).queryByRole('img', { name: 'Maple Lane Grocer' })).toBeNull()
+    expect(within(receipt).getByRole('link', { name: /finance\.openReceiptFile/ })).toBeTruthy()
+  })
+
   it('puts a fee printed after the subtotal with the taxes', async () => {
     // An invented order email: two items, the subtotal, then shipping and
     // tax. 84.00 + 22.50 is 106.50; 106.50 + 7.95 + 8.79 is 123.24.
