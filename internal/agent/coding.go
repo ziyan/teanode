@@ -53,6 +53,12 @@ const (
 	codingPromptWords = 3
 )
 
+// codingLessonFloor is how alike a lesson must be to a prompt before a
+// coding session is shown it, well above what a turn asks: the lessons are
+// read from the agent's own errands, and at the turn's floor a prompt about
+// a network failure in the code was shown how to resume a photo download.
+const codingLessonFloor = 0.45
+
 // CodingMemoryTag wraps what a coding session is shown, so that the
 // sources reading its transcript back can leave it out: memory filed
 // again from its own recital would confirm itself.
@@ -476,11 +482,13 @@ func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode
 	}, nil
 }
 
-// codingLessons is the lessons a question recalls, less those on pages
-// already shown.
+// codingLessons is the lessons a question recalls that are close to it,
+// less those on pages already shown.
 func (self *Agent) codingLessons(ctx context.Context, found *models.Agent, owner *models.User, question string, shownPaths []string) []string {
+	run := &AskRun{agent: self, settings: &AskSettings{Agent: found, Owner: owner, Message: question}, promptMemories: map[string]bool{}}
+	run.ctx = ctx
 	lessons := []string{}
-	for _, line := range self.LessonsForQuestion(ctx, found, owner, question) {
+	for _, line := range run.lessonLinesAbove(ctx, question, codingLessonFloor) {
 		if !slices.Contains(shownPaths, lessonPathOf(line)) {
 			lessons = append(lessons, line)
 		}
