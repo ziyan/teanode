@@ -1781,6 +1781,11 @@ input[type='datetime-local'] {
   min-width: 0;
   max-width: 100%;
   text-align: start;
+  /* As tall as a text field beside it: one line, the padding and the
+     border. Chrome pads the date's own editor a pixel above and below, so
+     a date sat two pixels taller than the search box next to it in a row
+     of filters. */
+  height: calc(1lh + 16px);
 }
 
 label {
@@ -13255,6 +13260,12 @@ button.idea-history-title {
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+}
+
+/* What it is matched to is its own part of the receipt, set apart from
+   the date and total line above it. */
+.finance-receipt-details > .finance-metadata-head {
+  margin-top: var(--space-3);
 }
 
 .finance-receipt-details .finance-receipt-lines-scroll {
