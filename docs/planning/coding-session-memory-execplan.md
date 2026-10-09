@@ -25,7 +25,9 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
 - [x] (2026-10-09 16:50Z) Milestone 4: the Recall dialog's checkout field and the memory tool's `checkout` action (also reachable over MCP).
 - [x] (2026-10-09 17:10Z) Deployed and run live: the session-start block and a prompt's recall checked on the development checkout; three fixes from what the live output showed (every project page the checkout is filed on, linked people and months kept out, lessons only above a stricter similarity).
 - [x] (2026-10-09 17:15Z) Real hooks in real sessions: `codex exec` and `claude -p` both answered "what was the last session here about" from the block, in one turn with no tool call; a Stop event set the claude-code source due at once.
-- [ ] Milestone 5: the measured comparison with and without the hooks (running), and capture going ahead of long passes on the same computer (committed, deploy after the trial).
+- [x] (2026-10-09 17:30Z) Milestone 5: the measured comparison with and without the hooks (`scripts/coding-memory-trial.py`), in both tools; see Outcomes.
+- [x] (2026-10-09 17:55Z) Capture end to end with the hooks installed: a saved Claude Code session's answer was filed 65 seconds after it ended, and the next session start named it as the last session, with its request and answer. Two fixes on the way: every page of a coding source's pass takes the computer's next turn, and a request to read is its own column (migration 0157) so a running pass cannot write over it.
+- [x] (2026-10-09 17:58Z) Two refinements from the hooks running in a real session: a prompt the tool sends on its own (a finished task, wrapped in a tag) recalls nothing, and a link the dream guessed does not widen the scope.
 
 ## Surprises & Discoveries
 
@@ -37,7 +39,7 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
 - Observation: both tools keep what a hook adds out of what the transcript sources read. Claude Code writes it as an `attachment` line of type `hook_additional_context` (the claude-code type reads only queued commands among attachments); Codex writes it as a `developer` message (the codex type reads only `user` and `assistant`). No change to the source types was needed for the injected block not to be filed back as something the person said.
   Evidence: a probe hook's text appeared once in each transcript, on those line types, and nowhere the types read.
 - Observation: a capture's pass waited behind four other sources on the same computer, each part way through a long pass (chat, mail, a code tree, the other tool's transcripts); the server gives a computer to one source at a time, the longest waiter first.
-  Evidence: the claude-code source said "waiting its turn on gen7, which is reading chat" for over ten minutes after a Stop event made it due.
+  Evidence: the claude-code source said "waiting its turn on <computer>, which is reading chat" for over ten minutes after a Stop event made it due.
 - Observation: the first live session start resolved the development checkout to the profile's own page (`projects/<name>-<parent>`), which held three facts, and left out the older page the night had grown around it, which held almost everything; the one lesson matched to the whole project was about downloading photos; and a prompt's recall carried a colleague's page and a month page through their links to the project.
   Evidence: the output of `teanode agent memory checkout .` before and after the fixes in commits 8f29f220, 27cc3bdc and da9a97c9.
 - Observation: a memory fact can be about a neighbouring part of the system and still read as an answer. Asked which GraphQL calls the command-line client retries, memory offered the dashboard client's rule (a read-only query once); with the hooks both tools still checked the code and answered for the command line correctly.
@@ -70,7 +72,17 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
 
 ## Outcomes & Retrospective
 
-(To be written at the end of each milestone.)
+Six questions about the development checkout, each asked twice with and twice without the hooks, in Claude Code (`claude -p`) and Codex (`codex exec`), with the person's own settings left out of both arms and no session saved. Four questions have answers in the code and in memory, one only in memory, one only in the last session's transcript. Both arms answered every question right once one question's grading was corrected (it expected a fact memory holds about the dashboard's client, and both arms rightly answered for the command line's); the difference is what it cost.
+
+    tool         arm       steps   input tokens   seconds   cost
+    Claude Code  without     6.6        235,770      15.8   $3.29 for 12
+    Claude Code  with        2.7        100,485       8.1   $2.18 for 12
+    Codex        without     6.0        134,132      21.6   (not reported)
+    Codex        with        2.7         61,912      12.7
+
+With the hooks a session needed about 60% fewer steps and 55% fewer input tokens, and answered in half the time. The gain is all on questions memory holds the answer to; on one whose answer is plainly in a file the repository points at (how to name a decision record) the hooks added a few thousand tokens and saved nothing. Without the hooks both tools still found the memory-only answers, through the TeaNode tools they reach over MCP, at five to nine steps each.
+
+What remains: the transcript sources are only as quick as the computer's turn-taking, which a stuck read on another source can still hold for its ten-minute limit; the lessons on file are about the agent's errands, so a coding session rarely sees one; and a project the agent knows little about shows little. The measurement is small (twelve answers an arm a tool) and on one checkout; it says the hooks pay for themselves where memory has the answer, not by how much on another project.
 
 ## Context and Orientation
 
