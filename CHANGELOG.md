@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.121.0] - 2026-10-09
+
+### Added
+
+- The day by day spending chart's tooltip says how much more or less you have spent than by the same day of the month before. (#364)
+
 ## [0.120.4] - 2026-10-09
 
 ### Fixed

@@ -288,6 +288,25 @@ function SpendingByDayChart({ month }: { month: string }) {
               values: keys.map((_, index) => cumulative(compareDays, index)),
             },
           ]}
+          // The difference on the day, said in words so the reader does not
+          // subtract the two amounts above it; only on a day both months
+          // have.
+          tooltipNote={(index) => {
+            const spent = cumulative(monthDays, index)
+            const spentBefore = cumulative(compareDays, index)
+            if (spent === null || spentBefore === null) return null
+            const difference = spent - spentBefore
+            const amount = formatMoney(Math.abs(difference), currency)
+            return {
+              label: t('finance.spendingDifference'),
+              text:
+                difference > 0
+                  ? t('finance.spendingMoreThanBefore', { amount })
+                  : difference < 0
+                    ? t('finance.spendingLessThanBefore', { amount })
+                    : t('finance.spendingSameAsBefore'),
+            }
+          }}
         />
       ) : null}
       <UnconvertedNote currencyCodes={answer?.unconvertedCurrencyCodes} />
