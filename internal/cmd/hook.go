@@ -99,7 +99,7 @@ func NewHookCommand() *cli.Command {
 		Name:  "hook",
 		Usage: "show your coding sessions what your agent remembers: the hooks Claude Code and Codex run",
 		Description: "Once installed (teanode hook install claude-code, or codex), a session started in a checkout your agent has read " +
-			"is shown the checkout's page, the lessons that apply and where the last session there stopped; each prompt is shown what it " +
+			"is shown the checkout's page and where the last session there stopped; each prompt is shown what it " +
 			"recalls from that project; and each answer is read in within a minute. A hook that cannot reach the server shows nothing " +
 			"and never stops the tool. 'teanode agent memory checkout' prints what a session would be shown.",
 		Commands: commands,

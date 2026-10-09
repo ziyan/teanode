@@ -17,8 +17,8 @@ milliseconds) to run on every prompt.
 ## Decision
 
 `teanode hook install claude-code|codex` adds hooks that show a session the
-checkout's project page, lessons and the last session there when it starts,
-the prompt's recall before each prompt, and ask the transcript source to
+checkout's project pages and the last session there when it starts, the
+prompt's recall and lessons before each prompt, and ask the transcript source to
 read again after each answer. Recall in a session is kept to the checkout's
 project, the pages under it and linked to it, and lessons. Where the last
 session stopped is read from its stored transcript, not written by a model.

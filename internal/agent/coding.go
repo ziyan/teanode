@@ -23,11 +23,13 @@ import (
 
 const (
 	// codingFactTokens is what the session-start block spends on the
-	// project page's own facts.
-	codingFactTokens = 600
+	// project pages' own facts.
+	codingFactTokens = 900
 
-	// codingFacts is the most of them it shows.
-	codingFacts = 8
+	// codingFacts is the most it shows of the first project page, and
+	// codingOtherFacts of each other page the checkout is filed on.
+	codingFacts      = 6
+	codingOtherFacts = 3
 
 	// codingRequests is how many of the person's last requests in the
 	// previous session it repeats, and codingRequestCharacters how much
@@ -121,15 +123,17 @@ type CodingSession struct {
 	LastAnswer   string
 }
 
-// codingCheckout is the checkout a directory is in and its project page.
+// codingCheckout is the checkout a directory is in and the project pages
+// it is filed on, the one whose line was written last first.
 type codingCheckout struct {
-	project   *models.AgentNode
+	projects  []*models.AgentNode
 	directory string
 }
 
 // CodingSessionStart is what a coding session starting in a directory is
-// shown: the checkout's project page and its liveliest facts, the lessons
-// that apply to it, and where the last session there stopped.
+// shown: the checkout's project pages and their liveliest facts, and where
+// the last session there stopped. Lessons wait for a prompt: matched to a
+// whole project they were about anything at all.
 func (self *Agent) CodingSessionStart(ctx context.Context, found *models.Agent, owner *models.User, request *CodingRequest) (*CodingContext, error) {
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
@@ -140,37 +144,39 @@ func (self *Agent) CodingSessionStart(ctx context.Context, found *models.Agent, 
 		if checkout, err = checkoutOfDirectory(tx, found.ID, request); err != nil || checkout == nil {
 			return err
 		}
-		result.ProjectPath, result.CheckoutDirectory = checkout.project.Path, checkout.directory
-		facts, err := tx.ListAgentFactsLively(found.ID, checkout.project.ID, 60)
-		if err != nil {
-			return err
-		}
-		page := &RecalledPage{Path: checkout.project.Path, Summary: strings.TrimSpace(checkout.project.Summary), Facts: []*models.AgentFact{}}
+		result.ProjectPath, result.CheckoutDirectory = checkout.projects[0].Path, checkout.directory
 		spent := 0
-		for _, fact := range facts {
-			// What the checkout's profile computed (its remotes, its
-			// languages, where it is) is in the files the session can
-			// read for itself; the facts worth its room are what was
-			// said and decided.
-			if _, isKeyed := repositoryKeyOf(fact); isKeyed || !stillStands(fact) {
-				continue
+		for index, project := range checkout.projects {
+			facts, err := tx.ListAgentFactsLively(found.ID, project.ID, 60)
+			if err != nil {
+				return err
 			}
-			cost := llm.EstimateTokens(fact.Line())
-			if len(page.Facts) >= codingFacts || spent+cost > codingFactTokens {
-				continue
+			most := codingFacts
+			if index > 0 {
+				most = codingOtherFacts
 			}
-			spent += cost
-			page.Facts = append(page.Facts, fact)
+			page := &RecalledPage{Path: project.Path, Summary: strings.TrimSpace(project.Summary), Facts: []*models.AgentFact{}}
+			for _, fact := range facts {
+				// What the checkout's profile computed (its remotes, its
+				// languages, where it is) is in the files the session
+				// can read for itself; the facts worth its room are what
+				// was said and decided.
+				if _, isKeyed := repositoryKeyOf(fact); isKeyed || !stillStands(fact) {
+					continue
+				}
+				cost := llm.EstimateTokens(fact.Line())
+				if len(page.Facts) >= most || spent+cost > codingFactTokens {
+					continue
+				}
+				spent += cost
+				page.Facts = append(page.Facts, fact)
+			}
+			result.Pages = append(result.Pages, page)
+			result.ShownPaths = append(result.ShownPaths, page.Path)
 		}
-		result.Pages = append(result.Pages, page)
-		result.ShownPaths = append(result.ShownPaths, page.Path)
 		return nil
 	}); err != nil {
 		return nil, err
-	}
-	if checkout != nil {
-		result.Lessons = self.codingLessons(ctx, found, owner, checkout.project.Name+": "+firstSentence(checkout.project.Summary), request.ShownPaths)
-		result.ShownPaths = append(result.ShownPaths, pathsOfLessons(result.Lessons)...)
 	}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		// Held in this directory, else anywhere in the checkout's own:
@@ -217,9 +223,9 @@ func (self *Agent) CodingPromptRecall(ctx context.Context, found *models.Agent, 
 		if err != nil || checkout == nil {
 			return err
 		}
-		result.ProjectPath, result.CheckoutDirectory = checkout.project.Path, checkout.directory
+		result.ProjectPath, result.CheckoutDirectory = checkout.projects[0].Path, checkout.directory
 		if !request.IsEverywhere {
-			isInScope, err = codingScope(tx, found.ID, checkout.project)
+			isInScope, err = codingScope(tx, found.ID, checkout.projects)
 		}
 		return err
 	}); err != nil {
@@ -306,14 +312,16 @@ func (self *AskRun) CodingMemory(ctx context.Context, directory, computerName, p
 }
 
 // checkoutOfDirectory is the checkout a directory is in, from the lines
-// that say where each checkout is, and the project page it belongs to;
+// that say where each checkout is, and the project pages it is filed on;
 // nil where no checkout holds the directory.
 //
 // Of the checkouts that hold it the deepest wins, and of the same
-// directory recorded on several computers the one named. The line is
-// often no longer on the checkout's own page, which the night moves
-// sentences off, so the page is found from where the line is: the
-// nearest page above it named for the checkout's folder, else the
+// directory recorded on several computers the one named. The same
+// checkout may be filed on more than one project page (the profile's own,
+// and an older page the night grew around it), and every one of them is
+// kept. The line is often no longer on the project's own page, which the
+// night moves sentences off, so each page is found from where its line is:
+// the nearest page above it named for the checkout's folder, else the
 // highest project above it.
 func checkoutOfDirectory(tx db.Transaction, agentId string, request *CodingRequest) (*codingCheckout, error) {
 	directory := cleanDirectory(request.Directory, request.HomeDirectory)
@@ -324,31 +332,57 @@ func checkoutOfDirectory(tx db.Transaction, agentId string, request *CodingReque
 	if err != nil {
 		return nil, err
 	}
-	var best *models.AgentFact
-	bestDirectory, isBestOnComputer := "", false
+	type located struct {
+		fact         *models.AgentFact
+		isOnComputer bool
+	}
+	var holding []located
+	bestDirectory, isAnyOnComputer := "", false
 	for _, fact := range facts {
 		where, computerName, isCheckout := checkoutLocationOf(fact.Text)
 		if !isCheckout {
 			continue
 		}
 		where = cleanDirectory(where, request.HomeDirectory)
-		if where == "" || (directory != where && !strings.HasPrefix(directory, where+"/")) {
+		if where == "" || (directory != where && !strings.HasPrefix(directory, where+"/")) || len(where) < len(bestDirectory) {
 			continue
+		}
+		if len(where) > len(bestDirectory) {
+			holding, bestDirectory, isAnyOnComputer = nil, where, false
 		}
 		isOnComputer := computerName == request.ComputerName
-		if len(where) < len(bestDirectory) || (len(where) == len(bestDirectory) && (isBestOnComputer || !isOnComputer)) {
+		isAnyOnComputer = isAnyOnComputer || isOnComputer
+		holding = append(holding, located{fact: fact, isOnComputer: isOnComputer})
+	}
+	checkout := &codingCheckout{directory: bestDirectory}
+	isKept := map[string]bool{}
+	for _, candidate := range holding {
+		if isAnyOnComputer && !candidate.isOnComputer {
 			continue
 		}
-		best, bestDirectory, isBestOnComputer = fact, where, isOnComputer
+		project, err := projectOfCheckoutLine(tx, agentId, candidate.fact, path.Base(bestDirectory))
+		if err != nil {
+			return nil, err
+		}
+		if project != nil && !isKept[project.ID] {
+			isKept[project.ID] = true
+			checkout.projects = append(checkout.projects, project)
+		}
 	}
-	if best == nil {
+	if len(checkout.projects) == 0 {
 		return nil, nil
 	}
-	node, err := tx.GetAgentNodeByID(agentId, best.NodeID)
+	return checkout, nil
+}
+
+// projectOfCheckoutLine is the project page a checkout line belongs to:
+// the nearest page at or above the line's own named for the checkout's
+// folder, else the highest project above it, else the line's page.
+func projectOfCheckoutLine(tx db.Transaction, agentId string, fact *models.AgentFact, folder string) (*models.AgentNode, error) {
+	node, err := tx.GetAgentNodeByID(agentId, fact.NodeID)
 	if err != nil || node == nil {
 		return nil, err
 	}
-	folder := path.Base(bestDirectory)
 	var named, highestProject *models.AgentNode
 	for current := node; current != nil; {
 		name := path.Base(current.Path)
@@ -365,13 +399,13 @@ func checkoutOfDirectory(tx db.Transaction, agentId string, request *CodingReque
 			return nil, err
 		}
 	}
-	project := node
-	if named != nil {
-		project = named
-	} else if highestProject != nil {
-		project = highestProject
+	switch {
+	case named != nil:
+		return named, nil
+	case highestProject != nil:
+		return highestProject, nil
 	}
-	return &codingCheckout{project: project, directory: bestDirectory}, nil
+	return node, nil
 }
 
 // cleanDirectory is a directory as an absolute path with no trailing
@@ -397,17 +431,19 @@ func cleanDirectory(directory, homeDirectory string) string {
 // project's page and those under it, the pages linked to it either way,
 // and the lessons. Never the person's own page, which holds their life
 // rather than their work.
-func codingScope(tx db.Transaction, agentId string, project *models.AgentNode) (func(string) bool, error) {
-	edges, err := tx.ListAgentEdges(agentId, project.ID)
-	if err != nil {
-		return nil, err
-	}
+func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode) (func(string) bool, error) {
 	var linkedIds []string
-	for _, edge := range edges {
-		if edge.FromID == project.ID {
-			linkedIds = append(linkedIds, edge.ToID)
-		} else {
-			linkedIds = append(linkedIds, edge.FromID)
+	for _, project := range projects {
+		edges, err := tx.ListAgentEdges(agentId, project.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, edge := range edges {
+			if edge.FromID == project.ID {
+				linkedIds = append(linkedIds, edge.ToID)
+			} else {
+				linkedIds = append(linkedIds, edge.FromID)
+			}
 		}
 	}
 	linked := map[string]bool{}
@@ -423,8 +459,12 @@ func codingScope(tx db.Transaction, agentId string, project *models.AgentNode) (
 		}
 	}
 	return func(pagePath string) bool {
-		return pagePath == project.Path || strings.HasPrefix(pagePath, project.Path+"/") ||
-			linked[pagePath] || strings.HasPrefix(pagePath, lessonsRoot+"/")
+		for _, project := range projects {
+			if pagePath == project.Path || strings.HasPrefix(pagePath, project.Path+"/") {
+				return true
+			}
+		}
+		return linked[pagePath] || strings.HasPrefix(pagePath, lessonsRoot+"/")
 	}, nil
 }
 
@@ -518,12 +558,20 @@ func lastCodingSession(tx db.Transaction, agentId string, owner *models.User, di
 		post := posts[index]
 		switch {
 		case post.author == owner.Username && len(session.Requests) < codingRequests:
-			session.Requests = append([]string{cutWords(post.text, codingRequestCharacters)}, session.Requests...)
+			session.Requests = append([]string{cutWords(withoutTags(post.text), codingRequestCharacters)}, session.Requests...)
 		case post.author == session.Assistant && session.LastAnswer == "":
-			session.LastAnswer = cutWords(post.text, codingAnswerCharacters)
+			session.LastAnswer = cutWords(withoutTags(post.text), codingAnswerCharacters)
 		}
 	}
 	return session, nil
+}
+
+// markupTag is a tag a tool wraps pasted or injected text in, such as
+// <pasted_content id="...">: noise in a request quoted back.
+var markupTag = regexp.MustCompile(`</?[a-z][a-z_-]*(\s[^<>]*)?>`)
+
+func withoutTags(text string) string {
+	return markupTag.ReplaceAllString(text, "")
 }
 
 // postsOf is the posts in a unit's passages. Passages overlap, so a line

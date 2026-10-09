@@ -21,9 +21,9 @@ import (
 // AgentCodingQuery reads what a coding session is shown.
 type AgentCodingQuery interface {
 	// ReadAgentCodingContext is what a coding session starting in a
-	// directory is shown: the checkout's project page and its liveliest
-	// facts, the lessons that apply, and where the last session in the
-	// directory stopped. Nothing is marked as used. Needs agent:use.
+	// directory is shown: the checkout's project pages and their
+	// liveliest facts, and where the last session in the directory
+	// stopped. Nothing is marked as used. Needs agent:use.
 	ReadAgentCodingContext(ctx context.Context, arguments ReadAgentCodingContextArguments) (*AgentCodingContext, error)
 
 	// RecallAgentCodingMemory is what a prompt typed in a coding session

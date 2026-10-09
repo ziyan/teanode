@@ -101,6 +101,38 @@ func TestASessionStartsWithItsCheckoutAndTheLastSessionThere(t *testing.T) {
 	}
 }
 
+// A checkout filed on two project pages -- the profile's own and an older
+// one the night grew around it -- shows both, and a prompt recalls from
+// either.
+func TestACheckoutFiledOnTwoPagesShowsBoth(t *testing.T) {
+	world := newCodingWorld(t)
+	older := world.page(t, "projects/seedling-legacy", "seedling", "The first plan for seedling, before the rewrite.",
+		"The rewrite dropped the plugin loader.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := putKeyedRepositoryFact(tx, world.agent.ID, older.ID, checkoutFactKey, checkoutLine("~/code/seedling", "workbench"), "0123456"); err != nil {
+			t.Fatalf("putKeyedRepositoryFact: %s", err)
+		}
+	})
+	request := &CodingRequest{Directory: "/srv/alice/code/seedling", ComputerName: "workbench", HomeDirectory: "/srv/alice"}
+	shown, err := world.run.agent.CodingSessionStart(context.Background(), world.agent, world.run.settings.Owner, request)
+	if err != nil {
+		t.Fatalf("CodingSessionStart: %s", err)
+	}
+	for _, want := range []string{"projects/seedling:", "projects/seedling-legacy:", "The rewrite dropped the plugin loader."} {
+		if !strings.Contains(shown.Text, want) {
+			t.Fatalf("the session is shown %q:\n%s", want, shown.Text)
+		}
+	}
+	request.Prompt = "what did the rewrite drop from the loader?"
+	recalled, err := world.run.agent.CodingPromptRecall(context.Background(), world.agent, world.run.settings.Owner, request)
+	if err != nil {
+		t.Fatalf("CodingPromptRecall: %s", err)
+	}
+	if !strings.Contains(recalled.Text, "plugin loader") {
+		t.Fatalf("a prompt recalls from the second page too:\n%s", recalled.Text)
+	}
+}
+
 // A directory no checkout holds is shown nothing, rather than the whole
 // of memory.
 func TestASessionOutsideAnyCheckoutIsShownNothing(t *testing.T) {

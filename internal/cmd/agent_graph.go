@@ -162,7 +162,7 @@ func newAgentGraphCommands() []*cli.Command {
 		},
 		{
 			Name:      "checkout",
-			Usage:     "what a coding session in a directory is shown by the hooks (teanode hook): the checkout's page, lessons and the last session there; with --prompt, what that prompt would recall. Nothing is marked as used",
+			Usage:     "what a coding session in a directory is shown by the hooks (teanode hook): the checkout's page and the last session there; with --prompt, what that prompt would recall. Nothing is marked as used",
 			ArgsUsage: "[directory]",
 			Flags: []cli.Flag{JSONFlag(),
 				&cli.StringFlag{Name: "prompt", Usage: "what a prompt typed there would recall, rather than what a session starting there is shown"},

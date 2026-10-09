@@ -1042,12 +1042,16 @@ and the dream moves sentences off a page, so that line is often on a page
 under the project's. `checkoutOfDirectory` reads every such line, keeps the
 deepest directory holding the session's, prefers the computer the session
 runs on, and walks up from wherever the line now is to the page named for the
-checkout's folder, else the highest project above it.
+checkout's folder, else the highest project above it. A checkout filed on
+more than one project page (the profile's own, and an older page the dream
+grew around it) keeps all of them. Lessons wait for a prompt: matched against
+a whole project they were about anything at all.
 
-**When a session starts** it is shown the project page's summary and up to
-eight of its liveliest facts, leaving out what the profile computed (remotes,
-languages, where it is), since the session can read those from the files;
-the lessons that apply to the project; and the last session held in that
+**When a session starts** it is shown each project page's summary and its
+liveliest facts (six from the first, three from any other the checkout is
+filed on), leaving out what the profile computed (remotes, languages, where
+it is), since the session can read those from the files; and the last
+session held in that
 directory, or anywhere in the checkout: its title, when it was last active,
 the person's last three requests and the start of its last answer, read
 from the chat units its source filed. The session being resumed is skipped
