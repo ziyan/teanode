@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,7 +86,13 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	if name := source.Specification.Computer; source.Kind == models.SourceComputer && name != "" {
 		waited := time.Now()
 		for {
-			turn := self.claimComputer(name, source.ID)
+			// A coding tool's transcripts starting a pass go first: it is
+			// a session that just answered asking to be read in
+			// (CaptureCodingSession), a page that takes seconds, and
+			// behind four sources each part way through a long pass it
+			// waited the better part of an hour.
+			isUrgent := after == "" && slices.Contains(CodingAssistants, source.Specification.Type)
+			turn := self.claimComputer(name, source.ID, isUrgent)
 			if turn.isFree {
 				break
 			}
@@ -307,11 +314,14 @@ type computerTurn struct {
 // which asks again within seconds, have the computer every time, while one
 // starting a pass asked every few minutes and waited behind them all
 // evening.
-func (self *Agent) claimComputer(computer, sourceId string) computerTurn {
-	return self.claimComputerAt(computer, sourceId, time.Now())
+//
+// An urgent source counts as having waited longest of all: it goes next,
+// though never ahead of the one reading now.
+func (self *Agent) claimComputer(computer, sourceId string, isUrgent bool) computerTurn {
+	return self.claimComputerAt(computer, sourceId, time.Now(), isUrgent)
 }
 
-func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time) computerTurn {
+func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time, isUrgent bool) computerTurn {
 	self.readingMutex.Lock()
 	defer self.readingMutex.Unlock()
 	if self.computersBusy == nil {
@@ -328,6 +338,9 @@ func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time) com
 	mine, found := waiting[sourceId]
 	if !found || now.Sub(mine.asked) > computerWaitForgotten {
 		mine.since = now
+	}
+	if isUrgent {
+		mine.since = time.Time{}
 	}
 	mine.asked = now
 	waiting[sourceId] = mine
