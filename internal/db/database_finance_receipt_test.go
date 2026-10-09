@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,7 +203,8 @@ func TestFinanceReceiptSourceIsCheckedByTheTable(t *testing.T) {
 
 // The migration reverses, taking the receipts and the annotations with
 // it, and applies again on top, after which receipts are written as
-// before.
+// before. The migrations after it go back first and come again after it,
+// as a downgrade and an upgrade would take them.
 func TestFinanceReceiptsMigrationReversesAndReapplies(t *testing.T) {
 	t.Parallel()
 	database, release := dbtest.AcquireDatabase(t)
@@ -216,32 +218,38 @@ func TestFinanceReceiptsMigrationReversesAndReapplies(t *testing.T) {
 		}
 		putReceipt(t, tx, inventedGroceryReceipt(fixture.agentId, "mail-receipt-one"))
 	})
+	var reversed []migrations.Migration
 	for _, migration := range migrations.Migrations() {
-		if migration.ID != "0154_finance_receipts" {
-			continue
+		if migration.ID >= "0154_finance_receipts" {
+			reversed = append(reversed, migration)
 		}
-		dbtest.Exec(t, database, migration.ReverseSQL)
-		if tables := dbtest.QueryString(t, database, `SELECT COUNT(*)::text FROM information_schema.tables WHERE table_name LIKE 'agent_finance_receipt%'`); tables != "0" {
-			t.Fatalf("the reverse drops the receipt tables: %s left", tables)
-		}
-		if columns := dbtest.QueryString(t, database, `SELECT COUNT(*)::text FROM information_schema.columns
-			WHERE table_name = 'agent_finance_transaction' AND column_name IN ('annotation', 'annotated_by')`); columns != "0" {
-			t.Fatalf("the reverse drops the annotation columns: %s left", columns)
-		}
-		dbtest.Exec(t, database, migration.SQL)
-		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-			grocer := financeTransactionsByProviderId(t, tx, fixture.agentId)["transaction-grocer"]
-			if grocer.Annotation != "" {
-				t.Fatalf("the annotation went with the reverse: %+v", grocer)
-			}
-			stored := putReceipt(t, tx, inventedGroceryReceipt(fixture.agentId, "mail-receipt-one"))
-			if len(stored.ReceiptLines) != 6 {
-				t.Fatalf("receipts are written again after applying it again: %+v", stored)
-			}
-		})
-		return
 	}
-	t.Fatal("there is no migration 0154_finance_receipts")
+	if len(reversed) == 0 || reversed[0].ID != "0154_finance_receipts" {
+		t.Fatal("there is no migration 0154_finance_receipts")
+	}
+	for index := len(reversed) - 1; index >= 0; index-- {
+		dbtest.Exec(t, database, reversed[index].ReverseSQL)
+	}
+	if tables := dbtest.QueryString(t, database, `SELECT COUNT(*)::text FROM information_schema.tables WHERE table_name LIKE 'agent_finance_receipt%'`); tables != "0" {
+		t.Fatalf("the reverse drops the receipt tables: %s left", tables)
+	}
+	if columns := dbtest.QueryString(t, database, `SELECT COUNT(*)::text FROM information_schema.columns
+		WHERE table_name = 'agent_finance_transaction' AND column_name IN ('annotation', 'annotated_by')`); columns != "0" {
+		t.Fatalf("the reverse drops the annotation columns: %s left", columns)
+	}
+	for _, migration := range reversed {
+		dbtest.Exec(t, database, migration.SQL)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		grocer := financeTransactionsByProviderId(t, tx, fixture.agentId)["transaction-grocer"]
+		if grocer.Annotation != "" {
+			t.Fatalf("the annotation went with the reverse: %+v", grocer)
+		}
+		stored := putReceipt(t, tx, inventedGroceryReceipt(fixture.agentId, "mail-receipt-one"))
+		if len(stored.ReceiptLines) != 6 {
+			t.Fatalf("receipts are written again after applying it again: %+v", stored)
+		}
+	})
 }
 
 // The receipt matcher never replaces or removes the person's match;
@@ -315,6 +323,13 @@ func TestFinanceReceiptMatchesKeepThePersonsAndCascade(t *testing.T) {
 		isRemoved, err = tx.DeleteFinanceReceiptMatch(fixture.agentId, receipt.ID, grocer.ID, "")
 		if err != nil || !isRemoved {
 			t.Fatalf("the person unmatches: %v %v", isRemoved, err)
+		}
+		// Unmatched by hand, the receipt is left to the person, and reading
+		// it again keeps it so; the one never matched is not.
+		putReceipt(t, tx, inventedGroceryReceipt(fixture.agentId, "mail-receipt-one"))
+		if notLeft, err := listReceipts(t, tx, fixture.agentId, &db.FinanceReceiptFilter{IsUnmatched: true, ShouldSkipLeftToPerson: true}); err != nil ||
+			len(notLeft) != 1 || notLeft[0].ID != unmatched.ID {
+			t.Fatalf("the receipts not left to the person: %+v %v", notLeft, err)
 		}
 		if _, err := tx.PutFinanceReceiptMatch(fixture.agentId, &models.FinanceReceiptMatch{
 			ReceiptID: unmatched.ID, FinanceTransactionID: diner.ID, MatchedAmount: "18.40", ReceiptMatchSource: models.ReceiptMatchSourceReceiptMatcher,
@@ -1103,6 +1118,57 @@ func TestPutFinanceReceiptFirstReadsOfOneSourceWriteOneReceipt(t *testing.T) {
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if listed, err := listReceipts(t, tx, fixture.agentId, nil); err != nil || len(listed) != 1 {
 			t.Fatalf("one receipt for one source: %d %v", len(listed), err)
+		}
+	})
+}
+
+// Text finds a receipt by its merchant, its receipt number or a word of
+// any line, in any case, counted the same; a percent sign is a percent
+// sign, not a wildcard; another agent's receipts are never found.
+func TestFinanceReceiptsFindByText(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "sparrow")
+	stranger := createFinanceFixture(t, database, "wren")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		grocery := inventedGroceryReceipt(fixture.agentId, "mail-text-grocery")
+		grocery.MerchantReceiptNumber = "R-4471"
+		putReceipt(t, tx, grocery)
+		hardware := inventedGroceryReceipt(fixture.agentId, "mail-text-hardware")
+		hardware.MerchantName = "Hilltop Hardware"
+		hardware.ReceiptLines[3].Description = "WOOD GLUE"
+		putReceipt(t, tx, hardware)
+		putReceipt(t, tx, inventedGroceryReceipt(stranger.agentId, "mail-text-stranger"))
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := func(text string) []string {
+			t.Helper()
+			page, err := tx.ListFinanceReceipts(fixture.agentId, &db.FinanceReceiptFilter{Text: text, ShouldCountTotal: true})
+			if err != nil {
+				t.Fatalf("ListFinanceReceipts %q: %s", text, err)
+			}
+			if page.TotalCount != len(page.FinanceReceipts) {
+				t.Fatalf("%q counts %d but lists %d", text, page.TotalCount, len(page.FinanceReceipts))
+			}
+			names := []string{}
+			for _, receipt := range page.FinanceReceipts {
+				names = append(names, receipt.MerchantName)
+			}
+			sort.Strings(names)
+			return names
+		}
+		for text, want := range map[string]string{
+			"hilltop":   "Hilltop Hardware",
+			"r-4471":    "Corner Grocer",
+			"wood glue": "Hilltop Hardware",
+			"dish soap": "Corner Grocer",
+			"bag fee":   "Corner Grocer,Hilltop Hardware",
+			"100%":      "",
+		} {
+			if got := strings.Join(found(text), ","); got != want {
+				t.Fatalf("%q finds %q, want %q", text, got, want)
+			}
 		}
 	})
 }

@@ -1,8 +1,12 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"sync/atomic"
+	"time"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
 // The tab relay: the person's own browser tab, attached through the
@@ -54,6 +58,38 @@ func (self *Agent) ConnectBrowser(agentId string, connection TabConnection, titl
 	connected := &attachedTab{deviceLink: newDeviceLink("the person's browser", connection), title: title, url: url}
 	connected.hasTab.Store(hasTab)
 	self.tabs[agentId] = connected
+	if self.tabsConnected != nil {
+		close(self.tabsConnected)
+	}
+	self.tabsConnected = make(chan struct{})
+}
+
+// reconnectedTab waits up to wait for a person's browser to be connected
+// through another connection than the one behind dropped, and is that
+// connection, or nil when none came in time. It never connects anything:
+// the extension puts its own connection back when it drops.
+func (self *Agent) reconnectedTab(ctx context.Context, agentId string, dropped tools.Tab, wait time.Duration) tools.Tab {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
+		self.tabsMutex.Lock()
+		current := self.tabs[agentId]
+		if self.tabsConnected == nil {
+			self.tabsConnected = make(chan struct{})
+		}
+		connected := self.tabsConnected
+		self.tabsMutex.Unlock()
+		if current != nil && tools.Tab(current) != dropped {
+			return current
+		}
+		select {
+		case <-connected:
+		case <-timer.C:
+			return nil
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 // SetTabHeld is the browser saying whether it has a tab the actions go to.

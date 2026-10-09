@@ -138,6 +138,10 @@ function answer(receipts: () => FinanceReceipt[]) {
         .filter((receipt) => !variables?.isUnmatched || receipt.receiptMatches.length === 0)
         .filter((receipt) => !variables?.isUndated || !receipt.purchasedOn)
         .filter((receipt) => !(variables?.from || variables?.to) || receipt.purchasedOn)
+        .filter(
+          (receipt) =>
+            !variables?.text || receipt.merchantName.toLowerCase().includes(String(variables.text).toLowerCase()),
+        )
       const offset = Number(variables?.offset ?? 0)
       const limit = Number(variables?.limit ?? 50)
       const shown = listed.slice(offset, offset + limit)
@@ -236,6 +240,20 @@ describe('the Receipts section', () => {
       }),
     )
     expect(shownSearch).toBe('?unmatched=1&from=2026-06-01')
+  })
+
+  it('finds receipts by words once typing pauses, keeps them in the address, and says when none has them', async () => {
+    answer(() => [floristReceipt, hardwareReceipt])
+    renderSection('/finance/receipts?page=2')
+    await screen.findByText('Birch Street Hardware')
+    // Opening a page from its address keeps its page.
+    expect(shownSearch).toBe('?page=2')
+    fireEvent.change(screen.getByLabelText('finance.receiptSearchText'), { target: { value: '  wood glue ' } })
+    await waitFor(() =>
+      expect(calledWith('FinanceReceipts')).toContainEqual({ text: 'wood glue', limit: 50, offset: 0 }),
+    )
+    expect(shownSearch).toBe('?text=wood+glue')
+    expect(await screen.findByText(/finance\.noReceiptsWithText/)).toBeTruthy()
   })
 
   it('pages on the server with the page in the address, and says how many there are', async () => {

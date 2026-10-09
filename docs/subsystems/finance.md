@@ -586,7 +586,14 @@ match from being made without asking only when they are the digits of
 another of the person's accounts. So an
 order email and its shipping email, or a photo and the email of the same
 purchase, never both explain one charge on their own; the person may still
-match the second by hand for what is left. The receipt job's prompt records
+match the second by hand for what is left. A receipt recorded before its
+charge arrives waits, unmatched: the sync or statement import that brings
+the charge weighs it again by the same rule (`matchWaitingReceipts`), and
+matches it only to a charge seen for the first time in that sync, the posted
+one a pending charge became included. A receipt a match was taken off by
+hand is left to the person (`is_left_to_person`), and no sync matches it on
+its own again, since a provider that does not link a pending charge to its
+posted one (SimpleFIN) brings the posted one as new. The receipt job's prompt records
 only a purchase paid with a card or bank account, nothing for a newsletter,
 a quote, a bill still to pay or an order paid some other way.
 
@@ -615,8 +622,14 @@ before, answering `{ financeReceipts, nextCursor, totalCount }`. The newest
 purchase comes first and receipts that print no day come after every dated
 one, so with no range every receipt is reached; `isUndated` lists only those,
 and cannot go with `from` or `to`, which leave them out.
+`text` keeps the receipts whose merchant, receipt number or any line's
+description holds the words, in any case, so a receipt is found by what was
+bought on it.
 
-A receipt's photo or PDF is an ordinary agent attachment. The sweep of
+A receipt's photo or PDF is an ordinary agent attachment. Every file a
+conversation turn carries is named to the model with its
+`agent_attachment_id`, so a receipt photographed into the chat is recorded
+from that upload, never asked for again. The sweep of
 uploads never sent leaves one a receipt was read from, and one uploaded to a
 finance transaction and waiting to be read while that transaction exists.
 Deleting a conversation leaves a receipt's photo to the receipt

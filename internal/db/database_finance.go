@@ -213,6 +213,12 @@ type FinanceSyncApplied struct {
 	// provider category changed under a spending category the person did
 	// not choose.
 	FinanceTransactionIDsToCategorize []string
+
+	// InsertedFinanceTransactionIDs are the finance transactions seen for
+	// the first time, pending or posted, the posted one a stored pending
+	// one became included: receipts recorded before their charge arrived
+	// are matched against these.
+	InsertedFinanceTransactionIDs []string
 }
 
 // FinanceTransactionFilter narrows a listing of finance transactions.
@@ -889,7 +895,7 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 	isNewerBalanceKept := providerKind == string(finance.ProviderKindStatement)
 
 	applied := &FinanceSyncApplied{
-		InsertedFinanceAccountIDs: []string{}, CreatedAssetIDs: []string{}, FinanceTransactionIDsToCategorize: []string{},
+		InsertedFinanceAccountIDs: []string{}, CreatedAssetIDs: []string{}, FinanceTransactionIDsToCategorize: []string{}, InsertedFinanceTransactionIDs: []string{},
 	}
 	now := time.Now()
 
@@ -988,6 +994,12 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		isInserted := written.CreatedAt.Equal(written.ModifiedAt)
 		if isInserted {
 			applied.InsertedTransactionCount++
+			// The posted one a pending charge became too: Plaid names a
+			// pending charge never stored when it posted between two
+			// syncs, and one stored may have had no receipt to carry (a
+			// tip changed the amount). A receipt already carried to it is
+			// matched, and one the person took off is left to them.
+			applied.InsertedFinanceTransactionIDs = append(applied.InsertedFinanceTransactionIDs, written.ID)
 		}
 		if !written.IsPending && isInserted {
 			insertedPostedIdsByFinanceAccountId[financeAccountId] = append(insertedPostedIdsByFinanceAccountId[financeAccountId], written.ID)
