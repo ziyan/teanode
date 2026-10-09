@@ -42,11 +42,16 @@ type KnowledgeOperation interface {
 	// whose metadata names that working directory and an assistant.
 	ListAgentCodingDocuments(agentId, directory string, limit int) ([]*models.AgentDocument, error)
 
-	// RequestAgentSourceRun makes an enabled source due at a moment,
-	// touching nothing else: unlike PutAgentSource it leaves the
-	// generation alone, so a pass already running is not abandoned as if
-	// the source had been edited under it.
+	// RequestAgentSourceRun makes an enabled source due at a moment and
+	// records the request, touching nothing else: unlike PutAgentSource it
+	// leaves the generation alone, so a pass already running is not
+	// abandoned as if the source had been edited under it, and the request
+	// outlives that pass writing its next time (see run_requested_at).
 	RequestAgentSourceRun(sourceId string, at time.Time) error
+
+	// ClearAgentSourceRunRequest forgets a request made at or before the
+	// moment a pass started, which that pass answers.
+	ClearAgentSourceRunRequest(sourceId string, passStarted time.Time) error
 	ListAgentSources(agentId string) ([]*models.AgentKnowledgeSource, error)
 	DeleteAgentSource(agentId, sourceId string) error
 
@@ -228,6 +233,7 @@ type agentSourceModel struct {
 	Instance       string     `gorm:"column:instance"`
 	LastRunAt      *time.Time `gorm:"column:last_run_at"`
 	NextRunAt      *time.Time `gorm:"column:next_run_at"`
+	RunRequestedAt *time.Time `gorm:"column:run_requested_at"`
 	LastError      string     `gorm:"column:last_error"`
 	DocumentCount  int        `gorm:"column:document_count"`
 	ChunkCount     int        `gorm:"column:chunk_count"`
@@ -321,7 +327,7 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 		Kind: string(written.Kind), Name: written.Name, Specification: specification,
 		RootPath: written.RootPath, Enabled: written.Enabled, Cron: written.Cron,
 		Cursor: cursor, Instance: written.Instance, Generation: written.Generation,
-		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, LastError: written.LastError,
+		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, RunRequestedAt: written.RunRequestedAt, LastError: written.LastError,
 		DocumentCount: written.DocumentCount, ChunkCount: written.ChunkCount,
 		RefusedCount: written.RefusedCount, More: written.More,
 		CheckoutsKeptToProfile: written.CheckoutsKeptToProfile,
@@ -365,7 +371,7 @@ func (self *agentSourceModel) toModel() (*models.AgentKnowledgeSource, error) {
 		ID: self.ID, AgentID: self.AgentID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Kind: models.AgentKnowledgeKind(self.Kind), Name: self.Name, RootPath: self.RootPath,
 		Enabled: self.Enabled, Cron: self.Cron, Instance: self.Instance, Generation: self.Generation,
-		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, LastError: self.LastError,
+		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, RunRequestedAt: self.RunRequestedAt, LastError: self.LastError,
 		DocumentCount: self.DocumentCount, ChunkCount: self.ChunkCount,
 		RefusedCount: self.RefusedCount, More: self.More,
 		CheckoutsKeptToProfile: self.CheckoutsKeptToProfile,
@@ -436,7 +442,12 @@ func (self *transaction) ListAgentCodingDocuments(agentId, directory string, lim
 
 func (self *transaction) RequestAgentSourceRun(sourceId string, at time.Time) error {
 	return self.tx.Model(&agentSourceModel{}).Where(`"id" = ? AND "enabled"`, sourceId).
-		Updates(map[string]any{"next_run_at": at}).Error
+		Updates(map[string]any{"next_run_at": at, "run_requested_at": at}).Error
+}
+
+func (self *transaction) ClearAgentSourceRunRequest(sourceId string, passStarted time.Time) error {
+	return self.tx.Model(&agentSourceModel{}).Where(`"id" = ? AND "run_requested_at" <= ?`, sourceId, passStarted).
+		Updates(map[string]any{"run_requested_at": nil}).Error
 }
 
 func (self *transaction) GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error) {

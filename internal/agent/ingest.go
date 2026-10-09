@@ -215,7 +215,17 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		// Written down before the page is asked for, so that the time the
 		// sweep at the end compares against is older than anything the
 		// pass can possibly have been shown.
+		isNewPass := isAtTopOfTree(cursor)
 		startedPass := markPassStart(source, cursor, time.Now())
+		// A pass from the top answers every request made before it
+		// began; one made after stands, for markSource.
+		if isNewPass && !startedPass.IsZero() {
+			if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+				return tx.ClearAgentSourceRunRequest(source.ID, startedPass.Add(time.Second))
+			}); err != nil {
+				log.Warningf("cannot clear the request to read source %q: %s", source.ID, err)
+			}
+		}
 		next, passCounts, err := self.readOnePass(ctx, run, source, cursor)
 		if errors.Is(err, errIngestSourceChanged) {
 			return nil
@@ -451,12 +461,13 @@ func (self *Agent) markSource(ctx context.Context, source *models.AgentKnowledge
 			return err
 		}
 		// Somebody asked for a pass while this one ran -- a coding
-		// session that just answered (CaptureCodingSession), or the
-		// person pressing sync -- and this pass may have read the files
-		// before what they wanted read was written. Their request
-		// stands rather than being put off to the next scheduled time.
-		if asked := current.NextRunAt; asked != nil && !asked.After(time.Now()) && (source.NextRunAt == nil || !asked.Equal(*source.NextRunAt)) {
-			next = asked
+		// session that just answered (CaptureCodingSession) -- and this
+		// pass may have read the files before what they wanted read was
+		// written. At the end of the pass their request stands rather
+		// than being put off to the next scheduled time.
+		if !more && current.RunRequestedAt != nil {
+			now := time.Now()
+			next = &now
 		}
 		return tx.MarkAgentSourceRun(source.ID, cursor, counts, more, failure, next)
 	})

@@ -289,6 +289,16 @@ func TestAPassKeepsARequestMadeWhileItRan(t *testing.T) {
 	if next := nextRunAfterPass(true); next == nil || next.After(time.Now()) {
 		t.Fatalf("a request made during the pass stands: %v", next)
 	}
+	// The pass that then starts from the top reads what was asked for,
+	// and answers the request.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.ClearAgentSourceRunRequest(world.source.ID, time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("ClearAgentSourceRunRequest: %s", err)
+		}
+	})
+	if next := nextRunAfterPass(false); next == nil || next.Before(tomorrow.Add(-time.Minute)) {
+		t.Fatalf("once a pass has answered the request, the next run is the scheduled one: %v", next)
+	}
 }
 
 // A unit's passages overlap, and a post read in one is not read twice.
