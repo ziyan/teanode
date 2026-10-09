@@ -138,7 +138,10 @@ the turn as before.
   tool itself can read.
 - **Run it**, then shape the answer: cut at `ResultCharacters` (24000), wrap in
   `<untrusted-data>` when the tool marked it so, prefix the relay instruction
-  when it is a `show_verbatim` secret, and collect any pictures.
+  when it is a `show_verbatim` secret, and collect any pictures. A tool whose
+  answer is JSON from outside (a computer, a tab) fits it first with
+  `tools.FitJSON`, to `tools.ResultCharactersOf(run)`, so it stays JSON with
+  its short fields kept; a file read gives fewer lines and says `nextOffset`.
 - **Emit `tool_result`** with the tool's one-line note for the drawer.
 
 ### Pictures a tool fetched

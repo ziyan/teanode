@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.120.2] - 2026-10-09
+
+### Fixed
+
+- Long tool results over MCP are no longer cut short by the client: they come back in parts, read on with `result_more`, and a computer's long file read says where to continue. (#360)
+
 ## [0.120.1] - 2026-10-08
 
 ### Fixed

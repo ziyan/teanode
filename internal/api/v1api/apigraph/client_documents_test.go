@@ -95,6 +95,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"DeleteNote":              client.DocumentDeleteNote,
 		"UpdateAgentConversation": client.DocumentUpdateAgentConversation,
 		"ListAgentIdeas":          client.DocumentListAgentIdeas,
+		"ListAgentIdeaHeadlines":  client.DocumentListAgentIdeaHeadlines,
 		"ProposeAgentIdea":        client.DocumentProposeAgentIdea,
 		"StartAgentIdea":          client.DocumentStartAgentIdea,
 		"SetAgentIdeaStatus":      client.DocumentSetAgentIdeaStatus,

@@ -41,8 +41,12 @@ func newAgentGraphCommands() []*cli.Command {
 			Name:      "get",
 			Usage:     "one page: what it says, its facts, and what it is linked to",
 			ArgsUsage: "<path>",
-			Flags:     []cli.Flag{JSONFlag()},
-			Action:    runAgentGraphGet,
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.IntFlag{Name: "link-limit", Usage: "how many of the page's links to show; every one when left out"},
+				&cli.IntFlag{Name: "link-offset", Usage: "how many of the page's links to skip, for the next part of them"},
+			},
+			Action: runAgentGraphGet,
 		},
 		{
 			Name:      "overview",
@@ -634,7 +638,8 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	page, err := client.AgentGraphPageOf(ctx, connection, command.Args().First())
+	linkOffset, linkLimit := int(command.Int("link-offset")), int(command.Int("link-limit"))
+	page, err := client.AgentGraphPageWithLinks(ctx, connection, command.Args().First(), linkOffset, linkLimit)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -726,7 +731,33 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 		}
 		_, _ = fmt.Fprintf(command.Writer, "\nunder it: %s\n", strings.Join(names, ", "))
 	}
+	if note := linkPageNote(len(page.Edges), linkOffset, linkLimit, page.LinkCount, page.NextLinkOffset); note != "" {
+		_, _ = fmt.Fprintln(command.ErrWriter, note)
+	}
 	return nil
+}
+
+// linkPageNote says which of a page's links a part of them holds and the
+// flags that read the next part, the limit among them. Empty when every
+// link is shown.
+func linkPageNote(shownCount, linkOffset, linkLimit, linkCount, nextLinkOffset int) string {
+	// A negative flag is not sent, so the page is read from the start.
+	linkOffset, linkLimit = max(linkOffset, 0), max(linkLimit, 0)
+	if linkOffset == 0 && linkLimit == 0 {
+		return ""
+	}
+	if shownCount == 0 && linkOffset >= linkCount {
+		return fmt.Sprintf("note: --link-offset %d is past the end, the page has %d links", linkOffset, linkCount)
+	}
+	shown := fmt.Sprintf("note: links %d to %d of %d", linkOffset+1, linkOffset+shownCount, linkCount)
+	if nextLinkOffset == 0 {
+		return shown
+	}
+	next := fmt.Sprintf("--link-offset %d", nextLinkOffset)
+	if linkLimit > 0 {
+		next += fmt.Sprintf(" --link-limit %d", linkLimit)
+	}
+	return fmt.Sprintf("%s; add %s for the next part", shown, next)
 }
 
 func runAgentGraphSearch(ctx context.Context, command *cli.Command) error {
