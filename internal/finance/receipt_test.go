@@ -226,8 +226,9 @@ func TestProposeReceiptMatchesTakesTheOneExactAmount(t *testing.T) {
 	}
 }
 
-// Two charges of the exact amount are left for the person, unless the
-// receipt prints the digits of the card exactly one of them is on.
+// Two charges of the exact amount are left for the person, even when the
+// receipt prints the digits of the card one of them is on: four digits
+// are a coincidence often enough, and a phone's wallet prints its own.
 func TestProposeReceiptMatchesNeverGuessesBetweenEqualAmounts(t *testing.T) {
 	receipt := inventedGroceryReceipt()
 	receipt.CurrencyCode = "USD"
@@ -237,13 +238,12 @@ func TestProposeReceiptMatchesNeverGuessesBetweenEqualAmounts(t *testing.T) {
 	}
 	masks := map[string]string{"account-card": "4821", "account-other": "1111"}
 	proposals := ProposeReceiptMatches(receipt, twins, masks, nil)
-	if len(proposals) != 2 || !proposals[0].IsAutomatic || proposals[0].FinanceTransactionID != "charge-card" || proposals[1].IsAutomatic {
-		t.Fatalf("the card the receipt names is taken: %+v", proposals)
+	if len(proposals) != 2 || proposals[0].FinanceTransactionID != "charge-card" || !proposals[0].IsSameAccount {
+		t.Fatalf("the card the receipt names comes first: %+v", proposals)
 	}
-	receipt.PaymentAccountMask = ""
-	for _, proposal := range ProposeReceiptMatches(receipt, twins, masks, nil) {
+	for _, proposal := range proposals {
 		if proposal.IsAutomatic {
-			t.Fatalf("without the card's digits, neither is guessed: %+v", proposal)
+			t.Fatalf("neither is guessed: %+v", proposal)
 		}
 	}
 }
@@ -271,9 +271,9 @@ func TestProposeReceiptMatchesLeavesASplitShipmentToThePerson(t *testing.T) {
 	}
 }
 
-// The one exact amount is matched without asking only with something else
-// that agrees: the card's digits or a word of the merchant. An amount
-// alone stays a candidate for the person.
+// The one exact amount is matched without asking only with a word of the
+// merchant that agrees. An amount alone, or an amount on the card whose
+// digits the receipt prints, stays a candidate for the person.
 func TestProposeReceiptMatchesWantsMoreThanTheAmount(t *testing.T) {
 	receipt := inventedGroceryReceipt()
 	receipt.CurrencyCode, receipt.PaymentAccountMask = "USD", ""
@@ -294,22 +294,27 @@ func TestProposeReceiptMatchesWantsMoreThanTheAmount(t *testing.T) {
 	onTheCard := ProposeReceiptMatches(receipt, []*models.FinanceTransaction{
 		inventedCharge("charge-card", "account-other", "2026-09-10", "-16.97", "SQ *HILLTOP"),
 	}, masks, nil)
-	if len(onTheCard) != 1 || !onTheCard[0].IsAutomatic || onTheCard[0].MatchConfidence != "0.85" {
-		t.Fatalf("the amount on the card the receipt prints is matched: %+v", onTheCard)
+	if len(onTheCard) != 1 || !onTheCard[0].IsSameAccount || onTheCard[0].IsAutomatic {
+		t.Fatalf("the amount on the card the receipt prints is only a candidate: %+v", onTheCard)
 	}
 }
 
 // The one exact amount sharing a word of the merchant is not matched
-// without asking when the receipt prints card digits and the charge is on
-// an account whose known digits differ: a candidate for the person only.
-// An account whose digits are not known says nothing either way.
+// without asking when the receipt prints the digits of another of the
+// person's accounts: a candidate for the person only. Digits no account
+// has, as a phone's wallet prints, and an account whose digits are not
+// known say nothing either way.
 func TestProposeReceiptMatchesNeverTakesAnotherCardsCharge(t *testing.T) {
 	receipt := inventedGroceryReceipt()
 	receipt.CurrencyCode, receipt.PaymentAccountMask = "USD", "4821"
 	charges := []*models.FinanceTransaction{inventedCharge("charge-named", "account-other", "2026-09-10", "-16.97", "MAPLE STREET MKT")}
-	otherCard := ProposeReceiptMatches(receipt, charges, map[string]string{"account-other": "1111"}, nil)
+	otherCard := ProposeReceiptMatches(receipt, charges, map[string]string{"account-other": "1111", "account-card": "4821"}, nil)
 	if len(otherCard) != 1 || !otherCard[0].IsExactAmount || otherCard[0].IsSameAccount || otherCard[0].IsAutomatic {
 		t.Fatalf("the charge on another card is only a candidate: %+v", otherCard)
+	}
+	walletCard := ProposeReceiptMatches(receipt, charges, map[string]string{"account-other": "1111"}, nil)
+	if len(walletCard) != 1 || !walletCard[0].IsAutomatic || walletCard[0].IsSameAccount || walletCard[0].MatchConfidence != "0.85" {
+		t.Fatalf("digits no account has do not keep the merchant's word from matching: %+v", walletCard)
 	}
 	unknownCard := ProposeReceiptMatches(receipt, charges, map[string]string{}, nil)
 	if len(unknownCard) != 1 || !unknownCard[0].IsAutomatic || unknownCard[0].MatchConfidence != "0.85" {
