@@ -6,6 +6,21 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.124.0] - 2026-10-09
+
+### Added
+
+- `teanode hook install claude-code` (or `codex`) shows your Claude Code and Codex sessions what your agent knows about the checkout they run in: its page and where the last session there stopped when a session starts, what each prompt recalls from that project, and has each session read in within a minute of an answer. `teanode agent memory checkout` and the Recall dialog's checkout field show what a session there sees. (#368)
+- A knowledge search over a tree of files says which directories its passages are in, and can search inside one (`--directory`, and in the documents dialog). (#368)
+
+### Changed
+
+- In a voice call, the mute button now mutes your microphone until you unmute it, instead of stopping answers being read aloud. (#369)
+
+### Fixed
+
+- A source asked to read again while it is part way through a pass reads again when that pass ends, rather than at its next scheduled time. (#368)
+
 ## [0.123.1] - 2026-10-09
 
 ### Fixed
