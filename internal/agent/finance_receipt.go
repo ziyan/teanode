@@ -397,13 +397,16 @@ func receiptMatchCandidates(tx db.Transaction, agentId string, receipt *models.F
 // matched to nothing whose day of purchase the new charges could be of is
 // weighed again by the same rule as when it was recorded, over every
 // charge of its window. Only a charge among insertedFinanceTransactionIds
-// is matched, so a match the person took off is never put back; anything
-// less sure stays with the person. It answers how many it matched.
+// is matched, and never a receipt a match was taken off by hand: a
+// provider that does not link a pending charge to the posted one it
+// became brings the posted one as new, and the match the person took off
+// the pending one would come back. Anything less sure stays with the
+// person. It answers how many it matched.
 func matchWaitingReceipts(tx db.Transaction, agentId string, insertedFinanceTransactionIds []string) (int, error) {
 	if len(insertedFinanceTransactionIds) == 0 {
 		return 0, nil
 	}
-	waiting, err := tx.ListFinanceReceipts(agentId, &db.FinanceReceiptFilter{IsUnmatched: true, Limit: 1})
+	waiting, err := tx.ListFinanceReceipts(agentId, &db.FinanceReceiptFilter{IsUnmatched: true, ShouldSkipLeftToPerson: true, Limit: 1})
 	if err != nil || len(waiting.FinanceReceipts) == 0 {
 		return 0, err
 	}
@@ -440,7 +443,7 @@ func matchWaitingReceipts(tx db.Transaction, agentId string, insertedFinanceTran
 	// day of purchase to ReceiptMatchDaysAfter after, so these are the
 	// days of purchase the new charges can explain.
 	filter := &db.FinanceReceiptFilter{
-		IsUnmatched: true, Limit: db.FinanceReceiptLimitMost,
+		IsUnmatched: true, ShouldSkipLeftToPerson: true, Limit: db.FinanceReceiptLimitMost,
 		From: earliest.AddDate(0, 0, -finance.ReceiptMatchDaysAfter).Format(time.DateOnly),
 		To:   latest.AddDate(0, 0, finance.ReceiptMatchDaysBefore).Format(time.DateOnly),
 	}
@@ -534,7 +537,8 @@ func (self *Agent) MatchReceipt(ctx context.Context, agentRow *models.Agent, rec
 }
 
 // UnmatchReceipt takes a receipt off a finance transaction, whoever matched
-// them. db.ErrNotFound when they were not matched.
+// them, and leaves the receipt to the person: a later sync never matches
+// it on its own again. db.ErrNotFound when they were not matched.
 func (self *Agent) UnmatchReceipt(ctx context.Context, agentRow *models.Agent, receiptId, financeTransactionId string) (*models.FinanceReceipt, error) {
 	var unmatched *models.FinanceReceipt
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {

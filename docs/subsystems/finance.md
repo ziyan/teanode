@@ -586,8 +586,11 @@ purchase, never both explain one charge on their own; the person may still
 match the second by hand for what is left. A receipt recorded before its
 charge arrives waits, unmatched: the sync or statement import that brings
 the charge weighs it again by the same rule (`matchWaitingReceipts`), and
-matches it only to a charge seen for the first time in that sync, so a match
-the person took off is never put back. The receipt job's prompt records
+matches it only to a charge seen for the first time in that sync, the posted
+one a pending charge became included. A receipt a match was taken off by
+hand is left to the person (`is_left_to_person`), and no sync matches it on
+its own again, since a provider that does not link a pending charge to its
+posted one (SimpleFIN) brings the posted one as new. The receipt job's prompt records
 only a purchase paid with a card or bank account, nothing for a newsletter,
 a quote, a bill still to pay or an order paid some other way.
 

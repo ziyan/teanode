@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -357,54 +358,72 @@ func TestDeleteReceiptRemovesItsUpload(t *testing.T) {
 	}
 }
 
-// A receipt recorded before its charge arrives waits, unmatched, and the
-// sync that brings the charge matches it by the same rule as recording
-// does. A match the person takes off is not put back by a later sync, and
-// the posted charge a pending one became is not a new charge to match.
-func TestSyncMatchesAReceiptRecordedBeforeItsCharge(t *testing.T) {
-	fixture := newFinanceFixture(t, "")
-	syncAndFollow := func(added ...finance.Transaction) *db.FinanceSyncApplied {
-		t.Helper()
-		var applied *db.FinanceSyncApplied
-		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-			var err error
-			if applied, err = tx.ApplyFinanceSync(fixture.agent.ID, fixture.source.ID, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: added}, time.Now().UTC().Format(time.DateOnly)); err != nil {
-				t.Fatalf("ApplyFinanceSync: %s", err)
-			}
-		})
-		if err := fixture.worker.afterFinanceSync(t.Context(), fixture.run(), fixture.source, applied, time.Now().UTC().Format(time.DateOnly), false, false); err != nil {
-			t.Fatalf("afterFinanceSync: %s", err)
+// syncAndFollow applies a sync and what follows one, as a sync job does,
+// and answers what it applied.
+func (self *financeFixture) syncAndFollow(t *testing.T, result *finance.SyncResult) *db.FinanceSyncApplied {
+	t.Helper()
+	if result.Accounts == nil {
+		result.Accounts = []finance.Account{inventedAccount()}
+	}
+	var applied *db.FinanceSyncApplied
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		if applied, err = tx.ApplyFinanceSync(self.agent.ID, self.source.ID, result, time.Now().UTC().Format(time.DateOnly)); err != nil {
+			t.Fatalf("ApplyFinanceSync: %s", err)
 		}
-		return applied
+	})
+	if err := self.worker.afterFinanceSync(t.Context(), self.run(), self.source, applied, time.Now().UTC().Format(time.DateOnly), false, false); err != nil {
+		t.Fatalf("afterFinanceSync: %s", err)
 	}
-	receiptMatches := func(receiptId string) []*models.FinanceReceiptMatch {
-		t.Helper()
-		var found *models.FinanceReceipt
-		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-			var err error
-			if found, err = tx.GetFinanceReceipt(fixture.agent.ID, receiptId); err != nil || found == nil {
-				t.Fatalf("GetFinanceReceipt: %v %v", found, err)
-			}
-		})
-		return found.ReceiptMatches
-	}
+	return applied
+}
 
-	syncAndFollow(inventedTransaction("unrelated", "2026-09-09", "-12.00", "LAKESIDE BOOKS", "Lakeside Books", ""))
-	recorded, err := fixture.worker.RecordReceipt(t.Context(), fixture.agent, inventedOrderReceipt("mail-before-charge"), ReceiptRecording{})
+// receiptMatches are the stored matches of a receipt.
+func (self *financeFixture) receiptMatches(t *testing.T, receiptId string) []*models.FinanceReceiptMatch {
+	t.Helper()
+	var found *models.FinanceReceipt
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		if found, err = tx.GetFinanceReceipt(self.agent.ID, receiptId); err != nil || found == nil {
+			t.Fatalf("GetFinanceReceipt: %v %v", found, err)
+		}
+	})
+	return found.ReceiptMatches
+}
+
+// recordWaitingReceipt records the invented order receipt while no charge
+// of its merchant has arrived, and answers its id.
+func (self *financeFixture) recordWaitingReceipt(t *testing.T, mailId string) string {
+	t.Helper()
+	self.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{
+		inventedTransaction("unrelated", "2026-09-09", "-12.00", "LAKESIDE BOOKS", "Lakeside Books", ""),
+	}})
+	recorded, err := self.worker.RecordReceipt(t.Context(), self.agent, inventedOrderReceipt(mailId), ReceiptRecording{})
 	if err != nil {
 		t.Fatalf("RecordReceipt: %s", err)
 	}
-	receiptId := recorded.FinanceReceipt.ID
 	if len(recorded.FinanceReceipt.ReceiptMatches) != 0 {
 		t.Fatalf("with no charge of its merchant yet, the receipt waits: %+v", recorded.FinanceReceipt.ReceiptMatches)
 	}
+	return recorded.FinanceReceipt.ID
+}
+
+// A receipt recorded before its charge arrives waits, unmatched, and the
+// sync that brings the charge matches it by the same rule as recording
+// does. A match the person takes off is not put back by a later sync, not
+// even on the posted charge the pending one became.
+func TestSyncMatchesAReceiptRecordedBeforeItsCharge(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	receiptId := fixture.recordWaitingReceipt(t, "mail-before-charge")
 
 	// The pending charge arrives; then the posted one it became.
-	applied := syncAndFollow(inventedTransaction("order-pending", "2026-09-11", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", ""))
+	applied := fixture.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{
+		inventedTransaction("order-pending", "2026-09-11", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", ""),
+	}})
 	if len(applied.InsertedFinanceTransactionIDs) != 1 {
 		t.Fatalf("the sync names the charge it brought: %+v", applied.InsertedFinanceTransactionIDs)
 	}
-	matches := receiptMatches(receiptId)
+	matches := fixture.receiptMatches(t, receiptId)
 	if len(matches) != 1 || matches[0].FinanceTransactionID != applied.InsertedFinanceTransactionIDs[0] ||
 		matches[0].ReceiptMatchSource != models.ReceiptMatchSourceReceiptMatcher || matches[0].MatchedAmount != "30.0000" {
 		t.Fatalf("the waiting receipt is matched to the charge that arrived: %+v", matches)
@@ -414,11 +433,103 @@ func TestSyncMatchesAReceiptRecordedBeforeItsCharge(t *testing.T) {
 	}
 	posted := inventedTransaction("order-posted", "2026-09-12", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", "")
 	posted.PendingProviderTransactionID = "order-pending"
-	applied = syncAndFollow(posted, inventedTransaction("another", "2026-09-12", "-4.00", "CORNER CAFE", "Corner Cafe", ""))
-	if len(applied.InsertedFinanceTransactionIDs) != 1 {
-		t.Fatalf("the posted one a pending charge became is not new: %+v", applied.InsertedFinanceTransactionIDs)
+	applied = fixture.syncAndFollow(t, &finance.SyncResult{
+		Added:                         []finance.Transaction{posted, inventedTransaction("another", "2026-09-12", "-4.00", "CORNER CAFE", "Corner Cafe", "")},
+		RemovedProviderTransactionIDs: []string{"order-pending"},
+	})
+	if len(applied.InsertedFinanceTransactionIDs) != 2 {
+		t.Fatalf("the posted one a pending charge became is new too: %+v", applied.InsertedFinanceTransactionIDs)
 	}
-	if matches := receiptMatches(receiptId); len(matches) != 0 {
+	if matches := fixture.receiptMatches(t, receiptId); len(matches) != 0 {
 		t.Fatalf("the match the person took off is not put back: %+v", matches)
+	}
+}
+
+// Plaid names the pending charge on a posted one even when that pending
+// charge was never synced, since it posted between two syncs: the posted
+// charge is new, and the waiting receipt is matched to it.
+func TestSyncMatchesAReceiptWhosePendingChargeWasNeverStored(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	receiptId := fixture.recordWaitingReceipt(t, "mail-pending-never-stored")
+	posted := inventedTransaction("order-posted", "2026-09-12", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", "")
+	posted.PendingProviderTransactionID = "order-pending-never-synced"
+	applied := fixture.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{posted}})
+	if len(applied.InsertedFinanceTransactionIDs) != 1 {
+		t.Fatalf("the posted charge is new: %+v", applied.InsertedFinanceTransactionIDs)
+	}
+	if matches := fixture.receiptMatches(t, receiptId); len(matches) != 1 || matches[0].FinanceTransactionID != applied.InsertedFinanceTransactionIDs[0] {
+		t.Fatalf("the waiting receipt is matched to the posted charge: %+v", matches)
+	}
+}
+
+// A pending charge that posts for more than it held (a tip added) carried
+// no match, since its amount was not the receipt's: the posted charge is
+// new, and the receipt waiting for it is matched to it.
+func TestSyncMatchesAReceiptAfterItsChargePostsWithATip(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	fixture.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{
+		{
+			ProviderTransactionID: "order-pending", ProviderAccountID: "account-1", PostedOn: "2026-09-10", Amount: "-25.00", CurrencyCode: "USD",
+			Description: "EXAMPLE OUTFITTERS", MerchantName: "Example Outfitters", IsPending: true, ProviderMetadata: json.RawMessage(`{}`),
+		},
+	}})
+	recorded, err := fixture.worker.RecordReceipt(t.Context(), fixture.agent, inventedOrderReceipt("mail-tip"), ReceiptRecording{})
+	if err != nil {
+		t.Fatalf("RecordReceipt: %s", err)
+	}
+	if len(recorded.FinanceReceipt.ReceiptMatches) != 0 {
+		t.Fatalf("a hold for less than the receipt is no automatic match: %+v", recorded.FinanceReceipt.ReceiptMatches)
+	}
+	posted := inventedTransaction("order-posted", "2026-09-11", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", "")
+	posted.PendingProviderTransactionID = "order-pending"
+	applied := fixture.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{posted}, RemovedProviderTransactionIDs: []string{"order-pending"}})
+	if matches := fixture.receiptMatches(t, recorded.FinanceReceipt.ID); len(matches) != 1 ||
+		matches[0].FinanceTransactionID != applied.InsertedFinanceTransactionIDs[0] || matches[0].MatchedAmount != "30.0000" {
+		t.Fatalf("the receipt is matched to the charge as it posted: %+v", matches)
+	}
+}
+
+// A provider that does not link a pending charge to the posted one it
+// became (SimpleFIN) brings the posted one under a new id. A match the
+// person took off the pending charge stays off: the receipt is left to
+// them, and reading it again does not change that.
+func TestSyncLeavesAnUnmatchedReceiptToThePerson(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	receiptId := fixture.recordWaitingReceipt(t, "mail-unlinked-posting")
+	pending := inventedTransaction("order-pending", "2026-09-11", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", "")
+	pending.IsPending = true
+	fixture.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{pending}})
+	matches := fixture.receiptMatches(t, receiptId)
+	if len(matches) != 1 {
+		t.Fatalf("the pending charge is matched: %+v", matches)
+	}
+	if _, err := fixture.worker.UnmatchReceipt(t.Context(), fixture.agent, receiptId, matches[0].FinanceTransactionID); err != nil {
+		t.Fatalf("UnmatchReceipt: %s", err)
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		stored, err := tx.GetFinanceReceipt(fixture.agent.ID, receiptId)
+		if err != nil {
+			t.Fatalf("GetFinanceReceipt: %s", err)
+		}
+		// Saved again as a second reading would, matches aside.
+		stored.ReceiptMatches = nil
+		if _, err := tx.PutFinanceReceipt(stored); err != nil {
+			t.Fatalf("PutFinanceReceipt: %s", err)
+		}
+	})
+	replacedFrom := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	applied := fixture.syncAndFollow(t, &finance.SyncResult{
+		Added:               []finance.Transaction{inventedTransaction("order-posted", "2026-09-12", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", "")},
+		PendingReplacedFrom: &replacedFrom,
+	})
+	if len(applied.InsertedFinanceTransactionIDs) != 1 || applied.ReplacedPendingTransactionCount != 1 {
+		t.Fatalf("the posted charge is new and replaces the pending one: %+v", applied)
+	}
+	if matches := fixture.receiptMatches(t, receiptId); len(matches) != 0 {
+		t.Fatalf("the match the person took off is not put back on the posted charge: %+v", matches)
+	}
+	// Still theirs to match by hand.
+	if _, err := fixture.worker.MatchReceipt(t.Context(), fixture.agent, receiptId, applied.InsertedFinanceTransactionIDs[0], ""); err != nil {
+		t.Fatalf("MatchReceipt: %s", err)
 	}
 }

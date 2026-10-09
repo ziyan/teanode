@@ -89,7 +89,9 @@ type FinanceReceiptOperation interface {
 	// DeleteFinanceReceiptMatch takes a receipt off a finance transaction,
 	// answering whether there was a match. With a source, only a match of
 	// that source is taken off, so the receipt matcher never removes the
-	// person's.
+	// person's. With none, the match is taken off by hand, and the receipt
+	// is left to the person from then on: the matcher no longer matches it
+	// on its own to a charge a sync brings (ShouldSkipLeftToPerson).
 	DeleteFinanceReceiptMatch(agentId, receiptId, financeTransactionId string, receiptMatchSource models.ReceiptMatchSource) (bool, error)
 }
 
@@ -112,6 +114,10 @@ type FinanceReceiptFilter struct {
 
 	// IsUnmatched keeps the receipts matched to no finance transaction.
 	IsUnmatched bool
+
+	// ShouldSkipLeftToPerson leaves out the receipts a match was taken off
+	// by hand, which the receipt matcher no longer matches on its own.
+	ShouldSkipLeftToPerson bool
 
 	// Limit is at most FinanceReceiptLimitMost; zero is
 	// FinanceReceiptLimitDefault.
@@ -216,6 +222,9 @@ func canonicalOptionalReceiptAmount(field, amount string) (*string, error) {
 	return &canonical, nil
 }
 
+// agentFinanceReceiptModel leaves out "is_left_to_person", which only
+// DeleteFinanceReceiptMatch writes, so that saving a receipt read again
+// keeps it.
 type agentFinanceReceiptModel struct {
 	ID                    string     `gorm:"column:id;primaryKey"`
 	AgentID               string     `gorm:"column:agent_id"`
@@ -730,6 +739,9 @@ func (self *transaction) financeReceiptQuery(agentId string, filter *FinanceRece
 	if filter.IsUnmatched {
 		query = query.Where(`NOT EXISTS (SELECT 1 FROM "agent_finance_receipt_match" AS "match" WHERE "match"."receipt_id" = "agent_finance_receipt"."id")`)
 	}
+	if filter.ShouldSkipLeftToPerson {
+		query = query.Where(`NOT "is_left_to_person"`)
+	}
 	return query, nil
 }
 
@@ -1159,8 +1171,15 @@ func (self *transaction) DeleteFinanceReceiptMatch(agentId, receiptId, financeTr
 	}
 	if err := self.applyMutation(models.AuditResourceFinanceReceipt, receipt.ID, models.AuditActionUpdate,
 		receiptMatchesAudit(receipt.ReceiptMatches), receiptMatchesAudit(after), func(tx *gorm.DB) error {
-			return tx.Where(`"agent_id" = ? AND "receipt_id" = ? AND "finance_transaction_id" = ? AND "receipt_match_source" = ?`,
-				agentId, receipt.ID, financeTransactionId, string(removed.ReceiptMatchSource)).Delete(&agentFinanceReceiptMatchModel{}).Error
+			if err := tx.Where(`"agent_id" = ? AND "receipt_id" = ? AND "finance_transaction_id" = ? AND "receipt_match_source" = ?`,
+				agentId, receipt.ID, financeTransactionId, string(removed.ReceiptMatchSource)).Delete(&agentFinanceReceiptMatchModel{}).Error; err != nil {
+				return err
+			}
+			if receiptMatchSource != "" {
+				return nil
+			}
+			return tx.Exec(`UPDATE "agent_finance_receipt" SET "is_left_to_person" = true WHERE "agent_id" = ? AND "id" = ?`,
+				agentId, receipt.ID).Error
 		}); err != nil {
 		return false, err
 	}

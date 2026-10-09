@@ -215,9 +215,9 @@ type FinanceSyncApplied struct {
 	FinanceTransactionIDsToCategorize []string
 
 	// InsertedFinanceTransactionIDs are the finance transactions seen for
-	// the first time, pending or posted, other than a posted one that
-	// became of a pending one already stored: receipts recorded before
-	// their charge arrived are matched against these.
+	// the first time, pending or posted, the posted one a stored pending
+	// one became included: receipts recorded before their charge arrived
+	// are matched against these.
 	InsertedFinanceTransactionIDs []string
 }
 
@@ -979,8 +979,7 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		}
 		// Before the pending one is removed below: Plaid names it on the
 		// posted one it became, in the same sync that removes it.
-		isOfPending := added.PendingProviderTransactionID != "" && added.PendingProviderTransactionID != added.ProviderTransactionID
-		if isOfPending {
+		if added.PendingProviderTransactionID != "" && added.PendingProviderTransactionID != added.ProviderTransactionID {
 			if err := self.carryPendingDecisions(agentId, sourceId, financeAccountId, added.ProviderTransactionID, added.PendingProviderTransactionID, now); err != nil {
 				return nil, err
 			}
@@ -995,11 +994,12 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		isInserted := written.CreatedAt.Equal(written.ModifiedAt)
 		if isInserted {
 			applied.InsertedTransactionCount++
-			// One that became of a pending charge brought that charge's
-			// receipt matches with it, or the person took them off.
-			if !isOfPending {
-				applied.InsertedFinanceTransactionIDs = append(applied.InsertedFinanceTransactionIDs, written.ID)
-			}
+			// The posted one a pending charge became too: Plaid names a
+			// pending charge never stored when it posted between two
+			// syncs, and one stored may have had no receipt to carry (a
+			// tip changed the amount). A receipt already carried to it is
+			// matched, and one the person took off is left to them.
+			applied.InsertedFinanceTransactionIDs = append(applied.InsertedFinanceTransactionIDs, written.ID)
 		}
 		if !written.IsPending && isInserted {
 			insertedPostedIdsByFinanceAccountId[financeAccountId] = append(insertedPostedIdsByFinanceAccountId[financeAccountId], written.ID)
