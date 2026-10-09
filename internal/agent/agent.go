@@ -139,6 +139,9 @@ type Agent struct {
 	// headless browser contexts in use under the operator's cap.
 	tabsMutex sync.Mutex
 	tabs      map[string]*attachedTab
+	// tabsConnected is closed, and made anew, each time a browser
+	// connects, for whoever waits on one coming back.
+	tabsConnected chan struct{}
 
 	// computersBusy is which source each attached computer is reading
 	// for right now, by computer name. One at a time: two big scans at

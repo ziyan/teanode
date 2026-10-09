@@ -113,6 +113,10 @@ type FinanceReceiptFilter struct {
 	// IsUnmatched keeps the receipts matched to no finance transaction.
 	IsUnmatched bool
 
+	// Text keeps the receipts whose merchant, receipt number or any line's
+	// description holds it, matched case-insensitively.
+	Text string
+
 	// Limit is at most FinanceReceiptLimitMost; zero is
 	// FinanceReceiptLimitDefault.
 	Limit int
@@ -729,6 +733,13 @@ func (self *transaction) financeReceiptQuery(agentId string, filter *FinanceRece
 	}
 	if filter.IsUnmatched {
 		query = query.Where(`NOT EXISTS (SELECT 1 FROM "agent_finance_receipt_match" AS "match" WHERE "match"."receipt_id" = "agent_finance_receipt"."id")`)
+	}
+	if text := strings.TrimSpace(filter.Text); text != "" {
+		pattern := "%" + escapeLike(text) + "%"
+		query = query.Where(`("merchant_name" ILIKE ? OR "merchant_receipt_number" ILIKE ?
+			OR EXISTS (SELECT 1 FROM "agent_finance_receipt_line" AS "line"
+				WHERE "line"."receipt_id" = "agent_finance_receipt"."id" AND "line"."description" ILIKE ?))`,
+			pattern, pattern, pattern)
 	}
 	return query, nil
 }

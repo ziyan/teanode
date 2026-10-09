@@ -71,7 +71,7 @@ type Opened =
   | { dialogKind: 'delete'; receiptId: string }
   | { dialogKind: 'transaction'; financeTransactionId: string; returnReceiptId: string }
 
-type ReceiptFilters = { from: string; to: string; isUnmatched: boolean; isUndated: boolean }
+type ReceiptFilters = { from: string; to: string; isUnmatched: boolean; isUndated: boolean; text: string }
 
 function receiptFiltersFromSearch(search: URLSearchParams): ReceiptFilters {
   return {
@@ -79,6 +79,7 @@ function receiptFiltersFromSearch(search: URLSearchParams): ReceiptFilters {
     to: search.get('to') ?? '',
     isUnmatched: search.get('unmatched') === '1',
     isUndated: search.get('undated') === '1',
+    text: search.get('text') ?? '',
   }
 }
 
@@ -110,6 +111,7 @@ export function FinanceReceiptListSection() {
           ['to', merged.to],
           ['unmatched', merged.isUnmatched ? '1' : ''],
           ['undated', merged.isUndated ? '1' : ''],
+          ['text', merged.text],
         ]) {
           if (value) next.set(parameter, value)
           else next.delete(parameter)
@@ -120,6 +122,22 @@ export function FinanceReceiptListSection() {
       { replace: true },
     )
 
+  // The words are sent once typing pauses, not on every key, and only when
+  // they changed, so a page opened from an address keeps its page number.
+  const [typed, setTyped] = useState(filters.text)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (typed.trim() !== filters.text) setFilters({ text: typed.trim() })
+    }, 400)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typed])
+  // Words that arrive by the address, from Back or a link, are put in the
+  // box; words being typed are not overwritten by the address catching up.
+  useEffect(() => {
+    setTyped((previous) => (previous.trim() === filters.text ? previous : filters.text))
+  }, [filters.text])
+
   const hasDays = Boolean(filters.from || filters.to)
   const isUndated = filters.isUndated && !hasDays
   const variables = {
@@ -127,6 +145,7 @@ export function FinanceReceiptListSection() {
     to: filters.to || undefined,
     isUnmatched: filters.isUnmatched || undefined,
     isUndated: isUndated || undefined,
+    text: filters.text || undefined,
   }
   const filterKey = JSON.stringify(variables)
   // The page asked for follows the Transactions section: nothing before the
@@ -510,6 +529,10 @@ export function FinanceReceiptListSection() {
             onChange={(event) => setFilters({ to: event.target.value })}
           />
         </label>
+        <label>
+          <span>{t('finance.receiptSearchText')}</span>
+          <input type="search" value={typed} onChange={(event) => setTyped(event.target.value)} />
+        </label>
       </div>
       <label className="checkbox">
         <input
@@ -541,11 +564,13 @@ export function FinanceReceiptListSection() {
           loading={!shownPage}
           remote={{ total: totalCount, onRange }}
           emptyMessage={
-            isUndated
-              ? t('finance.noUndatedReceipts')
-              : filters.isUnmatched
-                ? t('finance.noUnmatchedReceipts')
-                : t('finance.noReceiptsListed')
+            filters.text
+              ? t('finance.noReceiptsWithText', { text: filters.text })
+              : isUndated
+                ? t('finance.noUndatedReceipts')
+                : filters.isUnmatched
+                  ? t('finance.noUnmatchedReceipts')
+                  : t('finance.noReceiptsListed')
           }
           countLabel={receiptCountWords}
           onRowOpen={(receipt) => setOpened({ dialogKind: 'receipt', receiptId: receipt.id })}

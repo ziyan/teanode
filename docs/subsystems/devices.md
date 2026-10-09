@@ -20,6 +20,12 @@ A device is attached per person, not per conversation. Attaching a second
 computer of the same name replaces the first, and whoever was waiting on it is
 told it was detached rather than given the new one's answer.
 
+The numbers are counted once for the whole server, not per connection, so a
+device that reconnects never reuses one. The extension answers on the socket a
+request came on, or not at all; an answer sent late on a newer connection would
+otherwise have been taken for the answer to that connection's own request with
+the same number.
+
 Every answer from a device is marked untrusted. It is data the model read, never
 words the person said.
 
@@ -297,6 +303,19 @@ conversation, which is a different question from typing one in.
 A run with nobody present reads the tab but does not act in it: a click or
 a keystroke there acts as the person, signed in, and no card can be shown to
 an empty room to ask first.
+
+The extension's connection can drop and come back within a second or two
+while a request waits, as a worker restarted or a network blip does. The
+browser tool then waits up to ten seconds for the person's browser to connect
+again, and only waits: connecting is the extension's own doing. A request that
+only reads (snapshot, screenshot, tabs) is sent once more on the new
+connection. Anything else is not, since it may already have happened: the
+model is told the outcome is unknown and to read the page before trying again.
+If the browser does not come back, it is told to try again in a moment and,
+only if it stays away, to ask the person to check the extension. The server
+logs each such drop with the action, how long it waited, and whether it was
+sent again. The tab the actions go to is kept in the extension's session
+storage beside the person's own, so a restarted worker still knows it.
 
 ## The headless browser
 

@@ -39,11 +39,19 @@ type tabSocket struct {
 	mutex sync.Mutex
 }
 
+// Send writes a message. A write that fails closes the connection: a
+// websocket that failed a write fails every one after it, and one whose
+// reads still worked stayed attached, so every request to it waited for a
+// reconnect that the closing is what brings.
 func (self *tabSocket) Send(message []byte) error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	_ = self.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return self.conn.WriteMessage(websocket.TextMessage, message)
+	if err := self.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+		_ = self.conn.Close()
+		return err
+	}
+	return nil
 }
 
 // AgentTabQuery says whether a tab is attached.
