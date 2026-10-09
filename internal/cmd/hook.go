@@ -173,6 +173,28 @@ func answerHook(ctx context.Context, command *cli.Command, tool string, input io
 	return nil
 }
 
+// openHookClient connects to the server the hook was installed for: the
+// profile the hook's command names, whatever the coding tool's environment
+// says. A shell that loaded a development server's TEANODE_URL would
+// otherwise send every prompt of every session started from it there.
+func openHookClient(command *cli.Command) (*client.Client, error) {
+	resolved, err := hookTarget(command)
+	if err != nil {
+		return nil, err
+	}
+	return openTarget(resolved)
+}
+
+// hookTarget is the server a hook talks to: the profile its command
+// names, else what any command would resolve.
+func hookTarget(command *cli.Command) (*target, error) {
+	root := command.Root()
+	if profileName := root.String("profile"); profileName != "" {
+		return resolveTarget("", "", profileName, root.Bool("insecure"), root.Bool("read-only"))
+	}
+	return resolveCommandTarget(command)
+}
+
 func codingPlaceOf(ctx context.Context, command *cli.Command, event *hookEvent) *client.AgentCodingPlace {
 	return codingPlaceAt(ctx, command, event.Directory, event.SessionID)
 }
@@ -223,7 +245,8 @@ func showSessionStart(ctx context.Context, command *cli.Command, event *hookEven
 	state := &hookState{ShownAtPrompt: map[string]int{}}
 	saveHookState(event.SessionID, state)
 	pruneHookStates(time.Now())
-	connection, err := openClient(command)
+	trimHookLog()
+	connection, err := openHookClient(command)
 	if err != nil {
 		return err
 	}
@@ -241,7 +264,7 @@ func showPromptRecall(ctx context.Context, command *cli.Command, event *hookEven
 	state := loadHookState(event.SessionID)
 	state.PromptCount++
 	defer saveHookState(event.SessionID, state)
-	connection, err := openClient(command)
+	connection, err := openHookClient(command)
 	if err != nil {
 		return err
 	}
@@ -286,13 +309,13 @@ func startCapture(command *cli.Command, tool string) error {
 }
 
 // globalArguments is the root flags this command was run with that say
-// which server to talk to, for a command started from it.
+// which server to talk to, for a command started from it: the profile,
+// which the hook's command names. Not --url, which may come from the
+// tool's environment rather than the hook (see openHookClient).
 func globalArguments(command *cli.Command) []string {
 	var arguments []string
-	for _, name := range []string{"profile", "url"} {
-		if value := command.String(name); value != "" && command.IsSet(name) {
-			arguments = append(arguments, "--"+name, value)
-		}
+	if value := command.String("profile"); value != "" && command.IsSet("profile") {
+		arguments = append(arguments, "--profile", value)
 	}
 	if command.IsSet("insecure") && command.Bool("insecure") {
 		arguments = append(arguments, "--insecure")
@@ -301,7 +324,7 @@ func globalArguments(command *cli.Command) []string {
 }
 
 func runHookCapture(ctx context.Context, command *cli.Command) error {
-	connection, err := openClient(command)
+	connection, err := openHookClient(command)
 	if err != nil {
 		logHook("capture: %s", err)
 		return nil
@@ -369,6 +392,33 @@ func pruneHookStates(now time.Time) {
 		}
 		_ = os.Remove(filepath.Join(cache, "teanode", "hooks", entry.Name()))
 	}
+}
+
+// hookLogKept is the most the hook log grows to: a server that is down
+// for a week adds a line at every prompt.
+const hookLogKept = 1 << 20
+
+// trimHookLog empties the hook log once it has grown past hookLogKept,
+// keeping its newest half.
+func trimHookLog() {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	logPath := filepath.Join(cache, "teanode", "hooks", "hook.log")
+	info, err := os.Stat(logPath)
+	if err != nil || info.Size() <= hookLogKept {
+		return
+	}
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		return
+	}
+	kept := content[len(content)-hookLogKept/2:]
+	if newline := bytes.IndexByte(kept, '\n'); newline >= 0 {
+		kept = kept[newline+1:]
+	}
+	_ = os.WriteFile(logPath, kept, 0o600)
 }
 
 // forgetHookState removes an ended session's state.
@@ -468,7 +518,20 @@ func runHookInstall(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	profile := resolved.Profile
+	if profile == "" && resolved.URL != "" {
+		// Reached by --url with a token, from a profile already saved.
+		if profiles, err := LoadProfiles(); err == nil {
+			if saved := profiles.FindByURL(resolved.URL); saved != nil {
+				profile = saved.Name
+			}
+		}
+	}
 	if resolved.Local {
+		// Only where this computer runs a server: with no profile saved
+		// and none here, every hook would fail, silently.
+		if _, err := LoadLocalConfiguration(); err != nil {
+			return usage("no server is signed in to here: sign in with teanode auth login --url <server> first")
+		}
 		profile = LocalProfileName
 	}
 	if profile == "" {

@@ -40,7 +40,8 @@ type KnowledgeOperation interface {
 	// ListAgentCodingDocuments is the newest chat units a coding tool's
 	// session in a directory was filed as, newest first: the documents
 	// whose metadata names that working directory and an assistant.
-	ListAgentCodingDocuments(agentId, directory string, limit int) ([]*models.AgentDocument, error)
+	// Where sourceIds is not empty, only theirs.
+	ListAgentCodingDocuments(agentId, directory string, sourceIds []string, limit int) ([]*models.AgentDocument, error)
 
 	// RequestAgentSourceRun makes an enabled source due at a moment and
 	// records the request, touching nothing else: unlike PutAgentSource it
@@ -431,12 +432,13 @@ func (self *transaction) ListAgentSourceCheckouts(sourceId string) ([]string, er
 	return checkouts, err
 }
 
-func (self *transaction) ListAgentCodingDocuments(agentId, directory string, limit int) ([]*models.AgentDocument, error) {
+func (self *transaction) ListAgentCodingDocuments(agentId, directory string, sourceIds []string, limit int) ([]*models.AgentDocument, error) {
 	if limit <= 0 {
 		limit = 40
 	}
 	return self.documentsFrom(self.tx.
 		Where(`"agent_id" = ? AND "kind" = 'chat' AND "metadata"->>'directory' = ? AND COALESCE("metadata"->>'assistant', '') <> ''`, agentId, directory).
+		Where(`? OR "source_id" = ANY(?)`, len(sourceIds) == 0, pq.Array(sourceIds)).
 		Order(`"happened_at" DESC NULLS LAST, "id" DESC`).Limit(limit))
 }
 

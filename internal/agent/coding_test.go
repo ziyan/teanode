@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -193,6 +194,50 @@ func TestRemotesAreComparedAsRepositories(t *testing.T) {
 	}
 }
 
+// The last session is the one on the session's own computer, however
+// many newer ones another computer held at the same path.
+func TestTheLastSessionIsOnTheSameComputer(t *testing.T) {
+	world := newCodingWorld(t)
+	directory := "/srv/alice/code/seedling"
+	world.session(t, "here", "Here", directory, time.Now().Add(-5*time.Hour), "09:00 alice: the request made here\n09:01 Claude Code: done here.")
+	var laptop *models.AgentKnowledgeSource
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		laptop, err = tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: world.agent.ID, Kind: models.SourceComputer, Name: "claude-code-laptop", Enabled: true,
+			Specification: models.AgentKnowledgeSpecification{Type: "claude-code", Computer: "laptop", Format: models.FormatTyped},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+	})
+	for index := range codingDocuments + 5 {
+		at := time.Now().Add(-time.Duration(index) * time.Minute)
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			document, err := tx.PutAgentDocument(&models.AgentDocument{
+				AgentID: world.agent.ID, SourceID: laptop.ID, ExternalID: "projects/-code-seedling/elsewhere.jsonl#" + strconv.Itoa(index),
+				Kind: models.DocumentChat, Title: "Elsewhere", HappenedAt: &at, Hash: "elsewhere" + strconv.Itoa(index),
+				Metadata: map[string]any{"directory": directory, "assistant": "Claude Code", "channel": "Elsewhere", "posts": 2},
+			})
+			if err != nil {
+				t.Fatalf("PutAgentDocument: %s", err)
+			}
+			if err := tx.ReplaceAgentChunks(document, chunkText("10:00 alice: asked on the laptop")); err != nil {
+				t.Fatalf("ReplaceAgentChunks: %s", err)
+			}
+		})
+	}
+	shown, err := world.run.agent.CodingSessionStart(context.Background(), world.agent, world.run.settings.Owner, &CodingRequest{
+		Directory: directory, ComputerName: "workbench", HomeDirectory: "/srv/alice",
+	})
+	if err != nil {
+		t.Fatalf("CodingSessionStart: %s", err)
+	}
+	if shown.LastSession == nil || shown.LastSession.Title != "Here" {
+		t.Fatalf("the last session on this computer: %+v", shown.LastSession)
+	}
+}
+
 // A directory no checkout holds is shown nothing, rather than the whole
 // of memory.
 func TestASessionOutsideAnyCheckoutIsShownNothing(t *testing.T) {
@@ -380,6 +425,25 @@ func TestAPassKeepsARequestMadeWhileItRan(t *testing.T) {
 	if next := nextRunAfterPass(true); next == nil || next.After(time.Now()) {
 		t.Fatalf("a request made during the pass stands: %v", next)
 	}
+	// A pass that could not run -- its computer away -- leaves the source
+	// at the time the waiting chose, not due again at once for ever.
+	var snapshot *models.AgentKnowledgeSource
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		snapshot, _ = tx.GetAgentSource(world.agent.ID, world.source.ID)
+	})
+	if snapshot.RunRequestedAt == nil {
+		t.Fatalf("the request is still standing")
+	}
+	inFiveMinutes := time.Now().Add(5 * time.Minute)
+	if err := world.run.agent.markSource(context.Background(), snapshot, nil, db.SourceCounts{}, false, "waiting for the computer workbench to be attached", inFiveMinutes); err != nil {
+		t.Fatalf("markSource: %s", err)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		current, _ := tx.GetAgentSource(world.agent.ID, world.source.ID)
+		if current.NextRunAt == nil || current.NextRunAt.Before(inFiveMinutes.Add(-time.Second)) {
+			t.Fatalf("a failed pass keeps the time the waiting chose: %v", current.NextRunAt)
+		}
+	})
 	// The pass that then starts from the top reads what was asked for,
 	// and answers the request.
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {

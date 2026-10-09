@@ -454,6 +454,11 @@ func checkoutByRemote(tx db.Transaction, agentId string, request *CodingRequest,
 	var holding []*models.AgentFact
 	repository := ""
 	for _, fact := range facts {
+		// The line a profile wrote, not a sentence of the person's that
+		// happens to start the same way ("Lives at the old house.").
+		if key, isKeyed := repositoryKeyOf(fact); !isKeyed || key != "remote" {
+			continue
+		}
 		remote := strings.TrimSuffix(strings.TrimPrefix(fact.Text, remoteLinePrefix), ".")
 		if normalized := normalizeRemote(remote); wanted[normalized] {
 			holding = append(holding, fact)
@@ -711,23 +716,28 @@ func lastCodingSession(tx db.Transaction, agentId string, owner *models.User, di
 	if directory == "" {
 		return nil, nil
 	}
-	documents, err := tx.ListAgentCodingDocuments(agentId, directory, codingDocuments)
-	if err != nil || len(documents) == 0 {
-		return nil, err
-	}
 	// On the session's own computer, where it is named: the same path on
 	// another computer is another checkout, and its last session is not
-	// this one's.
+	// this one's. Narrowed in the query, so another computer's newer
+	// sessions do not use up the rows read.
+	var sourceIds []string
 	if computerName != "" {
 		sources, err := tx.ListAgentSources(agentId)
 		if err != nil {
 			return nil, err
 		}
-		isOnComputer := map[string]bool{}
 		for _, source := range sources {
-			isOnComputer[source.ID] = source.Specification.Computer == computerName
+			if source.Specification.Computer == computerName {
+				sourceIds = append(sourceIds, source.ID)
+			}
 		}
-		documents = slices.DeleteFunc(documents, func(document *models.AgentDocument) bool { return !isOnComputer[document.SourceID] })
+		if len(sourceIds) == 0 {
+			return nil, nil
+		}
+	}
+	documents, err := tx.ListAgentCodingDocuments(agentId, directory, sourceIds, codingDocuments)
+	if err != nil || len(documents) == 0 {
+		return nil, err
 	}
 	sessionOf := func(document *models.AgentDocument) string {
 		file, _, _ := strings.Cut(document.ExternalID, "#")

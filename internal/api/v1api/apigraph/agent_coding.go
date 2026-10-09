@@ -38,7 +38,8 @@ type AgentCodingMutation interface {
 	// CaptureAgentCodingSession asks the sources reading a coding tool's
 	// transcripts on a computer to read again now, so that a session's
 	// latest answer is searchable within a minute. True when a source was
-	// asked; false when none fits or one is already due. Needs agent:use.
+	// asked, already due or not (a pass may be reading already, and runs
+	// again when it ends); false when none fits. Needs agent:use.
 	CaptureAgentCodingSession(ctx context.Context, arguments CaptureAgentCodingSessionArguments) (bool, error)
 }
 

@@ -223,3 +223,26 @@ func TestTheHookReadsTheCheckoutFromGit(t *testing.T) {
 		t.Fatalf("every remote: %q", place.RemoteURLs)
 	}
 }
+
+// The hook talks to the server its command names, whatever URL the coding
+// tool's environment carries: a shell that loaded a development server's
+// variables would otherwise send every prompt there.
+func TestTheHookTalksToTheProfileItNames(t *testing.T) {
+	root := &cli.Command{Flags: []cli.Flag{
+		&cli.StringFlag{Name: "url", Value: "http://127.0.0.1:9"},
+		&cli.StringFlag{Name: "token", Value: "from-the-environment"},
+		&cli.StringFlag{Name: "profile", Value: LocalProfileName},
+		&cli.BoolFlag{Name: "insecure"}, &cli.BoolFlag{Name: "read-only"},
+	}}
+	resolved, err := hookTarget(root)
+	if err != nil {
+		t.Fatalf("hookTarget: %s", err)
+	}
+	if !resolved.Local || resolved.URL != "" {
+		t.Fatalf("the named profile, not the environment's URL: %+v", resolved)
+	}
+	arguments := globalArguments(root)
+	if slices.Contains(arguments, "--url") {
+		t.Fatalf("the capture is not handed the environment's URL: %v", arguments)
+	}
+}

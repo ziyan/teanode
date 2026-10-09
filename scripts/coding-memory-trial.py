@@ -9,9 +9,10 @@ tool reports it, the cost.
 
 Nothing a trial says is kept: Claude Code runs with
 --no-session-persistence and Codex with --ephemeral, so the questions are
-not read back into memory as if somebody had asked them, and the user's own
-settings are left out of both arms (Claude Code's --setting-sources) so the
-only difference between them is the hooks.
+not read back into memory as if somebody had asked them. Claude Code's
+user settings are left out of both arms (--setting-sources), so the only
+difference between them is the hooks; Codex has its hooks turned off for
+one arm and on for the other, the installed ones where there are any.
 
 The questions are a JSON list, kept outside the repository because they are
 about the person's own work:
@@ -79,13 +80,26 @@ def run_claude(prompt, directory, teanode, is_hooked, timeout_seconds):
     }
 
 
+def codex_hooks_installed():
+    """Whether `teanode hook install codex` was run, so ~/.codex/hooks.json
+    already carries the hooks."""
+    try:
+        with open(os.path.expanduser("~/.codex/hooks.json")) as file:
+            return " hook codex" in file.read()
+    except OSError:
+        return False
+
+
 def run_codex(prompt, directory, teanode, is_hooked, timeout_seconds):
     command = ["codex", "exec", "--ephemeral", "--json", "-s", "read-only", "-C", directory]
     if is_hooked:
-        hook = hook_command(teanode, "codex").replace('"', '\\"')
-        for event, seconds in (("SessionStart", 30), ("UserPromptSubmit", 15)):
-            command += ["-c", f'hooks.{event}=[{{hooks=[{{type="command",command="{hook}",timeout={seconds}}}]}}]']
-        command.append("--dangerously-bypass-hook-trust")
+        # Hooks on, whatever config.toml says; given here unless the hooks
+        # are installed already, which would run them twice.
+        command += ["-c", "features.hooks=true", "--dangerously-bypass-hook-trust"]
+        if not codex_hooks_installed():
+            hook = hook_command(teanode, "codex").replace('"', '\\"')
+            for event, seconds in (("SessionStart", 30), ("UserPromptSubmit", 15)):
+                command += ["-c", f'hooks.{event}=[{{hooks=[{{type="command",command="{hook}",timeout={seconds}}}]}}]']
     else:
         command += ["-c", "features.hooks=false"]
     command.append(prompt)

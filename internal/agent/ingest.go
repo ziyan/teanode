@@ -262,7 +262,8 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		if next == "" {
 			// A pass that ran out of time on part of what it read goes
 			// on with the next one straight away rather than at its hour.
-			if unfinished, _ := cursor[cursorPassUnfinished].(bool); unfinished {
+			isUnfinished, _ := cursor[cursorPassUnfinished].(bool)
+			if isUnfinished {
 				more = true
 			}
 			completion, err := self.completeIngestPass(ctx, source, cursor, startedPass, counts)
@@ -280,7 +281,9 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			// markSource runs the source again for it. Cleared at the end
 			// rather than the start, so that the request keeps the pass
 			// at the front of its computer's queue page after page.
-			if !startedPass.IsZero() {
+			// Not when a page ran out of time: what was not read is what
+			// the next pass is for, and it keeps the request's place.
+			if !isUnfinished && !startedPass.IsZero() {
 				if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 					return tx.ClearAgentSourceRunRequest(source.ID, startedPass.Add(time.Second))
 				}); err != nil {
@@ -467,7 +470,10 @@ func (self *Agent) markSource(ctx context.Context, source *models.AgentKnowledge
 		// pass may have read the files before what they wanted read was
 		// written. At the end of the pass their request stands rather
 		// than being put off to the next scheduled time.
-		if !more && current.RunRequestedAt != nil {
+		// Not when the pass failed, or the computer is away: a request
+		// a pass cannot answer would bring the source back every few
+		// seconds instead of when its computer is likely to be there.
+		if !more && failure == "" && current.RunRequestedAt != nil {
 			now := time.Now()
 			next = &now
 		}
