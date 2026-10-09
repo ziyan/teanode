@@ -443,8 +443,20 @@ func (self *Agent) markSource(ctx context.Context, source *models.AgentKnowledge
 		next = &nextRun
 	}
 	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		if err := lockIngestSource(tx, source); err != nil {
+		current, err := tx.LockAgentSource(source.AgentID, source.ID)
+		if err != nil {
 			return err
+		}
+		if err = checkIngestSource(current, source); err != nil {
+			return err
+		}
+		// Somebody asked for a pass while this one ran -- a coding
+		// session that just answered (CaptureCodingSession), or the
+		// person pressing sync -- and this pass may have read the files
+		// before what they wanted read was written. Their request
+		// stands rather than being put off to the next scheduled time.
+		if asked := current.NextRunAt; asked != nil && !asked.After(time.Now()) && (source.NextRunAt == nil || !asked.Equal(*source.NextRunAt)) {
+			next = asked
 		}
 		return tx.MarkAgentSourceRun(source.ID, cursor, counts, more, failure, next)
 	})

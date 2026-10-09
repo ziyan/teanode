@@ -1029,6 +1029,52 @@ which embeds per search. Where a deployment has no embedding model both
 fall back to the words, and the answer says so rather than letting a
 reader assume the meaning was searched.
 
+## In the person's coding sessions
+
+A Claude Code or Codex session sees this memory only if something puts it
+in front of it; a tool the model has to decide to call is rarely called. The
+hooks `teanode hook install` adds to those tools (`internal/cmd/hook.go`)
+put it there at three moments, and `internal/agent/coding.go` decides what.
+
+**Which checkout.** The only link from a directory to a page is the line a
+checkout's profile files, "The checkout is at <directory> on <computer>.",
+and the dream moves sentences off a page, so that line is often on a page
+under the project's. `checkoutOfDirectory` reads every such line, keeps the
+deepest directory holding the session's, prefers the computer the session
+runs on, and walks up from wherever the line now is to the page named for the
+checkout's folder, else the highest project above it.
+
+**When a session starts** it is shown the project page's summary and up to
+eight of its liveliest facts, leaving out what the profile computed (remotes,
+languages, where it is), since the session can read those from the files;
+the lessons that apply to the project; and the last session held in that
+directory, or anywhere in the checkout: its title, when it was last active,
+the person's last three requests and the start of its last answer, read
+from the chat units its source filed. The session being resumed is skipped
+by its id, which is in each unit's external id. No model writes any of it:
+it is what was said, and it is there as soon as the transcript is read.
+
+**When a prompt is typed** it gets the same recall a turn does, with one
+difference made while recall chooses rather than after: only the project's
+page, the pages under it, the pages linked to it (never `self`) and lessons
+may be carried, so a prompt about a build does not carry mail or finance into
+a coding tool's context, and pages left out do not spend the budget. A page
+the session was shown in its last five prompts is left out (the hook keeps
+that count in the user's cache directory), a prompt under three words or a
+slash command recalls nothing, and nothing is marked as used.
+
+**When an answer ends** the computer's `claude-code` or `codex` source is
+asked to read again now (`CaptureCodingSession`), setting only its next run
+time, so a pass already under way is not abandoned as if the source had
+been edited. A pass that finishes after such a request keeps it rather than
+writing its scheduled time over it (`markSource`): it may have read the
+transcript before the answer was written.
+
+What a session is shown is wrapped in `<teanode-memory>`, so it can be told
+apart from what the person said. The same blocks are on the memory tool's
+`checkout` action, `ReadAgentCodingContext` and `RecallAgentCodingMemory`,
+`teanode agent memory checkout`, and the Recall dialog's checkout field.
+
 ## Bootstrapping
 
 A first ingest brings years of record at once, and a dream that reads two

@@ -89,6 +89,7 @@ func main() {
 			cmd.NewNoteCommand(),
 			cmd.NewFinanceCommand(),
 			cmd.NewAgentCommand(),
+			cmd.NewHookCommand(),
 			cmd.NewComputerCommand(),
 			cmd.NewTerminalCommand(),
 			cmd.NewMailCommand(),

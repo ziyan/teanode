@@ -40,6 +40,7 @@ type Query interface {
 	AgentAskQuery
 	AgentMemoryQuery
 	AgentGraphQuery
+	AgentCodingQuery
 	AgentEvaluationQuery
 	AgentIdeaQuery
 	AgentAlertQuery
@@ -99,6 +100,7 @@ type Mutation interface {
 	AgentAskMutation
 	AgentMemoryMutation
 	AgentGraphMutation
+	AgentCodingMutation
 	AgentSpeakFirstMutation
 	AgentEvaluationMutation
 	AgentIdeaMutation

@@ -22,6 +22,8 @@ export const SAME_IN_EVERY_LANGUAGE: ReadonlySet<Key> = new Set<Key>([
   // A literal URL and an example address, which are not sentences.
   'integrations.endpointPlaceholder',
   'profile.emailPlaceholder',
+  // An example path on a computer, which is not a sentence.
+  'knowledge.recall.directoryPlaceholder',
   // Header names and DMARC's own vocabulary. They appear in mail and in DNS
   // records with these spellings, so translating them would stop somebody
   // matching what is on screen against what is in the record.

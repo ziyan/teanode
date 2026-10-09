@@ -36,6 +36,17 @@ type KnowledgeOperation interface {
 	// read from, as directories relative to the source: where each of its
 	// files belongs, since a file does not say.
 	ListAgentSourceCheckouts(sourceId string) ([]string, error)
+
+	// ListAgentCodingDocuments is the newest chat units a coding tool's
+	// session in a directory was filed as, newest first: the documents
+	// whose metadata names that working directory and an assistant.
+	ListAgentCodingDocuments(agentId, directory string, limit int) ([]*models.AgentDocument, error)
+
+	// RequestAgentSourceRun makes an enabled source due at a moment,
+	// touching nothing else: unlike PutAgentSource it leaves the
+	// generation alone, so a pass already running is not abandoned as if
+	// the source had been edited under it.
+	RequestAgentSourceRun(sourceId string, at time.Time) error
 	ListAgentSources(agentId string) ([]*models.AgentKnowledgeSource, error)
 	DeleteAgentSource(agentId, sourceId string) error
 
@@ -124,7 +135,7 @@ type KnowledgeOperation interface {
 	// HasAgentChunks says whether a document has any passages: whether
 	// anything was read out of it.
 	HasAgentChunks(agentId, documentId string) (bool, error)
-	SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error)
+	SearchAgentChunks(agentId string, sourceIds []string, documentPrefix string, query string, limit int) ([]*models.AgentChunk, error)
 	SearchAgentChunksEveryWord(agentId string, query string, limit int) ([]*models.AgentChunk, error)
 
 	// ListAgentChunksWithoutVector is what is still waiting to be
@@ -412,6 +423,20 @@ func (self *transaction) ListAgentSourceCheckouts(sourceId string) ([]string, er
 		WHERE "source_id" = ? AND "kind" = 'commit' AND COALESCE("metadata"->>'checkout', '') <> ''`, sourceId).
 		Scan(&checkouts).Error
 	return checkouts, err
+}
+
+func (self *transaction) ListAgentCodingDocuments(agentId, directory string, limit int) ([]*models.AgentDocument, error) {
+	if limit <= 0 {
+		limit = 40
+	}
+	return self.documentsFrom(self.tx.
+		Where(`"agent_id" = ? AND "kind" = 'chat' AND "metadata"->>'directory' = ? AND COALESCE("metadata"->>'assistant', '') <> ''`, agentId, directory).
+		Order(`"happened_at" DESC NULLS LAST, "id" DESC`).Limit(limit))
+}
+
+func (self *transaction) RequestAgentSourceRun(sourceId string, at time.Time) error {
+	return self.tx.Model(&agentSourceModel{}).Where(`"id" = ? AND "enabled"`, sourceId).
+		Updates(map[string]any{"next_run_at": at}).Error
 }
 
 func (self *transaction) GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error) {
@@ -905,7 +930,7 @@ func (self *transaction) ListAgentChunks(agentId, documentId string) ([]*models.
 // the same come back in the same order every time: a search read a page
 // at a time asks for more of the same list, and the shorter list has to
 // be the start of the longer one.
-func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error) {
+func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, documentPrefix string, query string, limit int) ([]*models.AgentChunk, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil
 	}
@@ -919,9 +944,16 @@ func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, q
 		SELECT * FROM "agent_chunk"
 		WHERE "agent_id" = ? AND "search" @@ `+AnyWord+`
 		  AND (? OR "source_id" = ANY(?))
+		  AND (? = '' OR "document_id" IN (SELECT "id" FROM "agent_document" WHERE "agent_id" = ? AND "external_id" LIKE ? ESCAPE '\'))
 		ORDER BY ts_rank("search", `+AnyWord+`) DESC, "id" ASC LIMIT ?`,
-		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), query, limit)
+		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), documentPrefix, agentId, LikePrefix(documentPrefix), query, limit)
 	return self.chunksFrom(statement)
+}
+
+// LikePrefix is a LIKE pattern matching what starts with prefix, its own
+// % and _ taken literally.
+func LikePrefix(prefix string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(prefix) + "%"
 }
 
 // SearchAgentChunksEveryWord finds the passages holding every word of the

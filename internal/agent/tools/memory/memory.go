@@ -91,13 +91,15 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from` for facts and `link_offset` for links, `index` and `search` with `offset`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
+				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from` for facts and `link_offset` for links, `index` and `search` with `offset`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it. `checkout` shows what a Claude Code or Codex session in a directory is shown of this memory by the hooks the person installed.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
-						"index", "get", "search", "look", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
+						"index", "get", "search", "look", "checkout", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
+					"directory":   tools.StringProperty("for checkout: a directory on one of the person's computers; shows what a Claude Code or Codex session there is shown of memory by the hooks they install, and with query, what that prompt would recall"),
+					"computer":    tools.StringProperty("for checkout: the computer the directory is on, where several have it"),
 					"path":        tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
 					"depth":       tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
-					"query":       tools.StringProperty("for search: words"),
+					"query":       tools.StringProperty("for search: words. For checkout: a prompt typed in the session"),
 					"document":    tools.StringProperty("for look: one file on its own, by the document identifier knowledge search and read give; not needed when you give path and number"),
 					"text":        tools.StringProperty("for note: the fact, in a sentence or two; with number, the whole sentence as it should now read"),
 					"fact_kind":   tools.EnumProperty("for note: what sort of statement it is, 'fact' by default; 'preference' and 'decision' are only for what the person themselves said", factKinds...),
@@ -133,6 +135,8 @@ func init() {
 						return "Read " + page
 					case "search":
 						return "Search what it knows"
+					case "checkout":
+						return "Read what a coding session there is shown"
 					case "look":
 						if call.Number > 0 {
 							return "Look at the picture behind one thing it knows about " + page
@@ -186,7 +190,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		return tools.RiskWrite
 	}
 	switch call.Action {
-	case "index", "get", "search", "look", "history":
+	case "index", "get", "search", "look", "checkout", "history":
 		return tools.RiskRead
 	case "forget":
 		// Forgetting a whole page takes its facts with it.
@@ -201,7 +205,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		risk := tools.RiskRead
 		for _, item := range call.Items {
 			switch item.Action {
-			case "index", "get", "search", "look", "history":
+			case "index", "get", "search", "look", "checkout", "history":
 			case "forget":
 				if item.Number <= 0 {
 					return tools.RiskDestructive
@@ -238,6 +242,10 @@ type memoryItem struct {
 	Query string `json:"query"`
 	Depth int    `json:"depth"`
 	Limit int    `json:"limit"`
+
+	// Directory and Computer are where a checkout is, for checkout.
+	Directory string `json:"directory"`
+	Computer  string `json:"computer"`
 
 	// From is the fact number a get lists a page's facts from, and
 	// Offset how many lines of an index, or how many pages and facts of a
@@ -282,6 +290,8 @@ func runMemoryItem(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		return searchAction(ctx, run, arguments)
 	case "look":
 		return lookAction(ctx, run, arguments)
+	case "checkout":
+		return checkoutAction(ctx, run, arguments)
 	case "note":
 		return noteAction(ctx, run, arguments)
 	case "page":
@@ -1564,4 +1574,25 @@ func factAudiences(names []string) []models.AgentAudience {
 		}
 	}
 	return audiences
+}
+
+// checkoutAction is what a coding session in a directory is shown, as the
+// hooks show it, so the agent can see what Claude Code or Codex sees there.
+func checkoutAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
+	directory := strings.TrimSpace(arguments.Directory)
+	if directory == "" {
+		return nil, fmt.Errorf("which directory? give the checkout's directory on the person's computer")
+	}
+	remembering, isCoding := run.(tools.CodingRemembering)
+	if !isCoding {
+		return nil, fmt.Errorf("this run cannot read what a coding session is shown")
+	}
+	text, err := remembering.CodingMemory(ctx, directory, strings.TrimSpace(arguments.Computer), strings.TrimSpace(arguments.Query))
+	if err != nil {
+		return nil, err
+	}
+	if text == "" {
+		return tools.TextResult("nothing: no checkout you know holds %s, or the prompt recalls nothing from its project", directory), nil
+	}
+	return tools.TextResult("%s", text), nil
 }

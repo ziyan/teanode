@@ -346,8 +346,15 @@ func (self *directRun) SearchGraphByMeaning(ctx context.Context, words string, l
 	return nodes, facts
 }
 
-func (self *directRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
-	return self.agent.searchChunksByMeaning(ctx, self.agentModel.ID, self.meaningOfQuestion(ctx, "search", words), sourceIds, limit)
+// CodingMemory is tools.CodingRemembering for a call from outside: a
+// coding tool reaching the memory tool over the protocol sees what its own
+// session was shown.
+func (self *directRun) CodingMemory(ctx context.Context, directory, computerName, prompt string) (string, error) {
+	return self.agent.codingMemory(ctx, self.agentModel, self.owner, directory, computerName, prompt)
+}
+
+func (self *directRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {
+	return self.agent.searchChunksByMeaning(ctx, self.agentModel.ID, self.meaningOfQuestion(ctx, "search", words), sourceIds, documentPrefix, limit)
 }
 
 func (self *directRun) RankChunksByMeaning(ctx context.Context, words string, chunks []*models.AgentChunk, limit int) []*models.AgentChunk {

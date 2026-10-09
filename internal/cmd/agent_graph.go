@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -160,6 +161,17 @@ func newAgentGraphCommands() []*cli.Command {
 			Action: runAgentGraphRecall,
 		},
 		{
+			Name:      "checkout",
+			Usage:     "what a coding session in a directory is shown by the hooks (teanode hook): the checkout's page, lessons and the last session there; with --prompt, what that prompt would recall. Nothing is marked as used",
+			ArgsUsage: "[directory]",
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.StringFlag{Name: "prompt", Usage: "what a prompt typed there would recall, rather than what a session starting there is shown"},
+				&cli.StringFlag{Name: "computer", Usage: "the computer the directory is on, as attached; this one's host name by default", Sources: cli.EnvVars("TEANODE_COMPUTER_NAME")},
+				&cli.BoolFlag{Name: "everywhere", Usage: "with --prompt, recall from all of memory rather than the checkout's project and what it links to"},
+			},
+			Action: runAgentGraphCheckout,
+		},
+		{
 			Name:      "evaluate",
 			Usage:     "replay a set of questions through recall and say which ones got the facts they needed",
 			ArgsUsage: "<file>",
@@ -247,6 +259,8 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.IntFlag{Name: "first", Usage: "how many passages", Value: indexed.SearchLimit},
 					&cli.IntFlag{Name: "offset", Usage: "how many passages to pass over, to read the next page of results"},
 					&cli.StringFlag{Name: "source", Usage: "narrow to one source, by name or identifier"},
+					&cli.StringFlag{Name: "directory", Usage: "narrow to what a source of files read under one directory, as a search's 'where these are' names them; search a large tree once, then inside the directory most hits are in"},
+					&cli.StringFlag{Name: "computer", Usage: "with --directory, the computer it is on, where sources on several have that path"},
 				},
 				Action: runKnowledgeSearch,
 			},
@@ -1171,8 +1185,10 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	found, err := client.SearchAgentDocuments(ctx, connection,
-		strings.Join(command.Args().Slice(), " "), int(command.Int("first")), int(command.Int("offset")), command.String("source"))
+	found, err := client.SearchAgentDocuments(ctx, connection, &client.AgentDocumentQuery{
+		Words: strings.Join(command.Args().Slice(), " "), First: int(command.Int("first")), Offset: int(command.Int("offset")),
+		SourceID: command.String("source"), Directory: command.String("directory"), ComputerName: command.String("computer"),
+	})
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -1193,6 +1209,13 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 			_, _ = fmt.Fprintf(command.Writer, "  %s (%s) — %s:%d  [%s]\n",
 				forTerminal(definition.Symbol), forTerminal(definition.Kind),
 				forTerminal(definition.ExternalID), definition.Line, definition.DocumentID)
+		}
+		_, _ = fmt.Fprintln(command.Writer)
+	}
+	if len(found.Directories) > 0 {
+		_, _ = fmt.Fprintln(command.Writer, "Where these are (--directory searches inside one):")
+		for _, hits := range found.Directories {
+			_, _ = fmt.Fprintf(command.Writer, "  %s — %s, %s\n", forTerminal(hits.Directory), plural(hits.PassageCount, "1 passage", "%d passages"), forTerminal(hits.Source))
 		}
 		_, _ = fmt.Fprintln(command.Writer)
 	}
@@ -2741,4 +2764,41 @@ func runAgentMemoryCheckRuns(ctx context.Context, command *cli.Command) error {
 		rows = append(rows, []string{run.ID, finished, fmt.Sprint(run.QuestionCount), strings.Join(scores, ", "), fmt.Sprintf("%.2f", run.Cost)})
 	}
 	return printTable([]string{"RUN", "FINISHED", "QUESTIONS", "SCORES", "COST"}, rows)
+}
+
+// runAgentGraphCheckout prints what a coding session in a directory is
+// shown, as the hooks would show it.
+func runAgentGraphCheckout(ctx context.Context, command *cli.Command) error {
+	directory := command.Args().First()
+	if directory == "" {
+		directory = "."
+	}
+	directory, err := filepath.Abs(directory)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	home, _ := os.UserHomeDir()
+	place := &client.AgentCodingPlace{Directory: directory, ComputerName: computerNameOf(command), HomeDirectory: home}
+	var shown *client.AgentCodingContext
+	if prompt := command.String("prompt"); prompt != "" {
+		shown, err = client.RecallAgentCodingMemory(ctx, connection, place, prompt, nil, command.Bool("everywhere"))
+	} else {
+		shown, err = client.ReadAgentCodingContext(ctx, connection, place)
+	}
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(shown)
+	}
+	if shown.Text == "" {
+		_, _ = fmt.Fprintln(command.Root().Writer, "Nothing: memory knows no checkout holding this directory, or the prompt recalls nothing from its project.")
+		return nil
+	}
+	_, _ = fmt.Fprintln(command.Root().Writer, shown.Text)
+	return nil
 }

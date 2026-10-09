@@ -15,9 +15,9 @@ import (
 // vector index, and the caller should fall back to re-ranking what the
 // words found: reading half a million vectors into memory to sort them is
 // not a search.
-func (self *AskRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
+func (self *AskRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {
 	return self.agent.searchChunksByMeaning(ctx, self.settings.Agent.ID,
-		self.meaningOfQuestion(ctx, "search", words), sourceIds, limit)
+		self.meaningOfQuestion(ctx, "search", words), sourceIds, documentPrefix, limit)
 }
 
 // RankChunksByMeaning puts a set the words found into the order the
@@ -61,8 +61,8 @@ type knowledgeMeaning struct {
 	tried bool
 }
 
-func (self *knowledgeMeaning) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
-	return self.agent.searchChunksByMeaning(ctx, self.agentId, self.questionOf(ctx, words), sourceIds, limit)
+func (self *knowledgeMeaning) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {
+	return self.agent.searchChunksByMeaning(ctx, self.agentId, self.questionOf(ctx, words), sourceIds, documentPrefix, limit)
 }
 
 func (self *knowledgeMeaning) RankChunksByMeaning(ctx context.Context, words string, chunks []*models.AgentChunk, limit int) []*models.AgentChunk {

@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -492,6 +493,13 @@ type SearchAgentDocumentsArguments struct {
 	// its name, because a person types the name and a script has the
 	// identifier.
 	SourceID string `json:"sourceId" graphapi:"nullable"`
+
+	// Directory narrows the search to what a source of files read under
+	// one directory, written as the source's path joined with the folder,
+	// the way the result's directories name them; ComputerName says which
+	// computer's, where several sources have that path.
+	Directory    string `json:"directory" graphapi:"nullable"`
+	ComputerName string `json:"computerName" graphapi:"nullable"`
 }
 
 // ReadAgentDocumentArguments is which document to read and how much of it.
@@ -1692,9 +1700,14 @@ func (self *graph) SearchAgentDocuments(ctx context.Context, arguments SearchAge
 	if worker := self.agentWorker(); worker != nil {
 		meaning = worker.KnowledgeMeaning(found.ID)
 	}
-	return indexed.Search(ctx, tx, meaning, found.ID, indexed.Query{
+	result, err := indexed.Search(ctx, tx, meaning, found.ID, indexed.Query{
 		Words: arguments.Query, SourceIds: sourceIds, Limit: arguments.First, Offset: arguments.Offset,
+		Directory: arguments.Directory, ComputerName: arguments.ComputerName,
 	})
+	if errors.Is(err, indexed.ErrNoSourceHoldsDirectory) {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	return result, err
 }
 
 // ReadAgentDocument reads one of the caller's own documents.

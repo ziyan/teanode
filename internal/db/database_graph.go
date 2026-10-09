@@ -140,6 +140,11 @@ type GraphOperation interface {
 	// first, for a reader that has room for only some of them.
 	ListAgentFactsLively(agentId, nodeId string, limit int) ([]*models.AgentFact, error)
 
+	// ListAgentCheckoutFacts is every live line that says where a checkout
+	// is ("The checkout is at <directory> on <computer>."), on whatever
+	// page it now sits: the only link from a directory to a page.
+	ListAgentCheckoutFacts(agentId string, limit int) ([]*models.AgentFact, error)
+
 	// ListAgentFactsOfKindNewestFirst is a page's live facts of one kind,
 	// the most recently filed first.
 	ListAgentFactsOfKindNewestFirst(agentId, nodeId string, factKind models.AgentFactKind, limit int) ([]*models.AgentFact, error)
@@ -1201,6 +1206,15 @@ func (self *transaction) ListAgentFactsLively(agentId, nodeId string, limit int)
 	}
 	return self.factsFrom(self.tx.Where(`"agent_id" = ? AND "node_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL`, agentId, nodeId).
 		Order(`"used_at" DESC NULLS LAST, "modified_at" DESC`).Limit(limit))
+}
+
+func (self *transaction) ListAgentCheckoutFacts(agentId string, limit int) ([]*models.AgentFact, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	return self.factsFrom(self.tx.
+		Where(`"agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL AND "text" LIKE 'The checkout is at %'`, agentId).
+		Order(`"modified_at" DESC`).Limit(limit))
 }
 
 func (self *transaction) ListAgentFactsForAudience(agentId string, audience models.AgentAudience, limit int) ([]*models.AgentFact, error) {

@@ -44,6 +44,15 @@ type GraphSearching interface {
 	SearchGraphByMeaning(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact)
 }
 
+// CodingRemembering is what a coding session (Claude Code, Codex) in a
+// checkout is shown of memory by the hooks the person installs: with a
+// prompt, what that prompt recalls from the checkout's project; without
+// one, what a session starting there sees. Empty where memory knows no
+// checkout holding the directory.
+type CodingRemembering interface {
+	CodingMemory(ctx context.Context, directory, computerName, prompt string) (string, error)
+}
+
 // KnowledgeSearching is searching what the person pointed their agent at
 // by meaning as well as by words.
 //
@@ -57,7 +66,7 @@ type KnowledgeSearching interface {
 	// SearchKnowledgeByMeaning is the passages nearest the words, and
 	// whether the database ranked them itself. False means the caller
 	// should fall back to re-ranking.
-	SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool)
+	SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool)
 
 	// RankChunksByMeaning puts a set the words found into the order the
 	// meaning wants.

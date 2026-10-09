@@ -48,7 +48,7 @@ func TestSearchesSendTheirOffsetAndReadWhereTheNextPageStarts(test *testing.T) {
 		test.Errorf("the memory search reads back what is left: %+v", graphFound)
 	}
 
-	documentsFound, err := SearchAgentDocuments(test.Context(), connection, "kestrel", 12, 12, "")
+	documentsFound, err := SearchAgentDocuments(test.Context(), connection, &AgentDocumentQuery{Words: "kestrel", First: 12, Offset: 12})
 	if err != nil {
 		test.Fatalf("SearchAgentDocuments: %s", err)
 	}
