@@ -167,10 +167,16 @@ export function Lightbox({
   // to the whole picture. Escape is checked against defaultPrevented the way
   // the other dialogs check it, so a control inside that took the key first
   // keeps it.
+  //
+  // It is listened for while the key goes down to the page, not as it comes
+  // back up, and marked taken: a dialog the picture was opened from listens
+  // on the document as well, from before the lightbox was there, so it heard
+  // the key first and closed with it.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return
       if (event.key === 'Escape') {
+        event.preventDefault()
         onClose()
         return
       }
@@ -185,8 +191,8 @@ export function Lightbox({
         setView(FIT)
       }
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [onClose, zoomBy])
 
   // The way out is where the keyboard lands, so that Tab starts inside the
