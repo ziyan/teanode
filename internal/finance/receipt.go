@@ -278,10 +278,11 @@ type ReceiptMatchCandidate struct {
 	DayDistanceCount int `json:"dayDistanceCount"`
 
 	// IsAutomatic says the matcher matches it without asking, with
-	// MatchConfidence: an exact amount that is the only candidate (the
-	// only one on the same account when the receipt prints its digits),
-	// on the card the receipt prints or with a word of its merchant, and
-	// explained by no other receipt yet.
+	// MatchConfidence: the only candidate of the exact amount, sharing a
+	// word with the receipt's merchant, explained by no other receipt yet,
+	// and not on another account than the one the receipt's digits name
+	// when they are the digits of one of the person's accounts. The digits
+	// never make it automatic.
 	IsAutomatic     bool   `json:"isAutomatic"`
 	MatchConfidence string `json:"matchConfidence,omitempty"`
 }
