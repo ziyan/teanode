@@ -104,3 +104,73 @@ func TestAnIndexPastItsLimitSaysWhereToReadOn(t *testing.T) {
 		t.Fatalf("the last part has the last page and nothing more: %q", result.Content)
 	}
 }
+
+// A page that many pages link to lists the first of its links, says how
+// many more there are, and a get with link_offset reads on from there to
+// the last of them.
+//
+// A get listed every link, and a page that a thousand pages pointed at
+// came to more than fifty thousand characters, which a client cut short
+// without saying where.
+func TestAGetPastItsLinksSaysHowManyMoreAndHowToReadThem(t *testing.T) {
+	run, database, closeDatabase := person(t, "linking")
+	defer closeDatabase()
+	const linkCount = 300
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if err := tx.EnsureAgentRoots(run.agent.ID); err != nil {
+			t.Fatalf("EnsureAgentRoots: %s", err)
+		}
+		harbor, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.agent.ID, Path: "places/harbor", Kind: models.NodePlace, Name: "Harbor"})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		for number := 1; number <= linkCount; number++ {
+			boat, err := tx.PutAgentNode(&models.AgentNode{
+				AgentID: run.agent.ID, Path: fmt.Sprintf("things/boat-%03d", number), Kind: models.NodeThing,
+			})
+			if err != nil {
+				t.Fatalf("PutAgentNode: %s", err)
+			}
+			if err := tx.PutAgentEdge(&models.AgentEdge{
+				AgentID: run.agent.ID, FromID: boat.ID, ToID: harbor.ID, Relation: models.EdgeLocatedIn,
+			}); err != nil {
+				t.Fatalf("PutAgentEdge: %s", err)
+			}
+		}
+	})
+
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "memory")
+	call := func(arguments string) string {
+		t.Helper()
+		result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)})
+		if err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+		return result.Content
+	}
+
+	first := call(`{"action":"get","path":"places/harbor"}`)
+	if len(first) > 4000 {
+		t.Errorf("a get of a page with %d links is %d characters", linkCount, len(first))
+	}
+	if !strings.Contains(first, "← things/boat-040 located_in this") || strings.Contains(first, "boat-041") {
+		t.Fatalf("a get lists the first forty links: %q", first)
+	}
+	if !strings.Contains(first, "… 260 more links; get again with link_offset: 40") {
+		t.Fatalf("and says how many more and how to read them: %q", first)
+	}
+
+	next := call(`{"action":"get","path":"places/harbor","link_offset":40}`)
+	if !strings.Contains(next, "links 41 to 80 of 300:") || !strings.Contains(next, "boat-041 ") || strings.Contains(next, "boat-040 ") {
+		t.Fatalf("link_offset reads on from where the get stopped: %q", next)
+	}
+	if !strings.Contains(next, "… 220 more links; get again with link_offset: 80") {
+		t.Fatalf("and says where to read on again: %q", next)
+	}
+
+	last := call(`{"action":"get","path":"places/harbor","link_offset":280}`)
+	if !strings.Contains(last, "boat-300 ") || strings.Contains(last, "more links") {
+		t.Fatalf("the last part reaches the last link and says nothing more: %q", last)
+	}
+}

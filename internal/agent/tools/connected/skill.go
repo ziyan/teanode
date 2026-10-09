@@ -19,10 +19,10 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "skill", Family: tools.FamilyServers, Risk: tools.RiskWrite,
-				Description: "Skills: files of declarations from a signed registry whose tools become yours. List what this server has installed and what each brings, search the registry for one, install or update it, or take one away. Secrets says which values the installed skills are waiting on from this person, which is why one of their tools may be refusing to work. Scope settles who fills a skill's values in here: one set for the whole server, or each person's own -- which is the difference between one camera system in a household and twenty people each with their own. Installing changes what everybody on this server is offered, so it needs the person to manage this server; listing does not. A skill that runs commands runs them on a computer the person attached, never on this server.",
+				Description: "Skills: files of declarations from a signed registry whose tools become yours. List what this server has installed and the names of the tools each brings, list with a name for that skill's tools and what each does, search the registry for one, install or update it, or take one away. Secrets says which values the installed skills are waiting on from this person, which is why one of their tools may be refusing to work. Scope settles who fills a skill's values in here: one set for the whole server, or each person's own -- which is the difference between one camera system in a household and twenty people each with their own. Installing changes what everybody on this server is offered, so it needs the person to manage this server; listing does not. A skill that runs commands runs them on a computer the person attached, never on this server.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do", "list", "search", "secrets", "install", "update", "remove", "enable", "disable", "scope"),
-					"name":   tools.StringProperty("the skill, for install, update, remove, enable, disable and scope"),
+					"name":   tools.StringProperty("the skill, for install, update, remove, enable, disable and scope; for list, the one skill whose tools to describe"),
 					"scope":  tools.EnumProperty("for scope: who fills this skill's secrets in here -- operator for one set of values for the whole server, person for each person's own, skill to leave it to what the skill declares", "operator", "person", "skill"),
 					"query":  tools.StringProperty("for search: words to narrow what the registry offers; leave it out to see everything, which is a short list"),
 				}, "action"),
@@ -102,6 +102,53 @@ type skillView struct {
 	} `json:"tools"`
 }
 
+// skillDescribed is an installed skill as this tool answers with it, one
+// shape whether it is listed with the others or asked for alone: what it
+// is, whether it works, who fills its values in, and its tools. Alone,
+// each tool says what it does and what kind it is; in a listing of them
+// all, only its name and whether it needs a computer, since the
+// descriptions were four fifths of a listing that clients cut short.
+type skillDescribed struct {
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Version         string            `json:"version"`
+	Publisher       string            `json:"publisher,omitempty"`
+	IsEnabled       bool              `json:"isEnabled"`
+	IsReadable      bool              `json:"isReadable"`
+	Problem         string            `json:"problem,omitempty"`
+	Scope           string            `json:"scope,omitempty"`
+	Secrets         []string          `json:"secrets,omitempty"`
+	PersonalSecrets []string          `json:"personalSecrets,omitempty"`
+	Tools           []*skillToolBrief `json:"tools"`
+}
+
+// skillToolBrief is one tool of a skill; Description and Kind are left
+// out of a listing of every skill.
+type skillToolBrief struct {
+	Name          string `json:"name"`
+	NeedsComputer bool   `json:"needsComputer"`
+	Description   string `json:"description,omitempty"`
+	Kind          string `json:"kind,omitempty"`
+}
+
+// describedSkill is a skill in the shape this tool answers with, its
+// tools described or only named.
+func describedSkill(skill *skillView, isToolDescribed bool) *skillDescribed {
+	skillTools := make([]*skillToolBrief, 0, len(skill.Tools))
+	for _, tool := range skill.Tools {
+		brief := &skillToolBrief{Name: tool.Name, NeedsComputer: tool.NeedsComputer}
+		if isToolDescribed {
+			brief.Description, brief.Kind = tool.Description, tool.Kind
+		}
+		skillTools = append(skillTools, brief)
+	}
+	return &skillDescribed{
+		Name: skill.Name, Description: skill.Description, Version: skill.Version, Publisher: skill.Publisher,
+		IsEnabled: skill.Enabled, IsReadable: skill.Readable, Problem: skill.Problem, Scope: skill.Scope,
+		Secrets: skill.Secrets, PersonalSecrets: skill.PersonalSecrets, Tools: skillTools,
+	}
+}
+
 // skillSecretView is one value an installed skill asks this person for.
 // Whether it is set comes back; the value never does.
 type skillSecretView struct {
@@ -155,7 +202,26 @@ func runSkill(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if err := run.Operations().Execute(ctx, documentInstalledSkills, nil, &answer); err != nil {
 			return nil, err
 		}
-		return tools.JSONResult(map[string]any{"installed": answer.ListAgentSkills})
+		if name != "" {
+			for _, skill := range answer.ListAgentSkills {
+				if skill.Name == name {
+					return tools.JSONResult(map[string]any{"skill": describedSkill(skill, true)})
+				}
+			}
+			return nil, fmt.Errorf("no skill named %q is installed; list without a name says which are", name)
+		}
+		// Each skill's tools by name alone: their descriptions were four
+		// fifths of a listing, which came to more than twenty thousand
+		// characters with a dozen skills and was cut short by clients.
+		listed := make([]*skillDescribed, 0, len(answer.ListAgentSkills))
+		for _, skill := range answer.ListAgentSkills {
+			listed = append(listed, describedSkill(skill, false))
+		}
+		described := map[string]any{"installed": listed}
+		if len(listed) > 0 {
+			described["hint"] = "each skill's tools by name; list with name gives one skill's tools and what each does"
+		}
+		return tools.JSONResult(described)
 
 	case "search":
 		var answer struct {
@@ -210,8 +276,9 @@ func runSkill(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, err
 		}
 		installed := answer.InstallAgentSkill
-		described := map[string]any{"installed": installed}
+		described := map[string]any{}
 		if installed != nil {
+			described["installed"] = describedSkill(installed, true)
 			var next []string
 			if len(installed.Secrets) > 0 {
 				next = append(next, fmt.Sprintf("An operator must put %s under agent.skillSecrets, once for the whole server.", strings.Join(installed.Secrets, ", ")))

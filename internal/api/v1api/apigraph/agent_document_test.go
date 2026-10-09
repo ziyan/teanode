@@ -180,7 +180,7 @@ func TestAPageCarriesTheFilesItsFactsWereReadFrom(test *testing.T) {
 	resolver := &graph{database: database}
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), asAgentPerson(owner)), tx)
-		page, err := resolver.AgentGraphPage(ctx, AgentGraphPageArguments{Path: "projects/rosedale"})
+		page, err := resolver.AgentGraphPage(ctx, AgentGraphPageReadArguments{Path: "projects/rosedale"})
 		if err != nil {
 			test.Fatalf("AgentGraphPage: %s", err)
 		}

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -502,6 +503,29 @@ func (self *AgentEdge) Phrase(outward, stale bool) string {
 		return phrases[index]
 	}
 	return string(self.Relation)
+}
+
+// SortAgentEdgesFrom puts a page's links in an order that holds from one
+// read to the next, so that reading them a part at a time neither repeats
+// a link nor skips one: the page's own links first, then those pointing at
+// it, each by relation and then by the path at the other end.
+func SortAgentEdgesFrom(path string, edges []*AgentEdge) {
+	isOutgoing := func(edge *AgentEdge) bool { return edge.FromPath == path }
+	otherPath := func(edge *AgentEdge) string {
+		if isOutgoing(edge) {
+			return edge.ToPath
+		}
+		return edge.FromPath
+	}
+	sort.SliceStable(edges, func(left, right int) bool {
+		if isOutgoing(edges[left]) != isOutgoing(edges[right]) {
+			return isOutgoing(edges[left])
+		}
+		if edges[left].Relation != edges[right].Relation {
+			return edges[left].Relation < edges[right].Relation
+		}
+		return otherPath(edges[left]) < otherPath(edges[right])
+	})
 }
 
 // Proposed says whether this link is the agent's own guess rather than

@@ -27,7 +27,12 @@ type fakeRun struct {
 	conversationKind models.AgentConversationKind
 	computer         tools.Computer
 	config           *config.Configuration
+	// resultCharacters is what the run keeps of a result, as a caller over
+	// MCP keeps less; zero is the usual bound.
+	resultCharacters int
 }
+
+func (self *fakeRun) ResultCharacters() int { return self.resultCharacters }
 
 func (self *fakeRun) AttachedComputers() []tools.Computer {
 	if self.computer == nil {
@@ -315,5 +320,89 @@ func TestALongOutputKeepsTheBackgroundId(t *testing.T) {
 	}
 	if len(result.Content) > tools.ResultCharacters+100 || !strings.Contains(result.Content, "01LONG") || !strings.Contains(result.Content, "woken when it ends") {
 		t.Fatalf("the id and the note survive the cut: %d characters, %q", len(result.Content), result.Content[:200])
+	}
+}
+
+// A file read longer than the run keeps comes back as fewer whole lines, still
+// JSON, with lines, offset and more as the computer gave them and nextOffset
+// saying where to read on. Cutting the encoded answer instead took exactly
+// those fields, which come after content.
+func TestALongReadGivesFewerLinesAndSaysWhereToReadOn(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	filesystem := find(t, "filesystem")
+	var lines []string
+	for lineNumber := 0; lineNumber < 600; lineNumber++ {
+		lines = append(lines, "a line of the file <with> markup & such "+strings.Repeat("é", lineNumber%7))
+	}
+	encoded, _ := json.Marshal(map[string]any{"path": "/tmp/example.txt", "lines": 1200, "offset": 300, "content": strings.Join(lines, "\n"), "more": true})
+	for _, budget := range []int{0, 7744} {
+		attached := &fakeComputer{answers: map[string]string{"filesystem": string(encoded)}}
+		run := &fakeRun{computer: attached, config: configuration, resultCharacters: budget}
+		result, err := filesystem.Run(tools.WithRun(context.Background(), run), &tools.Call{Arguments: json.RawMessage(`{"action":"read","path":"example.txt","offset":300}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if limit := tools.ResultCharactersOf(run); len(result.Content) > limit {
+			t.Fatalf("budget %d: the answer is %d characters", limit, len(result.Content))
+		}
+		var answer struct {
+			Content    string `json:"content"`
+			Lines      int    `json:"lines"`
+			Offset     int    `json:"offset"`
+			More       bool   `json:"more"`
+			NextOffset int    `json:"nextOffset"`
+			CutNote    string `json:"cutNote"`
+		}
+		if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+			t.Fatalf("budget %d: the answer is not JSON: %s", budget, err)
+		}
+		shownCount := len(strings.Split(answer.Content, "\n"))
+		if answer.Lines != 1200 || answer.Offset != 300 || !answer.More || answer.NextOffset != 300+shownCount {
+			t.Fatalf("budget %d: lines %d, offset %d, more %v, nextOffset %d after %d lines shown",
+				budget, answer.Lines, answer.Offset, answer.More, answer.NextOffset, shownCount)
+		}
+		if answer.Content != strings.Join(lines[:shownCount], "\n") {
+			t.Fatalf("budget %d: the lines shown are not the first %d whole", budget, shownCount)
+		}
+		if !strings.Contains(answer.CutNote, "read on with offset") {
+			t.Fatalf("budget %d: the note does not say how to read on: %q", budget, answer.CutNote)
+		}
+	}
+}
+
+// A page of markup is measured as it is sent: json.Marshal writes each <, >
+// and & as six bytes, and a page measured with it came out half the size it
+// had room for.
+func TestAReadOfMarkupFillsItsBudget(t *testing.T) {
+	lines := make([]string, 2000)
+	for index := range lines {
+		lines[index] = "<p>one & two</p>"
+	}
+	encoded, _ := json.Marshal(map[string]any{"path": "/tmp/example.html", "lines": 2000, "offset": 0, "content": strings.Join(lines, "\n"), "more": false})
+	fitted := fitRead(encoded, 8000)
+	if len(fitted) > 8000 || len(fitted) < 8000-40 {
+		t.Fatalf("a page with room for 8000 bytes came out as %d", len(fitted))
+	}
+	if !json.Valid(fitted) {
+		t.Fatal("the page is not JSON")
+	}
+}
+
+// One line longer than a whole answer is cut, the answer stays JSON, and
+// reading on starts at the line after it.
+func TestALineLongerThanAnAnswerIsCutAndReadingOnSkipsIt(t *testing.T) {
+	encoded, _ := json.Marshal(map[string]any{"path": "/tmp/example.min.js", "lines": 2, "offset": 0, "content": strings.Repeat("x", 20000) + "\nend", "more": false})
+	fitted := fitRead(encoded, 8000)
+	if len(fitted) > 8000 {
+		t.Fatalf("the answer is %d characters", len(fitted))
+	}
+	var answer map[string]any
+	if err := json.Unmarshal(fitted, &answer); err != nil {
+		t.Fatalf("not JSON: %s", err)
+	}
+	note, _ := answer["cutNote"].(string)
+	if answer["nextOffset"] != float64(1) || answer["more"] != true || !strings.Contains(note, "longer than one answer holds") {
+		t.Fatalf("nextOffset %v, more %v, note %q", answer["nextOffset"], answer["more"], note)
 	}
 }
