@@ -1068,7 +1068,8 @@ it is what was said, and it is there as soon as the transcript is read.
 difference made while recall chooses rather than after: only the project's
 page, the pages under it, the projects, topics, things and folders linked to
 it by a link somebody stated (never a person, a month or `self`, and not a
-dream's guess) and lessons may be carried, so a prompt about a build does not carry mail or finance into
+dream's guess) may be carried, with any lesson close to the prompt beside
+them, so a prompt about a build does not carry mail or finance into
 a coding tool's context, and pages left out do not spend the budget. A page
 the session was shown in its last five prompts is left out (the hook keeps
 that count in the user's cache directory), a prompt under three words or a

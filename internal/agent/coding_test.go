@@ -312,9 +312,38 @@ func TestACaptureAsksOnlyTheToolsSourceOnThatComputer(t *testing.T) {
 			}
 		}
 	})
-	if capture() {
-		t.Fatalf("a source already due is not asked again")
+	// Asked again before it runs, it stays due from the first request,
+	// and the request is recorded again: a pass may already be reading.
+	var firstDue *time.Time
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		current, _ := tx.GetAgentSource(world.agent.ID, world.source.ID)
+		firstDue = current.NextRunAt
+	})
+	if !capture() {
+		t.Fatalf("a source already due is still asked, so a pass under way reads again")
 	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		current, _ := tx.GetAgentSource(world.agent.ID, world.source.ID)
+		if current.NextRunAt == nil || !current.NextRunAt.Equal(*firstDue) || current.RunRequestedAt == nil || !current.RunRequestedAt.After(*firstDue) {
+			t.Fatalf("due as before (%v, was %v), asked again (%v)", current.NextRunAt, firstDue, current.RunRequestedAt)
+		}
+	})
+}
+
+// A line is found by how it starts, with % and _ in the prefix taken as
+// they are written rather than as wildcards.
+func TestLinesAreFoundByHowTheyStart(t *testing.T) {
+	world := newRecallWorld(t)
+	world.page(t, "topics/discounts", "discounts", "Offers.", "50% off the seed catalogue", "50x off nothing", "500 seeds sown")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		facts, err := tx.ListAgentFactsStartingWith(world.agent.ID, "50%", 0)
+		if err != nil {
+			t.Fatalf("ListAgentFactsStartingWith: %s", err)
+		}
+		if len(facts) != 1 || facts[0].Text != "50% off the seed catalogue" {
+			t.Fatalf("only the line that starts with 50%% itself: %d found", len(facts))
+		}
+	})
 }
 
 // A pass that ends after a capture asked for another keeps the request

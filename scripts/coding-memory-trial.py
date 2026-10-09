@@ -29,6 +29,7 @@ contains at least one of its words, ignoring case.
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -39,7 +40,7 @@ CLAUDE_TOOLS = "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(ls:*),mcp__
 
 
 def hook_command(teanode, tool):
-    return f"{teanode} hook {tool}"
+    return f"{shlex.quote(teanode)} hook {tool}"
 
 
 def run_claude(prompt, directory, teanode, is_hooked, timeout_seconds):
@@ -65,6 +66,8 @@ def run_claude(prompt, directory, teanode, is_hooked, timeout_seconds):
         answer = json.loads(finished.stdout)
     except json.JSONDecodeError:
         return {"error": (finished.stderr or finished.stdout)[-500:], "seconds": seconds}
+    if answer.get("is_error") or answer.get("subtype", "success") != "success":
+        return {"error": f"{answer.get('subtype')}: {(answer.get('result') or '')[:300]}", "seconds": seconds}
     usage = answer.get("usage") or {}
     return {
         "answer": answer.get("result") or "",
@@ -106,7 +109,10 @@ def run_codex(prompt, directory, teanode, is_hooked, timeout_seconds):
         elif event.get("type") == "turn.completed":
             usage = event.get("usage") or {}
             input_token_count += usage.get("input_tokens") or 0
-            output_token_count += (usage.get("output_tokens") or 0) + (usage.get("reasoning_output_tokens") or 0)
+            # Reasoning is counted in output_tokens already, as in the
+            # Responses API Codex reports from; adding it again counted it
+            # twice.
+            output_token_count += usage.get("output_tokens") or 0
     if not answer:
         return {"error": (finished.stderr or finished.stdout)[-500:], "seconds": seconds}
     return {
@@ -129,6 +135,8 @@ def summarize(results):
     arms = {}
     for result in results:
         arms.setdefault(result["arm"], []).append(result)
+    # Turns are what each tool counts: Claude Code's num_turns, Codex's
+    # messages and tool calls. Compare arms of one tool, not the tools.
     lines = ["arm        right  turns  input tokens  output tokens  seconds  cost"]
     for arm, rows in sorted(arms.items()):
         answered = [row for row in rows if "error" not in row]

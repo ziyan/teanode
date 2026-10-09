@@ -196,7 +196,8 @@ const recallLinkedPages = 5
 // where each page and fact stood in each list, and where the fusion put it.
 func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *RetrievalPlan) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
 	explanation := self.explanation
-	message := self.searchGraph(ctx, words, recallCandidates)
+	candidates := self.recallCandidateCount()
+	message := self.searchGraph(ctx, words, candidates)
 	pageLists, factLists := message.lists(RecallQueryMessage)
 	explanation.explainQuery(&RecallQuery{QueryID: RecallQueryMessage, QueryKind: RecallQueryMessage, QueryText: words}, pageLists, factLists)
 	if plan.isEmpty() {
@@ -217,7 +218,7 @@ func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *R
 	var hopFrom *models.AgentNode
 	for index, search := range plan.Searches {
 		queryId := RecallQueryPlanned + "-" + strconv.Itoa(index+1)
-		planned := self.searchGraph(ctx, search, recallCandidates)
+		planned := self.searchGraph(ctx, search, candidates)
 		if hopFrom == nil && len(planned.nodes) > 0 {
 			hopFrom = planned.nodes[0]
 		}
@@ -255,7 +256,7 @@ func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *R
 			explanation.IsBroadNoteCarried = true
 		}
 	}
-	nodes, facts := fuseNodes(recallCandidates, nodeLists...), fuseFacts(recallCandidates, factFusion...)
+	nodes, facts := fuseNodes(candidates, nodeLists...), fuseFacts(candidates, factFusion...)
 	explanation.explainPages(nodes, allPageLists)
 	if explanation != nil {
 		explanation.fusedFacts = facts
@@ -954,6 +955,19 @@ func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, o
 // for one.
 func (self *Agent) RecallForQuestionPlanned(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan) ([]*RecalledPage, error) {
 	return self.recallForQuestion(ctx, found, owner, question, plan, nil, nil)
+}
+
+// scopedRecallCandidates is how many rows each search offers when recall
+// is kept to some pages: the scope is applied to what the searches found,
+// and twenty from the whole graph were often twenty from outside it.
+const scopedRecallCandidates = recallCandidates * 5
+
+// recallCandidateCount is how many rows each search offers this recall.
+func (self *AskRun) recallCandidateCount() int {
+	if self.isInRecallScope != nil {
+		return scopedRecallCandidates
+	}
+	return recallCandidates
 }
 
 // recallForQuestion is RecallForQuestion, recording why into the

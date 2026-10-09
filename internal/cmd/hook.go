@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -140,6 +141,13 @@ type hookOutput struct {
 // runHook answers one event. It never fails the tool: whatever goes
 // wrong is written to the hook log and the session is shown nothing.
 func runHook(ctx context.Context, command *cli.Command, tool string) error {
+	// A panic exits 2, which Claude Code reads as "block this prompt" (or,
+	// on Stop, "do not stop"): never that, whatever went wrong.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logHook("%s: %v", tool, recovered)
+		}
+	}()
 	if err := answerHook(ctx, command, tool, os.Stdin, command.Root().Writer); err != nil {
 		logHook("%s: %s", tool, err)
 	}
@@ -156,7 +164,10 @@ func answerHook(ctx context.Context, command *cli.Command, tool string, input io
 		return showSessionStart(ctx, command, &event, output)
 	case "UserPromptSubmit":
 		return showPromptRecall(ctx, command, &event, output)
-	case "Stop", "PreCompact", "SessionEnd":
+	case "Stop", "PreCompact":
+		return startCapture(command, tool)
+	case "SessionEnd":
+		forgetHookState(event.SessionID)
 		return startCapture(command, tool)
 	}
 	return nil
@@ -176,20 +187,22 @@ func codingPlaceAt(ctx context.Context, command *cli.Command, directory, session
 	place := &client.AgentCodingPlace{Directory: directory, ComputerName: computerNameOf(command), HomeDirectory: home, SessionID: sessionId}
 	gitContext, cancel := context.WithTimeout(ctx, hookGitWait)
 	defer cancel()
-	git := func(arguments ...string) []string {
+	git := func(arguments ...string) string {
 		output, err := exec.CommandContext(gitContext, "git", append([]string{"-C", directory}, arguments...)...).Output()
 		if err != nil {
-			return nil
+			return ""
 		}
-		return strings.Fields(string(output))
+		return string(output)
 	}
-	if words := git("rev-parse", "--show-toplevel", "HEAD"); len(words) == 2 {
-		place.CheckoutRoot, place.Head = words[0], words[1]
+	// A line each, not a word each: a checkout's path may have a space in it.
+	if lines := strings.Split(strings.TrimRight(git("rev-parse", "--show-toplevel", "HEAD"), "\n"), "\n"); len(lines) == 2 {
+		place.CheckoutRoot, place.Head = lines[0], lines[1]
 	}
-	for index, word := range git("config", "--get-regexp", `^remote\..*\.url$`) {
-		// Name, value, name, value.
-		if index%2 == 1 {
-			place.RemoteURLs = append(place.RemoteURLs, word)
+	// With -z each entry is the key, a newline and the value, ended by a
+	// NUL, so a value is read whole whatever it holds.
+	for _, entry := range strings.Split(git("config", "-z", "--get-regexp", `^remote\..*\.url$`), "\x00") {
+		if _, remote, isEntry := strings.Cut(entry, "\n"); isEntry && remote != "" {
+			place.RemoteURLs = append(place.RemoteURLs, remote)
 		}
 	}
 	return place
@@ -204,6 +217,12 @@ func computerNameOf(command *cli.Command) string {
 }
 
 func showSessionStart(ctx context.Context, command *cli.Command, event *hookEvent, output io.Writer) error {
+	// A new start, a resume or a compaction: in every case what was shown
+	// before is no longer in the context, so nothing is held back, even
+	// when the server cannot be reached this time.
+	state := &hookState{ShownAtPrompt: map[string]int{}}
+	saveHookState(event.SessionID, state)
+	pruneHookStates(time.Now())
 	connection, err := openClient(command)
 	if err != nil {
 		return err
@@ -213,9 +232,6 @@ func showSessionStart(ctx context.Context, command *cli.Command, event *hookEven
 	if err != nil {
 		return err
 	}
-	// A new start, a resume or a compaction: in every case what was shown
-	// before is no longer in the context, so nothing is held back.
-	state := &hookState{ShownAtPrompt: map[string]int{}}
 	state.remember(shown.ShownPaths)
 	saveHookState(event.SessionID, state)
 	return writeHookOutput(output, event.HookEventName, shown.Text)
@@ -331,6 +347,37 @@ func hookStatePath(sessionId string) string {
 	return filepath.Join(cache, "teanode", "hooks", sessionId+".json")
 }
 
+// hookStateKept is how long a session's state outlives its last use: a
+// session that ended without its SessionEnd (a killed terminal) leaves
+// its file behind, and nothing else would ever remove it.
+const hookStateKept = 7 * 24 * time.Hour
+
+// pruneHookStates removes the state of sessions not heard from for a week.
+func pruneHookStates(now time.Time) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(filepath.Join(cache, "teanode", "hooks"))
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || !strings.HasSuffix(entry.Name(), ".json") || now.Sub(info.ModTime()) < hookStateKept {
+			continue
+		}
+		_ = os.Remove(filepath.Join(cache, "teanode", "hooks", entry.Name()))
+	}
+}
+
+// forgetHookState removes an ended session's state.
+func forgetHookState(sessionId string) {
+	if statePath := hookStatePath(sessionId); statePath != "" {
+		_ = os.Remove(statePath)
+	}
+}
+
 func loadHookState(sessionId string) *hookState {
 	state := &hookState{ShownAtPrompt: map[string]int{}}
 	if statePath := hookStatePath(sessionId); statePath != "" {
@@ -413,15 +460,32 @@ func runHookInstall(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	words := append([]string{executable}, globalArguments(command)...)
-	words = append(words, "hook", tool)
+	// The server is named in the hook, so a later sign-in to another
+	// server does not send this computer's prompts there, and so the hook
+	// does not depend on a token in the environment the tool runs in.
+	resolved, err := resolveCommandTarget(command)
+	if err != nil {
+		return err
+	}
+	profile := resolved.Profile
+	if resolved.Local {
+		profile = LocalProfileName
+	}
+	if profile == "" {
+		return usage("the hooks name a saved profile, and " + resolved.URL + " is not one: sign in with teanode auth login --url " + resolved.URL + " first")
+	}
+	words := []string{executable, "--profile", profile, "hook", tool}
 	if name := command.String("computer"); name != "" {
 		words = append(words, "--computer", name)
 	}
 	if command.Bool("everywhere") {
 		words = append(words, "--everywhere")
 	}
-	hookCommand := shellQuoteWords(words)
+	// Exit 2 from a hook blocks the prompt in Claude Code, and the binary
+	// named here may be replaced one day by one with no `hook` command,
+	// which exits 2 for a command it does not know: so the hook's own exit
+	// status is never the tool's business.
+	hookCommand := shellQuoteWords(words) + " 2>/dev/null || true"
 	file, err := hookFileOf(tool)
 	if err != nil {
 		return err
@@ -499,10 +563,12 @@ func removeTeaNodeHooks(hooks map[string]any, tool string) {
 					keptCommands = append(keptCommands, hook)
 				}
 			}
-			if len(keptCommands) == 0 && len(commands) > 0 {
-				continue
+			if len(keptCommands) < len(commands) {
+				if len(keptCommands) == 0 {
+					continue
+				}
+				group["hooks"] = keptCommands
 			}
-			group["hooks"] = keptCommands
 			kept = append(kept, group)
 		}
 		if len(kept) == 0 {
@@ -517,6 +583,11 @@ func removeTeaNodeHooks(hooks map[string]any, tool string) {
 // the file back with everything else in it as it was. A file that is not
 // JSON is left alone rather than replaced.
 func editHookFile(file string, change func(hooks map[string]any)) error {
+	// The file a link points at, so that a settings file kept in a
+	// dotfiles repository stays a link rather than being replaced by a copy.
+	if target, err := filepath.EvalSymlinks(file); err == nil {
+		file = target
+	}
 	settings := map[string]any{}
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(file); err == nil {
@@ -528,7 +599,10 @@ func editHookFile(file string, change func(hooks map[string]any)) error {
 	case err != nil:
 		return err
 	default:
-		if err := json.Unmarshal(encoded, &settings); err != nil {
+		// Numbers as written, not through a float.
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.UseNumber()
+		if err := decoder.Decode(&settings); err != nil {
 			return fmt.Errorf("%s is not JSON this can edit safely: %w", file, err)
 		}
 	}
@@ -542,20 +616,38 @@ func editHookFile(file string, change func(hooks map[string]any)) error {
 	} else {
 		settings["hooks"] = hooks
 	}
-	written, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
+	// Without escaping < > and &, which other hooks' commands are full
+	// of: the file is one people read and edit by hand.
+	var written bytes.Buffer
+	encoder := json.NewEncoder(&written)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(settings); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
 	// Written beside it and moved over it, so a tool reading the file at
-	// that moment never sees half of it.
-	temporary := file + ".teanode"
-	if err := os.WriteFile(temporary, append(written, '\n'), mode); err != nil {
+	// that moment never sees half of it; a name of its own, so two
+	// installs at once do not write the same temporary file.
+	temporary, err := os.CreateTemp(filepath.Dir(file), filepath.Base(file)+".*.teanode")
+	if err != nil {
 		return err
 	}
-	return os.Rename(temporary, file)
+	defer func() { _ = os.Remove(temporary.Name()) }()
+	if _, err := temporary.Write(written.Bytes()); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Chmod(mode); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), file)
 }
 
 // shellQuoteWords joins words into a command line a shell reads back as

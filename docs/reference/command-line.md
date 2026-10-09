@@ -432,7 +432,10 @@ what your agent knows about the checkout it is in. `teanode hook install
 claude-code` adds the hooks to `~/.claude/settings.json`, and `teanode hook
 install codex` to `~/.codex/hooks.json`, keeping every other hook in the
 file; `uninstall` takes out only TeaNode's. The hooks run this program as it
-was installed, with the profile and `--computer` it was given.
+was installed, naming the saved profile it signed in with (a server reached
+with `--url` alone is refused: sign in first, so the hook does not depend on
+a token in the tool's environment), and the `--computer` it was given. A
+hook's own exit status is never passed on: one that fails shows nothing.
 
 | Event | What the session gets |
 | --- | --- |

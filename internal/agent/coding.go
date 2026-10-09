@@ -246,7 +246,7 @@ func (self *Agent) CodingSessionStart(ctx context.Context, found *models.Agent, 
 			directories = append(directories, result.CheckoutDirectory)
 		}
 		for _, directory := range directories {
-			if result.LastSession, err = lastCodingSession(tx, found.ID, owner, directory, request.SessionID); err != nil || result.LastSession != nil {
+			if result.LastSession, err = lastCodingSession(tx, found.ID, owner, directory, request.ComputerName, request.SessionID); err != nil || result.LastSession != nil {
 				return err
 			}
 		}
@@ -321,9 +321,9 @@ func (self *Agent) CodingPromptRecall(ctx context.Context, found *models.Agent, 
 // transcripts to read again now, so that what was just said is searchable,
 // and the next session can be told where this one stopped, within a
 // minute rather than at the source's next scheduled pass. It says whether
-// any source was asked. A source the person paused stays paused, and one
-// already due is left as it is, so a burst of short answers is one pass.
-// One asked while a pass runs reads again after it (see markSource).
+// any source was asked. A source the person paused stays paused. One asked
+// while a pass runs reads again after it (see markSource), and a burst of
+// short answers before a pass begins is that one pass.
 func CaptureCodingSession(tx db.Transaction, agentId, computerName, assistant string) (bool, error) {
 	if !slices.Contains(CodingAssistants, assistant) {
 		return false, fmt.Errorf("a coding tool is one of %s, not %q", strings.Join(CodingAssistants, ", "), assistant)
@@ -338,9 +338,8 @@ func CaptureCodingSession(tx db.Transaction, agentId, computerName, assistant st
 		if !source.Enabled || source.Specification.Type != assistant || source.Specification.Computer != computerName {
 			continue
 		}
-		if source.NextRunAt != nil && !source.NextRunAt.After(now) {
-			continue
-		}
+		// Even when it is already due: a pass may be on its first page,
+		// and have read the transcript before the answer was written.
 		if err := tx.RequestAgentSourceRun(source.ID, now); err != nil {
 			return isAsked, err
 		}
@@ -353,7 +352,15 @@ func CaptureCodingSession(tx db.Transaction, agentId, computerName, assistant st
 // directory is shown, the session-start block without a prompt and the
 // prompt's recall with one.
 func (self *Agent) codingMemory(ctx context.Context, found *models.Agent, owner *models.User, directory, computerName, prompt string) (string, error) {
+	// The computer's home directory, where it is attached: a checkout's
+	// line may say ~/..., and the transcripts name absolute directories.
 	request := &CodingRequest{Directory: directory, ComputerName: computerName, Prompt: prompt}
+	if attached := self.computerNamed(found.ID, computerName); attached != nil {
+		request.HomeDirectory = attached.Home()
+		if request.ComputerName == "" {
+			request.ComputerName = attached.Name()
+		}
+	}
 	var shown *CodingContext
 	var err error
 	if prompt == "" {
@@ -609,8 +616,9 @@ var isCodingKind = map[models.AgentNodeKind]bool{
 }
 
 // codingScope is the pages a coding session's recall may carry: the
-// projects' pages and those under them, the work pages linked to them
-// either way, and the lessons.
+// projects' pages and those under them, and the work pages linked to them
+// either way. Not lessons: they come through codingLessons, at a closer
+// match than recall's.
 func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode) (func(string) bool, error) {
 	var linkedIds []string
 	for _, project := range projects {
@@ -649,7 +657,7 @@ func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode
 				return true
 			}
 		}
-		return linked[pagePath] || strings.HasPrefix(pagePath, lessonsRoot+"/")
+		return linked[pagePath]
 	}, nil
 }
 
@@ -695,17 +703,31 @@ type codingPost struct {
 	text   string
 }
 
-// lastCodingSession is the newest session held in a directory other
-// than the one asking, with the person's last requests and the
+// lastCodingSession is the newest session held in a directory on a
+// computer other than the one asking, with the person's last requests and the
 // assistant's last answer read from its newest units; nil where there was
 // none.
-func lastCodingSession(tx db.Transaction, agentId string, owner *models.User, directory, sessionId string) (*CodingSession, error) {
+func lastCodingSession(tx db.Transaction, agentId string, owner *models.User, directory, computerName, sessionId string) (*CodingSession, error) {
 	if directory == "" {
 		return nil, nil
 	}
 	documents, err := tx.ListAgentCodingDocuments(agentId, directory, codingDocuments)
 	if err != nil || len(documents) == 0 {
 		return nil, err
+	}
+	// On the session's own computer, where it is named: the same path on
+	// another computer is another checkout, and its last session is not
+	// this one's.
+	if computerName != "" {
+		sources, err := tx.ListAgentSources(agentId)
+		if err != nil {
+			return nil, err
+		}
+		isOnComputer := map[string]bool{}
+		for _, source := range sources {
+			isOnComputer[source.ID] = source.Specification.Computer == computerName
+		}
+		documents = slices.DeleteFunc(documents, func(document *models.AgentDocument) bool { return !isOnComputer[document.SourceID] })
 	}
 	sessionOf := func(document *models.AgentDocument) string {
 		file, _, _ := strings.Cut(document.ExternalID, "#")

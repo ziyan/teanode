@@ -103,7 +103,7 @@ const DOCUMENT_SEARCH = `query ($query: String!, $first: Int, $offset: Int, $sou
   SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId, directory: $directory) {
     passages { documentId externalId title kind author sourceId source happenedAt number text }
     definitions { symbol kind line documentId externalId title }
-    directories { directory source passageCount }
+    directories { directory sourceId source passageCount }
     meaningful moreCount isMoreCountLowerBound nextOffset
   }
 }`
@@ -277,7 +277,7 @@ type Definition = {
 type FoundDocuments = {
   passages: Passage[]
   definitions: Definition[]
-  directories: { directory: string; source: string; passageCount: number }[]
+  directories: { directory: string; sourceId: string; source: string; passageCount: number }[]
   meaningful: boolean
   moreCount: number
   isMoreCountLowerBound: boolean
@@ -1534,11 +1534,16 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
   ]
 
   // A directory the results name is searched inside at once, the way a
-  // person narrowing a large tree to where the hits cluster means it.
-  const search = (inside?: string) => {
+  // person narrowing a large tree to where the hits cluster means it, and
+  // in the source it was found in: two computers may have the same path.
+  const search = (inside?: { directory: string; sourceId: string }) => {
     if (wanted === '' || busy) return
-    const narrowedTo = (inside ?? directory).trim()
-    if (inside !== undefined) setDirectory(inside)
+    const narrowedTo = (inside?.directory ?? directory).trim()
+    const narrowedSourceId = inside?.sourceId ?? sourceId
+    if (inside !== undefined) {
+      setDirectory(inside.directory)
+      setSourceId(inside.sourceId)
+    }
     setBusy(true)
     setProblem(null)
     void (async () => {
@@ -1546,11 +1551,11 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
         // The source is left out of the variables rather than sent empty:
         // any source is the absence of a filter, not a filter on nothing.
         const variables: Record<string, unknown> = { query: wanted, first: DOCUMENT_PASSAGES }
-        if (sourceId !== '') variables.sourceId = sourceId
+        if (narrowedSourceId !== '') variables.sourceId = narrowedSourceId
         if (narrowedTo !== '') variables.directory = narrowedTo
         const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
         setFound(answer.SearchAgentDocuments)
-        setAsked({ words: wanted, sourceId, directory: narrowedTo })
+        setAsked({ words: wanted, sourceId: narrowedSourceId, directory: narrowedTo })
         setPageIndex(0)
       } catch (caught) {
         setProblem(messageOf(caught))
@@ -1717,12 +1722,12 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
               <p className="muted document-section">{t('knowledge.documents.where')}</p>
               <ul className="document-definitions">
                 {showing.directories.map((hits) => (
-                  <li key={hits.directory}>
+                  <li key={`${hits.sourceId}:${hits.directory}`}>
                     <button /* link-button: searches inside the directory */
                       type="button"
                       className="link"
                       aria-label={t('knowledge.documents.whereOne', { directory: hits.directory })}
-                      onClick={() => search(hits.directory)}
+                      onClick={() => search({ directory: hits.directory, sourceId: hits.sourceId })}
                     >
                       {hits.directory}
                     </button>{' '}

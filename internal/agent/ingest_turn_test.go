@@ -13,26 +13,26 @@ func TestTheLongestWaitingSourceReadsNext(t *testing.T) {
 	start := time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
 	at := func(seconds int) time.Time { return start.Add(time.Duration(seconds) * time.Second) }
 
-	if turn := worker.claimComputerAt("laptop", "chat", at(0), false); !turn.isFree {
+	if turn := worker.claimComputerAt("laptop", "chat", at(0), nil); !turn.isFree {
 		t.Fatalf("a free computer is given out: %+v", turn)
 	}
 	// The drive starts a pass while the chat reads; it waits.
-	if turn := worker.claimComputerAt("laptop", "drive", at(1), false); turn.isFree || turn.other != "chat" || !turn.isReading {
+	if turn := worker.claimComputerAt("laptop", "drive", at(1), nil); turn.isFree || turn.other != "chat" || !turn.isReading {
 		t.Fatalf("the drive waits for the chat: %+v", turn)
 	}
 	worker.releaseComputer("laptop", "chat")
 
 	// The chat asks again first, but the drive has waited longer.
-	if turn := worker.claimComputerAt("laptop", "chat", at(2), false); turn.isFree || turn.other != "drive" || turn.isReading {
+	if turn := worker.claimComputerAt("laptop", "chat", at(2), nil); turn.isFree || turn.other != "drive" || turn.isReading {
 		t.Fatalf("the chat goes after the drive: %+v", turn)
 	}
-	if turn := worker.claimComputerAt("laptop", "drive", at(3), false); !turn.isFree {
+	if turn := worker.claimComputerAt("laptop", "drive", at(3), nil); !turn.isFree {
 		t.Fatalf("the drive has its turn: %+v", turn)
 	}
 	worker.releaseComputer("laptop", "drive")
 
 	// Now the chat is the one that has waited; it reads.
-	if turn := worker.claimComputerAt("laptop", "chat", at(4), false); !turn.isFree {
+	if turn := worker.claimComputerAt("laptop", "chat", at(4), nil); !turn.isFree {
 		t.Fatalf("the chat has its turn after the drive: %+v", turn)
 	}
 	worker.releaseComputer("laptop", "chat")
@@ -40,42 +40,59 @@ func TestTheLongestWaitingSourceReadsNext(t *testing.T) {
 	// A source that asked a while ago keeps its place for as long as its
 	// job takes to come round again, and no longer: the computer would
 	// stand idle.
-	if turn := worker.claimComputerAt("laptop", "github", at(5), false); !turn.isFree {
+	if turn := worker.claimComputerAt("laptop", "github", at(5), nil); !turn.isFree {
 		t.Fatalf("github reads: %+v", turn)
 	}
-	if turn := worker.claimComputerAt("laptop", "codex", at(6), false); turn.isFree {
+	if turn := worker.claimComputerAt("laptop", "codex", at(6), nil); turn.isFree {
 		t.Fatalf("codex waits for github: %+v", turn)
 	}
 	worker.releaseComputer("laptop", "github")
 	// Codex asked four minutes ago and its job is on its way back: its
 	// place is kept.
-	if turn := worker.claimComputerAt("laptop", "chat", at(6+240), false); turn.isFree || turn.other != "codex" || turn.isReading {
+	if turn := worker.claimComputerAt("laptop", "chat", at(6+240), nil); turn.isFree || turn.other != "codex" || turn.isReading {
 		t.Fatalf("a source that asked four minutes ago keeps its place: %+v", turn)
 	}
-	if turn := worker.claimComputerAt("laptop", "chat", at(6+360), false); !turn.isFree {
+	if turn := worker.claimComputerAt("laptop", "chat", at(6+360), nil); !turn.isFree {
 		t.Fatalf("a source that stopped asking six minutes ago is not waited for: %+v", turn)
 	}
 }
 
-// A coding tool's transcripts asked to be read in after an answer go
-// ahead of a source that has waited longer, though not ahead of the one
-// reading now.
-func TestACodingSessionsTranscriptsReadNext(t *testing.T) {
+// A source asked to read now (a coding session's transcripts, after an
+// answer) goes ahead of one that has waited longer, though not ahead of
+// the one reading now; two asked go in the order they were asked, and a
+// scheduled pass of the same kind of source takes its turn.
+func TestASourceAskedToReadNowGoesNext(t *testing.T) {
 	worker := &Agent{}
 	start := time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
 	at := func(seconds int) time.Time { return start.Add(time.Duration(seconds) * time.Second) }
+	asked := func(seconds int) *time.Time { moment := at(seconds); return &moment }
 
-	worker.claimComputerAt("laptop", "chat", at(0), false)
-	worker.claimComputerAt("laptop", "drive", at(1), false)
-	if turn := worker.claimComputerAt("laptop", "claude-code", at(2), true); turn.isFree || turn.other != "chat" || !turn.isReading {
-		t.Fatalf("the transcripts wait for the chat reading now: %+v", turn)
+	worker.claimComputerAt("laptop", "chat", at(0), nil)
+	worker.claimComputerAt("laptop", "drive", at(1), nil)
+	if turn := worker.claimComputerAt("laptop", "codex", at(3), asked(3)); turn.isFree || turn.other != "chat" || !turn.isReading {
+		t.Fatalf("an asked source waits for the one reading now: %+v", turn)
+	}
+	if turn := worker.claimComputerAt("laptop", "claude-code", at(4), asked(2)); turn.isFree || turn.other != "chat" {
+		t.Fatalf("and so does another: %+v", turn)
 	}
 	worker.releaseComputer("laptop", "chat")
-	if turn := worker.claimComputerAt("laptop", "drive", at(3), false); turn.isFree || turn.other != "claude-code" {
-		t.Fatalf("the drive, though it waited longer, goes after the transcripts: %+v", turn)
+	if turn := worker.claimComputerAt("laptop", "drive", at(5), nil); turn.isFree || turn.isReading {
+		t.Fatalf("the drive, though it waited longer, goes after the sources asked to read now: %+v", turn)
 	}
-	if turn := worker.claimComputerAt("laptop", "claude-code", at(4), true); !turn.isFree {
-		t.Fatalf("the transcripts read next: %+v", turn)
+	if turn := worker.claimComputerAt("laptop", "codex", at(6), asked(3)); turn.isFree || turn.other != "claude-code" {
+		t.Fatalf("of two asked, the one asked first goes first: %+v", turn)
+	}
+	if turn := worker.claimComputerAt("laptop", "claude-code", at(7), asked(2)); !turn.isFree {
+		t.Fatalf("the source asked first reads next: %+v", turn)
+	}
+	worker.releaseComputer("laptop", "claude-code")
+	if turn := worker.claimComputerAt("laptop", "codex", at(8), asked(3)); !turn.isFree {
+		t.Fatalf("then the other: %+v", turn)
+	}
+	worker.releaseComputer("laptop", "codex")
+	// A scheduled pass, nobody asking, waits its turn like any source.
+	if turn := worker.claimComputerAt("laptop", "claude-code", at(9), nil); turn.isFree || turn.other != "drive" {
+		t.Fatalf("a scheduled pass goes after the source that waited longer: %+v", turn)
 	}
 }
 

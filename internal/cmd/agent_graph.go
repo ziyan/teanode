@@ -1181,6 +1181,9 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("search for what? teanode agent knowledge search \"the migration that failed\"")
 	}
+	if command.String("computer") != "" && command.String("directory") == "" {
+		return usage("--computer says which computer's --directory to search; give the directory too")
+	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
@@ -2798,6 +2801,8 @@ func runAgentGraphCheckout(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Root().Writer, "Nothing: memory knows no checkout holding this directory, or the prompt recalls nothing from its project.")
 		return nil
 	}
-	_, _ = fmt.Fprintln(command.Root().Writer, shown.Text)
+	// Through forTerminal: the block quotes what was said in a session,
+	// which is somebody else's text as far as the terminal is concerned.
+	_, _ = fmt.Fprintln(command.Root().Writer, forTerminal(shown.Text))
 	return nil
 }

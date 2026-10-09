@@ -441,8 +441,13 @@ func (self *transaction) ListAgentCodingDocuments(agentId, directory string, lim
 }
 
 func (self *transaction) RequestAgentSourceRun(sourceId string, at time.Time) error {
+	// The request is recorded even when the source is already due: a pass
+	// may be on its first page, and have read the files already.
 	return self.tx.Model(&agentSourceModel{}).Where(`"id" = ? AND "enabled"`, sourceId).
-		Updates(map[string]any{"next_run_at": at, "run_requested_at": at}).Error
+		Updates(map[string]any{
+			"next_run_at":      gorm.Expr(`CASE WHEN "next_run_at" IS NOT NULL AND "next_run_at" <= ? THEN "next_run_at" ELSE ? END`, at, at),
+			"run_requested_at": at,
+		}).Error
 }
 
 func (self *transaction) ClearAgentSourceRunRequest(sourceId string, passStarted time.Time) error {
@@ -955,14 +960,16 @@ func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, d
 		SELECT * FROM "agent_chunk"
 		WHERE "agent_id" = ? AND "search" @@ `+AnyWord+`
 		  AND (? OR "source_id" = ANY(?))
-		  AND (? = '' OR "document_id" IN (SELECT "id" FROM "agent_document" WHERE "agent_id" = ? AND "external_id" LIKE ? ESCAPE '\'))
+		  AND (? = '' OR "document_id" IN (SELECT "id" FROM "agent_document" WHERE "agent_id" = ? AND (? OR "source_id" = ANY(?)) AND "external_id" LIKE ?))
 		ORDER BY ts_rank("search", `+AnyWord+`) DESC, "id" ASC LIMIT ?`,
-		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), documentPrefix, agentId, LikePrefix(documentPrefix), query, limit)
+		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), documentPrefix, agentId, len(sourceIds) == 0, pq.Array(sourceIds), LikePrefix(documentPrefix), query, limit)
 	return self.chunksFrom(statement)
 }
 
 // LikePrefix is a LIKE pattern matching what starts with prefix, its own
-// % and _ taken literally.
+// % and _ taken literally. Backslash is LIKE's escape by default, and no
+// ESCAPE clause is written: with one, PostgreSQL will not use an index
+// for the prefix.
 func LikePrefix(prefix string) string {
 	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(prefix) + "%"
 }

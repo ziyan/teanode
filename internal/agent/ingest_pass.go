@@ -127,11 +127,3 @@ func countInCursor(cursor map[string]any, key string) int {
 	}
 	return 0
 }
-
-// isAtTopOfTree says whether the cursor is at the start of a pass: no
-// page read yet, and no start written down.
-func isAtTopOfTree(cursor map[string]any) bool {
-	started, _ := cursor[cursorPassStarted].(string)
-	after, _ := cursor["after"].(string)
-	return started == "" && after == ""
-}

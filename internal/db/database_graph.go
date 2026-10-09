@@ -1209,12 +1209,21 @@ func (self *transaction) ListAgentFactsLively(agentId, nodeId string, limit int)
 		Order(`"used_at" DESC NULLS LAST, "modified_at" DESC`).Limit(limit))
 }
 
+// factLineStart is how much of a fact agent_fact_line_start indexes; the
+// expression in the query must be the index's own for it to be used.
+const factLineStart = 24
+
 func (self *transaction) ListAgentFactsStartingWith(agentId, prefix string, limit int) ([]*models.AgentFact, error) {
 	if limit <= 0 {
 		limit = 5000
 	}
-	return self.factsFrom(self.tx.
-		Where(`"agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL AND "text" LIKE ? ESCAPE '\'`, agentId, LikePrefix(prefix)).
+	query := self.tx.Where(`"agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL AND "text" LIKE ?`, agentId, LikePrefix(prefix))
+	// Through agent_fact_line_start (migration 0158), which holds the
+	// first factLineStart characters of each live fact.
+	if runes := []rune(prefix); len(runes) <= factLineStart {
+		query = query.Where(`left("text", 24) LIKE ?`, LikePrefix(prefix))
+	}
+	return self.factsFrom(query.
 		Order(`"modified_at" DESC`).Limit(limit))
 }
 

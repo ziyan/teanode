@@ -96,7 +96,7 @@ func (self *Agent) searchChunksByMeaning(ctx context.Context, agentId string, qu
 	}
 	if documentPrefix != "" {
 		narrow.Where = append(narrow.Where, `EXISTS (SELECT 1 FROM "agent_chunk" JOIN "agent_document" ON "agent_document"."id" = "agent_chunk"."document_id"`+
-			` WHERE "agent_chunk"."id" = "agent_chunk_vector"."chunk_id" AND "agent_document"."external_id" LIKE ? ESCAPE '\')`)
+			` WHERE "agent_chunk"."id" = "agent_chunk_vector"."chunk_id" AND "agent_document"."external_id" LIKE ?)`)
 		narrow.Arguments = append(narrow.Arguments, db.LikePrefix(documentPrefix))
 	}
 	var chunks []*models.AgentChunk

@@ -215,17 +215,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		// Written down before the page is asked for, so that the time the
 		// sweep at the end compares against is older than anything the
 		// pass can possibly have been shown.
-		isNewPass := isAtTopOfTree(cursor)
 		startedPass := markPassStart(source, cursor, time.Now())
-		// A pass from the top answers every request made before it
-		// began; one made after stands, for markSource.
-		if isNewPass && !startedPass.IsZero() {
-			if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-				return tx.ClearAgentSourceRunRequest(source.ID, startedPass.Add(time.Second))
-			}); err != nil {
-				log.Warningf("cannot clear the request to read source %q: %s", source.ID, err)
-			}
-		}
 		next, passCounts, err := self.readOnePass(ctx, run, source, cursor)
 		if errors.Is(err, errIngestSourceChanged) {
 			return nil
@@ -285,6 +275,18 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				break
 			}
 			cursor, counts = completion.Cursor, completion.Counts
+			// The pass that has just read the whole tree answers every
+			// request made before it began; one made since stands, and
+			// markSource runs the source again for it. Cleared at the end
+			// rather than the start, so that the request keeps the pass
+			// at the front of its computer's queue page after page.
+			if !startedPass.IsZero() {
+				if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+					return tx.ClearAgentSourceRunRequest(source.ID, startedPass.Add(time.Second))
+				}); err != nil {
+					log.Warningf("cannot clear the request to read source %q: %s", source.ID, err)
+				}
+			}
 			break
 		}
 

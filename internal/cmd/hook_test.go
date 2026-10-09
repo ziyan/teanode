@@ -2,11 +2,16 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 )
 
 // Installing keeps every hook another program put in the file, and
@@ -146,4 +151,75 @@ func hookCommandsOf(settings map[string]any) string {
 		}
 	}
 	return strings.Join(commands, "\n")
+}
+
+// A group of another program's hooks is left exactly as it was, even
+// one with no commands in it, and the file keeps its characters and stays
+// the link it was.
+func TestEditingHooksLeavesOtherGroupsAndTheFileAlone(t *testing.T) {
+	directory := t.TempDir()
+	real := filepath.Join(directory, "dotfiles-settings.json")
+	link := filepath.Join(directory, "settings.json")
+	original := `{"timeout": 600, "hooks": {"Stop": [{"matcher": "", "hooks": []}, {"matcher": "*"}], "SessionStart": [{"hooks": [{"type": "command", "command": "run-other-tool > log 2>&1 && true"}]}]}}`
+	if err := os.WriteFile(real, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := editHookFile(link, func(hooks map[string]any) { removeTeaNodeHooks(hooks, "claude-code") }); err != nil {
+		t.Fatalf("editHookFile: %s", err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the settings file is still a link: %v", err)
+	}
+	written, err := os.ReadFile(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"timeout": 600`, `run-other-tool > log 2>&1 && true`, `"hooks": []`, `"matcher": "*"`} {
+		if !strings.Contains(string(written), want) {
+			t.Fatalf("the file keeps %q:\n%s", want, written)
+		}
+	}
+	if strings.Contains(string(written), "null") {
+		t.Fatalf("no group's hooks become null:\n%s", written)
+	}
+}
+
+// What git says about a checkout is read whole, a space in its path
+// included, remotes and all.
+func TestTheHookReadsTheCheckoutFromGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := filepath.Join(t.TempDir(), "my checkouts", "seedling")
+	run := func(arguments ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
+		command.Env = append(os.Environ(), "GIT_AUTHOR_NAME=A", "GIT_AUTHOR_EMAIL=a@example.com", "GIT_COMMITTER_NAME=A", "GIT_COMMITTER_EMAIL=a@example.com")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s %s", arguments, err, output)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cmd"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	run("init", "-q")
+	run("commit", "-q", "--allow-empty", "-m", "first")
+	run("remote", "add", "origin", "git@git.example.com:garden/seedling.git")
+	run("remote", "add", "mirror", "https://git.example.net/garden/seedling")
+
+	command := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: "computer", Value: "workbench"}}}
+	place := codingPlaceAt(context.Background(), command, filepath.Join(root, "cmd"), "session")
+	if resolved, _ := filepath.EvalSymlinks(root); place.CheckoutRoot != root && place.CheckoutRoot != resolved {
+		t.Fatalf("the checkout's top directory, space and all: %q", place.CheckoutRoot)
+	}
+	if len(place.Head) != 40 {
+		t.Fatalf("the commit: %q", place.Head)
+	}
+	slices.Sort(place.RemoteURLs)
+	if strings.Join(place.RemoteURLs, " ") != "git@git.example.com:garden/seedling.git https://git.example.net/garden/seedling" {
+		t.Fatalf("every remote: %q", place.RemoteURLs)
+	}
 }
