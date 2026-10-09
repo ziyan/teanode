@@ -215,8 +215,10 @@ func (self *Agent) CodingPromptRecall(ctx context.Context, found *models.Agent, 
 	}
 	result := &CodingContext{Pages: []*RecalledPage{}, Lessons: []string{}, ShownPaths: []string{}}
 	prompt := strings.TrimSpace(request.Prompt)
-	// A command to the tool, or a word of assent, is not a question.
-	if strings.HasPrefix(prompt, "/") || len(strings.Fields(prompt)) < codingPromptWords {
+	// A command to the tool, or a word of assent, is not a question, and
+	// nor is what the tool itself sends as a prompt (a finished background
+	// task arrives wrapped in a tag of its own).
+	if strings.HasPrefix(prompt, "/") || strings.HasPrefix(prompt, "<") || len(strings.Fields(prompt)) < codingPromptWords {
 		return result, nil
 	}
 	shown := map[string]bool{}
@@ -453,6 +455,11 @@ func codingScope(tx db.Transaction, agentId string, projects []*models.AgentNode
 			return nil, err
 		}
 		for _, edge := range edges {
+			// A link the night guessed is a guess, and a page it reaches
+			// is not the project's business until somebody says so.
+			if edge.Status == models.EdgeProposed {
+				continue
+			}
 			if edge.FromID == project.ID {
 				linkedIds = append(linkedIds, edge.ToID)
 			} else {

@@ -189,13 +189,15 @@ func TestAPromptRecallsOnlyItsProject(t *testing.T) {
 		t.Fatalf("a page shown a moment ago is not shown again:\n%s", again.Text)
 	}
 
-	request.ShownPaths, request.Prompt = nil, "yes go on"
-	assent, err := world.run.agent.CodingPromptRecall(context.Background(), world.agent, world.run.settings.Owner, request)
-	if err != nil {
-		t.Fatalf("CodingPromptRecall: %s", err)
-	}
-	if assent.Text != "" {
-		t.Fatalf("a word of assent recalls nothing:\n%s", assent.Text)
+	for _, prompt := range []string{"yes go on", "<task-notification> the database container tests finished </task-notification>"} {
+		request.ShownPaths, request.Prompt = nil, prompt
+		assent, err := world.run.agent.CodingPromptRecall(context.Background(), world.agent, world.run.settings.Owner, request)
+		if err != nil {
+			t.Fatalf("CodingPromptRecall: %s", err)
+		}
+		if assent.Text != "" {
+			t.Fatalf("%q recalls nothing:\n%s", prompt, assent.Text)
+		}
 	}
 }
 

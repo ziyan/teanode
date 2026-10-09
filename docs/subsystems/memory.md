@@ -1061,11 +1061,13 @@ it is what was said, and it is there as soon as the transcript is read.
 **When a prompt is typed** it gets the same recall a turn does, with one
 difference made while recall chooses rather than after: only the project's
 page, the pages under it, the projects, topics, things and folders linked to
-it (never a person, a month or `self`) and lessons may be carried, so a prompt about a build does not carry mail or finance into
+it by a link somebody stated (never a person, a month or `self`, and not a
+dream's guess) and lessons may be carried, so a prompt about a build does not carry mail or finance into
 a coding tool's context, and pages left out do not spend the budget. A page
 the session was shown in its last five prompts is left out (the hook keeps
 that count in the user's cache directory), a prompt under three words or a
-slash command recalls nothing, and nothing is marked as used.
+slash command or something the tool sends on its own (a finished task
+arrives as a prompt wrapped in a tag) recalls nothing, and nothing is marked as used.
 
 **When an answer ends** the computer's `claude-code` or `codex` source is
 asked to read again now (`CaptureCodingSession`), setting only its next run
