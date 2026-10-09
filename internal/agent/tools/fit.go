@@ -75,32 +75,34 @@ func FitJSON(answer []byte, budget int) string {
 		if largest.path == nil {
 			break
 		}
-		label := largest.path.String()
-		if _, isCut := originals[label]; !isCut {
+		// Notes name a field by its label; it is kept apart from the others
+		// by its key, since a key with a dot in it labels like a nested one.
+		label, fieldKey := largest.path.String(), largest.path.key()
+		if _, isCut := originals[fieldKey]; !isCut {
 			original := largest.path.valueIn(fields)
-			originals[label] = original
+			originals[fieldKey] = original
 			switch typed := original.(type) {
 			case string:
-				keptSizes[label] = len(typed)
+				keptSizes[fieldKey] = len(typed)
 			case []any:
-				keptSizes[label] = len(typed)
+				keptSizes[fieldKey] = len(typed)
 			}
 		}
-		keptSize := keptSizes[label]
-		switch original := originals[label].(type) {
+		keptSize := keptSizes[fieldKey]
+		switch original := originals[fieldKey].(type) {
 		case string:
 			keepBytes := min(keptSize-overflowBytes*keptSize/max(largest.encodedBytes, 1), keptSize-1)
 			kept := cutAtCharacter(original, max(keepBytes, 0))
-			keptSizes[label] = len(kept)
-			isExhausted[label] = kept == ""
+			keptSizes[fieldKey] = len(kept)
+			isExhausted[fieldKey] = kept == ""
 			remainingCharacterCount := utf8.RuneCountInString(original[len(kept):])
 			largest.path.setIn(fields, kept+fmt.Sprintf("\n[cut here: %d more characters]", remainingCharacterCount))
-			cutNotes[label] = fmt.Sprintf("%s was cut to fit, %d of its characters not shown", label, remainingCharacterCount)
+			cutNotes[fieldKey] = fmt.Sprintf("%s was cut to fit, %d of its characters not shown", label, remainingCharacterCount)
 		case []any:
 			keepCount := max(keptSize-max(1, overflowBytes*keptSize/max(largest.encodedBytes, 1)), 1)
-			keptSizes[label] = keepCount
+			keptSizes[fieldKey] = keepCount
 			largest.path.setIn(fields, append([]any(nil), original[:keepCount]...))
-			cutNotes[label] = fmt.Sprintf("%s holds %d of %d to fit; ask for fewer to see the rest", label, keepCount, len(original))
+			cutNotes[fieldKey] = fmt.Sprintf("%s holds %d of %d to fit; ask for fewer to see the rest", label, keepCount, len(original))
 		}
 	}
 	// Nothing left to shorten, and still too long: its start, as text in a
@@ -155,6 +157,12 @@ func (self fieldPath) String() string {
 		}
 	}
 	return strings.Join(parts, ".")
+}
+
+// key is the path written so that no two paths share it. String gives a
+// key with a dot in it and the same keys nested the same label.
+func (self fieldPath) key() string {
+	return EncodeJSON([]any(self))
 }
 
 // with is the path one step further.
@@ -216,7 +224,7 @@ func (self *largestField) find(field any, path fieldPath, isExhausted map[string
 			return
 		}
 	case string:
-		if typed == "" || isExhausted[path.String()] {
+		if typed == "" || isExhausted[path.key()] {
 			return
 		}
 	default:

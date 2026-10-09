@@ -132,3 +132,22 @@ func TestFitJSONCountsCharactersNotBytes(t *testing.T) {
 		t.Fatalf("the mark said %q, want %q", mark, want)
 	}
 }
+
+// A key with a dot in it and the same keys nested are two fields: each is
+// cut from its own text and named in the note.
+func TestFitJSONKeepsADottedKeyApartFromANestedOne(t *testing.T) {
+	encoded, _ := json.Marshal(map[string]any{"a.b": strings.Repeat("x", 5000), "a": map[string]any{"b": strings.Repeat("y", 5200)}})
+	fitted := FitJSON(encoded, 2000)
+	var answer map[string]any
+	if err := json.Unmarshal([]byte(fitted), &answer); err != nil || len(fitted) > 2000 {
+		t.Fatalf("%d characters, %v: %s", len(fitted), err, fitted)
+	}
+	dotted, isString := answer["a.b"].(string)
+	nested, isObject := answer["a"].(map[string]any)
+	if !isString || !isObject {
+		t.Fatalf("both fields are kept: %s", fitted)
+	}
+	if strings.Contains(dotted, "y") || strings.Contains(nested["b"].(string), "x") {
+		t.Fatalf("a field holds the other's text: %s", fitted)
+	}
+}
