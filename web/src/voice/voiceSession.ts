@@ -88,6 +88,44 @@ export function voiceSocketAddress(location: Location): string {
 // told about than heard seconds late.
 const MAXIMUM_BUFFERED_BYTES = 1 << 20
 
+// MUTED_TAIL_MS is how long silence goes on being sent once the microphone
+// is muted: longer than the longest pause the server may be set to wait
+// for, so that what was being said ends there as an utterance.
+const MUTED_TAIL_MS = 6000
+
+// STILL_HERE_INTERVAL_MS is how often a muted microphone tells the server
+// the call goes on; it ends a socket that sends nothing for a minute.
+const STILL_HERE_INTERVAL_MS = 20000
+
+// MicrophoneMute decides what a muted microphone sends: silence for a
+// moment, then no audio at all (nothing to transcribe, nothing to count),
+// and now and then a word that the call goes on.
+export class MicrophoneMute {
+  private mutedAt?: number
+  private lastSentAt = 0
+
+  isMuted(): boolean {
+    return this.mutedAt !== undefined
+  }
+
+  setMuted(isMuted: boolean, now: number) {
+    if (isMuted === this.isMuted()) return
+    this.mutedAt = isMuted ? now : undefined
+  }
+
+  // frame says what to do with one frame of captured audio: send it,
+  // send that the call goes on instead, or send nothing.
+  frame(now: number): 'audio' | 'stillHere' | 'nothing' {
+    if (this.mutedAt === undefined || now - this.mutedAt < MUTED_TAIL_MS) {
+      this.lastSentAt = now
+      return 'audio'
+    }
+    if (now - this.lastSentAt < STILL_HERE_INTERVAL_MS) return 'nothing'
+    this.lastSentAt = now
+    return 'stillHere'
+  }
+}
+
 // VoiceSession is one stretch of listening, from the button pressed to the
 // button pressed again.
 export class VoiceSession {
@@ -100,7 +138,7 @@ export class VoiceSession {
   private backchannel?: Backchannel
   private backchannelTiming = new BackchannelTiming()
   private backchannelTimer?: number
-  private isMuted = false
+  private microphoneMute = new MicrophoneMute()
   private isEnded = false
   private isReady = false
   private tracker = new TranscriptTracker()
@@ -154,7 +192,6 @@ export class VoiceSession {
       () => ({ microphoneRms: this.microphoneRms(), answerRms: player.rootMeanSquare() }),
       () => this.callbacks.onHearing(true),
     )
-    this.answers.setMuted(this.isMuted)
     const answers = this.answers
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
@@ -165,6 +202,7 @@ export class VoiceSession {
       return
     }
     if (this.isEnded) return this.release()
+    this.applyMicrophoneMute()
     await context.audioWorklet.addModule('/assets/voice-capture-worklet.js')
     if (this.isEnded) return this.release()
     if (context.state !== 'running') await context.resume().catch(() => undefined)
@@ -216,7 +254,9 @@ export class VoiceSession {
       if (!this.isReady || socket.readyState !== WebSocket.OPEN) return
       if (isHalfDuplex && answers.isSpeaking()) return
       if (socket.bufferedAmount > MAXIMUM_BUFFERED_BYTES) return
-      socket.send(event.data)
+      const sending = this.microphoneMute.frame(performance.now())
+      if (sending === 'audio') socket.send(event.data)
+      if (sending === 'stillHere') socket.send(JSON.stringify({ voiceEvent: 'stillHere' }))
     }
     socket.onmessage = (message) => {
       let event: VoiceEvent
@@ -314,10 +354,17 @@ export class VoiceSession {
     this.answers?.adopt(runIds)
   }
 
-  // setMuted stops speaking answers, or starts again with the next.
-  setMuted(isMuted: boolean) {
-    this.isMuted = isMuted
-    this.answers?.setMuted(isMuted)
+  // setMicrophoneMuted stops the agent hearing the person, or lets it hear
+  // them again; the call and its answers go on.
+  setMicrophoneMuted(isMuted: boolean) {
+    this.microphoneMute.setMuted(isMuted, performance.now())
+    this.applyMicrophoneMute()
+  }
+
+  // applyMicrophoneMute silences the microphone itself, so that nothing of
+  // the person is heard, drawn or taken for speaking over an answer.
+  private applyMicrophoneMute() {
+    for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = !this.microphoneMute.isMuted()
   }
 
   // cutAnswer ends the answer being spoken at the person's tap.
@@ -369,15 +416,15 @@ export class VoiceSession {
   }
 
   // startBackchannel has the sounds spoken once, and listens for where one
-  // fits while the person talks: not while an answer plays, and not when
-  // answers are not read aloud.
+  // fits while the person talks: not while an answer plays, and not while
+  // the microphone is muted.
   private startBackchannel(context: AudioContext) {
     if (this.backchannel) return
     this.backchannel = new Backchannel(context, (answerSegmentId, answerText) =>
       this.sendJSON({ voiceEvent: 'speakAnswer', answerSegmentId, answerText }),
     )
     this.backchannelTimer = window.setInterval(() => {
-      if (this.isMuted || this.answers?.isSpeaking()) return
+      if (this.microphoneMute.isMuted() || this.answers?.isSpeaking()) return
       if (this.backchannelTiming.isTime(performance.now(), this.microphoneRms())) this.backchannel?.play()
     }, 50)
   }

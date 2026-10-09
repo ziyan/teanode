@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { TranscriptTracker, voiceSocketAddress } from './voiceSession'
+import { MicrophoneMute, TranscriptTracker, voiceSocketAddress } from './voiceSession'
 
 describe('TranscriptTracker', () => {
   it('shows the words as they come and lets each finished utterance through once', () => {
@@ -93,5 +93,47 @@ describe('the capture worklet', () => {
       const expected = 0.5 * Math.sin((2 * Math.PI * 440 * index * 2) / 48000) * 0x7fff
       expect(Math.abs(frame[index] - expected)).toBeLessThan(40)
     }
+  })
+})
+
+describe('MicrophoneMute', () => {
+  it('sends every frame until muted', () => {
+    const mute = new MicrophoneMute()
+    expect(mute.frame(0)).toBe('audio')
+    expect(mute.frame(100_000)).toBe('audio')
+    expect(mute.isMuted()).toBe(false)
+  })
+
+  it('sends silence for a moment once muted, then no audio, and says now and then that the call goes on', () => {
+    const mute = new MicrophoneMute()
+    mute.setMuted(true, 1_000)
+    expect(mute.isMuted()).toBe(true)
+    // What was being said ends as an utterance.
+    expect(mute.frame(1_100)).toBe('audio')
+    expect(mute.frame(6_900)).toBe('audio')
+    expect(mute.frame(7_000)).toBe('nothing')
+    expect(mute.frame(26_800)).toBe('nothing')
+    // Well inside the minute the server waits.
+    expect(mute.frame(26_900)).toBe('stillHere')
+    expect(mute.frame(27_000)).toBe('nothing')
+    expect(mute.frame(46_900)).toBe('stillHere')
+  })
+
+  it('sends audio again at once when unmuted, and starts the silence afresh when muted again', () => {
+    const mute = new MicrophoneMute()
+    mute.setMuted(true, 0)
+    expect(mute.frame(10_000)).toBe('nothing')
+    mute.setMuted(false, 11_000)
+    expect(mute.frame(11_000)).toBe('audio')
+    mute.setMuted(true, 12_000)
+    expect(mute.frame(17_900)).toBe('audio')
+    expect(mute.frame(18_000)).toBe('nothing')
+  })
+
+  it('keeps when it was muted if told again', () => {
+    const mute = new MicrophoneMute()
+    mute.setMuted(true, 0)
+    mute.setMuted(true, 5_000)
+    expect(mute.frame(6_000)).toBe('nothing')
   })
 })
