@@ -86,12 +86,14 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	if name := source.Specification.Computer; source.Kind == models.SourceComputer && name != "" {
 		waited := time.Now()
 		for {
-			// A coding tool's transcripts starting a pass go first: it is
-			// a session that just answered asking to be read in
-			// (CaptureCodingSession), a page that takes seconds, and
-			// behind four sources each part way through a long pass it
-			// waited the better part of an hour.
-			isUrgent := after == "" && slices.Contains(CodingAssistants, source.Specification.Type)
+			// A coding tool's transcripts go first, every page of the
+			// pass: it is a session that just answered asking to be read
+			// in (CaptureCodingSession), the pages are quick because a
+			// file that has not changed is not read again, and behind
+			// four sources each part way through a long pass a capture
+			// waited the better part of an hour. Urgent on its first page
+			// only, it still waited that long, a page at a time.
+			isUrgent := slices.Contains(CodingAssistants, source.Specification.Type)
 			turn := self.claimComputer(name, source.ID, isUrgent)
 			if turn.isFree {
 				break

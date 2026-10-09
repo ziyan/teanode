@@ -65,7 +65,7 @@ To see it working: install the hooks, open `claude` in a checkout TeaNode has pr
   Rationale: what the first live runs showed (see Surprises). People and months linked to a project are the person's business, not a coding tool's, and the lessons on file are about the agent's own errands.
   Date/Author: 2026-10-09, agent.
 - Decision: a coding tool's transcripts starting a pass go ahead of other sources waiting for the same computer, never ahead of the one reading now.
-  Rationale: the pass is a session asking to be read in and takes seconds; without it a capture waited behind hours of other sources' pages. Only the first page of a pass is urgent, so a long first read of the whole store still takes turns.
+  Rationale: the pass is a session asking to be read in and its pages are quick; without it a capture waited behind hours of other sources' pages. At first only a pass's first page was urgent, and a capture then waited behind the other sources one page at a time; every page is urgent now, which a long first read of the whole store also gets, once.
   Date/Author: 2026-10-09, agent.
 
 ## Outcomes & Retrospective
