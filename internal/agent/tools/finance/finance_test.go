@@ -493,7 +493,7 @@ func TestFinanceToolSaysWhichRowsOfHowMany(test *testing.T) {
 	if sent := operations.variables[0]; sent["offset"] != 2 || sent["limit"] != 2 {
 		test.Errorf("sent %v", sent)
 	}
-	if !strings.Contains(result.Content, "rows 3 to 4 of 7 shown") || !strings.Contains(result.Content, "offset 4 reads the next page") {
+	if !strings.Contains(result.Content, "rows 3 to 4 of 7 shown") || !strings.Contains(result.Content, "3 more, and offset 4 with limit 2 reads the next page") {
 		test.Errorf("%s", result.Content)
 	}
 	if _, err := call(test, operations, `{"operation":"transactions","is_duplicate_included":true}`); err != nil {

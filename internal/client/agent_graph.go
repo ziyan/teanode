@@ -68,6 +68,11 @@ type AgentGraphPage struct {
 	Edges    []*AgentEdge `json:"edges"`
 	Children []*AgentNode `json:"children"`
 	Contact  *Contact     `json:"contact"`
+
+	// LinkCount is how many links the page has, and NextLinkOffset where
+	// the next part of them starts, zero when Edges reaches the last.
+	LinkCount      int `json:"linkCount"`
+	NextLinkOffset int `json:"nextLinkOffset"`
 }
 
 // AgentLearnedFact is a fact with the page it sits on.
@@ -366,13 +371,14 @@ const (
 	DocumentAgentGraphIndex = `query ($under: String, $first: Int) {
 		AgentGraphIndex(under: $under, first: $first) ` + nodeFields + `
 	}`
-	DocumentAgentGraphPage = `query ($path: String!) {
-		AgentGraphPage(path: $path) {
+	DocumentAgentGraphPage = `query ($path: String!, $linkOffset: Int, $linkLimit: Int) {
+		AgentGraphPage(path: $path, linkOffset: $linkOffset, linkLimit: $linkLimit) {
 			node ` + pageNodeFields + `
 			facts ` + factFields + `
 			edges { relation status fromPath toPath }
 			children ` + nodeFields + `
 			contact { id name emails phones organization }
+			linkCount nextLinkOffset
 		}
 	}`
 	DocumentSearchAgentGraph = `query ($query: String!, $first: Int, $offset: Int) {
@@ -477,12 +483,25 @@ func AgentGraphIndex(ctx context.Context, connection *Client, under string, firs
 	return result.AgentGraphIndex, nil
 }
 
-// AgentGraphPageOf is one page with its facts and links.
+// AgentGraphPageOf is one page with its facts and every link.
 func AgentGraphPageOf(ctx context.Context, connection *Client, path string) (*AgentGraphPage, error) {
+	return AgentGraphPageWithLinks(ctx, connection, path, 0, 0)
+}
+
+// AgentGraphPageWithLinks is one page with its facts and linkLimit of its
+// links past linkOffset, or every link past it when linkLimit is zero.
+func AgentGraphPageWithLinks(ctx context.Context, connection *Client, path string, linkOffset, linkLimit int) (*AgentGraphPage, error) {
 	var result struct {
 		AgentGraphPage *AgentGraphPage `json:"AgentGraphPage"`
 	}
-	if err := connection.Execute(ctx, DocumentAgentGraphPage, map[string]any{"path": path}, &result); err != nil {
+	variables := map[string]any{"path": path}
+	if linkOffset > 0 {
+		variables["linkOffset"] = linkOffset
+	}
+	if linkLimit > 0 {
+		variables["linkLimit"] = linkLimit
+	}
+	if err := connection.Execute(ctx, DocumentAgentGraphPage, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.AgentGraphPage, nil

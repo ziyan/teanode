@@ -19,7 +19,8 @@ import (
 type AgentIdeaQuery interface {
 	// The caller's ideas in the statuses and kinds asked for, or in all,
 	// the highest ranked first, with the areas an idea can be in, in the
-	// order they are shown. Needs agent:use.
+	// order they are shown; a page of them when a limit is given, with
+	// how many there are in all. Needs agent:use.
 	ListAgentIdeas(ctx context.Context, arguments ListAgentIdeasArguments) (*AgentIdeaList, error)
 }
 
@@ -48,14 +49,26 @@ type AgentIdeaMutation interface {
 type ListAgentIdeasArguments struct {
 	IdeaStatuses []string `json:"ideaStatuses" graphapi:"nullable"`
 	IdeaKinds    []string `json:"ideaKinds" graphapi:"nullable"`
+	// IdeaIDs narrows the listing to these ideas, whatever their status
+	// when no statuses are given.
+	IdeaIDs []string `json:"ideaIds" graphapi:"nullable"`
+	// Limit is how many ideas a page holds, every one when zero, and
+	// Offset how many of the listing to pass over: the nextOffset of the
+	// page before.
+	Limit  int `json:"limit" graphapi:"nullable"`
+	Offset int `json:"offset" graphapi:"nullable"`
 	// Language is the reader's, for the catalog's ideas: ja, zh or en.
 	Language string `json:"language" graphapi:"nullable"`
 }
 
-// AgentIdeaList is the ideas, and the areas they can be in.
+// AgentIdeaList is the ideas, and the areas they can be in. TotalCount is
+// how many ideas match on every page, and NextOffset the offset of the
+// page after this one, zero on the last.
 type AgentIdeaList struct {
 	Ideas          []*models.AgentIdea   `json:"ideas"`
 	IdeaCategories []models.IdeaCategory `json:"ideaCategories"`
+	TotalCount     int                   `json:"totalCount"`
+	NextOffset     int                   `json:"nextOffset"`
 }
 
 // ProposeAgentIdeaArguments are the idea.
@@ -137,11 +150,42 @@ func (self *graph) ListAgentIdeas(ctx context.Context, arguments ListAgentIdeasA
 			return nil, fmt.Errorf("%w: %q is not catalog or personal", api.ErrInvalidArguments, kind)
 		}
 	}
+	if arguments.Limit < 0 || arguments.Offset < 0 {
+		return nil, fmt.Errorf("%w: limit and offset cannot be negative", api.ErrInvalidArguments)
+	}
 	ideas, err := worker.ListIdeas(ctx, self.writing(ctx), found, principal.User, statuses, kinds, arguments.Language)
 	if err != nil {
 		return nil, err
 	}
-	return &AgentIdeaList{Ideas: ideas, IdeaCategories: models.IdeaCategories()}, nil
+	list := pageOfIdeas(ideas, arguments.IdeaIDs, arguments.Limit, arguments.Offset)
+	list.IdeaCategories = models.IdeaCategories()
+	return list, nil
+}
+
+// pageOfIdeas is the ideas with the identifiers given, or all of them,
+// limit of them from offset, or every one past offset when limit is zero.
+func pageOfIdeas(ideas []*models.AgentIdea, ideaIds []string, limit, offset int) *AgentIdeaList {
+	if len(ideaIds) > 0 {
+		wanted := make(map[string]bool, len(ideaIds))
+		for _, ideaId := range ideaIds {
+			wanted[strings.TrimSpace(ideaId)] = true
+		}
+		narrowed := make([]*models.AgentIdea, 0, len(ideaIds))
+		for _, idea := range ideas {
+			if wanted[idea.ID] {
+				narrowed = append(narrowed, idea)
+			}
+		}
+		ideas = narrowed
+	}
+	list := &AgentIdeaList{TotalCount: len(ideas)}
+	ideas = ideas[min(offset, len(ideas)):]
+	if limit > 0 && len(ideas) > limit {
+		ideas = ideas[:limit]
+		list.NextOffset = offset + limit
+	}
+	list.Ideas = ideas
+	return list
 }
 
 func (self *graph) ProposeAgentIdea(ctx context.Context, arguments ProposeAgentIdeaArguments) (*models.AgentIdea, error) {

@@ -30,12 +30,12 @@ func (self *catalog) List(ctx context.Context) ([]mcp.Tool, error) {
 	}, nil
 }
 
-func (self *catalog) Call(ctx context.Context, name string, arguments json.RawMessage) (string, error) {
+func (self *catalog) Call(ctx context.Context, name string, arguments json.RawMessage) (Answer, error) {
 	self.called, self.arguments = name, string(arguments)
 	if name == "broken" {
-		return "", errors.New("the roof fell in")
+		return Answer{}, errors.New("the roof fell in")
 	}
-	return "raining in " + name, nil
+	return Answer{Text: "raining in " + name}, nil
 }
 
 // pipe carries the client's messages straight into the server, so that the
@@ -82,7 +82,8 @@ func TestTheClientInThisRepositoryCanUseThisServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %s", err)
 	}
-	if len(listed) != 2 || listed[0].Name != "weather" {
+	// The two tools, and result_more after them, which this package adds.
+	if len(listed) != 3 || listed[0].Name != "weather" || listed[2].Name != resultMoreName {
 		t.Fatalf("the catalog came back as %+v", listed)
 	}
 	if listed[0].InputSchema["type"] != "object" {
