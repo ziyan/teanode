@@ -646,23 +646,13 @@ export function PhoneHangUpIcon(props: IconProps) {
   )
 }
 
-// SpeakerIcon is a loudspeaker sounding; SpeakerOffIcon one silenced.
+// SpeakerIcon is a loudspeaker sounding.
 export function SpeakerIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M11 5 6 9H2v6h4l5 4V5z" />
       <path d="M15.5 8.5a5 5 0 0 1 0 7" />
       <path d="M19 5a10 10 0 0 1 0 14" />
-    </Icon>
-  )
-}
-
-export function SpeakerOffIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M11 5 6 9H2v6h4l5 4V5z" />
-      <path d="m22 9-6 6" />
-      <path d="m16 9 6 6" />
     </Icon>
   )
 }

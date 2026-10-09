@@ -4510,7 +4510,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 <button
                   type="button"
                   className="icon-button agent-voice-mute"
-                  aria-label={isMicrophoneMuted ? t('agentDrawer.voiceUnmute') : t('agentDrawer.voiceMute')}
+                  aria-label={t('agentDrawer.voiceMute')}
                   aria-pressed={isMicrophoneMuted}
                   onClick={toggleMicrophoneMuted}
                 >
