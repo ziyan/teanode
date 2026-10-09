@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
 // A device is something on the person's side that keeps a websocket open
@@ -57,7 +59,6 @@ type deviceLink struct {
 	attachedAt time.Time
 
 	mutex   sync.Mutex
-	next    int64
 	pending map[int64]chan deviceAnswer
 
 	// The programs this device holds open for us. Unlike pending, which is
@@ -70,9 +71,17 @@ func newDeviceLink(what string, connection DeviceConnection) *deviceLink {
 	return &deviceLink{what: what, connection: connection, attachedAt: time.Now(), pending: map[int64]chan deviceAnswer{}}
 }
 
-// ErrDeviceDetached is the computer leaving while a question was open.
-// A caller that can wait treats it like the computer not being there.
-var ErrDeviceDetached = errors.New("was detached")
+// ErrDeviceDetached is the device leaving while a question was open, or
+// before it could be sent. A caller that can wait treats it like the
+// device not being there.
+var ErrDeviceDetached = tools.ErrDeviceDetached
+
+// deviceRequestCount numbers the requests of every link, so that no two
+// links ever use the same number. Numbered per link, a browser that
+// reconnected counted from 1 again, and an answer the extension sent late,
+// on its new socket, to a request of the old one could be taken as the
+// answer to the new request with the same number.
+var deviceRequestCount atomic.Int64
 
 // Ask sends an action to the device and waits a minute for its answer.
 func (self *deviceLink) Ask(ctx context.Context, action string, args any) (json.RawMessage, error) {
@@ -90,9 +99,8 @@ func (self *deviceLink) AskFor(ctx context.Context, action string, args any, wai
 	if err != nil {
 		return nil, err
 	}
+	id := deviceRequestCount.Add(1)
 	self.mutex.Lock()
-	self.next++
-	id := self.next
 	channel := make(chan deviceAnswer, 1)
 	self.pending[id] = channel
 	self.mutex.Unlock()
@@ -104,7 +112,7 @@ func (self *deviceLink) AskFor(ctx context.Context, action string, args any, wai
 	message, _ := json.Marshal(deviceMessage{Type: "act", ID: id, Action: action, Args: encoded})
 	if err := self.connection.Send(message); err != nil {
 		forget()
-		return nil, fmt.Errorf("%s is gone: %w", self.what, err)
+		return nil, fmt.Errorf("%s is gone: %w: %w", self.what, ErrDeviceDetached, err)
 	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
