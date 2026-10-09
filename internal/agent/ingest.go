@@ -293,7 +293,12 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			// the requests made before the unfinished pass before it.
 			if clearedBefore := requestsAnsweredBefore(cursor, startedPass, isUnfinished); !clearedBefore.IsZero() {
 				if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-					return tx.ClearAgentSourceRunRequest(source.ID, clearedBefore.Add(time.Second))
+					// The pass's start is rounded down to the second, so a
+					// request made in that second, perhaps after the pass
+					// had read the transcript, stands: it costs at most one
+					// pass more, where clearing it could leave an answer
+					// unread until the night.
+					return tx.ClearAgentSourceRunRequest(source.ID, clearedBefore)
 				}); err != nil {
 					log.Warningf("cannot clear the request to read source %q: %s", source.ID, err)
 				}
