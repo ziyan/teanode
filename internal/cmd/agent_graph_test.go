@@ -345,3 +345,25 @@ func TestAnOverviewSaysWhatItCovers(t *testing.T) {
 		t.Errorf("stale: %q", stale)
 	}
 }
+
+// A page read a part of its links at a time says which links of how many
+// it shows and the flags that read the next part, the limit among them;
+// a page read whole says nothing.
+func TestTheLinkPageNoteSaysHowToReadOn(t *testing.T) {
+	for _, each := range []struct {
+		shownCount, linkOffset, linkLimit, linkCount, nextLinkOffset int
+		want                                                         string
+	}{
+		{40, 0, 40, 300, 40, "note: links 1 to 40 of 300; add --link-offset 40 --link-limit 40 for the next part"},
+		{20, 280, 40, 300, 0, "note: links 281 to 300 of 300"},
+		{0, 400, 40, 300, 0, "note: --link-offset 400 is past the end, the page has 300 links"},
+		{300, 0, 0, 300, 0, ""},
+		// A negative flag is not sent: every link, and nothing to say.
+		{10, -1, 0, 10, 0, ""},
+		{0, -1, -5, 0, 0, ""},
+	} {
+		if got := linkPageNote(each.shownCount, each.linkOffset, each.linkLimit, each.linkCount, each.nextLinkOffset); got != each.want {
+			t.Errorf("%+v: %q, want %q", each, got, each.want)
+		}
+	}
+}

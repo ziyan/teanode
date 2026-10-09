@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.120.4] - 2026-10-09
+
+### Fixed
+
+- Agents reached over MCP see every herdr session: the list comes a page at a time, those asking first, instead of one long answer some clients cut short. (#359)
+
+## [0.120.3] - 2026-10-09
+
+### Fixed
+
+- The agent's memory, idea, skill and finance tools answer in pages that fit what connected chat apps keep, and each page says how to read the next. (#361)
+
 ## [0.120.2] - 2026-10-09
 
 ### Fixed
