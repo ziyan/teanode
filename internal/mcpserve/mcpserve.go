@@ -8,6 +8,10 @@
 // not sampling. That is the half a harness wants and the half this server
 // has something to put in.
 //
+// A tool's text longer than ResultCharacters goes back a page at a time:
+// the first page, a line saying how to read on, and result_more, which this
+// package lists and answers itself, for the rest. See results.go.
+//
 // Nothing here knows about HTTP, about a database, or about what a tool
 // is: it takes one decoded JSON-RPC message and gives back the message to
 // send in reply, and asks a Tools for the catalog and for the work. A
@@ -43,7 +47,17 @@ const (
 // not.
 type Tools interface {
 	List(ctx context.Context) ([]mcp.Tool, error)
-	Call(ctx context.Context, name string, arguments json.RawMessage) (string, error)
+	Call(ctx context.Context, name string, arguments json.RawMessage) (Answer, error)
+}
+
+// Answer is what a tool said.
+type Answer struct {
+	Text string
+
+	// IsUntrusted is text that came from outside. The server wraps it as
+	// data, and wraps each page of it on its own when it is paged, so that
+	// a page read on with result_more is marked as the first one was.
+	IsUntrusted bool
 }
 
 // Server answers one client's messages.
@@ -51,12 +65,36 @@ type Server struct {
 	name    string
 	version string
 	tools   Tools
+
+	// results holds the rest of a long result for result_more, under
+	// holder, which is who the caller is.
+	results *ResultStore
+	holder  string
+
+	// resultCharacters is how much of a tool's text one answer carries.
+	resultCharacters int
 }
 
 // New builds a server that says it is called name, at version, offering
-// what tools holds.
+// what tools holds. It holds long results in a store of its own, which
+// lasts as long as it does; WithResults shares one across servers.
 func New(name, version string, tools Tools) *Server {
-	return &Server{name: name, version: version, tools: tools}
+	return &Server{
+		name: name, version: version, tools: tools,
+		results: NewResultStore(), resultCharacters: ResultCharacters,
+	}
+}
+
+// WithResults holds long results in results, for holder: a transport that
+// builds a server per request passes the same store to each, and the same
+// holder for the same caller, so that result_more on the next request
+// finds what this one held.
+func (self *Server) WithResults(results *ResultStore, holder string) *Server {
+	if results != nil {
+		self.results = results
+	}
+	self.holder = holder
+	return self
 }
 
 // Handle answers one message.
@@ -121,6 +159,7 @@ func (self *Server) list(ctx context.Context, request *mcp.Request) *mcp.Respons
 	if catalog == nil {
 		catalog = []mcp.Tool{}
 	}
+	catalog = append(catalog, resultMoreTool())
 	// No cursor: the whole catalog goes in one page. It is tens of tools,
 	// not thousands, and a client that asked for a page it cannot get is
 	// worse served by pagination than by the list.
@@ -143,16 +182,22 @@ func (self *Server) call(ctx context.Context, request *mcp.Request) *mcp.Respons
 	if len(parameters.Arguments) == 0 {
 		parameters.Arguments = json.RawMessage(`{}`)
 	}
-	text, err := self.tools.Call(ctx, parameters.Name, parameters.Arguments)
-	if err != nil {
-		// The tool failed, which is an answer, not a broken call.
-		return self.success(request, &mcp.CallResult{
-			Content: []mcp.Content{{Type: "text", Text: err.Error()}},
-			IsError: true,
-		})
+	// A failed tool is an answer, not a broken call, and so is a page of a
+	// failure read on with result_more; both carry isError.
+	var text string
+	var isError bool
+	if parameters.Name == resultMoreName {
+		// Already a page, and holding it again would only hand out a
+		// second id for the same text.
+		text, isError = self.resultMore(parameters.Arguments)
+	} else if answer, err := self.tools.Call(ctx, parameters.Name, parameters.Arguments); err != nil {
+		text, isError = self.paged(Answer{Text: err.Error()}, true), true
+	} else {
+		text = self.paged(answer, false)
 	}
 	return self.success(request, &mcp.CallResult{
 		Content: []mcp.Content{{Type: "text", Text: text}},
+		IsError: isError,
 	})
 }
 

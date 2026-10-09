@@ -22,6 +22,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/mailer"
+	"github.com/ziyan/teanode/internal/mcpserve"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/ceremony"
@@ -64,6 +65,11 @@ type graph struct {
 	// default; in Redis when one is configured, which is what makes passkeys
 	// work behind a load balancer.
 	ceremonies ceremony.Store
+
+	// mcpResults holds the rest of a tool's long answer over MCP until the
+	// caller reads on with result_more; see agent_mcp.go. Nil in a test that
+	// built the graph by hand, where each request holds its own.
+	mcpResults *mcpserve.ResultStore
 }
 
 // New builds the GraphQL component, generating the schema by reflection over
@@ -81,6 +87,7 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 		ceremonies:    ceremonies,
 		settings:      settings,
 		started:       time.Now(),
+		mcpResults:    mcpserve.NewResultStore(),
 	}
 
 	graphApi := graphapi.New()

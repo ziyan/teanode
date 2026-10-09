@@ -633,6 +633,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Dates are 2026-09-01, months 2026-09; amounts are decimals, money out negative. " +
 	"A holding in an investment account is an asset with a financeSecurity, and its valuations carry heldQuantity, unitPrice and costBasis; the account's own asset holds its cash. " +
 	"`trades` lists buys, sells and securities moved in or out, which are never spending or income; dividends, interest, fees, deposits and withdrawals are finance transactions. " +
+	"`transactions`, `trades` and `receipts` answer 15 rows when limit is left out, with totalCount and the offset of the next page in hint, and each row leaves out the fields that are empty, false or zero, and a providerCategoryPrimary that its providerCategoryDetailed begins with. " +
 	"`assets` leaves the holdings out unless is_holding is true or finance_account_id is given, since each position is an asset and there can be hundreds; narrow it with asset_kind or text (words in the name). " +
 	"`transactions`, `trades`, `spending_summary`, `net_worth` and `cash_flow` take `month` as shorthand for that whole month; without a range they cover all of time (net_worth the last thirty days, cash_flow twelve months). " +
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
@@ -750,7 +751,7 @@ func init() {
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones that need a spending category, not decided yet (a transfer has the transfer category, one that fits nothing the other category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
 					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
-					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, at most 200"),
+					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 15 when left out and at most 200"),
 					"offset":                      tools.IntegerProperty("for transactions, trades and receipts: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
 					"after":                       tools.StringProperty("for transactions, trades and receipts: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
@@ -1259,9 +1260,28 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			}
 		}
 	}
+	listKey := pagedListKeys[name]
+	// A limit of zero or less is none given, as the API reads it, and
+	// takes the tool's page rather than the API's.
+	if limit, _ := variables["limit"].(int); listKey != "" && limit <= 0 {
+		variables["limit"] = pageRows
+	}
 	var answered any
 	if err := client.RunFinance(ctx, executor, operation.graphqlOperation, variables, &answered); err != nil {
 		return nil, err
+	}
+	if page, isPage := answered.(map[string]any); isPage && listKey != "" {
+		// totalCount stays even when it is zero: a page that says it holds
+		// none of none is an answer.
+		totalCount, hasTotalCount := page["totalCount"]
+		page, _ = withoutEmpty(page).(map[string]any)
+		if hasTotalCount {
+			page["totalCount"] = totalCount
+		}
+		if rows, isRows := page["financeTransactions"].([]any); isRows {
+			withoutRepeatedProviderCategory(rows)
+		}
+		answered = page
 	}
 	payload := map[string]any{name: answered}
 	if hint := emptyHint(name, answered); hint != "" {
@@ -1328,12 +1348,86 @@ func emptyHint(name string, answered any) string {
 	return ""
 }
 
+// pagedListKeys are the operations that answer a page of rows, and where
+// in the answer the rows are.
+var pagedListKeys = map[string]string{"transactions": "financeTransactions", "trades": "financeTrades", "receipts": "financeReceipts"}
+
+// pageRows is how many rows a page of transactions, trades or receipts
+// holds when the model gives no limit. The API's own fifty came to thirty
+// thousand characters, which clients over MCP cut short without a word, and
+// twenty of rows with real merchant names and memos still ran past one part.
+const pageRows = 15
+
+// withoutEmpty is rows with the fields that hold nothing left out: null,
+// an empty string or list, false and zero, in the rows and in what they
+// hold. A transaction carried a dozen of them, most of every row.
+func withoutEmpty(value any) any {
+	switch value := value.(type) {
+	case []any:
+		kept := make([]any, 0, len(value))
+		for _, element := range value {
+			kept = append(kept, withoutEmpty(element))
+		}
+		return kept
+	case map[string]any:
+		kept := make(map[string]any, len(value))
+		for key, field := range value {
+			field = withoutEmpty(field)
+			switch field := field.(type) {
+			case nil:
+				continue
+			case string:
+				if field == "" {
+					continue
+				}
+			case bool:
+				if !field {
+					continue
+				}
+			case float64:
+				if field == 0 {
+					continue
+				}
+			case []any:
+				if len(field) == 0 {
+					continue
+				}
+			case map[string]any:
+				if len(field) == 0 {
+					continue
+				}
+			}
+			kept[key] = field
+		}
+		return kept
+	}
+	return value
+}
+
+// withoutRepeatedProviderCategory leaves a transaction's primary provider
+// category out where its detailed one starts with it, as a provider's
+// detailed categories do ("FOOD_AND_DRINK" and "FOOD_AND_DRINK_GROCERIES"):
+// the detailed one says both.
+func withoutRepeatedProviderCategory(rows []any) {
+	for _, row := range rows {
+		transaction, isObject := row.(map[string]any)
+		if !isObject {
+			continue
+		}
+		primary, _ := transaction["providerCategoryPrimary"].(string)
+		detailed, _ := transaction["providerCategoryDetailed"].(string)
+		if primary != "" && strings.HasPrefix(detailed, primary+"_") {
+			delete(transaction, "providerCategoryPrimary")
+		}
+	}
+}
+
 // pageHint says which rows of how many a page of transactions, trades or
-// receipts holds, so the answer can say "50 of 1,234" rather than leave
+// receipts holds, so the answer can say "15 of 1,234" rather than leave
 // the rest unmentioned, and how to read the next page. Empty when the
 // page holds every row.
 func pageHint(name string, variables map[string]any, answered any) string {
-	listKey := map[string]string{"transactions": "financeTransactions", "trades": "financeTrades", "receipts": "financeReceipts"}[name]
+	listKey := pagedListKeys[name]
 	page, isPage := answered.(map[string]any)
 	if listKey == "" || !isPage {
 		return ""
@@ -1344,8 +1438,17 @@ func pageHint(name string, variables map[string]any, answered any) string {
 	if offset == 0 && len(rows) >= int(totalCount) {
 		return ""
 	}
+	limit, _ := variables["limit"].(int)
+	limitClause := ""
+	if limit != pageRows {
+		limitClause = fmt.Sprintf(" with limit %d", limit)
+	}
 	if _, isAfterGiven := variables["after"]; isAfterGiven {
-		return fmt.Sprintf("%d of %d shown, read from the cursor given; tell the person both numbers", len(rows), int(totalCount))
+		hint := fmt.Sprintf("%d of %d shown, read from the cursor given; tell the person both numbers", len(rows), int(totalCount))
+		if nextCursor, _ := page["nextCursor"].(string); nextCursor != "" {
+			hint += fmt.Sprintf(", and after %s%s reads the next page", nextCursor, limitClause)
+		}
+		return hint
 	}
 	// An offset past the last row holds nothing, and "rows 1001 to 1000"
 	// would say a range that is not there.
@@ -1354,7 +1457,7 @@ func pageHint(name string, variables map[string]any, answered any) string {
 	}
 	hint := fmt.Sprintf("rows %d to %d of %d shown; tell the person both numbers", offset+1, offset+len(rows), int(totalCount))
 	if offset+len(rows) < int(totalCount) {
-		hint += fmt.Sprintf(", and offset %d reads the next page", offset+len(rows))
+		hint += fmt.Sprintf(", %d more, and offset %d%s reads the next page", int(totalCount)-offset-len(rows), offset+len(rows), limitClause)
 	}
 	return hint
 }

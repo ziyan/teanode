@@ -48,6 +48,10 @@ type directRun struct {
 	// that has to work from wherever the caller is; empty when there is none.
 	origin string
 
+	// resultCharacters is how much of a tool's answer the caller takes in
+	// one piece (tools.ResultBudgeting); zero is the usual bound.
+	resultCharacters int
+
 	mutex    sync.Mutex
 	recalled []string
 }
@@ -90,6 +94,12 @@ func (self *directRun) Loaded() map[string]bool {
 }
 
 func (self *directRun) Load(name string) {}
+
+// ResultCharacters is what the caller takes of an answer in one piece
+// (tools.ResultBudgeting). A client of the protocol cuts a long answer
+// itself, at a length of its own and without saying where, so a tool that
+// pages its answer pages it to what the caller said it takes.
+func (self *directRun) ResultCharacters() int { return self.resultCharacters }
 
 func (self *directRun) Recall(line string) {
 	self.mutex.Lock()
@@ -178,7 +188,8 @@ func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operat
 
 // CallDirect runs one tool by name, as this person, outside a
 // conversation. The tool decides what it may do; the person's permissions
-// decided whether it was offered at all.
+// decided whether it was offered at all. resultCharacters is how much of an
+// answer the caller takes in one piece, or zero for the usual bound.
 func (self *Agent) CallDirect(
 	ctx context.Context,
 	owner *models.User,
@@ -186,6 +197,7 @@ func (self *Agent) CallDirect(
 	operations tools.Operations,
 	surface string,
 	origin string,
+	resultCharacters int,
 	name string,
 	arguments json.RawMessage,
 ) (*tools.Result, error) {
@@ -206,6 +218,7 @@ func (self *Agent) CallDirect(
 	run := &directRun{
 		agent: self, owner: owner, agentModel: person,
 		operations: operations, surface: surface, offered: offered, origin: origin,
+		resultCharacters: resultCharacters,
 	}
 	// Confirmed, because the person confirmed by making the call: a
 	// harness asks its own person before it runs a tool, and there is no
@@ -247,6 +260,7 @@ var (
 	_ tools.KnowledgeSearching = (*directRun)(nil)
 	_ tools.Remembering        = (*directRun)(nil)
 	_ tools.Linking            = (*directRun)(nil)
+	_ tools.ResultBudgeting    = (*directRun)(nil)
 )
 
 // SharedLink is a full address that opens one file with no sign-in
