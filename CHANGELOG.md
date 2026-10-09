@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.121.1] - 2026-10-09
+
+### Fixed
+
+- The agent no longer gives up on the person's browser when the extension's connection drops for a moment: reads are retried once it reconnects, and an interrupted action is reported as unknown rather than repeated. (#366)
+
 ## [0.121.0] - 2026-10-09
 
 ### Added
