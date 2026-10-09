@@ -90,7 +90,12 @@ const (
 	// jobs long and the cursor is the one thing written down after every
 	// page; both go when the pass reaches the end of the tree.
 	cursorPassStarted = "passStartedAt"
-	cursorPassSeen    = "passSeen"
+
+	// cursorRequestKeptSince is when the last unfinished pass began, which
+	// kept the request to read the source for the pass after it; that
+	// pass answers what was asked before it, finished or not.
+	cursorRequestKeptSince = "requestKeptSince"
+	cursorPassSeen         = "passSeen"
 
 	// cursorPassRefused is how many things this pass refused, kept the
 	// same way, so that the count on the source's row is this pass's
@@ -281,11 +286,14 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			// markSource runs the source again for it. Cleared at the end
 			// rather than the start, so that the request keeps the pass
 			// at the front of its computer's queue page after page.
-			// Not when a page ran out of time: what was not read is what
-			// the next pass is for, and it keeps the request's place.
-			if !isUnfinished && !startedPass.IsZero() {
+			// A pass with a page that ran out of time keeps the request for
+			// one more pass, which is what reads what it missed; but only
+			// one, or a file that never reads in time would keep its source
+			// at the front of the computer's queue for ever. So it answers
+			// the requests made before the unfinished pass before it.
+			if clearedBefore := requestsAnsweredBefore(cursor, startedPass, isUnfinished); !clearedBefore.IsZero() {
 				if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-					return tx.ClearAgentSourceRunRequest(source.ID, startedPass.Add(time.Second))
+					return tx.ClearAgentSourceRunRequest(source.ID, clearedBefore.Add(time.Second))
 				}); err != nil {
 					log.Warningf("cannot clear the request to read source %q: %s", source.ID, err)
 				}
@@ -345,6 +353,29 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		return nil
 	}
 	return err
+}
+
+// requestsAnsweredBefore is the moment before which the requests to read
+// a source are answered by a pass that has just read to the end of its
+// tree, zero for none; it keeps in the cursor when an unfinished pass
+// began. A finished pass answers what was asked before it started. An
+// unfinished one leaves the request for the pass after it, which reads
+// what it missed, and answers only what was asked before the unfinished
+// pass before it: so a file that never reads in time costs one pass at the
+// front of the computer's queue, not every pass.
+func requestsAnsweredBefore(cursor map[string]any, startedPass time.Time, isUnfinished bool) time.Time {
+	if !isUnfinished {
+		delete(cursor, cursorRequestKeptSince)
+		return startedPass
+	}
+	var keptSince time.Time
+	if said, isSaid := cursor[cursorRequestKeptSince].(string); isSaid {
+		keptSince, _ = time.Parse(time.RFC3339, said)
+	}
+	if !startedPass.IsZero() {
+		cursor[cursorRequestKeptSince] = startedPass.Format(time.RFC3339)
+	}
+	return keptSince
 }
 
 // waitedUntil is when a source that could not reach its computer tries

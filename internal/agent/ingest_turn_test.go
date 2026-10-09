@@ -140,3 +140,25 @@ func TestAnAgentAnswerNamesItsEffort(t *testing.T) {
 		}
 	}
 }
+
+// A request to read a source is answered by the pass that finishes after
+// it; one with a page that ran out of time keeps it for the next pass,
+// but not for ever.
+func TestARequestOutlivesOneUnfinishedPassOnly(t *testing.T) {
+	cursor := map[string]any{}
+	first := time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
+	second := first.Add(time.Minute)
+	third := second.Add(time.Minute)
+	if answered := requestsAnsweredBefore(cursor, first, true); !answered.IsZero() {
+		t.Fatalf("an unfinished pass answers nothing the first time: %v", answered)
+	}
+	if answered := requestsAnsweredBefore(cursor, second, true); !answered.Equal(first) {
+		t.Fatalf("a second unfinished pass answers what was asked before the first: %v", answered)
+	}
+	if answered := requestsAnsweredBefore(cursor, third, false); !answered.Equal(third) {
+		t.Fatalf("a finished pass answers what was asked before it began: %v", answered)
+	}
+	if _, isKept := cursor[cursorRequestKeptSince]; isKept {
+		t.Fatalf("and forgets the unfinished passes")
+	}
+}
