@@ -224,9 +224,15 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 			if err != nil {
 				return err
 			}
+			// A receipt the person took a match off is theirs: reading it
+			// again proposes its charges and matches none of them.
+			isLeftToPerson, err := tx.IsFinanceReceiptLeftToPerson(agentRow.ID, stored.ID)
+			if err != nil {
+				return err
+			}
 			isAutomaticallyMatched := false
 			for index, candidate := range candidates {
-				if !candidate.IsAutomatic || recorded.HandMatchRefusalReason != "" {
+				if !candidate.IsAutomatic || recorded.HandMatchRefusalReason != "" || isLeftToPerson {
 					candidates[index].IsAutomatic = false
 					continue
 				}

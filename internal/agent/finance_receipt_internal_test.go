@@ -533,3 +533,30 @@ func TestSyncLeavesAnUnmatchedReceiptToThePerson(t *testing.T) {
 		t.Fatalf("MatchReceipt: %s", err)
 	}
 }
+
+// A receipt the person took a match off is not matched again when the same
+// message is read again: its charge is proposed, and left for them.
+func TestRecordingAgainLeavesAnUnmatchedReceiptToThePerson(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	receiptId := fixture.recordWaitingReceipt(t, "mail-read-twice")
+	applied := fixture.syncAndFollow(t, &finance.SyncResult{Added: []finance.Transaction{
+		inventedTransaction("order-charge", "2026-09-11", "-30.00", "EXAMPLE OUTFITTERS", "Example Outfitters", ""),
+	}})
+	matches := fixture.receiptMatches(t, receiptId)
+	if len(matches) != 1 {
+		t.Fatalf("the charge is matched: %+v", matches)
+	}
+	if _, err := fixture.worker.UnmatchReceipt(t.Context(), fixture.agent, receiptId, matches[0].FinanceTransactionID); err != nil {
+		t.Fatalf("UnmatchReceipt: %s", err)
+	}
+	recorded, err := fixture.worker.RecordReceipt(t.Context(), fixture.agent, inventedOrderReceipt("mail-read-twice"), ReceiptRecording{})
+	if err != nil {
+		t.Fatalf("RecordReceipt: %s", err)
+	}
+	if recorded.FinanceReceipt.ID != receiptId || len(recorded.FinanceReceipt.ReceiptMatches) != 0 {
+		t.Fatalf("the same receipt, read again, stays unmatched: %+v", recorded.FinanceReceipt)
+	}
+	if matches := fixture.receiptMatches(t, receiptId); len(matches) != 0 || len(applied.InsertedFinanceTransactionIDs) != 1 {
+		t.Fatalf("the match the person took off is not put back: %+v", matches)
+	}
+}

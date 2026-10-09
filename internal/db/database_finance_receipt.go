@@ -56,6 +56,10 @@ type FinanceReceiptOperation interface {
 	// matches, or nil.
 	GetFinanceReceipt(agentId, receiptId string) (*models.FinanceReceipt, error)
 
+	// IsFinanceReceiptLeftToPerson says the person took a match off the
+	// receipt by hand, so nothing matches it on its own again.
+	IsFinanceReceiptLeftToPerson(agentId, receiptId string) (bool, error)
+
 	// FindFinanceReceiptBySource is the agent's receipt read from a
 	// source, or nil: the kind and the id the kind names.
 	FindFinanceReceiptBySource(agentId string, receiptSourceKind models.ReceiptSourceKind, sourceId string) (*models.FinanceReceipt, error)
@@ -688,6 +692,15 @@ func (self *transaction) GetFinanceReceipt(agentId, receiptId string) (*models.F
 		return nil, err
 	}
 	return receipts[0], nil
+}
+
+func (self *transaction) IsFinanceReceiptLeftToPerson(agentId, receiptId string) (bool, error) {
+	var isLeftToPerson []bool
+	if err := self.tx.Raw(`SELECT "is_left_to_person" FROM "agent_finance_receipt" WHERE "agent_id" = ? AND "id" = ?`,
+		agentId, receiptId).Scan(&isLeftToPerson).Error; err != nil {
+		return false, err
+	}
+	return len(isLeftToPerson) > 0 && isLeftToPerson[0], nil
 }
 
 func (self *transaction) FindFinanceReceiptBySource(agentId string, receiptSourceKind models.ReceiptSourceKind, sourceId string) (*models.FinanceReceipt, error) {
