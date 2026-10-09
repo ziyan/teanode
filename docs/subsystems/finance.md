@@ -577,10 +577,13 @@ less than printed". Receipts are matched to the charges they explain through
 The matcher (`ProposeReceiptMatches`) looks at money out in the receipt's
 currency posted from three days before the purchase to seven after, and
 leaves out a charge its receipts already explain in full. It matches without
-asking only the one charge of the exact amount (or the one on the card the
-receipt prints, when several have it), and only when that charge is on the
-printed card or shares a word of the merchant, and no other receipt is
-matched to it. An exact amount alone is a candidate for the person. So an
+asking only the one charge of the exact amount, and only when it shares a
+word of the merchant and no other receipt is matched to it. An exact amount
+alone is a candidate for the person. The card digits a receipt prints only
+sort the candidates: four digits are a coincidence often enough, and a
+phone's wallet (tap to pay) prints a card number of its own. They keep a
+match from being made without asking only when they are the digits of
+another of the person's accounts. So an
 order email and its shipping email, or a photo and the email of the same
 purchase, never both explain one charge on their own; the person may still
 match the second by hand for what is left. The receipt job's prompt records

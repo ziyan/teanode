@@ -330,15 +330,17 @@ func merchantWords(text string) map[string]bool {
 // receipt's matches to its other charges leave of its total when that is
 // less; a receipt they explain in full has no candidates.
 //
-// At most one is automatic: the one exact amount, or the one exact amount
-// on the receipt's account when it prints digits; and only when it is on
-// that account or shares a word of the merchant, since an amount alone is
-// a coincidence often enough, never when it is on an account whose known
-// digits are not the ones the receipt prints, and only when no other
-// receipt is matched to it, since an order email and its shipping email, or a photo and the
-// email of the same purchase, would otherwise both explain one charge.
-// Anything else is left for the person, never guessed. A receipt with no
-// day of purchase has no candidates.
+// At most one is automatic: the one exact amount, and only when it shares
+// a word of the merchant, since an amount alone is a coincidence often
+// enough. The card's digits never make a match automatic, since four
+// digits are a coincidence often enough too and a phone's wallet prints
+// a card number of its own; they only keep one from being automatic when
+// they are the digits of another of the person's accounts. Never when
+// another receipt is matched to it either, since an order email and its
+// shipping email, or a photo and the email of the same purchase, would
+// otherwise both explain one charge. Anything else is left for the
+// person, never guessed. A receipt with no day of purchase has no
+// candidates.
 func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.FinanceTransaction, accountMaskByFinanceAccountId map[string]string, coverageByFinanceTransactionId map[string]*ReceiptMatchCoverage) []ReceiptMatchCandidate {
 	proposals := []ReceiptMatchCandidate{}
 	if receipt == nil || receipt.PurchasedOn == "" {
@@ -410,9 +412,18 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 		if dayDistance < 0 {
 			dayDistance = -dayDistance
 		}
-		// The receipt prints the digits of one card and the charge is on an
-		// account whose digits are known and are not them.
-		isOnOtherAccount[candidate.ID] = paymentAccountMask != "" && accountMask != "" && !isMaskMatch(accountMask, paymentAccountMask)
+		// The receipt prints the digits of another of the person's
+		// accounts. Digits no account has say nothing: a phone's wallet
+		// prints a card number of its own, and a replacement or second
+		// card has its own digits on the same account.
+		isOnOtherAccount[candidate.ID] = false
+		if paymentAccountMask != "" && !isMaskMatch(accountMask, paymentAccountMask) {
+			for financeAccountId, otherMask := range accountMaskByFinanceAccountId {
+				if financeAccountId != candidate.FinanceAccountID && isMaskMatch(otherMask, paymentAccountMask) {
+					isOnOtherAccount[candidate.ID] = true
+				}
+			}
+		}
 		proposals = append(proposals, ReceiptMatchCandidate{
 			FinanceTransactionID: candidate.ID, MatchedAmount: FormatAmount(matchedAmount),
 			IsExactAmount:        chargedAmount.Cmp(totalAmount) == 0,
@@ -435,30 +446,24 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 		}
 		return proposals[left].FinanceTransactionID < proposals[right].FinanceTransactionID
 	})
-	var exactIndexes, sameAccountExactIndexes []int
+	automaticIndex := -1
 	for index, proposal := range proposals {
 		if !proposal.IsExactAmount {
 			continue
 		}
-		exactIndexes = append(exactIndexes, index)
-		if proposal.IsSameAccount {
-			sameAccountExactIndexes = append(sameAccountExactIndexes, index)
+		if automaticIndex >= 0 {
+			automaticIndex = -1
+			break
 		}
-	}
-	automaticIndex := -1
-	switch {
-	case len(exactIndexes) == 1:
-		automaticIndex = exactIndexes[0]
-	case paymentAccountMask != "" && len(sameAccountExactIndexes) == 1:
-		automaticIndex = sameAccountExactIndexes[0]
+		automaticIndex = index
 	}
 	if automaticIndex >= 0 {
 		chosen := proposals[automaticIndex]
 		// Automatic only for the whole of the charge and of the receipt:
 		// one explained in part already is the person's to judge.
-		// Never on an account the receipt's digits say it was not paid
-		// with, however well the amount and the merchant agree.
-		if (!chosen.IsSameAccount && !chosen.IsMerchantNameShared) || hasOtherReceipt[chosen.FinanceTransactionID] ||
+		// Never when the receipt's digits name another account, however
+		// well the amount and the merchant agree.
+		if !chosen.IsMerchantNameShared || hasOtherReceipt[chosen.FinanceTransactionID] ||
 			isOnOtherAccount[chosen.FinanceTransactionID] || chosen.MatchedAmount != FormatAmount(totalAmount) {
 			automaticIndex = -1
 		}
