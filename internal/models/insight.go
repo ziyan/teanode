@@ -426,6 +426,18 @@ type AgentReference struct {
 	MerchantName         string `json:"merchantName,omitempty" graphapi:"nullable"`
 	Description          string `json:"description,omitempty" graphapi:"nullable"`
 
+	// AgentMessageID points at a message earlier in the same conversation
+	// instead: the person swiped it, or picked Reply on it, to say what
+	// they are answering. QuotedRole is whose it was, "user" or
+	// "assistant", and QuotedText what it said, cut short; the server
+	// fills both in from the stored message whatever the dashboard sent,
+	// and drops the reference when the message is not in the
+	// conversation. A line the dashboard has no id for yet, an answer
+	// still arriving, is quoted by its words alone.
+	AgentMessageID string `json:"agentMessageId,omitempty" graphapi:"nullable"`
+	QuotedRole     string `json:"quotedRole,omitempty" graphapi:"nullable"`
+	QuotedText     string `json:"quotedText,omitempty" graphapi:"nullable"`
+
 	// FinanceTransactionContext is what the model is told about the
 	// finance transaction in the turn it was pointed at: read from the
 	// database when the turn is kept, and never stored, so an earlier

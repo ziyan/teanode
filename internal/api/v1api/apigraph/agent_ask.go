@@ -791,6 +791,20 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, api.ErrNotFound
 		}
 	}
+	// A message replied to must be one of this conversation's, refused
+	// the same way. The agent reads it again when it keeps the turn.
+	for _, reference := range arguments.References {
+		if strings.TrimSpace(reference.AgentMessageID) == "" {
+			continue
+		}
+		replied, err := tx.GetAgentConversationMessage(conversation.ID, strings.TrimSpace(reference.AgentMessageID))
+		if err != nil {
+			return nil, err
+		}
+		if replied == nil {
+			return nil, api.ErrNotFound
+		}
+	}
 	// Where the dashboard was reached, for a link to a file the person asks
 	// to open on another device.
 	origin := ""

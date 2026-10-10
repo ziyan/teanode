@@ -188,7 +188,7 @@ func keepPersonTurn(tx db.Transaction, settings *AskSettings) (*models.AgentMess
 	// that keeps them: a finance transaction that is not the agent's is
 	// dropped, and one that is carries what the model is told about it.
 	if len(settings.References) > 0 {
-		references, err := resolveReferences(tx, settings.Agent.ID, settings.References)
+		references, err := resolveReferences(tx, settings.Agent.ID, settings.Conversation.ID, settings.References)
 		if err != nil {
 			return nil, err
 		}

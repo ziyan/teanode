@@ -6649,8 +6649,11 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   min-width: 0;
 }
 
+/* Sideways it clips rather than scrolls: a message swiped across must not
+   make the conversation wider than the drawer. */
 .agent-drawer-transcript {
   flex: 1;
+  overflow-x: clip;
   overflow-y: auto;
   padding: 12px;
   display: flex;
@@ -7085,14 +7088,144 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   margin: 0 0 6px;
 }
 
-/* The question a late answer answers, above it and quieter: the card it
-   was given on may be far up the conversation by the time it is answered. */
+/* The question a late answer answers, or the message a reply answers,
+   above it and quieter: either may be far up the conversation by now. A
+   long one shows its start. */
 .agent-line.user .agent-in-reply-to {
   margin: 0 0 6px;
   padding-left: 8px;
   border-left: 2px solid currentColor;
   opacity: 0.75;
   font-size: 0.9em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* A message that can be replied to or copied. On a touch screen it
+   follows a finger swiped across, and the browser keeps the vertical
+   scroll; let go, it springs back. */
+.agent-line-swipeable {
+  position: relative;
+  touch-action: pan-y;
+  transition: transform 0.18s ease-out;
+}
+
+/* While it moves, nothing in it is selected and no callout opens. */
+.agent-line-swipeable.swiping {
+  transition: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The mark that shows in the room the swipe opens, brighter the nearer
+   letting go is to acting: Reply on the right of a line swiped left, Copy
+   on the left of one swiped right. */
+.agent-swipe-action {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.agent-swipe-action.reply {
+  left: calc(100% + 16px);
+}
+
+.agent-swipe-action.copy {
+  right: calc(100% + 16px);
+}
+
+/* A swipe whose copy the browser refused: the mark becomes a button to
+   tap, which the browser does let copy. */
+.agent-swipe-action.copy.waiting {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--text);
+  pointer-events: auto;
+}
+
+/* Copied: the mark, and the button, turn to a green tick for a moment. */
+.agent-swipe-action.copied,
+.agent-line-actions .icon-action.copied {
+  color: var(--good);
+}
+
+/* With a mouse, Copy and Reply in the message's corner on hover; reached
+   by keyboard as well. Never on a touch screen, where the swipes are. */
+.agent-line-actions {
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.agent-line-actions .icon-action {
+  padding: 2px;
+}
+
+.agent-line-swipeable:focus-within .agent-line-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) {
+  .agent-line-swipeable:hover .agent-line-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.agent-line-actions .icon-action:hover {
+  color: var(--text);
+}
+
+/* The message the next turn answers, above the box: who said it and its
+   start, with a way to drop it. */
+.agent-reply-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--muted);
+}
+
+.agent-reply-quote-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-reply-quote-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-reply-quote-text {
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .agent-attachment-chip,

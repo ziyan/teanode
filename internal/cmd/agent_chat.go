@@ -35,6 +35,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringFlag{Name: "effort", Usage: "how hard the model thinks before it answers: low, medium or high; the agent's own choice by default"},
 			&cli.BoolFlag{Name: "quiet", Usage: "print the answer only, not what the agent did on the way"},
 			&cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the agent with the message; a picture is shown to it, a text file read to it, anything else named"},
+			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
 		},
 		Action: runAgentAsk,
 	}
@@ -223,7 +224,14 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 		}
 		attachmentIds = append(attachmentIds, attachment.ID)
 	}
-	return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, Effort: command.String("effort")}, command.Bool("json"), command.Bool("quiet"))
+	var references []client.AgentReference
+	if replyTo := strings.TrimSpace(command.String("reply-to")); replyTo != "" {
+		if command.Bool("new") {
+			return fmt.Errorf("--reply-to names a message of an existing conversation; a new one has none")
+		}
+		references = append(references, client.AgentReference{AgentMessageID: replyTo})
+	}
+	return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort")}, command.Bool("json"), command.Bool("quiet"))
 }
 
 // askOnce says one thing and follows the run to its end, answering
@@ -416,6 +424,11 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 		when := message.CreatedAt.Local().Format("15:04")
 		switch message.Role {
 		case "user":
+			for _, reference := range message.References {
+				if reference.QuotedText != "" {
+					_, _ = fmt.Fprintf(command.Writer, "[%s] ↪ replying to %s\n", when, quotedLine(reference))
+				}
+			}
 			_, _ = fmt.Fprintf(command.Writer, "[%s] you: %s\n", when, message.Content)
 		case "assistant":
 			if strings.TrimSpace(message.Content) != "" {
@@ -453,6 +466,19 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 		}
 	}
 	return nil
+}
+
+// quotedLine is a message replied to, in a line: whose, and how it began.
+func quotedLine(reference client.AgentReference) string {
+	whose := "the agent"
+	if reference.QuotedRole == "user" {
+		whose = "you"
+	}
+	quoted := strings.Join(strings.Fields(reference.QuotedText), " ")
+	if runes := []rune(quoted); len(runes) > 80 {
+		quoted = string(runes[:80]) + "…"
+	}
+	return fmt.Sprintf("%s: %q", whose, quoted)
 }
 
 func runAgentConversationNew(ctx context.Context, command *cli.Command) error {
