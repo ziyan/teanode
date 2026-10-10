@@ -70,6 +70,46 @@ final class AppModel {
         }
     }
 
+    /// A file being shown in Quick Look: pictures with pinch to zoom, and
+    /// any other kind the phone can show.
+    var previewAddress: URL?
+
+    /// Pictures already read, by their address on the server.
+    private var pictures: [String: UIImage] = [:]
+
+    /// Reads a picture the server keeps, once.
+    func picture(_ path: String) async -> UIImage? {
+        if let known = pictures[path] { return known }
+        guard let connection, let data = try? await connection.download(path), let picture = UIImage(data: data) else { return nil }
+        pictures[path] = picture
+        return picture
+    }
+
+    /// Shows a file the server keeps in Quick Look: read, written to a
+    /// place of the app's own under its name, then opened.
+    func preview(_ path: String, name: String) async {
+        guard let connection else { return }
+        do {
+            let data = try await connection.download(path)
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let safeName = name.isEmpty ? "file" : name.replacingOccurrences(of: "/", with: "-")
+            let address = folder.appendingPathComponent(safeName)
+            try data.write(to: address)
+            previewAddress = address
+        } catch {
+            previewProblemText = describe(error)
+        }
+    }
+
+    /// Why a file could not be shown.
+    var previewProblemText: String?
+
+    var isShowingPreviewProblem: Bool {
+        get { previewProblemText != nil }
+        set { if !newValue { previewProblemText = nil } }
+    }
+
     /// Reads the agent's name.
     func loadAgentName() async {
         if let connection, let name = try? await connection.agentName() {

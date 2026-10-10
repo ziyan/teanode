@@ -49,7 +49,9 @@ struct ConversationView: View {
                         .onAppear { loadEarlier(scroller) }
                     }
                     ForEach(ConversationItem.items(of: shownLines)) { item in
-                        ConversationItemView(item: item, model: model, isShowingUsage: isShowingUsage)
+                        ConversationItemView(
+                            item: item, model: model, isShowingUsage: isShowingUsage,
+                            isShowingToolCalls: isShowingToolCalls || model.conversation?.jobKind == "mcp")
                             .id(item.id)
                     }
                     if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
@@ -70,7 +72,7 @@ struct ConversationView: View {
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40
             } action: { _, isNowAtEnd in
@@ -138,6 +140,13 @@ struct ConversationView: View {
             }
         }
         .environment(\.openURL, OpenURLAction { address in app.route(address) })
+        .environment(\.pictureConversationId, model.conversationId)
+        .quickLookPreview(Bindable(app).previewAddress)
+        .alert("Cannot open the file", isPresented: Bindable(app).isShowingPreviewProblem, presenting: app.previewProblemText) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { text in
+            Text(text)
+        }
         .sensoryFeedback(.success, trigger: model.sentCount)
         .sensoryFeedback(.warning, trigger: model.sendProblemText) { _, new in new != nil }
         .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
@@ -164,7 +173,7 @@ struct ConversationView: View {
         return model.transcript.lines.filter { line in
             switch line.kind {
             case .tool:
-                return isShowingToolCalls || isMCPRecord
+                return isShowingToolCalls || isMCPRecord || !AgentFile.of(toolResult: line.text).isEmpty
             case .checkIn:
                 return isShowingWorkingNotes || line.detail == CheckInOrigin.goalNeedsYou.rawValue
             case .note:
@@ -283,6 +292,7 @@ struct ConversationItemView: View {
     let item: ConversationItem
     let model: ConversationModel
     let isShowingUsage: Bool
+    let isShowingToolCalls: Bool
 
     var body: some View {
         switch item {
@@ -311,7 +321,12 @@ struct ConversationItemView: View {
                     }
                 }
             case .tool:
-                ToolLine(line: line)
+                VStack(alignment: .leading, spacing: 6) {
+                    if isShowingToolCalls {
+                        ToolLine(line: line)
+                    }
+                    ToolFiles(line: line)
+                }
             case .checkIn:
                 CheckInLine(line: line)
             case .note:
@@ -397,9 +412,7 @@ struct PersonBubble: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(line.attachments, id: \.id) { attachment in
-                    Label(attachment.name, systemImage: "photo")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    AttachmentView(attachment: attachment)
                 }
                 if !line.text.isEmpty {
                     Text(line.text)
@@ -617,6 +630,8 @@ struct MarkdownView: View {
                     }
                 case .rule:
                     Divider()
+                case .image(let alt, let address, let link):
+                    AnswerPicture(alt: alt, address: address, link: link)
                 }
             }
         }
@@ -962,34 +977,26 @@ struct CodingQuestionCard: View {
 }
 
 /// Composer is where the person writes: a glass field floating over the
-/// conversation, with pictures to add and a button to send, or to stop the
+/// conversation, with files to add and a button to send, or to stop the
 /// turn that is running.
 struct Composer: View {
     @Bindable var model: ConversationModel
     @Environment(AppModel.self) private var app
     @State private var pickedItems: [PhotosPickerItem] = []
+    @State private var isPickingPhotos = false
+    @State private var isTakingPicture = false
+    @State private var isPickingFiles = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
-            if !model.pictures.isEmpty {
+            if !model.pendingFiles.isEmpty {
                 ScrollView(.horizontal) {
                     HStack {
-                        ForEach(model.pictures) { picture in
-                            Image(uiImage: picture.preview)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 56, height: 56)
-                                .clipShape(.rect(cornerRadius: 10, style: .continuous))
-                                .overlay(alignment: .topTrailing) {
-                                    Button {
-                                        model.pictures.removeAll { $0.id == picture.id }
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .symbolRenderingMode(.hierarchical)
-                                    }
-                                    .accessibilityLabel("Remove picture")
-                                }
+                        ForEach(model.pendingFiles) { file in
+                            PendingFileChip(file: file) {
+                                model.pendingFiles.removeAll { $0.id == file.id }
+                            }
                         }
                     }
                 }
@@ -997,13 +1004,31 @@ struct Composer: View {
             }
             GlassEffectContainer {
                 HStack(alignment: .bottom, spacing: 8) {
-                    PhotosPicker(selection: $pickedItems, maxSelectionCount: 4, matching: .images) {
+                    Menu {
+                        Button {
+                            isPickingPhotos = true
+                        } label: {
+                            Label("Photo library", systemImage: "photo.on.rectangle")
+                        }
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                isTakingPicture = true
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        Button {
+                            isPickingFiles = true
+                        } label: {
+                            Label("Files", systemImage: "folder")
+                        }
+                    } label: {
                         Image(systemName: "plus")
                             .font(.title3)
                             .frame(minWidth: 44, minHeight: 44)
                     }
                     .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("Add pictures")
+                    .accessibilityLabel("Add files")
 
                     TextField(placeholder, text: $model.draft, axis: .vertical)
                         .lineLimit(1...6)
@@ -1012,7 +1037,7 @@ struct Composer: View {
                         .padding(.vertical, 12)
                         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
 
-                    if model.runningRunId != nil, model.draft.isEmpty, model.pictures.isEmpty {
+                    if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
                         Button {
                             Task { await model.stop() }
                         } label: {
@@ -1041,6 +1066,23 @@ struct Composer: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
+        .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
+        .fullScreenCover(isPresented: $isTakingPicture) {
+            CameraPicker { picture in
+                if let file = PendingFile(picture: picture, index: model.pendingFiles.count) {
+                    model.pendingFiles.append(file)
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case .success(let addresses) = result else { return }
+            for address in addresses {
+                if let file = PendingFile(fileAt: address) {
+                    model.pendingFiles.append(file)
+                }
+            }
+        }
         .onChange(of: pickedItems) { _, items in
             guard !items.isEmpty else { return }
             pickedItems = []
@@ -1056,9 +1098,9 @@ struct Composer: View {
     private func add(_ items: [PhotosPickerItem]) async {
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self),
-                let picture = PickedPicture(data: data, index: model.pictures.count)
+                let file = PendingFile(pictureData: data, index: model.pendingFiles.count)
             else { continue }
-            model.pictures.append(picture)
+            model.pendingFiles.append(file)
         }
     }
 }

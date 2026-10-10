@@ -129,6 +129,22 @@
         }
       }
     },
+    "Add files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加文件"
+          }
+        }
+      }
+    },
     "Add pictures": {
       "localizations": {
         "ja": {
@@ -385,6 +401,22 @@
         }
       }
     },
+    "Camera": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相机"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "ja": {
@@ -413,6 +445,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法加载对话"
+          }
+        }
+      }
+    },
+    "Cannot open the file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開けません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开文件"
           }
         }
       }
@@ -637,6 +685,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不要"
+          }
+        }
+      }
+    },
+    "Files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
           }
         }
       }
@@ -1009,6 +1073,22 @@
         }
       }
     },
+    "Photo library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真ライブラリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片图库"
+          }
+        }
+      }
+    },
     "Questions for you": {
       "localizations": {
         "ja": {
@@ -1021,6 +1101,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要你回答的问题"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
           }
         }
       }
@@ -1556,6 +1652,22 @@
         }
       }
     },
+    "The files come to more than 25 MB, more than the server takes in one message.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルの合計が 25 MB を超えており、サーバーが 1 通で受け取れる量を超えています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些文件超过 25 MB，超出服务器一条消息能接收的大小。"
+          }
+        }
+      }
+    },
     "The server could not be reached. Check the connection and try again.": {
       "localizations": {
         "ja": {
@@ -1728,6 +1840,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "今天"
+          }
+        }
+      }
+    },
+    "Untitled": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無題"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无标题"
           }
         }
       }

@@ -241,6 +241,26 @@ final class TranscriptTests: XCTestCase {
     }
 }
 
+final class MediaTests: XCTestCase {
+    func testFilesAToolHandsOverAreRead() {
+        let shared = #"<untrusted-data>{"attachment_id":"a1","name":"receipt.jpg","content_type":"image/jpeg","size":2048,"url":"/api/v1/agent/attachments/a1","caption":"The receipt"}</untrusted-data>"#
+        XCTAssertEqual(AgentFile.of(toolResult: shared).map(\.name), ["receipt.jpg"])
+        XCTAssertEqual(AgentFile.of(toolResult: shared).first?.isImage, true)
+        let artifact = #"{"artifact_id":"b2","title":"Spending","kind":"html","url":"/api/v1/agent/attachments/b2"}"#
+        XCTAssertEqual(AgentFile.of(toolResult: artifact).first?.artifactKind, "html")
+        let elsewhere = #"{"attachment_id":"c3","name":"x","url":"https://example.com/x"}"#
+        XCTAssertTrue(AgentFile.of(toolResult: elsewhere).isEmpty)
+    }
+
+    func testAPictureOnItsOwnLineIsABlock() {
+        XCTAssertEqual(MarkdownBlock.parse("Here it is:\n\n![The park](https://example.com/park.jpg)"), [
+            .paragraph("Here it is:"), .image(alt: "The park", address: "https://example.com/park.jpg", link: nil),
+        ])
+        XCTAssertEqual(Connection.picturePath(conversationId: "c1", address: "https://example.com/a b.jpg"),
+            "/api/v1/agent/conversations/c1/picture?url=https%3A%2F%2Fexample.com%2Fa%20b.jpg")
+    }
+}
+
 final class MarkdownTableTests: XCTestCase {
     func testATableAndARuleAreRead() {
         let text = "Two stops:\n\n| Time | Place |\n|---|:---:|\n| 10:00 | Park |\n| 11:00 | Lunch |\n\n---\nDone."

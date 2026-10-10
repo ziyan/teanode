@@ -60,6 +60,9 @@ public enum Documents {
           StartAgentIdea(ideaId: $ideaId, conversationId: $conversationId, language: $language) { conversation { id } openingRequest }
         }
         """
+    public static let shareAttachment = """
+        query ($attachmentId: String!) { ShareAgentAttachment(attachmentId: $attachmentId) }
+        """
     public static let markIdeasShown = """
         mutation ($ideaIds: [String!]!) { MarkAgentIdeasShown(ideaIds: $ideaIds) }
         """
@@ -111,7 +114,7 @@ public enum Documents {
         "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
         "updatePhone": updatePhone, "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
         "updateConversation": updateConversation, "deleteConversation": deleteConversation,
-        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown,
+        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment,
     ]
 }
 

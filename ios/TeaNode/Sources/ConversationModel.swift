@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import TeaNodeKit
 import UIKit
+import UniformTypeIdentifiers
 
 /// ConversationModel is one conversation as the screen shows it: its
 /// transcript, kept up to date from the server's feed, and what the person
@@ -38,7 +39,7 @@ final class ConversationModel {
     var draft = "" {
         didSet { saveDraft() }
     }
-    var pictures: [PickedPicture] = []
+    var pendingFiles: [PendingFile] = []
     /// The message being replied to, shown above the composer.
     var replyingTo: AgentReference?
     private(set) var isSending = false
@@ -202,7 +203,7 @@ final class ConversationModel {
     }
 
     var canSend: Bool {
-        !isSending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pictures.isEmpty)
+        !isSending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingFiles.isEmpty)
     }
 
     /// The question that typing answers: the newest unanswered one, while
@@ -219,7 +220,7 @@ final class ConversationModel {
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
-        if let question = freshQuestion, pictures.isEmpty, replyingTo == nil {
+        if let question = freshQuestion, pendingFiles.isEmpty, replyingTo == nil {
             draft = ""
             if question.kind == .codingQuestion {
                 await answerCodingQuestion(question, options: [], freeText: text)
@@ -228,18 +229,22 @@ final class ConversationModel {
             }
             return
         }
+        if pendingFiles.reduce(0, { $0 + $1.data.count }) > PendingFile.bytesMost {
+            sendProblemText = String(localized: "The files come to more than 25 MB, more than the server takes in one message.")
+            return
+        }
         isSending = true
         defer { isSending = false }
-        let sending = pictures
+        let sending = pendingFiles
         let reply = replyingTo
         draft = ""
-        pictures = []
+        pendingFiles = []
         replyingTo = nil
         do {
             var attachments: [AgentAttachment] = []
-            for picture in sending {
-                let id = try await connection.upload(name: picture.name, contentType: "image/jpeg", data: picture.data)
-                attachments.append(AgentAttachment(id: id, name: picture.name, contentType: "image/jpeg", size: picture.data.count))
+            for file in sending {
+                let id = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data)
+                attachments.append(AgentAttachment(id: id, name: file.name, contentType: file.contentType, size: file.data.count))
             }
             let message = text.isEmpty ? "(files)" : text
             transcript.addSent(message, attachments: attachments, replyingTo: reply)
@@ -257,7 +262,7 @@ final class ConversationModel {
         } catch {
             transcript.withdrawSent()
             draft = text
-            pictures = sending
+            pendingFiles = sending
             replyingTo = reply
             sendProblemText = app.describe(error)
         }
@@ -370,21 +375,27 @@ final class ConversationModel {
     }
 }
 
-/// PickedPicture is a picture chosen to send, already made small enough.
-struct PickedPicture: Identifiable {
+/// PendingFile is a file chosen to send with the next message: a picture,
+/// made small enough, or any other file as it is.
+struct PendingFile: Identifiable {
     let id = UUID()
     let name: String
+    let contentType: String
     let data: Data
-    let preview: UIImage
+    /// What the composer shows for it: the picture itself, or nothing.
+    let preview: UIImage?
 
     /// The longest side a picture is sent at: plenty for the agent to read
     /// a receipt or a screen, and a fraction of what a camera takes.
     static let longestSide: CGFloat = 2048
 
-    /// A picture from the library as a JPEG at most longestSide on its
-    /// longest side, whatever it was taken as.
-    init?(data: Data, index: Int) {
-        guard let image = UIImage(data: data) else { return nil }
+    /// The most the server takes in one message (the agent's
+    /// maxAttachmentBytes, 25 MB unless the operator changed it).
+    static let bytesMost = 25 << 20
+
+    /// A picture from the library or the camera, as a JPEG at most
+    /// longestSide on its longest side, whatever it was taken as.
+    init?(picture image: UIImage, index: Int) {
         let scale = min(1, Self.longestSide / max(image.size.width, image.size.height))
         let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
         let format = UIGraphicsImageRendererFormat()
@@ -394,8 +405,25 @@ struct PickedPicture: Identifiable {
         }
         guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { return nil }
         self.name = "picture-\(index + 1).jpg"
+        self.contentType = "image/jpeg"
         self.data = jpeg
         self.preview = resized
+    }
+
+    init?(pictureData data: Data, index: Int) {
+        guard let image = UIImage(data: data) else { return nil }
+        self.init(picture: image, index: index)
+    }
+
+    /// A file from Files, sent as it is.
+    init?(fileAt address: URL) {
+        let isScoped = address.startAccessingSecurityScopedResource()
+        defer { if isScoped { address.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: address) else { return nil }
+        self.name = address.lastPathComponent
+        self.contentType = UTType(filenameExtension: address.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        self.data = data
+        self.preview = contentType.hasPrefix("image/") ? UIImage(data: data) : nil
     }
 }
 

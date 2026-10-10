@@ -12,6 +12,8 @@ public enum MarkdownBlock: Equatable, Sendable {
     /// A table: its header cells, then its rows.
     case table(header: [String], rows: [[String]])
     case rule
+    /// A picture on a line of its own, and where it links to if it does.
+    case image(alt: String, address: String, link: String?)
 
     public struct ListItem: Equatable, Sendable {
         /// "•" for a bullet, or the item's own number with its dot.
@@ -21,6 +23,18 @@ public enum MarkdownBlock: Equatable, Sendable {
 
     static let listItemPattern = try! NSRegularExpression(pattern: #"^\s*([-*+]|\d{1,3}[.)])\s+(.*)$"#)
     static let tableSeparatorPattern = try! NSRegularExpression(pattern: #"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$"#)
+
+    static let imagePattern = try! NSRegularExpression(pattern: #"^\s*(?:\[)?!\[([^\]]*)\]\(([^)\s]+)\)(?:\]\(([^)\s]+)\))?\s*$"#)
+
+    /// The picture a line is, when the line is nothing but a picture.
+    static func image(of line: String) -> MarkdownBlock? {
+        let range = NSRange(line.startIndex..., in: line)
+        guard let match = imagePattern.firstMatch(in: line, range: range),
+            let altRange = Range(match.range(at: 1), in: line), let addressRange = Range(match.range(at: 2), in: line)
+        else { return nil }
+        let link = Range(match.range(at: 3), in: line).map { String(line[$0]) }
+        return .image(alt: String(line[altRange]), address: String(line[addressRange]), link: link)
+    }
 
     static func cells(of line: String) -> [String] {
         var trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -95,6 +109,11 @@ public enum MarkdownBlock: Equatable, Sendable {
             }
             if trimmed.isEmpty {
                 flush()
+                continue
+            }
+            if let picture = image(of: trimmed) {
+                flush()
+                blocks.append(picture)
                 continue
             }
             if trimmed.hasPrefix("#") {
