@@ -85,6 +85,11 @@ readonly ALLOWED_HOSTS=(
   .example.org
   .example.edu
 
+  # The reverse of example.com, which is how an app's own identifier and
+  # return address (RFC 8252's private-use scheme) are written in examples
+  # and tests: com.example.app:/oauth.
+  .com.example.app
+
   # The project's own site, which the README and the documents link to. It is
   # published on purpose, which is the opposite of a private reference.
   .teanode.com
@@ -169,6 +174,8 @@ readonly ALLOWED_HOSTS=(
   # The module path of the YAML library, which go.sum names.
   go.yaml.in
   .gorm.io
+  # The module path of the QR code encoder, which go.mod and go.sum name.
+  rsc.io
   # A module host, appearing only in go.mod and go.sum as the name of a
   # dependency. Vanity import paths are hostnames whether or not anything is
   # served there.

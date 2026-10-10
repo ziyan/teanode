@@ -68,3 +68,13 @@ type OAuthAuthorization struct {
 
 	ExpiresAt time.Time `json:"expiresAt,omitempty"`
 }
+
+// OAuthConnectCode is a one-time secret that signs a phone app in as a
+// person: shown where they are signed in, as a QR code, and scanned by the
+// phone. It is deleted when it is used.
+type OAuthConnectCode struct {
+	ID        string    `json:"id,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
+	UserID    string    `json:"userId,omitempty"`
+	ExpiresAt time.Time `json:"expiresAt,omitempty"`
+}

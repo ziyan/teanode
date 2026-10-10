@@ -55,9 +55,11 @@ func (self *oauth) tokenView(response http.ResponseWriter, request *http.Request
 		self.exchangeCode(response, request)
 	case "refresh_token":
 		self.refreshToken(response, request)
+	case grantConnectCode:
+		self.collectConnectCode(response, request)
 	default:
 		writeOAuthError(response, http.StatusBadRequest, "unsupported_grant_type",
-			"this server issues tokens for an authorization code or a refresh token")
+			"this server issues tokens for an authorization code, a refresh token or a connect code")
 	}
 }
 
@@ -204,7 +206,7 @@ func (self *oauth) issue(response http.ResponseWriter, userId, name, clientId, r
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(authorizedTokenLifetime / time.Second),
 		RefreshToken: refresh,
-		Scope:        scopeMCP,
+		Scope:        scopeOfResource(resource),
 	}); err != nil {
 		log.Errorf("failed to answer with a token: %s", err)
 	}

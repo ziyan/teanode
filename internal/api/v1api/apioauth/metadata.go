@@ -7,14 +7,30 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 )
 
-// The one scope this server publishes.
+// The two scopes this server publishes.
 //
 // TeaNode's permissions live on accounts and groups, and a token acts as the
 // account it belongs to. A vocabulary of scope names invented here would be a
 // second answer to what a caller may do, sitting beside the real one, and the
-// two would eventually disagree. One name, meaning the tools this account can
-// already reach, is the truth about what the token grants.
-const scopeMCP = "mcp"
+// two would eventually disagree. So a scope says where a token works, never
+// what it may do there: "mcp" is the agent tools endpoint, with the tools this
+// account can already reach; "api" is the whole API, as the account, the way
+// the dashboard and the command line use it. Nothing asks for "api": it is
+// what a phone connected by a connect code is given (connect.go), and never
+// what a consent page grants, because a page anybody can link to that hands
+// out everything is what phishing aims at.
+const (
+	scopeMCP = "mcp"
+	scopeAPI = "api"
+)
+
+// scopeOfResource is the scope a token's resource came from.
+func scopeOfResource(resource string) string {
+	if resource == "" {
+		return scopeAPI
+	}
+	return scopeMCP
+}
 
 // ProtectedResourceMetadata describes the thing being guarded: what it is,
 // who issues tokens for it, and how a token travels.
@@ -82,7 +98,7 @@ func (self *oauth) authorizationServerView(response http.ResponseWriter, request
 		RegistrationEndpoint:   origin + api.PathOAuthRegister,
 		RevocationEndpoint:     origin + api.PathOAuthRevoke,
 		ResponseTypesSupported: []string{"code"},
-		GrantTypesSupported:    []string{"authorization_code", "refresh_token"},
+		GrantTypesSupported:    []string{"authorization_code", "refresh_token", grantConnectCode},
 		// S256 alone. Offering "plain" beside it lets a client choose the
 		// method that hashes nothing, which is the same as not asking.
 		CodeChallengeMethodsSupported: []string{"S256"},
@@ -90,7 +106,7 @@ func (self *oauth) authorizationServerView(response http.ResponseWriter, request
 		// issued one and does not authenticate at the token endpoint. The
 		// proof of possession is the PKCE verifier instead.
 		TokenEndpointAuthMethodsSupported: []string{"none"},
-		ScopesSupported:                   []string{scopeMCP},
+		ScopesSupported:                   []string{scopeMCP, scopeAPI},
 	})
 }
 

@@ -27,6 +27,13 @@ type OAuthOperation interface {
 	// hands back a hash rather than comparing one here.
 	SpendOAuthAuthorization(authorizationId string, now time.Time) (*models.OAuthAuthorization, string, error)
 
+	CreateOAuthConnectCode(code *models.OAuthConnectCode, codeHash string) (*models.OAuthConnectCode, error)
+
+	// SpendOAuthConnectCode takes an unexpired connect code and deletes it, in
+	// one statement, so a code signs in one phone however many present it at
+	// once. Nil when there was nothing to spend.
+	SpendOAuthConnectCode(codeHash string, now time.Time) (*models.OAuthConnectCode, error)
+
 	ScavengeOAuth(now time.Time) (int64, error)
 }
 
@@ -62,6 +69,27 @@ type oauthAuthorizationModel struct {
 
 func (self *oauthAuthorizationModel) TableName() string {
 	return "oauth_authorization"
+}
+
+type oauthConnectCodeModel struct {
+	ID        string `gorm:"primary_key:true;size:32"`
+	CreatedAt time.Time
+	UserID    string `gorm:"column:user_id;size:32"`
+	CodeHash  string `gorm:"column:code_hash;size:64"`
+	ExpiresAt time.Time
+}
+
+func (self *oauthConnectCodeModel) TableName() string {
+	return "oauth_connect_code"
+}
+
+func oauthConnectCodeFromModel(model *oauthConnectCodeModel) *models.OAuthConnectCode {
+	return &models.OAuthConnectCode{
+		ID:        model.ID,
+		CreatedAt: model.CreatedAt.In(time.Local),
+		UserID:    model.UserID,
+		ExpiresAt: model.ExpiresAt.In(time.Local),
+	}
 }
 
 // Addresses are kept one per line. They are opaque to SQL, there are rarely
@@ -193,6 +221,35 @@ func (self *database) SpendOAuthAuthorization(authorizationId string, now time.T
 	}, model.KeyHash, nil
 }
 
+func (self *database) CreateOAuthConnectCode(code *models.OAuthConnectCode, codeHash string) (*models.OAuthConnectCode, error) {
+	model := &oauthConnectCodeModel{
+		ID:        code.ID,
+		CreatedAt: time.Now(),
+		UserID:    code.UserID,
+		CodeHash:  codeHash,
+		ExpiresAt: code.ExpiresAt,
+	}
+	if err := self.db.Create(model).Error; err != nil {
+		return nil, err
+	}
+	return oauthConnectCodeFromModel(model), nil
+}
+
+func (self *database) SpendOAuthConnectCode(codeHash string, now time.Time) (*models.OAuthConnectCode, error) {
+	var model oauthConnectCodeModel
+	result := self.db.Raw(
+		"DELETE FROM \"oauth_connect_code\" WHERE \"code_hash\" = ? AND \"expires_at\" > ? RETURNING *",
+		codeHash, now,
+	).Scan(&model)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 || model.ID == "" {
+		return nil, nil
+	}
+	return oauthConnectCodeFromModel(&model), nil
+}
+
 // ScavengeOAuth removes approvals nobody collected and registrations nobody
 // ever approved.
 //
@@ -204,6 +261,11 @@ func (self *database) ScavengeOAuth(now time.Time) (int64, error) {
 	if expired.Error != nil {
 		return 0, expired.Error
 	}
+	expiredCodes := self.db.Delete(&oauthConnectCodeModel{}, "\"expires_at\" < ?", now)
+	if expiredCodes.Error != nil {
+		return expired.RowsAffected, expiredCodes.Error
+	}
+	expired.RowsAffected += expiredCodes.RowsAffected
 	unused := self.db.Delete(&oauthClientModel{},
 		"\"approved_at\" IS NULL AND \"created_at\" < ?", now.Add(-24*time.Hour))
 	if unused.Error != nil {

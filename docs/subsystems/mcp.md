@@ -99,10 +99,33 @@ the harness swaps it at `POST /oauth/token`, proving with its PKCE verifier
 that it is the program that asked.
 
 What comes back is an ordinary token belonging to the person, with two more
-columns: the client that holds it, and the resource it is good for. That
-resource is always the agent tools endpoint. A harness that names none is
-given it, and one that names anything else is refused, so a token from this
-flow is refused by GraphQL and by every other path. Refresh replaces the token
+columns: the client that holds it, and the resource it is good for. For a
+harness that resource is always the agent tools endpoint. A harness that names
+none is given it, and one that names anything else is refused, so a token from
+this flow is refused by GraphQL and by every other path.
+
+The consent page never grants more, whatever a program registered as: a page
+anybody can send a link to is where phishing aims. Registration does accept an
+app's own return address (`com.example.app:/oauth`, RFC 8252's private-use
+scheme; `api.IsPrivateUseRedirect`), for an app using the agent tools.
+
+The TeaNode phone app is given more, the scope `api`: everything the person
+can do, the way the dashboard and the command line use the API, so the token's
+resource is empty. It gets it only by connecting with a code. Where
+they are signed in (the dashboard's `/connect` page, `teanode agent phone
+pair`, or `CreateOAuthConnectCode`) a one-time connect code is made for them
+and shown as a QR code holding `https://teanode.com/app/connect#server=…&code=…`.
+The phone's camera opens the app, which presents the code at
+`POST /oauth/token` with the grant
+`urn:teanode:params:oauth:grant-type:connect-code` and is handed a token for
+the whole API as that person. A code lasts ten minutes and signs in one phone; it is
+made only by the person themselves (not by an operator signed in as them) and
+only over https or on the server's own machine, since the link carries it. The code travels from
+the person's screen to their own phone, never the other way: RFC 8628's
+device flow, where a device shows a code for the person to approve, lets a
+stranger send the person a link to approve the stranger's code. The exchange
+is `internal/api/v1api/apioauth/connect.go`; the code is
+`internal/api/v1api/apigraph/oauth_connect.go`. Refresh replaces the token
 and retires the old one, carrying its name over. Because the token changes at
 every refresh, these tokens are listed by app rather than with the person's
 API tokens: Settings > Apps (and `teanode app`) renames an app or disconnects

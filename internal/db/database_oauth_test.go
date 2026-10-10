@@ -355,3 +355,34 @@ func TestTokensAreChangedOneByOneAndByApp(test *testing.T) {
 		test.Error("only that app's tokens of that person are revoked")
 	}
 }
+
+// A connect code signs in one phone, once, and only while it is fresh.
+func TestAConnectCodeIsSpentOnceAndOnlyWhileFresh(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	if _, err := database.CreateOAuthConnectCode(&models.OAuthConnectCode{
+		ID: security.NewULID(), UserID: "a-person", ExpiresAt: time.Now().Add(10 * time.Minute),
+	}, "a-fresh-hash"); err != nil {
+		test.Fatalf("CreateOAuthConnectCode: %s", err)
+	}
+	spent, err := database.SpendOAuthConnectCode("a-fresh-hash", time.Now())
+	if err != nil || spent == nil || spent.UserID != "a-person" {
+		test.Fatalf("the code was not spent: %v %v", spent, err)
+	}
+	if again, err := database.SpendOAuthConnectCode("a-fresh-hash", time.Now()); err != nil || again != nil {
+		test.Errorf("the same code was spent twice: %v %v", again, err)
+	}
+
+	if _, err := database.CreateOAuthConnectCode(&models.OAuthConnectCode{
+		ID: security.NewULID(), UserID: "a-person", ExpiresAt: time.Now().Add(-time.Second),
+	}, "a-stale-hash"); err != nil {
+		test.Fatalf("CreateOAuthConnectCode: %s", err)
+	}
+	if stale, err := database.SpendOAuthConnectCode("a-stale-hash", time.Now()); err != nil || stale != nil {
+		test.Errorf("an expired code was spent: %v %v", stale, err)
+	}
+	if swept, err := database.ScavengeOAuth(time.Now()); err != nil || swept < 1 {
+		test.Errorf("the expired code was not swept: %d %v", swept, err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strings"
 )
 
@@ -162,4 +163,45 @@ func IsLoopbackHost(host string) bool {
 		return address.IsLoopback()
 	}
 	return false
+}
+
+// IsPrivateUseRedirect says whether address is an app's own return address
+// (RFC 8252 section 7.1): a scheme that is a reverse domain name, such as
+// com.example.app:/oauth, with a path and no host.
+//
+// Only an app installed on a device can receive one: the device hands the
+// address to whichever app claimed the scheme, never to a web page. That
+// is what lets a sign-in sheet on a phone return to its app, where a
+// self-hosted server's address could never have been claimed in advance.
+// The dot is what keeps out every scheme a browser or an operating system
+// already means something by (javascript:, file:, data:, mailto:).
+func IsPrivateUseRedirect(address string) bool {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Opaque != "" || parsed.Host != "" || parsed.User != nil || parsed.Fragment != "" {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if !strings.Contains(scheme, ".") || strings.HasPrefix(scheme, ".") || strings.HasSuffix(scheme, ".") ||
+		strings.Contains(scheme, "..") {
+		return false
+	}
+	// One slash after the colon, as the specification writes it: two would
+	// make what follows a host, and none would make it opaque.
+	return strings.HasPrefix(address[len(parsed.Scheme):], ":/") && !strings.HasPrefix(address[len(parsed.Scheme):], "://") &&
+		len(parsed.Path) > 1
+}
+
+// IsNativeAppClient says whether every address a program registered is an
+// app's own return address: what a program must have registered as to be
+// handed a connect code's token (internal/api/v1api/apioauth/connect.go).
+func IsNativeAppClient(redirects []string) bool {
+	if len(redirects) == 0 {
+		return false
+	}
+	for _, redirect := range redirects {
+		if !IsPrivateUseRedirect(redirect) {
+			return false
+		}
+	}
+	return true
 }

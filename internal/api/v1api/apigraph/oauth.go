@@ -30,6 +30,11 @@ type OAuthQuery interface {
 type OAuthMutation interface {
 	// Approve a program, returning the address to send the person back to.
 	ApproveOAuthAuthorization(ctx context.Context, arguments ApproveOAuthAuthorizationArguments) (*OAuthApproval, error)
+
+	// Make a one-time code that connects the TeaNode phone app to this
+	// server as you: a link and a QR code for your phone's camera, good for
+	// ten minutes and one phone. Show it to nobody else.
+	CreateOAuthConnectCode(ctx context.Context) (*OAuthConnectCode, error)
 }
 
 type ReadOAuthAuthorizationRequestArguments struct {
