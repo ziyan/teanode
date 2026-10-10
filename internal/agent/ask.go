@@ -865,6 +865,7 @@ func (self *AskRun) loop() {
 	// A goal that was waiting for the person has had its answer: it goes
 	// back to work a minute from now, whether the turn ended well or not.
 	self.resumeGoalAfterPerson()
+	self.clearFinishedTodos()
 	self.emit(Event{Kind: EventDone})
 }
 
