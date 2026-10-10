@@ -8,7 +8,7 @@ import PackageDescription
 
 let package = Package(
     name: "TeaNodeKit",
-    platforms: [.iOS(.v18), .macOS(.v15)],
+    platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
         .library(name: "TeaNodeKit", targets: ["TeaNodeKit"])
     ],
