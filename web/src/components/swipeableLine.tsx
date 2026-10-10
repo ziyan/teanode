@@ -8,8 +8,11 @@ export const SWIPE_STARTS_PX = 12
 export const SWIPE_ACTION_PX = 56
 const SWIPE_FARTHEST_PX = 96
 
-// How long a copied line stays out, its mark a tick, before it goes back.
+// How long a copied line stays out, its mark a tick, before it goes back;
+// and how long one whose copy the browser refused waits, its mark a button,
+// for the tap that copies it.
 export const COPIED_HOLD_MS = 900
+export const COPY_TAP_HOLD_MS = 4000
 
 // swipeOffset is how far a line is drawn across for a finger that has moved
 // acrossPx since the swipe began: one for one up to where letting go acts,
@@ -26,14 +29,17 @@ export function SwipeableLine({
   copyLabel,
   onReply,
   onCopy,
+  onCopyFailed,
   children,
 }: {
   className: string
   replyLabel: string
   copyLabel: string
   onReply: () => void
-  // onCopy copies the line and says whether it took.
+  // onCopy copies the line and says whether it took; onCopyFailed is told
+  // when a tap or a click could not copy it either.
   onCopy: () => Promise<boolean>
+  onCopyFailed: () => void
   children: ReactNode
 }) {
   // Where the finger came down, and whether it has become a swipe: until
@@ -47,20 +53,40 @@ export function SwipeableLine({
   // A line just copied: held out where the swipe left it, its mark a tick,
   // until COPIED_HOLD_MS have passed. The button says so too.
   const [isCopied, setCopied] = useState(false)
+  // A browser writes to the clipboard only straight after what it counts as
+  // a deliberate tap or click, and a swipe does not always count: Safari on
+  // a phone never takes one, Chrome not every time. A swipe whose copy was
+  // refused leaves the line out with its mark a button, which a tap does
+  // count for; only when that fails too is the person told.
+  const [isCopyTapWaiting, setCopyTapWaiting] = useState(false)
   const holding = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(holding.current), [])
-  const copy = (isHeld: boolean) => {
+  const holdThen = (holdMS: number, then: () => void) => {
+    window.clearTimeout(holding.current)
+    holding.current = window.setTimeout(then, holdMS)
+  }
+  const copy = (isSwiped: boolean, isHeld: boolean) => {
     void onCopy().then((isTaken) => {
-      if (!isTaken) {
-        move(0)
+      if (isTaken) {
+        setCopyTapWaiting(false)
+        setCopied(true)
+        holdThen(COPIED_HOLD_MS, () => {
+          setCopied(false)
+          if (isHeld) move(0)
+        })
         return
       }
-      setCopied(true)
-      window.clearTimeout(holding.current)
-      holding.current = window.setTimeout(() => {
-        setCopied(false)
-        if (isHeld) move(0)
-      }, COPIED_HOLD_MS)
+      if (isSwiped) {
+        setCopyTapWaiting(true)
+        holdThen(COPY_TAP_HOLD_MS, () => {
+          setCopyTapWaiting(false)
+          move(0)
+        })
+        return
+      }
+      setCopyTapWaiting(false)
+      if (isHeld) move(0)
+      onCopyFailed()
     })
   }
   const move = (next: number) => {
@@ -73,15 +99,20 @@ export function SwipeableLine({
     const wasSwiping = touched.current?.isSwiping ?? false
     const reached = offsetRef.current
     touched.current = null
-    if (isActing && wasSwiping && reached >= SWIPE_ACTION_PX) {
+    // A tap moves nothing, and leaves a line held out where it is: the tap
+    // may be on its copy button.
+    if (!wasSwiping) return
+    if (isActing && reached >= SWIPE_ACTION_PX) {
       // Settles where letting go acts, and stays there while it copies.
       hasSwiped.current = true
+      window.clearTimeout(holding.current)
       move(SWIPE_ACTION_PX)
-      copy(true)
+      copy(true, true)
       return
     }
+    setCopyTapWaiting(false)
     move(0)
-    if (!isActing || !wasSwiping) return
+    if (!isActing) return
     hasSwiped.current = true
     if (reached <= -SWIPE_ACTION_PX) onReply()
   }
@@ -136,22 +167,33 @@ export function SwipeableLine({
           <ReplyIcon size={16} />
         </span>
       )}
-      {offset > 0 && (
-        <span
-          className={['agent-swipe-action copy', isCopied ? 'copied' : ''].filter(Boolean).join(' ')}
-          aria-hidden="true"
-          style={{ opacity: Math.min(1, offset / SWIPE_ACTION_PX) }}
-        >
-          {isCopied ? <CheckIcon size={18} /> : <CopyIcon size={16} />}
-        </span>
-      )}
+      {offset > 0 &&
+        (isCopyTapWaiting ? (
+          <button
+            type="button"
+            className="agent-swipe-action copy waiting icon-action"
+            title={copyLabel}
+            aria-label={copyLabel}
+            onClick={() => copy(false, true)}
+          >
+            <CopyIcon size={18} />
+          </button>
+        ) : (
+          <span
+            className={['agent-swipe-action copy', isCopied ? 'copied' : ''].filter(Boolean).join(' ')}
+            aria-hidden="true"
+            style={{ opacity: Math.min(1, offset / SWIPE_ACTION_PX) }}
+          >
+            {isCopied ? <CheckIcon size={18} /> : <CopyIcon size={16} />}
+          </span>
+        ))}
       <span className="agent-line-actions">
         <button
           type="button"
           className={['icon-action', isCopied ? 'copied' : ''].filter(Boolean).join(' ')}
           title={copyLabel}
           aria-label={copyLabel}
-          onClick={() => copy(false)}
+          onClick={() => copy(false, false)}
         >
           {isCopied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
         </button>

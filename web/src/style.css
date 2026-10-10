@@ -7135,6 +7135,17 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   right: calc(100% + 16px);
 }
 
+/* A swipe whose copy the browser refused: the mark becomes a button to
+   tap, which the browser does let copy. */
+.agent-swipe-action.copy.waiting {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--text);
+  pointer-events: auto;
+}
+
 /* Copied: the mark, and the button, turn to a green tick for a moment. */
 .agent-swipe-action.copied,
 .agent-line-actions .icon-action.copied {

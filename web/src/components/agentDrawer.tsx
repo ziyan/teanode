@@ -3848,19 +3848,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }
   // Swiping a message to the right, or its Copy button, copies what it
   // says: an answer as the Markdown it was written in.
-  // The line itself shows it took, with a tick; only a failure is a toast.
+  // The line itself shows it took, with a tick, and what it does when the
+  // browser refuses (SwipeableLine); a copy that cannot be made is a toast.
   const copyLine = async (line: Line): Promise<boolean> => {
     const text = shownText(line)
-    if (!text) return false
+    if (!text || !navigator.clipboard) return false
     try {
-      if (!navigator.clipboard) throw new Error('no clipboard')
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      toast.failed(t('common.copyFailed'))
       return false
     }
   }
+  const sayCopyFailed = () => toast.failed(t('common.copyFailed'))
   const replying = references.find(isReplyReference)
   const chipped = references.filter((reference) => !isReplyReference(reference))
 
@@ -3881,6 +3881,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               copyLabel={t('common.copy')}
               onReply={() => replyTo(line)}
               onCopy={() => copyLine(line)}
+              onCopyFailed={sayCopyFailed}
             >
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
@@ -3900,6 +3901,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               copyLabel={t('common.copy')}
               onReply={() => replyTo(line)}
               onCopy={() => copyLine(line)}
+              onCopyFailed={sayCopyFailed}
             >
               <Markdown
                 text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}

@@ -26,6 +26,7 @@ describe('SwipeableLine', () => {
         copyLabel="Copy"
         onReply={onReply}
         onCopy={onCopy}
+        onCopyFailed={() => undefined}
       >
         The ferry leaves at nine.
       </SwipeableLine>,
@@ -44,6 +45,7 @@ describe('SwipeableLine', () => {
         copyLabel="Copy"
         onReply={() => undefined}
         onCopy={() => Promise.resolve(true)}
+        onCopyFailed={() => undefined}
       >
         Book the seat.
       </SwipeableLine>,
@@ -52,4 +54,22 @@ describe('SwipeableLine', () => {
     fireEvent.click(copyButton)
     await waitFor(() => expect(copyButton.className).toContain('copied'))
   })
+})
+
+it('says a click could not copy, rather than holding out a button for it', async () => {
+  const onCopyFailed = vi.fn()
+  const { container } = render(
+    <SwipeableLine
+      className="agent-line user"
+      replyLabel="Reply"
+      copyLabel="Copy"
+      onReply={() => undefined}
+      onCopy={() => Promise.resolve(false)}
+      onCopyFailed={onCopyFailed}
+    >
+      Book the seat.
+    </SwipeableLine>,
+  )
+  fireEvent.click(within(container).getByRole('button', { name: 'Copy' }))
+  await waitFor(() => expect(onCopyFailed).toHaveBeenCalled())
 })
