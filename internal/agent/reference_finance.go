@@ -32,8 +32,9 @@ const (
 // stored row rather than from what the dashboard sent, and what the model
 // is told about it is written beside it. The API refuses another agent's
 // finance transaction before a turn starts; this is the same check for
-// any caller that did not.
-func resolveReferences(tx db.Transaction, agentId string, references []models.AgentReference) ([]models.AgentReference, error) {
+// any caller that did not. A message replied to is read the same way, from
+// the conversation the turn is in (see resolveReply).
+func resolveReferences(tx db.Transaction, agentId, conversationId string, references []models.AgentReference) ([]models.AgentReference, error) {
 	if len(references) == 0 {
 		return references, nil
 	}
@@ -41,7 +42,23 @@ func resolveReferences(tx db.Transaction, agentId string, references []models.Ag
 	// One transaction pointed at twice is told once: each costs a block of
 	// context on every round of the run.
 	seenFinanceTransactionIds := map[string]bool{}
+	isReplyKept := false
 	for _, reference := range references {
+		if isReplyReference(reference) {
+			// A turn answers one message: the first kept.
+			if isReplyKept {
+				continue
+			}
+			reply, err := resolveReply(tx, conversationId, reference)
+			if err != nil {
+				return nil, err
+			}
+			if reply != nil {
+				resolved = append(resolved, *reply)
+				isReplyKept = true
+			}
+			continue
+		}
 		if reference.FinanceTransactionID == "" {
 			resolved = append(resolved, reference)
 			continue

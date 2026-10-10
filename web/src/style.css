@@ -7080,14 +7080,109 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   margin: 0 0 6px;
 }
 
-/* The question a late answer answers, above it and quieter: the card it
-   was given on may be far up the conversation by the time it is answered. */
+/* The question a late answer answers, or the message a reply answers,
+   above it and quieter: either may be far up the conversation by now. A
+   long one shows its start. */
 .agent-line.user .agent-in-reply-to {
   margin: 0 0 6px;
   padding-left: 8px;
   border-left: 2px solid currentColor;
   opacity: 0.75;
   font-size: 0.9em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* A message that can be replied to. On a touch screen it follows a finger
+   swiped to the left, and the browser keeps the vertical scroll; let go,
+   it springs back. */
+.agent-line-replyable {
+  position: relative;
+  touch-action: pan-y;
+  transition: transform 0.18s ease-out;
+}
+
+.agent-line-replyable.swiping {
+  transition: none;
+}
+
+/* The arrow that shows in the room the swipe opens, brighter the nearer
+   letting go is to replying. */
+.agent-swipe-reply {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 16px);
+  display: inline-flex;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* With a mouse, a Reply button in the message's corner on hover; reached
+   by keyboard as well. Never on a touch screen, where the swipe is. */
+.agent-line-reply {
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.agent-line-replyable:focus-within .agent-line-reply {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) {
+  .agent-line-replyable:hover .agent-line-reply {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.agent-line-reply:hover {
+  color: var(--text);
+}
+
+/* The message the next turn answers, above the box: who said it and its
+   start, with a way to drop it. */
+.agent-reply-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--muted);
+}
+
+.agent-reply-quote-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-reply-quote-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-reply-quote-text {
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .agent-attachment-chip,

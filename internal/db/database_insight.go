@@ -117,6 +117,9 @@ type InsightOperation interface {
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
+	// GetAgentConversationMessage is one message of the conversation
+	// given, or nil when the conversation has no message by that id.
+	GetAgentConversationMessage(conversationId, messageId string) (*models.AgentMessage, error)
 	// ListAgentOwnTurnAnswers is what the agent answered in a conversation
 	// in turns of its own -- its last word of each round, never a round
 	// that went on to call a tool -- after the message given and before
@@ -962,6 +965,17 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func (self *transaction) GetAgentConversationMessage(conversationId, messageId string) (*models.AgentMessage, error) {
+	var found []agentMessageModel
+	if err := self.tx.Where("\"conversation_id\" = ? AND \"id\" = ?", conversationId, messageId).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return messageFromModel(&found[0])
 }
 
 func (self *transaction) ListAgentOwnTurnAnswers(conversationId, afterMessageId string, before time.Time, limit int) ([]*models.AgentMessage, error) {

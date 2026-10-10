@@ -165,6 +165,19 @@ func referenceLines(references []models.AgentReference) string {
 			parts = append(parts, fmt.Sprintf("finance transaction %s (posted on %s, %s %s): described below when it was pointed at in this turn, else read it with the finance tool (transactions with finance_transaction_ids); act on it by that id with the same tool if asked, as categorize_transaction does",
 				reference.FinanceTransactionID, reference.PostedOn, reference.Amount, reference.CurrencyCode))
 		}
+		if reference.QuotedText != "" {
+			// A message of this conversation the person is answering: what
+			// they write is about it, and "this" or "that" means it.
+			whose := "your earlier answer"
+			if reference.QuotedRole == string(llm.RoleUser) {
+				whose = "their own earlier message"
+			}
+			line := "replying to " + whose
+			if reference.AgentMessageID != "" {
+				line += " (agent_message_id " + reference.AgentMessageID + ")"
+			}
+			parts = append(parts, fmt.Sprintf("%s, which said: %q", line, reference.QuotedText))
+		}
 		if len(parts) > 0 {
 			lines = append(lines, "- "+strings.Join(parts, ", "))
 		}

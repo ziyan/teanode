@@ -85,12 +85,19 @@ type AgentAttachment struct {
 	Size        int64  `json:"size"`
 }
 
-// AgentReference is a thread the person pointed at with a turn.
+// AgentReference is what the person pointed at with a turn: a thread, or
+// a message of the conversation they are replying to.
 type AgentReference struct {
 	ItemID   string `json:"itemId,omitempty"`
 	ThreadID string `json:"threadId,omitempty"`
 	Subject  string `json:"subject,omitempty"`
 	From     string `json:"from,omitempty"`
+
+	// AgentMessageID is the message replied to; the server reads its words
+	// into QuotedRole and QuotedText.
+	AgentMessageID string `json:"agentMessageId,omitempty"`
+	QuotedRole     string `json:"quotedRole,omitempty"`
+	QuotedText     string `json:"quotedText,omitempty"`
 }
 
 // AskAgentRequest is one turn with everything that may come with it.
@@ -192,7 +199,7 @@ const (
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
-			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from } }
+			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from agentMessageId quotedRole quotedText } }
 			total
 			todos ` + todoFields + `
 		}

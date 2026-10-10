@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { ReferenceChips, referenceLabel } from './agentReferenceChips'
+import { isReplyReference, ReferenceChips, ReplyQuote, referenceLabel } from './agentReferenceChips'
 
 vi.mock('../i18n/i18n', () => ({
   useTranslation: () => ({
@@ -45,11 +45,26 @@ it('takes a finance transaction chip off', () => {
   render(<ReferenceChips references={[{ itemId: 'item-1', subject: 'Thursday?' }, fee]} onRemove={onRemove} />)
   expect(screen.getByText(/Transaction: .*Invented Brokerage/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /Invented Brokerage.*agentDrawer\.remove/ }))
-  expect(onRemove).toHaveBeenCalledWith(1)
+  expect(onRemove).toHaveBeenCalledWith(fee)
 })
 
 // Sent, the chips are drawn without a way to take them off.
 it('draws a sent chip without a remove button', () => {
   render(<ReferenceChips references={[fee]} />)
   expect(screen.queryByRole('button')).toBeNull()
+})
+
+// A message replied to is drawn as a quote, not as a chip, and the quote
+// in the box can be dropped.
+it('draws a reply as a quote rather than a chip', () => {
+  const reply = { agentMessageId: 'message-1', quotedRole: 'assistant' as const, quotedText: 'The ferry leaves at nine.' }
+  const { container } = render(<ReferenceChips references={[reply]} />)
+  expect(container.textContent).toBe('')
+  const onRemove = vi.fn()
+  render(<ReplyQuote reference={reply} title="Replying to Bertie" onRemove={onRemove} />)
+  expect(screen.getByText('The ferry leaves at nine.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'agentDrawer.cancelReply' }))
+  expect(onRemove).toHaveBeenCalled()
+  expect(isReplyReference(reply)).toBe(true)
+  expect(isReplyReference(fee)).toBe(false)
 })

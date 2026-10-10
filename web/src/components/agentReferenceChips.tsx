@@ -1,7 +1,7 @@
 import type { AgentReference } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { formatMoney } from './common'
-import { CloseIcon, SparkIcon } from './icons'
+import { CloseIcon, ReplyIcon, SparkIcon } from './icons'
 import { Tooltip } from './tooltip'
 
 // referenceDay is a finance transaction's posted day as its chip says it:
@@ -39,19 +39,53 @@ function referenceHint(reference: AgentReference): string {
   return reference.from ?? reference.path ?? ''
 }
 
+// isReplyReference says the reference is a message of the conversation
+// the turn answers, drawn as a quote rather than a chip.
+export function isReplyReference(reference: AgentReference): boolean {
+  return Boolean(reference.agentMessageId || reference.quotedText)
+}
+
+// ReplyQuote is the message a turn answers, above the box while it is
+// being written: who said it, the start of it, and a way to drop it. On
+// the person's line once sent it is the quote above their words.
+export function ReplyQuote({ reference, title, onRemove }: { reference: AgentReference; title: string; onRemove: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="agent-reply-quote">
+      <ReplyIcon size={14} />
+      <div className="agent-reply-quote-body">
+        <div className="agent-reply-quote-title">{title}</div>
+        <div className="agent-reply-quote-text">{reference.quotedText}</div>
+      </div>
+      <button
+        type="button"
+        className="icon-action"
+        title={t('agentDrawer.cancelReply')}
+        aria-label={t('agentDrawer.cancelReply')}
+        onClick={onRemove}
+      >
+        <CloseIcon size={12} />
+      </button>
+    </div>
+  )
+}
+
 // ReferenceChips are what a turn points at, above the box while it is
 // being written (each removable) and on the person's line once it is sent.
+// A message replied to is not among them: it is drawn as a quote.
 export function ReferenceChips({
   references,
   onRemove,
 }: {
   references: AgentReference[]
-  onRemove?: (index: number) => void
+  onRemove?: (reference: AgentReference) => void
 }) {
   const { t } = useTranslation()
+  const chips = references.filter((reference) => !isReplyReference(reference))
+  if (chips.length === 0) return null
   return (
     <div className="agent-references">
-      {references.map((reference, index) => {
+      {chips.map((reference, index) => {
         const label = referenceLabel(reference, t)
         return (
           <Tooltip
@@ -66,7 +100,7 @@ export function ReferenceChips({
                   className="icon-action"
                   title={t('agentDrawer.remove')}
                   aria-label={`${label}: ${t('agentDrawer.remove')}`}
-                  onClick={() => onRemove(index)}
+                  onClick={() => onRemove(reference)}
                 >
                   <CloseIcon size={12} />
                 </button>

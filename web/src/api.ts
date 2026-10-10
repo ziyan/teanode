@@ -1059,6 +1059,12 @@ export interface AgentReference {
   currencyCode?: string
   merchantName?: string
   description?: string
+  // A message of the conversation the turn answers: its id when the
+  // drawer has one, whose it was, and what it said. The server reads the
+  // words again from the stored message.
+  agentMessageId?: string
+  quotedRole?: 'user' | 'assistant'
+  quotedText?: string
 }
 
 export interface AgentAskDetail {

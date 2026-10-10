@@ -69,7 +69,8 @@ import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
-import { ReferenceChips } from './agentReferenceChips'
+import { isReplyReference, ReferenceChips, ReplyQuote } from './agentReferenceChips'
+import { SwipeToReply } from './swipeToReply'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -196,6 +197,10 @@ const CHAT_ABOUT_IT = '[chat about it]'
 
 // How long a question card takes what is typed in the box as its answer.
 const CARD_FRESH_MS = 60 * 60 * 1000
+
+// The most of a message a reply quotes, as the server keeps it: enough to
+// say which part of a long answer is meant.
+const REPLY_QUOTE_CHARACTERS = 1000
 
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
@@ -430,8 +435,19 @@ type Line =
       attachments?: Attachment[]
       references?: AgentReference[]
       inReplyTo?: string
+      // The stored message's id, once the transcript is read: what a reply
+      // to it names. A line just sent or still arriving has none yet.
+      messageId?: string
     }
-  | { kind: 'assistant'; key: string; text: string; at?: string; streaming?: boolean; usage?: Usage | null }
+  | {
+      kind: 'assistant'
+      key: string
+      text: string
+      at?: string
+      streaming?: boolean
+      usage?: Usage | null
+      messageId?: string
+    }
   | {
       kind: 'tool'
       key: string
@@ -515,7 +531,7 @@ const CONVERSATION = `
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
         attachments { id name contentType size }
-        references { itemId threadId subject from path name financeTransactionId postedOn amount currencyCode merchantName description }
+        references { itemId threadId subject from path name financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
       }
       total
       todos { id text doneAt }
@@ -1225,6 +1241,7 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
             at: message.createdAt,
             attachments: message.attachments ?? undefined,
             references: message.references ?? undefined,
+            messageId: message.id,
           })
         }
         break
@@ -1242,6 +1259,7 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
             key: message.id,
             text: message.content,
             at: message.createdAt,
+            messageId: message.id,
           })
           running.lastAnswer = lines.length - 1
         }
@@ -3811,6 +3829,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const isCallRecord = loaded?.id === conversationId && loaded?.jobKind === 'mcp'
   const isToolOpen = (key: string) => expanded.has(key) !== isCallRecord
 
+  // Swiping a message to the left, or its Reply button, makes the next
+  // turn an answer to it: the quote shows above the box, and the turn
+  // carries it, so the agent knows what "that" is. One at a time.
+  const replyTo = (line: Line) => {
+    if (line.kind !== 'user' && line.kind !== 'assistant') return
+    const shown = line.kind === 'assistant' ? suggestedRepliesOf(withoutPartialMarker(line.text)).displayText : line.text
+    const quotedText = shown.trim().slice(0, REPLY_QUOTE_CHARACTERS)
+    if (!quotedText) return
+    const reply: AgentReference = { agentMessageId: line.messageId, quotedRole: line.kind, quotedText }
+    setReferences((previous) => [...previous.filter((reference) => !isReplyReference(reference)), reply])
+    setTimeout(() => input.current?.focus(), 50)
+  }
+  const replying = references.find(isReplyReference)
+  const chipped = references.filter((reference) => !isReplyReference(reference))
+
   // drawLine is one line of the transcript as the drawer draws it.
   const drawLine = (line: Line) => {
     switch (line.kind) {
@@ -3818,21 +3851,28 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       // line inside it: a line that appears on hover changes the bubble's
       // size under the pointer, and the conversation should read as a
       // conversation, not as a log.
-      case 'user':
+      case 'user': {
+        const repliedTo = line.references?.find(isReplyReference)
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
-            <div className="agent-line user">
+            <SwipeToReply className="agent-line user" replyLabel={t('agentDrawer.reply')} onReply={() => replyTo(line)}>
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
+              {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
               {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
               {line.text}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-            </div>
+            </SwipeToReply>
           </Tooltip>
         )
+      }
       case 'assistant':
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
-            <div className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}>
+            <SwipeToReply
+              className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}
+              replyLabel={t('agentDrawer.reply')}
+              onReply={() => replyTo(line)}
+            >
               <Markdown
                 text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
                 onLeaving={leaving}
@@ -3848,7 +3888,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
                 </div>
               )}
-            </div>
+            </SwipeToReply>
           </Tooltip>
         )
       case 'tool': {
@@ -4410,10 +4450,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           )}
           {(references.length > 0 || pending.length > 0) && (
             <div className="agent-drawer-pending">
-              {references.length > 0 && (
+              {replying && (
+                <ReplyQuote
+                  reference={replying}
+                  title={
+                    replying.quotedRole === 'user'
+                      ? t('agentDrawer.replyingToYourself')
+                      : t('agentDrawer.replyingTo', { name: agentName.trim() || t('agent.title') })
+                  }
+                  onRemove={() => setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))}
+                />
+              )}
+              {chipped.length > 0 && (
                 <ReferenceChips
-                  references={references}
-                  onRemove={(index) => setReferences((previous) => previous.filter((_, at) => at !== index))}
+                  references={chipped}
+                  onRemove={(removed) => setReferences((previous) => previous.filter((reference) => reference !== removed))}
                 />
               )}
               {pending.length > 0 && (
