@@ -110,6 +110,9 @@ export function SwipeableLine({
       copy(true, true)
       return
     }
+    // A line held out for a tap goes back now, and its timer with it, or
+    // the timer would pull back the next swipe midway.
+    window.clearTimeout(holding.current)
     setCopyTapWaiting(false)
     move(0)
     if (!isActing) return

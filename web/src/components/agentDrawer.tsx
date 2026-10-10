@@ -2494,6 +2494,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     adoptConversation,
   } = useAgentConversation(initialConversationId, readConversationSnapshot, applyConversationSnapshot)
 
+  // A reply names a message of the conversation it was swiped in: moving
+  // to another drops it, or the next turn there would answer a message it
+  // does not have.
+  useEffect(() => {
+    setReferences((previous) =>
+      previous.some(isReplyReference) ? previous.filter((reference) => !isReplyReference(reference)) : previous,
+    )
+  }, [conversationId])
+
   // What this conversation left running on the person's computers, kept up
   // while the drawer is open. The main conversation is named by an empty
   // id until it has been read, and the list wants its real one.
