@@ -28,6 +28,13 @@ targets:
       - TeaNode/Resources
     dependencies:
       - package: TeaNodeKit
+    # teanode.com/app/connect links open the app (the site serves the
+    # association file), so scanning a connect code with the Camera does.
+    entitlements:
+      path: TeaNode/TeaNode.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:teanode.com
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER)

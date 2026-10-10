@@ -14,6 +14,17 @@ final class AppModel {
     /// Why the app signed itself out, shown on the connect screen.
     var signedOutText: String?
 
+    /// A connect link opened from outside the app, for the connect screen.
+    var openedLink: ConnectLink?
+
+    /// What to say about a connect link opened while signed in.
+    var openedLinkText: String?
+
+    var isShowingOpenedLinkText: Bool {
+        get { openedLinkText != nil }
+        set { if !newValue { openedLinkText = nil } }
+    }
+
     let store = KeychainAccountStore()
     let transport: any HTTPTransport
 
@@ -47,6 +58,22 @@ final class AppModel {
     private func use(_ account: Account) {
         self.account = account
         connection = Connection(account: account, transport: transport, store: store)
+    }
+
+    /// Takes a link iOS opened the app with. A connect code is used only
+    /// while the phone is signed out: one opened while signed in is left
+    /// unspent, and the person is told why.
+    func open(_ url: URL) {
+        guard let link = ConnectLink(url) else { return }
+        guard let account else {
+            openedLink = link
+            return
+        }
+        if link.server == account.server {
+            openedLinkText = String(localized: "This phone is already connected to \(account.server.host).")
+        } else {
+            openedLinkText = String(localized: "This phone is connected to \(account.server.host). To connect it to \(link.server.host), sign out in Settings first.")
+        }
     }
 
     /// Exchanges a connect link's code for a sign-in and finds out whose it

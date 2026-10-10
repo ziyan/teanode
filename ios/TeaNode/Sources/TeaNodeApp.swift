@@ -18,6 +18,7 @@ struct TeaNodeApp: App {
                 }
             }
             .environment(app)
+            .onOpenURL { url in app.open(url) }
         }
     }
 }
@@ -61,6 +62,15 @@ struct MainView: View {
         }
         .sheet(isPresented: $isShowingSettings) {
             SettingsView()
+        }
+        .alert(
+            "Already connected",
+            isPresented: Bindable(app).isShowingOpenedLinkText,
+            presenting: app.openedLinkText
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { text in
+            Text(text)
         }
         // While the app is open the person is here: notifications that
         // would tell them what they are looking at are held back.
