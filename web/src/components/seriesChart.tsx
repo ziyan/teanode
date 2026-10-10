@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 // The drawing the usage chart and the finance charts share: a slot per key
 // across the width, gridlines on a round scale, columns and lines in the
@@ -217,6 +217,18 @@ export function SeriesChart({
   const [holder, width] = useWidth()
   const labelAxis = axisFormat ?? format
 
+  // A touch screen has no hover: a tap shows a key's tooltip, and it stays
+  // until a tap somewhere else, rather than going the moment the finger
+  // lifts.
+  useEffect(() => {
+    if (hovered === null) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!holder.current?.contains(event.target as Node)) setHovered(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [hovered, holder])
+
   const scale = useMemo(
     () =>
       chartScale(
@@ -381,7 +393,10 @@ function SeriesDrawing({
       role={isSelectable ? 'group' : 'img'}
       aria-label={isSelectable ? label : `${label}. ${said}`}
       onPointerMove={(event) => pointAt(event.clientX, event.currentTarget)}
-      onPointerLeave={() => onHover(null)}
+      onPointerDown={(event) => pointAt(event.clientX, event.currentTarget)}
+      onPointerLeave={(event) => {
+        if (event.pointerType === 'mouse') onHover(null)
+      }}
     >
       {selectedIndex >= 0 ? (
         <rect
