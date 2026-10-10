@@ -30,11 +30,19 @@ const (
 	// pictureLeastBytes is the least a picture is given of a budget, however
 	// many pictures share it.
 	pictureLeastBytes = 48 << 10
-	// pictureDecodePixels bounds what is decoded to shrink: a larger
-	// picture is sent as it is, which is what happened before.
-	pictureDecodePixels = 64 << 20
+	// pictureDecodePixels bounds what is decoded to shrink, about a 48
+	// megapixel photo, which takes some 200 MB to shrink: a larger picture
+	// is sent as it is, which is what happened before.
+	pictureDecodePixels = 50_000_000
+	// pictureBudgetStepBytes is the step a picture's share is rounded down
+	// to. A turn's words grow every round and its pictures' share shrinks a
+	// little with them; shrunk to the exact share, a picture would come out
+	// different each round, and everything after it would miss the
+	// provider's cache.
+	pictureBudgetStepBytes = 64 << 10
 	// pictureShrinksKept is how many shrunk pictures are kept for the next
-	// round of a turn, which sends the same pictures again.
+	// round of a turn, which sends the same pictures again, and sends them
+	// the same while they still fit.
 	pictureShrinksKept = 32
 )
 
@@ -115,21 +123,19 @@ func fitPictures(messages []ChatMessage, budgetBytes int) []ChatMessage {
 }
 
 // shrinkPicture returns a JPEG copy of picture of no more than
-// maximumBytes, upright as a phone meant it, or an error when the picture
-// cannot be read or made that small.
+// maximumBytes, upright as a phone meant it; the smallest copy it could
+// make when none is that small; or an error when the picture cannot be
+// read or made any smaller.
 func shrinkPicture(picture ContentPart, maximumBytes int) (ContentPart, error) {
-	var key [sha256.Size]byte
-	{
-		hash := sha256.New()
-		_ = binary.Write(hash, binary.LittleEndian, int64(maximumBytes))
-		hash.Write(picture.Data)
-		copy(key[:], hash.Sum(nil))
-	}
+	key := sha256.Sum256(picture.Data)
 	pictureShrinksMutex.Lock()
 	shrunk, isKept := pictureShrinks[key]
 	pictureShrinksMutex.Unlock()
-	if isKept {
+	if isKept && len(shrunk.Data) <= maximumBytes {
 		return shrunk, nil
+	}
+	if maximumBytes > pictureBudgetStepBytes {
+		maximumBytes -= maximumBytes % pictureBudgetStepBytes
 	}
 
 	config, _, err := image.DecodeConfig(bytes.NewReader(picture.Data))
@@ -144,11 +150,11 @@ func shrinkPicture(picture ContentPart, maximumBytes int) (ContentPart, error) {
 		return picture, fmt.Errorf("llm: a picture to shrink could not be read: %w", err)
 	}
 	orientation := jpegOrientation(picture.Data)
-	source, isRGBA := decoded.(*image.RGBA)
-	if !isRGBA || decoded.Bounds().Min != (image.Point{}) {
-		source = image.NewRGBA(image.Rect(0, 0, decoded.Bounds().Dx(), decoded.Bounds().Dy()))
-		draw.Draw(source, source.Bounds(), decoded, decoded.Bounds().Min, draw.Src)
-	}
+	// On white: a JPEG keeps no transparency, and what was clear would
+	// otherwise come out black, under text that is often black too.
+	source := image.NewRGBA(image.Rect(0, 0, decoded.Bounds().Dx(), decoded.Bounds().Dy()))
+	draw.Draw(source, source.Bounds(), image.White, image.Point{}, draw.Src)
+	draw.Draw(source, source.Bounds(), decoded, decoded.Bounds().Min, draw.Over)
 
 	longestSidePixels := min(max(config.Width, config.Height), pictureLongestSidePixels)
 	quality := 85
@@ -159,17 +165,7 @@ func shrinkPicture(picture ContentPart, maximumBytes int) (ContentPart, error) {
 		if err := jpeg.Encode(&encoded, orientPicture(scaled, orientation), &jpeg.Options{Quality: quality}); err != nil {
 			return picture, fmt.Errorf("llm: a shrunk picture could not be written: %w", err)
 		}
-		if encoded.Len() <= maximumBytes {
-			shrunk = ContentPart{Type: "image", MediaType: "image/jpeg", Data: bytes.Clone(encoded.Bytes())}
-			pictureShrinksMutex.Lock()
-			if len(pictureShrinks) >= pictureShrinksKept {
-				clear(pictureShrinks)
-			}
-			pictureShrinks[key] = shrunk
-			pictureShrinksMutex.Unlock()
-			return shrunk, nil
-		}
-		if longestSidePixels <= pictureShortestSidePixels {
+		if encoded.Len() <= maximumBytes || longestSidePixels <= pictureShortestSidePixels {
 			break
 		}
 		// Bytes go roughly with the area: the side by the square root of
@@ -178,10 +174,22 @@ func shrinkPicture(picture ContentPart, maximumBytes int) (ContentPart, error) {
 		longestSidePixels = max(int(float64(longestSidePixels)*ratio), pictureShortestSidePixels)
 		quality = 75
 	}
-	return picture, fmt.Errorf("llm: a picture could not be made smaller than %d bytes", maximumBytes)
+	// Over its share still, the smallest copy made is sent all the same:
+	// nearer to fitting than the picture it came from.
+	if encoded.Len() >= len(picture.Data) {
+		return picture, fmt.Errorf("llm: a picture could not be made smaller than its %d bytes", len(picture.Data))
+	}
+	shrunk = ContentPart{Type: "image", MediaType: "image/jpeg", Data: bytes.Clone(encoded.Bytes())}
+	pictureShrinksMutex.Lock()
+	if len(pictureShrinks) >= pictureShrinksKept {
+		clear(pictureShrinks)
+	}
+	pictureShrinks[key] = shrunk
+	pictureShrinksMutex.Unlock()
+	return shrunk, nil
 }
 
-// scalePicture returns picture with its longest side no longer than
+// scalePicture returns source with its longest side no longer than
 // longestSidePixels, each pixel the average of those it covers.
 func scalePicture(source *image.RGBA, longestSidePixels int) *image.RGBA {
 	sourceWidth, sourceHeight := source.Bounds().Dx(), source.Bounds().Dy()

@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"math/rand/v2"
 	"strings"
 	"testing"
@@ -177,5 +178,52 @@ func TestARequestTooLargeForThePlanHasItsPicturesShrunk(test *testing.T) {
 	content := body.Input[0].Content
 	if len(content) != 2 || content[1].Type != "input_image" || !strings.HasPrefix(content[1].ImageURL, "data:image/jpeg;base64,") {
 		test.Errorf("the picture was not sent: %+v", content)
+	}
+}
+
+func TestAShrunkPictureStaysTheSameWhileItStillFits(test *testing.T) {
+	test.Parallel()
+
+	photo := ContentPart{Type: "image", MediaType: "image/jpeg", Data: noisyPhoto(test, 800, 600)}
+	first, err := shrinkPicture(photo, len(photo.Data)/2)
+	if err != nil {
+		test.Fatalf("shrink: %s", err)
+	}
+	// The next round's words took a little more of the budget.
+	second, err := shrinkPicture(photo, len(photo.Data)/2-2000)
+	if err != nil {
+		test.Fatalf("shrink: %s", err)
+	}
+	if !bytes.Equal(first.Data, second.Data) {
+		test.Errorf("the picture came out different for a slightly smaller share, and would miss the cache")
+	}
+}
+
+func TestWhatWasClearComesOutWhite(test *testing.T) {
+	test.Parallel()
+
+	// The left half clear, the right half opaque noise, which no PNG
+	// compresses and a JPEG does.
+	random := rand.New(rand.NewPCG(3, 5))
+	picture := image.NewNRGBA(image.Rect(0, 0, 600, 400))
+	for y := 0; y < 400; y++ {
+		for x := 300; x < 600; x++ {
+			picture.Set(x, y, color.NRGBA{uint8(random.IntN(256)), uint8(random.IntN(256)), uint8(random.IntN(256)), 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, picture); err != nil {
+		test.Fatalf("encode: %s", err)
+	}
+	shrunk, err := shrinkPicture(ContentPart{Type: "image", MediaType: "image/png", Data: encoded.Bytes()}, len(encoded.Bytes())/2)
+	if err != nil {
+		test.Fatalf("shrink: %s", err)
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(shrunk.Data))
+	if err != nil {
+		test.Fatalf("decode: %s", err)
+	}
+	if red, _, _, _ := decoded.At(10, 10).RGBA(); red < 0xF000 {
+		test.Errorf("a clear pixel came out %#x, not white", red)
 	}
 }
