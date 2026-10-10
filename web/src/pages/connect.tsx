@@ -157,11 +157,20 @@ export function ConnectPage() {
         <dt>{t('authorize.program')}</dt>
         <dd>
           <span className="authorize-name">{pairing.clientName || t('authorize.unnamed')}</span>
-          {pairing.deviceName && <span className="authorize-name"> · {pairing.deviceName}</span>}
           {/* Anybody may register under any name, and a device calls itself
               what it likes; the code is the part the reader can check. */}
-          <span className="authorize-claimed muted">{t('connect.claimedNames')}</span>
+          <span className="authorize-claimed muted">{t('authorize.claimedName')}</span>
         </dd>
+
+        {pairing.deviceName && (
+          <>
+            <dt>{t('connect.device')}</dt>
+            <dd>
+              <span className="authorize-name">{pairing.deviceName}</span>
+              <span className="authorize-claimed muted">{t('connect.claimedDeviceName')}</span>
+            </dd>
+          </>
+        )}
 
         <dt>{t('authorize.actsAs')}</dt>
         <dd>{pairing.username}</dd>
