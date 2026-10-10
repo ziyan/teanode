@@ -98,6 +98,16 @@ readonly ALLOWED_HOSTS=(
   chatgpt.com
   auth.openai.com
 
+  # Apple's public services, which the iPhone app's plan and README name:
+  # the developer site, App Store Connect, and the push service the relay
+  # sends to.
+  .apple.com
+
+  # The iPhone app's bundle and app group identifiers. They are written like
+  # host names in reverse, from the project's own domain, and name no
+  # machine. A leading dot also allows group.com.teanode.app.
+  .com.teanode.app
+
   # The bank data provider an operator can offer, for the same reason: its API
   # and the script its linking window loads from are addresses of a public
   # service that the code and the finance accounts plan have to name.
