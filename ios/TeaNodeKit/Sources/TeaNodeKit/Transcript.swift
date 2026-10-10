@@ -141,9 +141,44 @@ public struct Transcript: Sendable {
 
     static func cardId(runId: String, callId: String) -> String { "\(runId)-\(callId)-card" }
 
+    /// sentPrefix starts the id of a line this app sent, until the feed
+    /// says which turn it began.
+    static let sentPrefix = "sent-"
+
+    /// Shows what the person just sent from this app, before the turn it
+    /// begins is under way.
+    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = []) {
+        lines.append(TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments))
+    }
+
+    /// Takes back the last thing sent from this app, when the server
+    /// refused it.
+    public mutating func withdrawSent() {
+        if let index = lines.lastIndex(where: { $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty }) {
+            lines.remove(at: index)
+        }
+    }
+
+    /// The question waiting for the person's answer, if one is.
+    public var openQuestion: TranscriptLine? {
+        lines.last { $0.kind == .question && !$0.isDone }
+    }
+
     /// Applies an event of a running turn.
     public mutating func apply(_ event: AgentEvent) {
         switch event.kind {
+        case "asked":
+            // A turn began: something the person said, here or anywhere
+            // else, or a turn the agent took on its own. One sent from this
+            // app is shown already.
+            guard let text = event.text, !text.isEmpty else { return }
+            if let index = lines.lastIndex(where: { $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty && $0.text == text }) {
+                lines[index].runId = event.runId
+            } else if let origin = CheckInOrigin.of(text) {
+                lines.append(TranscriptLine(id: "\(event.runId)-asked", kind: .checkIn, text: text, detail: origin.rawValue, runId: event.runId, at: event.at))
+            } else {
+                lines.append(TranscriptLine(id: "\(event.runId)-asked", kind: .person, text: text, runId: event.runId, at: event.at))
+            }
         case "text":
             if let last = lines.indices.last, lines[last].kind == .answer, lines[last].isStreaming {
                 lines[last].text += event.text ?? ""

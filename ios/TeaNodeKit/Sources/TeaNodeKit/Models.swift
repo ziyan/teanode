@@ -39,6 +39,13 @@ public struct AgentAttachment: Codable, Hashable, Sendable {
     public let name: String
     public let contentType: String
     public let size: Int
+
+    public init(id: String, name: String, contentType: String, size: Int) {
+        self.id = id
+        self.name = name
+        self.contentType = contentType
+        self.size = size
+    }
 }
 
 /// AgentMessage is one stored message of a conversation.

@@ -5,6 +5,7 @@
 name: TeaNode
 
 options:
+  developmentLanguage: en
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
@@ -42,6 +43,12 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         # The TeaNode leaf on white, from docs/images/logo.svg.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # TeaNode green, the one color of the app's own (DESIGN.md).
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Your agent asks where you are when something you asked depends on it, such as the weather or how long a trip takes."
         # The app encrypts nothing beyond the https the system provides, which
         # export rules exempt; saying so here spares every upload the question.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"

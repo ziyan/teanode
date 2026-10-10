@@ -154,6 +154,16 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.lines[1].resolution, "Friday")
     }
 
+    func testWhatThisAppSentIsShownOnce() {
+        var transcript = Transcript(messages: [])
+        transcript.addSent("Is it raining?")
+        transcript.apply(AgentEvent(kind: "asked", runId: "r", sequence: 1, text: "Is it raining?"))
+        transcript.apply(AgentEvent(kind: "asked", runId: "s", sequence: 1, text: "Asked on the dashboard."))
+        transcript.apply(AgentEvent(kind: "asked", runId: "t", sequence: 1, text: "[alert] a parcel arrived"))
+        XCTAssertEqual(transcript.lines.map(\.kind), [.person, .person, .checkIn])
+        XCTAssertEqual(transcript.lines[0].runId, "r")
+    }
+
     func testServerTimesAreRead() {
         XCTAssertNotNil(ServerTime.date("2026-10-10T17:58:04.123456789-04:00"))
         XCTAssertNotNil(ServerTime.date("2026-10-10T21:58:04Z"))
