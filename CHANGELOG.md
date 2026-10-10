@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.124.2] - 2026-10-10
+
+### Changed
+
+- The agent's task list is cleared when a turn ends with every step done, instead of staying above the chat box. (#374)
+
 ## [0.124.1] - 2026-10-10
 
 ### Changed
