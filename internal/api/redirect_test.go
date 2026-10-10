@@ -48,16 +48,18 @@ func TestANativeAppRegisteredOnlyAppAddresses(test *testing.T) {
 	}
 }
 
-func TestAPairingCodeIsReadHoweverItIsTyped(test *testing.T) {
-	for _, typed := range []string{"KQ7M4TXD", "KQ7M-4TXD", "kq7m-4txd", " kq7m 4txd "} {
-		if got := NormalizePairingCode(typed); got != "KQ7M4TXD" {
-			test.Errorf("%q came out %q", typed, got)
+func TestADisplayNameHidesNothing(test *testing.T) {
+	for given, shown := range map[string]string{
+		"TeaNode":            "TeaNode",
+		"  a   test\nphone ": "a test phone",
+		"Tea\u202eedoN":      "TeaedoN",
+		"Tea\u200bNode":      "TeaNode",
+		"a\x00b\x1bc":        "abc",
+		"名前":                 "名前",
+		"一二三四五六七八九十一二三四五六七八九十一二三": "一二三四五六七八九十一二三四五六七八九十",
+	} {
+		if got := DisplayName(given, 20); got != shown {
+			test.Errorf("%q was shown as %q, not %q", given, got, shown)
 		}
-	}
-	if got := FormatPairingCode("KQ7M4TXD"); got != "KQ7M-4TXD" {
-		test.Errorf("formatted as %q", got)
-	}
-	if got := FormatPairingCode("SHORT"); got != "SHORT" {
-		test.Errorf("a code of the wrong length was changed to %q", got)
 	}
 }

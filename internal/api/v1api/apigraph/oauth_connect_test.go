@@ -136,104 +136,65 @@ func (self *signInWorld) worksOnTheAPI(token string) bool {
 	return ok && username == self.person.Username
 }
 
-// A phone app is paired by a code the person approves somewhere else, and
-// collects a token for the whole API, once.
-func TestAnAppIsPairedByACodeAndGetsTheWholeAPI(test *testing.T) {
-	world := newSignInWorld(test)
-	clientId := world.register(test, "com.example.app:/oauth")
-
-	status, started := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{
-		"client_id": {clientId}, "scope": {"api"}, "device_name": {"  a   test\nphone "},
-	})
-	if status != http.StatusOK {
-		test.Fatalf("starting a pairing: %d %v", status, started)
-	}
-	deviceCode, _ := started["device_code"].(string)
-	userCode, _ := started["user_code"].(string)
-	if deviceCode == "" || len(userCode) != 9 || userCode[4] != '-' {
-		test.Fatalf("the pairing came back as %v", started)
-	}
-	if complete, _ := started["verification_uri_complete"].(string); !strings.HasSuffix(complete, api.PathOAuthConnect+"?code="+strings.ReplaceAll(userCode, "-", "")) {
-		test.Errorf("the page to approve on is %q", complete)
-	}
-
-	poll := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {clientId}, "device_code": {deviceCode}}
-	if _, answer := world.post(test, api.PathOAuthToken, poll); answer["error"] != "authorization_pending" {
-		test.Errorf("before approval the device was told %v", answer)
-	}
-	if _, answer := world.post(test, api.PathOAuthToken, poll); answer["error"] != "slow_down" {
-		test.Errorf("polling at once again, the device was told %v", answer)
-	}
-	stranger := url.Values{"grant_type": poll["grant_type"], "client_id": {"another-program"}, "device_code": {deviceCode}}
-	if _, answer := world.post(test, api.PathOAuthToken, stranger); answer["error"] != "invalid_grant" {
-		test.Errorf("another program collecting the code was told %v", answer)
-	}
-
-	// The person reads the code off the phone, in lower case and without
-	// the dash.
-	typed := strings.ToLower(strings.ReplaceAll(userCode, "-", ""))
-	data, errors := world.ask(test, `{ ReadOAuthDevicePairing(userCode: "`+typed+`") { userCode clientName deviceName username isFullAccess } }`)
+// connectCode makes a connect code as the person and returns the secret the
+// link carries.
+func (self *signInWorld) connectCode(t *testing.T) string {
+	t.Helper()
+	data, errors := self.ask(t, `mutation { CreateOAuthConnectCode { connectLink qrCodeSvg expiresAt } }`)
 	if len(errors) > 0 {
-		test.Fatalf("ReadOAuthDevicePairing: %v", errors)
+		t.Fatalf("CreateOAuthConnectCode: %v", errors)
 	}
-	read, _ := data["ReadOAuthDevicePairing"].(map[string]any)
-	if read["userCode"] != userCode || read["clientName"] != "a test app" || read["deviceName"] != "a test phone" ||
-		read["username"] != world.person.Username || read["isFullAccess"] != true {
-		test.Errorf("the pairing reads as %v", read)
+	made, _ := data["CreateOAuthConnectCode"].(map[string]any)
+	link, _ := made["connectLink"].(string)
+	if !strings.HasPrefix(link, api.AppConnectLink+"#") || !strings.HasPrefix(made["qrCodeSvg"].(string), "<svg") {
+		t.Fatalf("the code came back as %v", made)
 	}
-	if _, errors := world.ask(test, `mutation { DecideOAuthDevicePairing(userCode: "`+userCode+`", isApproved: true) { isApproved } }`); len(errors) > 0 {
-		test.Fatalf("DecideOAuthDevicePairing: %v", errors)
+	// The secret and the server travel after the "#", which no browser sends.
+	fragment, err := url.ParseQuery(strings.TrimPrefix(link, api.AppConnectLink+"#"))
+	if err != nil || fragment.Get("server") == "" || len(fragment.Get("code")) < 32 {
+		t.Fatalf("the link carries %v (%v)", fragment, err)
 	}
-	if _, errors := world.ask(test, `mutation { DecideOAuthDevicePairing(userCode: "`+userCode+`", isApproved: false) { isApproved } }`); len(errors) == 0 {
-		test.Error("a pairing already approved was refused afterwards")
-	}
-
-	_, answer := world.post(test, api.PathOAuthToken, poll)
-	token, _ := answer["access_token"].(string)
-	if token == "" || answer["scope"] != "api" || answer["refresh_token"] == "" {
-		test.Fatalf("after approval the device was answered %v", answer)
-	}
-	if !world.worksOnTheAPI(token) {
-		test.Error("the paired token is not taken by the API")
-	}
-	if _, again := world.post(test, api.PathOAuthToken, poll); again["error"] != "invalid_grant" {
-		test.Errorf("collecting the same pairing again was answered %v", again)
-	}
+	return fragment.Get("code")
 }
 
-// A refused code gives the device nothing, and a wrong code says nothing
-// about whether it ever was one.
-func TestARefusedPairingGivesNothing(test *testing.T) {
+// A phone app scans a code made where the person is signed in, and gets a
+// token for the whole API as them, once.
+func TestAnAppConnectsWithACodeAndGetsTheWholeAPI(test *testing.T) {
 	world := newSignInWorld(test)
-	clientId := world.register(test, "com.example.app:/oauth")
-	_, started := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{"client_id": {clientId}, "scope": {"api"}})
-	userCode, _ := started["user_code"].(string)
+	appClient := world.register(test, "com.example.app:/oauth")
+	webClient := world.register(test, "https://app.example.com/callback")
+	code := world.connectCode(test)
 
-	if _, errors := world.ask(test, `mutation { DecideOAuthDevicePairing(userCode: "`+userCode+`", isApproved: false) { isDenied } }`); len(errors) > 0 {
-		test.Fatalf("refusing: %v", errors)
+	exchange := func(clientId string) map[string]any {
+		_, answer := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"urn:teanode:params:oauth:grant-type:connect-code"}, "client_id": {clientId},
+			"connect_code": {code}, "device_name": {"a test\u202ephone"},
+		})
+		return answer
 	}
-	poll := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {clientId}, "device_code": {started["device_code"].(string)}}
-	if _, answer := world.post(test, api.PathOAuthToken, poll); answer["error"] != "access_denied" {
-		test.Errorf("a refused device was told %v", answer)
+
+	// A web page cannot use it, and trying does not spend it.
+	if answer := exchange(webClient); answer["error"] != "unauthorized_client" {
+		test.Errorf("a web program presenting the code was answered %v", answer)
 	}
-	if _, errors := world.ask(test, `{ ReadOAuthDevicePairing(userCode: "BBBB-BBBB") { userCode } }`); len(errors) == 0 {
-		test.Error("a code nobody issued was found")
+	answer := exchange(appClient)
+	token, _ := answer["access_token"].(string)
+	if token == "" || answer["scope"] != "api" || answer["refresh_token"] == "" {
+		test.Fatalf("the app was answered %v", answer)
+	}
+	if !world.worksOnTheAPI(token) {
+		test.Error("the connected token is not taken by the API")
+	}
+	if again := exchange(appClient); again["error"] != "invalid_grant" {
+		test.Errorf("the same code was accepted twice: %v", again)
 	}
 }
 
 // Only an app installed on a device may be given the whole API: a program
-// with a web address is refused, by pairing and by the consent page alike,
-// while the agent tools stay open to it.
+// with a web address is refused by the consent page.
 func TestOnlyAnInstalledAppMayAskForTheWholeAPI(test *testing.T) {
 	world := newSignInWorld(test)
 	webClient := world.register(test, "https://app.example.com/callback")
-	if status, answer := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{"client_id": {webClient}, "scope": {"api"}}); status != http.StatusBadRequest || answer["error"] != "invalid_scope" {
-		test.Errorf("a web program pairing for the whole API was answered %d %v", status, answer)
-	}
-	if status, answer := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{"client_id": {webClient}, "scope": {"mcp"}}); status != http.StatusOK {
-		test.Errorf("a web program pairing for the agent tools was answered %d %v", status, answer)
-	}
-
 	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 	if _, errors := world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+webClient+`", redirectUri: "https://app.example.com/callback", codeChallenge: "`+challenge+`", scope: "api") { redirectUrl } }`); len(errors) == 0 {
 		test.Error("a web program was approved for the whole API")

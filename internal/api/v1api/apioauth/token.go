@@ -55,11 +55,11 @@ func (self *oauth) tokenView(response http.ResponseWriter, request *http.Request
 		self.exchangeCode(response, request)
 	case "refresh_token":
 		self.refreshToken(response, request)
-	case grantDeviceCode:
-		self.collectPairing(response, request)
+	case grantConnectCode:
+		self.collectConnectCode(response, request)
 	default:
 		writeOAuthError(response, http.StatusBadRequest, "unsupported_grant_type",
-			"this server issues tokens for an authorization code, a refresh token or a device code")
+			"this server issues tokens for an authorization code, a refresh token or a connect code")
 	}
 }
 

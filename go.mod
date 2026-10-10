@@ -42,6 +42,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
+	rsc.io/qr v0.2.0
 )
 
 require (

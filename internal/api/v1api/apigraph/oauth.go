@@ -25,19 +25,16 @@ type OAuthQuery interface {
 	// Describe the program asking to be authorized, for the page that asks
 	// somebody whether to allow it.
 	ReadOAuthAuthorizationRequest(ctx context.Context, arguments ReadOAuthAuthorizationRequestArguments) (*OAuthAuthorizationRequest, error)
-
-	// Describe the device showing a pairing code, for the page, the command
-	// and the agent that approve it.
-	ReadOAuthDevicePairing(ctx context.Context, arguments ReadOAuthDevicePairingArguments) (*OAuthDevicePairing, error)
 }
 
 type OAuthMutation interface {
 	// Approve a program, returning the address to send the person back to.
 	ApproveOAuthAuthorization(ctx context.Context, arguments ApproveOAuthAuthorizationArguments) (*OAuthApproval, error)
 
-	// Approve or refuse the device showing a pairing code, signing it in as
-	// you when approved.
-	DecideOAuthDevicePairing(ctx context.Context, arguments DecideOAuthDevicePairingArguments) (*OAuthDevicePairing, error)
+	// Make a one-time code that connects the TeaNode phone app to this
+	// server as you: a link and a QR code for your phone's camera, good for
+	// ten minutes and one phone. Show it to nobody else.
+	CreateOAuthConnectCode(ctx context.Context) (*OAuthConnectCode, error)
 }
 
 type ReadOAuthAuthorizationRequestArguments struct {

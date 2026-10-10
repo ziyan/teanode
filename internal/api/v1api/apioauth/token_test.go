@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/ziyan/teanode/internal/api"
 )
 
 // A client may name itself in the body or in an HTTP Basic header.
@@ -48,14 +50,14 @@ func TestTheClientIsReadFromTheBodyOrTheBasicHeader(test *testing.T) {
 // got a server error instead of a registration.
 func TestANameIsCutByCharacters(test *testing.T) {
 	long := strings.Repeat("名", clientNameLongest+5)
-	cut := truncateName(long)
+	cut := api.DisplayName(long, clientNameLongest)
 	if count := len([]rune(cut)); count != clientNameLongest {
 		test.Errorf("cut to %d characters, not %d", count, clientNameLongest)
 	}
 	if !utf8.ValidString(cut) {
 		test.Error("the cut name is not valid UTF-8")
 	}
-	if short := "a short name"; truncateName(short) != short {
+	if short := "a short name"; api.DisplayName(short, clientNameLongest) != short {
 		test.Error("a short name was changed")
 	}
 }

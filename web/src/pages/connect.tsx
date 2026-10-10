@@ -1,195 +1,107 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { graphql } from '../api'
 import { AuthCard } from '../components/authCard'
-import { ErrorMessage } from '../components/common'
+import { ErrorMessage, formatClock } from '../components/common'
 import { useTranslation } from '../i18n/i18n'
 
-// The page a device sends somebody to when it wants to be signed in: the
-// TeaNode phone app shows a code, such as KQ7M-4TXD, and a link here. The
-// person types the code (or follows the link, which carries it), sees which
-// app and device are asking, and approves or turns it away. The device has
-// been asking the server all along and collects its sign-in once approved.
+// The page that connects the TeaNode phone app: a one-time QR code, made for
+// whoever is signed in here, that the phone's camera scans. The camera opens
+// the app (or the App Store), and the app exchanges the code for a sign-in as
+// that person.
 //
-// Drawn as one card, like the authorize page, for the same reason: the reader
-// was brought here to answer one question. Somebody not signed in meets the
-// login form at this address first.
+// The code goes from this screen to the person's own phone and nowhere else.
+// That is why the phone scans rather than the person approving something the
+// phone shows: a code shown for approval can be anybody's, sent with a link to
+// this server, and approving it would sign the stranger in.
+//
+// Drawn as one card, like the authorize page, because it is one thing to do.
+// Somebody not signed in meets the login form at this address first.
 
-const READ = `
-  query ($userCode: String!) {
-    ReadOAuthDevicePairing(userCode: $userCode) {
-      userCode
-      clientName
-      deviceName
-      username
-      isFullAccess
+const CREATE = `
+  mutation {
+    CreateOAuthConnectCode {
+      connectLink
+      qrCodeSvg
+      expiresAt
     }
   }`
 
-const DECIDE = `
-  mutation ($userCode: String!, $isApproved: Boolean!) {
-    DecideOAuthDevicePairing(userCode: $userCode, isApproved: $isApproved) {
-      isApproved
-    }
-  }`
-
-type Pairing = {
-  userCode: string
-  clientName: string
-  deviceName: string
-  username: string
-  isFullAccess: boolean
+type ConnectCode = {
+  connectLink: string
+  qrCodeSvg: string
+  expiresAt: string
 }
-
-type Phase = 'typing' | 'reading' | 'asking' | 'working' | 'approved' | 'denied'
 
 export function ConnectPage() {
   const { t } = useTranslation()
-  const [typedCode, setTypedCode] = useState(() => new URLSearchParams(window.location.search).get('code') ?? '')
-  const [phase, setPhase] = useState<Phase>('typing')
-  const [pairing, setPairing] = useState<Pairing | null>(null)
+  const [code, setCode] = useState<ConnectCode | null>(null)
+  const [isMaking, setIsMaking] = useState(false)
+  const [isExpired, setIsExpired] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     document.title = `${t('connect.title')} · ${t('app.name')}`
   }, [t])
 
-  const read = useCallback(
-    async (userCode: string) => {
-      setError(null)
-      setPhase('reading')
-      try {
-        const data = await graphql<{ ReadOAuthDevicePairing: Pairing }>(READ, { userCode })
-        setPairing(data.ReadOAuthDevicePairing)
-        setPhase('asking')
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : t('connect.failed'))
-        setPhase('typing')
-      }
-    },
-    [t],
-  )
+  const make = useCallback(async () => {
+    setError(null)
+    setIsMaking(true)
+    try {
+      const data = await graphql<{ CreateOAuthConnectCode: ConnectCode }>(CREATE)
+      setCode(data.CreateOAuthConnectCode)
+      setIsExpired(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('connect.failed'))
+    } finally {
+      setIsMaking(false)
+    }
+  }, [t])
 
-  // A link from the device carries its code, so the reader only has to
-  // check it rather than type it.
   useEffect(() => {
-    const linked = new URLSearchParams(window.location.search).get('code')
-    if (linked) void read(linked)
-  }, [read])
+    void make()
+  }, [make])
 
-  const decide = useCallback(
-    async (isApproved: boolean) => {
-      if (!pairing) return
-      setError(null)
-      setPhase('working')
-      try {
-        await graphql(DECIDE, { userCode: pairing.userCode, isApproved })
-        setPhase(isApproved ? 'approved' : 'denied')
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : t('connect.failed'))
-        setPhase('asking')
-      }
-    },
-    [pairing, t],
-  )
-
-  if (phase === 'approved' || phase === 'denied') {
-    return (
-      <AuthCard purpose={t('connect.title')} onSubmit={(event) => event.preventDefault()}>
-        <p className="muted">{phase === 'approved' ? t('connect.approved') : t('connect.denied')}</p>
-      </AuthCard>
-    )
-  }
-
-  if (!pairing || phase === 'typing' || phase === 'reading') {
-    return (
-      <AuthCard
-        purpose={t('connect.title')}
-        onSubmit={(event: React.FormEvent) => {
-          event.preventDefault()
-          void read(typedCode)
-        }}
-      >
-        <p className="authorize-intro">{t('connect.intro')}</p>
-        <label className="auth-field">
-          <span>{t('connect.codeLabel')}</span>
-          <input
-            className="connect-code"
-            value={typedCode}
-            onChange={(event) => setTypedCode(event.target.value)}
-            placeholder="KQ7M-4TXD"
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            autoFocus
-          />
-        </label>
-        <ErrorMessage error={error} />
-        <div className="authorize-actions">
-          <button
-            className="primary auth-button"
-            type="submit"
-            disabled={phase === 'reading' || typedCode.trim() === ''}
-          >
-            {phase === 'reading' ? t('connect.reading') : t('connect.continue')}
-          </button>
-        </div>
-      </AuthCard>
-    )
-  }
+  // A code past its time is hidden rather than left on the screen to be
+  // scanned and refused.
+  useEffect(() => {
+    if (!code) return
+    const left = new Date(code.expiresAt).getTime() - Date.now()
+    const timer = window.setTimeout(() => setIsExpired(true), Math.max(left, 0))
+    return () => window.clearTimeout(timer)
+  }, [code])
 
   return (
-    <AuthCard
-      purpose={t('connect.title')}
-      onSubmit={(event: React.FormEvent) => {
-        event.preventDefault()
-        void decide(true)
-      }}
-    >
-      <p className="authorize-intro">{t('connect.checkCode')}</p>
+    <AuthCard purpose={t('connect.title')} onSubmit={(event) => event.preventDefault()}>
+      <p className="authorize-intro">{t('connect.intro')}</p>
 
-      <dl className="authorize-facts">
-        <dt>{t('connect.code')}</dt>
-        <dd>
-          <code className="connect-code-shown">{pairing.userCode}</code>
-        </dd>
-
-        <dt>{t('authorize.program')}</dt>
-        <dd>
-          <span className="authorize-name">{pairing.clientName || t('authorize.unnamed')}</span>
-          {/* Anybody may register under any name, and a device calls itself
-              what it likes; the code is the part the reader can check. */}
-          <span className="authorize-claimed muted">{t('authorize.claimedName')}</span>
-        </dd>
-
-        {pairing.deviceName && (
-          <>
-            <dt>{t('connect.device')}</dt>
-            <dd>
-              <span className="authorize-name">{pairing.deviceName}</span>
-              <span className="authorize-claimed muted">{t('connect.claimedDeviceName')}</span>
-            </dd>
-          </>
-        )}
-
-        <dt>{t('authorize.actsAs')}</dt>
-        <dd>{pairing.username}</dd>
-      </dl>
-
-      <p className="authorize-grant muted">
-        {pairing.isFullAccess ? t('authorize.grantFullAccess') : t('authorize.grant')}
-      </p>
+      {code && !isExpired && (
+        <>
+          <img
+            className="connect-qr"
+            src={`data:image/svg+xml;utf8,${encodeURIComponent(code.qrCodeSvg)}`}
+            alt={t('connect.qrAlt')}
+          />
+          <p className="muted">{t('connect.expires', { time: formatClock(code.expiresAt) })}</p>
+          <p className="authorize-grant muted">{t('connect.warning')}</p>
+          {/* On the phone itself there is nothing to scan: the link opens the
+              app directly. */}
+          <a className="connect-here" href={code.connectLink}>
+            {t('connect.openHere')}
+          </a>
+        </>
+      )}
+      {isExpired && <p className="muted">{t('connect.expired')}</p>}
 
       <ErrorMessage error={error} />
 
-      <div className="authorize-actions">
-        <button className="primary auth-button" type="submit" disabled={phase === 'working'}>
-          {phase === 'working' ? t('authorize.working') : t('connect.approve')}
-        </button>
-        <button className="auth-button" type="button" onClick={() => void decide(false)} disabled={phase === 'working'}>
-          {t('connect.deny')}
-        </button>
-      </div>
+      {(isExpired || error) && (
+        <div className="authorize-actions">
+          <button className="primary auth-button" type="button" onClick={() => void make()} disabled={isMaking}>
+            {isMaking ? t('connect.making') : t('connect.newCode')}
+          </button>
+        </div>
+      )}
     </AuthCard>
   )
 }

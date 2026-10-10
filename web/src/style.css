@@ -11381,14 +11381,19 @@ main.content:has(> .knowledge-frame) {
   overflow-wrap: break-word;
 }
 
-/* A pairing code, typed and shown in the same large, spaced capitals the
-   device shows it in, so the reader can compare the two at a glance. */
-.connect-code,
-.connect-code-shown {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-title);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+/* The code a phone scans: square, on the white its image carries, and large
+   enough to read from arm's length on a laptop. */
+.connect-qr {
+  display: block;
+  width: min(100%, 240px);
+  aspect-ratio: 1;
+  margin: var(--space-3) auto;
+  border-radius: var(--radius-1);
+}
+
+.connect-here {
+  display: inline-block;
+  margin-top: var(--space-2);
 }
 
 .authorize-grant {

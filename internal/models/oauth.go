@@ -69,35 +69,12 @@ type OAuthAuthorization struct {
 	ExpiresAt time.Time `json:"expiresAt,omitempty"`
 }
 
-// OAuthDeviceAuthorization is a pairing in progress (RFC 8628): a device
-// showing a short code, waiting for a person signed in somewhere else to
-// approve it.
-//
-// It is approved or refused once, and deleted when its token is collected.
-type OAuthDeviceAuthorization struct {
+// OAuthConnectCode is a one-time secret that signs a phone app in as a
+// person: shown where they are signed in, as a QR code, and scanned by the
+// phone. It is deleted when it is used.
+type OAuthConnectCode struct {
 	ID        string    `json:"id,omitempty"`
 	CreatedAt time.Time `json:"createdAt,omitempty"`
-
-	ClientID string `json:"clientId,omitempty"`
-
-	// UserCode is what the person types, without its dash.
-	UserCode string `json:"userCode,omitempty"`
-
-	// DeviceName is what the device calls itself. Claimed, not verified.
-	DeviceName string `json:"deviceName,omitempty"`
-
-	// Resource is what the token will be good for: empty for the whole API.
-	Resource string `json:"resource,omitempty"`
-
-	// UserID is who approved it, empty until somebody does.
 	UserID    string    `json:"userId,omitempty"`
-	IsDenied  bool      `json:"isDenied,omitempty"`
-	DecidedAt time.Time `json:"decidedAt,omitempty"`
-	PolledAt  time.Time `json:"polledAt,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt,omitempty"`
-}
-
-// IsDecided says whether a person has approved or refused it.
-func (self *OAuthDeviceAuthorization) IsDecided() bool {
-	return self.UserID != "" || self.IsDenied
 }

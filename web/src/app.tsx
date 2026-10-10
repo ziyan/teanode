@@ -250,8 +250,8 @@ export function App() {
     )
   }
 
-  // Approving a device that shows a pairing code: the TeaNode phone app.
-  // One question, brought here by the device, drawn the same way.
+  // The code the TeaNode phone app scans to connect: one thing to do, drawn
+  // the same way.
   if (location.pathname === '/connect') {
     return (
       <div className="auth-page">

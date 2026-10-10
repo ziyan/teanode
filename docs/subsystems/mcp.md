@@ -112,16 +112,20 @@ own (`com.example.app:/oauth`, RFC 8252's private-use scheme, which the device
 hands to that app alone; `api.IsPrivateUseRedirect`). A web page asking for
 everything is refused, and the consent page says plainly what `api` grants.
 
-An app can also sign in without the person typing anything on it: it asks
-`POST /oauth/device_authorization` for a pairing (RFC 8628), shows the short
-code it is given, such as `KQ7M-4TXD`, and polls `POST /oauth/token` with the
-long device code only it holds. The person approves the code where they are
-already signed in: the dashboard's `/connect` page (`web/src/pages/connect.tsx`),
-`teanode agent phone approve <code>`, or `DecideOAuthDevicePairing`. The code
-lasts ten minutes, issues one token, and every look at a code counts against
-the login limiter, so guessing gets nowhere. The pairing is
-`internal/api/v1api/apioauth/device.go` and
-`internal/api/v1api/apigraph/oauth_pairing.go`. Refresh replaces the token
+An app can also sign in without the person typing anything on it. Where
+they are signed in (the dashboard's `/connect` page, `teanode agent phone
+pair`, or `CreateOAuthConnectCode`) a one-time connect code is made for them
+and shown as a QR code holding `https://teanode.com/app/connect#server=…&code=…`.
+The phone's camera opens the app, which presents the code at
+`POST /oauth/token` with the grant
+`urn:teanode:params:oauth:grant-type:connect-code` and is handed a token for
+the whole API as that person. A code lasts ten minutes and signs in one phone,
+and only an app installed on a device may present one. The code travels from
+the person's screen to their own phone, never the other way: RFC 8628's
+device flow, where a device shows a code for the person to approve, lets a
+stranger send the person a link to approve the stranger's code. The exchange
+is `internal/api/v1api/apioauth/connect.go`; the code is
+`internal/api/v1api/apigraph/oauth_connect.go`. Refresh replaces the token
 and retires the old one, carrying its name over. Because the token changes at
 every refresh, these tokens are listed by app rather than with the person's
 API tokens: Settings > Apps (and `teanode app`) renames an app or disconnects

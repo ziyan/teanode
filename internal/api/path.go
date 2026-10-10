@@ -146,11 +146,15 @@ const (
 	PathOAuthToken     = "/oauth/token"
 	PathOAuthRevoke    = "/oauth/revoke"
 
-	// Where a device that cannot show a sign-in page well, a phone app,
-	// asks for a pairing code (RFC 8628), and the dashboard page where the
-	// person approves that code from wherever they are already signed in.
-	PathOAuthDeviceAuthorization = "/oauth/device_authorization"
-	PathOAuthConnect             = "/connect"
+	// The dashboard page that shows a one-time code for the TeaNode phone
+	// app to scan, signing it in as the person who is signed in there.
+	PathOAuthConnect = "/connect"
+
+	// AppConnectLink is what that code holds: the project's own address,
+	// which the app claims, so a phone's camera opens the app (or the App
+	// Store) with the server and the code. Both go after the "#", which a
+	// browser never sends, so neither reaches the project's web server.
+	AppConnectLink = "https://teanode.com/app/connect"
 )
 
 // BimiLogoUploadPath is PathBimiLogoUpload with its parameter filled in: where

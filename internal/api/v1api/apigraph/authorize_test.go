@@ -24,10 +24,6 @@ var authorizing = map[string]bool{
 	// requireSignedIn, plus the account it resolved to. Anything about a
 	// person rather than about the server needs the account itself.
 	"requireAccount": true,
-	// requireSignedIn with an account, counted against the login limiter:
-	// approving a pairing code signs a device in, so guessing codes is
-	// limited the way guessing passwords is.
-	"requirePairingApprover": true,
 	// requireAccount, plus the passkey, which it refuses unless it belongs to
 	// that account.
 	"requireOwnPasskey": true,

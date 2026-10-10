@@ -356,99 +356,33 @@ func TestTokensAreChangedOneByOneAndByApp(test *testing.T) {
 	}
 }
 
-// pairing is a code waiting to be approved, for the tests below.
-func pairing(test *testing.T, database db.Database, clientId, userCode, deviceCodeHash string, expires time.Time) *models.OAuthDeviceAuthorization {
-	test.Helper()
-	created, err := database.CreateOAuthDeviceAuthorization(&models.OAuthDeviceAuthorization{
-		ID:         security.NewULID(),
-		ClientID:   clientId,
-		UserCode:   userCode,
-		DeviceName: "a test phone",
-		ExpiresAt:  expires,
-	}, deviceCodeHash)
-	if err != nil {
-		test.Fatalf("CreateOAuthDeviceAuthorization: %s", err)
-	}
-	return created
-}
-
-// A pairing is decided once, and then collected once.
-func TestAPairingIsDecidedOnceAndCollectedOnce(test *testing.T) {
+// A connect code signs in one phone, once, and only while it is fresh.
+func TestAConnectCodeIsSpentOnceAndOnlyWhileFresh(test *testing.T) {
 	database, release := dbtest.AcquireDatabase(test)
 	defer release()
 
-	client := registered(test, database)
-	pairing(test, database, client.ID, "BCDFGHJK", "a-device-hash", time.Now().Add(10*time.Minute))
-
-	// Asked before anybody decided: pending, and not collectable.
-	polled, previousPoll, err := database.PollOAuthDeviceAuthorization("a-device-hash", time.Now())
-	if err != nil || polled == nil {
-		test.Fatalf("PollOAuthDeviceAuthorization: %v %v", polled, err)
+	if _, err := database.CreateOAuthConnectCode(&models.OAuthConnectCode{
+		ID: security.NewULID(), UserID: "a-person", ExpiresAt: time.Now().Add(10 * time.Minute),
+	}, "a-fresh-hash"); err != nil {
+		test.Fatalf("CreateOAuthConnectCode: %s", err)
 	}
-	if polled.IsDecided() || !previousPoll.IsZero() {
-		test.Errorf("a new pairing came back decided (%v) or polled before (%v)", polled.IsDecided(), previousPoll)
-	}
-	if spent, err := database.SpendOAuthDeviceAuthorization("a-device-hash", time.Now()); err != nil || spent != nil {
-		test.Fatalf("a pairing nobody approved was collected: %v %v", spent, err)
-	}
-
-	// The second poll is told when the first was.
-	_, previousPoll, err = database.PollOAuthDeviceAuthorization("a-device-hash", time.Now())
-	if err != nil || previousPoll.IsZero() {
-		test.Errorf("the second poll was not told of the first: %v %v", previousPoll, err)
-	}
-
-	approved, err := database.DecideOAuthDeviceAuthorization("BCDFGHJK", "a-person", true, time.Now())
-	if err != nil || approved == nil {
-		test.Fatalf("DecideOAuthDeviceAuthorization: %v %v", approved, err)
-	}
-	if approved.UserID != "a-person" || approved.IsDenied {
-		test.Errorf("approved as %q, denied %v", approved.UserID, approved.IsDenied)
-	}
-	if again, err := database.DecideOAuthDeviceAuthorization("BCDFGHJK", "somebody-else", false, time.Now()); err != nil || again != nil {
-		test.Errorf("a decided pairing was decided again: %v %v", again, err)
-	}
-	if waiting, err := database.GetOAuthDeviceAuthorizationByUserCode("BCDFGHJK", time.Now()); err != nil || waiting == nil || !waiting.IsDecided() {
-		test.Errorf("the decided pairing does not read as decided: %v %v", waiting, err)
-	}
-
-	spent, err := database.SpendOAuthDeviceAuthorization("a-device-hash", time.Now())
+	spent, err := database.SpendOAuthConnectCode("a-fresh-hash", time.Now())
 	if err != nil || spent == nil || spent.UserID != "a-person" {
-		test.Fatalf("the approved pairing was not collected: %v %v", spent, err)
+		test.Fatalf("the code was not spent: %v %v", spent, err)
 	}
-	if again, err := database.SpendOAuthDeviceAuthorization("a-device-hash", time.Now()); err != nil || again != nil {
-		test.Errorf("the same pairing was collected twice: %v %v", again, err)
-	}
-}
-
-// A refused pairing, and an expired one, are never collected.
-func TestARefusedOrExpiredPairingIsNotCollected(test *testing.T) {
-	database, release := dbtest.AcquireDatabase(test)
-	defer release()
-
-	client := registered(test, database)
-	pairing(test, database, client.ID, "LMNPQRST", "a-refused-hash", time.Now().Add(10*time.Minute))
-	refused, err := database.DecideOAuthDeviceAuthorization("LMNPQRST", "a-person", false, time.Now())
-	if err != nil || refused == nil || !refused.IsDenied {
-		test.Fatalf("DecideOAuthDeviceAuthorization: %v %v", refused, err)
-	}
-	if spent, err := database.SpendOAuthDeviceAuthorization("a-refused-hash", time.Now()); err != nil || spent != nil {
-		test.Errorf("a refused pairing was collected: %v %v", spent, err)
+	if again, err := database.SpendOAuthConnectCode("a-fresh-hash", time.Now()); err != nil || again != nil {
+		test.Errorf("the same code was spent twice: %v %v", again, err)
 	}
 
-	pairing(test, database, client.ID, "VWXZBCDF", "an-expired-hash", time.Now().Add(-time.Second))
-	if decided, err := database.DecideOAuthDeviceAuthorization("VWXZBCDF", "a-person", true, time.Now()); err != nil || decided != nil {
-		test.Errorf("an expired pairing was approved: %v %v", decided, err)
+	if _, err := database.CreateOAuthConnectCode(&models.OAuthConnectCode{
+		ID: security.NewULID(), UserID: "a-person", ExpiresAt: time.Now().Add(-time.Second),
+	}, "a-stale-hash"); err != nil {
+		test.Fatalf("CreateOAuthConnectCode: %s", err)
 	}
-	if waiting, err := database.GetOAuthDeviceAuthorizationByUserCode("VWXZBCDF", time.Now()); err != nil || waiting != nil {
-		test.Errorf("an expired pairing was found by its code: %v %v", waiting, err)
-	}
-	// The device can still be told its code expired rather than that it is
-	// unknown.
-	if polled, _, err := database.PollOAuthDeviceAuthorization("an-expired-hash", time.Now()); err != nil || polled == nil {
-		test.Errorf("an expired pairing could not be polled: %v %v", polled, err)
+	if stale, err := database.SpendOAuthConnectCode("a-stale-hash", time.Now()); err != nil || stale != nil {
+		test.Errorf("an expired code was spent: %v %v", stale, err)
 	}
 	if swept, err := database.ScavengeOAuth(time.Now()); err != nil || swept < 1 {
-		test.Errorf("the expired pairing was not swept: %d %v", swept, err)
+		test.Errorf("the expired code was not swept: %d %v", swept, err)
 	}
 }

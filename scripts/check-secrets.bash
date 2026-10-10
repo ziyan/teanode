@@ -164,6 +164,8 @@ readonly ALLOWED_HOSTS=(
   # The module path of the YAML library, which go.sum names.
   go.yaml.in
   .gorm.io
+  # The module path of the QR code encoder, which go.mod and go.sum name.
+  rsc.io
   # A module host, appearing only in go.mod and go.sum as the name of a
   # dependency. Vanity import paths are hostnames whether or not anything is
   # served there.

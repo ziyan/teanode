@@ -91,20 +91,6 @@ func usableRedirect(address string) bool {
 	return false
 }
 
-// truncateName shortens a name to clientNameLongest characters.
-//
-// By characters rather than bytes. Cutting bytes could split a character in
-// two, and PostgreSQL refuses the half character, so a program that named
-// itself in Japanese or with an emoji near the limit got a server error
-// instead of a registration.
-func truncateName(name string) string {
-	runes := []rune(name)
-	if len(runes) > clientNameLongest {
-		return string(runes[:clientNameLongest])
-	}
-	return name
-}
-
 func (self *oauth) registerView(response http.ResponseWriter, request *http.Request) {
 	// Registration writes a row on behalf of somebody who has not proved
 	// anything, which is the whole point of it and also the reason it needs a
@@ -142,16 +128,11 @@ func (self *oauth) registerView(response http.ResponseWriter, request *http.Requ
 		}
 	}
 
-	name := truncateName(strings.TrimSpace(asked.ClientName))
-	// A name is shown to a person on the approval page, so a line break in it
-	// would be a line break in what they read. Replaced rather than refused:
-	// this is presentation, not security.
-	name = strings.Map(func(character rune) rune {
-		if character == '\n' || character == '\r' || character == '\t' {
-			return ' '
-		}
-		return character
-	}, name)
+	// A name is shown to a person deciding whether to trust the program, so
+	// it is one line with nothing hidden in it: no line breaks, and none of
+	// the invisible or direction-changing characters that can make one name
+	// read as another.
+	name := api.DisplayName(asked.ClientName, clientNameLongest)
 
 	client, err := self.database.CreateOAuthClient(&models.OAuthClient{
 		ID:           security.NewULID(),
@@ -174,7 +155,7 @@ func (self *oauth) registerView(response http.ResponseWriter, request *http.Requ
 		ClientName:              client.Name,
 		RedirectURIs:            client.RedirectURIs,
 		TokenEndpointAuthMethod: "none",
-		GrantTypes:              []string{"authorization_code", "refresh_token", grantDeviceCode},
+		GrantTypes:              []string{"authorization_code", "refresh_token", grantConnectCode},
 		ResponseTypes:           []string{"code"},
 		ClientIDIssuedAt:        client.CreatedAt.Unix(),
 	}); err != nil {

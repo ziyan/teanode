@@ -27,27 +27,12 @@ type OAuthOperation interface {
 	// hands back a hash rather than comparing one here.
 	SpendOAuthAuthorization(authorizationId string, now time.Time) (*models.OAuthAuthorization, string, error)
 
-	CreateOAuthDeviceAuthorization(authorization *models.OAuthDeviceAuthorization, deviceCodeHash string) (*models.OAuthDeviceAuthorization, error)
+	CreateOAuthConnectCode(code *models.OAuthConnectCode, codeHash string) (*models.OAuthConnectCode, error)
 
-	// GetOAuthDeviceAuthorizationByUserCode is the pairing a person typed the
-	// code of, while it has not expired; nil when there is none.
-	GetOAuthDeviceAuthorizationByUserCode(userCode string, now time.Time) (*models.OAuthDeviceAuthorization, error)
-
-	// DecideOAuthDeviceAuthorization approves (userId set) or refuses a
-	// pairing that nobody has decided yet and that has not expired. One
-	// statement, so two people deciding the same code at once cannot both
-	// win; nil when there was nothing left to decide.
-	DecideOAuthDeviceAuthorization(userCode, userId string, isApproved bool, now time.Time) (*models.OAuthDeviceAuthorization, error)
-
-	// PollOAuthDeviceAuthorization is the pairing a device's code belongs to,
-	// whatever its state, with when it was polled before this; it records
-	// this poll. Nil when the code is unknown.
-	PollOAuthDeviceAuthorization(deviceCodeHash string, now time.Time) (*models.OAuthDeviceAuthorization, time.Time, error)
-
-	// SpendOAuthDeviceAuthorization takes an approved, unexpired pairing and
-	// deletes it, in one statement, so it issues one token however many
-	// polls arrive at once. Nil when there was nothing to spend.
-	SpendOAuthDeviceAuthorization(deviceCodeHash string, now time.Time) (*models.OAuthDeviceAuthorization, error)
+	// SpendOAuthConnectCode takes an unexpired connect code and deletes it, in
+	// one statement, so a code signs in one phone however many present it at
+	// once. Nil when there was nothing to spend.
+	SpendOAuthConnectCode(codeHash string, now time.Time) (*models.OAuthConnectCode, error)
 
 	ScavengeOAuth(now time.Time) (int64, error)
 }
@@ -86,44 +71,24 @@ func (self *oauthAuthorizationModel) TableName() string {
 	return "oauth_authorization"
 }
 
-type oauthDeviceAuthorizationModel struct {
+type oauthConnectCodeModel struct {
 	ID        string `gorm:"primary_key:true;size:32"`
 	CreatedAt time.Time
-
-	ClientID       string `gorm:"column:client_id;size:32"`
-	DeviceCodeHash string `gorm:"column:device_code_hash;size:64"`
-	UserCode       string `gorm:"column:user_code;size:16"`
-	DeviceName     string `gorm:"column:device_name;size:128"`
-	Resource       string `gorm:"type:text"`
-
-	UserID    *string `gorm:"column:user_id;size:32"`
-	IsDenied  bool    `gorm:"column:is_denied"`
-	DecidedAt *time.Time
-	PolledAt  *time.Time
+	UserID    string `gorm:"column:user_id;size:32"`
+	CodeHash  string `gorm:"column:code_hash;size:64"`
 	ExpiresAt time.Time
 }
 
-func (self *oauthDeviceAuthorizationModel) TableName() string {
-	return "oauth_device_authorization"
+func (self *oauthConnectCodeModel) TableName() string {
+	return "oauth_connect_code"
 }
 
-func oauthDeviceAuthorizationFromModel(model *oauthDeviceAuthorizationModel) *models.OAuthDeviceAuthorization {
-	userId := ""
-	if model.UserID != nil {
-		userId = *model.UserID
-	}
-	return &models.OAuthDeviceAuthorization{
-		ID:         model.ID,
-		CreatedAt:  model.CreatedAt.In(time.Local),
-		ClientID:   model.ClientID,
-		UserCode:   model.UserCode,
-		DeviceName: model.DeviceName,
-		Resource:   model.Resource,
-		UserID:     userId,
-		IsDenied:   model.IsDenied,
-		DecidedAt:  timeOrZero(model.DecidedAt),
-		PolledAt:   timeOrZero(model.PolledAt),
-		ExpiresAt:  model.ExpiresAt.In(time.Local),
+func oauthConnectCodeFromModel(model *oauthConnectCodeModel) *models.OAuthConnectCode {
+	return &models.OAuthConnectCode{
+		ID:        model.ID,
+		CreatedAt: model.CreatedAt.In(time.Local),
+		UserID:    model.UserID,
+		ExpiresAt: model.ExpiresAt.In(time.Local),
 	}
 }
 
@@ -256,42 +221,25 @@ func (self *database) SpendOAuthAuthorization(authorizationId string, now time.T
 	}, model.KeyHash, nil
 }
 
-func (self *database) CreateOAuthDeviceAuthorization(authorization *models.OAuthDeviceAuthorization, deviceCodeHash string) (*models.OAuthDeviceAuthorization, error) {
-	model := &oauthDeviceAuthorizationModel{
-		ID:             authorization.ID,
-		CreatedAt:      time.Now(),
-		ClientID:       authorization.ClientID,
-		DeviceCodeHash: deviceCodeHash,
-		UserCode:       authorization.UserCode,
-		DeviceName:     authorization.DeviceName,
-		Resource:       authorization.Resource,
-		ExpiresAt:      authorization.ExpiresAt,
+func (self *database) CreateOAuthConnectCode(code *models.OAuthConnectCode, codeHash string) (*models.OAuthConnectCode, error) {
+	model := &oauthConnectCodeModel{
+		ID:        code.ID,
+		CreatedAt: time.Now(),
+		UserID:    code.UserID,
+		CodeHash:  codeHash,
+		ExpiresAt: code.ExpiresAt,
 	}
 	if err := self.db.Create(model).Error; err != nil {
 		return nil, err
 	}
-	return oauthDeviceAuthorizationFromModel(model), nil
+	return oauthConnectCodeFromModel(model), nil
 }
 
-func (self *database) GetOAuthDeviceAuthorizationByUserCode(userCode string, now time.Time) (*models.OAuthDeviceAuthorization, error) {
-	var model oauthDeviceAuthorizationModel
-	if err := self.db.First(&model, "\"user_code\" = ? AND \"expires_at\" > ?", userCode, now).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return oauthDeviceAuthorizationFromModel(&model), nil
-}
-
-func (self *database) DecideOAuthDeviceAuthorization(userCode, userId string, isApproved bool, now time.Time) (*models.OAuthDeviceAuthorization, error) {
-	var model oauthDeviceAuthorizationModel
-	// The approver is recorded on a refusal too, so a refused pairing says
-	// who refused it; isDenied is what decides.
+func (self *database) SpendOAuthConnectCode(codeHash string, now time.Time) (*models.OAuthConnectCode, error) {
+	var model oauthConnectCodeModel
 	result := self.db.Raw(
-		"UPDATE \"oauth_device_authorization\" SET \"user_id\" = ?, \"is_denied\" = ?, \"decided_at\" = ? "+
-			"WHERE \"user_code\" = ? AND \"expires_at\" > ? AND \"user_id\" IS NULL AND NOT \"is_denied\" RETURNING *",
-		userId, !isApproved, now, userCode, now,
+		"DELETE FROM \"oauth_connect_code\" WHERE \"code_hash\" = ? AND \"expires_at\" > ? RETURNING *",
+		codeHash, now,
 	).Scan(&model)
 	if result.Error != nil {
 		return nil, result.Error
@@ -299,48 +247,7 @@ func (self *database) DecideOAuthDeviceAuthorization(userCode, userId string, is
 	if result.RowsAffected == 0 || model.ID == "" {
 		return nil, nil
 	}
-	return oauthDeviceAuthorizationFromModel(&model), nil
-}
-
-func (self *database) PollOAuthDeviceAuthorization(deviceCodeHash string, now time.Time) (*models.OAuthDeviceAuthorization, time.Time, error) {
-	var model oauthDeviceAuthorizationModel
-	found := false
-	// The row is locked while the poll before this one is read and this one
-	// recorded, so two polls at once do not both see the older time.
-	err := self.db.Transaction(func(transaction *gorm.DB) error {
-		result := transaction.Raw(
-			"SELECT * FROM \"oauth_device_authorization\" WHERE \"device_code_hash\" = ? FOR UPDATE",
-			deviceCodeHash,
-		).Scan(&model)
-		if result.Error != nil || model.ID == "" {
-			return result.Error
-		}
-		found = true
-		return transaction.Model(&oauthDeviceAuthorizationModel{}).Where("\"id\" = ?", model.ID).
-			Update("polled_at", now).Error
-	})
-	if err != nil || !found {
-		return nil, time.Time{}, err
-	}
-	previousPoll := timeOrZero(model.PolledAt)
-	model.PolledAt = &now
-	return oauthDeviceAuthorizationFromModel(&model), previousPoll, nil
-}
-
-func (self *database) SpendOAuthDeviceAuthorization(deviceCodeHash string, now time.Time) (*models.OAuthDeviceAuthorization, error) {
-	var model oauthDeviceAuthorizationModel
-	result := self.db.Raw(
-		"DELETE FROM \"oauth_device_authorization\" WHERE \"device_code_hash\" = ? AND \"expires_at\" > ? "+
-			"AND \"user_id\" IS NOT NULL AND NOT \"is_denied\" RETURNING *",
-		deviceCodeHash, now,
-	).Scan(&model)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 || model.ID == "" {
-		return nil, nil
-	}
-	return oauthDeviceAuthorizationFromModel(&model), nil
+	return oauthConnectCodeFromModel(&model), nil
 }
 
 // ScavengeOAuth removes approvals nobody collected and registrations nobody
@@ -354,11 +261,11 @@ func (self *database) ScavengeOAuth(now time.Time) (int64, error) {
 	if expired.Error != nil {
 		return 0, expired.Error
 	}
-	expiredPairings := self.db.Delete(&oauthDeviceAuthorizationModel{}, "\"expires_at\" < ?", now)
-	if expiredPairings.Error != nil {
-		return expired.RowsAffected, expiredPairings.Error
+	expiredCodes := self.db.Delete(&oauthConnectCodeModel{}, "\"expires_at\" < ?", now)
+	if expiredCodes.Error != nil {
+		return expired.RowsAffected, expiredCodes.Error
 	}
-	expired.RowsAffected += expiredPairings.RowsAffected
+	expired.RowsAffected += expiredCodes.RowsAffected
 	unused := self.db.Delete(&oauthClientModel{},
 		"\"approved_at\" IS NULL AND \"created_at\" < ?", now.Add(-24*time.Hour))
 	if unused.Error != nil {
