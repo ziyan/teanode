@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.125.0] - 2026-10-10
+
+### Added
+
+- The agent can ask where you are, when it needs to, from the browser you are chatting with it in. The browser asks your permission the first time. Chatting from anywhere else, it is told your location is not available and asks you instead. (#372)
+
 ## [0.124.2] - 2026-10-10
 
 ### Changed
