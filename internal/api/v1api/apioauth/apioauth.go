@@ -56,6 +56,7 @@ func (self *oauth) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathOAuthRegister).Methods(http.MethodPost).HandlerFunc(self.registerView)
 	router.Path(api.PathOAuthToken).Methods(http.MethodPost).HandlerFunc(self.tokenView)
 	router.Path(api.PathOAuthRevoke).Methods(http.MethodPost).HandlerFunc(self.revokeView)
+	router.Path(api.PathOAuthDeviceAuthorization).Methods(http.MethodPost).HandlerFunc(self.deviceAuthorizationView)
 	// PathOAuthAuthorize is deliberately not here. It is where a person is
 	// sent to approve, so it is a page rather than an endpoint, and it is
 	// drawn by the dashboard: that way approving reuses the sign-in the

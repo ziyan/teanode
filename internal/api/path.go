@@ -145,6 +145,12 @@ const (
 	PathOAuthAuthorize = "/oauth/authorize"
 	PathOAuthToken     = "/oauth/token"
 	PathOAuthRevoke    = "/oauth/revoke"
+
+	// Where a device that cannot show a sign-in page well, a phone app,
+	// asks for a pairing code (RFC 8628), and the dashboard page where the
+	// person approves that code from wherever they are already signed in.
+	PathOAuthDeviceAuthorization = "/oauth/device_authorization"
+	PathOAuthConnect             = "/connect"
 )
 
 // BimiLogoUploadPath is PathBimiLogoUpload with its parameter filled in: where

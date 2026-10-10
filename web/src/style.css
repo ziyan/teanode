@@ -11381,6 +11381,16 @@ main.content:has(> .knowledge-frame) {
   overflow-wrap: break-word;
 }
 
+/* A pairing code, typed and shown in the same large, spaced capitals the
+   device shows it in, so the reader can compare the two at a glance. */
+.connect-code,
+.connect-code-shown {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-title);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .authorize-grant {
   margin: var(--space-3) 0 0;
   font-size: var(--text-label);

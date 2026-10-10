@@ -20,23 +20,25 @@ import { useTranslation } from '../i18n/i18n'
 // with passkeys and single sign-on, and this page renders once they are.
 
 const REQUEST = `
-  query ($clientId: String!, $redirectUri: String!) {
-    ReadOAuthAuthorizationRequest(clientId: $clientId, redirectUri: $redirectUri) {
+  query ($clientId: String!, $redirectUri: String!, $scope: String) {
+    ReadOAuthAuthorizationRequest(clientId: $clientId, redirectUri: $redirectUri, scope: $scope) {
       clientName
       redirectHost
       username
       registered
+      isFullAccess
     }
   }`
 
 const APPROVE = `
-  mutation ($clientId: String!, $redirectUri: String!, $codeChallenge: String!, $state: String, $resource: String) {
+  mutation ($clientId: String!, $redirectUri: String!, $codeChallenge: String!, $state: String, $resource: String, $scope: String) {
     ApproveOAuthAuthorization(
       clientId: $clientId
       redirectUri: $redirectUri
       codeChallenge: $codeChallenge
       state: $state
       resource: $resource
+      scope: $scope
     ) {
       redirectUrl
     }
@@ -47,6 +49,7 @@ type AuthorizationRequest = {
   redirectHost: string
   username: string
   registered: string
+  isFullAccess: boolean
 }
 
 type Phase = 'reading' | 'asking' | 'working' | 'sending'
@@ -62,6 +65,9 @@ export function AuthorizePage() {
   const responseType = query.get('response_type') ?? ''
   const state = query.get('state')
   const resource = query.get('resource')
+  // "api" asks for everything the account can do, which only an app on the
+  // person's own device is allowed; the server refuses it for anything else.
+  const scope = query.get('scope')
 
   const [phase, setPhase] = useState<Phase>('reading')
   const [request, setRequest] = useState<AuthorizationRequest | null>(null)
@@ -85,7 +91,7 @@ export function AuthorizePage() {
   useEffect(() => {
     if (!asked) return
     let current = true
-    graphql<{ ReadOAuthAuthorizationRequest: AuthorizationRequest }>(REQUEST, { clientId, redirectUri })
+    graphql<{ ReadOAuthAuthorizationRequest: AuthorizationRequest }>(REQUEST, { clientId, redirectUri, scope })
       .then((data) => {
         if (!current) return
         setRequest(data.ReadOAuthAuthorizationRequest)
@@ -99,7 +105,7 @@ export function AuthorizePage() {
     return () => {
       current = false
     }
-  }, [asked, clientId, redirectUri, t])
+  }, [asked, clientId, redirectUri, scope, t])
 
   const allow = useCallback(
     async (event: React.FormEvent) => {
@@ -113,6 +119,7 @@ export function AuthorizePage() {
           codeChallenge,
           state,
           resource,
+          scope,
         })
         // Leaving the dashboard for the program's own address. Replaced
         // rather than pushed, so the back button does not return to a page
@@ -124,7 +131,7 @@ export function AuthorizePage() {
         setPhase('asking')
       }
     },
-    [clientId, redirectUri, codeChallenge, state, resource, t],
+    [clientId, redirectUri, codeChallenge, state, resource, scope, t],
   )
 
   // Refusing is not reported back to the program. Telling it that it was
@@ -179,7 +186,7 @@ export function AuthorizePage() {
 
   return (
     <AuthCard purpose={t('authorize.title')} onSubmit={allow}>
-      <p className="authorize-intro">{t('authorize.intro')}</p>
+      <p className="authorize-intro">{request.isFullAccess ? t('authorize.introFullAccess') : t('authorize.intro')}</p>
 
       <dl className="authorize-facts">
         <dt>{t('authorize.program')}</dt>
@@ -200,7 +207,9 @@ export function AuthorizePage() {
         <dd>{request.username}</dd>
       </dl>
 
-      <p className="authorize-grant muted">{t('authorize.grant')}</p>
+      <p className="authorize-grant muted">
+        {request.isFullAccess ? t('authorize.grantFullAccess') : t('authorize.grant')}
+      </p>
 
       <ErrorMessage error={error} />
 

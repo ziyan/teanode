@@ -1,0 +1,267 @@
+package apigraph
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/gorilla/mux"
+
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/api/v1api/apioauth"
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/web"
+)
+
+// signInWorld is a server with one person, its OAuth endpoints and its graph,
+// for following a program from registering to holding a token.
+type signInWorld struct {
+	graph         *graph
+	authenticator web.Authenticator
+	router        *mux.Router
+	person        *models.User
+}
+
+func newSignInWorld(t *testing.T) *signInWorld {
+	t.Helper()
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	world := &signInWorld{}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "fixture-pairing-person"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		world.person = user
+	})
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "teanode1.key"), []byte("not a real key"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	configuration := config.Example()
+	configuration.Server.DataDirectory = directory
+	store := config.NewMemoryStore(configuration)
+	t.Cleanup(func() { _ = store.Close() })
+	if err := config.EnsureSecrets(store); err != nil {
+		t.Fatalf("EnsureSecrets: %s", err)
+	}
+	authenticator, err := web.NewAuthenticator(store, database)
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %s", err)
+	}
+	component, err := New(database, store, nil, nil, nil, nil, nil, authenticator, nil, &api.Settings{})
+	if err != nil {
+		t.Fatalf("New: %s", err)
+	}
+	discovery, err := apioauth.New(store, database, authenticator)
+	if err != nil {
+		t.Fatalf("apioauth.New: %s", err)
+	}
+	world.router = mux.NewRouter()
+	if err := discovery.AddRoutes(world.router); err != nil {
+		t.Fatalf("AddRoutes: %s", err)
+	}
+	world.graph, world.authenticator = component.(*graph), authenticator
+	return world
+}
+
+// post sends a form to an OAuth endpoint and reads the JSON answer.
+func (self *signInWorld) post(t *testing.T, path string, form url.Values) (int, map[string]any) {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.RemoteAddr = "192.0.2.10:4000"
+	response := httptest.NewRecorder()
+	self.router.ServeHTTP(response, request)
+	answer := map[string]any{}
+	_ = json.Unmarshal(response.Body.Bytes(), &answer)
+	return response.Code, answer
+}
+
+// register registers a program with these return addresses.
+func (self *signInWorld) register(t *testing.T, redirects ...string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"client_name": "a test app", "redirect_uris": redirects})
+	request := httptest.NewRequest(http.MethodPost, api.PathOAuthRegister, strings.NewReader(string(body)))
+	request.RemoteAddr = "192.0.2.10:4000"
+	response := httptest.NewRecorder()
+	self.router.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("registering %v: %d %s", redirects, response.Code, response.Body.String())
+	}
+	var registered struct {
+		ClientID string `json:"client_id"`
+	}
+	_ = json.Unmarshal(response.Body.Bytes(), &registered)
+	return registered.ClientID
+}
+
+// ask sends GraphQL as the signed-in person and returns the data and the
+// error messages.
+func (self *signInWorld) ask(t *testing.T, query string) (map[string]any, []string) {
+	t.Helper()
+	body, _ := json.Marshal(graphRequest{Query: query})
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(api.AuthenticatedUsernameHeader, self.person.Username)
+	response := httptest.NewRecorder()
+	self.graph.graphView(response, request)
+	var outcome struct {
+		Data   map[string]any `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	_ = json.Unmarshal(response.Body.Bytes(), &outcome)
+	var messages []string
+	for _, failure := range outcome.Errors {
+		messages = append(messages, failure.Message)
+	}
+	return outcome.Data, messages
+}
+
+// worksOnTheAPI says whether a token is taken at the GraphQL endpoint.
+func (self *signInWorld) worksOnTheAPI(token string) bool {
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	username, ok := self.authenticator.Authenticate(request)
+	return ok && username == self.person.Username
+}
+
+// A phone app is paired by a code the person approves somewhere else, and
+// collects a token for the whole API, once.
+func TestAnAppIsPairedByACodeAndGetsTheWholeAPI(test *testing.T) {
+	world := newSignInWorld(test)
+	clientId := world.register(test, "com.example.app:/oauth")
+
+	status, started := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{
+		"client_id": {clientId}, "scope": {"api"}, "device_name": {"  a   test\nphone "},
+	})
+	if status != http.StatusOK {
+		test.Fatalf("starting a pairing: %d %v", status, started)
+	}
+	deviceCode, _ := started["device_code"].(string)
+	userCode, _ := started["user_code"].(string)
+	if deviceCode == "" || len(userCode) != 9 || userCode[4] != '-' {
+		test.Fatalf("the pairing came back as %v", started)
+	}
+	if complete, _ := started["verification_uri_complete"].(string); !strings.HasSuffix(complete, api.PathOAuthConnect+"?code="+strings.ReplaceAll(userCode, "-", "")) {
+		test.Errorf("the page to approve on is %q", complete)
+	}
+
+	poll := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {clientId}, "device_code": {deviceCode}}
+	if _, answer := world.post(test, api.PathOAuthToken, poll); answer["error"] != "authorization_pending" {
+		test.Errorf("before approval the device was told %v", answer)
+	}
+	if _, answer := world.post(test, api.PathOAuthToken, poll); answer["error"] != "slow_down" {
+		test.Errorf("polling at once again, the device was told %v", answer)
+	}
+	stranger := url.Values{"grant_type": poll["grant_type"], "client_id": {"another-program"}, "device_code": {deviceCode}}
+	if _, answer := world.post(test, api.PathOAuthToken, stranger); answer["error"] != "invalid_grant" {
+		test.Errorf("another program collecting the code was told %v", answer)
+	}
+
+	// The person reads the code off the phone, in lower case and without
+	// the dash.
+	typed := strings.ToLower(strings.ReplaceAll(userCode, "-", ""))
+	data, errors := world.ask(test, `{ ReadOAuthDevicePairing(userCode: "`+typed+`") { userCode clientName deviceName username isFullAccess } }`)
+	if len(errors) > 0 {
+		test.Fatalf("ReadOAuthDevicePairing: %v", errors)
+	}
+	read, _ := data["ReadOAuthDevicePairing"].(map[string]any)
+	if read["userCode"] != userCode || read["clientName"] != "a test app" || read["deviceName"] != "a test phone" ||
+		read["username"] != world.person.Username || read["isFullAccess"] != true {
+		test.Errorf("the pairing reads as %v", read)
+	}
+	if _, errors := world.ask(test, `mutation { DecideOAuthDevicePairing(userCode: "`+userCode+`", isApproved: true) { isApproved } }`); len(errors) > 0 {
+		test.Fatalf("DecideOAuthDevicePairing: %v", errors)
+	}
+	if _, errors := world.ask(test, `mutation { DecideOAuthDevicePairing(userCode: "`+userCode+`", isApproved: false) { isApproved } }`); len(errors) == 0 {
+		test.Error("a pairing already approved was refused afterwards")
+	}
+
+	_, answer := world.post(test, api.PathOAuthToken, poll)
+	token, _ := answer["access_token"].(string)
+	if token == "" || answer["scope"] != "api" || answer["refresh_token"] == "" {
+		test.Fatalf("after approval the device was answered %v", answer)
+	}
+	if !world.worksOnTheAPI(token) {
+		test.Error("the paired token is not taken by the API")
+	}
+	if _, again := world.post(test, api.PathOAuthToken, poll); again["error"] != "invalid_grant" {
+		test.Errorf("collecting the same pairing again was answered %v", again)
+	}
+}
+
+// A refused code gives the device nothing, and a wrong code says nothing
+// about whether it ever was one.
+func TestARefusedPairingGivesNothing(test *testing.T) {
+	world := newSignInWorld(test)
+	clientId := world.register(test, "com.example.app:/oauth")
+	_, started := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{"client_id": {clientId}, "scope": {"api"}})
+	userCode, _ := started["user_code"].(string)
+
+	if _, errors := world.ask(test, `mutation { DecideOAuthDevicePairing(userCode: "`+userCode+`", isApproved: false) { isDenied } }`); len(errors) > 0 {
+		test.Fatalf("refusing: %v", errors)
+	}
+	poll := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {clientId}, "device_code": {started["device_code"].(string)}}
+	if _, answer := world.post(test, api.PathOAuthToken, poll); answer["error"] != "access_denied" {
+		test.Errorf("a refused device was told %v", answer)
+	}
+	if _, errors := world.ask(test, `{ ReadOAuthDevicePairing(userCode: "BBBB-BBBB") { userCode } }`); len(errors) == 0 {
+		test.Error("a code nobody issued was found")
+	}
+}
+
+// Only an app installed on a device may be given the whole API: a program
+// with a web address is refused, by pairing and by the consent page alike,
+// while the agent tools stay open to it.
+func TestOnlyAnInstalledAppMayAskForTheWholeAPI(test *testing.T) {
+	world := newSignInWorld(test)
+	webClient := world.register(test, "https://app.example.com/callback")
+	if status, answer := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{"client_id": {webClient}, "scope": {"api"}}); status != http.StatusBadRequest || answer["error"] != "invalid_scope" {
+		test.Errorf("a web program pairing for the whole API was answered %d %v", status, answer)
+	}
+	if status, answer := world.post(test, api.PathOAuthDeviceAuthorization, url.Values{"client_id": {webClient}, "scope": {"mcp"}}); status != http.StatusOK {
+		test.Errorf("a web program pairing for the agent tools was answered %d %v", status, answer)
+	}
+
+	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	if _, errors := world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+webClient+`", redirectUri: "https://app.example.com/callback", codeChallenge: "`+challenge+`", scope: "api") { redirectUrl } }`); len(errors) == 0 {
+		test.Error("a web program was approved for the whole API")
+	}
+
+	appClient := world.register(test, "com.example.app:/oauth")
+	data, errors := world.ask(test, `{ ReadOAuthAuthorizationRequest(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", scope: "api") { isFullAccess } }`)
+	if len(errors) > 0 {
+		test.Fatalf("ReadOAuthAuthorizationRequest: %v", errors)
+	}
+	if read, _ := data["ReadOAuthAuthorizationRequest"].(map[string]any); read["isFullAccess"] != true {
+		test.Errorf("the consent page was told %v", read)
+	}
+	data, errors = world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", codeChallenge: "`+challenge+`", scope: "api") { redirectUrl } }`)
+	if len(errors) > 0 {
+		test.Fatalf("ApproveOAuthAuthorization: %v", errors)
+	}
+	approved, _ := data["ApproveOAuthAuthorization"].(map[string]any)
+	redirect, _ := url.Parse(approved["redirectUrl"].(string))
+	if redirect.Scheme != "com.example.app" {
+		test.Fatalf("the approval went to %v", redirect)
+	}
+	_, answer := world.post(test, api.PathOAuthToken, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {"com.example.app:/oauth"},
+		"code": {redirect.Query().Get("code")}, "code_verifier": {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
+	})
+	token, _ := answer["access_token"].(string)
+	if answer["scope"] != "api" || !world.worksOnTheAPI(token) {
+		test.Errorf("the app's sign-in was answered %v", answer)
+	}
+}

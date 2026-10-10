@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
 import { LoginPage } from './pages/login'
 import { AuthorizePage } from './pages/authorize'
+import { ConnectPage } from './pages/connect'
 import { MailPage } from './pages/mail'
 import { MailboxPage } from './pages/mailbox'
 import { SetupAccountPage } from './pages/setupAccount'
@@ -244,6 +245,19 @@ export function App() {
         {corner}
         <Suspense fallback={<Loading />}>
           <AuthorizePage />
+        </Suspense>
+      </div>
+    )
+  }
+
+  // Approving a device that shows a pairing code: the TeaNode phone app.
+  // One question, brought here by the device, drawn the same way.
+  if (location.pathname === '/connect') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <Suspense fallback={<Loading />}>
+          <ConnectPage />
         </Suspense>
       </div>
     )

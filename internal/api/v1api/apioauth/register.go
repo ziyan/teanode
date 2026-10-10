@@ -64,12 +64,19 @@ type registrationResponse struct {
 // a registered address is either a misunderstanding or an attempt to make two
 // addresses compare as one.
 //
-// Nothing relative, and no other scheme. An address that is not absolute has
-// no host to check, and a scheme this server does not understand is a scheme
-// whose rules it cannot enforce.
+// Nothing relative, and no other scheme, but one: an app's own return address
+// (api.IsPrivateUseRedirect), a reverse domain name as its scheme. A phone app
+// signing in to somebody's own server cannot have claimed that server's
+// address in advance, so its sign-in sheet returns through its scheme, which
+// the phone hands to that app alone. An address that is not absolute has no
+// host to check, and any other scheme is one whose rules this server cannot
+// enforce.
 func usableRedirect(address string) bool {
 	if address == "" || len(address) > clientRedirectLength {
 		return false
+	}
+	if api.IsPrivateUseRedirect(address) {
+		return true
 	}
 	parsed, err := url.Parse(address)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.Fragment != "" {
@@ -130,7 +137,7 @@ func (self *oauth) registerView(response http.ResponseWriter, request *http.Requ
 	for _, address := range asked.RedirectURIs {
 		if !usableRedirect(address) {
 			writeOAuthError(response, http.StatusBadRequest, "invalid_redirect_uri",
-				"an approval may only be sent to an https address, or to http on a loopback address, and never to one carrying a fragment")
+				"an approval may only be sent to an https address, to http on a loopback address, or to an app's own address such as com.example.app:/oauth, and never to one carrying a fragment")
 			return
 		}
 	}
@@ -167,7 +174,7 @@ func (self *oauth) registerView(response http.ResponseWriter, request *http.Requ
 		ClientName:              client.Name,
 		RedirectURIs:            client.RedirectURIs,
 		TokenEndpointAuthMethod: "none",
-		GrantTypes:              []string{"authorization_code", "refresh_token"},
+		GrantTypes:              []string{"authorization_code", "refresh_token", grantDeviceCode},
 		ResponseTypes:           []string{"code"},
 		ClientIDIssuedAt:        client.CreatedAt.Unix(),
 	}); err != nil {

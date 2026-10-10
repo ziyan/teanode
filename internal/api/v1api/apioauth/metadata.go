@@ -7,14 +7,47 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 )
 
-// The one scope this server publishes.
+// The two scopes this server publishes.
 //
 // TeaNode's permissions live on accounts and groups, and a token acts as the
 // account it belongs to. A vocabulary of scope names invented here would be a
 // second answer to what a caller may do, sitting beside the real one, and the
-// two would eventually disagree. One name, meaning the tools this account can
-// already reach, is the truth about what the token grants.
-const scopeMCP = "mcp"
+// two would eventually disagree. So a scope says where a token works, never
+// what it may do there: "mcp" is the agent tools endpoint, with the tools this
+// account can already reach; "api" is the whole API, as the account, the way
+// the dashboard and the command line use it. Only an app installed on a device
+// may ask for "api" (api.IsNativeAppClient), because its sign-in returns to
+// the app and nowhere else.
+const (
+	scopeMCP = "mcp"
+	scopeAPI = "api"
+)
+
+// grantDeviceCode is the grant type a device collects a pairing with
+// (RFC 8628 section 3.4).
+const grantDeviceCode = "urn:ietf:params:oauth:grant-type:device_code"
+
+// resourceOfScope is what a token for scope will be good for: the agent tools
+// endpoint for "mcp" (and for no scope, which is what programs written before
+// "api" send), and everything for "api", which is what an empty resource
+// means on a token. ok is false for a scope this server does not publish.
+func resourceOfScope(scope string) (resource string, ok bool) {
+	switch scope {
+	case "", scopeMCP:
+		return api.PathAgentMCP, true
+	case scopeAPI:
+		return "", true
+	}
+	return "", false
+}
+
+// scopeOfResource is the scope a token's resource came from.
+func scopeOfResource(resource string) string {
+	if resource == "" {
+		return scopeAPI
+	}
+	return scopeMCP
+}
 
 // ProtectedResourceMetadata describes the thing being guarded: what it is,
 // who issues tokens for it, and how a token travels.
@@ -33,6 +66,7 @@ type ProtectedResourceMetadata struct {
 type AuthorizationServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
+	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
 	RegistrationEndpoint              string   `json:"registration_endpoint"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
@@ -76,13 +110,14 @@ func (self *oauth) protectedResourceView(response http.ResponseWriter, request *
 func (self *oauth) authorizationServerView(response http.ResponseWriter, request *http.Request) {
 	origin := self.originOf(request)
 	writeMetadata(response, &AuthorizationServerMetadata{
-		Issuer:                 origin,
-		AuthorizationEndpoint:  origin + api.PathOAuthAuthorize,
-		TokenEndpoint:          origin + api.PathOAuthToken,
-		RegistrationEndpoint:   origin + api.PathOAuthRegister,
-		RevocationEndpoint:     origin + api.PathOAuthRevoke,
-		ResponseTypesSupported: []string{"code"},
-		GrantTypesSupported:    []string{"authorization_code", "refresh_token"},
+		Issuer:                      origin,
+		AuthorizationEndpoint:       origin + api.PathOAuthAuthorize,
+		DeviceAuthorizationEndpoint: origin + api.PathOAuthDeviceAuthorization,
+		TokenEndpoint:               origin + api.PathOAuthToken,
+		RegistrationEndpoint:        origin + api.PathOAuthRegister,
+		RevocationEndpoint:          origin + api.PathOAuthRevoke,
+		ResponseTypesSupported:      []string{"code"},
+		GrantTypesSupported:         []string{"authorization_code", "refresh_token", grantDeviceCode},
 		// S256 alone. Offering "plain" beside it lets a client choose the
 		// method that hashes nothing, which is the same as not asking.
 		CodeChallengeMethodsSupported: []string{"S256"},
@@ -90,7 +125,7 @@ func (self *oauth) authorizationServerView(response http.ResponseWriter, request
 		// issued one and does not authenticate at the token endpoint. The
 		// proof of possession is the PKCE verifier instead.
 		TokenEndpointAuthMethodsSupported: []string{"none"},
-		ScopesSupported:                   []string{scopeMCP},
+		ScopesSupported:                   []string{scopeMCP, scopeAPI},
 	})
 }
 

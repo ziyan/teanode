@@ -99,10 +99,29 @@ the harness swaps it at `POST /oauth/token`, proving with its PKCE verifier
 that it is the program that asked.
 
 What comes back is an ordinary token belonging to the person, with two more
-columns: the client that holds it, and the resource it is good for. That
-resource is always the agent tools endpoint. A harness that names none is
-given it, and one that names anything else is refused, so a token from this
-flow is refused by GraphQL and by every other path. Refresh replaces the token
+columns: the client that holds it, and the resource it is good for. For a
+harness that resource is always the agent tools endpoint. A harness that names
+none is given it, and one that names anything else is refused, so a token from
+this flow is refused by GraphQL and by every other path.
+
+The one exception is the scope `api`, which the TeaNode phone app asks for:
+everything the person can do, the way the dashboard and the command line use
+the API, so the token's resource is empty. Only an app installed on a device
+may ask for it, meaning a client whose every registered address is an app's
+own (`com.example.app:/oauth`, RFC 8252's private-use scheme, which the device
+hands to that app alone; `api.IsPrivateUseRedirect`). A web page asking for
+everything is refused, and the consent page says plainly what `api` grants.
+
+An app can also sign in without the person typing anything on it: it asks
+`POST /oauth/device_authorization` for a pairing (RFC 8628), shows the short
+code it is given, such as `KQ7M-4TXD`, and polls `POST /oauth/token` with the
+long device code only it holds. The person approves the code where they are
+already signed in: the dashboard's `/connect` page (`web/src/pages/connect.tsx`),
+`teanode agent phone approve <code>`, or `DecideOAuthDevicePairing`. The code
+lasts ten minutes, issues one token, and every look at a code counts against
+the login limiter, so guessing gets nowhere. The pairing is
+`internal/api/v1api/apioauth/device.go` and
+`internal/api/v1api/apigraph/oauth_pairing.go`. Refresh replaces the token
 and retires the old one, carrying its name over. Because the token changes at
 every refresh, these tokens are listed by app rather than with the person's
 API tokens: Settings > Apps (and `teanode app`) renames an app or disconnects
