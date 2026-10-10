@@ -219,10 +219,12 @@ export function ChartTooltip({
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [boxWidth, setBoxWidth] = useState(0)
+  // Measured again whenever what it says or where it stands changes: a
+  // box placed by the width of the last key's would sit wrong.
   useLayoutEffect(() => {
     const measured = box.current?.offsetWidth ?? 0
-    if (measured !== boxWidth) setBoxWidth(measured)
-  })
+    setBoxWidth((previous) => (previous === measured ? previous : measured))
+  }, [center, width, children])
   const isLeft = center > width / 2
   const wanted = isLeft ? center - CHART_TOOLTIP_GAP - boxWidth : center + CHART_TOOLTIP_GAP
   const left = Math.max(0, Math.min(wanted, width - boxWidth))
