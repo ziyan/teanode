@@ -51,6 +51,7 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [ ] Milestone 10: widgets and Live Activities.
 - [ ] Milestone 11: the agent helps the person onboard.
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
+- [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
 
 ## Surprises & Discoveries
 
@@ -123,6 +124,11 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - Decision: when a phone connects for the first time, the agent speaks first in the app: a short tour of what this server lets the phone do, one thing at a time, built from what is turned on (notifications always; voice calls if voice is available; the coding-session notifications if a computer with herdr is attached; sending receipts if Finance is on; the setup profile if the person has a mailbox). A person new to TeaNode altogether gets the existing introduction (`speak_first_onboarding.go`) first, in the app.
   Rationale: features nobody finds are features nobody uses, and the agent knows what the server has turned on where a static tour would not.
   Date/Author: 2026-10-10, agent.
+
+- Decision: health data comes later, as Milestone 13, and is read on the phone with HealthKit and synced to the person's own server. It is the only way to have it: Apple keeps health data on the iPhone (and the Watch), with no web or server API, so only an app on the phone, with the person's permission for each kind of data, can read it.
+  Rationale: the person asked for steps and the other health metrics in TeaNode, so the agent can answer "how did I sleep this week?" and see health beside mail, calendar and money.
+  Consequences for the earlier milestones: none in the code, but the first App Store release must not claim HealthKit, because Apple reviews an app that asks for the HealthKit entitlement on what it does with it. The capability is added to the `com.teanode.app` App ID only when Milestone 13 starts.
+  Date/Author: 2026-10-10, the person (the wish); placement by agent.
 
 - Decision: the app tells the server which surface it is with three new surfaces in `internal/agent/surface.go`: `ios` for typed turns in the app, `ios_voice` for a call, and `siri` for Siri and Shortcuts. `ios` and `ios_voice` can locate; `siri` asks for one short spoken sentence.
   Rationale: `phone` exists, but the drawer guesses it from the window width. Naming the app lets the prompt say what it can show (pictures, cards, no hover) and lets a location request go to the phone that sent the turn.
@@ -372,6 +378,44 @@ At the end, merging to `main` uploads a build to TestFlight, and a version is on
 - `docs/decisions/<date>-the-phone-is-a-device-the-person-carries.md`: the decisions above.
 - `docs/subsystems/` pages that mention surfaces, notifications or devices are updated.
 - README: a short paragraph and a screenshot of an invented conversation.
+
+### Milestone 13 (later): health data from the iPhone, synced into TeaNode
+
+At the end, the person turns on "Health" in the app, chooses what to share, and TeaNode has their steps, heart rate, sleep, workouts and the rest, kept up to date; the agent answers "how many steps did I average this month?" and "how did I sleep since the trip?" from them; the dashboard shows them; and `teanode health` prints them.
+
+What is read (HealthKit types, each asked for separately, each one the person may refuse):
+
+- Quantities, as samples with a start, an end, a value and a unit: steps, distance walked and run, flights climbed, active and resting energy, exercise and stand minutes, heart rate, resting heart rate, walking heart rate average, heart rate variability, respiratory rate, blood oxygen, body temperature, weight, body fat, height, blood pressure (a correlation of two), blood glucose, VO2 max, and the others HealthKit offers as quantities, added from a table rather than code.
+- Categories: sleep analysis (in bed, asleep, and the stages), mindful minutes, menstrual flow and the other cycle categories (only if the person turns them on), stand hours.
+- Workouts, with their kind, duration, distance, energy and route summary (not the route itself, unless the person asks for routes separately).
+- Not read: clinical records, and anything the person did not turn on.
+
+On the phone:
+
+- The app asks HealthKit for read access to the chosen types, never write access.
+- For each type, an `HKAnchoredObjectQuery` reads what is new or deleted since the last anchor, which is kept per type in the app group. The first sync reads backwards in pages (a month at a time, newest first) so recent data arrives first and a phone with years of history is not stuck for an hour.
+- `HKObserverQuery` with `enableBackgroundDelivery` wakes the app when new data arrives (hourly for most types, as iOS allows). HealthKit data cannot be read while the phone is locked, so a sync that finds the phone locked waits for the next unlock.
+- Samples go up in batches: `POST /api/v1/health/samples` with `{samples:[{healthSampleId, healthType, startedAt, endedAt, value, unit, sourceName, deviceName, metadata}], deletedHealthSampleIds:[...]}`, at most 1000 a request. `healthSampleId` is HealthKit's UUID for the sample, so sending one twice is harmless. Only once the server answers does the anchor move.
+- Settings in the app: Health on or off, which types, "sync now", what was last synced and when, and "delete my health data from TeaNode" (which calls the server's delete).
+
+On the server:
+
+- Storage, a new migration: `health_samples` (`id`, `user_id`, `health_sample_id` unique per person, `health_type`, `started_at`, `ended_at`, `value`, `unit`, `source_name`, `device_name`, `metadata` as JSON, `received_at`), indexed by person, type and time; and `health_workouts` alongside it. A daily summary (`health_daily_summaries`: per person, day in their time zone, and type: sum, minimum, maximum, average, count) is updated as samples arrive, because "steps per day for a year" must not read a million samples.
+- GraphQL: `ListHealthTypes` (what the person has, with the first and last day), `ReadHealthSummary(healthType, from, to, period)` (day, week, month), `ReadHealthSamples(healthType, from, to, first, offset)`, `DeleteHealthData(healthType?)`. Command line: `teanode health types | summary | samples | delete`. Dashboard: a Health page with a chart per type (the dashboard's ECharts components) and the delete button.
+- The agent: a `health` tool with `types`, `summary` and `samples`, read-only. Health data is among the most private there is, so it is held to these rules:
+  - The tool is off until the person turns it on in the agent's settings, separately from syncing (someone may want their data kept and charted without the agent reading it).
+  - The tool prefers summaries: `samples` is bounded and paginated like every other read, and the model is told when there is more.
+  - Dreams do not read health data into memory unless the person says so; a fact like "walks about 9,000 steps a day" is something the person may want remembered, a heart rate series is not.
+  - What the tool reads goes to the model's provider like any other tool result; the settings switch says so in words.
+- Retention: kept until the person deletes it. Deleting is complete: samples, summaries, and the anchors on the phone are reset so nothing is sent again unless the person syncs again.
+
+App Store and Apple's rules for HealthKit apps, which review checks:
+
+- The App ID gets the HealthKit capability, and the app's `Info.plist` gets `NSHealthShareUsageDescription`, saying plainly that the data is sent to the person's own TeaNode server and nowhere else.
+- Health data may not be used for advertising or sold, and may be stored only to give the person the feature; the privacy policy says so. It never goes to the push relay, and never into a notification's visible text.
+- The app works without Health: it is a choice in settings, not a step of connecting.
+
+Tests: the server's batch endpoint is idempotent (the same batch twice stores it once), deletions remove samples and fix the summaries, the daily summary is right across a time zone change, and a person cannot read another's data; on the phone, `TeaNodeKit` turns HealthKit samples into the upload shape (tested with recorded samples on the macOS runner, where HealthKit types exist).
 
 ## Concrete Steps
 
