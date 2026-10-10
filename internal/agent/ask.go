@@ -71,6 +71,12 @@ type AskSettings struct {
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
+	// DrawerID names the open drawer that sent the turn: the browser a
+	// location call asks, rather than any other the person has open. Empty
+	// for a turn no drawer sent, such as one begun after a card was
+	// approved.
+	DrawerID string
+
 	// Origin is the address the dashboard was reached at, scheme and host,
 	// for a link to a file that has to open somewhere else; empty where the
 	// turn did not come through it.
@@ -236,6 +242,7 @@ const (
 	EventNote         EventKind = "note"         // compaction and the like
 	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
 	EventNavigate     EventKind = "navigate"     // the dashboard is to show a page of itself: Text is its path
+	EventLocate       EventKind = "locate"       // the browser the person writes in is asked where it is: CallID
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
 )
@@ -254,10 +261,13 @@ type Event struct {
 	Note           string    `json:"note,omitempty"`
 	// NoteKind and NoteDetail are a note's kind and detail, for a client
 	// that words it in the person's language; Note is it in English.
-	NoteKind   string    `json:"noteKind,omitempty"`
-	NoteDetail string    `json:"noteDetail,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	At         time.Time `json:"at"`
+	NoteKind   string `json:"noteKind,omitempty"`
+	NoteDetail string `json:"noteDetail,omitempty"`
+	Error      string `json:"error,omitempty"`
+	// DrawerID is, on a locate event, the drawer that is to answer it
+	// (AskSettings.DrawerID).
+	DrawerID string    `json:"drawerId,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // sayNote tells whoever is watching a note of a kind: in English, and by
@@ -323,6 +333,10 @@ type AskRun struct {
 
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
+
+	// locations are the location calls waiting for the browser, by call
+	// id; see Locate.
+	locations map[string]chan string
 
 	// recalled is what memory searches found this turn, for the overlay;
 	// promptMemories are the pages the prompt already carries, which the
@@ -798,6 +812,10 @@ func (self *AskRun) finish() {
 		delete(self.questions, id)
 		close(channel)
 	}
+	for id, channel := range self.locations {
+		delete(self.locations, id)
+		close(channel)
+	}
 	self.mutex.Unlock()
 	close(self.done)
 	self.cancel()
@@ -865,6 +883,7 @@ func (self *AskRun) loop() {
 	// A goal that was waiting for the person has had its answer: it goes
 	// back to work a minute from now, whether the turn ended well or not.
 	self.resumeGoalAfterPerson()
+	self.clearFinishedTodos()
 	self.emit(Event{Kind: EventDone})
 }
 
@@ -1071,6 +1090,17 @@ func (self *AskRun) turn() error {
 			}
 		}
 		self.offered = withoutDashboard
+	}
+	// A tool that asks the person's browser goes wherever they are not
+	// writing in one; the prompt says so instead (see locationLine).
+	if settings.Headless || !surfaceOf(settings.Surface).canLocate {
+		withoutBrowser := self.offered[:0:0]
+		for _, tool := range self.offered {
+			if !tool.BrowserOnly {
+				withoutBrowser = append(withoutBrowser, tool)
+			}
+		}
+		self.offered = withoutBrowser
 	}
 	if settings.ReadOnly || settings.Allow != nil {
 		kept := self.offered[:0:0]
@@ -2355,7 +2385,11 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	// replies it draws as buttons above the box, to send with a click.
 	where := surfaceOf(settings.Surface)
 	if where.situationLine != "" {
-		blocks = append(blocks, "<where>\n"+where.situationLine+"\n</where>")
+		situation := where.situationLine
+		if !where.canLocate && !settings.Headless && settings.Surface != backgroundSurface {
+			situation += " " + locationLine
+		}
+		blocks = append(blocks, "<where>\n"+situation+"\n</where>")
 	}
 	if where.hasSuggestedReplies {
 		blocks = append(blocks, suggestedRepliesBlock)

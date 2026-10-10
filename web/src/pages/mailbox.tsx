@@ -1180,7 +1180,12 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             ) : (
               <>
                 {inTrash && total > 0 && (
-                  <button type="button" className="danger" disabled={busy} onClick={() => setEmptying(true)}>
+                  <button
+                    type="button"
+                    className="danger mailbox-empty-trash"
+                    disabled={busy}
+                    onClick={() => setEmptying(true)}
+                  >
                     {t('mailbox.emptyTrash')}
                   </button>
                 )}

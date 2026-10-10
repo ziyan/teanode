@@ -70,6 +70,7 @@ import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
 import { isReplyReference, ReferenceChips, ReplyQuote } from './agentReferenceChips'
+import { isAskedOfThisDrawer, newDrawerId, readBrowserLocation } from './browserLocation'
 import { SwipeableLine } from './swipeableLine'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
@@ -408,6 +409,7 @@ interface RunEvent {
     | 'note'
     | 'titled'
     | 'navigate'
+    | 'locate'
     | 'done'
     | 'error'
   runId: string
@@ -422,6 +424,8 @@ interface RunEvent {
   noteKind?: string
   noteDetail?: string
   error?: string
+  // On a locate event, the drawer that is to answer it.
+  drawerId?: string
 }
 
 // A line of the transcript as the drawer draws it.
@@ -554,18 +558,24 @@ const CITED = `
   }`
 
 const ASK = `
-  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!]) {
-    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references) { runId conversationId }
+  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String) {
+    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId) { runId conversationId }
   }`
 
 const FEED = `
   subscription ($conversationId: String!) {
-    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error }
+    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId }
   }`
 
 const ANSWER = `
   mutation ($runId: String!, $callId: String!, $answer: String!) {
     AnswerAgentQuestion(runId: $runId, callId: $callId, answer: $answer)
+  }`
+
+// The browser's answer to a turn that asked where the person is.
+const ANSWER_LOCATION = `
+  mutation ($runId: String!, $callId: String!, $latitudeDegrees: Float, $longitudeDegrees: Float, $accuracyMeters: Float, $measuredAt: String, $errorMessage: String) {
+    AnswerAgentLocation(runId: $runId, callId: $callId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, accuracyMeters: $accuracyMeters, measuredAt: $measuredAt, errorMessage: $errorMessage)
   }`
 
 const RESOLVE = `
@@ -3035,6 +3045,31 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // site the drawer has no dashboard around it to move, and the tool is not
   // offered there.
   const showPage = useShowPage(() => leaving())
+  // The location tool asks the browser the person is chatting in where it
+  // is: the drawer that sent the turn, named by the id it sends turns
+  // with, or for a turn no drawer sent the one they sent from last. The
+  // browser asks the person the first time; what it says, or why it
+  // cannot, goes back to the turn. A call is answered once, though the
+  // feed may replay it.
+  const drawerId = useRef(newDrawerId())
+  const lastSent = useRef({ conversationId: '', at: 0 })
+  const answeredLocationCalls = useRef(new Set<string>())
+  const answerLocation = (event: RunEvent) => {
+    const callId = event.callId
+    if (!callId || answeredLocationCalls.current.has(callId)) return
+    const isAsked = isAskedOfThisDrawer({
+      askedDrawerId: event.drawerId,
+      drawerId: drawerId.current,
+      lastSentAt: lastSent.current.conversationId === conversationRef.current ? lastSent.current.at : 0,
+      now: Date.now(),
+      isVisible: document.visibilityState === 'visible',
+    })
+    if (!isAsked) return
+    answeredLocationCalls.current.add(callId)
+    void readBrowserLocation()
+      .then((answer) => graphql<{ AnswerAgentLocation: boolean }>(ANSWER_LOCATION, { runId: event.runId, callId, ...answer }))
+      .catch(() => undefined)
+  }
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
@@ -3047,6 +3082,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
     if (event.kind === 'navigate') {
       if (!standalone) showPage(event)
+      return
+    }
+    if (event.kind === 'locate') {
+      answerLocation(event)
       return
     }
     //
@@ -3361,10 +3400,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           interruptedAnswer: options?.interruptedAnswer,
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           references: pointed.length > 0 ? pointed : undefined,
+          drawerId: drawerId.current,
         })
       } finally {
         sending.current -= 1
       }
+      lastSent.current = { conversationId: response.AskAgent.conversationId, at: Date.now() }
       if (conversationRef.current !== sendingConversationId) return
       if (!conversationId) {
         const conversation = response.AskAgent.conversationId

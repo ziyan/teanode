@@ -21,7 +21,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "todo", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "This conversation's task list: yours, for work in several steps, to keep your place and show the person your progress; they can see it but not change it. `batch` makes every change in one call -- add the steps when you start, complete each as you finish it, update or delete one that changed; `list` shows it, `prune` clears the finished ones. Shown to you every round.",
+				Description: "This conversation's task list: yours, for work in several steps, to keep your place and show the person your progress; they can see it but not change it. `batch` makes every change in one call -- add the steps when you start, complete each as you finish it, update or delete one that changed; `list` shows it, `prune` clears the finished ones, and a list with every step done is cleared when your turn ends. Shown to you every round.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do", "batch", "list", "prune"),
 					"items": map[string]any{

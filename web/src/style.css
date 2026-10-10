@@ -4530,6 +4530,11 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   font-size: 12px;
   padding: 3px 8px;
 }
+/* Emptying the trash acts on the whole folder, not on what is ticked, so
+   it stands apart at the far end of the row. */
+.mailbox-actions .mailbox-empty-trash {
+  margin-left: auto;
+}
 .mailbox-rows {
   list-style: none;
   margin: 0;

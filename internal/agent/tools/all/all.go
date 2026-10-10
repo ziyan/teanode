@@ -23,6 +23,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/goal"
 	_ "github.com/ziyan/teanode/internal/agent/tools/idea"
 	_ "github.com/ziyan/teanode/internal/agent/tools/knowledge"
+	_ "github.com/ziyan/teanode/internal/agent/tools/location"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailaudit"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailboxsettings"

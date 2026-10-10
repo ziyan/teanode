@@ -230,8 +230,9 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies f
 			response.Header().Set("Referrer-Policy", "no-referrer")
 			// The dashboard asks for none of these but the microphone, which
 			// the drawer listens to when the person talks to their agent, and
-			// only its own pages may ask: nothing it embeds gets to.
-			response.Header().Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=()")
+			// the location, which the drawer gives a turn that asks where
+			// they are. Only its own pages may ask: nothing it embeds gets to.
+			response.Header().Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(self), payment=()")
 			handler.ServeHTTP(response, request)
 		})
 	}
