@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.125.1] - 2026-10-10
+
+### Changed
+
+- The net worth chart is drawn around its values rather than from zero, says how much it went up or down over the range, and its All range covers all of the history. (#371)
+- On a phone, tapping a chart shows that day's values, and the box stays inside the screen. (#371)
+- Chart axes label every gridline differently, and a month that lost a little money is drawn below zero. (#371)
+- The memory check says how far its score moved since the first run shown. (#371)
+- Charts on pages the agent makes draw a balance or price around its values, show tooltips on lines, and follow a theme change. (#371)
+
 ## [0.125.0] - 2026-10-10
 
 ### Added
