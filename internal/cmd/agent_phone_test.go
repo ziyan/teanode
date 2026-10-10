@@ -11,7 +11,7 @@ import (
 )
 
 // Everything a person does with their phones is on every surface they use:
-// the API, the dashboard's Phones card and teanode agent phone. One table
+// the API, the dashboard's Phones page and teanode agent phone. One table
 // names each, and nothing exists on a surface that the table does not list.
 // The agent's phone tool comes with onboarding (milestone 11 of the iPhone
 // app plan) and joins this table then.
@@ -43,13 +43,13 @@ func TestPhoneParity(test *testing.T) {
 		subcommands[subcommand.Name] = true
 	}
 
-	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "pages", "agent.tsx"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "pages", "settings", "phones.tsx"))
 	if err != nil {
 		test.Fatal(err)
 	}
 	documents := regexp.MustCompile(`(?s)const PHONE_DOCUMENTS = \{(.*?)\n\}`).FindSubmatch(source)
 	if documents == nil {
-		test.Fatal("the Phones card's documents are not in web/src/pages/agent.tsx")
+		test.Fatal("the Phones page's documents are not in web/src/pages/settings/phones.tsx")
 	}
 	dashboard := map[string]bool{}
 	for _, match := range regexp.MustCompile(`(?m)^  ([A-Za-z]+): `).FindAllSubmatch(documents[1], -1) {

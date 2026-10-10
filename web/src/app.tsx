@@ -114,6 +114,9 @@ const PasskeysPage = lazyPage(async () => ({
 const TokensPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/tokens')).TokensPage,
 }))
+const PhonesPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/phones')).PhonesPage,
+}))
 const AppsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/apps')).AppsPage,
 }))
@@ -482,6 +485,7 @@ export function App() {
                     <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                     <Route path="/settings/passkeys" element={<PasskeysPage />} />
                     <Route path="/settings/tokens" element={<TokensPage />} />
+                    <Route path="/settings/phones" element={<PhonesPage />} />
                     <Route path="/settings/apps" element={<AppsPage />} />
                     <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
 
