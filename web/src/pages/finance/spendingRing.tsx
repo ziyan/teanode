@@ -88,6 +88,11 @@ export function ringSlicePath(
 const RING_SIZE = 200
 const RING_OUTER = 96
 const RING_INNER = 62
+// The total in the middle is pressed to fit inside the hole when it is
+// longer than the hole is wide: a total in the millions, at about ten units
+// a figure, crossed the slices.
+const RING_TOTAL_ROOM = RING_INNER * 2 - 14
+const RING_TOTAL_LETTER = 10
 
 // ringSliceClass is the colour a slice is drawn in, as a class, for the
 // slice and for the swatch that names it elsewhere: the table under the
@@ -149,6 +154,7 @@ export function SpendingRing({
         : `${slice.label}: ${formatMoney(slice.amount, currency)}`,
     )
     .join('; ')
+  const totalShown = totalText ?? formatMoney(totalAmount ?? total, currency)
   return (
     <div className="spending-ring">
       <svg
@@ -175,8 +181,11 @@ export function SpendingRing({
           x={RING_SIZE / 2}
           y={RING_SIZE / 2 - 2}
           textAnchor="middle"
+          {...(totalShown.length * RING_TOTAL_LETTER > RING_TOTAL_ROOM
+            ? { textLength: RING_TOTAL_ROOM, lengthAdjust: 'spacingAndGlyphs' }
+            : {})}
         >
-          {totalText ?? formatMoney(totalAmount ?? total, currency)}
+          {totalShown}
         </text>
         <text className="spending-ring-caption" x={RING_SIZE / 2} y={RING_SIZE / 2 + 18} textAnchor="middle">
           {totalLabel}

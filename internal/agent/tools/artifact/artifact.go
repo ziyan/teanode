@@ -21,7 +21,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "artifact", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Make something the person opens beside the conversation rather than reads in it: a page (HTML), a picture (SVG), or a document (Markdown). Use it for a chart, a table wider than a message, a report, a mock-up. A page is one self-contained document: nothing loads from another server. It gets the dashboard's look on its own (classes .card, .grid, .muted, .good/.bad/.warn, plain tables, a .chart box 320px tall), and when it calls teanode.chart(element, option) — a plain ECharts 5 option: title, tooltip, legend, xAxis and yAxis with the series, or a pie series — the chart is drawn in the dashboard's colours and type, sized to its box, following the person's theme. Say in the answer that it is there; the person sees it under the tool line.",
+				Description: "Make something the person opens beside the conversation rather than reads in it: a page (HTML), a picture (SVG), or a document (Markdown). Use it for a chart, a table wider than a message, a report, a mock-up. A page is one self-contained document: nothing loads from another server. It gets the dashboard's look on its own (classes .card, .grid, .muted, .good/.bad/.warn, plain tables, a .chart box 320px tall), and when it calls teanode.chart(element, option) (a plain ECharts 6 option: title, tooltip, legend, xAxis and yAxis with the series, or a pie series), the chart is drawn in the dashboard's colours and type, sized to its box, following the person's theme. Say in the answer that it is there; the person sees it under the tool line.",
 				Parameters: tools.Object(map[string]any{
 					"title":   tools.StringProperty("what to call it, a few words"),
 					"kind":    tools.EnumProperty("what it is", "html", "svg", "markdown"),
@@ -37,7 +37,7 @@ func init() {
 					}
 					return "Make " + what + " called " + tools.Named(call.Title, "this") + " to open beside the conversation"
 				}),
-				Guidance: "artifact: a chart is a page with <div class=\"chart\"></div> and a <script> that calls teanode.chart(element, option); link nothing — the library and the look come with the page — and let the theme choose colours and type; name every unit. Nothing loads from another server; keep a page under 200 kB.",
+				Guidance: "artifact: a chart is a page with <div class=\"chart\"></div> and a <script> that calls teanode.chart(element, option); link nothing (the library and the look come with the page) and let the theme choose colours and type; name every unit. A line of a level (a balance, a price, a weight) is drawn around its values, while counts, money spent and bars keep zero; a tooltip follows the axis unless the option says otherwise. Nothing loads from another server; keep a page under 200 kB.",
 				Run:      runArtifact,
 			},
 		}

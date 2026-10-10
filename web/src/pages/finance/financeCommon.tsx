@@ -106,7 +106,7 @@ export function Money({ amount, currency }: { amount?: string | number | null; c
 // compactMoney is an amount in a few characters, for a chart's axis: the
 // currency's sign and a count to the thousand, $7.5k rather than
 // $7,500.00, so the axis stays narrow and the plot keeps its width.
-export function compactMoney(amount: number, currency?: string | null): string {
+export function compactMoney(amount: number, currency?: string | null, precision = 0): string {
   const code = (currency || 'USD').toUpperCase()
   let sign = `${code} `
   try {
@@ -115,7 +115,7 @@ export function compactMoney(amount: number, currency?: string | null): string {
   } catch {
     // A code the browser does not know is written out.
   }
-  return `${amount < 0 ? '-' : ''}${sign}${compact(Math.abs(amount))}`
+  return `${amount < 0 ? '-' : ''}${sign}${compact(Math.abs(amount), precision)}`
 }
 
 // accountLabel names a finance account the way its statement does: its
