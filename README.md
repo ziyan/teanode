@@ -28,8 +28,9 @@ Each person can turn on an agent of their own, pointed at a model the operator
 chose (OpenAI, Anthropic, Gemini, an Ollama or vLLM on the same machine, or a
 ChatGPT plan). It sorts the mail that arrives, drafts replies, answers
 questions with exactly that person's permissions, keeps a memory of what it
-learns, and can read the banks and cards they link. It is off until somebody
-turns it on.
+learns, and can read the banks and cards they link. You can call it from the
+dashboard and talk, and it can see and prompt the Claude Code and Codex
+sessions on your computers. It is off until somebody turns it on.
 
 ```mermaid
 flowchart LR
@@ -83,6 +84,18 @@ The agent is a drawer on every page. Asked what needs you today, it searches
 your mail and answers from what it found; anything it cannot undo, and
 anything that leaves the server, waits for you to approve it.
 
+![A voice call in the drawer](docs/images/voice.jpg)
+
+Press the telephone beside send and talk. Each thing you finish saying goes to
+the agent as a turn, and the answer is read back as it is written; you can
+cut in, or mute the microphone for a word with somebody else.
+
+![A coding session's question in the drawer](docs/images/coding-session.jpg)
+
+With herdr on your computers, the agent sees every Claude Code and Codex
+session, reads what each did, types into one where you can see it, and brings
+you the questions they stop to ask, with the options as buttons.
+
 ![The agent's own settings page](docs/images/agent.jpg)
 
 Its own page says what to call it, how it should write, which mailboxes it may
@@ -102,6 +115,11 @@ The same pages as a graph, joined by links that say how they relate.
 Link a bank, a card or a brokerage through Plaid or SimpleFIN, and the Finance
 page shows where the money went, against budgets that say where the month is
 heading.
+
+![A receipt matched to its charge](docs/images/finance-receipt.jpg)
+
+A receipt photographed into the chat is kept line by line, checked against its
+printed totals and matched to the charge it explains.
 
 ![Net worth and assets](docs/images/finance-net-worth.jpg)
 
@@ -219,10 +237,20 @@ is granted one. It sorts what arrives, summarizes long conversations, drafts
 replies in your voice, and can answer on your behalf under a policy you write.
 It answers questions in a drawer on every page or with `teanode agent ask`,
 through the same operations the dashboard uses, with your permissions. It can
-reach your calendar and contacts, your own computer and browser tab while you
-are present, the web, and servers you connect over the Model Context
-Protocol. It tells you, unasked, when mail shows something that cannot wait,
+reach your calendar and contacts, your own computer and browser tab, the web,
+and servers you connect over the Model Context Protocol. It tells you, unasked, when mail shows something that cannot wait,
 within quiet hours and a daily limit you set. Operators cap what it may spend.
+
+**Talk to it.** A call in the drawer, on a laptop or a phone: what you say is
+transcribed as you say it, the answer is written for the ear and read back,
+and you can talk over it. The operator turns it on and the provider's key
+never leaves the server.
+
+**Your coding sessions.** Through herdr on each attached computer, the agent
+lists your Claude Code and Codex sessions, reads them, types an instruction
+into one, answers the questions they ask, and tells you when one finishes. With
+`teanode hook install`, the sessions themselves are shown what the agent's
+memory knows about the checkout they run in.
 
 **A memory that learns you.** The agent keeps what it learns as a graph of
 pages, each fact numbered and tied to the words it came from. It writes pages
@@ -232,12 +260,15 @@ Nothing is deleted, and every change can be put back.
 
 **Finance.** Banks, cards, brokerages and lenders linked through Plaid or
 SimpleFIN, kept in your own database: transactions in your own categories,
-budgets that project the month, savings targets, and net worth over time. The
+budgets that project the month, savings targets, and net worth over time.
+Accounts no provider reaches come in from an OFX statement or from
+screenshots, and receipts are kept line by line against their charges. The
 agent reads the same rows, so you can ask it how the month is going.
 
-**Model Context Protocol, both ways.** An editor or a coding tool can use your
-agent's tools and ask it questions; approve it in your browser and there is no
-token to copy.
+**Model Context Protocol, both ways.** An editor, a coding tool, or ChatGPT or
+Grok on your phone can use your agent's tools and ask it questions, so you can
+check on your coding sessions by voice from the car; approve it in your
+browser and there is no token to copy.
 
 **Relays your outbound mail.** Per-device SMTP credentials on the submission
 port, each optionally restricted to one sender address.
