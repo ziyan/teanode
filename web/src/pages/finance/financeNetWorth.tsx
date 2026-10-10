@@ -140,6 +140,10 @@ export function FinanceNetWorthSection() {
   )
 }
 
+// changePercent is a change in net worth as a share of where the chart
+// starts: a tenth of a percent shows, since a large total moves by little.
+const changePercent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
+
 function NetWorthChart() {
   const { t } = useTranslation()
   const [range, setRange] = useState('90')
@@ -189,6 +193,23 @@ function NetWorthChart() {
           headline={formatMoney(amountOf(latest?.netWorthAmount), currency)}
           caption={latest ? t('finance.netWorthOn', { day: formatDay(latest.netWorthOn) }) : undefined}
           isFitted
+          tooltipNote={(index) => {
+            const first = points[0]
+            if (index === 0 || !first) return null
+            const start = amountOf(first.netWorthAmount)
+            const difference = amountOf(points[index].netWorthAmount) - start
+            const amount = formatMoney(Math.abs(difference), currency)
+            const share = start === 0 ? '' : ` (${changePercent.format(Math.abs(difference / start))})`
+            return {
+              label: t('finance.netWorthSince', { day: dayLabel(first.netWorthOn) }),
+              text:
+                difference > 0
+                  ? t('finance.netWorthUp', { amount, share })
+                  : difference < 0
+                    ? t('finance.netWorthDown', { amount, share })
+                    : t('finance.netWorthUnchanged'),
+            }
+          }}
           series={[
             {
               id: 'netWorth',
