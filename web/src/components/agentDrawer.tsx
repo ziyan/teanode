@@ -3848,17 +3848,18 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }
   // Swiping a message to the right, or its Copy button, copies what it
   // says: an answer as the Markdown it was written in.
-  const copyLine = (line: Line) => {
+  // The line itself shows it took, with a tick; only a failure is a toast.
+  const copyLine = async (line: Line): Promise<boolean> => {
     const text = shownText(line)
-    if (!text) return
-    if (!navigator.clipboard) {
+    if (!text) return false
+    try {
+      if (!navigator.clipboard) throw new Error('no clipboard')
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
       toast.failed(t('common.copyFailed'))
-      return
+      return false
     }
-    void navigator.clipboard.writeText(text).then(
-      () => toast.done(t('common.copied')),
-      () => toast.failed(t('common.copyFailed')),
-    )
   }
   const replying = references.find(isReplyReference)
   const chipped = references.filter((reference) => !isReplyReference(reference))

@@ -6644,8 +6644,11 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   min-width: 0;
 }
 
+/* Sideways it clips rather than scrolls: a message swiped across must not
+   make the conversation wider than the drawer. */
 .agent-drawer-transcript {
   flex: 1;
+  overflow-x: clip;
   overflow-y: auto;
   padding: 12px;
   display: flex;
@@ -7104,8 +7107,12 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   transition: transform 0.18s ease-out;
 }
 
+/* While it moves, nothing in it is selected and no callout opens. */
 .agent-line-swipeable.swiping {
   transition: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* The mark that shows in the room the swipe opens, brighter the nearer
@@ -7126,6 +7133,12 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 .agent-swipe-action.copy {
   right: calc(100% + 16px);
+}
+
+/* Copied: the mark, and the button, turn to a green tick for a moment. */
+.agent-swipe-action.copied,
+.agent-line-actions .icon-action.copied {
+  color: var(--good);
 }
 
 /* With a mouse, Copy and Reply in the message's corner on hover; reached

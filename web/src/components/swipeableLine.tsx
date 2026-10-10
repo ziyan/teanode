@@ -1,26 +1,25 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { CopyIcon, ReplyIcon } from './icons'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { CheckIcon, CopyIcon, ReplyIcon } from './icons'
 
-// How far a message is swiped before letting go acts on it, and the
-// farthest it follows the finger.
+// How far a finger has to move sideways before it is a swipe rather than a
+// tap or the start of a scroll (as a mailbox row's), how far a message is
+// carried before letting go acts on it, and the farthest it goes.
+export const SWIPE_STARTS_PX = 12
 export const SWIPE_ACTION_PX = 56
-const SWIPE_FARTHEST_PX = 80
+const SWIPE_FARTHEST_PX = 96
 
-// swipeOffset is how far a line is drawn across for a finger that has
-// moved acrossPx to the right and downPx down since it touched: negative
-// to the left, positive to the right, and nothing for a move more down
-// than across, which is a scroll.
-export function swipeOffset(acrossPx: number, downPx: number): number {
-  if (Math.abs(downPx) > Math.abs(acrossPx)) return 0
-  return Math.max(-SWIPE_FARTHEST_PX, Math.min(SWIPE_FARTHEST_PX, acrossPx))
+// How long a copied line stays out, its mark a tick, before it goes back.
+export const COPIED_HOLD_MS = 900
+
+// swipeOffset is how far a line is drawn across for a finger that has moved
+// acrossPx since the swipe began: one for one up to where letting go acts,
+// then heavier, so the line says it has gone far enough.
+export function swipeOffset(acrossPx: number): number {
+  const distance = Math.abs(acrossPx)
+  const carried = distance <= SWIPE_ACTION_PX ? distance : SWIPE_ACTION_PX + (distance - SWIPE_ACTION_PX) * 0.35
+  return Math.sign(acrossPx) * Math.min(carried, SWIPE_FARTHEST_PX)
 }
 
-// SwipeableLine is a line of the conversation that can be answered or
-// copied. On a touch screen it follows a finger: swiped to the left and let
-// go far enough it replies, to the right it copies, as chat apps do. With a
-// mouse, Copy and Reply buttons show in its corner on hover, and they are
-// reached by keyboard too. The browser keeps the vertical scroll
-// (touch-action: pan-y), and a scroll it starts cancels the swipe.
 export function SwipeableLine({
   className,
   replyLabel,
@@ -33,12 +32,37 @@ export function SwipeableLine({
   replyLabel: string
   copyLabel: string
   onReply: () => void
-  onCopy: () => void
+  // onCopy copies the line and says whether it took.
+  onCopy: () => Promise<boolean>
   children: ReactNode
 }) {
-  const touched = useRef<{ pointerId: number; x: number; y: number } | null>(null)
+  // Where the finger came down, and whether it has become a swipe: until
+  // it moves SWIPE_STARTS_PX across it may still be a tap, and a move more
+  // down than across first is a scroll, left to the browser. Once a swipe,
+  // the direction is held: drifting down does not drop the line.
+  const touched = useRef<{ pointerId: number; x: number; y: number; isSwiping: boolean } | null>(null)
+  const hasSwiped = useRef(false)
   const offsetRef = useRef(0)
   const [offset, setOffset] = useState(0)
+  // A line just copied: held out where the swipe left it, its mark a tick,
+  // until COPIED_HOLD_MS have passed. The button says so too.
+  const [isCopied, setCopied] = useState(false)
+  const holding = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(holding.current), [])
+  const copy = (isHeld: boolean) => {
+    void onCopy().then((isTaken) => {
+      if (!isTaken) {
+        move(0)
+        return
+      }
+      setCopied(true)
+      window.clearTimeout(holding.current)
+      holding.current = window.setTimeout(() => {
+        setCopied(false)
+        if (isHeld) move(0)
+      }, COPIED_HOLD_MS)
+    })
+  }
   const move = (next: number) => {
     // A small buzz where letting go would act, on a phone that has one.
     if (Math.abs(offsetRef.current) < SWIPE_ACTION_PX && Math.abs(next) >= SWIPE_ACTION_PX) navigator.vibrate?.(8)
@@ -46,12 +70,20 @@ export function SwipeableLine({
     setOffset(next)
   }
   const end = (isActing: boolean) => {
+    const wasSwiping = touched.current?.isSwiping ?? false
     const reached = offsetRef.current
     touched.current = null
+    if (isActing && wasSwiping && reached >= SWIPE_ACTION_PX) {
+      // Settles where letting go acts, and stays there while it copies.
+      hasSwiped.current = true
+      move(SWIPE_ACTION_PX)
+      copy(true)
+      return
+    }
     move(0)
-    if (!isActing) return
+    if (!isActing || !wasSwiping) return
+    hasSwiped.current = true
     if (reached <= -SWIPE_ACTION_PX) onReply()
-    else if (reached >= SWIPE_ACTION_PX) onCopy()
   }
   return (
     <div
@@ -59,17 +91,40 @@ export function SwipeableLine({
       style={offset !== 0 ? { transform: `translateX(${offset}px)` } : undefined}
       onPointerDown={(event) => {
         if (event.pointerType !== 'touch') return
-        touched.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+        touched.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, isSwiping: false }
+        hasSwiped.current = false
       }}
       onPointerMove={(event) => {
         const from = touched.current
         if (!from || from.pointerId !== event.pointerId) return
-        move(swipeOffset(event.clientX - from.x, event.clientY - from.y))
+        const across = event.clientX - from.x
+        const down = event.clientY - from.y
+        if (!from.isSwiping) {
+          if (Math.abs(down) > SWIPE_STARTS_PX && Math.abs(down) > Math.abs(across)) {
+            touched.current = null
+            return
+          }
+          if (Math.abs(across) < SWIPE_STARTS_PX) return
+          from.isSwiping = true
+          // Moved on from where it began, not from where it became a
+          // swipe, would jump the line by the slack.
+          from.x += Math.sign(across) * SWIPE_STARTS_PX
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+        }
+        move(swipeOffset(event.clientX - from.x))
       }}
       onPointerUp={(event) => {
         if (touched.current?.pointerId === event.pointerId) end(true)
       }}
       onPointerCancel={() => end(false)}
+      // The tap that ends a swipe is not a tap on what is in the line: a
+      // link in an answer stays shut.
+      onClickCapture={(event) => {
+        if (!hasSwiped.current) return
+        hasSwiped.current = false
+        event.preventDefault()
+        event.stopPropagation()
+      }}
     >
       {children}
       {offset < 0 && (
@@ -83,16 +138,22 @@ export function SwipeableLine({
       )}
       {offset > 0 && (
         <span
-          className="agent-swipe-action copy"
+          className={['agent-swipe-action copy', isCopied ? 'copied' : ''].filter(Boolean).join(' ')}
           aria-hidden="true"
           style={{ opacity: Math.min(1, offset / SWIPE_ACTION_PX) }}
         >
-          <CopyIcon size={16} />
+          {isCopied ? <CheckIcon size={18} /> : <CopyIcon size={16} />}
         </span>
       )}
       <span className="agent-line-actions">
-        <button type="button" className="icon-action" title={copyLabel} aria-label={copyLabel} onClick={onCopy}>
-          <CopyIcon size={14} />
+        <button
+          type="button"
+          className={['icon-action', isCopied ? 'copied' : ''].filter(Boolean).join(' ')}
+          title={copyLabel}
+          aria-label={copyLabel}
+          onClick={() => copy(false)}
+        >
+          {isCopied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
         </button>
         <button type="button" className="icon-action" title={replyLabel} aria-label={replyLabel} onClick={onReply}>
           <ReplyIcon size={14} />
