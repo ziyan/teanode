@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.127.0] - 2026-10-10
+
+### Added
+
+- Connect a phone by scanning a code: the dashboard's Connect page and `teanode agent phone pair` show a one-time code for the TeaNode app. (#379)
+
 ## [0.126.1] - 2026-10-10
 
 ### Fixed
