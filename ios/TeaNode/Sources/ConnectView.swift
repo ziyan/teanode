@@ -90,6 +90,11 @@ struct ConnectView: View {
                 }
             }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
+            .task(id: app.openedLink?.url) {
+                guard let link = app.openedLink else { return }
+                app.openedLink = nil
+                await connect(link.url.absoluteString)
+            }
         }
     }
 

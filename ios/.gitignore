@@ -10,3 +10,9 @@
 /TeaNodeKit/.build/
 /TeaNodeKit/.swiftpm/
 xcuserdata/
+
+# Written by `xcodegen generate` from the entitlements and Info.plist
+# properties in project.yml.
+/TeaNode/TeaNode.entitlements
+/TeaNodeNotification/*.entitlements
+/TeaNodeNotification/Info.plist

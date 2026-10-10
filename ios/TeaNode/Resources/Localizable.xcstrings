@@ -129,6 +129,22 @@
         }
       }
     },
+    "Already connected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经连接"
+          }
+        }
+      }
+    },
     "Answered": {
       "localizations": {
         "ja": {
@@ -896,6 +912,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法连接服务器。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "This phone is already connected to %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスマートフォンはすでに %@ に接続されています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部手机已经连接到 %@。"
+          }
+        }
+      }
+    },
+    "This phone is connected to %@. To connect it to %@, sign out in Settings first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスマートフォンは %1$@ に接続されています。%2$@ に接続するには、先に「設定」でログアウトしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部手机已连接到 %1$@。要连接到 %2$@，请先在“设置”中退出登录。"
           }
         }
       }
