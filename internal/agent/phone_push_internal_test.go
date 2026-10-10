@@ -172,3 +172,28 @@ func TestASignedOutPhoneIsNotSentTo(t *testing.T) {
 		t.Errorf("a signed-out phone was sent %d notifications", len(sent))
 	}
 }
+
+// The app going to the background hides the app at once, whatever it said a
+// moment before, while another tab still shown keeps the person present; and
+// a dashboard left untouched on a desk does not keep the phone quiet.
+func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
+	worker := &Agent{}
+	now := time.Now()
+	worker.ReportPresence("u", "phone", true, 0, now)
+	if !worker.isWatching("u", now) {
+		t.Fatal("the app in front was not taken as watching")
+	}
+	worker.ReportPresence("u", "phone", false, 0, now.Add(time.Second))
+	if worker.isWatching("u", now.Add(2*time.Second)) {
+		t.Error("the app in the background was still taken as watching")
+	}
+	worker.ReportPresence("u", "tab", true, 0, now)
+	worker.ReportPresence("u", "other-tab", false, 0, now.Add(time.Second))
+	if !worker.isWatching("u", now.Add(2*time.Second)) {
+		t.Error("a hidden tab hid a shown one")
+	}
+	worker.ReportPresence("u", "tab", true, 300, now.Add(3*time.Second))
+	if worker.isWatching("u", now.Add(4*time.Second)) {
+		t.Error("a tab untouched for five minutes kept the phone quiet")
+	}
+}

@@ -280,7 +280,7 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 	if interaction == nil || self.settings.Agent == nil {
 		return
 	}
-	if isPresent, _ := self.agent.isPresent(self.settings.Agent.UserID, time.Now()); isPresent {
+	if self.agent.isWatching(self.settings.Agent.UserID, time.Now()) {
 		return
 	}
 	content := &push.Content{
@@ -319,7 +319,7 @@ func (self *AskRun) notifyAnswer(answer string) {
 	if self.settings.Agent == nil || strings.TrimSpace(answer) == "" || !isAppSurface(self.settings.Surface) {
 		return
 	}
-	if isPresent, _ := self.agent.isPresent(self.settings.Agent.UserID, time.Now()); isPresent {
+	if self.agent.isWatching(self.settings.Agent.UserID, time.Now()) {
 		return
 	}
 	agentName := self.settings.Agent.Name
