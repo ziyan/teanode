@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.128.0] - 2026-10-10
+
+### Added
+
+- Notifications on your phone through the TeaNode app, and a Phones card and `teanode agent phone` to manage the phones you talk to your agent from. (#380)
+- A push relay an operator can turn on with the TeaNode app's Apple push key (`agent.push.relay`). (#380)
+
 ## [0.127.0] - 2026-10-10
 
 ### Added
