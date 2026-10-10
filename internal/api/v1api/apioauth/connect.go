@@ -12,8 +12,8 @@ import (
 // token for the whole API as the person the code was made for.
 //
 // The code was made where the person is signed in (the dashboard's Connect
-// page, `teanode agent phone pair`, or a card their agent showed) and shown
-// as a QR code their phone scanned. That direction is the point. The opposite
+// page or `teanode agent phone pair`) and shown as a QR code their phone
+// scanned. That direction is the point. The opposite
 // one, a device showing a short code for the person to approve (RFC 8628),
 // lets anybody start a pairing as "TeaNode on Ana's iPhone", send the person a
 // link to approve it on their own server, and collect a full token from one
@@ -45,8 +45,9 @@ func (self *oauth) collectConnectCode(response http.ResponseWriter, request *htt
 		writeOAuthError(response, http.StatusUnauthorized, "invalid_client", "no program is registered under that identifier")
 		return
 	}
-	// The whole API, so only an app installed on a device: its sign-in can
-	// only ever return to it.
+	// The code itself is the credential, so this keeps nobody out who holds
+	// one; it keeps the tokens a code gives to programs registered as apps,
+	// which is what the person was told they were connecting.
 	if !api.IsNativeAppClient(client.RedirectURIs) {
 		writeOAuthError(response, http.StatusBadRequest, "unauthorized_client",
 			"only an app installed on a device may connect with a code: register with an app's own address, such as com.example.app:/oauth")
@@ -66,7 +67,7 @@ func (self *oauth) collectConnectCode(response http.ResponseWriter, request *htt
 		return
 	}
 	user := self.authenticator.UserByID(connected.UserID)
-	if user == nil {
+	if user == nil || user.Disabled() {
 		writeOAuthError(response, http.StatusBadRequest, "invalid_grant", "that account no longer exists")
 		return
 	}

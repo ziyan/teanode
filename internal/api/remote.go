@@ -192,10 +192,8 @@ func IsPrivateUseRedirect(address string) bool {
 }
 
 // IsNativeAppClient says whether every address a program registered is an
-// app's own return address, which is what a program must be to be granted
-// the whole API: a web page asking for everything a person can do, from
-// whatever site, is the shape phishing takes, and a page cannot receive a
-// private-use redirect anyway.
+// app's own return address: what a program must have registered as to be
+// handed a connect code's token (internal/api/v1api/apioauth/connect.go).
 func IsNativeAppClient(redirects []string) bool {
 	if len(redirects) == 0 {
 		return false

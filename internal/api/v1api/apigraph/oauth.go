@@ -43,10 +43,6 @@ type ReadOAuthAuthorizationRequestArguments struct {
 
 	// RedirectURI it asked to be sent back to
 	RedirectURI string `json:"redirectUri"`
-
-	// Scope it asked for: "mcp" (the default) for the agent tools, "api" for
-	// everything you can do
-	Scope *string `json:"scope" graphapi:"nullable"`
 }
 
 // OAuthAuthorizationRequest is what the page shows.
@@ -67,11 +63,6 @@ type OAuthAuthorizationRequest struct {
 	// seconds ago is the one you just started; an old one you do not
 	// recognize is worth a second look.
 	Registered time.Time `json:"registered"`
-
-	// IsFullAccess says whether approving gives the program everything the
-	// account can do, rather than the agent tools alone. Only an app
-	// installed on a device can ask for it.
-	IsFullAccess bool `json:"isFullAccess"`
 }
 
 type ApproveOAuthAuthorizationArguments struct {
@@ -86,11 +77,6 @@ type ApproveOAuthAuthorizationArguments struct {
 	// Resource is what the token will be good for, and is why a token from
 	// this flow cannot be spent against the rest of the API.
 	Resource *string `json:"resource" graphapi:"nullable"`
-
-	// Scope the program asked for. "api" gives it everything the account can
-	// do and is accepted only for an app installed on a device; anything else
-	// gives the agent tools, as Resource says.
-	Scope *string `json:"scope" graphapi:"nullable"`
 }
 
 // OAuthApproval is where to send the person next.
@@ -165,10 +151,6 @@ func (self *graph) ReadOAuthAuthorizationRequest(ctx context.Context, arguments 
 	if err != nil {
 		return nil, err
 	}
-	isFullAccess, err := isFullAccessScope(client, valueOrEmpty(arguments.Scope))
-	if err != nil {
-		return nil, err
-	}
 	host := arguments.RedirectURI
 	if parsed, parseError := url.Parse(arguments.RedirectURI); parseError == nil && parsed.Host != "" {
 		host = parsed.Host
@@ -178,7 +160,6 @@ func (self *graph) ReadOAuthAuthorizationRequest(ctx context.Context, arguments 
 		RedirectHost: host,
 		Username:     principal.User.Username,
 		Registered:   client.CreatedAt,
-		IsFullAccess: isFullAccess,
 	}, nil
 }
 
@@ -204,17 +185,9 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		return nil, fmt.Errorf("%w: this server authorizes only with a PKCE challenge, hashed with S256", api.ErrInvalidArguments)
 	}
 
-	isFullAccess, err := isFullAccessScope(client, valueOrEmpty(arguments.Scope))
+	resource, err := agentToolsResource(valueOrEmpty(arguments.Resource))
 	if err != nil {
 		return nil, err
-	}
-	// Empty is what a token for the whole API carries, the way one minted by
-	// hand does.
-	resource := ""
-	if !isFullAccess {
-		if resource, err = agentToolsResource(valueOrEmpty(arguments.Resource)); err != nil {
-			return nil, err
-		}
 	}
 
 	// The secret half of the approval. The program collects by presenting it
@@ -251,26 +224,6 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 
 	log.Noticef("%s authorized the client %s (%q)", principal.User.Username, client.ID, client.Name)
 	return &OAuthApproval{RedirectURL: redirect.String()}, nil
-}
-
-// isFullAccessScope says whether a scope asks for the whole API, refusing it
-// for a program that is not an app installed on a device.
-//
-// The whole API is everything the account can do, and a web page asking for
-// it from wherever it is hosted is what phishing looks like. An app's own
-// return address (com.example.app:/oauth) can only be received by that app on
-// the person's device, so it is the one kind of program allowed to ask.
-func isFullAccessScope(client *models.OAuthClient, scope string) (bool, error) {
-	switch scope {
-	case "", "mcp":
-		return false, nil
-	case "api":
-		if !api.IsNativeAppClient(client.RedirectURIs) {
-			return false, fmt.Errorf("%w: only an app installed on a device may be given everything you can do", api.ErrInvalidArguments)
-		}
-		return true, nil
-	}
-	return false, fmt.Errorf("%w: this server publishes the scopes mcp and api", api.ErrInvalidArguments)
 }
 
 // agentToolsResource is what an approved token will be good for: the agent

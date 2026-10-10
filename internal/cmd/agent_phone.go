@@ -18,8 +18,8 @@ func newAgentPhoneCommand() *cli.Command {
 		Name:  "phone",
 		Usage: "the phones you talk to your agent from, in the TeaNode app",
 		Description: "A phone connects by scanning a one-time code made where you are signed in: 'pair' draws one\n" +
-			"here, the dashboard's Connect page shows one, and your agent can show one too. The code signs\n" +
-			"the phone in as you, so show it to nobody else.",
+			"here, and the dashboard's Connect page shows one. The code signs the phone in as you, so show it\n" +
+			"to nobody else.",
 		Commands: []*cli.Command{
 			{
 				Name:   "pair",

@@ -2113,8 +2113,6 @@ export const ja: Catalog = {
   'authorize.sendsTo': '戻り先',
   'authorize.actsAs': '実行者',
   'authorize.grant': 'あなたができることだけを行えます。設定の「アプリ」からいつでも取り消せます。',
-  'authorize.introFullAccess': 'あなたのデバイス上のアプリが、このサーバーにあなたとしてサインインすることを求めています。',
-  'authorize.grantFullAccess': 'このサーバーであなたができることをすべて、あなたとして行えるようになります。メールを読む、設定を変える、エージェントと話すことなどです。設定の「アプリ」からいつでも接続を解除できます。',
   'connect.title': 'スマートフォンを接続する',
   'connect.intro': 'スマートフォンのカメラを開いて、このコードに向けてください。TeaNode アプリが開き（まだインストールしていなければ App Store が開きます）、あなたとしてこのサーバーに接続します。',
   'connect.qrAlt': 'TeaNode アプリをこのサーバーに接続するコード',

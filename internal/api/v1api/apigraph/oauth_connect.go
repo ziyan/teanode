@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 // shown as a QR code, that the TeaNode phone app scans and exchanges for a
 // token as them (internal/api/v1api/apioauth/connect.go). The dashboard's
 // Connect page and `teanode agent phone pair` make one.
+//
+// The code is the whole credential: whoever presents it gets a token for
+// everything the person can do. So it is made only for the person themselves
+// and only over a connection that keeps it secret.
 
 // connectCodeLifetime is how long a code can be scanned in: long enough to
 // fetch a phone and open its camera, short enough that a photo of the screen
@@ -47,6 +52,19 @@ func (self *graph) CreateOAuthConnectCode(ctx context.Context) (*OAuthConnectCod
 	if principal.User == nil {
 		return nil, fmt.Errorf("%w: a phone is connected to an account", api.ErrInvalidArguments)
 	}
+	// An operator signed in as somebody is not that somebody. A phone they
+	// connected would go on acting as the account after the impersonation
+	// ended, and nothing would say who connected it.
+	if principal.IsImpersonation() {
+		return nil, fmt.Errorf("%w: a phone is connected by the person themselves, not while signed in as them", api.ErrPermissionDenied)
+	}
+	// The link carries the address the phone sends the code to. Plain http
+	// would send it, and the token that comes back, where anybody on the way
+	// can read them, so it is refused except on this machine.
+	request := api.ContextRequest(ctx)
+	if !api.IsSecure(request, self.config.Current().Server.TrustedProxies) && !api.IsLoopbackHost(hostOnly(request.Host)) {
+		return nil, fmt.Errorf("%w: open the dashboard over https to connect a phone; a code sent over plain http could be read on the way", api.ErrInvalidArguments)
+	}
 	secret := security.GenerateRandomString(40, security.LowerAlphaNumeric)
 	sum := sha256.Sum256([]byte(secret))
 	created, err := self.database.CreateOAuthConnectCode(&models.OAuthConnectCode{
@@ -61,7 +79,7 @@ func (self *graph) CreateOAuthConnectCode(ctx context.Context) (*OAuthConnectCod
 	// After the "#", so the secret never reaches the project's web server
 	// should the phone open the link in a browser rather than the app.
 	fragment := url.Values{}
-	fragment.Set("server", self.originOf(api.ContextRequest(ctx)))
+	fragment.Set("server", self.originOf(request))
 	fragment.Set("code", secret)
 	link := api.AppConnectLink + "#" + fragment.Encode()
 	drawn, err := qrcode.SVG(link)
@@ -70,4 +88,12 @@ func (self *graph) CreateOAuthConnectCode(ctx context.Context) (*OAuthConnectCod
 	}
 	log.Noticef("%s made a code to connect a phone", principal.User.Username)
 	return &OAuthConnectCode{ConnectLink: link, QRCodeSVG: drawn, ExpiresAt: created.ExpiresAt}, nil
+}
+
+// hostOnly is the host of a Host header, without its port.
+func hostOnly(hostAndPort string) string {
+	if host, _, err := net.SplitHostPort(hostAndPort); err == nil {
+		return host
+	}
+	return hostAndPort
 }

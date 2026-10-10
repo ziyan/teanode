@@ -104,23 +104,23 @@ harness that resource is always the agent tools endpoint. A harness that names
 none is given it, and one that names anything else is refused, so a token from
 this flow is refused by GraphQL and by every other path.
 
-The one exception is the scope `api`, which the TeaNode phone app asks for:
-everything the person can do, the way the dashboard and the command line use
-the API, so the token's resource is empty. Only an app installed on a device
-may ask for it, meaning a client whose every registered address is an app's
-own (`com.example.app:/oauth`, RFC 8252's private-use scheme, which the device
-hands to that app alone; `api.IsPrivateUseRedirect`). A web page asking for
-everything is refused, and the consent page says plainly what `api` grants.
+The consent page never grants more, whatever a program registered as: a page
+anybody can send a link to is where phishing aims. Registration does accept an
+app's own return address (`com.example.app:/oauth`, RFC 8252's private-use
+scheme; `api.IsPrivateUseRedirect`), for an app using the agent tools.
 
-An app can also sign in without the person typing anything on it. Where
+The TeaNode phone app is given more, the scope `api`: everything the person
+can do, the way the dashboard and the command line use the API, so the token's
+resource is empty. It gets it only by connecting with a code. Where
 they are signed in (the dashboard's `/connect` page, `teanode agent phone
 pair`, or `CreateOAuthConnectCode`) a one-time connect code is made for them
 and shown as a QR code holding `https://teanode.com/app/connect#server=…&code=…`.
 The phone's camera opens the app, which presents the code at
 `POST /oauth/token` with the grant
 `urn:teanode:params:oauth:grant-type:connect-code` and is handed a token for
-the whole API as that person. A code lasts ten minutes and signs in one phone,
-and only an app installed on a device may present one. The code travels from
+the whole API as that person. A code lasts ten minutes and signs in one phone; it is
+made only by the person themselves (not by an operator signed in as them) and
+only over https or on the server's own machine, since the link carries it. The code travels from
 the person's screen to their own phone, never the other way: RFC 8628's
 device flow, where a device shows a code for the person to approve, lets a
 stranger send the person a link to approve the stranger's code. The exchange

@@ -15,9 +15,10 @@ import (
 // two would eventually disagree. So a scope says where a token works, never
 // what it may do there: "mcp" is the agent tools endpoint, with the tools this
 // account can already reach; "api" is the whole API, as the account, the way
-// the dashboard and the command line use it. Only an app installed on a device
-// may ask for "api" (api.IsNativeAppClient), because its sign-in returns to
-// the app and nowhere else.
+// the dashboard and the command line use it. Nothing asks for "api": it is
+// what a phone connected by a connect code is given (connect.go), and never
+// what a consent page grants, because a page anybody can link to that hands
+// out everything is what phishing aims at.
 const (
 	scopeMCP = "mcp"
 	scopeAPI = "api"

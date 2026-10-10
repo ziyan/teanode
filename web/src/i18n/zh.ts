@@ -2057,8 +2057,6 @@ export const zh: Catalog = {
   'authorize.sendsTo': '返回到',
   'authorize.actsAs': '执行身份',
   'authorize.grant': '它只能做你能做的事。你可以随时在设置的“应用”中撤销。',
-  'authorize.introFullAccess': '你设备上的一个应用请求在此服务器上以你的身份登录。',
-  'authorize.grantFullAccess': '它将能以你的身份做你在此服务器上能做的一切：读取你的邮件、更改你的设置、与你的助理对话。你可以随时在设置的“应用”中断开它。',
   'connect.title': '连接手机',
   'connect.intro': '打开手机的相机，对准这个代码。TeaNode 应用会打开（如果还没安装，则打开 App Store），并以你的身份连接到此服务器。',
   'connect.qrAlt': '将 TeaNode 应用连接到此服务器的代码',

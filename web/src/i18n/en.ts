@@ -2125,8 +2125,6 @@ export const en = {
   'authorize.sendsTo': 'Returns you to',
   'authorize.actsAs': 'Acts as',
   'authorize.grant': 'It will be able to do what you can do, and nothing more. You can revoke it at any time under Apps in your settings.',
-  'authorize.introFullAccess': 'An app on your device is asking to sign in as you on this server.',
-  'authorize.grantFullAccess': 'It will be able to do everything you can do on this server, as you: read your mail, change your settings and talk to your agent. You can disconnect it at any time under Apps in your settings.',
   'connect.title': 'Connect a phone',
   'connect.intro': 'Open the camera on your phone and point it at this code. The TeaNode app opens, or the App Store if it is not installed yet, and connects to this server as you.',
   'connect.qrAlt': 'A code that connects the TeaNode app to this server',

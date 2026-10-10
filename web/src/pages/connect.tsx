@@ -33,6 +33,13 @@ type ConnectCode = {
   expiresAt: string
 }
 
+// isOnAPhone is whether this page is on a phone, where there is nothing to
+// scan and the link itself is the way in. On a computer the link is left
+// out: following it there would put the code in that browser's history.
+function isOnAPhone(): boolean {
+  return window.matchMedia('(pointer: coarse)').matches && window.matchMedia('(max-width: 900px)').matches
+}
+
 export function ConnectPage() {
   const { t } = useTranslation()
   const [code, setCode] = useState<ConnectCode | null>(null)
@@ -84,11 +91,11 @@ export function ConnectPage() {
           />
           <p className="muted">{t('connect.expires', { time: formatClock(code.expiresAt) })}</p>
           <p className="authorize-grant muted">{t('connect.warning')}</p>
-          {/* On the phone itself there is nothing to scan: the link opens the
-              app directly. */}
-          <a className="connect-here" href={code.connectLink}>
-            {t('connect.openHere')}
-          </a>
+          {isOnAPhone() && (
+            <a className="connect-here" href={code.connectLink}>
+              {t('connect.openHere')}
+            </a>
+          )}
         </>
       )}
       {isExpired && <p className="muted">{t('connect.expired')}</p>}

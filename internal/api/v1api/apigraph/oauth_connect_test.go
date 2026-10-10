@@ -28,13 +28,18 @@ type signInWorld struct {
 	authenticator web.Authenticator
 	router        *mux.Router
 	person        *models.User
+
+	// host is what the dashboard was reached as: loopback unless a test
+	// says otherwise, since a connect code is made only over https or on
+	// the server's own machine.
+	host string
 }
 
 func newSignInWorld(t *testing.T) *signInWorld {
 	t.Helper()
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
-	world := &signInWorld{}
+	world := &signInWorld{host: "127.0.0.1:10081"}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		user, err := tx.CreateUser(&models.User{Username: "fixture-pairing-person"})
 		if err != nil {
@@ -112,6 +117,7 @@ func (self *signInWorld) ask(t *testing.T, query string) (map[string]any, []stri
 	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(api.AuthenticatedUsernameHeader, self.person.Username)
+	request.Host = self.host
 	response := httptest.NewRecorder()
 	self.graph.graphView(response, request)
 	var outcome struct {
@@ -190,39 +196,38 @@ func TestAnAppConnectsWithACodeAndGetsTheWholeAPI(test *testing.T) {
 	}
 }
 
-// Only an app installed on a device may be given the whole API: a program
-// with a web address is refused by the consent page.
-func TestOnlyAnInstalledAppMayAskForTheWholeAPI(test *testing.T) {
+// A code would travel in clear over plain http, so it is made only over https
+// or on the server's own machine.
+func TestNoCodeIsMadeOverPlainHTTP(test *testing.T) {
 	world := newSignInWorld(test)
-	webClient := world.register(test, "https://app.example.com/callback")
-	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-	if _, errors := world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+webClient+`", redirectUri: "https://app.example.com/callback", codeChallenge: "`+challenge+`", scope: "api") { redirectUrl } }`); len(errors) == 0 {
-		test.Error("a web program was approved for the whole API")
+	world.host = "mail.example.com"
+	if _, errors := world.ask(test, `mutation { CreateOAuthConnectCode { connectLink } }`); len(errors) == 0 {
+		test.Error("a code was made for a dashboard reached over plain http")
 	}
+}
 
+// The consent page never grants the whole API, whatever a program registered
+// as: a page anybody can send a link to is where phishing aims. An app
+// approved there gets the agent tools, which GraphQL refuses.
+func TestTheConsentPageNeverGrantsTheWholeAPI(test *testing.T) {
+	world := newSignInWorld(test)
 	appClient := world.register(test, "com.example.app:/oauth")
-	data, errors := world.ask(test, `{ ReadOAuthAuthorizationRequest(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", scope: "api") { isFullAccess } }`)
-	if len(errors) > 0 {
-		test.Fatalf("ReadOAuthAuthorizationRequest: %v", errors)
-	}
-	if read, _ := data["ReadOAuthAuthorizationRequest"].(map[string]any); read["isFullAccess"] != true {
-		test.Errorf("the consent page was told %v", read)
-	}
-	data, errors = world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", codeChallenge: "`+challenge+`", scope: "api") { redirectUrl } }`)
+	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	data, errors := world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", codeChallenge: "`+challenge+`") { redirectUrl } }`)
 	if len(errors) > 0 {
 		test.Fatalf("ApproveOAuthAuthorization: %v", errors)
 	}
 	approved, _ := data["ApproveOAuthAuthorization"].(map[string]any)
 	redirect, _ := url.Parse(approved["redirectUrl"].(string))
-	if redirect.Scheme != "com.example.app" {
-		test.Fatalf("the approval went to %v", redirect)
-	}
 	_, answer := world.post(test, api.PathOAuthToken, url.Values{
 		"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {"com.example.app:/oauth"},
 		"code": {redirect.Query().Get("code")}, "code_verifier": {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
 	})
 	token, _ := answer["access_token"].(string)
-	if answer["scope"] != "api" || !world.worksOnTheAPI(token) {
-		test.Errorf("the app's sign-in was answered %v", answer)
+	if token == "" || answer["scope"] != "mcp" {
+		test.Fatalf("the app's consent was answered %v", answer)
+	}
+	if world.worksOnTheAPI(token) {
+		test.Error("a token from the consent page was taken by the whole API")
 	}
 }
