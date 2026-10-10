@@ -11,7 +11,7 @@ Today a person reaches their TeaNode agent from a phone through the dashboard in
 - It cannot keep a call going. A voice call in the drawer stops when the screen locks.
 - It cannot be asked from Siri, the Action button, a widget or the lock screen.
 
-After this change, a person installs the TeaNode app on their iPhone, signs in to their own server, and:
+After this change, anyone who runs a TeaNode server downloads the TeaNode app from the App Store, connects it to their own server, and:
 
 - talks to their agent in the main conversation and the named ones, with the same streamed answers, tool lines, approval cards and coding-session question cards as the drawer;
 - gets a notification for each alert, approval, coding-session question and goal that needs them, and can answer from the notification itself ("Approve", "Option 2") without opening the app;
@@ -19,26 +19,32 @@ After this change, a person installs the TeaNode app on their iPhone, signs in t
 - calls their agent and keeps talking with the screen locked, through AirPods, and later in the car;
 - says "Ask Tea ..." to Siri, or presses the Action button;
 - sees waiting approvals in a widget, and a working coding session on the lock screen;
-- installs one setup profile that adds their TeaNode mailbox, calendars, contacts and reminders to the iPhone's own Mail, Calendar, Contacts and Reminders apps.
+- installs one setup profile that adds their TeaNode mailbox, calendars, contacts and reminders to the iPhone's own Mail, Calendar, Contacts and Reminders apps;
+- is helped through all of it by their agent: asked in the dashboard to "connect my phone", it shows a code to scan; once the phone is connected, it walks them through notifications, the share sheet, Siri and the setup profile, offering only what their server has turned on.
 
-To see it working, once complete: install the app from TestFlight, sign in to the server, lock the phone, and have a coding session on an attached computer ask a question. The phone shows a notification with the options as buttons; pressing one answers the question in the pane.
+The app is published once, by the project, and works with every server. Notifications reach it through a push relay the project runs: a small service that holds the app's Apple push key and passes on notifications it cannot read.
 
-Mail, calendar, contacts, finance and memory get no screens of their own in the app. Mail, calendars, contacts and reminders already reach the iPhone's own apps over IMAP, CalDAV and CardDAV, which the server serves (Milestone 3 makes that one tap). Finance and memory are reached by asking the agent, or through the dashboard in Safari.
+To see it working, once complete: install the app, scan the code the dashboard shows, lock the phone, and have a coding session on an attached computer ask a question. The phone shows a notification with the options as buttons; pressing one answers the question in the pane.
+
+Mail, calendar, contacts, finance and memory get no screens of their own in the app. Mail, calendars, contacts and reminders already reach the iPhone's own apps over IMAP, CalDAV and CardDAV, which the server serves (Milestone 4 makes that one tap). Finance and memory are reached by asking the agent, or through the dashboard in Safari.
 
 ## Progress
 
 - [x] (2026-10-10) Researched what the server offers a native client: sign-in, the GraphQL API and its websocket, cards, attachments, voice, location, where unasked messages are delivered, devices, DAV and IMAP. Chose the scope with the person. Wrote this plan.
-- [ ] Milestone 0: a build pipeline with no Mac, and the person's Apple developer setup.
-- [ ] Milestone 1: an app can sign in and get a token for the whole API.
+- [x] (2026-10-10) Revised after review by the person: app tokens have full access; the app is for anyone with a server, so notifications go through a push relay from the start; the agent helps the person connect and learn the app.
+- [ ] Milestone 0: a build pipeline with no Mac, and the Apple developer setup.
+- [ ] Milestone 1: an app can sign in, by OAuth or by a pairing code, and get a token for the whole API.
 - [ ] Milestone 2: phones as devices, and notifications sent to them.
-- [ ] Milestone 3: the setup profile.
-- [ ] Milestone 4: the app: sign in, conversations, chat, cards, pictures, location.
-- [ ] Milestone 5: notifications in the app, and answering from them.
-- [ ] Milestone 6: the share extension.
-- [ ] Milestone 7: voice calls.
-- [ ] Milestone 8: Siri and Shortcuts.
-- [ ] Milestone 9: widgets and Live Activities.
-- [ ] Milestone 10: TestFlight from CI, documentation, decision record, release.
+- [ ] Milestone 3: the push relay.
+- [ ] Milestone 4: the setup profile.
+- [ ] Milestone 5: the app: connect, conversations, chat, cards, pictures, location.
+- [ ] Milestone 6: notifications in the app, and answering from them.
+- [ ] Milestone 7: the share extension.
+- [ ] Milestone 8: voice calls.
+- [ ] Milestone 9: Siri and Shortcuts.
+- [ ] Milestone 10: widgets and Live Activities.
+- [ ] Milestone 11: the agent helps the person onboard.
+- [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 
 ## Surprises & Discoveries
 
@@ -63,7 +69,7 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   Date/Author: 2026-10-10, agent; scope chosen by the person.
 
 - Decision: the app lives in `ios/` in this repository.
-  Rationale: the repository is public, so GitHub's macOS runners build it for free (the person has no Mac). A server change and the app change that uses it land in one pull request, and a test can check the app's queries against the server's schema (Milestone 4).
+  Rationale: the repository is public, so GitHub's macOS runners build it for free (the person has no Mac). A server change and the app change that uses it land in one pull request, and a test can check the app's queries against the server's schema (Milestone 5).
   Date/Author: 2026-10-10, agent.
 
 - Decision: the app does not re-implement mail, calendar, contacts, finance or memory.
@@ -73,19 +79,44 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - Decision: an app signs in through the server's existing OAuth, extended with a second scope, `api`, that grants a token for the whole API as the person; and registration accepts a private-use scheme, `com.teanode.app:/oauth` (a reverse domain name with one slash, RFC 8252 section 7.1), as a redirect.
   Rationale: the CLI's loopback sign-in (`teanode auth login`) cannot be used, because an iPhone app cannot rely on a loopback listener while the sign-in sheet is open. Handing a token back through a scheme is safe only with PKCE, which the OAuth flow already requires. A scheme is the only redirect a self-hosted server can use.
   Consequences: a token with scope `api` is listed among the person's tokens with the app's name and can be deleted there, like the CLI's. The consent page must say plainly that this grants everything the person can do. The `mcp` scope keeps its narrow resource. This needs the security review in Milestone 1.
-  Date/Author: 2026-10-10, agent. To be confirmed by the person.
+  Date/Author: 2026-10-10, agent; full access confirmed by the person.
 
-- Decision: the server sends notifications directly to Apple's push service (APNs) with a key the operator configures. A relay run by whoever publishes the app comes later, and only if the app is published for servers other than the publisher's.
-  Rationale: APNs only accepts notifications for an app from a key belonging to the developer account that publishes it. A person who builds the app under their own account and runs their own server holds both, which is the case now. An App Store app used by other people's servers would need its publisher to run a relay that holds the key, which the server would then call instead of APNs.
-  Date/Author: 2026-10-10, agent. To be confirmed by the person.
+- Decision: a phone can also be connected by pairing, without typing a password on it. The app asks the server for a pairing (OAuth's device authorization grant, RFC 8628): the server answers with a short code, like `KQ7M-4TXD`, valid for ten minutes. The person approves that code where they are already signed in: the dashboard's "Connect a phone" page, `teanode agent phone approve <code>`, or by telling their agent the code. The app, polling the token endpoint, then receives the same `api` token as the OAuth sign-in gives. The reverse also works: the dashboard shows a QR code holding the server's address, so the app never needs it typed.
+  Rationale: typing a server address and a strong password, and passing a second factor, on a phone is where people give up. A code approved on the computer they are already signed in to removes all three. The code is not a secret worth stealing: alone it grants nothing, and approving it needs the person's own sign-in and, when the agent does it, their confirmation.
+  Date/Author: 2026-10-10, agent, from the person's request that the agent help onboard.
 
-- Decision: Apple sees no content. Every notification is encrypted for the phone it goes to. The phone generates a key when it registers and hands it to the server, which stores it sealed (like other secrets). A notification carries only the ciphertext and `mutable-content: 1`. The app's notification service extension decrypts it on the phone and fills in the title, body and buttons.
-  Rationale: what an alert says is the person's own mail. The same reasoning made the ChatGPT provider send `store: false` (`internal/llm/codex_wire.go`).
+- Decision: the app is published once, on the App Store, by the project, and works with every TeaNode server. Its bundle ID and its Apple push key belong to the project's developer account.
+  Rationale: the person's goal: anyone downloads the app and uses it with the server they deployed.
+  Date/Author: 2026-10-10, the person.
+
+- Decision: servers send notifications through a push relay the project runs, at `https://push.teanode.com` by default. The relay holds the app's APNs key and nothing else. It keeps no database: what a server holds for a phone is a sealed registration, the phone's device token encrypted and signed by the relay's own secret, which only the relay can open.
+  - The app registers its device token with the relay (`POST /v1/registrations`) and gets back the sealed registration. It gives that, never the raw token, to its own server.
+  - The server sends `POST /v1/notifications` with the sealed registration and the encrypted payload. The relay opens the registration, posts to APNs, and passes back what APNs said: a `410` tells the server the phone is gone.
+  - The relay limits each registration's rate, and keeps only counts.
+  - An operator who builds and signs the app themselves can instead give their server their own APNs key (`agent.push.apns`), and it sends directly.
+  Rationale: Apple accepts notifications for the App Store app only from the project's key, which cannot be handed to every server. A relay that holds the key and forwards is how other self-hosted projects with App Store apps do it. Sealing the registration means the relay stores nothing, and a server can only reach the phones that registered with it, because nobody else has their sealed registrations.
+  Date/Author: 2026-10-10, the person (a relay from the start); design by agent.
+
+- Decision: neither Apple nor the relay sees content. Every notification is encrypted for the phone it goes to. The phone generates a key when it registers and hands it to the server, which stores it sealed (like other secrets). A notification carries only the ciphertext and `mutable-content: 1`. The app's notification service extension decrypts it on the phone and fills in the title, body and buttons.
+  Rationale: what an alert says is the person's own mail. The same reasoning made the ChatGPT provider send `store: false` (`internal/llm/codex_wire.go`). The key goes from the phone to its own server only; the relay never has it.
   Date/Author: 2026-10-10, agent.
 
-- Decision: the language model gets no tool for phones or the setup profile.
-  Rationale: the agent already notifies through alerts, goals and questions, and the phone receives those. Registering a phone or handing out a setup profile is something the person does on the phone itself. A setup profile carries an app password, which the agent must never hold or pass through a conversation. Phones are listed and removed on the dashboard and the command line, which stay in parity with each other.
-  Date/Author: 2026-10-10, agent. This narrows the tools, web and command line parity rule, so the person confirms it.
+- Decision: the agent helps the person onboard, and has a `phone` tool for it, in parity with the dashboard and the command line. Its actions:
+  - `list`: the person's phones, whether the server can notify them (relay or key configured, last delivery, last error), which kinds each receives, when each was last seen. This answers "why does my phone not buzz?".
+  - `pair`: show a card with a QR code and a link that opens the app (or the App Store) with this server's address filled in.
+  - `approve`: approve a pairing code the person read out from their phone. Granting risk: it needs the person's confirmation, like any granting call.
+  - `rename`, `notify` (which kinds), `test`, and `remove` (destructive, so confirmed).
+  - `setup_profile`: hand the person a setup profile for a mailbox (Milestone 4). Granting risk, confirmed.
+  Rationale: the person asked for the agent to help onboard. Connecting a phone and learning what it can do is a conversation: "connect my phone", "why no notifications?", "how do I send it receipts?".
+  Date/Author: 2026-10-10, the person (the agent helps onboard); actions by agent.
+
+- Decision: what grants access is shown to the person and never to the model. The QR card, the setup profile's download link and the profile's app password are rendered by the drawer and the app as a private card. The tool's result tells the model only that the card was shown and when it expires, and the card is stored with the message but left out when the conversation is sent to the model.
+  Rationale: whatever the model reads goes to the model's provider. A download link for a profile is an app password in all but name for ten minutes. The person sees and taps it; the model only needs to know it was offered.
+  Date/Author: 2026-10-10, agent.
+
+- Decision: when a phone connects for the first time, the agent speaks first in the app: a short tour of what this server lets the phone do, one thing at a time, built from what is turned on (notifications always; voice calls if voice is available; the coding-session notifications if a computer with herdr is attached; sending receipts if Finance is on; the setup profile if the person has a mailbox). A person new to TeaNode altogether gets the existing introduction (`speak_first_onboarding.go`) first, in the app.
+  Rationale: features nobody finds are features nobody uses, and the agent knows what the server has turned on where a static tour would not.
+  Date/Author: 2026-10-10, agent.
 
 - Decision: the app tells the server which surface it is with three new surfaces in `internal/agent/surface.go`: `ios` for typed turns in the app, `ios_voice` for a call, and `siri` for Siri and Shortcuts. `ios` and `ios_voice` can locate; `siri` asks for one short spoken sentence.
   Rationale: `phone` exists, but the drawer guesses it from the window width. Naming the app lets the prompt say what it can show (pictures, cards, no hover) and lets a location request go to the phone that sent the turn.
@@ -104,6 +135,8 @@ Terms used below:
 - A Live Activity is a lock screen and Dynamic Island card an app starts. APNs updates it with `apns-push-type: liveactivity` sent to the activity's own push token.
 - App Intents are actions an app offers to Siri, Shortcuts and the Action button.
 - `ASWebAuthenticationSession` is the sign-in sheet: it opens a web page and returns when the page redirects to the app's scheme.
+- The device authorization grant (RFC 8628) is OAuth's way to sign in a device by approving it somewhere else: the device gets a short code, the person approves the code where they are signed in, and the device, which has been asking the token endpoint every few seconds, then gets its token. Televisions use it. Here it is called pairing.
+- The push relay is a small service the project runs that holds the app's APNs key and forwards notifications from any TeaNode server to the phones registered with it (Milestone 3).
 
 What the server offers a client today, all of which the drawer uses (`web/src/components/agentDrawer.tsx`, `web/src/api.ts`):
 
@@ -122,16 +155,17 @@ What the server offers a client today, all of which the drawer uses (`web/src/co
 
 ## Plan of Work
 
-### Milestone 0: a build pipeline with no Mac, and the person's Apple setup
+### Milestone 0: a build pipeline with no Mac, and the Apple developer setup
 
 The person has no Mac. At the end of this milestone, a pull request that touches `ios/` builds the app and runs its tests on a GitHub macOS runner, and the person has what Apple requires.
 
-The person, not the agent, does these in their own Apple account; write them as a checklist in `ios/README.md`:
+The person, not the agent, does these in the project's Apple developer account, which publishes the app; write them as a checklist in `ios/README.md`:
 
 - Join the Apple Developer Program.
 - Register the bundle IDs `com.teanode.app`, `com.teanode.app.share`, `com.teanode.app.notification` and `com.teanode.app.widgets`, and the app group `group.com.teanode.app`. A person who builds the app under another account uses their own prefix; every ID is set in one file, `ios/Configuration/Identity.xcconfig`, which is not committed (`Identity.example.xcconfig` is).
-- Create an APNs key (`.p8`) and note its key ID and the team ID.
-- Create an App Store Connect API key for uploads from CI (Milestone 10).
+- Create an APNs key (`.p8`) and note its key ID and the team ID. It goes to the relay (Milestone 3), not to any TeaNode server.
+- Create an App Store Connect API key for uploads from CI (Milestone 12).
+- Register the associated domain `teanode.com` for the app, for the links in Milestone 11.
 
 The agent writes:
 
@@ -140,11 +174,13 @@ The agent writes:
 - A first app target that shows "Hello" so the pipeline has something to build.
 - `.github/workflows/ios.yml`: on pull requests touching `ios/`, on `macos-latest` with the current Xcode, run `xcodegen`, `xcodebuild build` for the simulator, and `xcodebuild test`. No signing is needed for a simulator build.
 
-Prototype in this milestone: send one notification from a Go test program on the person's machine to a development build on the person's phone. TestFlight needs Milestone 10, so this prototype uses a development build installed from a rented Mac or from Xcode Cloud. Record which, and what it cost, in Surprises & Discoveries. It proves the key, the topic and the token before Milestone 2 builds on them.
+Prototype in this milestone: send one notification from a Go test program on the person's machine to a development build on the person's phone. TestFlight needs Milestone 12, so this prototype uses a development build installed from a rented Mac or from Xcode Cloud. Record which, and what it cost, in Surprises & Discoveries. It proves the key, the topic and the token before Milestone 2 builds on them.
 
-### Milestone 1: an app can sign in and get a token for the whole API
+### Milestone 1: an app can sign in, by OAuth or by a pairing code, and get a token for the whole API
 
-At the end, `curl` can go through registration, authorization and token exchange with the redirect `com.teanode.app:/oauth` and scope `api`, and the token it gets can call `/api/v1/graphql`.
+At the end, `curl` can go through registration, authorization and token exchange with the redirect `com.teanode.app:/oauth` and scope `api`, and the token it gets can call `/api/v1/graphql`. And `curl` can start a pairing, `teanode agent phone approve <code>` approves it, and the polling `curl` receives a token.
+
+OAuth sign-in:
 
 - In `apioauth/register.go`, `usableRedirect` also accepts a private-use scheme: a scheme containing a dot, followed by `:/` and a path, with no host. Any other non-`https` scheme is still refused.
 - In `apioauth/metadata.go`, list the scopes `mcp` and `api`.
@@ -152,61 +188,91 @@ At the end, `curl` can go through registration, authorization and token exchange
 - On the consent page (`web/src/pages/authorize.tsx`), a request for `api` says "<client name> will be able to do everything you can do on this server, as you", with the redirect's scheme shown. `ReadOAuthAuthorizationRequest` returns the scope so the page can say it.
 - An `api` token is listed among the person's tokens (`ListTokens`) under the client's name, and deleting it there ends the app's sign-in. Refreshing keeps the same name.
 - Tests in `apioauth`: a private-use scheme registers and anything else odd is refused (`javascript:`, `file:`, a scheme without a dot, a scheme with a host); an `api` token works on GraphQL and an `mcp` token still does not; the scope cannot be changed at the exchange.
-- Add the change to `docs/security/security-review.md` as an open item until reviewed, then review it (a subagent review is enough) and close it.
+
+Pairing (OAuth's device authorization grant, RFC 8628):
+
+- `POST /oauth/device_authorization` with `client_id` and `scope=api` answers `{device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval}`. The user code is eight characters from an alphabet without look-alikes (no 0, O, 1, I), shown as `KQ7M-4TXD`; it lasts ten minutes; the device code is a long random secret only the app holds. List the endpoint and the grant type in the metadata.
+- `POST /oauth/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` answers `authorization_pending` until approved, `slow_down` if polled faster than `interval`, `access_denied` if refused, `expired_token` after ten minutes, and the `api` token once approved. A device code is spent when its token is issued.
+- Approving: `ApproveAgentPhonePairing(userCode)` as the signed-in person, from the dashboard page `/connect` (which `verification_uri` points at; `verification_uri_complete` fills in the code), from `teanode agent phone approve <code>`, and from the `phone` tool's `approve` (Milestone 11). `ReadAgentPhonePairing(userCode)` says which app and device name asked, so the page and the confirmation card can show "iPhone (TeaNode app) wants to connect as you".
+- Wrong codes are counted by the login limiter, like passwords, so a code cannot be guessed.
+
+- Add both changes to `docs/security/security-review.md` as an open item until reviewed, then review them (a subagent review is enough) and close the item.
 
 ### Milestone 2: phones as devices, and notifications sent to them
 
-At the end, `teanode agent phone list` shows a registered phone, `teanode agent phone test <id>` makes it buzz, and an alert written into the main conversation reaches it.
+At the end, `teanode agent phone list` shows a registered phone, `teanode agent phone test <id>` makes it buzz, and an alert written into the main conversation reaches it. Until Milestone 3 runs a relay, this milestone is tested against a fake relay and with a direct APNs key.
 
-Configuration (`internal/config/agent.go`, documented like every field): `agent.push.apns` with `keyId`, `teamId`, `topic` (the bundle ID), `key` (the `.p8` contents, sealed like other secrets) and `isSandbox`. With no key, phones can still register; nothing is sent, and the dashboard says why.
+Configuration (`internal/config/agent.go`, documented like every field): `agent.push.relayUrl`, `https://push.teanode.com` by default; and, for an operator who builds the app themselves, `agent.push.apns` with `keyId`, `teamId`, `topic` (the bundle ID), `key` (the `.p8` contents, sealed like other secrets) and `isSandbox`. A key, when set, is used instead of the relay. `agent.push.isEnabled` turns notifications off altogether.
 
-Storage, a new migration (`docs/coding/database-migrations.md`): `agent_phones` with `id`, `agent_id`, `name` (as the phone calls itself), `model`, `token_id` (the API token it signed in with), `push_token`, `is_sandbox`, `payload_key` (sealed), `notification_kinds` (which kinds it wants; all by default), `created_at`, `last_seen_at`. Deleting the token deletes the phone, so ending a sign-in ends its notifications.
+Storage, a new migration (`docs/coding/database-migrations.md`): `agent_phones` with `id`, `agent_id`, `name` (as the phone calls itself), `model`, `token_id` (the API token it signed in with), `push_registration` (the relay's sealed registration, or the raw device token when the server sends with its own key), `is_sandbox`, `payload_key` (sealed), `notification_kinds` (which kinds it wants; all by default), `created_at`, `last_seen_at`. Deleting the token deletes the phone, so ending a sign-in ends its notifications.
 
 GraphQL (`internal/api/v1api/apigraph/agent_phone.go`):
 
-- `RegisterAgentPhone(name, model, pushToken, isSandbox, payloadKey)`: called by the app after sign-in and whenever iOS hands it a new push token. It is keyed on the calling token, so registering again updates the same row.
-- `ListAgentPhones` returns `{id name model createdAt lastSeenAt notificationKinds isPushConfigured}`.
+- `RegisterAgentPhone(name, model, pushRegistration, isSandbox, payloadKey)`: called by the app after sign-in and whenever iOS hands it a new push token (the app registers the new token with the relay first). It is keyed on the calling token, so registering again updates the same row.
+- `ListAgentPhones` returns `{id name model createdAt lastSeenAt notificationKinds isPushConfigured lastDeliveredAt lastDeliveryError}`.
 - `UpdateAgentPhone(phoneId, name, notificationKinds)`.
 - `RemoveAgentPhone(phoneId)` deletes the phone and its token.
 - `TestAgentPhone(phoneId)` sends "TeaNode can reach this phone".
 
-Command line (`internal/cmd/agent_phone.go`): `teanode agent phone list | rename | notify | remove | test`, the same operations. Dashboard: a "Phones" card in the agent's settings beside the computers, with the same operations, outcomes as toasts.
+Command line (`internal/cmd/agent_phone.go`): `teanode agent phone list | rename | notify | remove | test | approve`, the same operations. Dashboard: a "Phones" card in the agent's settings beside the computers, with the same operations, outcomes as toasts.
 
-Sending (`internal/agent/push.go` and `internal/agent/push_apns.go`):
+Sending (`internal/agent/push.go`, `internal/agent/push_relay.go` and `internal/push/apns.go`):
 
-- The APNs client signs a JWT with the key (ES256; the header names the key ID, the claims the team ID and the time), keeps it for 50 minutes, and posts over one HTTP/2 connection. A `410` answer means the token is dead: clear it. A `429` or `5xx` is retried with backoff, at most three times.
+- `push_relay.go` posts each notification to the relay (Milestone 3 defines the protocol) and maps its answers the same way as APNs's below.
+- `internal/push/apns.go` is shared with the relay. It signs a JWT with the key (ES256; the header names the key ID, the claims the team ID and the time), keeps it for 50 minutes, and posts over one HTTP/2 connection. A `410` answer means the token is dead: clear it. A `429` or `5xx` is retried with backoff, at most three times.
 - The payload, before encryption: `{kind, conversationId, runId, callId, title, body, buttons, threadId}`. `buttons` is a list of `{label, action}` where `action` is what pressing it does (`approve`, `deny`, `answer:<option number>`, `reply`, `open`). It is encrypted with AES-GCM using the phone's `payload_key`, and sent as `{"aps":{"alert":{"title":"TeaNode","body":"New message"},"mutable-content":1,"thread-id":...},"sealed":"<base64 nonce + ciphertext>"}`. The visible fallback says nothing about the content.
 - What sends, by `kind`:
   - `alert`, `herdr_question`, `goal_needs_you`, `speak_first`: in `Agent.publish` (`internal/agent/feed.go`), an `asked` event on the main conversation whose `note` is one of these surfaces calls `self.push.notify(...)` after the messages are written. The body is the text written to the conversation.
   - `confirmation` and `question`: in `raiseInteraction`, when a card is saved and nobody is present (`ReportAgentPresence` says no tab or app is visible). Buttons: Approve and Deny, or the question's options.
   - `answer`: an answer to a turn the person started from the app finished while the app was not visible.
 - Present means not notified: if a dashboard tab or the app reported itself visible in the last minute, nothing is pushed for that conversation.
-- Tests: a fake APNs server (`httptest` with HTTP/2) checks the JWT, the headers, the encrypted body that the test decrypts again, the retry and the dead token; and each `kind` is sent once, not twice when a tab is visible.
+- Tests: a fake APNs server (`httptest` with HTTP/2) checks the JWT, the headers, the encrypted body that the test decrypts again, the retry and the dead token; a fake relay checks the same through the relay; and each `kind` is sent once, not twice when a tab is visible.
 
-Parity: `TestPhoneParity` (like `TestHerdrParity`) checks that each phone operation exists on GraphQL, the command line and the dashboard. The agent's tools are left out by decision.
+Parity: `TestPhoneParity` (like `TestHerdrParity`) checks that each phone operation exists on GraphQL, the command line, the dashboard and the `phone` tool (the tool comes in Milestone 11, and the test lists it as expected from then).
 
-### Milestone 3: the setup profile
+### Milestone 3: the push relay
+
+At the end, the relay runs at `push.teanode.com`, a TestFlight build registers with it, and a server with no Apple key of its own makes that phone buzz.
+
+The relay is a third program built from this repository, `cmd/teanode-push-relay`, small enough to read in one sitting. It has no database and no configuration beyond its APNs key, its own sealing secret and its address.
+
+- `POST /v1/registrations {deviceToken, isSandbox, pushKind}` (from the app) answers `{registration}`: the device token, the environment, the kind (`alert` or `liveactivity`) and the time, encrypted and authenticated with the relay's secret (AES-GCM), base64url. The relay remembers nothing.
+- `POST /v1/notifications {registration, pushType, priority, expiration, collapseId, payload}` (from a server) opens the registration, refuses one it did not make, and posts the payload to APNs with the app's topic (`com.teanode.app`, or `com.teanode.app.push-type.liveactivity`). It answers `200`, `410` (the phone is gone: the server deletes it), `413` (over APNs's 4 KB), `429` (over the rate), or `502` with APNs's reason.
+- Limits, in memory: per registration, 60 notifications a minute; per calling address, 600. Payloads are already encrypted for the phone; the relay never logs them, nor tokens, nor registrations, only counts per answer.
+- A rotated sealing secret: the relay accepts registrations made with the previous secret for 90 days, and phones register again whenever the app starts, so they move over on their own.
+- Tests against a fake APNs: a registration it did not make is refused; one made for the sandbox goes to the sandbox host; a `410` from APNs comes back as `410`; the rate limits.
+- Deployment: `docs/reference/push-relay.md` describes running it (a container behind TLS). Where the project runs it is the person's call; record it here when made.
+- The privacy policy the App Store requires says what the relay sees: the address of the server calling it, and an encrypted payload it cannot read.
+
+
+### Milestone 4: the setup profile
 
 At the end, the person presses "Set up an iPhone or Mac" on a mailbox page, opens the downloaded file on the phone, installs it in Settings, and the phone's Mail, Calendar, Contacts and Reminders show their TeaNode data.
 
 - `CreateMailboxSetupProfile(mailboxId, deviceName)` creates an app password named after the device (`CreateMailboxAppPassword`), builds the profile, and returns a one-time download address `/api/v1/mailbox/profile/<random>.mobileconfig` that works for ten minutes, once. The profile is never stored.
 - The profile (`internal/mailbox/profile.go`) is an Apple property list with three payloads, all from `GetMailProgramSettings`: `com.apple.mail.managed` (IMAP on the TLS port, SMTP submission, the address and the app password), `com.apple.caldav.account` (`davHost`, the principal URL `/dav/<userId>/`), and `com.apple.carddav.account`. It is served as `application/x-apple-aspen-config`. It is not signed, so Settings shows it as "Not verified"; signing it with the server's certificate is a later step.
-- Command line: `teanode mailbox profile <mailbox> --device "<name>" --out <file>`. The app: Settings, "Add mail, calendars and contacts to this iPhone" opens the download address in Safari, which hands it to Settings (an app cannot install a profile itself).
+- Command line: `teanode mailbox profile <mailbox> --device "<name>" --out <file>`. The `phone` tool's `setup_profile` action shows it as a private card (Milestone 11). The app: Settings, "Add mail, calendars and contacts to this iPhone" opens the download address in Safari, which hands it to Settings (an app cannot install a profile itself).
 - Tests: the plist parses, has the three payloads with the advertised hosts and ports, and the download works once.
 
-### Milestone 4: the app: sign in, conversations, chat, cards, pictures, location
+### Milestone 5: the app: connect, conversations, chat, cards, pictures, location
 
-At the end, the person signs in on their phone, picks a conversation, and talks to their agent as in the drawer.
+At the end, the person connects the app to their server, picks a conversation, and talks to their agent as in the drawer.
 
 Layout of `ios/`:
 
-- `TeaNodeKit/` (Swift package): `Server` (the address, the token and its refresh, in the keychain shared through the app group), `SignIn` (registration, PKCE, `ASWebAuthenticationSession`, exchange), `GraphQL` (a POST client and the `graphql-ws` websocket with reconnect and replay, following `web/src/api.ts`: back off up to 30 s, treat 15 s of silence as a dead connection, re-read the conversation before subscribing again), `Models` (Codable conversation, message, event, card), `Transcript` (turns messages and events into lines the way `linesOf` and `applyEvent` in `agentDrawer.tsx` do), `Upload` (multipart, converting HEIC to JPEG and shrinking to at most 2048 pixels a side before upload).
+- `TeaNodeKit/` (Swift package): `Server` (the address, the token and its refresh, in the keychain shared through the app group), `SignIn` (registration, PKCE, `ASWebAuthenticationSession`, exchange; and pairing: start, show the code, poll), `GraphQL` (a POST client and the `graphql-ws` websocket with reconnect and replay, following `web/src/api.ts`: back off up to 30 s, treat 15 s of silence as a dead connection, re-read the conversation before subscribing again), `Models` (Codable conversation, message, event, card), `Transcript` (turns messages and events into lines the way `linesOf` and `applyEvent` in `agentDrawer.tsx` do), `Upload` (multipart, converting HEIC to JPEG and shrinking to at most 2048 pixels a side before upload).
 - `TeaNode/` (the app): screens for servers, conversations, a conversation, and settings.
 - `Operations/`: every GraphQL operation the app sends, one `.graphql` file each.
 
 The app:
 
-- Signs in with the server's address. Several servers, like the command line's profiles.
+- Connects on its first screen, three ways:
+  - "Scan the code from your dashboard": the camera reads the QR code the dashboard or the agent shows (`https://teanode.com/app/connect?server=<address>`), which fills in the server. The same link opened on the phone opens the app, or the App Store when the app is not installed (the `apple-app-site-association` file on `teanode.com` claims `/app/*` for the app).
+  - "Enter your server's address": the address, then the OAuth sign-in sheet.
+  - Either way it then offers both sign-ins: "Sign in here" (the OAuth sheet) or "Approve from your computer" (pairing: the app shows the code in large type and waits).
+  - "I don't have a server yet" opens the getting-started guide on `teanode.com`. The app does nothing without a server, and says so before asking for anything.
+- Checks the server's version (`ReadServerVersion` or the existing version query) and says plainly when the server is too old for the app, naming the version it needs.
+- Keeps several servers, like the command line's profiles.
 - Lists conversations, main first. A conversation shows its lines: what the person said, the answer streamed as it is written, tool lines collapsed, notes, pictures, and check-in lines for messages that begin with a marker (`[alert]`, `[herdr question]`, `[goal needs you]` and the rest listed in `agentDrawer.tsx`).
 - Sends with `AskAgent(surface: "ios", drawerId: <this install's ID>)`. Attaches from the camera, Photos and Files. Swipe a line left to reply to it and right to copy it, as in the drawer.
 - Shows approval cards, question cards and coding-session question cards with buttons, from live events and from `ListAgentInteractions`.
@@ -218,25 +284,25 @@ Server side for this milestone: the surfaces `ios`, `ios_voice` and `siri` in `i
 
 Schema check: `TestIOSOperationsMatchTheSchema` in `apigraph` reads every `ios/Operations/*.graphql`, parses it with `graphql-go`'s parser, and validates it against the built schema. A server change that breaks the app fails the server's tests.
 
-### Milestone 5: notifications in the app, and answering from them
+### Milestone 6: notifications in the app, and answering from them
 
 At the end, a locked phone shows "Claude Code in greenfinch-site asks: ..." with the options as buttons, and pressing one answers the question.
 
-- The app asks for notification permission after sign-in, registers for remote notifications, and calls `RegisterAgentPhone` with the push token and a new 256-bit payload key, kept in the shared keychain.
+- The app asks for notification permission after sign-in, registers for remote notifications, registers the device token with the relay (`POST /v1/registrations`), and calls `RegisterAgentPhone` with the relay's sealed registration and a new 256-bit payload key, kept in the shared keychain. It registers again with both whenever it starts, so a rotated device token or relay secret heals on its own.
 - `TeaNodeNotification`, the notification service extension, decrypts `sealed`, sets the title, body and thread, and sets the category. Categories are fixed at launch: `approval` (Approve, Deny), `reply` (a text field), `open`. A question's options are not known in advance, so the extension registers a category for that notification's options just before handing it over (`setNotificationCategories`, adding to the fixed ones). Milestone 0's prototype or this milestone confirms that iOS shows a category registered this late; if not, the fallback is a notification content extension that draws the options as buttons.
 - Pressing a button runs in the background without opening the app: `ResolveAgentConfirmation`, `AnswerAgentQuestion`, `AnswerAgentHerdrQuestion` or `AskAgent` (for a reply), using the shared token. Approve requires the phone to be unlocked (`authenticationRequired`).
 - Pressing the notification opens the conversation.
 - Settings in the app: which kinds to receive (`UpdateAgentPhone`).
 
-### Milestone 6: the share extension
+### Milestone 7: the share extension
 
 At the end, choosing TeaNode in the share sheet of Photos, Safari or Files sends the item to a conversation, with an optional line of text.
 
 - `TeaNodeShare` shows a small sheet: the conversation (main by default), a text field, Send.
-- Photos are converted and shrunk as in Milestone 4; other files are sent as they are, up to the server's limit. Links and text become the message.
+- Photos are converted and shrunk as in Milestone 5; other files are sent as they are, up to the server's limit. Links and text become the message.
 - It uploads, then calls `AskAgent(surface: "ios")`, and closes without waiting for the answer. The answer arrives as a notification (`answer`) if the app is not open. A share extension may use at most about 120 MB of memory, so photos are decoded downsampled (`CGImageSourceCreateThumbnailAtIndex`), never at full size.
 
-### Milestone 7: voice calls
+### Milestone 8: voice calls
 
 At the end, the person starts a call in the app, locks the phone, and keeps talking, with AirPods if they like.
 
@@ -245,30 +311,59 @@ At the end, the person starts a call in the app, locks the phone, and keeps talk
 - Mute is the call's own mute.
 - The app's `Info.plist` asks for the `audio` and `voip` background modes. Only outgoing calls: there is no incoming call, so no PushKit.
 
-### Milestone 8: Siri and Shortcuts
+### Milestone 9: Siri and Shortcuts
 
 At the end, "Hey Siri, ask Tea what's on tomorrow" answers out loud, and the Action button can be set to talk to Tea.
 
 - `AskTeaIntent(question)`: calls `AskAgent(surface: "siri")` on the main conversation and waits for `done` with `ReadAgentRun(wait)` for up to 25 seconds. If the answer came, Siri says it. If not, Siri says "Tea is still working on it; I'll tell you when it's done", and the answer arrives as a notification.
 - `SendToTeaIntent(file, text)`: what the share extension does, for Shortcuts.
-- `OpenConversationIntent(conversation)` and `CallTeaIntent`, which starts a call (Milestone 7).
+- `OpenConversationIntent(conversation)` and `CallTeaIntent`, which starts a call (Milestone 8).
 - An `AppShortcutsProvider` gives each phrases, so they work without setup and appear for the Action button.
 - The `siri` surface asks for one or two short sentences with no formatting, which is what Siri reads well.
 
-### Milestone 9: widgets and Live Activities
+### Milestone 10: widgets and Live Activities
 
 At the end, a home screen widget shows how many approvals and questions are waiting, and a coding session that is working shows on the lock screen until it finishes.
 
 - `TeaNodeWidgets` (WidgetKit): "Waiting for you" (the count of open cards, the newest one's line, a tap opens it) and "Ask Tea" (a button that opens the app ready to type). The widget reads a small summary the app and the notification extension write to the app group whenever a card or notification arrives, and is reloaded through `WidgetCenter`. A new query, `CountAgentOpenInteractions`, gives the app the count across conversations; it is added to the command line (`teanode agent conversation todo` shows the steps; this count goes in `teanode agent interactions`) for parity.
-- Live Activities (ActivityKit) for two things: an agent turn the person started from the app that is still running after they leave the app, and a coding session the person asked to be told about (`herdr watch`). The app starts the activity and registers its push token with `RegisterAgentLiveActivity(phoneId, activityKind, target, pushToken)`. The server sends `liveactivity` pushes as the turn or session changes state and ends the activity when it finishes. Live Activity content is visible on the lock screen and cannot be encrypted the way alerts are, so it carries only a state and a short title ("Working", "greenfinch-site"), never content.
+- Live Activities (ActivityKit) for two things: an agent turn the person started from the app that is still running after they leave the app, and a coding session the person asked to be told about (`herdr watch`). The app starts the activity, registers the activity's push token with the relay as kind `liveactivity`, and gives the sealed registration to the server with `RegisterAgentLiveActivity(phoneId, activityKind, target, pushRegistration)`. The server sends `liveactivity` pushes as the turn or session changes state and ends the activity when it finishes. Live Activity content is visible on the lock screen and cannot be encrypted the way alerts are, so it carries only a state and a short title ("Working", "greenfinch-site"), never content.
 
-### Milestone 10: TestFlight from CI, documentation, decision record, release
+### Milestone 11: the agent helps the person onboard
 
-At the end, merging to `main` uploads a build to TestFlight, and the person installs it on their phone.
+At the end, the person tells their agent in the dashboard "connect my phone", scans the code it shows, approves the connection by saying yes, and the agent greets them in the app with a tour of what this phone can do here.
 
-- `.github/workflows/ios.yml` gains a job on `main` that signs with a distribution certificate and profile kept as repository secrets, archives, and uploads with the App Store Connect API key (`xcrun altool` or `xcodebuild -exportArchive` with `destination: upload`). If keeping the certificate in GitHub secrets proves fragile, Xcode Cloud does the same from App Store Connect with Apple holding the signing; record which was used and why.
-- `docs/reference/ios-app.md`: what the app does, setting up APNs on the server, the setup profile, and building it yourself with your own IDs.
-- `docs/decisions/<date>-the-phone-is-a-device-the-person-carries.md`: the decisions above that the person confirmed.
+The `phone` tool (`internal/agent/tools/phone/phone.go`), its actions as in the Decision Log:
+
+- `list` (read): each phone, whether the server can notify it and why not ("notifications are off on this server", "the relay could not be reached: ...", "Apple says this phone is gone"), the kinds it receives, last seen. The agent uses this to answer "why does my phone not buzz?".
+- `pair` (read): shows the private connect card: the QR code, the link, and "or open the TeaNode app and enter <server address>". The model is told "the connect card is shown".
+- `approve` (granting, confirmed): approves a pairing code the person reads out. The confirmation card names the app and the device that asked, from `ReadAgentPhonePairing`.
+- `rename`, `notify` (write), `test` (write), `remove` (destructive, confirmed).
+- `setup_profile` (granting, confirmed): makes a setup profile for a mailbox and shows its download link as a private card.
+
+Private cards (`internal/agent/private_card.go`): a tool result may carry a card for the person with `isPrivate`. The drawer and the app draw it (a QR code, a link, a button). It is stored with the tool's message in a field the transcript builder (`internal/agent/ask.go`, where messages become the model's input) skips; the model's copy of the result says only what was shown and until when. A test builds a conversation with a private card and checks that nothing of it reaches the request sent to the model. The dashboard and the app hide a private card once it expires.
+
+The tour (`internal/agent/speak_first_phone.go`), a speak-first reason like `onboardingReason`:
+
+- It fires once per phone, the first time a phone registers, into the main conversation, with the app's surface, so it arrives in the app (and, being unasked, as a notification once notifications are allowed).
+- Its instructions list what this server has on: whether notifications reach the phone (`list`), whether voice is available (`ReadAgentVoice`), whether a computer with herdr is attached, whether Finance is on, whether the person has a mailbox, and whether the setup profile was already made. The agent offers one thing at a time and stops when the person says enough: turning notifications on and choosing kinds, then sending a photo or receipt through the share sheet, then "Hey Siri, ask Tea", then the Action button, then a call, then the setup profile.
+- A person whose agent was never introduced gets the existing introduction first, in the app.
+- `agent_profile` gains `phone_tour_done`, as it has `onboarding_done`, so the tour can be ended and is not offered twice.
+
+The `situation` the agent is given each turn mentions the person's phones (count, and whether notifications reach them), so "connect my phone" and "is my phone set up?" need no guessing.
+
+Parity: `TestPhoneParity` now includes the tool. Command line: `teanode agent phone pair` prints the link and draws the QR code in the terminal. Dashboard: "Connect a phone" in the Phones card shows the same card.
+
+### Milestone 12: TestFlight and the App Store, documentation, decision record
+
+At the end, merging to `main` uploads a build to TestFlight, and a version is on the App Store for anyone.
+
+- `.github/workflows/ios.yml` gains a job on `main` that signs with a distribution certificate and profile kept as repository secrets, archives, and uploads with the App Store Connect API key (`xcodebuild -exportArchive` with `destination: upload`). If keeping the certificate in GitHub secrets proves fragile, Xcode Cloud does the same from App Store Connect with Apple holding the signing; record which was used and why.
+- `teanode.com` serves `/.well-known/apple-app-site-association` (JSON, no redirect) claiming `/app/*` for the app, and `/app/connect`, which on a computer explains what to do and on a phone opens the app or the App Store.
+- App Store review needs a server to sign in to: a review server with an invented person, mailbox and conversation, and its address and a pairing approved for the reviewer, given in the review notes. Its data is invented throughout.
+- The App Store listing: description, screenshots of invented conversations, the privacy details (the app sends what the person types and shares to the server they connect it to; the relay sees encrypted notifications and the calling server's address; no tracking), and a privacy policy page on `teanode.com`.
+- Server version: the release notes name the first server version the app works with.
+- `docs/reference/ios-app.md`: what the app does, turning notifications on for a server (nothing to do with the relay; `agent.push.apns` only for one's own build), the setup profile, and building the app yourself with your own IDs.
+- `docs/decisions/<date>-the-phone-is-a-device-the-person-carries.md`: the decisions above.
 - `docs/subsystems/` pages that mention surfaces, notifications or devices are updated.
 - README: a short paragraph and a screenshot of an invented conversation.
 
@@ -291,7 +386,7 @@ This runs the parts of `TeaNodeKit` that need only Foundation: the models, the t
 
 Each milestone ends with its own check above. The whole is accepted when, on the person's own phone with a TestFlight build and their own server:
 
-1. Sign in with the server's address, and see the main conversation.
+1. Ask the agent in the dashboard to connect the phone; scan its code; approve; see the main conversation in the app, and the agent's tour.
 2. Ask "what is on tomorrow?" and watch the answer stream.
 3. Lock the phone. From a computer, have a coding session ask a question. The phone shows it with the options; press one; the pane goes on.
 4. Share a photo of a receipt from Photos to TeaNode. The agent files it.
@@ -336,11 +431,19 @@ Server, Go:
     }
     func (self *Agent) notifyPhones(ctx context.Context, notification *PushNotification) error
 
-    // internal/agent/push_apns.go
-    type apnsClient struct { /* key, keyId, teamId, topic, isSandbox, cached JWT, http client */ }
-    func (self *apnsClient) send(ctx context.Context, pushToken string, pushType string, body []byte) error
+    // internal/push/apns.go, shared by the server (own key) and the relay
+    type APNsClient struct { /* key, keyId, teamId, topic, cached JWT, http client */ }
+    func (self *APNsClient) Send(ctx context.Context, deviceToken string, isSandbox bool, pushType string, body []byte) error
 
-GraphQL, new: `RegisterAgentPhone`, `ListAgentPhones`, `UpdateAgentPhone`, `RemoveAgentPhone`, `TestAgentPhone`, `RegisterAgentLiveActivity`, `CountAgentOpenInteractions`, `CreateMailboxSetupProfile`. Changed: OAuth registration and the `api` scope.
+    // internal/agent/push_relay.go
+    type relayClient struct { /* relay address, http client */ }
+    func (self *relayClient) send(ctx context.Context, pushRegistration string, pushType string, body []byte) error
+
+GraphQL, new: `RegisterAgentPhone`, `ListAgentPhones`, `UpdateAgentPhone`, `RemoveAgentPhone`, `TestAgentPhone`, `ReadAgentPhonePairing`, `ApproveAgentPhonePairing`, `RegisterAgentLiveActivity`, `CountAgentOpenInteractions`, `CreateMailboxSetupProfile`. Changed: OAuth registration, the `api` scope, and the device authorization grant.
+
+Push relay, HTTP: `POST /v1/registrations`, `POST /v1/notifications` (Milestone 3). A new program, `cmd/teanode-push-relay`, sharing `internal/push` with the server.
+
+Agent tool: `phone`, with `list`, `pair`, `approve`, `rename`, `notify`, `test`, `remove`, `setup_profile`. Private cards.
 
 App, Swift: Apple frameworks only (SwiftUI, Foundation, AuthenticationServices, Security, UserNotifications, PhotosUI, CoreLocation, AVFoundation, CallKit, AppIntents, WidgetKit, ActivityKit, CryptoKit). Build tool: XcodeGen, on the CI runner only.
 
