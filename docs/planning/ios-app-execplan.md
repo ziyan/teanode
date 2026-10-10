@@ -39,14 +39,14 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   - [x] (2026-10-10) The App IDs `com.teanode.app` (Push Notifications, App Groups, Associated Domains, Siri), `.share` and `.notification` (App Groups), `.widgets` (App Groups, Push Notifications), and the app group `group.com.teanode.app`, attached to all four.
   - [x] (2026-10-10) The App Store Connect API key (team key, Admin role, in the repository's secrets) and the app record "TeaNode".
   - [x] (2026-10-10) TestFlight from CI: a push to main or an `ios/...` branch archives, signs automatically with the API key, and uploads. Build 0.1.0 (8) ran on the person's iPhone. (Pulled forward from Milestone 12.)
-  - [ ] The APNs key, created with the push relay (Milestone 3).
-  - [ ] The prototype notification, folded into Milestone 3's test against the real APNs.
-- [ ] Milestone 1: an app can sign in, by OAuth or by scanning a connect code, and get a token for the whole API (draft PR #379).
-- [ ] Milestone 2: phones as devices, and notifications sent to them.
-- [ ] Milestone 3: the push relay.
+  - [x] (2026-10-10) The APNs key, created with the push relay (Milestone 3).
+  - [x] (2026-10-10) The prototype notification, folded into Milestone 3's test against the real APNs.
+- [x] (2026-10-10) Milestone 1: an app can sign in by scanning a connect code and get a token for the whole API (PR #379).
+- [x] (2026-10-10) Milestone 2: phones as devices, and notifications sent to them (PR #380).
+- [x] (2026-10-10) Milestone 3: the push relay, built into the server and turned on for the published app (PR #380). Presence is kept per tab and phone, so a phone is told as soon as the app is left (PR #381).
 - [ ] Milestone 4: the setup profile.
-- [ ] Milestone 5: the app: connect, conversations, chat, cards, pictures, location.
-- [ ] Milestone 6: notifications in the app, and answering from them.
+- [ ] Milestone 5: the app: connect, conversations, chat, cards, pictures, location. Connect, the conversation, cards, coding-session questions, suggested replies, reply and copy, the switches for tool calls, usage and working notes, the agent's steps and ideas, earlier messages, links and universal links are in TestFlight; pictures, files and artifacts are being written.
+- [ ] Milestone 6: notifications in the app, and answering from them. In TestFlight; checked on the person's phone.
 - [ ] Milestone 7: the share extension.
 - [ ] Milestone 8: voice calls.
 - [ ] Milestone 9: Siri and Shortcuts.
@@ -54,6 +54,15 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [ ] Milestone 11: the agent helps the person onboard.
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 - [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
+- [ ] Milestone 14: the app becomes the whole dashboard: a tab bar, and the agent reachable from every screen.
+- [ ] Milestone 15: mail: folders, threads, reading, actions, composing, drafts, rules and mailbox settings.
+- [ ] Milestone 16: mail subscriptions.
+- [ ] Milestone 17: the calendar.
+- [ ] Milestone 18: contacts.
+- [ ] Milestone 19: finance.
+- [ ] Milestone 20: knowledge: search, pages, the graph and sources.
+- [ ] Milestone 21: every account setting, the agent's settings included.
+- [ ] Milestone 22: management: domains, people and access, queues, audit, and the server's settings.
 
 ## Surprises & Discoveries
 
@@ -84,9 +93,13 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   Rationale: the repository is public, so GitHub's macOS runners build it for free (the person has no Mac). A server change and the app change that uses it land in one pull request, and a test can check the app's queries against the server's schema (Milestone 5).
   Date/Author: 2026-10-10, agent.
 
-- Decision: the app does not re-implement mail, calendar, contacts, finance or memory.
+- Decision (superseded by the next): the app does not re-implement mail, calendar, contacts, finance or memory.
   Rationale: the iPhone's own apps already read mail, calendars, contacts and reminders from the server. Native screens for the rest would be a large surface to keep in parity with the dashboard and the command line for little gain over asking the agent.
   Date/Author: 2026-10-10, the person and agent.
+
+- Decision: the app has full parity with the dashboard: mail, subscriptions, calendar, contacts, finance, knowledge, every setting and every management page, as native screens (Milestones 14 to 22). The agent's conversation does everything the drawer does first.
+  Rationale: the person decided it ("the ios app will have full parity with the web ui"): the app is meant to be the way to use TeaNode from a phone, not only a way to talk to the agent, and the iPhone's own apps cover mail, calendars and contacts only partly (no subscriptions, rules, agent sorting, finance or memory). Parity is kept by building every screen on the dashboard's GraphQL operations, checked against the schema, and settings from the server's own description of them.
+  Date/Author: 2026-10-10, the person.
 
 - Decision: the app gets its token, scope `api` (everything the person can do, as the person), only by presenting a one-time connect code the person made where they are signed in (next decision). The OAuth consent page never grants `api`. Registration accepts an app's own return address (`com.teanode.app:/oauth`, RFC 8252's private-use scheme) for apps using the agent tools.
   Rationale: the person decided app tokens get full access. The first version also offered `api` on the consent page to any client registered with an app's own scheme, but registration is open and a scheme proves nothing about who registered it, so a stranger could send the person a link to grant everything to the stranger's program. Two security reviews of #379 (`docs/security/security-review.md`, seventh pass) settled it this way.
@@ -416,6 +429,38 @@ App Store and Apple's rules for HealthKit apps, which review checks:
 - The app works without Health: it is a choice in settings, not a step of connecting.
 
 Tests: the server's batch endpoint is idempotent (the same batch twice stores it once), deletions remove samples and fix the summaries, the daily summary is right across a time zone change, and a person cannot read another's data; on the phone, `TeaNodeKit` turns HealthKit samples into the upload shape (tested with recorded samples on the macOS runner, where HealthKit types exist).
+
+### Milestones 14 to 22: everything the dashboard does
+
+At the end, a person with only an iPhone can do everything the dashboard does: read and send mail, keep their calendar and contacts, look after their money, read and work on their memory, change any setting, and, if they operate the server, manage its domains, people, queues and settings. The person decided this on 2026-10-10 ("the ios app will have full parity with the web ui").
+
+How it is built:
+
+- Native SwiftUI screens, following `ios/DESIGN.md`, not the dashboard in a web view: a web view would look like a web page on a phone, and the agent already shows what a native client gives (notifications that answer, the share sheet, Siri). The one exception is content that is itself a page: a mail message's HTML and the agent's HTML artifacts are drawn in a web view, with remote content off until the person asks for it, as the dashboard does.
+- Every screen uses the GraphQL operations the dashboard uses, so there is no server work unless a page turns out to depend on something only a browser has. The documents live in `TeaNodeKit` beside each call and are checked against the schema by `TestTheAppDocumentsMatchTheSchema`.
+- Parity is checked page by page: for each dashboard page, a list of what it shows and does is written into the milestone's progress, and the app's screen is checked against it before the milestone is ticked.
+- Settings are drawn from the server's own description of them, the way `teanode settings describe` covers every section, so a setting added on the server reaches the app without app work, and nothing is left out.
+- Management pages appear only for people whose role allows them, from the same permissions the dashboard reads.
+
+Milestone 14, the shell: a tab bar with the agent, Mail, Calendar, Contacts and More (Finance, Knowledge, Subscriptions, Settings, Management); the agent's conversation reachable from every tab, as the dashboard's drawer is; deep links between them (a `mail:` link in an answer opens the message in the app, not the dashboard).
+
+Milestone 15, mail: the mailboxes and folders the person has; a thread list with search, sorting, unread and starred filters and paging; a thread read with its messages, attachments (Quick Look) and the remote-image choice per message and per subscription; actions with undo (archive, delete, move, mark read, star, junk, not junk); compose, reply, reply all and forward, with the person's identities, attachments and drafts that are kept; rules; and the mailbox's settings (automatic reply, app passwords and the connection settings for other mail programs).
+
+Milestone 16, subscriptions: the lists the person gets mail from, each list's messages, unsubscribe where the sender offers it (with the dashboard's confirmation), mute, images, and the list-wide actions.
+
+Milestone 17, the calendar: agenda, day and week views, creating and changing events, invitations answered, the calendars the person has.
+
+Milestone 18, contacts: the list, search, a contact read and changed, groups.
+
+Milestone 19, finance: accounts and their balances, transactions with filters and categories, budgets, spending rules, savings targets, statements and receipts, and linking an account (SimpleFIN in the app; Plaid's own link flow in a web view, since Plaid offers no native SDK this project uses).
+
+Milestone 20, knowledge: search, a page with its sections, facts, connections, children and history, the graph explorer drawn natively, cited files in Quick Look, and the sources the agent reads.
+
+Milestone 21, account settings: preferences, every tab of the agent's settings (overview, ideas, goals, alerts, mail, sources, memory, dreams, schedules, connections, activity, finance), password, passkeys (with the platform's passkey sheet), API tokens, phones, apps and sessions.
+
+Milestone 22, management: domains with their DNS records and keys, people, groups, roles and access, the delivery queue with retry, the audit log, and every server setting.
+
+Each is built in the same loop as the agent's screens: write it, build it on CI, look at CI's screenshots in light, dark and the largest text, put it in TestFlight, and fix what the person finds on their phone.
 
 ## Concrete Steps
 
