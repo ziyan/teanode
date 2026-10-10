@@ -42,6 +42,13 @@ func TestATurnEndingWithEveryStepDoneClearsTheTaskList(t *testing.T) {
 		}
 	})
 	worker := &Agent{settings: &Settings{Database: database}}
+	// A turn held to reading changes nothing.
+	(&AskRun{agent: worker, settings: &AskSettings{Conversation: finished, ReadOnly: true}}).clearFinishedTodos()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if todos, err := tx.ListAgentTodos(finished.ID); err != nil || len(todos) != 2 {
+			t.Errorf("a read-only turn cleared the list: %d, %v", len(todos), err)
+		}
+	})
 	for _, conversation := range []*models.AgentConversation{finished, unfinished} {
 		run := &AskRun{agent: worker, settings: &AskSettings{Conversation: conversation}}
 		run.clearFinishedTodos()

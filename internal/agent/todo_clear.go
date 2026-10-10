@@ -6,8 +6,12 @@ import "github.com/ziyan/teanode/internal/db"
 // ends with every step on it done: the work it tracked is over, and a
 // list of ticks left above the box says nothing. A list with a step still
 // open stays, for the turn that picks it up. Before the turn's done event,
-// on which the drawer reads the list again.
+// on which the drawer reads the list again. A turn held to reading leaves
+// it: it may not change the list with the todo tool either.
 func (self *AskRun) clearFinishedTodos() {
+	if self.settings.ReadOnly {
+		return
+	}
 	conversationId := self.settings.Conversation.ID
 	err := self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
 		todos, err := tx.ListAgentTodos(conversationId)
