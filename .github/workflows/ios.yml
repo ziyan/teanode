@@ -70,6 +70,46 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           -quiet
 
+      # What the screens look like, for the review ios/DESIGN.md asks for:
+      # the connect screen, and a conversation of invented data from the
+      # debug build's demo server, in light, dark and the largest text size.
+      - name: Take screenshots
+        working-directory: ios
+        run: |
+          app=build/Build/Products/Debug-iphonesimulator/TeaNode.app
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
+          device=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro")]
+          print(phones[-1]["udid"])')
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          mkdir -p screenshots
+          shoot() {
+            name=$1 appearance=$2 size=$3
+            shift 3
+            xcrun simctl ui "$device" appearance "$appearance"
+            xcrun simctl ui "$device" content_size "$size"
+            xcrun simctl terminate "$device" "$bundle" 2>/dev/null || true
+            xcrun simctl launch "$device" "$bundle" "$@"
+            sleep 8
+            xcrun simctl io "$device" screenshot "screenshots/$name.png"
+          }
+          shoot connect-light light large
+          shoot connect-dark dark large
+          shoot conversation-light light large -TeaNodeDemo
+          shoot conversation-dark dark large -TeaNodeDemo
+          shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
+
+      - name: Keep the screenshots
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshots
+          path: ios/screenshots
+
   # Signs the app and uploads it to App Store Connect, where it appears in
   # TestFlight once Apple has processed it (usually 10 to 30 minutes).
   # Signing is automatic: the App Store Connect key in the secrets, with
