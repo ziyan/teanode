@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { axisWidthFor, chartScale, isolatedIndexes, labeledIndexes } from './seriesChart'
+import { axisLabelsFor, axisWidthFor, chartScale, compact, isolatedIndexes, labeledIndexes } from './seriesChart'
 
 // A month of cash flow that went below zero: the scale reaches under the
 // lowest value, so the line is drawn whole, and zero is a gridline.
@@ -24,17 +24,17 @@ it('starts at zero when nothing is below it', () => {
 // A net worth near a million that moved by a few thousand: a fitted scale
 // is drawn around the values, in round steps, not from zero.
 it('fits the scale around the values when asked', () => {
-  const scale = chartScale([1_012_000, 1_018_500, 1_009_300], true)
+  const scale = chartScale([1_012_000, 1_018_500, 1_009_300], { isFitted: true })
   expect(scale.floor).toBeGreaterThan(900_000)
   expect(scale.floor).toBeLessThanOrEqual(1_009_300)
   expect(scale.ceiling).toBeGreaterThanOrEqual(1_018_500)
   expect(scale.ceiling - scale.floor).toBeLessThan(20_000)
   const steps = scale.grid.slice(1).map((value, index) => value - scale.grid[index])
   expect(new Set(steps).size).toBe(1)
-  const flat = chartScale([500, 500], true)
+  const flat = chartScale([500, 500], { isFitted: true })
   expect(flat.floor).toBeLessThan(500)
   expect(flat.ceiling).toBeGreaterThan(500)
-  const crossing = chartScale([-3000, 4000], true)
+  const crossing = chartScale([-3000, 4000], { isFitted: true })
   expect(crossing.grid).toContain(0)
 })
 
@@ -74,4 +74,20 @@ it('always labels the chosen key and clears its neighbours', () => {
   expect([...labeledIndexes(12, 3, 11)].sort((left, right) => left - right)).toEqual([0, 3, 6, 11])
   expect([...labeledIndexes(12, 3, 6)].sort((left, right) => left - right)).toEqual([0, 3, 6, 9])
   expect([...labeledIndexes(5, 1, 2)].sort((left, right) => left - right)).toEqual([0, 1, 2, 3, 4])
+})
+
+// A fitted axis whose gridlines are closer than the short form tells apart
+// is labelled with more figures, so no two lines read alike.
+it('labels every gridline differently', () => {
+  const scale = chartScale([1_203_000, 1_231_000], { isFitted: true })
+  const labels = axisLabelsFor(scale.grid, compact)
+  expect(new Set(labels).size).toBe(labels.length)
+  expect(axisLabelsFor([0, 5000, 10000], compact)).toEqual(['0', '5.0k', '10k'])
+})
+
+// A month that lost a little money is drawn below zero when asked, not on
+// the zero line as if it broke even.
+it('reaches for every dip when asked', () => {
+  expect(chartScale([9000, -300]).floor).toBe(0)
+  expect(chartScale([9000, -300], { isEveryDipShown: true }).floor).toBeLessThan(0)
 })

@@ -7277,6 +7277,14 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   font-size: var(--text-label);
 }
 
+/* The sparkline's scale is the whole of zero to a hundred, so this line
+   is where a move of a few points can be read. */
+.memory-check-score-change {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Shrinks with its panel rather than pushing it wider; the height stays,
    so the points keep their shape. */
 .memory-check-sparkline {
@@ -8997,6 +9005,9 @@ button.with-icon {
 
 .usage-chart-plot svg {
   display: block;
+  /* A finger dragged sideways moves the tooltip along the keys; up and
+     down still scrolls the page. */
+  touch-action: pan-y;
   width: 100%;
   height: auto;
   overflow: visible;
@@ -9072,7 +9083,10 @@ button.with-icon {
   position: absolute;
   top: 0;
   z-index: 2;
-  min-width: 11rem;
+  /* Never wider than the plot it is held inside (ChartTooltip). */
+  min-width: min(11rem, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
@@ -9080,14 +9094,6 @@ button.with-icon {
   box-shadow: var(--shadow-floating);
   font-size: var(--text-label);
   pointer-events: none;
-}
-
-.usage-chart-tooltip.right {
-  margin-left: 10px;
-}
-
-.usage-chart-tooltip.left {
-  margin-right: 10px;
 }
 
 .usage-chart-tooltip-day {

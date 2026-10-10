@@ -42,11 +42,18 @@ export const CHART_NEGLIGIBLE_DIP = 0.05
 // isFitted draws the range around the values instead, zero or not: a net
 // worth of a million that moved by ten thousand is a flat line on a scale
 // from zero. Only a line may be fitted; a column's height is its value.
-export function chartScale(values: number[], isFitted = false): ChartScale {
+//
+// isEveryDipShown reaches below zero for any value under it, however
+// small: a month that lost a little money is not drawn as one that broke
+// even.
+export function chartScale(
+  values: number[],
+  { isFitted = false, isEveryDipShown = false }: { isFitted?: boolean; isEveryDipShown?: boolean } = {},
+): ChartScale {
   if (isFitted) return fittedScale(values)
   const highest = Math.max(0, ...values)
   const deepest = Math.min(0, ...values)
-  const lowest = -deepest < highest * CHART_NEGLIGIBLE_DIP ? 0 : deepest
+  const lowest = !isEveryDipShown && -deepest < highest * CHART_NEGLIGIBLE_DIP ? 0 : deepest
   if (highest === lowest) return { floor: 0, ceiling: 1, grid: [0, 1] }
   const step = niceCeiling((highest - lowest) / 4)
   const below = Math.ceil(-lowest / step - 1e-9)
@@ -128,13 +135,96 @@ export function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {
 }
 
 // compact is a count in a few characters, to the billions: the tokens of a
-// month of reading run past a thousand million.
-export function compact(value: number): string {
+// month of reading run past a thousand million. precision adds that many
+// figures after the point, for an axis whose gridlines are closer together
+// than the shortest form can tell apart.
+export function compact(value: number, precision = 0): string {
   const size = Math.abs(value)
-  if (size >= 1e9) return `${(value / 1e9).toFixed(size >= 1e10 ? 0 : 1)}B`
-  if (size >= 1e6) return `${(value / 1e6).toFixed(size >= 1e7 ? 0 : 1)}M`
-  if (size >= 1e3) return `${(value / 1e3).toFixed(size >= 1e4 ? 0 : 1)}k`
-  return String(Math.round(value))
+  if (size >= 1e9) return `${(value / 1e9).toFixed((size >= 1e10 ? 0 : 1) + precision)}B`
+  if (size >= 1e6) return `${(value / 1e6).toFixed((size >= 1e7 ? 0 : 1) + precision)}M`
+  if (size >= 1e3) return `${(value / 1e3).toFixed((size >= 1e4 ? 0 : 1) + precision)}k`
+  return precision > 0 ? value.toFixed(precision) : String(Math.round(value))
+}
+
+// axisLabelsFor is the gridlines' labels in the shortest form that still
+// tells each from the next: a net worth axis from $1.20M to $1.23M read
+// "$1.2M" on every line, which said nothing about the change it was drawn
+// to show.
+export function axisLabelsFor(grid: number[], label: (value: number, precision: number) => string): string[] {
+  for (let precision = 0; precision <= 3; precision++) {
+    const labels = grid.map((value) => label(value, precision))
+    if (new Set(labels).size === labels.length) return labels
+  }
+  return grid.map((value) => label(value, 3))
+}
+
+// useChartHover is the key a chart's tooltip is shown for. A touch screen
+// has no hover: a tap shows a key's tooltip, and it stays until a tap
+// somewhere else, rather than going the moment the finger lifts.
+export function useChartHover(
+  holder: React.RefObject<HTMLDivElement | null>,
+): [number | null, (index: number | null) => void] {
+  const [hovered, setHovered] = useState<number | null>(null)
+  useEffect(() => {
+    if (hovered === null) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!holder.current?.contains(event.target as Node)) setHovered(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [hovered, holder])
+  return [hovered, setHovered]
+}
+
+// chartPointerHandlers are a chart drawing's pointer events: a mouse shows
+// the key under it and clears on leaving; a touch shows the key it lands
+// on or is dragged sideways to, and a touch that turns into a scroll of the
+// page (pointercancel) clears it, rather than leaving a tooltip open over
+// a chart the reader has scrolled past.
+export function chartPointerHandlers(
+  pointAt: (clientX: number, element: SVGSVGElement) => void,
+  onHover: (index: number | null) => void,
+) {
+  return {
+    onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => pointAt(event.clientX, event.currentTarget),
+    onPointerDown: (event: React.PointerEvent<SVGSVGElement>) => pointAt(event.clientX, event.currentTarget),
+    onPointerLeave: (event: React.PointerEvent<SVGSVGElement>) => {
+      if (event.pointerType === 'mouse') onHover(null)
+    },
+    onPointerCancel: () => onHover(null),
+  }
+}
+
+// CHART_TOOLTIP_GAP is how far a tooltip stands off the key it is about.
+const CHART_TOOLTIP_GAP = 10
+
+// ChartTooltip is the box of a key's values beside it: to its right, or to
+// its left past halfway, and in either case held inside the plot. On a
+// phone the plot is narrower than twice the box, and a box placed only by
+// which half the key is in ran off the edge, losing the amounts.
+export function ChartTooltip({
+  center,
+  width,
+  children,
+}: {
+  center: number
+  width: number
+  children: React.ReactNode
+}) {
+  const box = useRef<HTMLDivElement>(null)
+  const [boxWidth, setBoxWidth] = useState(0)
+  useLayoutEffect(() => {
+    const measured = box.current?.offsetWidth ?? 0
+    if (measured !== boxWidth) setBoxWidth(measured)
+  })
+  const isLeft = center > width / 2
+  const wanted = isLeft ? center - CHART_TOOLTIP_GAP - boxWidth : center + CHART_TOOLTIP_GAP
+  const left = Math.max(0, Math.min(wanted, width - boxWidth))
+  return (
+    <div ref={box} className="usage-chart-tooltip" style={{ left: `${left}px` }}>
+      {children}
+    </div>
+  )
 }
 
 // roundedTop is a column with its top corners rounded and its foot square,
@@ -179,6 +269,7 @@ export type ChartSeries = {
 export function SeriesChart({
   keys,
   keyLabel,
+  keyTitle,
   series,
   format,
   axisFormat,
@@ -190,12 +281,19 @@ export function SeriesChart({
   headAction,
   tooltipNote,
   isFitted = false,
+  isEveryDipShown = false,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
+  // The key at the top of its tooltip, where the axis's label is too short
+  // to stand alone ("12" for a day of a month) or too long to fit under a
+  // column; keyLabel when not given.
+  keyTitle?: (key: string) => string
   series: ChartSeries[]
   format: (value: number) => string
-  axisFormat?: (value: number) => string
+  // The axis's labels; precision asks for that many more figures, when the
+  // shortest form would label two gridlines alike.
+  axisFormat?: (value: number, precision: number) => string
   headline?: React.ReactNode
   caption?: React.ReactNode
   // Beside the headline, at its right: a control choosing what the chart
@@ -212,32 +310,23 @@ export function SeriesChart({
   // The scale drawn around the values rather than from zero, for a line
   // whose changes are small beside its size (see chartScale).
   isFitted?: boolean
+  // Any value below zero is drawn below it (see chartScale), for a flow
+  // whose small losses matter.
+  isEveryDipShown?: boolean
 }) {
-  const [hovered, setHovered] = useState<number | null>(null)
   const [holder, width] = useWidth()
-  const labelAxis = axisFormat ?? format
-
-  // A touch screen has no hover: a tap shows a key's tooltip, and it stays
-  // until a tap somewhere else, rather than going the moment the finger
-  // lifts.
-  useEffect(() => {
-    if (hovered === null) return
-    const onPointerDown = (event: PointerEvent) => {
-      if (!holder.current?.contains(event.target as Node)) setHovered(null)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [hovered, holder])
+  const [hovered, setHovered] = useChartHover(holder)
 
   const scale = useMemo(
     () =>
       chartScale(
         series.flatMap((one) => one.values.filter((value): value is number => value !== null)),
-        isFitted,
+        { isFitted, isEveryDipShown },
       ),
-    [series, isFitted],
+    [series, isFitted, isEveryDipShown],
   )
-  const axisWidth = axisWidthFor(scale.grid.map(labelAxis))
+  const axisLabels = axisLabelsFor(scale.grid, axisFormat ?? ((value) => format(value)))
+  const axisWidth = axisWidthFor(axisLabels)
 
   return (
     <div className="usage-chart">
@@ -255,12 +344,13 @@ export function SeriesChart({
           <SeriesDrawing
             keys={keys}
             keyLabel={keyLabel}
+            keyTitle={keyTitle ?? keyLabel}
             series={series}
             scale={scale}
             axisWidth={axisWidth}
             width={width}
             format={format}
-            axisFormat={labelAxis}
+            axisLabels={axisLabels}
             hovered={hovered}
             onHover={setHovered}
             label={label}
@@ -270,7 +360,7 @@ export function SeriesChart({
         ) : null}
         {hovered !== null && keys[hovered] !== undefined && width > 0 ? (
           <SeriesTooltip
-            title={keyLabel(keys[hovered])}
+            title={(keyTitle ?? keyLabel)(keys[hovered])}
             index={hovered}
             count={keys.length}
             width={width}
@@ -303,12 +393,13 @@ export function SeriesChart({
 function SeriesDrawing({
   keys,
   keyLabel,
+  keyTitle,
   series,
   scale,
   axisWidth,
   width,
   format,
-  axisFormat,
+  axisLabels,
   hovered,
   onHover,
   label,
@@ -317,12 +408,13 @@ function SeriesDrawing({
 }: {
   keys: string[]
   keyLabel: (key: string) => string
+  keyTitle: (key: string) => string
   series: ChartSeries[]
   scale: ChartScale
   axisWidth: number
   width: number
   format: (value: number) => string
-  axisFormat: (value: number) => string
+  axisLabels: string[]
   hovered: number | null
   onHover: (index: number | null) => void
   label: string
@@ -358,7 +450,7 @@ function SeriesDrawing({
   }
 
   const slotSaid = (key: string, index: number) =>
-    `${keyLabel(key)}: ${series
+    `${keyTitle(key)}: ${series
       .map((one) => `${one.label} ${one.values[index] === null ? '—' : format(one.values[index] ?? 0)}`)
       .join(', ')}`
   const said = keys.map(slotSaid).join('; ')
@@ -392,11 +484,7 @@ function SeriesDrawing({
       viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
       role={isSelectable ? 'group' : 'img'}
       aria-label={isSelectable ? label : `${label}. ${said}`}
-      onPointerMove={(event) => pointAt(event.clientX, event.currentTarget)}
-      onPointerDown={(event) => pointAt(event.clientX, event.currentTarget)}
-      onPointerLeave={(event) => {
-        if (event.pointerType === 'mouse') onHover(null)
-      }}
+      {...chartPointerHandlers(pointAt, onHover)}
     >
       {selectedIndex >= 0 ? (
         <rect
@@ -408,18 +496,18 @@ function SeriesDrawing({
           rx={4}
         />
       ) : null}
-      {grid.map((value) => {
+      {grid.map((value, index) => {
         const y = yOf(value)
         return (
           <g key={value}>
             <line className="usage-chart-grid" x1={axisWidth} x2={width} y1={y} y2={y} />
             <text className="usage-chart-axis" x={axisWidth - 8} y={y} textAnchor="end" dominantBaseline="middle">
-              {axisFormat(value)}
+              {axisLabels[index]}
             </text>
           </g>
         )
       })}
-      {floor < 0 ? <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} /> : null}
+      {floor < 0 && ceiling > 0 ? <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} /> : null}
       {keys.map((key, index) => {
         const groupX = axisWidth + index * slot + (slot - groupWidth) / 2
         // With a key chosen, the others step back (less far than for the
@@ -583,14 +671,8 @@ function SeriesTooltip({
 }) {
   const slot = (width - axisWidth) / Math.max(1, count)
   const center = axisWidth + index * slot + slot / 2
-  // Kept inside the chart: flipped to the left of the slot past halfway.
-  const isLeft = center > width / 2
   return (
-    <div
-      className={`usage-chart-tooltip ${isLeft ? 'left' : 'right'}`}
-      style={isLeft ? { right: `${((width - center) / width) * 100}%` } : { left: `${(center / width) * 100}%` }}
-      role="status"
-    >
+    <ChartTooltip center={center} width={width}>
       <div className="usage-chart-tooltip-day">{title}</div>
       {lines.map((line) => (
         <div key={line.id} className="usage-chart-tooltip-line">
@@ -606,6 +688,6 @@ function SeriesTooltip({
           <strong>{note.text}</strong>
         </div>
       ) : null}
-    </div>
+    </ChartTooltip>
   )
 }

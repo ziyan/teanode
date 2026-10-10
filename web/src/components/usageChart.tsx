@@ -2,15 +2,20 @@ import { useMemo, useState } from 'react'
 
 import { formatMoney } from './common'
 import {
-  CHART_AXIS_WIDTH,
   CHART_BOTTOM,
   CHART_HEIGHT,
   CHART_TOP,
+  ChartScale,
+  ChartTooltip,
+  axisLabelsFor,
+  axisWidthFor,
+  chartPointerHandlers,
+  chartScale,
   compact,
   dayLabel,
   daysBetween,
-  niceCeiling,
   roundedTop,
+  useChartHover,
   useWidth,
 } from './seriesChart'
 import { useTranslation } from '../i18n/i18n'
@@ -43,7 +48,6 @@ type Part = 'input' | 'cached' | 'output'
 const PARTS: Part[] = ['input', 'cached', 'output']
 
 const HEIGHT = CHART_HEIGHT
-const AXIS_WIDTH = CHART_AXIS_WIDTH
 const TOP = CHART_TOP
 const BOTTOM = CHART_BOTTOM
 const RANKED = 8
@@ -55,6 +59,18 @@ function partsOf(row: UsageChartRow | undefined): Record<Part, number> {
     cached: row.totals.cacheReadTokens + row.totals.cacheWriteTokens,
     output: row.totals.completionTokens,
   }
+}
+
+// dailyScale is the columns' scale: round steps from zero, and whole ones
+// for calls and tokens, which come one at a time. Quarters of a top of 5 put
+// gridlines at 1.25 and 3.75, and labels rounded to whole calls sat beside
+// lines that were not at them.
+function dailyScale(values: number[], metric: Metric): ChartScale {
+  const scale = chartScale(values)
+  const step = scale.grid.length > 1 ? scale.grid[1] - scale.grid[0] : 1
+  if (metric === 'cost' || step >= 1) return scale
+  const ceiling = Math.max(1, Math.ceil(Math.max(0, ...values)))
+  return { floor: 0, ceiling, grid: Array.from({ length: ceiling + 1 }, (_, index) => index) }
 }
 
 function measure(row: UsageChartRow | undefined, metric: Metric): number {
@@ -80,8 +96,8 @@ export function UsageChart({
 }) {
   const { t } = useTranslation()
   const [metric, setMetric] = useState<Metric>('tokens')
-  const [hovered, setHovered] = useState<number | null>(null)
   const [holder, width] = useWidth()
+  const [hovered, setHovered] = useChartHover(holder)
   const currency = rows.find((row) => row.currency)?.currency || 'USD'
   const isDaily = by === 'day'
 
@@ -102,9 +118,14 @@ export function UsageChart({
   const values = items.map((item) => measure(item.row, metric))
   // Columns over time get a round scale with gridlines on it; bars ranked
   // against each other are scaled to the largest, which fills its track.
-  const ceiling = isDaily ? niceCeiling(Math.max(0, ...values)) : Math.max(1e-9, ...values)
+  const scale = dailyScale(values, metric)
+  const ceiling = isDaily ? scale.ceiling : Math.max(1e-9, ...values)
   const sum = rows.reduce((total, row) => total + measure(row, metric), 0)
   const format = (value: number) => (metric === 'cost' ? formatMoney(value, currency) : compact(value))
+  const axisLabels = axisLabelsFor(scale.grid, (value, precision) =>
+    metric === 'cost' ? formatMoney(value, currency) : compact(value, precision),
+  )
+  const axisWidth = axisWidthFor(axisLabels)
 
   const metrics: { id: Metric; label: string }[] = [
     { id: 'tokens', label: t('usageChart.tokens') },
@@ -148,7 +169,9 @@ export function UsageChart({
             <DailyColumns
               items={items}
               metric={metric}
-              ceiling={ceiling}
+              scale={scale}
+              axisLabels={axisLabels}
+              axisWidth={axisWidth}
               width={width}
               format={format}
               hovered={hovered}
@@ -163,6 +186,7 @@ export function UsageChart({
             index={hovered}
             count={items.length}
             width={width}
+            axisWidth={axisWidth}
             currency={currency}
             partLabel={partLabel}
           />
@@ -185,7 +209,9 @@ export function UsageChart({
 function DailyColumns({
   items,
   metric,
-  ceiling,
+  scale: { ceiling, grid },
+  axisLabels,
+  axisWidth,
   width,
   format,
   hovered,
@@ -193,26 +219,27 @@ function DailyColumns({
 }: {
   items: { key: string; row?: UsageChartRow }[]
   metric: Metric
-  ceiling: number
+  scale: ChartScale
+  axisLabels: string[]
+  axisWidth: number
   width: number
   format: (value: number) => string
   hovered: number | null
   onHover: (index: number | null) => void
 }) {
-  const plotWidth = Math.max(40, width - AXIS_WIDTH)
+  const plotWidth = Math.max(40, width - axisWidth)
   const plotHeight = HEIGHT - TOP - BOTTOM
   const slot = plotWidth / Math.max(1, items.length)
   const columnWidth = Math.max(2, Math.min(28, slot * 0.62))
-  const scale = (value: number) => (value / ceiling) * plotHeight
+  const heightOf = (value: number) => (value / ceiling) * plotHeight
   const labelEvery = Math.max(1, Math.ceil(items.length / Math.max(2, Math.floor(plotWidth / 64))))
-  const grid = [0, 0.25, 0.5, 0.75, 1]
 
   // The drawing is scaled to the width it is shown at, so a pointer is
   // turned back into the drawing's own units first.
   const pointAt = (clientX: number, element: SVGSVGElement) => {
     const bounds = element.getBoundingClientRect()
     const x = ((clientX - bounds.left) * width) / Math.max(1, bounds.width)
-    const index = Math.floor((x - AXIS_WIDTH) / slot)
+    const index = Math.floor((x - axisWidth) / slot)
     onHover(index >= 0 && index < items.length ? index : null)
   }
 
@@ -221,22 +248,21 @@ function DailyColumns({
       viewBox={`0 0 ${width} ${HEIGHT}`}
       role="img"
       aria-label={items.map((item) => `${item.key}: ${format(measure(item.row, metric))}`).join(', ')}
-      onPointerMove={(event) => pointAt(event.clientX, event.currentTarget)}
-      onPointerLeave={() => onHover(null)}
+      {...chartPointerHandlers(pointAt, onHover)}
     >
-      {grid.map((fraction) => {
-        const y = TOP + plotHeight - fraction * plotHeight
+      {grid.map((value, index) => {
+        const y = TOP + plotHeight - heightOf(value)
         return (
-          <g key={fraction}>
-            <line className="usage-chart-grid" x1={AXIS_WIDTH} x2={width} y1={y} y2={y} />
-            <text className="usage-chart-axis" x={AXIS_WIDTH - 8} y={y} textAnchor="end" dominantBaseline="middle">
-              {format(ceiling * fraction)}
+          <g key={value}>
+            <line className="usage-chart-grid" x1={axisWidth} x2={width} y1={y} y2={y} />
+            <text className="usage-chart-axis" x={axisWidth - 8} y={y} textAnchor="end" dominantBaseline="middle">
+              {axisLabels[index]}
             </text>
           </g>
         )
       })}
       {items.map((item, index) => {
-        const x = AXIS_WIDTH + index * slot + (slot - columnWidth) / 2
+        const x = axisWidth + index * slot + (slot - columnWidth) / 2
         const isDimmed = hovered !== null && hovered !== index
         const segments: { part: Part | 'single'; value: number }[] =
           metric === 'tokens'
@@ -247,7 +273,7 @@ function DailyColumns({
         return (
           <g key={item.key} className={isDimmed ? 'usage-chart-dim' : ''}>
             {drawn.map((segment, position) => {
-              const height = Math.max(1, scale(segment.value))
+              const height = Math.max(1, heightOf(segment.value))
               base -= height
               const isTop = position === drawn.length - 1
               const radius = Math.min(4, columnWidth / 2, height)
@@ -331,6 +357,7 @@ function DayTooltip({
   index,
   count,
   width,
+  axisWidth,
   currency,
   partLabel,
 }: {
@@ -338,23 +365,22 @@ function DayTooltip({
   index: number
   count: number
   width: number
+  axisWidth: number
   currency: string
   partLabel: Record<Part, string>
 }) {
   const { t } = useTranslation()
-  const slot = (width - AXIS_WIDTH) / Math.max(1, count)
-  const center = AXIS_WIDTH + index * slot + slot / 2
-  // Kept inside the chart: flipped to the left of the column past halfway.
-  // In proportions, since the drawing is scaled to the width it is shown at.
-  const isLeft = center > width / 2
+  const slot = (width - axisWidth) / Math.max(1, count)
+  const center = axisWidth + index * slot + slot / 2
   const parts = partsOf(item.row)
   return (
-    <div
-      className={`usage-chart-tooltip ${isLeft ? 'left' : 'right'}`}
-      style={isLeft ? { right: `${((width - center) / width) * 100}%` } : { left: `${(center / width) * 100}%` }}
-      role="status"
-    >
+    <ChartTooltip center={center} width={width}>
       <div className="usage-chart-tooltip-day">{dayLabel(item.key)}</div>
+      {/* The column's whole height, which the parts under it add up to. */}
+      <div className="usage-chart-tooltip-line">
+        <span>{t('usageChart.tokens')}</span>
+        <strong>{compact(parts.input + parts.cached + parts.output)}</strong>
+      </div>
       {PARTS.map((part) => (
         <div key={part} className="usage-chart-tooltip-line">
           <i className={`usage-chart-swatch ${part}`} />
@@ -370,6 +396,6 @@ function DayTooltip({
         <span>{t('usageChart.calls')}</span>
         <strong>{item.row?.totals.calls ?? 0}</strong>
       </div>
-    </div>
+    </ChartTooltip>
   )
 }

@@ -140,9 +140,9 @@ it('adds the note under the series in the tooltip', () => {
   // Three slots across 600 pixels less the axis: the middle of the drawing
   // is the middle slot, and its right edge the last.
   pointAt(drawing, 330)
-  const tooltip = screen.getByRole('status')
+  const tooltip = document.querySelector('.usage-chart-tooltip') as HTMLElement
   expect(tooltip.textContent).toContain('Difference')
   expect(tooltip.textContent).toContain('5 more')
   pointAt(drawing, 595)
-  expect(screen.getByRole('status').textContent).not.toContain('Difference')
+  expect(document.querySelector('.usage-chart-tooltip')?.textContent).not.toContain('Difference')
 })
