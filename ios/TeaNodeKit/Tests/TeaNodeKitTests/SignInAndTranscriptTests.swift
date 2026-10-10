@@ -164,6 +164,27 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.lines[0].runId, "r")
     }
 
+    func testACodingSessionsQuestionIsACardWithItsOptions() {
+        let asked = #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1","herdrSession":{"paneName":"site","codingAgentKind":"claude","question":{"questionFingerprint":"f1","questionText":"Deploy now?","isMultipleChoice":false,"options":[{"optionNumber":1,"optionLabel":"Yes","herdrOptionKind":"choice"},{"optionNumber":2,"optionLabel":"Type something","herdrOptionKind":"freeText"}]}}}"#
+        let answered = #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1","answerText":"1. Yes"}"#
+        var messages = [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "user", content: "[herdr question] a laptop w1:p1 f1\nNobody asked for this."),
+            AgentMessage(id: "2", createdAt: "2026-10-10T09:00:01Z", role: "assistant", content: "**Claude Code** in site asks:\n\n> Deploy now?"),
+            AgentMessage(id: "3", createdAt: "2026-10-10T09:00:01Z", role: "note", content: asked, name: "herdr_asked"),
+        ]
+        var transcript = Transcript(messages: messages)
+        XCTAssertEqual(transcript.lines.map(\.kind), [.codingQuestion])
+        XCTAssertEqual(transcript.lines[0].choices, ["Yes"])
+        XCTAssertEqual(transcript.lines[0].codingQuestion?.sessionName, "site")
+        XCTAssertEqual(transcript.openQuestion?.id, transcript.lines[0].id)
+
+        messages.append(AgentMessage(id: "4", createdAt: "2026-10-10T09:02:00Z", role: "note", content: answered, name: "herdr_answered"))
+        transcript = Transcript(messages: messages)
+        XCTAssertTrue(transcript.lines[0].isDone)
+        XCTAssertEqual(transcript.lines[0].resolution, "1. Yes")
+        XCTAssertNil(transcript.openQuestion)
+    }
+
     func testServerTimesAreRead() {
         XCTAssertNotNil(ServerTime.date("2026-10-10T17:58:04.123456789-04:00"))
         XCTAssertNotNil(ServerTime.date("2026-10-10T21:58:04Z"))
@@ -174,5 +195,19 @@ final class TranscriptTests: XCTestCase {
         let body = String(decoding: Upload.body(boundary: "b", name: "receipt\".jpg", contentType: "image/jpeg", data: Data("x".utf8)), as: UTF8.self)
         XCTAssertTrue(body.hasPrefix("--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"receipt'.jpg\"\r\n"))
         XCTAssertTrue(body.hasSuffix("\r\nx\r\n--b--\r\n"))
+    }
+}
+
+final class MarkdownTests: XCTestCase {
+    func testAnAnswersBlocksAreRead() {
+        let text = "**Claude Code** asks:\n\n> What now?\n> Pick one.\n\n1. Stop\n2. Wait here,\n   then go on\n\n- one\n- two\n\n## Next\n```\nmake test\n```"
+        XCTAssertEqual(MarkdownBlock.parse(text), [
+            .paragraph("**Claude Code** asks:"),
+            .quote("What now?\nPick one."),
+            .list([.init(marker: "1.", text: "Stop"), .init(marker: "2.", text: "Wait here, then go on")]),
+            .list([.init(marker: "•", text: "one"), .init(marker: "•", text: "two")]),
+            .heading("Next"),
+            .code("make test"),
+        ])
     }
 }

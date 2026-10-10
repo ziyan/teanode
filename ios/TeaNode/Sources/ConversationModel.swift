@@ -39,6 +39,11 @@ final class ConversationModel {
     private let connection: Connection
     private var answeredLocationCalls: Set<String> = []
 
+    /// A coding session's question is being told: the card it is drawn as
+    /// comes from a note the feed does not carry, so the conversation is
+    /// read again once the telling is done.
+    private var isCodingQuestionArriving = false
+
     init(conversation: AgentConversation?, app: AppModel, connection: Connection) {
         self.conversationId = conversation?.id
         self.title = conversation.map(ConversationModel.title(of:)) ?? String(localized: "Your agent")
@@ -98,8 +103,15 @@ final class ConversationModel {
         switch event.kind {
         case "asked":
             runningRunId = event.runId
+            if event.text.map({ CheckInOrigin.of($0) == .herdrQuestion }) == true {
+                isCodingQuestionArriving = true
+            }
         case "done":
             if runningRunId == event.runId { runningRunId = nil }
+            if isCodingQuestionArriving {
+                isCodingQuestionArriving = false
+                Task { try? await load() }
+            }
         case "error":
             if runningRunId == event.runId { runningRunId = nil }
             sendProblemText = event.error
@@ -123,7 +135,11 @@ final class ConversationModel {
         guard canSend else { return }
         if let question = transcript.openQuestion, pictures.isEmpty {
             draft = ""
-            await answer(question, with: text)
+            if question.kind == .codingQuestion {
+                await answerCodingQuestion(question, options: [], freeText: text)
+            } else {
+                await answer(question, with: text)
+            }
             return
         }
         isSending = true
@@ -167,6 +183,19 @@ final class ConversationModel {
         do {
             try await connection.answerQuestion(runId: line.runId, callId: line.callId, answer: answer)
             transcript.settle(cardId: line.id, resolution: answer)
+            sentCount += 1
+        } catch {
+            sendProblemText = app.describe(error)
+        }
+    }
+
+    /// Answers a coding session's question with the options chosen, or with
+    /// what to type into it.
+    func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async {
+        guard let question = line.codingQuestion else { return }
+        do {
+            let answeredWith = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
+            transcript.settle(cardId: line.id, resolution: answeredWith)
             sentCount += 1
         } catch {
             sendProblemText = app.describe(error)

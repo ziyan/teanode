@@ -2,24 +2,25 @@ import PhotosUI
 import SwiftUI
 import TeaNodeKit
 
-/// ConversationView is one conversation: its messages, and the composer
+/// ConversationView is one conversation, laid out like a messaging app: the
+/// person's messages on the right, the agent's on the left, and the composer
 /// floating over them.
 struct ConversationView: View {
     @State var model: ConversationModel
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                ForEach(model.transcript.lines) { line in
-                    TranscriptLineView(line: line, model: model)
-                        .id(line.id)
+            LazyVStack(alignment: .leading, spacing: 10) {
+                ForEach(ConversationItem.items(of: model.transcript.lines)) { item in
+                    ConversationItemView(item: item, model: model)
+                        .id(item.id)
                 }
                 if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
-                    ProgressView()
-                        .accessibilityLabel("Your agent is working")
+                    TypingBubble()
                 }
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.vertical, 12)
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -43,11 +44,7 @@ struct ConversationView: View {
         .task { await model.follow() }
         .sensoryFeedback(.success, trigger: model.sentCount)
         .sensoryFeedback(.warning, trigger: model.sendProblemText) { _, new in new != nil }
-        .alert(
-            "Something went wrong",
-            isPresented: $model.isShowingSendProblem,
-            presenting: model.sendProblemText
-        ) { _ in
+        .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
             Button("OK", role: .cancel) {}
         } message: { text in
             Text(text)
@@ -55,47 +52,106 @@ struct ConversationView: View {
     }
 }
 
-/// TranscriptLineView is one line: the person's bubble, the agent's answer as
-/// plain text, a tool on one quiet line, or a card waiting for the person.
-struct TranscriptLineView: View {
-    let line: TranscriptLine
-    let model: ConversationModel
+/// ConversationItem is one thing on the screen: a line of the transcript,
+/// the tools the agent used in a row, or the time between two lines far
+/// apart.
+enum ConversationItem: Identifiable {
+    case line(TranscriptLine)
+    case tools([TranscriptLine])
+    case time(Date)
 
-    var body: some View {
-        switch line.kind {
-        case .person:
-            PersonBubble(line: line)
-        case .answer:
-            Text(Self.markdown(line.text))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case .tool:
-            ToolLine(line: line)
-        case .checkIn:
-            Label(Self.withoutMarker(line.text), systemImage: "bell")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        case .note:
-            Text(line.text)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .multilineTextAlignment(.center)
-        case .approval, .question:
-            CardView(line: line, model: model)
+    var id: String {
+        switch self {
+        case .line(let line): line.id
+        case .tools(let lines): "tools-" + (lines.first?.id ?? "")
+        case .time(let date): "time-\(date.timeIntervalSince1970)"
         }
     }
 
-    /// An answer's Markdown, with its inline styles and its line breaks.
-    static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
+    /// How far apart two lines are before the time is shown between them.
+    static let timeGap: TimeInterval = 30 * 60
+
+    static func items(of lines: [TranscriptLine]) -> [ConversationItem] {
+        var items: [ConversationItem] = []
+        var tools: [TranscriptLine] = []
+        var lastDate: Date?
+        for line in lines {
+            if let date = ServerTime.date(line.at) {
+                if lastDate.map({ date.timeIntervalSince($0) > timeGap }) ?? true {
+                    if !tools.isEmpty {
+                        items.append(.tools(tools))
+                        tools = []
+                    }
+                    items.append(.time(date))
+                }
+                lastDate = date
+            }
+            if line.kind == .tool {
+                tools.append(line)
+                continue
+            }
+            if !tools.isEmpty {
+                items.append(.tools(tools))
+                tools = []
+            }
+            items.append(.line(line))
+        }
+        if !tools.isEmpty {
+            items.append(.tools(tools))
+        }
+        return items
+    }
+}
+
+struct ConversationItemView: View {
+    let item: ConversationItem
+    let model: ConversationModel
+
+    var body: some View {
+        switch item {
+        case .time(let date):
+            Text(Self.timeText(date))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 6)
+        case .tools(let lines):
+            ToolsLine(lines: lines)
+        case .line(let line):
+            switch line.kind {
+            case .person:
+                PersonBubble(line: line)
+            case .answer:
+                AgentBubble {
+                    MarkdownView(text: line.text)
+                }
+            case .checkIn:
+                CheckInLine(line: line)
+            case .note:
+                Text(line.text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            case .approval, .question:
+                AgentBubble {
+                    CardView(line: line, model: model)
+                }
+            case .codingQuestion:
+                AgentBubble {
+                    CodingQuestionCard(line: line, model: model)
+                }
+            case .tool:
+                EmptyView()
+            }
+        }
     }
 
-    /// A check-in's text without the marker that says where it came from.
-    static func withoutMarker(_ text: String) -> String {
-        guard let origin = CheckInOrigin.of(text) else { return text }
-        return text.dropFirst(origin.rawValue.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    static func timeText(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
@@ -105,7 +161,7 @@ struct PersonBubble: View {
 
     var body: some View {
         HStack {
-            Spacer(minLength: 48)
+            Spacer(minLength: 56)
             VStack(alignment: .trailing, spacing: 4) {
                 ForEach(line.attachments, id: \.id) { attachment in
                     Label(attachment.name, systemImage: "photo")
@@ -116,7 +172,7 @@ struct PersonBubble: View {
                     Text(line.text)
                         .textSelection(.enabled)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 9)
                         .foregroundStyle(.white)
                         .background(Color.accentColor, in: .rect(cornerRadius: 20, style: .continuous))
                 }
@@ -125,32 +181,177 @@ struct PersonBubble: View {
     }
 }
 
-/// ToolLine is a tool the agent called, one line until tapped.
-struct ToolLine: View {
-    let line: TranscriptLine
+/// AgentBubble is something from the agent: on the left, in gray.
+struct AgentBubble<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack {
+            content
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+            Spacer(minLength: 40)
+        }
+    }
+}
+
+/// TypingBubble says the agent is working on an answer.
+struct TypingBubble: View {
+    var body: some View {
+        AgentBubble {
+            Image(systemName: "ellipsis")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .symbolEffect(.variableColor.iterative, options: .repeating)
+                .frame(height: 20)
+        }
+        .accessibilityLabel("Your agent is working")
+    }
+}
+
+/// MarkdownView draws an answer's Markdown: its blocks, each with its
+/// inline styles. Headings are no larger than a headline.
+struct MarkdownView: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(MarkdownBlock.parse(text).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .paragraph(let text):
+                    Text(Self.inline(text))
+                case .heading(let text):
+                    Text(Self.inline(text)).font(.headline)
+                case .quote(let text):
+                    HStack(spacing: 8) {
+                        Capsule().fill(.tertiary).frame(width: 3)
+                        Text(Self.inline(text)).foregroundStyle(.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                case .list(let items):
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(item.marker).monospacedDigit().foregroundStyle(.secondary)
+                                Text(Self.inline(item.text))
+                            }
+                        }
+                    }
+                case .code(let text):
+                    Text(text)
+                        .font(.callout.monospaced())
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 8, style: .continuous))
+                }
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    static func inline(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+}
+
+/// ToolsLine is the tools the agent used in a row, one quiet line until
+/// tapped.
+struct ToolsLine: View {
+    let lines: [TranscriptLine]
     @State private var isExpanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            Text(line.text.isEmpty ? String(localized: "Nothing came back yet.") : String(line.text.prefix(4000)))
-                .font(.footnote.monospaced())
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    if lines.allSatisfy(\.isDone) {
+                        Image(systemName: "checkmark.circle")
+                    } else {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text("Used \(Self.names(of: lines))")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label {
-                Text(line.detail)
-            } icon: {
-                if line.isDone {
-                    Image(systemName: "checkmark.circle")
-                } else {
-                    ProgressView().controlSize(.mini)
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                ForEach(lines) { line in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(line.detail).font(.caption.bold()).foregroundStyle(.secondary)
+                        Text(line.text.isEmpty ? String(localized: "Nothing came back yet.") : String(line.text.prefix(2000)))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
                 }
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
         }
-        .tint(.secondary)
+        .padding(.leading, 4)
+    }
+
+    /// The tools' names, each once, in the order first used.
+    static func names(of lines: [TranscriptLine]) -> String {
+        var seen: [String] = []
+        for line in lines where !seen.contains(line.detail) {
+            seen.append(line.detail)
+        }
+        return seen.joined(separator: ", ")
+    }
+}
+
+/// CheckInLine is a turn the agent took on its own, shown as where it came
+/// from: what started it is the agent's business, and its answer follows.
+struct CheckInLine: View {
+    let line: TranscriptLine
+
+    var body: some View {
+        Label(Self.label(of: line.detail), systemImage: Self.symbol(of: line.detail))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+    }
+
+    static func label(of marker: String) -> String {
+        switch CheckInOrigin(rawValue: marker) {
+        case .goal: String(localized: "Goal check-in")
+        case .goalNeedsYou: String(localized: "A goal needs you")
+        case .background: String(localized: "Background command ended")
+        case .backgroundWork: String(localized: "Background work finished")
+        case .schedule: String(localized: "Scheduled turn")
+        case .speakFirst: String(localized: "Started by the agent")
+        case .alert: String(localized: "Alert from your mail")
+        case .herdrQuestion: String(localized: "A coding session asks you")
+        case .herdrSession: String(localized: "A coding session finished")
+        case .approved: String(localized: "Approved after the turn ended")
+        case .declined: String(localized: "Declined after the turn ended")
+        case nil: marker
+        }
+    }
+
+    static func symbol(of marker: String) -> String {
+        switch CheckInOrigin(rawValue: marker) {
+        case .goal, .goalNeedsYou: "target"
+        case .background, .herdrSession, .herdrQuestion: "terminal"
+        case .backgroundWork: "list.bullet"
+        case .schedule: "calendar"
+        case .speakFirst: "sparkles"
+        case .alert: "bell"
+        case .approved: "checkmark"
+        case .declined: "xmark"
+        case nil: "bell"
+        }
     }
 }
 
@@ -161,7 +362,7 @@ struct CardView: View {
     let model: ConversationModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if line.kind == .approval {
                 Label(line.detail.isEmpty ? String(localized: "Approve?") : line.detail, systemImage: "hand.raised")
                     .font(.headline)
@@ -169,8 +370,7 @@ struct CardView: View {
                 Label("Your agent asks", systemImage: "questionmark.bubble")
                     .font(.headline)
             }
-            Text(TranscriptLineView.markdown(line.text))
-                .textSelection(.enabled)
+            MarkdownView(text: line.text)
             if line.isDone {
                 Label(resolutionText, systemImage: "checkmark.circle")
                     .font(.callout)
@@ -198,9 +398,6 @@ struct CardView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16, style: .continuous))
     }
 
     private var resolutionText: String {
@@ -208,6 +405,77 @@ struct CardView: View {
         case "approved": String(localized: "Approved")
         case "declined": String(localized: "Declined")
         default: line.resolution
+        }
+    }
+}
+
+/// CodingQuestionCard is a question one of the person's coding sessions
+/// asked, with its options as buttons: one press answers, or with several
+/// allowed, the chosen ones are sent together.
+struct CodingQuestionCard: View {
+    let line: TranscriptLine
+    let model: ConversationModel
+    @State private var chosen: Set<Int> = []
+
+    var body: some View {
+        if let question = line.codingQuestion {
+            VStack(alignment: .leading, spacing: 10) {
+                Label {
+                    Text(verbatim: question.sessionName.isEmpty ? question.codingAgentName : "\(question.codingAgentName) · \(question.sessionName)")
+                } icon: {
+                    Image(systemName: "terminal")
+                }
+                .font(.subheadline.bold())
+                .foregroundStyle(.secondary)
+                MarkdownView(text: question.questionText)
+                if line.isDone {
+                    Label(line.resolution.isEmpty ? String(localized: "Answered") : line.resolution, systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(question.choices, id: \.optionNumber) { option in
+                        Button {
+                            if question.isMultipleChoice {
+                                if chosen.contains(option.optionNumber) {
+                                    chosen.remove(option.optionNumber)
+                                } else {
+                                    chosen.insert(option.optionNumber)
+                                }
+                            } else {
+                                Task { await model.answerCodingQuestion(line, options: [option], freeText: nil) }
+                            }
+                        } label: {
+                            HStack {
+                                if question.isMultipleChoice {
+                                    Image(systemName: chosen.contains(option.optionNumber) ? "checkmark.circle.fill" : "circle")
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(option.optionLabel)
+                                    if !option.optionDescription.isEmpty {
+                                        Text(option.optionDescription).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.glass)
+                    }
+                    if question.isMultipleChoice {
+                        Button("Send") {
+                            let options = question.choices.filter { chosen.contains($0.optionNumber) }
+                            Task { await model.answerCodingQuestion(line, options: options, freeText: nil) }
+                        }
+                        .buttonStyle(.glassProminent)
+                        .disabled(chosen.isEmpty)
+                    }
+                    if question.options.contains(where: { $0.herdrOptionKind != "choice" }) {
+                        Text("Or type your answer below.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 }

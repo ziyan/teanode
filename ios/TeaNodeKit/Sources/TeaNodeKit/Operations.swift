@@ -52,6 +52,11 @@ public enum Documents {
           RegisterAgentPhone(phoneName: $phoneName, phoneModel: $phoneModel, pushRegistration: $pushRegistration, payloadKey: $payloadKey) { id }
         }
         """
+    public static let answerCodingQuestion = """
+        mutation ($computer: String, $paneId: String!, $questionFingerprint: String!, $optionNumbers: [Int!], $optionLabels: [String!], $freeText: String) {
+          AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, optionLabels: $optionLabels, freeText: $freeText) { isAnswerAccepted answeredWith }
+        }
+        """
     public static let conversationEvents = """
         subscription ($conversationId: String!) {
           AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId }
@@ -63,7 +68,7 @@ public enum Documents {
         "session": session, "conversations": conversations, "conversation": conversation, "ask": ask,
         "startConversation": startConversation, "resolveConfirmation": resolveConfirmation, "answerQuestion": answerQuestion,
         "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
-        "conversationEvents": conversationEvents,
+        "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
     ]
 }
 
@@ -152,6 +157,33 @@ extension Connection {
         _ = try await execute(Documents.answerQuestion, variables: [
             "runId": .string(runId), "callId": .string(callId), "answer": .string(answer),
         ], as: Answer.self)
+    }
+
+    /// Answers a coding session's question: the options chosen, or what to
+    /// type. Returns how the session took it, in its words.
+    public func answerCodingQuestion(_ question: CodingQuestion, options: [CodingQuestion.Option], freeText: String?) async throws -> String {
+        struct Answer: Decodable, Sendable {
+            struct Answered: Decodable, Sendable {
+                let isAnswerAccepted: Bool
+                let answeredWith: String
+            }
+            let AnswerAgentHerdrQuestion: Answered
+        }
+        var variables: [String: JSONValue] = [
+            "computer": .string(question.computer), "paneId": .string(question.paneId),
+            "questionFingerprint": .string(question.questionFingerprint),
+        ]
+        if let freeText {
+            variables["freeText"] = .string(freeText)
+        } else {
+            variables["optionNumbers"] = .array(options.map { .number(Double($0.optionNumber)) })
+            variables["optionLabels"] = .array(options.map { .string($0.optionLabel) })
+        }
+        let answered = try await execute(Documents.answerCodingQuestion, variables: variables, as: Answer.self).AnswerAgentHerdrQuestion
+        guard answered.isAnswerAccepted else {
+            throw TeaNodeError.refused("The coding session did not take that answer. It may have moved on.")
+        }
+        return answered.answeredWith
     }
 
     public func stopRun(_ runId: String) async throws {

@@ -27,7 +27,7 @@ struct ConnectView: View {
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("On a computer, open your dashboard. Under Agent, find Phones and choose Connect a phone.", systemImage: "1.circle")
+                        Label("On a computer, open your dashboard. In Settings, open Phones and choose Connect a phone.", systemImage: "1.circle")
                         Label("Scan the code it shows.", systemImage: "2.circle")
                     }
                     .symbolRenderingMode(.hierarchical)
