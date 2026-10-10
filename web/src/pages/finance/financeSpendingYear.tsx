@@ -250,9 +250,14 @@ export function SpendingByYearPanel({
         <SeriesChart
           label={t('finance.cashFlowByYearTitle')}
           keys={years.map((candidate) => candidate.year)}
-          keyLabel={yearLabel}
+          // The year alone under its columns: "2024 from Mar, earlier not
+          // shown" is too long to fit under one, and is said in full at the
+          // top of its tooltip instead.
+          keyLabel={(key) => key}
+          keyTitle={yearLabel}
+          isEveryDipShown
           format={(value) => formatMoney(value, currency)}
-          axisFormat={(value) => compactMoney(value, currency)}
+          axisFormat={(value, precision) => compactMoney(value, currency, precision)}
           headline={formatMoney(chosen?.spendingAmount ?? 0, currency)}
           caption={caption}
           series={[

@@ -7,6 +7,7 @@ import {
   EvaluationRun,
   MemoryCheckSection,
   isMissedOrWrong,
+  scoreChangePoints,
   scoreHistory,
   sparklinePoints,
   visibleQuestions,
@@ -92,6 +93,13 @@ it('orders the history oldest first and leaves out running runs and runs without
     run('earliest', '2030-01-01T00:00:00Z', 60),
   ]
   expect(scoreHistory(runs, 'memory').map((entry) => entry.runId)).toEqual(['earliest', 'latest'])
+})
+
+it('measures the change between the rounded first and last scores, and has none for a lone run', () => {
+  expect(scoreChangePoints([{ scorePercent: 66.4 }, { scorePercent: 90 }, { scorePercent: 72.2 }])).toBe(6)
+  expect(scoreChangePoints([{ scorePercent: 75 }, { scorePercent: 72 }])).toBe(-3)
+  expect(scoreChangePoints([{ scorePercent: 70.2 }, { scorePercent: 69.8 }])).toBe(0)
+  expect(scoreChangePoints([{ scorePercent: 70 }])).toBeNull()
 })
 
 it('counts missed, wrong, invented and stale as the ones to read, and not known as right', () => {

@@ -203,6 +203,24 @@ function formatPercent(scorePercent: number): string {
   return `${Math.round(scorePercent)}%`
 }
 
+// How many points a source's score moved from the first run in its history
+// to the last, or null with fewer than two runs, where there is nothing to
+// compare. The scores are rounded first, so the change is the difference
+// between the two percents the person can read, and a drift of a fraction
+// of a point is unchanged rather than "up 0 points".
+export function scoreChangePoints(history: { scorePercent: number }[]): number | null {
+  if (history.length < 2) return null
+  return Math.round(history[history.length - 1].scorePercent) - Math.round(history[0].scorePercent)
+}
+
+// A run's day, short, for the line under the sparkline and its spoken
+// description. The hour is left out: the full time is on each point.
+function formatRunDay(startedAt: string, language: string): string {
+  const parsed = new Date(startedAt)
+  if (Number.isNaN(parsed.getTime())) return startedAt
+  return parsed.toLocaleDateString(language, { month: 'short', day: 'numeric' })
+}
+
 function messageOf(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught)
 }
@@ -226,7 +244,10 @@ const SPARKLINE_PADDING_PIXELS = 5
 
 // A line of one source's scores. Small and without axes: it is there to
 // say whether the score is rising, and the number beside it says where it
-// is. Each point names its run and its score on hover.
+// is. Each point names its run and its score on hover. On the whole scale
+// a move of a few points is too small to see, and a hover title reaches
+// neither a touch screen nor a keyboard, so a line of text under it says
+// how far the score moved since the first run shown.
 function ScoreSparkline({
   history,
   label,
@@ -234,47 +255,73 @@ function ScoreSparkline({
   history: { runId: string; startedAt: string; scorePercent: number }[]
   label: string
 }) {
+  const { t, plural, language } = useTranslation()
   const points = sparklinePoints(
     history.map((entry) => entry.scorePercent),
     SPARKLINE_WIDTH_PIXELS,
     SPARKLINE_HEIGHT_PIXELS,
     SPARKLINE_PADDING_PIXELS,
   )
-  const description = `${label}: ${history.map((entry) => formatPercent(entry.scorePercent)).join(', ')}`
+  const description = `${label}: ${history
+    .map((entry) => `${formatRunDay(entry.startedAt, language)} ${formatPercent(entry.scorePercent)}`)
+    .join(', ')}`
+  const changePoints = scoreChangePoints(history)
+  const firstRunDay = formatRunDay(history[0].startedAt, language)
+  let changeText: string | null = null
+  if (changePoints !== null) {
+    if (changePoints > 0) {
+      changeText = plural(
+        changePoints,
+        { one: 'memoryCheck.scoreUpOne', other: 'memoryCheck.scoreUpOther' },
+        { day: firstRunDay },
+      )
+    } else if (changePoints < 0) {
+      changeText = plural(
+        -changePoints,
+        { one: 'memoryCheck.scoreDownOne', other: 'memoryCheck.scoreDownOther' },
+        { day: firstRunDay },
+      )
+    } else {
+      changeText = t('memoryCheck.scoreUnchanged', { day: firstRunDay })
+    }
+  }
   return (
-    <svg
-      className="memory-check-sparkline"
-      width={SPARKLINE_WIDTH_PIXELS}
-      height={SPARKLINE_HEIGHT_PIXELS}
-      viewBox={`0 0 ${SPARKLINE_WIDTH_PIXELS} ${SPARKLINE_HEIGHT_PIXELS}`}
-      role="img"
-      aria-label={description}
-    >
-      <line
-        className="memory-check-sparkline-baseline"
-        x1={0}
-        x2={SPARKLINE_WIDTH_PIXELS}
-        y1={SPARKLINE_HEIGHT_PIXELS - SPARKLINE_PADDING_PIXELS}
-        y2={SPARKLINE_HEIGHT_PIXELS - SPARKLINE_PADDING_PIXELS}
-      />
-      {points.length > 1 ? (
-        <polyline
-          className="memory-check-sparkline-line"
-          points={points.map((point) => `${point.xPixels},${point.yPixels}`).join(' ')}
+    <>
+      <svg
+        className="memory-check-sparkline"
+        width={SPARKLINE_WIDTH_PIXELS}
+        height={SPARKLINE_HEIGHT_PIXELS}
+        viewBox={`0 0 ${SPARKLINE_WIDTH_PIXELS} ${SPARKLINE_HEIGHT_PIXELS}`}
+        role="img"
+        aria-label={description}
+      >
+        <line
+          className="memory-check-sparkline-baseline"
+          x1={0}
+          x2={SPARKLINE_WIDTH_PIXELS}
+          y1={SPARKLINE_HEIGHT_PIXELS - SPARKLINE_PADDING_PIXELS}
+          y2={SPARKLINE_HEIGHT_PIXELS - SPARKLINE_PADDING_PIXELS}
         />
-      ) : null}
-      {points.map((point, index) => (
-        <circle
-          key={history[index].runId}
-          className="memory-check-sparkline-point"
-          cx={point.xPixels}
-          cy={point.yPixels}
-          r={index === points.length - 1 ? 4 : 3}
-        >
-          <title>{`${formatTime(history[index].startedAt)}: ${formatPercent(history[index].scorePercent)}`}</title>
-        </circle>
-      ))}
-    </svg>
+        {points.length > 1 ? (
+          <polyline
+            className="memory-check-sparkline-line"
+            points={points.map((point) => `${point.xPixels},${point.yPixels}`).join(' ')}
+          />
+        ) : null}
+        {points.map((point, index) => (
+          <circle
+            key={history[index].runId}
+            className="memory-check-sparkline-point"
+            cx={point.xPixels}
+            cy={point.yPixels}
+            r={index === points.length - 1 ? 4 : 3}
+          >
+            <title>{`${formatTime(history[index].startedAt)}: ${formatPercent(history[index].scorePercent)}`}</title>
+          </circle>
+        ))}
+      </svg>
+      {changeText ? <p className="muted memory-check-score-change">{changeText}</p> : null}
+    </>
   )
 }
 

@@ -140,6 +140,11 @@ export function FinanceNetWorthSection() {
   )
 }
 
+// NET_WORTH_ALL_DAYS is how far back "All" asks for: the server's longest
+// series, ten years. Asking with no start gave the server's default of
+// thirty days, so "All" drew the same chart as "30 days".
+const NET_WORTH_ALL_DAYS = 3650
+
 // changePercent is a change in net worth as a share of where the chart
 // starts: a tenth of a percent shows, since a large total moves by little.
 const changePercent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
@@ -149,7 +154,7 @@ function NetWorthChart() {
   const [range, setRange] = useState('90')
   const days = RANGES.find((candidate) => candidate.id === range)?.days ?? 90
   const today = personToday()
-  const from = days > 0 ? daysBefore(today, days) : undefined
+  const from = daysBefore(today, days > 0 ? days : NET_WORTH_ALL_DAYS)
   const { data, error, loading } = useQuery(
     () => graphql<{ NetWorth: NetWorth }>(NET_WORTH, { from, to: today }),
     [range],
@@ -159,6 +164,25 @@ function NetWorthChart() {
   const points = worth?.convertedNetWorthPoints ?? []
   const currency = worth?.reportingCurrencyCode || 'USD'
   const latest = points[points.length - 1]
+  // How far net worth moved from the chart's first day to a later one, in
+  // money and as a share of where it started. The share is left out where
+  // the start is small beside the value, as when an account was linked
+  // partway through: a start of a tenth or less makes it a thousand
+  // percent that says nothing about growth.
+  const changeAt = (index: number): string | null => {
+    const first = points[0]
+    if (index <= 0 || !first || !points[index]) return null
+    const start = amountOf(first.netWorthAmount)
+    const value = amountOf(points[index].netWorthAmount)
+    const difference = value - start
+    const amount = formatMoney(Math.abs(difference), currency)
+    const isShareMeaningful = start !== 0 && Math.abs(start) >= Math.abs(value) * 0.1
+    const share = isShareMeaningful ? ` (${changePercent.format(Math.abs(difference / start))})` : ''
+    if (difference > 0) return t('finance.netWorthUp', { amount, share })
+    if (difference < 0) return t('finance.netWorthDown', { amount, share })
+    return t('finance.netWorthUnchanged')
+  }
+  const changeToLatest = changeAt(points.length - 1)
   return (
     <SettingsSection
       card
@@ -188,27 +212,26 @@ function NetWorthChart() {
           label={t('finance.netWorthTitle')}
           keys={points.map((point) => point.netWorthOn)}
           keyLabel={dayLabel}
+          keyTitle={(key) => formatDay(key)}
           format={(value) => formatMoney(value, currency)}
-          axisFormat={(value) => compactMoney(value, currency)}
+          axisFormat={(value, precision) => compactMoney(value, currency, precision)}
           headline={formatMoney(amountOf(latest?.netWorthAmount), currency)}
-          caption={latest ? t('finance.netWorthOn', { day: formatDay(latest.netWorthOn) }) : undefined}
+          caption={
+            latest
+              ? [
+                  t('finance.netWorthOn', { day: formatDay(latest.netWorthOn) }),
+                  changeToLatest
+                    ? t('finance.netWorthChangeSince', { change: changeToLatest, day: formatDay(points[0].netWorthOn) })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : undefined
+          }
           isFitted
           tooltipNote={(index) => {
-            const first = points[0]
-            if (index === 0 || !first) return null
-            const start = amountOf(first.netWorthAmount)
-            const difference = amountOf(points[index].netWorthAmount) - start
-            const amount = formatMoney(Math.abs(difference), currency)
-            const share = start === 0 ? '' : ` (${changePercent.format(Math.abs(difference / start))})`
-            return {
-              label: t('finance.netWorthSince', { day: dayLabel(first.netWorthOn) }),
-              text:
-                difference > 0
-                  ? t('finance.netWorthUp', { amount, share })
-                  : difference < 0
-                    ? t('finance.netWorthDown', { amount, share })
-                    : t('finance.netWorthUnchanged'),
-            }
+            const change = changeAt(index)
+            return change ? { label: t('finance.netWorthSince', { day: formatDay(points[0].netWorthOn) }), text: change } : null
           }}
           series={[
             {

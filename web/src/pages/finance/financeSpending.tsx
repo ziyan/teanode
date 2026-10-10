@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatMoney } from '../../components/common'
 import { MeterBar } from '../../components/budgetBar'
-import { SeriesChart } from '../../components/seriesChart'
+import { SeriesChart, dayLabel } from '../../components/seriesChart'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
@@ -169,8 +169,9 @@ function SpendingByMonthPanel({
           label={t('finance.cashFlowByMonthTitle')}
           keys={months.map((candidate) => candidate.cashFlowMonth)}
           keyLabel={(key) => monthLabel(key)}
+          isEveryDipShown
           format={(value) => formatMoney(value, currency)}
-          axisFormat={(value) => compactMoney(value, currency)}
+          axisFormat={(value, precision) => compactMoney(value, currency, precision)}
           headline={formatMoney(spentOf(chosen?.spendingAmount), currency)}
           caption={
             month === currentMonth
@@ -270,8 +271,9 @@ function SpendingByDayChart({ month }: { month: string }) {
           label={t('finance.spendingByDay')}
           keys={keys}
           keyLabel={(key) => key}
+          keyTitle={(key) => dayLabel(`${month}-${key.padStart(2, '0')}`)}
           format={(value) => formatMoney(value, currency)}
-          axisFormat={(value) => compactMoney(value, currency)}
+          axisFormat={(value, precision) => compactMoney(value, currency, precision)}
           series={[
             {
               id: 'month',
