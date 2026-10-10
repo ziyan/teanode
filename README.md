@@ -94,7 +94,9 @@ cut in, or mute the microphone for a word with somebody else.
 
 With herdr on your computers, the agent sees every Claude Code and Codex
 session, reads what each did, types into one where you can see it, and brings
-you the questions they stop to ask, with the options as buttons.
+you the questions they stop to ask, with the options as buttons. The other
+way round, hooks show those sessions what the agent's memory knows about the
+checkout they run in.
 
 ![The agent's own settings page](docs/images/agent.jpg)
 
@@ -248,9 +250,20 @@ never leaves the server.
 
 **Your coding sessions.** Through herdr on each attached computer, the agent
 lists your Claude Code and Codex sessions, reads them, types an instruction
-into one, answers the questions they ask, and tells you when one finishes. With
-`teanode hook install`, the sessions themselves are shown what the agent's
-memory knows about the checkout they run in.
+into one, answers the questions they ask, and tells you when one finishes.
+
+**Memory in your coding sessions.** `teanode hook install claude-code` (or
+`codex`) adds hooks that show each session what the agent knows about the
+checkout it runs in. When a session starts: the project's page and its facts
+most in use, and where the last session in that directory stopped (your last
+requests and the start of its last answer, read from the transcript). Before
+each prompt: what the prompt recalls and the lessons close to it, kept to the
+checkout's project so your mail and money stay out of the coding tool. After
+each answer: the computer's transcript source reads the session within a
+minute, so the next one knows where this one stopped. A hook that fails shows
+nothing and never stops the tool, and `teanode agent memory checkout` prints
+what a session would be shown. [Memory in coding
+sessions](https://teanode.com/doc/coding-memory) has the details.
 
 **A memory that learns you.** The agent keeps what it learns as a graph of
 pages, each fact numbered and tied to the words it came from. It writes pages
