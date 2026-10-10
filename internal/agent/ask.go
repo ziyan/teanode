@@ -1081,6 +1081,17 @@ func (self *AskRun) turn() error {
 		}
 		self.offered = withoutDashboard
 	}
+	// A tool that asks the person's browser goes wherever they are not
+	// writing in one; the prompt says so instead (see locationLine).
+	if settings.Headless || !surfaceOf(settings.Surface).canLocate {
+		withoutBrowser := self.offered[:0:0]
+		for _, tool := range self.offered {
+			if !tool.BrowserOnly {
+				withoutBrowser = append(withoutBrowser, tool)
+			}
+		}
+		self.offered = withoutBrowser
+	}
 	if settings.ReadOnly || settings.Allow != nil {
 		kept := self.offered[:0:0]
 		for _, tool := range self.offered {
@@ -2364,7 +2375,11 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	// replies it draws as buttons above the box, to send with a click.
 	where := surfaceOf(settings.Surface)
 	if where.situationLine != "" {
-		blocks = append(blocks, "<where>\n"+where.situationLine+"\n</where>")
+		situation := where.situationLine
+		if !where.canLocate && !settings.Headless && settings.Surface != backgroundSurface {
+			situation += " " + locationLine
+		}
+		blocks = append(blocks, "<where>\n"+situation+"\n</where>")
 	}
 	if where.hasSuggestedReplies {
 		blocks = append(blocks, suggestedRepliesBlock)

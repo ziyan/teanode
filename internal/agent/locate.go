@@ -18,6 +18,11 @@ var _ tools.Locating = (*AskRun)(nil)
 // where they are, and that question waits on them.
 const locationWait = time.Minute
 
+// locationLine tells a turn written anywhere but the dashboard in a
+// browser that it has no way to know where the person is, so the agent
+// asks instead of guessing. The location tool is not offered there.
+const locationLine = "Their location is not available here: it comes only from their browser while they chat with you in the dashboard. Ask them where they are when it matters."
+
 // LocationAnswer is what the browser says to a location call: where it
 // is, or, in ErrorMessage, why it cannot say.
 type LocationAnswer struct {

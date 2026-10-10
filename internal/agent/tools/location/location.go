@@ -17,10 +17,11 @@ func init() {
 	tools.Register(func() []*tools.Tool {
 		return []*tools.Tool{
 			{
-				Name:   "location",
-				Family: tools.FamilyGeneral,
-				Core:   true,
-				Risk:   tools.RiskRead,
+				Name:        "location",
+				Family:      tools.FamilyGeneral,
+				Core:        true,
+				BrowserOnly: true,
+				Risk:        tools.RiskRead,
 				Description: "Where the person is now: asks the browser they are chatting with you in for its location (latitude, longitude, accuracy). " +
 					"Use it when the answer depends on where they are (weather here, what is near me, how long to get home) and they have not said. " +
 					"It works only while they write to you from the dashboard in a browser, and the browser may ask them first; anywhere else it says the location is not available, and then you ask them where they are. " +
