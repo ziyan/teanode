@@ -1,0 +1,44 @@
+import TeaNodeKit
+import UIKit
+import UserNotifications
+
+/// AppDelegate is what iOS tells the app about notifications: the device
+/// token to register with the relay, and a button pressed on a notification.
+/// It holds the app's model, so the screens and it reach the same one.
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    let app = AppModel()
+
+    func application(
+        _ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories(NotificationCategories.fixed)
+        return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        Task { await app.register(deviceToken: deviceToken) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        app.noteNotificationFailure(error)
+    }
+
+    /// A notification arriving while the app is open is shown all the same:
+    /// the server holds back what the person is looking at already.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let pressed = PressedButton(response)
+        await perform(pressed)
+    }
+
+    private func perform(_ pressed: PressedButton) async {
+        await app.perform(pressed)
+    }
+}

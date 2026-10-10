@@ -130,6 +130,17 @@ public struct AgentEvent: Codable, Hashable, Sendable {
     }
 }
 
+/// AgentPhone is this phone as the server knows it.
+public struct AgentPhone: Codable, Hashable, Sendable {
+    public let id: String
+    /// The kinds it is told about; empty is every kind.
+    public let notificationKinds: [String]
+    public let canBeNotified: Bool
+
+    /// Every kind, in the order a person chooses among them.
+    public static let allNotificationKinds = ["message", "approval", "question", "answer"]
+}
+
 /// ServerTime reads the server's times.
 public enum ServerTime {
     /// The date an RFC 3339 time stands for; nil for anything else. Go

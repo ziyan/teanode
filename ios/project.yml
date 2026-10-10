@@ -28,19 +28,23 @@ targets:
       - TeaNode/Resources
     dependencies:
       - package: TeaNodeKit
+      - target: TeaNodeNotification
     # teanode.com/app/connect links open the app (the site serves the
     # association file), so scanning a connect code with the Camera does.
+    # Notifications, and a keychain group the notification extension
+    # shares, so it can read the key notifications are encrypted with.
     entitlements:
       path: TeaNode/TeaNode.entitlements
       properties:
         com.apple.developer.associated-domains:
           - applinks:teanode.com
+        aps-environment: development
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER)
         PRODUCT_NAME: TeaNode
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
@@ -59,6 +63,39 @@ targets:
         # The app encrypts nothing beyond the https the system provides, which
         # export rules exempt; saying so here spares every upload the question.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
+
+  # Decrypts each notification before iOS shows it, and gives it its
+  # buttons. Neither Apple nor the relay can read what a notification says.
+  TeaNodeNotification:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeaNodeNotification
+      # The buttons a notification has, and their words, shared with the app.
+      - TeaNode/Sources/NotificationCategories.swift
+      - TeaNode/Resources/Localizable.xcstrings
+    dependencies:
+      - package: TeaNodeKit
+    entitlements:
+      path: TeaNodeNotification/TeaNodeNotification.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+    info:
+      path: TeaNodeNotification/Info.plist
+      properties:
+        CFBundleDisplayName: TeaNode
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).notification
+        # The Swift 5 language mode: see NotificationService.swift.
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
 
 schemes:
   TeaNode:

@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import TeaNodeKit
 import UIKit
+import UserNotifications
 
 /// AppModel is the app's sign-in: the account kept in the keychain, the
 /// connection made from it, and connecting and signing out.
@@ -24,6 +25,18 @@ final class AppModel {
         get { openedLinkText != nil }
         set { if !newValue { openedLinkText = nil } }
     }
+
+    /// This phone as the server knows it, once it has registered.
+    private(set) var phone: AgentPhone?
+
+    /// Whether the person allowed notifications.
+    private(set) var isNotificationAllowed = false
+
+    /// Why notifications could not be set up, for Settings.
+    private(set) var notificationProblemText: String?
+
+    /// A conversation a pressed notification asks to open.
+    var openedConversationId: String?
 
     let store = KeychainAccountStore()
     let transport: any HTTPTransport
@@ -50,6 +63,12 @@ final class AppModel {
             }
         #endif
         transport = URLSessionTransport()
+        // A sign-in kept before the app shared a keychain group with its
+        // notification extension moves into the shared one, once.
+        if !defaults.bool(forKey: "isKeychainShared") {
+            try? Keychain.moveToSharedGroup("account")
+            defaults.set(true, forKey: "isKeychainShared")
+        }
         if let saved = try? store.load() {
             use(saved)
         }
@@ -95,9 +114,115 @@ final class AppModel {
         try? store.save(pending.account)
         use(pending.account)
         signedOutText = nil
-        // A server without phones yet (before notifications came) refuses
-        // this, which costs nothing: the phone works without it.
-        try? await connection?.registerPhone(phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier)
+        await setUpNotifications()
+    }
+
+    /// Asks to send notifications and registers for them. Done after
+    /// connecting and each time the app starts, so a new device token, or a
+    /// registration the relay no longer takes, heals on its own.
+    func setUpNotifications() async {
+        guard let connection else { return }
+        #if DEBUG
+            // The screenshots CI takes would show the permission prompt.
+            if DemoServer.isRequested { return }
+        #endif
+        let center = UNUserNotificationCenter.current()
+        isNotificationAllowed = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        if isNotificationAllowed {
+            // The device token arrives in AppDelegate, which hands it to
+            // register(deviceToken:).
+            UIApplication.shared.registerForRemoteNotifications()
+        } else {
+            // Listed on the dashboard all the same, as a phone that is told
+            // nothing.
+            phone = try? await connection.registerPhone(phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier)
+        }
+    }
+
+    /// Registers the device token with the relay and hands the sealed
+    /// registration, with the key notifications are encrypted with, to the
+    /// server.
+    func register(deviceToken: Data) async {
+        guard let connection else { return }
+        #if DEBUG
+            // A build installed from Xcode is delivered to by Apple's sandbox.
+            let isSandbox = true
+        #else
+            let isSandbox = false
+        #endif
+        do {
+            let pushRegistration = try await PushRelay(transport: transport).register(deviceToken: deviceToken, isSandbox: isSandbox)
+            phone = try await connection.registerPhone(
+                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier,
+                pushRegistration: pushRegistration, payloadKey: try PayloadKey.current())
+            notificationProblemText = nil
+        } catch {
+            notificationProblemText = describe(error)
+        }
+    }
+
+    func noteNotificationFailure(_ error: Error) {
+        notificationProblemText = error.localizedDescription
+    }
+
+    /// Whether this phone is told about a kind of notification.
+    func wants(_ notificationKind: String) -> Bool {
+        guard let phone else { return true }
+        return phone.notificationKinds.isEmpty || phone.notificationKinds.contains(notificationKind)
+    }
+
+    /// Turns one kind of notification on or off for this phone. At least
+    /// one stays on: none chosen means every kind.
+    func setNotificationKind(_ notificationKind: String, isOn: Bool) async {
+        guard let connection, let phone, wants(notificationKind) != isOn else { return }
+        var kinds = phone.notificationKinds.isEmpty ? AgentPhone.allNotificationKinds : phone.notificationKinds
+        if isOn {
+            kinds.append(notificationKind)
+        } else {
+            kinds.removeAll { $0 == notificationKind }
+        }
+        guard !kinds.isEmpty else { return }
+        do {
+            self.phone = try await connection.updatePhone(phone.id, notificationKinds: kinds)
+        } catch {
+            notificationProblemText = describe(error)
+        }
+    }
+
+    /// Does what a pressed notification button says, in the background
+    /// when the button does not open the app.
+    func perform(_ pressed: PressedButton) async {
+        guard let info = pressed.info else { return }
+        if pressed.actionIdentifier == UNNotificationDefaultActionIdentifier || pressed.actionIdentifier == "open" {
+            if !info.conversationId.isEmpty {
+                openedConversationId = info.conversationId
+            }
+            return
+        }
+        guard let connection else { return }
+        do {
+            switch pressed.actionIdentifier {
+            case "approve", "deny":
+                try await connection.resolveConfirmation(runId: info.runId, callId: info.callId, isApproved: pressed.actionIdentifier == "approve")
+            case "reply":
+                let text = (pressed.typedText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                if info.notificationKind == "question", !info.callId.isEmpty {
+                    try await connection.answerQuestion(runId: info.runId, callId: info.callId, answer: text)
+                } else {
+                    _ = try await connection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
+                }
+            default:
+                guard let answer = info.answers[pressed.actionIdentifier] else { return }
+                try await connection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
+            }
+        } catch {
+            // Nobody is looking at the app: say so where the button was.
+            let content = UNMutableNotificationContent()
+            content.title = "TeaNode"
+            content.body = String(localized: "That did not reach your agent: \(describe(error))")
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
     }
 
     /// Gives up a sign-in the person chose not to keep.
@@ -112,8 +237,10 @@ final class AppModel {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
         try? store.delete()
+        try? PayloadKey.forget()
         account = nil
         connection = nil
+        phone = nil
         self.signedOutText = signedOutText
     }
 
@@ -164,5 +291,19 @@ enum Device {
         return withUnsafeBytes(of: &system.machine) { bytes in
             String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
         }
+    }
+}
+
+/// PressedButton is a button pressed on a notification, read out of iOS's
+/// response so it can cross to the main actor.
+struct PressedButton: Sendable {
+    let actionIdentifier: String
+    let typedText: String?
+    let info: NotificationInfo?
+
+    init(_ response: UNNotificationResponse) {
+        actionIdentifier = response.actionIdentifier
+        typedText = (response as? UNTextInputNotificationResponse)?.userText
+        info = NotificationInfo(userInfo: response.notification.request.content.userInfo)
     }
 }

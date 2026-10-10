@@ -49,7 +49,12 @@ public enum Documents {
         """
     public static let registerPhone = """
         mutation ($phoneName: String!, $phoneModel: String!, $pushRegistration: String, $payloadKey: String) {
-          RegisterAgentPhone(phoneName: $phoneName, phoneModel: $phoneModel, pushRegistration: $pushRegistration, payloadKey: $payloadKey) { id }
+          RegisterAgentPhone(phoneName: $phoneName, phoneModel: $phoneModel, pushRegistration: $pushRegistration, payloadKey: $payloadKey) { id notificationKinds canBeNotified }
+        }
+        """
+    public static let updatePhone = """
+        mutation ($phoneId: String!, $notificationKinds: [String!]) {
+          UpdateAgentPhone(phoneId: $phoneId, notificationKinds: $notificationKinds) { id notificationKinds canBeNotified }
         }
         """
     public static let answerCodingQuestion = """
@@ -68,7 +73,7 @@ public enum Documents {
         "session": session, "conversations": conversations, "conversation": conversation, "ask": ask,
         "startConversation": startConversation, "resolveConfirmation": resolveConfirmation, "answerQuestion": answerQuestion,
         "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
-        "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
+        "updatePhone": updatePhone, "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
     ]
 }
 
@@ -214,14 +219,21 @@ extension Connection {
 
     /// Registers this phone with the server; push registration and key come
     /// once the person allows notifications.
-    public func registerPhone(phoneName: String, phoneModel: String, pushRegistration: String? = nil, payloadKey: String? = nil) async throws {
-        struct Answer: Decodable, Sendable {
-            struct Registered: Decodable, Sendable { let id: String }
-            let RegisterAgentPhone: Registered
-        }
+    @discardableResult
+    public func registerPhone(phoneName: String, phoneModel: String, pushRegistration: String? = nil, payloadKey: String? = nil) async throws -> AgentPhone {
+        struct Answer: Decodable, Sendable { let RegisterAgentPhone: AgentPhone }
         var variables: [String: JSONValue] = ["phoneName": .string(phoneName), "phoneModel": .string(phoneModel)]
         if let pushRegistration { variables["pushRegistration"] = .string(pushRegistration) }
         if let payloadKey { variables["payloadKey"] = .string(payloadKey) }
-        _ = try await execute(Documents.registerPhone, variables: variables, as: Answer.self)
+        return try await execute(Documents.registerPhone, variables: variables, as: Answer.self).RegisterAgentPhone
+    }
+
+    /// Chooses which kinds of notification this phone gets; none is every
+    /// kind.
+    public func updatePhone(_ phoneId: String, notificationKinds: [String]) async throws -> AgentPhone {
+        struct Answer: Decodable, Sendable { let UpdateAgentPhone: AgentPhone }
+        return try await execute(Documents.updatePhone, variables: [
+            "phoneId": .string(phoneId), "notificationKinds": .array(notificationKinds.map { .string($0) }),
+        ], as: Answer.self).UpdateAgentPhone
     }
 }

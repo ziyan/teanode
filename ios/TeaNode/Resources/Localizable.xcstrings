@@ -161,6 +161,38 @@
         }
       }
     },
+    "Answers to what you asked from the phone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンから尋ねたことへの答え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在手机上提问的回答"
+          }
+        }
+      }
+    },
+    "Approvals waiting for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの承認待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你批准的事项"
+          }
+        }
+      }
+    },
     "Approve?": {
       "localizations": {
         "ja": {
@@ -545,6 +577,38 @@
         }
       }
     },
+    "Notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        }
+      }
+    },
+    "Notifications are off for TeaNode. Turn them on to hear when your agent needs you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode の通知はオフです。オンにすると、エージェントがあなたを必要とするときに知らせます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 的通知已关闭。打开通知，助手需要你时就能知道。"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "ja": {
@@ -593,6 +657,38 @@
         }
       }
     },
+    "Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开设置"
+          }
+        }
+      }
+    },
     "Or type your answer below.": {
       "localizations": {
         "ja": {
@@ -609,6 +705,22 @@
         }
       }
     },
+    "Questions for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたへの質問"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要你回答的问题"
+          }
+        }
+      }
+    },
     "Remove picture": {
       "localizations": {
         "ja": {
@@ -621,6 +733,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除图片"
+          }
+        }
+      }
+    },
+    "Reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复"
           }
         }
       }
@@ -852,6 +980,22 @@
     "TeaNode": {
       "shouldTranslate": false
     },
+    "That did not reach your agent: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに届きませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没能送到助手：%@"
+          }
+        }
+      }
+    },
     "That is not a TeaNode connect code. Use the code on your dashboard's Connect a phone page.": {
       "localizations": {
         "ja": {
@@ -1024,6 +1168,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "版本"
+          }
+        }
+      }
+    },
+    "What your agent says on its own": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが自分から伝えること"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助理主动说的话"
           }
         }
       }

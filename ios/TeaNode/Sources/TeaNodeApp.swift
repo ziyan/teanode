@@ -5,7 +5,9 @@ import TeaNodeKit
 /// conversation with the agent.
 @main
 struct TeaNodeApp: App {
-    @State private var app = AppModel()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    private var app: AppModel { delegate.app }
 
     var body: some Scene {
         WindowGroup {
@@ -62,6 +64,17 @@ struct MainView: View {
         }
         .sheet(isPresented: $isShowingSettings) {
             SettingsView()
+        }
+        .task {
+            await app.setUpNotifications()
+        }
+        .onChange(of: app.openedConversationId) { _, conversationId in
+            guard let conversationId else { return }
+            app.openedConversationId = nil
+            isChoosing = false
+            isShowingSettings = false
+            // The kind is learned when the conversation loads.
+            conversation = AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
         }
         .alert(
             "Already connected",
@@ -185,6 +198,7 @@ struct SettingsView: View {
                         LabeledContent("Account", value: account.username)
                     }
                 }
+                NotificationsSection()
                 Section {
                     Button("Sign out", role: .destructive) {
                         isConfirmingSignOut = true
@@ -221,5 +235,63 @@ struct SettingsView: View {
         let marketing = info?["CFBundleShortVersionString"] as? String ?? ""
         let build = info?["CFBundleVersion"] as? String ?? ""
         return "\(marketing) (\(build))"
+    }
+}
+
+/// NotificationsSection is what this phone is told about, and the way to
+/// turn notifications on when the person said no at first.
+struct NotificationsSection: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Section {
+            if app.isNotificationAllowed, app.phone?.canBeNotified == true {
+                ForEach(AgentPhone.allNotificationKinds, id: \.self) { kind in
+                    NotificationKindToggle(notificationKind: kind)
+                }
+            } else {
+                Text("Notifications are off for TeaNode. Turn them on to hear when your agent needs you.")
+                    .foregroundStyle(.secondary)
+                Button("Open Settings") {
+                    if let address = URL(string: UIApplication.openNotificationSettingsURLString) {
+                        UIApplication.shared.open(address)
+                    }
+                }
+            }
+        } header: {
+            Text("Notifications")
+        } footer: {
+            if let text = app.notificationProblemText {
+                Text(text)
+            }
+        }
+    }
+}
+
+/// NotificationKindToggle turns one kind of notification on or off.
+struct NotificationKindToggle: View {
+    let notificationKind: String
+    @Environment(AppModel.self) private var app
+    @State private var isOn = true
+
+    var body: some View {
+        Toggle(Self.label(of: notificationKind), isOn: $isOn)
+            .onAppear { isOn = app.wants(notificationKind) }
+            .onChange(of: isOn) { _, wanted in
+                Task {
+                    await app.setNotificationKind(notificationKind, isOn: wanted)
+                    isOn = app.wants(notificationKind)
+                }
+            }
+    }
+
+    static func label(of notificationKind: String) -> String {
+        switch notificationKind {
+        case "message": String(localized: "What your agent says on its own")
+        case "approval": String(localized: "Approvals waiting for you")
+        case "question": String(localized: "Questions for you")
+        case "answer": String(localized: "Answers to what you asked from the phone")
+        default: notificationKind
+        }
     }
 }

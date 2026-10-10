@@ -211,3 +211,29 @@ final class MarkdownTests: XCTestCase {
         ])
     }
 }
+
+final class NotificationTests: XCTestCase {
+    func testThePhoneRegistersWithTheRelay() async throws {
+        let fake = FakeServer { _ in (200, #"{"pushRegistration":"a-sealed-registration"}"#) }
+        let sealed = try await PushRelay(transport: fake).register(deviceToken: Data([0x0a, 0xff]), isSandbox: true)
+        XCTAssertEqual(sealed, "a-sealed-registration")
+        XCTAssertEqual(fake.sent[0].url?.absoluteString, "https://mail.teanode.com/api/v1/push/registrations")
+        let body = try JSONDecoder().decode(JSONValue.self, from: fake.sent[0].httpBody ?? Data())
+        XCTAssertEqual(body["deviceToken"], .string("0aff"))
+        XCTAssertEqual(body["isSandbox"], .bool(true))
+    }
+
+    #if canImport(CryptoKit)
+        /// Sealed by the server's own code (push.EncryptContent) with the key
+        /// 0, 1, 2 ... 31, so the two sides are checked against each other.
+        func testWhatTheServerSealsTheExtensionOpens() throws {
+            let key = Data((0..<32).map { UInt8($0) }).base64EncodedString()
+            let sealed = "H8RRRtjjpug7CHBstkS2ic1gPC+8v2ETffkv/MTXRhaeqmtyQJlSIczFvR481L+D1BqhO2Yrfj7bLeBSFAqJ6salcR93DzAV0Hleqk+fuO6pBo99yOEC9Th0d3b6jj6DbnbFCqL2MZpVKCm4va3GD+K4WMEw53BqMqCutMuPKvhXNemi9I/xNGgsTk0DwtlofvJaDfsKruPrdHYcbh6GhJnlMoyNoFN89Jyh/44oVcTaSTfMrAwh6hSWET6IAKGuwhUaJl7bpmD3aJJMWjDthHDMClCZB9rbMhezpEl62YAnPDx1iknIqW/yjXFVsqXMv6bv8yMD2jIawXoa2PlPu3qpZXZY6GxXyvgRGazoTJREK2c9gW0="
+            let content = try PayloadKey.open(sealed, key: key)
+            XCTAssertEqual(content.notificationKind, "question")
+            XCTAssertEqual(content.body, "Which day suits you?")
+            XCTAssertEqual(content.buttons?.first, NotificationButton(label: "Friday", buttonAction: "answer:1"))
+            XCTAssertThrowsError(try PayloadKey.open(sealed, key: PayloadKey.make()))
+        }
+    #endif
+}
