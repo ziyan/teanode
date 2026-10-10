@@ -1,0 +1,47 @@
+# The Xcode project, described as text. XcodeGen turns this into
+# TeaNode.xcodeproj, which is not committed: run `xcodegen generate` in this
+# directory after changing it. See README.md.
+
+name: TeaNode
+
+options:
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+configFiles:
+  Debug: Configuration/Base.xcconfig
+  Release: Configuration/Base.xcconfig
+
+packages:
+  TeaNodeKit:
+    path: TeaNodeKit
+
+targets:
+  TeaNode:
+    type: application
+    platform: iOS
+    sources:
+      - TeaNode/Sources
+    dependencies:
+      - package: TeaNodeKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER)
+        PRODUCT_NAME: TeaNode
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: TeaNode
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+
+schemes:
+  TeaNode:
+    build:
+      targets:
+        TeaNode: all

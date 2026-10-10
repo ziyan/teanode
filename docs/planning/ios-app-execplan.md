@@ -33,6 +33,11 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [x] (2026-10-10) Researched what the server offers a native client: sign-in, the GraphQL API and its websocket, cards, attachments, voice, location, where unasked messages are delivered, devices, DAV and IMAP. Chose the scope with the person. Wrote this plan.
 - [x] (2026-10-10) Revised after review by the person: app tokens have full access; the app is for anyone with a server, so notifications go through a push relay from the start; the agent helps the person connect and learn the app.
 - [ ] Milestone 0: a build pipeline with no Mac, and the Apple developer setup.
+  - [x] (2026-10-10) The project's developer account is enrolled (an individual membership).
+  - [x] (2026-10-10) `ios/` scaffold: `TeaNodeKit` (server address, connect link, the `graphql-ws` messages, with tests that pass on Linux in the `swift:6.1` container), a first connect screen, `project.yml`, configuration, and `.github/workflows/ios.yml`.
+  - [ ] The macOS job passes on GitHub.
+  - [ ] The account's App IDs, app group, APNs key, App Store Connect key and app record (checklist in `ios/README.md`).
+  - [ ] The prototype notification to a development build.
 - [ ] Milestone 1: an app can sign in, by OAuth or by a pairing code, and get a token for the whole API.
 - [ ] Milestone 2: phones as devices, and notifications sent to them.
 - [ ] Milestone 3: the push relay.
