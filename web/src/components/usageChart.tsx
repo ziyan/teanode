@@ -65,6 +65,26 @@ function partsOf(row: UsageChartRow | undefined): Record<Part, number> {
 // for calls and tokens, which come one at a time. Quarters of a top of 5 put
 // gridlines at 1.25 and 3.75, and labels rounded to whole calls sat beside
 // lines that were not at them.
+// costLabel is a cost on the axis with precision more places than the
+// currency is written with, for gridlines closer together than a cent.
+function costLabel(amount: number, currency: string | undefined | null, precision: number): string {
+  if (precision === 0) return formatMoney(amount, currency)
+  const code = (currency || 'USD').toUpperCase()
+  try {
+    const usual = new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).resolvedOptions()
+      .maximumFractionDigits
+    const places = (usual ?? 2) + precision
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: places,
+      maximumFractionDigits: places,
+    }).format(amount)
+  } catch {
+    return formatMoney(amount, currency)
+  }
+}
+
 function dailyScale(values: number[], metric: Metric): ChartScale {
   const scale = chartScale(values)
   const step = scale.grid.length > 1 ? scale.grid[1] - scale.grid[0] : 1
@@ -122,8 +142,10 @@ export function UsageChart({
   const ceiling = isDaily ? scale.ceiling : Math.max(1e-9, ...values)
   const sum = rows.reduce((total, row) => total + measure(row, metric), 0)
   const format = (value: number) => (metric === 'cost' ? formatMoney(value, currency) : compact(value))
-  const axisLabels = axisLabelsFor(scale.grid, (value, precision) =>
-    metric === 'cost' ? formatMoney(value, currency) : compact(value, precision),
+  const axisLabels = axisLabelsFor(
+    scale.grid,
+    (value, precision) => (metric === 'cost' ? costLabel(value, currency, precision) : compact(value, precision)),
+    format,
   )
   const axisWidth = axisWidthFor(axisLabels)
 

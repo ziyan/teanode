@@ -149,13 +149,19 @@ export function compact(value: number, precision = 0): string {
 // axisLabelsFor is the gridlines' labels in the shortest form that still
 // tells each from the next: a net worth axis from $1.20M to $1.23M read
 // "$1.2M" on every line, which said nothing about the change it was drawn
-// to show.
-export function axisLabelsFor(grid: number[], label: (value: number, precision: number) => string): string[] {
+// to show. Where three more figures do not tell them apart either, a large
+// total that barely moved, each is said whole with fullLabel, and the axis
+// widens to fit.
+export function axisLabelsFor(
+  grid: number[],
+  label: (value: number, precision: number) => string,
+  fullLabel?: (value: number) => string,
+): string[] {
   for (let precision = 0; precision <= 3; precision++) {
     const labels = grid.map((value) => label(value, precision))
     if (new Set(labels).size === labels.length) return labels
   }
-  return grid.map((value) => label(value, 3))
+  return grid.map((value) => (fullLabel ? fullLabel(value) : label(value, 3)))
 }
 
 // useChartHover is the key a chart's tooltip is shown for. A touch screen
@@ -325,7 +331,7 @@ export function SeriesChart({
       ),
     [series, isFitted, isEveryDipShown],
   )
-  const axisLabels = axisLabelsFor(scale.grid, axisFormat ?? ((value) => format(value)))
+  const axisLabels = axisLabelsFor(scale.grid, axisFormat ?? ((value) => format(value)), format)
   const axisWidth = axisWidthFor(axisLabels)
 
   return (
@@ -507,7 +513,9 @@ function SeriesDrawing({
           </g>
         )
       })}
-      {floor < 0 && ceiling > 0 ? <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} /> : null}
+      {floor < 0 && ceiling > 0 ? (
+        <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} />
+      ) : null}
       {keys.map((key, index) => {
         const groupX = axisWidth + index * slot + (slot - groupWidth) / 2
         // With a key chosen, the others step back (less far than for the

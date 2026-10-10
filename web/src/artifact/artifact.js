@@ -8,11 +8,12 @@
   const root = document.documentElement
   // The drawer says the theme in the address after the #, and says it again
   // there when the person switches theme with the page open. Changing only
-  // that part does not reload the page, so it is read on every change.
+  // that part does not reload the page, so it is read on every change. A
+  // change that names no theme is the page's own, a link to a heading in
+  // it, and leaves the theme as it was.
   const followAskedTheme = () => {
     const asked = /theme=(dark|light)/.exec(window.location.hash || '')
     if (asked) root.setAttribute('data-theme', asked[1])
-    else root.removeAttribute('data-theme')
   }
   followAskedTheme()
 
@@ -78,9 +79,6 @@
         itemGap: 16,
         textStyle: { color: muted, fontFamily, fontSize: 12 },
         pageTextStyle: { color: muted },
-        // In a narrow drawer a legend of many names would wrap onto the
-        // plot; it pages instead.
-        type: 'scroll',
       },
       grid: { left: 4, right: 4, top: 48, bottom: 4, containLabel: true },
       tooltip: {
@@ -174,6 +172,16 @@
     return Object.assign({}, option, { tooltip })
   }
 
+  // In a narrow drawer a legend of many names would wrap onto the plot; it
+  // pages instead. Said on the option: ECharts takes a legend's type from
+  // the option alone, never from the theme.
+  const scrollingLegend = (option) => {
+    if (!option || !option.legend) return option
+    const withScroll = (legend) => (legend && typeof legend === 'object' && legend.type === undefined ? Object.assign({}, legend, { type: 'scroll' }) : legend)
+    const legend = Array.isArray(option.legend) ? option.legend.map(withScroll) : withScroll(option.legend)
+    return Object.assign({}, option, { legend })
+  }
+
   // A line of a level, such as a balance, a price or a weight, drawn from
   // zero is a flat line at the top of the box: the movement it exists to
   // show takes a few pixels. Its value axis is fitted to its values. Bars,
@@ -227,7 +235,7 @@
       drawnCharts.delete(target)
       previous.dispose()
     }
-    return draw(target, fittedValueAxes(tooltipTrigger(roomForTheTitle(option))))
+    return draw(target, fittedValueAxes(scrollingLegend(tooltipTrigger(roomForTheTitle(option)))))
   }
 
   // When the theme changes, the palette is read again from the page's

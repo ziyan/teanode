@@ -85,6 +85,14 @@ it('labels every gridline differently', () => {
   expect(axisLabelsFor([0, 5000, 10000], compact)).toEqual(['0', '5.0k', '10k'])
 })
 
+// A large total that barely moved: three more figures do not tell the
+// gridlines apart, so each is said whole.
+it('says the gridlines whole when no shorter form tells them apart', () => {
+  const grid = [1_000_000, 1_000_010, 1_000_020]
+  expect(new Set(axisLabelsFor(grid, compact)).size).toBe(1)
+  expect(axisLabelsFor(grid, compact, (value) => String(value))).toEqual(['1000000', '1000010', '1000020'])
+})
+
 // A month that lost a little money is drawn below zero when asked, not on
 // the zero line as if it broke even.
 it('reaches for every dip when asked', () => {

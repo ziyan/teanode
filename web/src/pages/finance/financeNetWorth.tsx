@@ -91,7 +91,6 @@ const ASSET_KINDS = [
   'other_liability',
 ]
 
-
 // How far back the chart reaches, in days; zero is from the first
 // valuation there is.
 const RANGES: {
@@ -168,7 +167,8 @@ function NetWorthChart() {
   // money and as a share of where it started. The share is left out where
   // the start is small beside the value, as when an account was linked
   // partway through: a start of a tenth or less makes it a thousand
-  // percent that says nothing about growth.
+  // percent that says nothing about growth. Nor where it started below zero
+  // or crossed it: a share of a debt is no measure of growth either.
   const changeAt = (index: number): string | null => {
     const first = points[0]
     if (index <= 0 || !first || !points[index]) return null
@@ -176,7 +176,7 @@ function NetWorthChart() {
     const value = amountOf(points[index].netWorthAmount)
     const difference = value - start
     const amount = formatMoney(Math.abs(difference), currency)
-    const isShareMeaningful = start !== 0 && Math.abs(start) >= Math.abs(value) * 0.1
+    const isShareMeaningful = start > 0 && value >= 0 && start >= value * 0.1
     const share = isShareMeaningful ? ` (${changePercent.format(Math.abs(difference / start))})` : ''
     if (difference > 0) return t('finance.netWorthUp', { amount, share })
     if (difference < 0) return t('finance.netWorthDown', { amount, share })
@@ -231,7 +231,9 @@ function NetWorthChart() {
           isFitted
           tooltipNote={(index) => {
             const change = changeAt(index)
-            return change ? { label: t('finance.netWorthSince', { day: formatDay(points[0].netWorthOn) }), text: change } : null
+            return change
+              ? { label: t('finance.netWorthSince', { day: formatDay(points[0].netWorthOn) }), text: change }
+              : null
           }}
           series={[
             {
@@ -358,9 +360,7 @@ function AssetsPanel({
   // was asked for: for one render after the reporting currency arrives, or
   // a reload brings a new currency, the answer held is still the last one.
   const isRatesReady =
-    isReportingCurrencyLoaded &&
-    !rates.loading &&
-    areRatesFor(rates.data, reportingCurrencyCode, foreignCurrencyCodes)
+    isReportingCurrencyLoaded && !rates.loading && areRatesFor(rates.data, reportingCurrencyCode, foreignCurrencyCodes)
   const currency = reportingCurrencyCode || 'USD'
   const slices = foldIntoOther(
     whole.groups
@@ -602,7 +602,10 @@ function AssetsPanel({
                                     count: String(shown.length),
                                     total: String(group.assets.length),
                                   })
-                                : plural(group.assets.length, { one: 'finance.assetCountOne', other: 'finance.assetCountOther' })}
+                                : plural(group.assets.length, {
+                                    one: 'finance.assetCountOne',
+                                    other: 'finance.assetCountOther',
+                                  })}
                             </span>
                           </button>
                         </td>
@@ -789,7 +792,12 @@ function AssetDialog({
           {value.trim() !== '' ? (
             <label>
               <span>{t('finance.valuedOn')}</span>
-              <input type="date" value={valuedOn} max={personToday()} onChange={(event) => setValuedOn(event.target.value)} />
+              <input
+                type="date"
+                value={valuedOn}
+                max={personToday()}
+                onChange={(event) => setValuedOn(event.target.value)}
+              />
             </label>
           ) : null}
         </>
@@ -888,7 +896,9 @@ function AssetPage({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void run(CLOSE_ASSET, { assetId: asset.id, shouldReopen: true }, t('finance.assetReopened'))}
+              onClick={() =>
+                void run(CLOSE_ASSET, { assetId: asset.id, shouldReopen: true }, t('finance.assetReopened'))
+              }
             >
               {t('finance.reopen')}
             </button>
