@@ -15,7 +15,7 @@ final class AppModel {
     var signedOutText: String?
 
     let store = KeychainAccountStore()
-    let transport = URLSessionTransport()
+    let transport: any HTTPTransport
 
     /// Names this install to the server, so that when the agent asks where
     /// the person is, the app the turn was started from is the one that
@@ -30,6 +30,15 @@ final class AppModel {
             drawerId = UUID().uuidString
             defaults.set(drawerId, forKey: "drawerId")
         }
+        #if DEBUG
+            if DemoServer.isRequested {
+                transport = DemoServer()
+                account = DemoServer.account
+                connection = Connection(account: DemoServer.account, transport: transport)
+                return
+            }
+        #endif
+        transport = URLSessionTransport()
         if let saved = try? store.load() {
             use(saved)
         }
