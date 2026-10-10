@@ -188,6 +188,7 @@ function NetWorthChart() {
           axisFormat={(value) => compactMoney(value, currency)}
           headline={formatMoney(amountOf(latest?.netWorthAmount), currency)}
           caption={latest ? t('finance.netWorthOn', { day: formatDay(latest.netWorthOn) }) : undefined}
+          isFitted
           series={[
             {
               id: 'netWorth',

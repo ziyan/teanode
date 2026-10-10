@@ -21,6 +21,23 @@ it('starts at zero when nothing is below it', () => {
   expect(scale.ceiling).toBeGreaterThanOrEqual(950)
 })
 
+// A net worth near a million that moved by a few thousand: a fitted scale
+// is drawn around the values, in round steps, not from zero.
+it('fits the scale around the values when asked', () => {
+  const scale = chartScale([1_012_000, 1_018_500, 1_009_300], true)
+  expect(scale.floor).toBeGreaterThan(900_000)
+  expect(scale.floor).toBeLessThanOrEqual(1_009_300)
+  expect(scale.ceiling).toBeGreaterThanOrEqual(1_018_500)
+  expect(scale.ceiling - scale.floor).toBeLessThan(20_000)
+  const steps = scale.grid.slice(1).map((value, index) => value - scale.grid[index])
+  expect(new Set(steps).size).toBe(1)
+  const flat = chartScale([500, 500], true)
+  expect(flat.floor).toBeLessThan(500)
+  expect(flat.ceiling).toBeGreaterThan(500)
+  const crossing = chartScale([-3000, 4000], true)
+  expect(crossing.grid).toContain(0)
+})
+
 // The axis is as wide as its widest label, within bounds.
 it('sizes the axis to its widest label', () => {
   expect(axisWidthFor(['$0', '$10k'])).toBeLessThan(axisWidthFor(['$0', '$1,250,000.00']))

@@ -38,7 +38,12 @@ export const CHART_NEGLIGIBLE_DIP = 0.05
 // drawn whole and money in reads against money out. A dip below zero that
 // is negligible beside the highest value does not add a step; it is drawn
 // at zero instead.
-export function chartScale(values: number[]): ChartScale {
+//
+// isFitted draws the range around the values instead, zero or not: a net
+// worth of a million that moved by ten thousand is a flat line on a scale
+// from zero. Only a line may be fitted; a column's height is its value.
+export function chartScale(values: number[], isFitted = false): ChartScale {
+  if (isFitted) return fittedScale(values)
   const highest = Math.max(0, ...values)
   const deepest = Math.min(0, ...values)
   const lowest = -deepest < highest * CHART_NEGLIGIBLE_DIP ? 0 : deepest
@@ -49,6 +54,26 @@ export function chartScale(values: number[]): ChartScale {
   const grid: number[] = []
   for (let index = -below; index <= above; index++) grid.push(index * step)
   return { floor: -below * step, ceiling: above * step, grid }
+}
+
+// fittedScale is a range in round steps, about four of them, from a step
+// at or below the lowest value to one at or above the highest. A line that
+// does not move gets a band around it, so it is drawn across the middle.
+function fittedScale(values: number[]): ChartScale {
+  if (values.length === 0) return { floor: 0, ceiling: 1, grid: [0, 1] }
+  let lowest = Math.min(...values)
+  let highest = Math.max(...values)
+  if (highest === lowest) {
+    const margin = Math.max(1, Math.abs(highest) * 0.01)
+    lowest -= margin
+    highest += margin
+  }
+  const step = niceCeiling((highest - lowest) / 4)
+  const bottom = Math.floor(lowest / step + 1e-9)
+  const top = Math.ceil(highest / step - 1e-9)
+  const grid: number[] = []
+  for (let index = bottom; index <= top; index++) grid.push(index * step)
+  return { floor: bottom * step, ceiling: top * step, grid }
 }
 
 // CHART_AXIS_LETTER is about how wide one figure of an axis label is drawn,
@@ -164,6 +189,7 @@ export function SeriesChart({
   onSelectKey,
   headAction,
   tooltipNote,
+  isFitted = false,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -183,14 +209,21 @@ export function SeriesChart({
   // otherwise work out from them: how far one series is from another on
   // that key. Null leaves it out for that key.
   tooltipNote?: (index: number) => { label: string; text: string } | null
+  // The scale drawn around the values rather than from zero, for a line
+  // whose changes are small beside its size (see chartScale).
+  isFitted?: boolean
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [holder, width] = useWidth()
   const labelAxis = axisFormat ?? format
 
   const scale = useMemo(
-    () => chartScale(series.flatMap((one) => one.values.filter((value): value is number => value !== null))),
-    [series],
+    () =>
+      chartScale(
+        series.flatMap((one) => one.values.filter((value): value is number => value !== null)),
+        isFitted,
+      ),
+    [series, isFitted],
   )
   const axisWidth = axisWidthFor(scale.grid.map(labelAxis))
 
