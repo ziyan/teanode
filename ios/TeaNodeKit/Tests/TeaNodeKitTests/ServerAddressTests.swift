@@ -48,22 +48,32 @@ final class ServerAddressTests: XCTestCase {
             "ws://localhost:10081/api/v1/agent/voice")
     }
 
-    func testAConnectLinkNamesItsServer() throws {
+    func testAConnectLinkCarriesItsServerAndCode() throws {
         let server = try ServerAddress(parsing: "mail.example.com:10443")
-        let link = ConnectLink.link(for: server)
-        XCTAssertEqual(link.host, "teanode.com")
-        XCTAssertEqual(ConnectLink.server(in: link), server)
+        let link = ConnectLink(server: server, connectCode: "abc123")
+        XCTAssertEqual(link.url.host, "teanode.com")
+        XCTAssertNil(link.url.query, "the server and code belong after the #, not in the query")
+        XCTAssertEqual(ConnectLink(link.url), link)
+    }
+
+    func testTheServersLinkIsRead() throws {
+        // As the server writes it: Go's url.Values, sorted, percent-encoded.
+        let written = URL(string: "https://teanode.com/app/connect#code=abc123&server=https%3A%2F%2Fmail.example.com%3A10443")!
+        let link = try XCTUnwrap(ConnectLink(written))
+        XCTAssertEqual(link.server.description, "https://mail.example.com:10443")
+        XCTAssertEqual(link.connectCode, "abc123")
     }
 
     func testOtherLinksAreNotConnectLinks() throws {
         for written in [
-            "https://example.com/app/connect?server=mail.example.com",
-            "https://teanode.com/app/other?server=mail.example.com",
-            "http://teanode.com/app/connect?server=mail.example.com",
+            "https://example.com/app/connect#server=mail.example.com",
+            "https://teanode.com/app/other#server=mail.example.com",
+            "http://teanode.com/app/connect#server=mail.example.com",
             "https://teanode.com/app/connect",
-            "https://teanode.com/app/connect?server=http://mail.example.com",
+            "https://teanode.com/app/connect?server=mail.example.com",
+            "https://teanode.com/app/connect#server=http://mail.example.com",
         ] {
-            XCTAssertNil(ConnectLink.server(in: URL(string: written)!), "for \(written)")
+            XCTAssertNil(ConnectLink(URL(string: written)!), "for \(written)")
         }
     }
 }
