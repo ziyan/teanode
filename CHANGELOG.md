@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.126.1] - 2026-10-10
+
+### Fixed
+
+- `teanode computer --help` no longer says only a conversation you are present in may use your computer; schedules and goals may too, and what needs your word is refused when you are not there. (#375)
+- A message with a phone photo no longer fails with "the provider answered 503" on a ChatGPT sign-in: the photo is shrunk to fit the request. (#376)
+
 ## [0.126.0] - 2026-10-10
 
 ### Added
