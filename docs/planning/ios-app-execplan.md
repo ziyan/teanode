@@ -80,10 +80,10 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   Rationale: the iPhone's own apps already read mail, calendars, contacts and reminders from the server. Native screens for the rest would be a large surface to keep in parity with the dashboard and the command line for little gain over asking the agent.
   Date/Author: 2026-10-10, the person and agent.
 
-- Decision: an app signs in through the server's existing OAuth, extended with a second scope, `api`, that grants a token for the whole API as the person; and registration accepts a private-use scheme, `com.teanode.app:/oauth` (a reverse domain name with one slash, RFC 8252 section 7.1), as a redirect.
-  Rationale: the CLI's loopback sign-in (`teanode auth login`) cannot be used, because an iPhone app cannot rely on a loopback listener while the sign-in sheet is open. Handing a token back through a scheme is safe only with PKCE, which the OAuth flow already requires. A scheme is the only redirect a self-hosted server can use.
-  Consequences: a token with scope `api` is listed among the person's tokens with the app's name and can be deleted there, like the CLI's. The consent page must say plainly that this grants everything the person can do. The `mcp` scope keeps its narrow resource. This needs the security review in Milestone 1.
-  Date/Author: 2026-10-10, agent; full access confirmed by the person.
+- Decision: the app gets its token, scope `api` (everything the person can do, as the person), only by presenting a one-time connect code the person made where they are signed in (next decision). The OAuth consent page never grants `api`. Registration accepts an app's own return address (`com.teanode.app:/oauth`, RFC 8252's private-use scheme) for apps using the agent tools.
+  Rationale: the person decided app tokens get full access. The first version also offered `api` on the consent page to any client registered with an app's own scheme, but registration is open and a scheme proves nothing about who registered it, so a stranger could send the person a link to grant everything to the stranger's program. Two security reviews of #379 (`docs/security/security-review.md`, seventh pass) settled it this way.
+  Consequences: a connected phone's token is listed under Settings > Apps as "TeaNode on <device>" and is disconnected there. A person with only a phone signs in to the dashboard in the phone's browser and taps "Open the TeaNode app" on the Connect page.
+  Date/Author: 2026-10-10, the person (full access); agent, revised after review.
 
 - Decision: a phone can also be connected without typing anything on it, by scanning a one-time connect code. Where the person is signed in (the dashboard's Connect page, `teanode agent phone pair`, or a card their agent shows), the server makes a code for them, good for ten minutes and one phone, and shows it as a QR code holding `https://teanode.com/app/connect#server=<address>&code=<secret>`. The phone's camera opens the app (or the App Store), and the app exchanges the code at `/oauth/token` (grant `urn:teanode:params:oauth:grant-type:connect-code`) for the same `api` token the OAuth sign-in gives. The server and the secret ride after the "#", which no browser sends, so they never reach `teanode.com`'s web server.
   Rationale: typing a server address and a strong password, and passing a second factor, on a phone is where people give up. Scanning removes all three.
@@ -186,16 +186,13 @@ Prototype in this milestone: send one notification from a Go test program on the
 
 ### Milestone 1: an app can sign in, by OAuth or by scanning a connect code, and get a token for the whole API
 
-At the end, `curl` can go through registration, authorization and token exchange with the redirect `com.teanode.app:/oauth` and scope `api`, and the token it gets can call `/api/v1/graphql`. And a connect code made on the dashboard's Connect page or with `teanode agent phone pair` can be exchanged by an app for a token, once.
+At the end, a connect code made on the dashboard's Connect page or with `teanode agent phone pair` can be exchanged by an app, once, for a token that can call `/api/v1/graphql`; and nothing else hands out such a token.
 
 OAuth sign-in:
 
-- In `apioauth/register.go`, `usableRedirect` also accepts a private-use scheme: a scheme containing a dot, followed by `:/` and a path, with no host. Any other non-`https` scheme is still refused.
-- In `apioauth/metadata.go`, list the scopes `mcp` and `api`.
-- In `apioauth/oauth.go`, the requested scope decides the token's resource: `mcp` keeps `/api/v1/mcp`; `api` sets no resource restriction, which is what `allowsResource` already allows for an ordinary API token. Store the scope on the authorization code so it cannot change between the consent page and the exchange.
-- On the consent page (`web/src/pages/authorize.tsx`), a request for `api` says "<client name> will be able to do everything you can do on this server, as you", with the redirect's scheme shown. `ReadOAuthAuthorizationRequest` returns the scope so the page can say it.
-- An `api` token is listed among the person's tokens (`ListTokens`) under the client's name, and deleting it there ends the app's sign-in. Refreshing keeps the same name.
-- Tests in `apioauth`: a private-use scheme registers and anything else odd is refused (`javascript:`, `file:`, a scheme without a dot, a scheme with a host); an `api` token works on GraphQL and an `mcp` token still does not; the scope cannot be changed at the exchange.
+- In `apioauth/register.go`, `usableRedirect` also accepts a private-use scheme: a scheme containing a dot, followed by `:/` and a path, with no host. Any other non-`https` scheme is still refused. The consent page still grants only the agent tools.
+- The token endpoint answers with the scope a token really has: `api` for a connected phone, `mcp` otherwise.
+- Tests: a private-use scheme registers and anything else odd is refused (`javascript:`, `file:`, a scheme without a dot, a scheme with a host); a token from the consent page is refused by GraphQL whatever the program registered as.
 
 Connect codes (as built in #379):
 
@@ -276,7 +273,8 @@ The app:
 
 - Connects on its first screen, three ways:
   - "Scan the code from your dashboard": the camera reads the connect code the dashboard, the command line or the agent shows (`https://teanode.com/app/connect#server=<address>&code=<secret>`), which connects the app to that server as the person, with nothing to type. The same link opened on the phone itself opens the app, or the App Store when the app is not installed (the `apple-app-site-association` file on `teanode.com` claims `/app/*` for the app).
-  - "Enter your server's address": the address, then the OAuth sign-in sheet, for a phone with no other screen at hand.
+  - "I only have this phone": opens the server's dashboard in the sign-in sheet (`ASWebAuthenticationSession`) at `/connect`, where the person signs in as they would in Safari, with a passkey if they have one, and taps "Open the TeaNode app", which hands the app the connect code.
+  - Before using any code, the app says "Connect to <server> as <account>?" (the account from `GetSession` once the token arrives, before it is kept) and refuses plain `http` to anything but its own machine. A doctored link could otherwise point the phone at somebody else's server with a code for somebody else's account.
   - "I don't have a server yet" opens the getting-started guide on `teanode.com`. The app does nothing without a server, and says so before asking for anything.
 - Checks the server's version (`ReadServerVersion` or the existing version query) and says plainly when the server is too old for the app, naming the version it needs.
 - Keeps several servers, like the command line's profiles.
@@ -364,7 +362,7 @@ Parity: `TestPhoneParity` now includes the tool. Command line: `teanode agent ph
 At the end, merging to `main` uploads a build to TestFlight, and a version is on the App Store for anyone.
 
 - `.github/workflows/ios.yml` gains a job on `main` that signs with a distribution certificate and profile kept as repository secrets, archives, and uploads with the App Store Connect API key (`xcodebuild -exportArchive` with `destination: upload`). If keeping the certificate in GitHub secrets proves fragile, Xcode Cloud does the same from App Store Connect with Apple holding the signing; record which was used and why.
-- `teanode.com` serves `/.well-known/apple-app-site-association` (JSON, no redirect) claiming `/app/*` for the app, and `/app/connect`, which on a computer explains what to do and on a phone opens the app or the App Store.
+- `teanode.com` serves `/.well-known/apple-app-site-association` (JSON, no redirect) claiming `/app/*` for the app. Its `/app/connect` page, which a link opens when the app is not installed, clears the fragment (`history.replaceState`) before anything else and loads no other site's scripts, since the fragment carries a connect code. On a computer that page explains what to do and on a phone opens the app or the App Store.
 - App Store review needs a server to sign in to: a review server with an invented person, mailbox and conversation, and its address and a connect link made for the reviewer's account, given in the review notes. Its data is invented throughout.
 - The App Store listing: description, screenshots of invented conversations, the privacy details (the app sends what the person types and shares to the server they connect it to; the relay sees encrypted notifications and the calling server's address; no tracking), and a privacy policy page on `teanode.com`.
 - Server version: the release notes name the first server version the app works with.
