@@ -70,7 +70,7 @@ import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
 import { isReplyReference, ReferenceChips, ReplyQuote } from './agentReferenceChips'
-import { SwipeToReply } from './swipeToReply'
+import { SwipeableLine } from './swipeableLine'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -3832,14 +3832,33 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // Swiping a message to the left, or its Reply button, makes the next
   // turn an answer to it: the quote shows above the box, and the turn
   // carries it, so the agent knows what "that" is. One at a time.
+  const shownText = (line: Line) =>
+    line.kind === 'assistant'
+      ? suggestedRepliesOf(withoutPartialMarker(line.text)).displayText.trim()
+      : line.kind === 'user'
+        ? line.text.trim()
+        : ''
   const replyTo = (line: Line) => {
     if (line.kind !== 'user' && line.kind !== 'assistant') return
-    const shown = line.kind === 'assistant' ? suggestedRepliesOf(withoutPartialMarker(line.text)).displayText : line.text
-    const quotedText = shown.trim().slice(0, REPLY_QUOTE_CHARACTERS)
+    const quotedText = shownText(line).slice(0, REPLY_QUOTE_CHARACTERS)
     if (!quotedText) return
     const reply: AgentReference = { agentMessageId: line.messageId, quotedRole: line.kind, quotedText }
     setReferences((previous) => [...previous.filter((reference) => !isReplyReference(reference)), reply])
     setTimeout(() => input.current?.focus(), 50)
+  }
+  // Swiping a message to the right, or its Copy button, copies what it
+  // says: an answer as the Markdown it was written in.
+  const copyLine = (line: Line) => {
+    const text = shownText(line)
+    if (!text) return
+    if (!navigator.clipboard) {
+      toast.failed(t('common.copyFailed'))
+      return
+    }
+    void navigator.clipboard.writeText(text).then(
+      () => toast.done(t('common.copied')),
+      () => toast.failed(t('common.copyFailed')),
+    )
   }
   const replying = references.find(isReplyReference)
   const chipped = references.filter((reference) => !isReplyReference(reference))
@@ -3855,23 +3874,31 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         const repliedTo = line.references?.find(isReplyReference)
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
-            <SwipeToReply className="agent-line user" replyLabel={t('agentDrawer.reply')} onReply={() => replyTo(line)}>
+            <SwipeableLine
+              className="agent-line user"
+              replyLabel={t('agentDrawer.reply')}
+              copyLabel={t('common.copy')}
+              onReply={() => replyTo(line)}
+              onCopy={() => copyLine(line)}
+            >
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
               {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
               {line.text}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-            </SwipeToReply>
+            </SwipeableLine>
           </Tooltip>
         )
       }
       case 'assistant':
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
-            <SwipeToReply
+            <SwipeableLine
               className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}
               replyLabel={t('agentDrawer.reply')}
+              copyLabel={t('common.copy')}
               onReply={() => replyTo(line)}
+              onCopy={() => copyLine(line)}
             >
               <Markdown
                 text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
@@ -3888,7 +3915,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
                 </div>
               )}
-            </SwipeToReply>
+            </SwipeableLine>
           </Tooltip>
         )
       case 'tool': {

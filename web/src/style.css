@@ -7095,38 +7095,48 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   overflow: hidden;
 }
 
-/* A message that can be replied to. On a touch screen it follows a finger
-   swiped to the left, and the browser keeps the vertical scroll; let go,
-   it springs back. */
-.agent-line-replyable {
+/* A message that can be replied to or copied. On a touch screen it
+   follows a finger swiped across, and the browser keeps the vertical
+   scroll; let go, it springs back. */
+.agent-line-swipeable {
   position: relative;
   touch-action: pan-y;
   transition: transform 0.18s ease-out;
 }
 
-.agent-line-replyable.swiping {
+.agent-line-swipeable.swiping {
   transition: none;
 }
 
-/* The arrow that shows in the room the swipe opens, brighter the nearer
-   letting go is to replying. */
-.agent-swipe-reply {
+/* The mark that shows in the room the swipe opens, brighter the nearer
+   letting go is to acting: Reply on the right of a line swiped left, Copy
+   on the left of one swiped right. */
+.agent-swipe-action {
   position: absolute;
   top: 50%;
-  left: calc(100% + 16px);
   display: inline-flex;
   transform: translateY(-50%);
   color: var(--muted);
   pointer-events: none;
 }
 
-/* With a mouse, a Reply button in the message's corner on hover; reached
-   by keyboard as well. Never on a touch screen, where the swipe is. */
-.agent-line-reply {
+.agent-swipe-action.reply {
+  left: calc(100% + 16px);
+}
+
+.agent-swipe-action.copy {
+  right: calc(100% + 16px);
+}
+
+/* With a mouse, Copy and Reply in the message's corner on hover; reached
+   by keyboard as well. Never on a touch screen, where the swipes are. */
+.agent-line-actions {
   position: absolute;
   top: -10px;
   right: 6px;
-  padding: 3px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--background);
@@ -7135,19 +7145,23 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   pointer-events: none;
 }
 
-.agent-line-replyable:focus-within .agent-line-reply {
+.agent-line-actions .icon-action {
+  padding: 2px;
+}
+
+.agent-line-swipeable:focus-within .agent-line-actions {
   opacity: 1;
   pointer-events: auto;
 }
 
 @media (hover: hover) {
-  .agent-line-replyable:hover .agent-line-reply {
+  .agent-line-swipeable:hover .agent-line-actions {
     opacity: 1;
     pointer-events: auto;
   }
 }
 
-.agent-line-reply:hover {
+.agent-line-actions .icon-action:hover {
   color: var(--text);
 }
 
