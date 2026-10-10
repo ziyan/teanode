@@ -37,13 +37,14 @@ func NewComputerCommand() *cli.Command {
 	}
 	return &cli.Command{
 		Name:  "computer",
-		Usage: "attach this computer to your agent, so it can run commands and read files here while you talk to it",
+		Usage: "attach this computer to your agent, so it can run commands and read files here",
 		Description: "While the program runs, your agent has two more tools: shell, which runs a command here, and\n" +
 			"filesystem, which reads, writes, lists and searches your files — as you, anywhere on this\n" +
-			"machine, the way a terminal of yours would. Only a conversation you are present in may use\n" +
-			"them, and what changes the machine or reaches out of it asks you first. 'start' runs the\n" +
-			"program in the background and 'stop' ends it; 'daemon' is the same program in the foreground,\n" +
-			"for a terminal or a service manager.",
+			"machine, the way a terminal of yours would. Your conversations, schedules and goals may use\n" +
+			"them whether or not you are there; what changes the machine or reaches out of it asks you\n" +
+			"first, and is refused when nobody is there to answer. 'start' runs the program in the\n" +
+			"background and 'stop' ends it; 'daemon' is the same program in the foreground, for a\n" +
+			"terminal or a service manager.",
 		Commands: []*cli.Command{
 			{
 				Name:   "daemon",
