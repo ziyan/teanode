@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.126.0] - 2026-10-10
+
+### Added
+
+- Swipe a message in the agent drawer to the left, or press its Reply button, to reply to that message: the agent is told which message you mean. Swipe it to the right, or press Copy, to copy it. From the command line, `teanode agent ask --reply-to MESSAGE_ID` does the same. (#373)
+
 ## [0.125.1] - 2026-10-10
 
 ### Changed
