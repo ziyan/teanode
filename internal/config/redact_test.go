@@ -11,6 +11,9 @@ import (
 var notSecret = map[string]bool{
 	// A lexical token budget for GraphQL parsing, not an authentication token.
 	"GraphQL.MaximumTokenCount": true,
+	// Which Apple push key the relay uses: Apple shows it beside the key, and
+	// it opens nothing without the key itself, which is tagged.
+	"Agent.Push.Relay.APNSKeyID": true,
 	// Derived from the server secret by a one-way function, to tell the
 	// right secret file from a wrong one; it opens nothing.
 	"Server.SecretCheck": true,

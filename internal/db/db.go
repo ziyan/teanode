@@ -175,6 +175,7 @@ type Transaction interface {
 	MemoryOperation
 	ConnectionOperation
 	ChannelOperation
+	PhoneOperation
 	EvaluationOperation
 	InteractionOperation
 	IdeaOperation

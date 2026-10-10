@@ -54,18 +54,31 @@ var surfaces = map[string]surface{
 	// written for the ear: it is shown in the drawer as it is written, and
 	// is what will be read aloud to them.
 	"voice": {
-		situationLine: "You are talking with them by voice in the dashboard's drawer: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
-		overlay: "<surface>\nVoice: they are listening, not reading, and silence on a call feels like nobody is there. " +
-			"Speak at once: when you need to look something up, say so first in five words or fewer (\"Let me check.\", \"Looking that up.\", \"One second.\", \"Let me think about that.\"), then call the tool. " +
-			"Say it once a turn. Between later looks say nothing, or two words at most when one leads to another (\"Still looking.\"). " +
-			"Never restate what you are going to do, never say again what you said earlier in the turn, and never announce what you will or will not do next: ask when you need their answer, otherwise act, then say what you found. " +
-			"Then answer the way you would say it to them: the answer first, in a few short spoken sentences, said once, then stop; offer more rather than giving it all. " +
-			"No tables, headings, code blocks or bullet lists, and no web addresses read out: name the page or the thing instead, and put a link or a picture only where they would look at the screen for it. " +
-			"Say numbers, sums, dates and times the way a person says them (\"half past three tomorrow\", \"about twelve hundred dollars\"). " +
-			"Ask at most one question, at the end. When a word they said may have been misheard and it changes what they want, a name, a sum, a day, say what you heard and ask before acting on it.\n</surface>",
+		situationLine:       "You are talking with them by voice in the dashboard's drawer: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
+		overlay:             voiceOverlay,
 		hasSuggestedReplies: true,
 		canShowPages:        true,
 		canLocate:           true,
+	},
+	// The TeaNode app on the person's iPhone: typed in the app, spoken in a
+	// call from it, or asked through Siri, whose answer Siri reads out.
+	"ios": {
+		situationLine:       "You are talking with them in the TeaNode app on their iPhone.",
+		overlay:             "<surface>\nThe TeaNode app on a phone: Markdown renders; keep it short, and no table wider than a phone. " + picturesLine + "\n</surface>",
+		hasSuggestedReplies: true,
+		canShowPages:        true,
+		canLocate:           true,
+	},
+	"ios_voice": {
+		situationLine:       "You are on a call with them in the TeaNode app on their iPhone: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
+		overlay:             voiceOverlay,
+		hasSuggestedReplies: true,
+		canShowPages:        true,
+		canLocate:           true,
+	},
+	"siri": {
+		situationLine: "They asked you through Siri on their iPhone, and Siri reads your answer aloud.",
+		overlay:       "<surface>\nSiri: answer in one or two short spoken sentences, with no formatting, links or lists. When the answer needs more, say the gist and that the rest is in the TeaNode app.\n</surface>",
 	},
 	"phone": {
 		situationLine:       talkingThrough("phone"),
@@ -109,6 +122,21 @@ var surfaces = map[string]surface{
 		overlay:             dashboardOverlay,
 		hasSuggestedReplies: true,
 	},
+}
+
+// voiceOverlay is how to answer a person on a call, in the drawer or the app.
+const voiceOverlay = "<surface>\nVoice: they are listening, not reading, and silence on a call feels like nobody is there. " +
+	"Speak at once: when you need to look something up, say so first in five words or fewer (\"Let me check.\", \"Looking that up.\", \"One second.\", \"Let me think about that.\"), then call the tool. " +
+	"Say it once a turn. Between later looks say nothing, or two words at most when one leads to another (\"Still looking.\"). " +
+	"Never restate what you are going to do, never say again what you said earlier in the turn, and never announce what you will or will not do next: ask when you need their answer, otherwise act, then say what you found. " +
+	"Then answer the way you would say it to them: the answer first, in a few short spoken sentences, said once, then stop; offer more rather than giving it all. " +
+	"No tables, headings, code blocks or bullet lists, and no web addresses read out: name the page or the thing instead, and put a link or a picture only where they would look at the screen for it. " +
+	"Say numbers, sums, dates and times the way a person says them (\"half past three tomorrow\", \"about twelve hundred dollars\"). " +
+	"Ask at most one question, at the end. When a word they said may have been misheard and it changes what they want, a name, a sum, a day, say what you heard and ask before acting on it.\n</surface>"
+
+// isAppSurface reports whether a turn was asked from the TeaNode app.
+func isAppSurface(surfaceName string) bool {
+	return surfaceName == "ios" || surfaceName == "ios_voice" || surfaceName == "siri"
 }
 
 // terminalOverlay is how to write for a terminal: the CLI and the API.

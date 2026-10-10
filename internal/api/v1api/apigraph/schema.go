@@ -51,6 +51,7 @@ type Query interface {
 	AgentSourceTypeQuery
 	AgentSourceSecretQuery
 	AgentChannelQuery
+	AgentPhoneQuery
 	AgentTabQuery
 	AgentVoiceQuery
 	AgentComputerQuery
@@ -112,6 +113,7 @@ type Mutation interface {
 	AgentSourceTypeMutation
 	AgentSourceSecretMutation
 	AgentChannelMutation
+	AgentPhoneMutation
 	AgentBackgroundMutation
 	AgentHerdrMutation
 	AgentBackgroundWorkMutation

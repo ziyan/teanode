@@ -308,9 +308,12 @@ type AskRun struct {
 	// deploy, a deadline -- leaves its cards open for later.
 	isStoppedByPerson atomic.Bool
 
-	mutex          sync.Mutex
-	events         []Event
-	nextSequence   int
+	mutex        sync.Mutex
+	events       []Event
+	nextSequence int
+	// lastAnswer is the newest answer the turn gave, for the phone
+	// notification sent when a turn asked from the app finishes.
+	lastAnswer     string
 	subscribers    map[int]chan Event
 	nextSubscriber int
 	finished       bool
@@ -771,6 +774,9 @@ func (self *AskRun) emit(event Event) {
 	}
 	event.Sequence = self.nextSequence
 	self.nextSequence++
+	if event.Kind == EventMessage {
+		self.lastAnswer = event.Text
+	}
 	if len(self.events) < askEventBacklog {
 		self.events = append(self.events, event)
 	}
@@ -884,6 +890,10 @@ func (self *AskRun) loop() {
 	// back to work a minute from now, whether the turn ended well or not.
 	self.resumeGoalAfterPerson()
 	self.clearFinishedTodos()
+	self.mutex.Lock()
+	answer := self.lastAnswer
+	self.mutex.Unlock()
+	self.notifyAnswer(answer)
 	self.emit(Event{Kind: EventDone})
 }
 

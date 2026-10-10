@@ -131,6 +131,13 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     category: 'account',
   },
   {
+    segment: 'phones',
+    path: '/settings/phones',
+    label: 'phones.title',
+    description: 'settings.phones.description',
+    category: 'account',
+  },
+  {
     segment: 'apps',
     path: '/settings/apps',
     label: 'apps.title',
