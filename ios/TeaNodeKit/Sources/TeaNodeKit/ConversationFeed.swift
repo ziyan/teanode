@@ -9,6 +9,11 @@ import Foundation
     /// The stream ends with an error when the connection drops; the screen
     /// reloads the conversation and opens a new feed.
     public enum ConversationFeed {
+        /// How long the feed may say nothing before it is taken for dead:
+        /// the server sends a keep-alive every second, and a connection a
+        /// phone lost while asleep can stay open without saying so.
+        static let silenceMost: TimeInterval = 15
+
         public static func events(
             connection: Connection, conversationId: String, session: URLSession = .shared
         ) -> AsyncThrowingStream<AgentEvent, Error> {
@@ -36,7 +41,20 @@ import Foundation
             components.scheme = components.scheme == "http" ? "ws" : "wss"
             let socket = session.webSocketTask(with: components.url!, protocols: [GraphQLWebSocketMessage.subprotocol])
             socket.resume()
-            defer { socket.cancel(with: .goingAway, reason: nil) }
+            let watched = WatchedSocket(socket)
+            let watchdog = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    if watched.silence > silenceMost {
+                        watched.close()
+                        return
+                    }
+                }
+            }
+            defer {
+                watchdog.cancel()
+                watched.close()
+            }
 
             try await socket.send(.string(GraphQLWebSocketMessage.connectionInit(authorization: "Bearer \(token)").encoded()))
             try await socket.send(.string(GraphQLWebSocketMessage.start(
@@ -45,6 +63,7 @@ import Foundation
 
             while !Task.isCancelled {
                 let frame = try await socket.receive()
+                watched.heard()
                 guard case .string(let text) = frame, let message = try? GraphQLWebSocketMessage(decoding: text) else {
                     continue
                 }
@@ -65,6 +84,34 @@ import Foundation
                     continue
                 }
             }
+        }
+    }
+
+    /// WatchedSocket is the feed's socket and when it last said anything, for
+    /// the watchdog that closes one gone quiet.
+    final class WatchedSocket: @unchecked Sendable {
+        private let lock = NSLock()
+        private let socket: URLSessionWebSocketTask
+        private var heardAt = Date()
+
+        init(_ socket: URLSessionWebSocketTask) {
+            self.socket = socket
+        }
+
+        func heard() {
+            lock.lock()
+            defer { lock.unlock() }
+            heardAt = Date()
+        }
+
+        var silence: TimeInterval {
+            lock.lock()
+            defer { lock.unlock() }
+            return Date().timeIntervalSince(heardAt)
+        }
+
+        func close() {
+            socket.cancel(with: .goingAway, reason: nil)
         }
     }
 #endif

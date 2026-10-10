@@ -185,6 +185,49 @@ final class TranscriptTests: XCTestCase {
         XCTAssertNil(transcript.openQuestion)
     }
 
+    func testAReplayedTurnIsNotDrawnTwice() {
+        // Read back after the feed dropped: the person's message and a tool
+        // call are stored; the feed then replays the turn from its start.
+        var transcript = Transcript(messages: [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "user", content: "Plan tomorrow."),
+            AgentMessage(id: "2", createdAt: "2026-10-10T09:00:01Z", role: "assistant", content: "", toolCalls: [AgentToolCall(id: "c1", name: "calendar", arguments: "{}")]),
+        ])
+        transcript.apply(AgentEvent(kind: "asked", runId: "r", sequence: 1, text: "Plan tomorrow."))
+        transcript.apply(AgentEvent(kind: "tool_call", runId: "r", sequence: 2, tool: "calendar", callId: "c1"))
+        XCTAssertEqual(transcript.lines.map(\.kind), [.person, .tool])
+    }
+
+    func testSuggestionsAreOfferedAndNotShown() {
+        let split = Suggestions.split("Shall I book it?\n<!--suggestions:[\"Yes\",\"Not yet\"]-->")
+        XCTAssertEqual(split.text, "Shall I book it?")
+        XCTAssertEqual(split.suggestions, ["Yes", "Not yet"])
+        XCTAssertEqual(Suggestions.split("Working on it <!--sugg").text, "Working on it")
+        let transcript = Transcript(messages: [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "assistant", content: "Shall I book it?\n<!--suggestions:[\"Yes\",\"Not yet\"]-->")
+        ])
+        XCTAssertEqual(transcript.offeredSuggestions, ["Yes", "Not yet"])
+    }
+
+    func testATurnsUsageIsOnItsLastAnswer() {
+        var first = AgentMessage(id: "2", createdAt: "2026-10-10T09:00:01Z", role: "assistant", content: "Looking.")
+        first.usage = AgentUsage(promptTokens: 100, completionTokens: 10, cost: 0.01)
+        var second = AgentMessage(id: "3", createdAt: "2026-10-10T09:00:02Z", role: "assistant", content: "Done.")
+        second.usage = AgentUsage(promptTokens: 200, completionTokens: 20, cost: 0.02)
+        let transcript = Transcript(messages: [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "user", content: "Go."), first, second,
+        ])
+        XCTAssertNil(transcript.lines[1].usage)
+        XCTAssertEqual(transcript.lines[2].usage?.promptTokens, 300)
+    }
+
+    func testAQueuedTurnSaysSoUntilItBegins() {
+        var transcript = Transcript(messages: [])
+        transcript.apply(AgentEvent(kind: "note", runId: "r2", sequence: 1, noteKind: "queued"))
+        XCTAssertEqual(transcript.lines.first?.isPending, true)
+        transcript.apply(AgentEvent(kind: "asked", runId: "r2", sequence: 2, text: "Next thing"))
+        XCTAssertEqual(transcript.lines.map(\.kind), [.person])
+    }
+
     func testServerTimesAreRead() {
         XCTAssertNotNil(ServerTime.date("2026-10-10T17:58:04.123456789-04:00"))
         XCTAssertNotNil(ServerTime.date("2026-10-10T21:58:04Z"))
@@ -195,6 +238,18 @@ final class TranscriptTests: XCTestCase {
         let body = String(decoding: Upload.body(boundary: "b", name: "receipt\".jpg", contentType: "image/jpeg", data: Data("x".utf8)), as: UTF8.self)
         XCTAssertTrue(body.hasPrefix("--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"receipt'.jpg\"\r\n"))
         XCTAssertTrue(body.hasSuffix("\r\nx\r\n--b--\r\n"))
+    }
+}
+
+final class MarkdownTableTests: XCTestCase {
+    func testATableAndARuleAreRead() {
+        let text = "Two stops:\n\n| Time | Place |\n|---|:---:|\n| 10:00 | Park |\n| 11:00 | Lunch |\n\n---\nDone."
+        XCTAssertEqual(MarkdownBlock.parse(text), [
+            .paragraph("Two stops:"),
+            .table(header: ["Time", "Place"], rows: [["10:00", "Park"], ["11:00", "Lunch"]]),
+            .rule,
+            .paragraph("Done."),
+        ])
     }
 }
 

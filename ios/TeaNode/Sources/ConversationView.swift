@@ -2,31 +2,111 @@ import PhotosUI
 import SwiftUI
 import TeaNodeKit
 
+/// The switches that choose how much of a conversation shows, kept on the
+/// phone as the dashboard keeps them in the browser.
+enum TranscriptPreference {
+    static let showToolCalls = "showToolCalls"
+    static let showUsage = "showUsage"
+    static let showWorkingNotes = "showWorkingNotes"
+
+    /// Notes about how the agent works rather than what it did, shown only
+    /// with the working notes.
+    static let workingNoteKinds: Set<String> = ["depth", "call_unreadable"]
+}
+
 /// ConversationView is one conversation, laid out like a messaging app: the
 /// person's messages on the right, the agent's on the left, and the composer
 /// floating over them.
 struct ConversationView: View {
     @State var model: ConversationModel
+    @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(TranscriptPreference.showToolCalls) private var isShowingToolCalls = true
+    @AppStorage(TranscriptPreference.showUsage) private var isShowingUsage = false
+    @AppStorage(TranscriptPreference.showWorkingNotes) private var isShowingWorkingNotes = false
+    @State private var isAtEnd = true
+
+    private static let endId = "end"
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
-                ForEach(ConversationItem.items(of: model.transcript.lines)) { item in
-                    ConversationItemView(item: item, model: model)
-                        .id(item.id)
+        ScrollViewReader { scroller in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if model.earlierCount > 0 {
+                        // Reaching the top reads the page before it, and the
+                        // line that was first stays where it was.
+                        Button {
+                            loadEarlier(scroller)
+                        } label: {
+                            if model.isLoadingEarlier {
+                                ProgressView()
+                            } else {
+                                Text("\(model.earlierCount) earlier messages")
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .frame(maxWidth: .infinity)
+                        .onAppear { loadEarlier(scroller) }
+                    }
+                    ForEach(ConversationItem.items(of: shownLines)) { item in
+                        ConversationItemView(item: item, model: model, isShowingUsage: isShowingUsage)
+                            .id(item.id)
+                    }
+                    if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
+                        TypingBubble()
+                    }
+                    if model.runningRunId == nil, !model.transcript.offeredSuggestions.isEmpty {
+                        SuggestionsRow(suggestions: model.transcript.offeredSuggestions) { suggestion in
+                            Task { await model.sendSuggestion(suggestion) }
+                        }
+                    }
+                    if model.isLoaded, model.transcript.lines.isEmpty {
+                        EmptyConversation(model: model)
+                    }
+                    Color.clear.frame(height: 1).id(Self.endId)
                 }
-                if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
-                    TypingBubble()
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+            }
+            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .scrollDismissesKeyboard(.interactively)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40
+            } action: { _, isNowAtEnd in
+                isAtEnd = isNowAtEnd
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !isAtEnd {
+                    Button {
+                        withAnimation { scroller.scrollTo(Self.endId, anchor: .bottom) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.headline)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel("Jump to the end")
+                    .padding()
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .onChange(of: model.sentCount) {
+                withAnimation { scroller.scrollTo(Self.endId, anchor: .bottom) }
+            }
         }
-        .defaultScrollAnchor(.bottom)
-        .defaultScrollAnchor(.bottom, for: .sizeChanges)
-        .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) {
-            Composer(model: model)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            ConversationBanners(model: model)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 8) {
+                if !model.todos.isEmpty, model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }) {
+                    TodoPanel(todos: model.todos)
+                }
+                if let reply = model.replyingTo {
+                    ReplyBar(reply: reply) { model.replyingTo = nil }
+                }
+                Composer(model: model)
+            }
         }
         .overlay {
             if !model.isLoaded {
@@ -35,13 +115,29 @@ struct ConversationView: View {
                 } else {
                     ProgressView()
                 }
-            } else if model.transcript.lines.isEmpty {
-                ContentUnavailableView("Say something", systemImage: "bubble.left.and.text.bubble.right", description: Text("Ask your agent anything: your mail, your calendar, a picture of a receipt."))
             }
         }
         .navigationTitle(model.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.follow() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Toggle("Show tool calls", isOn: $isShowingToolCalls)
+                    Toggle("Show usage", isOn: $isShowingUsage)
+                    Toggle("Show the agent's working notes", isOn: $isShowingWorkingNotes)
+                } label: {
+                    Label("What to show", systemImage: "eye")
+                }
+            }
+        }
+        // The feed is followed while the app is in front; iOS closes it in
+        // the background, and coming back opens it again at once.
+        .task(id: scenePhase == .active) {
+            if scenePhase == .active {
+                await model.follow()
+            }
+        }
+        .environment(\.openURL, OpenURLAction { address in app.route(address) })
         .sensoryFeedback(.success, trigger: model.sentCount)
         .sensoryFeedback(.warning, trigger: model.sendProblemText) { _, new in new != nil }
         .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
@@ -50,54 +146,134 @@ struct ConversationView: View {
             Text(text)
         }
     }
+
+    private func loadEarlier(_ scroller: ScrollViewProxy) {
+        guard model.isLoaded, !model.isLoadingEarlier else { return }
+        let firstId = ConversationItem.items(of: shownLines).first?.id
+        Task {
+            await model.loadEarlier()
+            if let firstId {
+                scroller.scrollTo(firstId, anchor: .top)
+            }
+        }
+    }
+
+    /// The lines the switches leave on screen.
+    private var shownLines: [TranscriptLine] {
+        let isMCPRecord = model.conversation?.jobKind == "mcp"
+        return model.transcript.lines.filter { line in
+            switch line.kind {
+            case .tool:
+                return isShowingToolCalls || isMCPRecord
+            case .checkIn:
+                return isShowingWorkingNotes || line.detail == CheckInOrigin.goalNeedsYou.rawValue
+            case .note:
+                return isShowingWorkingNotes || !TranscriptPreference.workingNoteKinds.contains(line.detail)
+            default:
+                return true
+            }
+        }
+    }
+}
+
+/// ConversationBanners say what kind of conversation this is when it is not
+/// an ordinary one: somebody else's agent, a record of what the agent did on
+/// its own, a goal waiting for the person.
+struct ConversationBanners: View {
+    let model: ConversationModel
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let actingAs = model.actingAs {
+                Banner(systemImage: "person.badge.key", text: String(localized: "This is \(actingAs)'s agent. What you say here reaches it as \(actingAs), and the server log says you did."))
+            }
+            if model.conversation?.kind == "run" {
+                Banner(systemImage: "clock.arrow.circlepath", text: String(localized: "What your agent did on its own, as it happened. Ask about it here, or go back to the main chat.")) {
+                    app.openedConversationId = ""
+                }
+            }
+            if let conversation = model.conversation, conversation.kind == "goal", let goal = conversation.goal, !goal.isEmpty {
+                Banner(systemImage: "target", text: GoalWords.summary(of: conversation))
+                if conversation.goalState == "waiting", let note = conversation.goalNote, !note.isEmpty {
+                    Banner(systemImage: "hand.raised", text: note)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+/// Banner is one line of what kind of conversation this is.
+struct Banner: View {
+    let systemImage: String
+    let text: String
+    var action: (() -> Void)?
+
+    var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { label }
+                    .buttonStyle(.plain)
+            } else {
+                label
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(in: .rect(cornerRadius: 14, style: .continuous))
+    }
+
+    private var label: some View {
+        Label(text, systemImage: systemImage)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// GoalWords say where a goal stands, in the dashboard's words.
+enum GoalWords {
+    static func state(_ goalState: String?) -> String {
+        switch goalState {
+        case "working": String(localized: "working")
+        case "waiting": String(localized: "waiting for you")
+        case "met": String(localized: "met")
+        case "dropped": String(localized: "dropped")
+        default: goalState ?? ""
+        }
+    }
+
+    static func summary(of conversation: AgentConversation) -> String {
+        "\(state(conversation.goalState)) · \(conversation.goal ?? "")"
+    }
 }
 
 /// ConversationItem is one thing on the screen: a line of the transcript,
-/// the tools the agent used in a row, or the time between two lines far
-/// apart.
+/// or the day between two lines on different days.
 enum ConversationItem: Identifiable {
     case line(TranscriptLine)
-    case tools([TranscriptLine])
-    case time(Date)
+    case day(Date)
 
     var id: String {
         switch self {
         case .line(let line): line.id
-        case .tools(let lines): "tools-" + (lines.first?.id ?? "")
-        case .time(let date): "time-\(date.timeIntervalSince1970)"
+        case .day(let date): "day-\(date.timeIntervalSince1970)"
         }
     }
 
-    /// How far apart two lines are before the time is shown between them.
-    static let timeGap: TimeInterval = 30 * 60
-
     static func items(of lines: [TranscriptLine]) -> [ConversationItem] {
         var items: [ConversationItem] = []
-        var tools: [TranscriptLine] = []
-        var lastDate: Date?
+        var lastDay: Date?
         for line in lines {
             if let date = ServerTime.date(line.at) {
-                if lastDate.map({ date.timeIntervalSince($0) > timeGap }) ?? true {
-                    if !tools.isEmpty {
-                        items.append(.tools(tools))
-                        tools = []
-                    }
-                    items.append(.time(date))
+                let day = Calendar.current.startOfDay(for: date)
+                if day != lastDay {
+                    items.append(.day(day))
+                    lastDay = day
                 }
-                lastDate = date
-            }
-            if line.kind == .tool {
-                tools.append(line)
-                continue
-            }
-            if !tools.isEmpty {
-                items.append(.tools(tools))
-                tools = []
             }
             items.append(.line(line))
-        }
-        if !tools.isEmpty {
-            items.append(.tools(tools))
         }
         return items
     }
@@ -106,33 +282,40 @@ enum ConversationItem: Identifiable {
 struct ConversationItemView: View {
     let item: ConversationItem
     let model: ConversationModel
+    let isShowingUsage: Bool
 
     var body: some View {
         switch item {
-        case .time(let date):
-            Text(Self.timeText(date))
+        case .day(let date):
+            Text(Self.dayText(date))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 6)
-        case .tools(let lines):
-            ToolsLine(lines: lines)
         case .line(let line):
             switch line.kind {
             case .person:
                 PersonBubble(line: line)
+                    .contextMenu { LineActions(line: line, model: model) }
             case .answer:
-                AgentBubble {
-                    MarkdownView(text: line.text)
+                VStack(alignment: .leading, spacing: 4) {
+                    AgentBubble {
+                        MarkdownView(text: line.text)
+                    }
+                    .contextMenu { LineActions(line: line, model: model) }
+                    if isShowingUsage, let usage = line.usage {
+                        Text(UsageWords.turn(usage))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, 8)
+                    }
                 }
+            case .tool:
+                ToolLine(line: line)
             case .checkIn:
                 CheckInLine(line: line)
             case .note:
-                Text(line.text)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
+                NoteLine(line: line)
             case .approval, .question:
                 AgentBubble {
                     CardView(line: line, model: model)
@@ -141,21 +324,55 @@ struct ConversationItemView: View {
                 AgentBubble {
                     CodingQuestionCard(line: line, model: model)
                 }
-            case .tool:
-                EmptyView()
             }
         }
     }
 
-    static func timeText(_ date: Date) -> String {
-        if Calendar.current.isDateInToday(date) {
-            return date.formatted(date: .omitted, time: .shortened)
-        }
-        return date.formatted(date: .abbreviated, time: .shortened)
+    static func dayText(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) { return String(localized: "Today") }
+        if Calendar.current.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 }
 
-/// PersonBubble is what the person said: on the right, in the accent color.
+/// LineActions are what a long press on a message offers.
+struct LineActions: View {
+    let line: TranscriptLine
+    let model: ConversationModel
+
+    var body: some View {
+        Button {
+            UIPasteboard.general.string = line.text
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+        if line.messageId != nil {
+            Button {
+                model.reply(to: line)
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        }
+    }
+}
+
+/// UsageWords say what a turn cost: tokens in and out, and the money.
+enum UsageWords {
+    static func count(_ count: Int) -> String {
+        count.formatted(.number.notation(.compactName))
+    }
+
+    static func money(_ cost: Double) -> String {
+        cost.formatted(.currency(code: "USD").precision(.fractionLength(cost < 0.01 ? 4 : 2)))
+    }
+
+    static func turn(_ usage: AgentUsage) -> String {
+        String(localized: "\(count(usage.promptTokens)) in, \(count(usage.completionTokens)) out · \(money(usage.cost))")
+    }
+}
+
+/// PersonBubble is what the person said: on the right, in the accent color,
+/// with what it replies to above it.
 struct PersonBubble: View {
     let line: TranscriptLine
 
@@ -163,6 +380,22 @@ struct PersonBubble: View {
         HStack {
             Spacer(minLength: 56)
             VStack(alignment: .trailing, spacing: 4) {
+                if !line.quotedText.isEmpty {
+                    Text(line.quotedText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(.tertiary).frame(width: 3)
+                        }
+                }
+                ForEach(line.references, id: \.self) { reference in
+                    Label(reference.label, systemImage: reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(line.attachments, id: \.id) { attachment in
                     Label(attachment.name, systemImage: "photo")
                         .font(.footnote)
@@ -170,7 +403,6 @@ struct PersonBubble: View {
                 }
                 if !line.text.isEmpty {
                     Text(line.text)
-                        .textSelection(.enabled)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
                         .foregroundStyle(.white)
@@ -206,7 +438,129 @@ struct TypingBubble: View {
                 .symbolEffect(.variableColor.iterative, options: .repeating)
                 .frame(height: 20)
         }
-        .accessibilityLabel("Your agent is working")
+        .accessibilityLabel("Thinking…")
+    }
+}
+
+/// SuggestionsRow is the replies the last answer offers, each sent as it is
+/// with a tap.
+struct SuggestionsRow: View {
+    let suggestions: [String]
+    let onChoose: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button(suggestion) { onChoose(suggestion) }
+                        .buttonStyle(.glass)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+}
+
+/// EmptyConversation is what a conversation with nothing in it offers: what
+/// to ask, and a few of the agent's ideas.
+struct EmptyConversation: View {
+    let model: ConversationModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ask about your mail, or ask for something to be done.")
+                .foregroundStyle(.secondary)
+            if !model.ideas.isEmpty, model.draft.isEmpty {
+                Text("Or start with one of these:")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                ForEach(model.ideas) { idea in
+                    Button {
+                        Task { await model.start(idea) }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(idea.emoji ?? "💡")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(idea.headline).font(.headline)
+                                if let body = idea.body, !body.isEmpty {
+                                    Text(body).font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.glass)
+                }
+            }
+        }
+        .padding(.top, 40)
+    }
+}
+
+/// TodoPanel is the agent's own list of steps for this conversation, while
+/// it works through them.
+struct TodoPanel: View {
+    let todos: [AgentTodo]
+    @State private var expanded: Set<String> = []
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(todos) { todo in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(todo.isDone ? Color.accentColor : Color.secondary)
+                            .accessibilityLabel(todo.isDone ? Text("Done") : Text("Still to do"))
+                        Text(todo.text)
+                            .strikethrough(todo.isDone)
+                            .foregroundStyle(todo.isDone ? .secondary : .primary)
+                            .lineLimit(expanded.contains(todo.id) ? nil : 1)
+                            .onTapGesture {
+                                if expanded.contains(todo.id) { expanded.remove(todo.id) } else { expanded.insert(todo.id) }
+                            }
+                    }
+                    .font(.footnote)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 120)
+        .fixedSize(horizontal: false, vertical: true)
+        .glassEffect(in: .rect(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal)
+        .accessibilityLabel("The agent's steps")
+    }
+}
+
+/// ReplyBar is the message being replied to, above the composer.
+struct ReplyBar: View {
+    let reply: AgentReference
+    let onCancel: () -> Void
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(reply.quotedRole == "user" ? String(localized: "Replying to your own message") : String(localized: "Replying to \(app.agentTitle)"))
+                    .font(.caption.bold())
+                Text(reply.quotedText ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Button(action: onCancel) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Cancel")
+        }
+        .padding(.leading, 12)
+        .glassEffect(in: .rect(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal)
     }
 }
 
@@ -221,6 +575,8 @@ struct MarkdownView: View {
                 switch block {
                 case .paragraph(let text):
                     Text(Self.inline(text))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 case .heading(let text):
                     Text(Self.inline(text)).font(.headline)
                 case .quote(let text):
@@ -235,19 +591,35 @@ struct MarkdownView: View {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(item.marker).monospacedDigit().foregroundStyle(.secondary)
                                 Text(Self.inline(item.text))
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
                 case .code(let text):
-                    Text(text)
-                        .font(.callout.monospaced())
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 8, style: .continuous))
+                    CodeBlock(text: text)
+                case .table(let header, let rows):
+                    ScrollView(.horizontal) {
+                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+                            GridRow {
+                                ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                                    Text(Self.inline(cell)).font(.subheadline.bold())
+                                }
+                            }
+                            Divider()
+                            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                                GridRow {
+                                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                        Text(Self.inline(cell)).font(.subheadline)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                case .rule:
+                    Divider()
                 }
             }
         }
-        .textSelection(.enabled)
     }
 
     static func inline(_ text: String) -> AttributedString {
@@ -256,10 +628,57 @@ struct MarkdownView: View {
     }
 }
 
-/// ToolsLine is the tools the agent used in a row, one quiet line until
-/// tapped.
-struct ToolsLine: View {
-    let lines: [TranscriptLine]
+/// CodeBlock is code or a tool's JSON: monospaced, scrolling when long, and
+/// copied with a tap.
+struct CodeBlock: View {
+    let text: String
+    var maxHeight: CGFloat = 400
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView([.horizontal, .vertical]) {
+                Text(text)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: maxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            Button {
+                UIPasteboard.general.string = text
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.caption)
+                    .frame(minWidth: 32, minHeight: 32)
+            }
+            .accessibilityLabel("Copy")
+        }
+        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
+    }
+
+    /// A tool's arguments or result made readable: the untrusted-data fence
+    /// a result is wrapped in taken off, and JSON indented.
+    static func tidy(_ text: String) -> String {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("<untrusted-data>"), trimmed.hasSuffix("</untrusted-data>") {
+            trimmed = String(trimmed.dropFirst("<untrusted-data>".count).dropLast("</untrusted-data>".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let data = trimmed.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+            !(object is String),
+            let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        {
+            return String(decoding: pretty, as: UTF8.self)
+        }
+        return trimmed
+    }
+}
+
+/// ToolLine is a tool the agent called: its name and how it ended on one
+/// line, what it was given and what came back on a tap.
+struct ToolLine: View {
+    let line: TranscriptLine
     @State private var isExpanded = false
 
     var body: some View {
@@ -268,12 +687,12 @@ struct ToolsLine: View {
                 withAnimation { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    if lines.allSatisfy(\.isDone) {
+                    if line.isDone {
                         Image(systemName: "checkmark.circle")
                     } else {
                         ProgressView().controlSize(.mini)
                     }
-                    Text("Used \(Self.names(of: lines))")
+                    Text(line.resolution.isEmpty ? line.detail : "\(line.detail) · \(line.resolution)")
                         .lineLimit(1)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -283,44 +702,38 @@ struct ToolsLine: View {
             }
             .buttonStyle(.plain)
             if isExpanded {
-                ForEach(lines) { line in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(line.detail).font(.caption.bold()).foregroundStyle(.secondary)
-                        Text(line.text.isEmpty ? String(localized: "Nothing came back yet.") : String(line.text.prefix(2000)))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
+                if !line.arguments.isEmpty {
+                    CodeBlock(text: CodeBlock.tidy(line.arguments), maxHeight: 240)
                 }
+                CodeBlock(text: line.text.isEmpty ? String(localized: "Nothing came back yet.") : CodeBlock.tidy(line.text), maxHeight: 240)
             }
         }
         .padding(.leading, 4)
     }
-
-    /// The tools' names, each once, in the order first used.
-    static func names(of lines: [TranscriptLine]) -> String {
-        var seen: [String] = []
-        for line in lines where !seen.contains(line.detail) {
-            seen.append(line.detail)
-        }
-        return seen.joined(separator: ", ")
-    }
 }
 
 /// CheckInLine is a turn the agent took on its own, shown as where it came
-/// from: what started it is the agent's business, and its answer follows.
+/// from; a tap shows what started it.
 struct CheckInLine: View {
     let line: TranscriptLine
+    @State private var isExpanded = false
 
     var body: some View {
-        Label(Self.label(of: line.detail), systemImage: Self.symbol(of: line.detail))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
+        VStack(spacing: 6) {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                Label(Self.label(of: line.detail), systemImage: Self.symbol(of: line.detail))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                CodeBlock(text: line.text, maxHeight: 240)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 
     static func label(of marker: String) -> String {
@@ -343,14 +756,68 @@ struct CheckInLine: View {
     static func symbol(of marker: String) -> String {
         switch CheckInOrigin(rawValue: marker) {
         case .goal, .goalNeedsYou: "target"
-        case .background, .herdrSession, .herdrQuestion: "terminal"
+        case .background, .herdrSession: "terminal"
+        case .herdrQuestion, .alert: "exclamationmark.triangle"
         case .backgroundWork: "list.bullet"
         case .schedule: "calendar"
         case .speakFirst: "sparkles"
-        case .alert: "bell"
         case .approved: "checkmark"
         case .declined: "xmark"
         case nil: "bell"
+        }
+    }
+}
+
+/// NoteLine is something that happened, in the dashboard's words; the note
+/// the earlier chat was folded into opens on a tap.
+struct NoteLine: View {
+    let line: TranscriptLine
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if line.detail == "compacted", !line.text.isEmpty {
+                Button {
+                    withAnimation { isExpanded.toggle() }
+                } label: {
+                    Label(Self.words(of: line), systemImage: isExpanded ? "chevron.down" : "chevron.right")
+                }
+                .buttonStyle(.plain)
+                if isExpanded {
+                    AgentBubble { MarkdownView(text: line.text) }
+                }
+            } else {
+                HStack(spacing: 6) {
+                    if line.isPending { ProgressView().controlSize(.mini) }
+                    Text(Self.words(of: line))
+                }
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+    }
+
+    static func words(of line: TranscriptLine) -> String {
+        let detail = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch line.detail {
+        case "queued": return String(localized: "Waiting for the turn before it…")
+        case "stopped": return detail.isEmpty ? String(localized: "Stopped.") : String(localized: "Stopped: \(detail)")
+        case "failed": return detail.isEmpty ? String(localized: "The turn failed.") : String(localized: "The turn failed: \(detail)")
+        case "call_unreadable": return String(localized: "A tool call could not be read, so it was asked for again.")
+        case "repeated_failure": return String(localized: "Stopped: the same call failed three times.")
+        case "round_limit": return String(localized: "Stopped after the most rounds a turn may take.")
+        case "compacting": return String(localized: "Folding the earlier chat into a note…")
+        case "compacted": return String(localized: "The earlier chat was folded into a note.")
+        case "depth": return detail.isEmpty ? String(localized: "Looking into this carefully.") : String(localized: "Looking into this carefully: \(detail)")
+        case "goal_set": return String(localized: "Goal set: \(detail)")
+        case "goal_set_again": return String(localized: "Goal set again: \(detail)")
+        case "goal_changed": return String(localized: "Goal changed: \(detail)")
+        case "goal_cleared": return String(localized: "Goal cleared: \(detail)")
+        case "goal_met": return String(localized: "Goal met: \(detail)")
+        case "goal_stalled": return String(localized: "Goal stalled: \(detail) turns since you last wrote and it is not met. Write to keep going, or clear or change it.")
+        default: return detail
         }
     }
 }
@@ -377,22 +844,36 @@ struct CardView: View {
                     .foregroundStyle(.secondary)
             } else if line.kind == .approval {
                 HStack {
-                    Button("Do it") {
-                        Task { await model.approve(line, isApproved: true) }
+                    if line.risk == "destructive" {
+                        Button("Do it", role: .destructive) {
+                            Task { await model.approve(line, isApproved: true) }
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(.red)
+                    } else {
+                        Button("Do it") {
+                            Task { await model.approve(line, isApproved: true) }
+                        }
+                        .buttonStyle(.glassProminent)
                     }
-                    .buttonStyle(.glassProminent)
-                    Button("Don’t", role: .destructive) {
+                    Button("Don’t") {
                         Task { await model.approve(line, isApproved: false) }
                     }
                     .buttonStyle(.glass)
                 }
             } else {
                 ForEach(line.choices, id: \.self) { choice in
-                    Button(choice) {
+                    Button {
                         Task { await model.answer(line, with: choice) }
+                    } label: {
+                        Text(choice).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.glass)
                 }
+                Button("Chat about it") {
+                    Task { await model.answer(line, with: ConversationModel.chatAboutIt) }
+                }
+                .buttonStyle(.borderless)
                 Text("Or type your answer below.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -485,6 +966,7 @@ struct CodingQuestionCard: View {
 /// turn that is running.
 struct Composer: View {
     @Bindable var model: ConversationModel
+    @Environment(AppModel.self) private var app
     @State private var pickedItems: [PhotosPickerItem] = []
     @FocusState private var isFocused: Bool
 
@@ -567,7 +1049,8 @@ struct Composer: View {
     }
 
     private var placeholder: String {
-        model.transcript.openQuestion == nil ? String(localized: "Ask your agent…") : String(localized: "Your answer")
+        if model.freshQuestion != nil { return String(localized: "Your answer") }
+        return app.agentName.isEmpty ? String(localized: "Ask your agent…") : String(localized: "Ask \(app.agentName)…")
     }
 
     private func add(_ items: [PhotosPickerItem]) async {

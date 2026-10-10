@@ -13,13 +13,34 @@ final class ConversationModel {
     /// The conversation's id; nil for the main conversation until it is
     /// loaded.
     private(set) var conversationId: String?
+    private(set) var conversation: AgentConversation?
     private(set) var title: String
     private(set) var transcript = Transcript(messages: [])
     private(set) var isLoaded = false
     private(set) var loadProblemText: String?
 
-    var draft = ""
+    /// The messages read so far, oldest first, and how many there are in
+    /// all: older ones are read a page at a time.
+    private var messages: [AgentMessage] = []
+    private var interactions: [AgentInteraction] = []
+    private(set) var total = 0
+    private(set) var isLoadingEarlier = false
+    var earlierCount: Int { max(0, total - messages.count) }
+
+    /// The agent's list for this conversation, and whose agent this is when
+    /// an operator looks at somebody else's.
+    private(set) var todos: [AgentTodo] = []
+    private(set) var actingAs: String?
+
+    /// Ideas to start an empty conversation with.
+    private(set) var ideas: [AgentIdea] = []
+
+    var draft = "" {
+        didSet { saveDraft() }
+    }
     var pictures: [PickedPicture] = []
+    /// The message being replied to, shown above the composer.
+    var replyingTo: AgentReference?
     private(set) var isSending = false
     var sendProblemText: String?
 
@@ -29,8 +50,10 @@ final class ConversationModel {
         set { if !newValue { sendProblemText = nil } }
     }
 
-    /// The turn running now, which the stop button stops.
-    private(set) var runningRunId: String?
+    /// The turns running or waiting, oldest first: the stop button stops
+    /// the first.
+    private(set) var runningRunIds: [String] = []
+    var runningRunId: String? { runningRunIds.first }
 
     /// Changes when something is sent or a card is settled, for the haptic.
     private(set) var sentCount = 0
@@ -39,21 +62,23 @@ final class ConversationModel {
     private let connection: Connection
     private var answeredLocationCalls: Set<String> = []
 
-    /// A coding session's question is being told: the card it is drawn as
-    /// comes from a note the feed does not carry, so the conversation is
-    /// read again once the telling is done.
-    private var isCodingQuestionArriving = false
+    /// How recent a question must be for typing to answer it rather than
+    /// start a turn: one from an hour ago is not what the person is
+    /// answering.
+    static let cardFresh: TimeInterval = 60 * 60
 
     init(conversation: AgentConversation?, app: AppModel, connection: Connection) {
         self.conversationId = conversation?.id
-        self.title = conversation.map(ConversationModel.title(of:)) ?? String(localized: "Your agent")
+        self.conversation = conversation
+        self.title = conversation.map { ConversationModel.title(of: $0, agentTitle: app.agentTitle) } ?? app.agentTitle
         self.app = app
         self.connection = connection
+        self.draft = UserDefaults.standard.string(forKey: draftKey) ?? ""
     }
 
-    static func title(of conversation: AgentConversation) -> String {
+    static func title(of conversation: AgentConversation, agentTitle: String) -> String {
         if conversation.isMain {
-            return String(localized: "Your agent")
+            return agentTitle
         }
         if let title = conversation.title, !title.isEmpty {
             return title
@@ -61,8 +86,21 @@ final class ConversationModel {
         return String(localized: "New conversation")
     }
 
-    /// Loads the conversation and follows its feed until the screen goes
-    /// away, loading again and following anew whenever the feed drops.
+    /// The draft is kept per conversation, as the dashboard keeps it.
+    private var draftKey: String { "draft.\(conversationId ?? "main")" }
+
+    private func saveDraft() {
+        if draft.isEmpty {
+            UserDefaults.standard.removeObject(forKey: draftKey)
+        } else {
+            UserDefaults.standard.set(draft, forKey: draftKey)
+        }
+    }
+
+    /// Loads the conversation and follows its feed while the screen shows
+    /// it, loading again and following anew whenever the feed drops. The
+    /// screen restarts this when the app comes back to the front, so a feed
+    /// iOS closed in the background is opened again at once.
     func follow() async {
         var delay = Duration.seconds(1)
         while !Task.isCancelled {
@@ -82,39 +120,78 @@ final class ConversationModel {
                 }
             }
             try? await Task.sleep(for: delay)
-            delay = min(delay * 2, .seconds(30))
+            delay = min(delay * 2, .seconds(10))
         }
     }
 
-    /// Reads the conversation's newest messages and open cards.
+    /// Reads the conversation's newest messages and open cards. A turn
+    /// still running is replayed by the feed that follows, which says it
+    /// runs again; one that ended while the feed was down is not.
     func load() async throws {
-        let page = try await connection.conversation(conversationId)
+        let page = try await connection.conversation(conversationId, first: max(100, messages.count))
         if let conversation = page.conversation {
             conversationId = conversation.id
-            title = Self.title(of: conversation)
+            self.conversation = conversation
+            title = Self.title(of: conversation, agentTitle: app.agentTitle)
         }
-        transcript = Transcript(messages: page.messages, interactions: page.interactions)
+        messages = page.messages
+        interactions = page.interactions
+        total = page.total
+        todos = page.todos
+        actingAs = page.actingAs
+        runningRunIds = []
+        transcript = Transcript(messages: messages, interactions: interactions)
         isLoaded = true
         loadProblemText = nil
+        if messages.isEmpty {
+            await loadIdeas()
+        }
+    }
+
+    /// Reads the page of messages before those shown.
+    func loadEarlier() async {
+        guard earlierCount > 0, !isLoadingEarlier else { return }
+        isLoadingEarlier = true
+        defer { isLoadingEarlier = false }
+        do {
+            let page = try await connection.conversation(conversationId, first: 100, offset: messages.count)
+            let known = Set(messages.map(\.id))
+            messages = page.messages.filter { !known.contains($0.id) } + messages
+            total = page.total
+            transcript = Transcript(messages: messages, interactions: interactions)
+        } catch {
+            sendProblemText = app.describe(error)
+        }
+    }
+
+    private func loadIdeas() async {
+        ideas = (try? await connection.ideas(language: Locale.current.language.languageCode?.identifier ?? "en"))?.prefix(3).map { $0 } ?? []
+        if !ideas.isEmpty {
+            try? await connection.markIdeasShown(ideas.map(\.id))
+        }
     }
 
     private func apply(_ event: AgentEvent) {
         transcript.apply(event)
         switch event.kind {
         case "asked":
-            runningRunId = event.runId
-            if event.text.map({ CheckInOrigin.of($0) == .herdrQuestion }) == true {
-                isCodingQuestionArriving = true
+            if !runningRunIds.contains(event.runId) {
+                runningRunIds.append(event.runId)
             }
-        case "done":
-            if runningRunId == event.runId { runningRunId = nil }
-            if isCodingQuestionArriving {
-                isCodingQuestionArriving = false
-                Task { try? await load() }
+        case "done", "error":
+            runningRunIds.removeAll { $0 == event.runId }
+            if event.kind == "error", let text = event.error, !text.isEmpty {
+                sendProblemText = text
             }
-        case "error":
-            if runningRunId == event.runId { runningRunId = nil }
-            sendProblemText = event.error
+            // The stored turn replaces the one drawn as it arrived: its
+            // usage, its ids for replying, a coding session's question card.
+            Task { try? await load() }
+        case "tool_result" where event.tool == "todo":
+            Task {
+                if let page = try? await connection.conversation(conversationId, first: 1) {
+                    todos = page.todos
+                }
+            }
         case "titled":
             if let text = event.text, !text.isEmpty { title = text }
         case "locate":
@@ -128,12 +205,21 @@ final class ConversationModel {
         !isSending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pictures.isEmpty)
     }
 
-    /// Sends what is typed: an answer to the question waiting, when one is,
-    /// or a new message.
+    /// The question that typing answers: the newest unanswered one, while
+    /// its turn runs or for an hour after it was asked.
+    var freshQuestion: TranscriptLine? {
+        guard let question = transcript.openQuestion else { return nil }
+        if runningRunIds.contains(question.runId) || question.kind == .codingQuestion { return question }
+        guard let at = ServerTime.date(question.at) else { return question }
+        return Date().timeIntervalSince(at) < Self.cardFresh ? question : nil
+    }
+
+    /// Sends what is typed: an answer to the question waiting, when one is
+    /// fresh, or a new message.
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
-        if let question = transcript.openQuestion, pictures.isEmpty {
+        if let question = freshQuestion, pictures.isEmpty, replyingTo == nil {
             draft = ""
             if question.kind == .codingQuestion {
                 await answerCodingQuestion(question, options: [], freeText: text)
@@ -145,35 +231,83 @@ final class ConversationModel {
         isSending = true
         defer { isSending = false }
         let sending = pictures
+        let reply = replyingTo
         draft = ""
         pictures = []
+        replyingTo = nil
         do {
             var attachments: [AgentAttachment] = []
             for picture in sending {
                 let id = try await connection.upload(name: picture.name, contentType: "image/jpeg", data: picture.data)
                 attachments.append(AgentAttachment(id: id, name: picture.name, contentType: "image/jpeg", size: picture.data.count))
             }
-            transcript.addSent(text, attachments: attachments)
+            let message = text.isEmpty ? "(files)" : text
+            transcript.addSent(message, attachments: attachments, replyingTo: reply)
             let asked = try await connection.ask(
-                text, in: conversationId, attachmentIds: attachments.map(\.id), drawerId: app.drawerId)
-            runningRunId = asked.runId
+                message, in: conversationId, attachmentIds: attachments.map(\.id), references: reply.map { [$0] } ?? [],
+                drawerId: app.drawerId)
+            if !runningRunIds.contains(asked.runId) {
+                runningRunIds.append(asked.runId)
+            }
             sentCount += 1
             if conversationId == nil {
                 conversationId = asked.conversationId
             }
+            ideas = []
         } catch {
             transcript.withdrawSent()
             draft = text
             pictures = sending
+            replyingTo = reply
             sendProblemText = app.describe(error)
         }
     }
 
+    /// Sends a suggested reply as it is, leaving the draft alone.
+    func sendSuggestion(_ suggestion: String) async {
+        transcript.addSent(suggestion)
+        do {
+            let asked = try await connection.ask(suggestion, in: conversationId, drawerId: app.drawerId)
+            runningRunIds.append(asked.runId)
+            sentCount += 1
+        } catch {
+            transcript.withdrawSent()
+            sendProblemText = app.describe(error)
+        }
+    }
+
+    /// Starts one of the agent's ideas: what it opens with is sent at once.
+    func start(_ idea: AgentIdea) async {
+        do {
+            let started = try await connection.startIdea(idea.id, in: conversationId, language: Locale.current.language.languageCode?.identifier ?? "en")
+            ideas = []
+            if let opened = started.conversationId, opened != conversationId {
+                app.openedConversationId = opened
+                return
+            }
+            await sendSuggestion(started.openingRequest)
+        } catch {
+            sendProblemText = app.describe(error)
+        }
+    }
+
+    /// Replies to a line: its words are quoted with what is sent next.
+    func reply(to line: TranscriptLine) {
+        guard let messageId = line.messageId else { return }
+        replyingTo = AgentReference(
+            agentMessageId: messageId, quotedRole: line.kind == .person ? "user" : "assistant",
+            quotedText: String(line.text.prefix(1000)))
+    }
+
     func approve(_ line: TranscriptLine, isApproved: Bool) async {
         do {
-            try await connection.resolveConfirmation(runId: line.runId, callId: line.callId, isApproved: isApproved)
-            transcript.settle(cardId: line.id, resolution: isApproved ? "approved" : "declined")
-            sentCount += 1
+            if try await connection.resolveConfirmation(runId: line.runId, callId: line.callId, isApproved: isApproved) {
+                transcript.settle(cardId: line.id, resolution: isApproved ? "approved" : "declined")
+                sentCount += 1
+            } else {
+                transcript.remove(cardId: line.id)
+                sendProblemText = String(localized: "That card was already answered, or is no longer waiting.")
+            }
         } catch {
             sendProblemText = app.describe(error)
         }
@@ -181,13 +315,21 @@ final class ConversationModel {
 
     func answer(_ line: TranscriptLine, with answer: String) async {
         do {
-            try await connection.answerQuestion(runId: line.runId, callId: line.callId, answer: answer)
-            transcript.settle(cardId: line.id, resolution: answer)
-            sentCount += 1
+            if try await connection.answerQuestion(runId: line.runId, callId: line.callId, answer: answer) {
+                transcript.settle(cardId: line.id, resolution: answer == Self.chatAboutIt ? String(localized: "Chatting about it instead") : answer)
+                sentCount += 1
+            } else {
+                transcript.remove(cardId: line.id)
+                sendProblemText = String(localized: "That card was already answered, or is no longer waiting.")
+            }
         } catch {
             sendProblemText = app.describe(error)
         }
     }
+
+    /// What a question card answers when the person would rather talk than
+    /// pick (askuser.ChatAboutIt on the server), the same in every language.
+    static let chatAboutIt = "[chat about it]"
 
     /// Answers a coding session's question with the options chosen, or with
     /// what to type into it.

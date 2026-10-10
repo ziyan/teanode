@@ -7,14 +7,13 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
         case person
         /// What the agent answered.
         case answer
-        /// A tool the agent called, collapsed to one line.
+        /// A tool the agent called.
         case tool
         /// A turn the agent took on its own: an alert, a goal, a coding
-        /// session's question. Nobody typed it, so only where it came from
-        /// is shown.
+        /// session's question. Nobody typed it.
         case checkIn
         /// Something that happened: the turn was stopped, the conversation
-        /// was summarized.
+        /// was folded into a note, a goal changed.
         case note
         /// A tool call waiting for the person's approval.
         case approval
@@ -28,8 +27,8 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     public let id: String
     public let kind: Kind
     public var text: String
-    /// For a tool, its name; for a check-in, where it came from; for a
-    /// note, its kind.
+    /// For a tool, its name; for a check-in, its marker; for a note, its
+    /// kind.
     public var detail: String
     public var isStreaming: Bool
     /// For a tool, whether it finished; for a card, whether it was settled.
@@ -37,12 +36,34 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     public var runId: String
     public var callId: String
     public var choices: [String]
-    /// How a card was settled: "approved", "declined", or the answer given.
+    /// How a card was settled ("approved", "declined", or the answer
+    /// given); for a tool, the short note it ended with.
     public var resolution: String
     public var attachments: [AgentAttachment]
     public var at: String?
     /// For a coding session's question, the question whole.
     public var codingQuestion: CodingQuestion?
+    /// The stored message the line is, which a reply points at; nil for a
+    /// line still arriving.
+    public var messageId: String?
+    /// On the last answer of a turn, what the whole turn cost.
+    public var usage: AgentUsage?
+    /// What a person's message points at, besides a reply.
+    public var references: [AgentReference] = []
+    /// What a person's message replies to: an earlier message, or the
+    /// question a late answer answers.
+    public var quotedText: String = ""
+    /// "user", "assistant" or "question": whose words quotedText are.
+    public var quotedRole: String = ""
+    /// For an approval, how risky the call is; "destructive" is drawn red.
+    public var risk: String = ""
+    /// For an answer, the replies it suggests, shown as buttons.
+    public var suggestions: [String] = []
+    /// For a tool, what it was called with.
+    public var arguments: String = ""
+    /// For a note, whether it is waiting on something still to happen
+    /// (a turn queued behind another, the conversation being folded).
+    public var isPending = false
 
     public init(
         id: String, kind: Kind, text: String, detail: String = "", isStreaming: Bool = false, isDone: Bool = false,
@@ -61,6 +82,30 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
         self.resolution = resolution
         self.attachments = attachments
         self.at = at
+    }
+}
+
+/// Suggestions are the replies an answer offers, written as a hidden last
+/// line, `<!--suggestions:["Yes","Not yet"]-->`, which is never shown.
+public enum Suggestions {
+    static let pattern = try! NSRegularExpression(pattern: #"<!--\s*suggestions:\s*(\[.*?\])\s*-->\s*$"#, options: [.dotMatchesLineSeparators])
+
+    /// An answer's text without its suggestions line, and the suggestions;
+    /// while it is still being written, a half-written line is left out too.
+    public static func split(_ text: String) -> (text: String, suggestions: [String]) {
+        let range = NSRange(text.startIndex..., in: text)
+        if let match = pattern.firstMatch(in: text, range: range),
+            let whole = Range(match.range, in: text), let list = Range(match.range(at: 1), in: text)
+        {
+            let parsed = (try? JSONDecoder().decode([String].self, from: Data(text[list].utf8))) ?? []
+            let suggestions = parsed.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            let display = String(text[..<whole.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return (display, (2...6).contains(suggestions.count) ? suggestions : [])
+        }
+        if let open = text.range(of: "<!--", options: .backwards), text[open.lowerBound...].range(of: "-->") == nil {
+            return (String(text[..<open.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines), [])
+        }
+        return (text, [])
     }
 }
 
@@ -172,26 +217,64 @@ public struct Transcript: Sendable {
         for message in messages where message.role == "tool" {
             if let callId = message.toolCallId { results[callId] = message.content }
         }
+        // What a turn cost is added up over its rounds and shown on its
+        // last answer.
+        var turnUsage: AgentUsage?
+        var turnAnswer: Int?
+        func closeTurn() {
+            if let turnAnswer, let turnUsage { lines[turnAnswer].usage = turnUsage }
+            turnUsage = nil
+            turnAnswer = nil
+        }
         for message in messages {
             switch message.role {
             case "user":
+                closeTurn()
                 if let origin = CheckInOrigin.of(message.content) {
-                    lines.append(TranscriptLine(id: message.id, kind: .checkIn, text: message.content, detail: origin.rawValue, at: message.createdAt))
-                } else if message.content.hasPrefix(answeringMarker) {
-                    let rest = message.content.dropFirst(answeringMarker.count).trimmingCharacters(in: .whitespacesAndNewlines)
-                    let answer = rest.range(of: "\n\n").map { String(rest[$0.upperBound...]) } ?? rest
-                    lines.append(TranscriptLine(id: message.id, kind: .person, text: answer.trimmingCharacters(in: .whitespacesAndNewlines), at: message.createdAt))
-                } else {
-                    lines.append(TranscriptLine(id: message.id, kind: .person, text: message.content, attachments: message.attachments ?? [], at: message.createdAt))
+                    var line = TranscriptLine(id: message.id, kind: .checkIn, text: message.content, detail: origin.rawValue, at: message.createdAt)
+                    line.messageId = message.id
+                    lines.append(line)
+                    continue
                 }
+                var line = TranscriptLine(id: message.id, kind: .person, text: message.content, attachments: message.attachments ?? [], at: message.createdAt)
+                line.messageId = message.id
+                if message.content.hasPrefix(answeringMarker) {
+                    let rest = message.content.dropFirst(answeringMarker.count).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let gap = rest.range(of: "\n\n") {
+                        line.quotedText = String(rest[..<gap.lowerBound])
+                        line.quotedRole = "question"
+                        line.text = String(rest[gap.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        line.text = rest
+                    }
+                }
+                for reference in message.references ?? [] {
+                    if reference.isReply {
+                        line.quotedText = reference.quotedText ?? ""
+                        line.quotedRole = reference.quotedRole ?? ""
+                    } else {
+                        line.references.append(reference)
+                    }
+                }
+                lines.append(line)
             case "assistant":
+                if let usage = message.usage {
+                    turnUsage = (turnUsage ?? AgentUsage()) + usage
+                }
                 if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    lines.append(TranscriptLine(id: message.id, kind: .answer, text: message.content, at: message.createdAt))
+                    let split = Suggestions.split(message.content)
+                    var line = TranscriptLine(id: message.id, kind: .answer, text: split.text, at: message.createdAt)
+                    line.suggestions = split.suggestions
+                    line.messageId = message.id
+                    lines.append(line)
+                    turnAnswer = lines.count - 1
                 }
                 for call in message.toolCalls ?? [] {
-                    lines.append(TranscriptLine(
-                        id: "\(message.id)-\(call.id)", kind: .tool, text: results[call.id] ?? "", detail: call.name,
-                        isDone: true, callId: call.id, at: message.createdAt))
+                    var line = TranscriptLine(
+                        id: Self.toolId(callId: call.id), kind: .tool, text: results[call.id] ?? "", detail: call.name,
+                        isDone: true, callId: call.id, at: message.createdAt)
+                    line.arguments = call.arguments ?? ""
+                    lines.append(line)
                 }
             case "note":
                 // A coding session's question is drawn as its card, in place
@@ -206,6 +289,7 @@ public struct Transcript: Sendable {
                             callId: question.questionFingerprint, choices: question.choices.map(\.optionLabel), at: message.createdAt)
                         card.codingQuestion = question
                         lines.append(card)
+                        turnAnswer = nil
                     }
                     continue
                 }
@@ -230,27 +314,43 @@ public struct Transcript: Sendable {
                 continue
             }
         }
+        closeTurn()
         for interaction in interactions {
             let id = Self.cardId(runId: interaction.runId, callId: interaction.callId)
             guard !lines.contains(where: { $0.id == id }) else { continue }
-            lines.append(TranscriptLine(
+            var line = TranscriptLine(
                 id: id, kind: interaction.interactionKind == "approval" ? .approval : .question,
                 text: interaction.interactionText, detail: interaction.toolName ?? "",
                 runId: interaction.runId, callId: interaction.callId, choices: interaction.interactionChoices ?? [],
-                at: interaction.createdAt))
+                at: interaction.createdAt)
+            line.risk = interaction.toolRisk ?? ""
+            lines.append(line)
         }
     }
 
     static func cardId(runId: String, callId: String) -> String { "\(runId)-\(callId)-card" }
 
+    /// A tool line's id, the same whether it was read back or arrived live,
+    /// so a turn replayed after the feed reconnects does not draw it twice.
+    static func toolId(callId: String) -> String { "tool-\(callId)" }
+
     /// sentPrefix starts the id of a line this app sent, until the feed
     /// says which turn it began.
     static let sentPrefix = "sent-"
 
+    /// How far back a turn's opening is looked for, so one the feed replays
+    /// is matched with the line already there rather than drawn again.
+    static let replayLookBack = 8
+
     /// Shows what the person just sent from this app, before the turn it
     /// begins is under way.
-    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = []) {
-        lines.append(TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments))
+    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil) {
+        var line = TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments)
+        if let reply {
+            line.quotedText = reply.quotedText ?? ""
+            line.quotedRole = reply.quotedRole ?? ""
+        }
+        lines.append(line)
     }
 
     /// Takes back the last thing sent from this app, when the server
@@ -267,15 +367,31 @@ public struct Transcript: Sendable {
         lines.last { ($0.kind == .question || $0.kind == .codingQuestion) && !$0.isDone }
     }
 
+    /// The suggested replies to offer now: those of the last answer, when
+    /// nothing but notes came after it and it is finished.
+    public var offeredSuggestions: [String] {
+        guard let last = lines.last(where: { $0.kind != .note }), last.kind == .answer, !last.isStreaming else { return [] }
+        return last.suggestions
+    }
+
     /// Applies an event of a running turn.
     public mutating func apply(_ event: AgentEvent) {
+        // A turn waiting behind another has begun once anything else of it
+        // arrives.
+        if event.kind != "note" || event.noteKind != "queued" {
+            lines.removeAll { $0.id == "\(event.runId)-queued" }
+        }
         switch event.kind {
         case "asked":
             // A turn began: something the person said, here or anywhere
-            // else, or a turn the agent took on its own. One sent from this
-            // app is shown already.
+            // else, or a turn the agent took on its own. One already shown,
+            // sent from this app or read back before the feed replayed the
+            // turn, is not drawn again.
             guard let text = event.text, !text.isEmpty else { return }
-            if let index = lines.lastIndex(where: { $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty && $0.text == text }) {
+            let recent = lines.indices.suffix(Self.replayLookBack)
+            if let index = recent.last(where: { lines[$0].text == text && (lines[$0].runId.isEmpty || lines[$0].runId == event.runId) && (lines[$0].kind == .person || lines[$0].kind == .checkIn) }) {
+                lines[index].runId = event.runId
+            } else if let index = recent.last(where: { lines[$0].kind == .checkIn && lines[$0].text == text }) {
                 lines[index].runId = event.runId
             } else if let origin = CheckInOrigin.of(text) {
                 lines.append(TranscriptLine(id: "\(event.runId)-asked", kind: .checkIn, text: text, detail: origin.rawValue, runId: event.runId, at: event.at))
@@ -289,20 +405,29 @@ public struct Transcript: Sendable {
                 lines.append(TranscriptLine(id: "\(event.runId)-\(event.sequence)", kind: .answer, text: event.text ?? "", isStreaming: true, runId: event.runId, at: event.at))
             }
         case "message":
+            let split = Suggestions.split(event.text ?? "")
             if let last = lines.indices.last, lines[last].kind == .answer, lines[last].isStreaming {
-                lines[last].text = event.text ?? lines[last].text
+                lines[last].text = event.text == nil ? lines[last].text : split.text
+                lines[last].suggestions = split.suggestions
                 lines[last].isStreaming = false
-            } else if let text = event.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                lines.append(TranscriptLine(id: "\(event.runId)-\(event.sequence)", kind: .answer, text: text, runId: event.runId, at: event.at))
+            } else if !split.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                !lines.suffix(Self.replayLookBack).contains(where: { $0.kind == .answer && $0.text == split.text })
+            {
+                var line = TranscriptLine(id: "\(event.runId)-\(event.sequence)", kind: .answer, text: split.text, runId: event.runId, at: event.at)
+                line.suggestions = split.suggestions
+                lines.append(line)
             }
         case "tool_call":
-            let id = "\(event.runId)-\(event.callId ?? "")"
+            let id = Self.toolId(callId: event.callId ?? "")
             guard !lines.contains(where: { $0.id == id }) else { return }
-            lines.append(TranscriptLine(id: id, kind: .tool, text: "", detail: event.tool ?? "", runId: event.runId, callId: event.callId ?? "", at: event.at))
+            var line = TranscriptLine(id: id, kind: .tool, text: "", detail: event.tool ?? "", runId: event.runId, callId: event.callId ?? "", at: event.at)
+            line.arguments = event.arguments ?? ""
+            lines.append(line)
         case "tool_result":
-            if let index = lines.firstIndex(where: { $0.id == "\(event.runId)-\(event.callId ?? "")" }) {
+            if let index = lines.firstIndex(where: { $0.id == Self.toolId(callId: event.callId ?? "") }) {
                 lines[index].isDone = true
                 lines[index].text = event.text ?? ""
+                lines[index].resolution = event.note ?? ""
             }
             // A card's call has an answer: settled, wherever it was settled.
             if let index = lines.firstIndex(where: { $0.id == Self.cardId(runId: event.runId, callId: event.callId ?? "") }), !lines[index].isDone {
@@ -312,16 +437,44 @@ public struct Transcript: Sendable {
         case "confirmation":
             let id = Self.cardId(runId: event.runId, callId: event.callId ?? "")
             guard !lines.contains(where: { $0.id == id }) else { return }
-            lines.append(TranscriptLine(id: id, kind: .approval, text: event.note ?? "", detail: event.tool ?? "", runId: event.runId, callId: event.callId ?? "", at: event.at))
+            var line = TranscriptLine(id: id, kind: .approval, text: event.note ?? "", detail: event.tool ?? "", runId: event.runId, callId: event.callId ?? "", at: event.at)
+            line.risk = event.risk ?? ""
+            lines.append(line)
         case "question":
             let id = Self.cardId(runId: event.runId, callId: event.callId ?? "")
             guard !lines.contains(where: { $0.id == id }) else { return }
             let choices = (event.text ?? "").split(separator: "\n").map(String.init).filter { !$0.isEmpty }
             lines.append(TranscriptLine(id: id, kind: .question, text: event.note ?? "", runId: event.runId, callId: event.callId ?? "", choices: choices, at: event.at))
-        case "done":
+        case "note":
+            let noteKind = event.noteKind ?? ""
+            switch noteKind {
+            case "queued":
+                guard !lines.contains(where: { $0.id == "\(event.runId)-queued" }) else { return }
+                var line = TranscriptLine(id: "\(event.runId)-queued", kind: .note, text: "", detail: "queued", runId: event.runId, at: event.at)
+                line.isPending = true
+                lines.append(line)
+            case "compacting":
+                guard !lines.contains(where: { $0.id == "\(event.runId)-compacting" }) else { return }
+                var line = TranscriptLine(id: "\(event.runId)-compacting", kind: .note, text: "", detail: "compacting", runId: event.runId, at: event.at)
+                line.isPending = true
+                lines.append(line)
+            case "herdr_asked", "herdr_answered":
+                return
+            default:
+                let id = "\(event.runId)-note-\(event.sequence)"
+                guard !lines.contains(where: { $0.id == id }) else { return }
+                let line = TranscriptLine(id: id, kind: .note, text: event.noteDetail ?? event.note ?? "", detail: noteKind, runId: event.runId, at: event.at)
+                if noteKind == "compacted", let index = lines.firstIndex(where: { $0.id == "\(event.runId)-compacting" }) {
+                    lines[index] = line
+                } else {
+                    lines.append(line)
+                }
+            }
+        case "done", "error":
             for index in lines.indices where lines[index].runId == event.runId && lines[index].isStreaming {
                 lines[index].isStreaming = false
             }
+            lines.removeAll { $0.runId == event.runId && $0.isPending }
         default:
             return
         }
@@ -335,10 +488,21 @@ public struct Transcript: Sendable {
         }
     }
 
+    /// Takes a card away that the server says is no longer waiting.
+    public mutating func remove(cardId: String) {
+        lines.removeAll { $0.id == cardId }
+    }
+
     static func resolution(of result: String, kind: TranscriptLine.Kind) -> String {
         if kind == .approval {
             let lowered = result.lowercased()
             return lowered.contains("declined") || lowered.contains("refused") || lowered.contains("denied") ? "declined" : "approved"
+        }
+        // A question's tool result is {"answer": ...}.
+        if let data = result.data(using: .utf8), let answered = try? JSONDecoder().decode([String: JSONValue].self, from: data),
+            let answer = answered["answer"]?.stringValue
+        {
+            return answer
         }
         return result
     }

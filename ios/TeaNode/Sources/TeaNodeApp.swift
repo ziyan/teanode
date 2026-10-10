@@ -66,6 +66,7 @@ struct MainView: View {
             SettingsView()
         }
         .task {
+            await app.loadAgentName()
             await app.setUpNotifications()
         }
         .onChange(of: app.openedConversationId) { _, conversationId in
@@ -73,8 +74,9 @@ struct MainView: View {
             app.openedConversationId = nil
             isChoosing = false
             isShowingSettings = false
-            // The kind is learned when the conversation loads.
-            conversation = AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
+            // An empty id is the main conversation; for another, the kind is
+            // learned when the conversation loads.
+            conversation = conversationId.isEmpty ? nil : AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
         }
         .alert(
             "Already connected",
@@ -116,7 +118,7 @@ struct ConversationsSheet: View {
                     Button {
                         onChoose(nil)
                     } label: {
-                        Label("Your agent", systemImage: "leaf")
+                        Label(app.agentTitle, systemImage: "leaf")
                     }
                 }
                 Section("Conversations") {
@@ -125,7 +127,7 @@ struct ConversationsSheet: View {
                             onChoose(conversation)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(ConversationModel.title(of: conversation))
+                                Text(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))
                                     .foregroundStyle(.primary)
                                 if let lastAt = ServerTime.date(conversation.lastAt) {
                                     Text(lastAt, format: .relative(presentation: .named))

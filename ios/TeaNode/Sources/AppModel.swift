@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 import TeaNodeKit
 import UIKit
 import UserNotifications
@@ -37,6 +38,44 @@ final class AppModel {
 
     /// A conversation a pressed notification asks to open.
     var openedConversationId: String?
+
+    /// The agent's name, for the main conversation's title and the
+    /// composer; empty until read, or when the agent has none.
+    private(set) var agentName = ""
+
+    /// What the main conversation is called: the agent's name.
+    var agentTitle: String { agentName.isEmpty ? String(localized: "Your agent") : agentName }
+
+    /// Where a link in an answer goes. Web links open as they are; a mail
+    /// item or a memory page opens its page on the dashboard; anything else
+    /// is not followed, as the dashboard does not follow it.
+    func route(_ address: URL) -> OpenURLAction.Result {
+        let written = address.absoluteString
+        switch address.scheme?.lowercased() {
+        case "http", "https":
+            return .systemAction(address)
+        case "mail":
+            let itemId = String(written.dropFirst("mail:".count))
+            guard let account, !itemId.isEmpty, itemId.allSatisfy({ $0.isLetter || $0.isNumber }) else { return .discarded }
+            return .systemAction(account.server.endpoint("/mailbox/starred/\(itemId)"))
+        case "memory":
+            let path = String(written.dropFirst("memory:".count).split(separator: "#").first ?? "")
+            let segments = path.split(separator: "/")
+            guard let account, !segments.isEmpty, segments.count <= 8,
+                segments.allSatisfy({ $0.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" } })
+            else { return .discarded }
+            return .systemAction(account.server.endpoint("/knowledge/\(path)"))
+        default:
+            return .discarded
+        }
+    }
+
+    /// Reads the agent's name.
+    func loadAgentName() async {
+        if let connection, let name = try? await connection.agentName() {
+            agentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
 
     let store = KeychainAccountStore()
     let transport: any HTTPTransport

@@ -9,23 +9,59 @@ public enum Documents {
     public static let session = """
         query { GetSession { username } }
         """
+    public static let agent = """
+        query { ReadAgent { agent { id enabled name } } }
+        """
     public static let conversations = """
-        query { ListAgentConversations(archived: false) { id kind title summary lastAt } }
+        query ($archived: Boolean, $query: String) {
+          ListAgentConversations(archived: $archived, query: $query) { id kind jobKind title summary lastAt archivedAt goal goalState goalNote }
+        }
         """
     public static let conversation = """
-        query ($conversationId: String, $first: Int) {
-          ReadAgentConversation(conversationId: $conversationId, first: $first) {
-            conversation { id kind title summary lastAt }
-            messages { id createdAt role content name toolCallId toolCalls { id name arguments } attachments { id name contentType size } }
+        query ($conversationId: String, $first: Int, $offset: Int) {
+          ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
+            conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote }
+            actingAs
+            messages {
+              id createdAt role content name toolCallId toolCalls { id name arguments }
+              usage { promptTokens completionTokens cost }
+              attachments { id name contentType size }
+              references { itemId threadId subject from path name financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
+            }
             total
+            todos { id text doneAt }
           }
-          ListAgentInteractions(conversationId: $conversationId) { runId callId interactionKind toolName interactionText interactionChoices createdAt }
+          ListAgentInteractions(conversationId: $conversationId) { runId callId interactionKind toolName interactionText interactionChoices toolRisk createdAt }
         }
         """
     public static let ask = """
-        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $drawerId: String) {
-          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, drawerId: $drawerId) { runId conversationId }
+        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String) {
+          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId) { runId conversationId }
         }
+        """
+    public static let updateConversation = """
+        mutation ($conversationId: String!, $title: String, $archived: Boolean) {
+          UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived) { id }
+        }
+        """
+    public static let deleteConversation = """
+        mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }
+        """
+    public static let setMainConversation = """
+        mutation ($conversationId: String) { SetAgentMainConversation(conversationId: $conversationId) { id } }
+        """
+    public static let ideas = """
+        query ($ideaStatuses: [String!], $language: String) {
+          ListAgentIdeas(ideaStatuses: $ideaStatuses, language: $language) { ideas { id emoji headline body openingRequest } }
+        }
+        """
+    public static let startIdea = """
+        mutation ($ideaId: String!, $conversationId: String, $language: String) {
+          StartAgentIdea(ideaId: $ideaId, conversationId: $conversationId, language: $language) { conversation { id } openingRequest }
+        }
+        """
+    public static let markIdeasShown = """
+        mutation ($ideaIds: [String!]!) { MarkAgentIdeasShown(ideaIds: $ideaIds) }
         """
     public static let startConversation = """
         mutation ($title: String) { StartAgentConversation(title: $title) { id kind title summary lastAt } }
@@ -70,10 +106,12 @@ public enum Documents {
 
     /// Every document, for the server's schema check.
     public static let all: [String: String] = [
-        "session": session, "conversations": conversations, "conversation": conversation, "ask": ask,
+        "session": session, "agent": agent, "conversations": conversations, "conversation": conversation, "ask": ask,
         "startConversation": startConversation, "resolveConfirmation": resolveConfirmation, "answerQuestion": answerQuestion,
         "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
         "updatePhone": updatePhone, "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
+        "updateConversation": updateConversation, "deleteConversation": deleteConversation,
+        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown,
     ]
 }
 
@@ -84,11 +122,26 @@ public enum Surface {
     public static let siri = "siri"
 }
 
-/// ConversationPage is a conversation's newest messages and its open cards.
+/// ConversationPage is a page of a conversation's messages, newest last,
+/// with its open cards and the agent's list for it.
 public struct ConversationPage: Sendable {
     public let conversation: AgentConversation?
     public let messages: [AgentMessage]
     public let interactions: [AgentInteraction]
+    /// How many messages the conversation has in all.
+    public let total: Int
+    public let todos: [AgentTodo]
+    /// Whose agent this is, when an operator is looking at somebody else's.
+    public let actingAs: String?
+}
+
+/// AgentIdea is something the agent suggests starting with.
+public struct AgentIdea: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let emoji: String?
+    public let headline: String
+    public let body: String?
+    public let openingRequest: String?
 }
 
 extension Connection {
@@ -101,32 +154,119 @@ extension Connection {
         return try await execute(Documents.session, as: Answer.self).GetSession.username ?? ""
     }
 
-    public func conversations() async throws -> [AgentConversation] {
-        struct Answer: Decodable, Sendable { let ListAgentConversations: [AgentConversation] }
-        return try await execute(Documents.conversations, as: Answer.self).ListAgentConversations
+    /// The conversations, or the archived ones, or those matching words.
+    /// The agent's name, which the app calls it by; empty when it has none.
+    public func agentName() async throws -> String {
+        struct Answer: Decodable, Sendable {
+            struct Read: Decodable, Sendable {
+                struct Agent: Decodable, Sendable { let name: String? }
+                let agent: Agent?
+            }
+            let ReadAgent: Read
+        }
+        return try await execute(Documents.agent, as: Answer.self).ReadAgent.agent?.name ?? ""
     }
 
-    /// A conversation's newest messages; nil is the main conversation.
-    public func conversation(_ conversationId: String?, first: Int = 120) async throws -> ConversationPage {
+    public func conversations(isArchived: Bool = false, matching words: String? = nil) async throws -> [AgentConversation] {
+        struct Answer: Decodable, Sendable { let ListAgentConversations: [AgentConversation] }
+        var variables: [String: JSONValue] = [:]
+        if let words, !words.isEmpty {
+            variables["query"] = .string(words)
+        } else {
+            variables["archived"] = .bool(isArchived)
+        }
+        return try await execute(Documents.conversations, variables: variables, as: Answer.self).ListAgentConversations
+    }
+
+    /// A page of a conversation's messages: the newest `first`, or older
+    /// ones `offset` from the newest. A nil id is the main conversation.
+    public func conversation(_ conversationId: String?, first: Int = 100, offset: Int = 0) async throws -> ConversationPage {
         struct Answer: Decodable, Sendable {
             struct Read: Decodable, Sendable {
                 let conversation: AgentConversation?
+                let actingAs: String?
                 let messages: [AgentMessage]
+                let total: Int?
+                let todos: [AgentTodo]?
             }
             let ReadAgentConversation: Read
             let ListAgentInteractions: [AgentInteraction]?
         }
-        var variables: [String: JSONValue] = ["first": .number(Double(first))]
+        var variables: [String: JSONValue] = ["first": .number(Double(first)), "offset": .number(Double(offset))]
         if let conversationId { variables["conversationId"] = .string(conversationId) }
         let answer = try await execute(Documents.conversation, variables: variables, as: Answer.self)
+        let read = answer.ReadAgentConversation
         return ConversationPage(
-            conversation: answer.ReadAgentConversation.conversation, messages: answer.ReadAgentConversation.messages,
-            interactions: answer.ListAgentInteractions ?? [])
+            conversation: read.conversation, messages: read.messages, interactions: answer.ListAgentInteractions ?? [],
+            total: read.total ?? read.messages.count, todos: read.todos ?? [],
+            actingAs: (read.actingAs ?? "").isEmpty ? nil : read.actingAs)
+    }
+
+    /// Renames a conversation, or puts it away or back.
+    public func updateConversation(_ conversationId: String, title: String? = nil, isArchived: Bool? = nil) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Updated: Decodable, Sendable { let id: String }
+            let UpdateAgentConversation: Updated
+        }
+        var variables: [String: JSONValue] = ["conversationId": .string(conversationId)]
+        if let title { variables["title"] = .string(title) }
+        if let isArchived { variables["archived"] = .bool(isArchived) }
+        _ = try await execute(Documents.updateConversation, variables: variables, as: Answer.self)
+    }
+
+    public func deleteConversation(_ conversationId: String) async throws {
+        struct Answer: Decodable, Sendable { let DeleteAgentConversation: Bool? }
+        _ = try await execute(Documents.deleteConversation, variables: ["conversationId": .string(conversationId)], as: Answer.self)
+    }
+
+    /// Makes a conversation the main one; the one before is kept as a side
+    /// conversation.
+    public func setMainConversation(_ conversationId: String) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Main: Decodable, Sendable { let id: String }
+            let SetAgentMainConversation: Main
+        }
+        _ = try await execute(Documents.setMainConversation, variables: ["conversationId": .string(conversationId)], as: Answer.self)
+    }
+
+    /// The agent's open ideas, in the person's language.
+    public func ideas(language: String) async throws -> [AgentIdea] {
+        struct Answer: Decodable, Sendable {
+            struct Listed: Decodable, Sendable { let ideas: [AgentIdea] }
+            let ListAgentIdeas: Listed
+        }
+        return try await execute(Documents.ideas, variables: [
+            "ideaStatuses": .array([.string("open")]), "language": .string(language),
+        ], as: Answer.self).ListAgentIdeas.ideas
+    }
+
+    /// Starts an idea: the conversation it goes to and what to ask.
+    public func startIdea(_ ideaId: String, in conversationId: String?, language: String) async throws -> (conversationId: String?, openingRequest: String) {
+        struct Answer: Decodable, Sendable {
+            struct Started: Decodable, Sendable {
+                struct Conversation: Decodable, Sendable { let id: String }
+                let conversation: Conversation?
+                let openingRequest: String
+            }
+            let StartAgentIdea: Started
+        }
+        var variables: [String: JSONValue] = ["ideaId": .string(ideaId), "language": .string(language)]
+        if let conversationId { variables["conversationId"] = .string(conversationId) }
+        let started = try await execute(Documents.startIdea, variables: variables, as: Answer.self).StartAgentIdea
+        return (started.conversation?.id, started.openingRequest)
+    }
+
+    public func markIdeasShown(_ ideaIds: [String]) async throws {
+        struct Answer: Decodable, Sendable { let MarkAgentIdeasShown: Bool? }
+        _ = try await execute(Documents.markIdeasShown, variables: ["ideaIds": .array(ideaIds.map { .string($0) })], as: Answer.self)
     }
 
     /// Asks the agent something; returns the run and the conversation it
     /// runs in.
-    public func ask(_ message: String, in conversationId: String?, attachmentIds: [String] = [], surface: String = Surface.typed, drawerId: String) async throws -> (runId: String, conversationId: String) {
+    public func ask(
+        _ message: String, in conversationId: String?, attachmentIds: [String] = [], references: [AgentReference] = [],
+        surface: String = Surface.typed, drawerId: String
+    ) async throws -> (runId: String, conversationId: String) {
         struct Answer: Decodable, Sendable {
             struct Asked: Decodable, Sendable {
                 let runId: String
@@ -138,6 +278,10 @@ extension Connection {
             "message": .string(message), "surface": .string(surface), "drawerId": .string(drawerId),
             "attachmentIds": .array(attachmentIds.map { .string($0) }),
         ]
+        if !references.isEmpty {
+            let encoded = try JSONEncoder().encode(references)
+            variables["references"] = try JSONDecoder().decode(JSONValue.self, from: encoded)
+        }
         if let conversationId { variables["conversationId"] = .string(conversationId) }
         let asked = try await execute(Documents.ask, variables: variables, as: Answer.self).AskAgent
         return (asked.runId, asked.conversationId)
@@ -150,18 +294,24 @@ extension Connection {
         return try await execute(Documents.startConversation, variables: variables, as: Answer.self).StartAgentConversation
     }
 
-    public func resolveConfirmation(runId: String, callId: String, isApproved: Bool) async throws {
+    /// Settles an approval; false when the card was answered already or
+    /// is no longer waiting.
+    @discardableResult
+    public func resolveConfirmation(runId: String, callId: String, isApproved: Bool) async throws -> Bool {
         struct Answer: Decodable, Sendable { let ResolveAgentConfirmation: Bool? }
-        _ = try await execute(Documents.resolveConfirmation, variables: [
+        return try await execute(Documents.resolveConfirmation, variables: [
             "runId": .string(runId), "callId": .string(callId), "approve": .bool(isApproved),
-        ], as: Answer.self)
+        ], as: Answer.self).ResolveAgentConfirmation ?? false
     }
 
-    public func answerQuestion(runId: String, callId: String, answer: String) async throws {
+    /// Answers the agent's question; false when the card was answered
+    /// already or is no longer waiting.
+    @discardableResult
+    public func answerQuestion(runId: String, callId: String, answer: String) async throws -> Bool {
         struct Answer: Decodable, Sendable { let AnswerAgentQuestion: Bool? }
-        _ = try await execute(Documents.answerQuestion, variables: [
+        return try await execute(Documents.answerQuestion, variables: [
             "runId": .string(runId), "callId": .string(callId), "answer": .string(answer),
-        ], as: Answer.self)
+        ], as: Answer.self).AnswerAgentQuestion ?? false
     }
 
     /// Answers a coding session's question: the options chosen, or what to

@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ in, %@ out · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力 %1$@、出力 %2$@ · %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 %1$@，输出 %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%lld earlier messages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それ以前のメッセージ %lld 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有 %lld 条更早的消息"
+          }
+        }
+      }
+    },
     "A coding session asks you": {
       "localizations": {
         "ja": {
@@ -45,6 +77,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有个目标需要你"
+          }
+        }
+      }
+    },
+    "A tool call could not be read, so it was asked for again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取れないツール呼び出しがあったため、もう一度依頼しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有一个工具调用无法读取，已重新请求。"
           }
         }
       }
@@ -241,6 +289,38 @@
         }
       }
     },
+    "Ask %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に尋ねる…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问问 %@ …"
+          }
+        }
+      }
+    },
+    "Ask about your mail, or ask for something to be done.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールについて尋ねたり、何かを頼んだりできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以问问你的邮件，或让助手去做点什么。"
+          }
+        }
+      }
+    },
     "Ask your agent anything: your mail, your calendar, a picture of a receipt.": {
       "localizations": {
         "ja": {
@@ -353,6 +433,38 @@
         }
       }
     },
+    "Chat about it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットで話す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊一聊"
+          }
+        }
+      }
+    },
+    "Chatting about it instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットで話すことにしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改为聊一聊"
+          }
+        }
+      }
+    },
     "Connect": {
       "localizations": {
         "ja": {
@@ -429,6 +541,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "对话"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
           }
         }
       }
@@ -513,6 +641,38 @@
         }
       }
     },
+    "Folding the earlier chat into a note…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それまでのチャットをメモにまとめています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在把之前的聊天折叠成一份笔记…"
+          }
+        }
+      }
+    },
+    "Goal changed: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を変更しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标已更改：%@"
+          }
+        }
+      }
+    },
     "Goal check-in": {
       "localizations": {
         "ja": {
@@ -525,6 +685,134 @@
           "stringUnit": {
             "state": "translated",
             "value": "目标回合"
+          }
+        }
+      }
+    },
+    "Goal cleared: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を解除しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标已清除：%@"
+          }
+        }
+      }
+    },
+    "Goal met: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を達成しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标已达成：%@"
+          }
+        }
+      }
+    },
+    "Goal set again: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を再設定しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重新设定目标：%@"
+          }
+        }
+      }
+    },
+    "Goal set: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を設定しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已设定目标：%@"
+          }
+        }
+      }
+    },
+    "Goal stalled: %@ turns since you last wrote and it is not met. Write to keep going, or clear or change it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標が停滞しています：最後の発言から %@ ターンが経過しましたが、まだ達成されていません。続けるにはメッセージを送るか、目標を解除・変更してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标停滞：自你上次发言后已过 %@ 轮，目标仍未达成。发消息以继续，或清除、更改目标。"
+          }
+        }
+      }
+    },
+    "Jump to the end": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "末尾へ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳到末尾"
+          }
+        }
+      }
+    },
+    "Looking into this carefully.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "じっくり調べています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在仔细研究。"
+          }
+        }
+      }
+    },
+    "Looking into this carefully: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "じっくり調べています：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在仔细研究：%@"
           }
         }
       }
@@ -689,6 +977,22 @@
         }
       }
     },
+    "Or start with one of these:": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "または、こちらから始めることもできます:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或者从这些开始："
+          }
+        }
+      }
+    },
     "Or type your answer below.": {
       "localizations": {
         "ja": {
@@ -749,6 +1053,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "回复"
+          }
+        }
+      }
+    },
+    "Replying to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ への返信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复 %@"
+          }
+        }
+      }
+    },
+    "Replying to your own message": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のメッセージへの返信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复你自己的消息"
           }
         }
       }
@@ -865,6 +1201,54 @@
         }
       }
     },
+    "Show the agent's working notes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの作業メモを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示助手的工作笔记"
+          }
+        }
+      }
+    },
+    "Show tool calls": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール呼び出しを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示工具调用"
+          }
+        }
+      }
+    },
+    "Show usage": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用量を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示用量"
+          }
+        }
+      }
+    },
     "Sign out": {
       "localizations": {
         "ja": {
@@ -945,6 +1329,22 @@
         }
       }
     },
+    "Still to do": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待完成"
+          }
+        }
+      }
+    },
     "Stop": {
       "localizations": {
         "ja": {
@@ -957,6 +1357,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "Stopped after the most rounds a turn may take.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1ターンで可能な最大ラウンド数に達したため停止しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已达到一轮允许的最多回合，已停止。"
+          }
+        }
+      }
+    },
+    "Stopped.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止。"
+          }
+        }
+      }
+    },
+    "Stopped: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止：%@"
+          }
+        }
+      }
+    },
+    "Stopped: the same call failed three times.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止しました：同じ呼び出しが3回失敗しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止：同一个调用连续失败了三次。"
           }
         }
       }
@@ -979,6 +1443,22 @@
     },
     "TeaNode": {
       "shouldTranslate": false
+    },
+    "That card was already answered, or is no longer waiting.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このカードはすでに回答済みか、もう待っていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张卡片已被回答，或已不再等待。"
+          }
+        }
+      }
     },
     "That did not reach your agent: %@": {
       "localizations": {
@@ -1028,6 +1508,22 @@
         }
       }
     },
+    "The agent's steps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの手順"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手的步骤"
+          }
+        }
+      }
+    },
     "The camera is not available": {
       "localizations": {
         "ja": {
@@ -1044,6 +1540,22 @@
         }
       }
     },
+    "The earlier chat was folded into a note.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それまでのチャットはメモにまとめられました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之前的聊天已折叠成一份笔记。"
+          }
+        }
+      }
+    },
     "The server could not be reached. Check the connection and try again.": {
       "localizations": {
         "ja": {
@@ -1056,6 +1568,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法连接服务器。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "The turn failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このターンは失敗しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一轮失败了。"
+          }
+        }
+      }
+    },
+    "The turn failed: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このターンは失敗しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一轮失败了：%@"
+          }
+        }
+      }
+    },
+    "Thinking…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "考え中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考中…"
+          }
+        }
+      }
+    },
+    "This is %@'s agent. What you say here reaches it as %@, and the server log says you did.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは %@ のエージェントです。ここで話しかけると %@ として届き、サーバーのログにそのことが残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是 %@ 的助手。你在这里说的话会以 %@ 的身份到达它，服务器日志会记录这一点。"
           }
         }
       }
@@ -1140,6 +1716,22 @@
         }
       }
     },
+    "Today": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        }
+      }
+    },
     "Used %@": {
       "localizations": {
         "ja": {
@@ -1172,6 +1764,54 @@
         }
       }
     },
+    "Waiting for the turn before it…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のターンを待っています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待上一轮完成…"
+          }
+        }
+      }
+    },
+    "What to show": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示する内容"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示内容"
+          }
+        }
+      }
+    },
+    "What your agent did on its own, as it happened. Ask about it here, or go back to the main chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが自分で行ったことを、起きた順に記録しています。ここで尋ねるか、メインのチャットに戻れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手自行完成的事，按发生顺序记录。可以在这里问它，或回到主对话。"
+          }
+        }
+      }
+    },
     "What your agent says on its own": {
       "localizations": {
         "ja": {
@@ -1184,6 +1824,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "助理主动说的话"
+          }
+        }
+      }
+    },
+    "Yesterday": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "昨日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "昨天"
           }
         }
       }
@@ -1248,6 +1904,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的回答"
+          }
+        }
+      }
+    },
+    "dropped": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已放弃"
+          }
+        }
+      }
+    },
+    "met": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "達成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已达成"
+          }
+        }
+      }
+    },
+    "waiting for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなた待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等你回应"
+          }
+        }
+      }
+    },
+    "working": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進行中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
           }
         }
       }

@@ -9,11 +9,19 @@ import Foundation
 /// named one.
 public struct AgentConversation: Codable, Identifiable, Hashable, Sendable {
     public let id: String
-    /// "main", "named" or "goal".
+    /// "main", "named", "run" or "goal".
     public let kind: String
+    /// For a run, what kind of job it was, such as "mcp".
+    public var jobKind: String? = nil
     public let title: String?
     public let summary: String?
     public let lastAt: String?
+    public var archivedAt: String? = nil
+    /// For a goal conversation: the goal, where it stands ("working",
+    /// "waiting", "met", "dropped"), and its last note.
+    public var goal: String? = nil
+    public var goalState: String? = nil
+    public var goalNote: String? = nil
 
     public init(id: String, kind: String, title: String?, summary: String?, lastAt: String?) {
         self.id = id
@@ -24,6 +32,76 @@ public struct AgentConversation: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var isMain: Bool { kind == "main" }
+    public var isArchived: Bool { !(archivedAt ?? "").isEmpty }
+}
+
+/// AgentUsage is what one round of a turn cost.
+public struct AgentUsage: Codable, Hashable, Sendable {
+    public var promptTokens: Int
+    public var completionTokens: Int
+    public var cost: Double
+
+    public init(promptTokens: Int = 0, completionTokens: Int = 0, cost: Double = 0) {
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.cost = cost
+    }
+
+    static func + (left: AgentUsage, right: AgentUsage) -> AgentUsage {
+        AgentUsage(
+            promptTokens: left.promptTokens + right.promptTokens, completionTokens: left.completionTokens + right.completionTokens,
+            cost: left.cost + right.cost)
+    }
+}
+
+/// AgentReference is something a message points at: a mail thread, a
+/// memory page, a finance transaction, or an earlier message replied to.
+public struct AgentReference: Codable, Hashable, Sendable {
+    public var itemId: String? = nil
+    public var threadId: String? = nil
+    public var subject: String? = nil
+    public var from: String? = nil
+    public var path: String? = nil
+    public var name: String? = nil
+    public var financeTransactionId: String? = nil
+    public var postedOn: String? = nil
+    public var amount: String? = nil
+    public var currencyCode: String? = nil
+    public var merchantName: String? = nil
+    public var description: String? = nil
+    public var agentMessageId: String? = nil
+    /// "user" or "assistant": whose message was replied to.
+    public var quotedRole: String? = nil
+    public var quotedText: String? = nil
+
+    public init(agentMessageId: String, quotedRole: String, quotedText: String) {
+        self.agentMessageId = agentMessageId
+        self.quotedRole = quotedRole
+        self.quotedText = quotedText
+    }
+
+    /// Whether this is a reply to an earlier message, not a thing pointed at.
+    public var isReply: Bool { !(agentMessageId ?? "").isEmpty }
+
+    /// What the reference's chip says.
+    public var label: String {
+        if let subject, !subject.isEmpty { return subject }
+        if let name, !name.isEmpty { return name }
+        if let path, !path.isEmpty { return path }
+        if let merchantName, !merchantName.isEmpty {
+            return [postedOn, merchantName, amount].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        }
+        return description ?? ""
+    }
+}
+
+/// AgentTodo is one step of the agent's own list for a conversation.
+public struct AgentTodo: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let text: String
+    public let doneAt: String?
+
+    public var isDone: Bool { !(doneAt ?? "").isEmpty }
 }
 
 /// AgentToolCall is a tool the agent called in one round.
@@ -59,6 +137,8 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     public let toolCallId: String?
     public let toolCalls: [AgentToolCall]?
     public let attachments: [AgentAttachment]?
+    public var usage: AgentUsage? = nil
+    public var references: [AgentReference]? = nil
 
     public init(
         id: String, createdAt: String, role: String, content: String, name: String? = nil, toolCallId: String? = nil,
@@ -85,6 +165,7 @@ public struct AgentInteraction: Codable, Hashable, Sendable {
     public let toolName: String?
     public let interactionText: String
     public let interactionChoices: [String]?
+    public var toolRisk: String? = nil
     public let createdAt: String?
 }
 

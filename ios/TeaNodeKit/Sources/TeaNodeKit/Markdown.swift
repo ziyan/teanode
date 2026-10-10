@@ -9,6 +9,9 @@ public enum MarkdownBlock: Equatable, Sendable {
     case quote(String)
     case list([ListItem])
     case code(String)
+    /// A table: its header cells, then its rows.
+    case table(header: [String], rows: [[String]])
+    case rule
 
     public struct ListItem: Equatable, Sendable {
         /// "•" for a bullet, or the item's own number with its dot.
@@ -17,6 +20,18 @@ public enum MarkdownBlock: Equatable, Sendable {
     }
 
     static let listItemPattern = try! NSRegularExpression(pattern: #"^\s*([-*+]|\d{1,3}[.)])\s+(.*)$"#)
+    static let tableSeparatorPattern = try! NSRegularExpression(pattern: #"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$"#)
+
+    static func cells(of line: String) -> [String] {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("|") { trimmed.removeLast() }
+        return trimmed.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    static func isTableSeparator(_ line: String) -> Bool {
+        line.contains("-") && tableSeparatorPattern.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
+    }
 
     /// The blocks of a Markdown text, in order.
     public static func parse(_ text: String) -> [MarkdownBlock] {
@@ -35,8 +50,35 @@ public enum MarkdownBlock: Equatable, Sendable {
             items = []
         }
 
-        for line in text.components(separatedBy: "\n") {
+        let allLines = text.components(separatedBy: "\n")
+        var index = 0
+        var table: (header: [String], rows: [[String]])?
+        func flushTable() {
+            if let table { blocks.append(.table(header: table.header, rows: table.rows)) }
+            table = nil
+        }
+        while index < allLines.count {
+            let line = allLines[index]
+            index += 1
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if table != nil {
+                if code == nil, trimmed.contains("|") {
+                    table?.rows.append(cells(of: trimmed))
+                    continue
+                }
+                flushTable()
+            }
+            if code == nil, trimmed.contains("|"), index < allLines.count, isTableSeparator(allLines[index]) {
+                flush()
+                table = (cells(of: trimmed), [])
+                index += 1
+                continue
+            }
+            if code == nil, ["---", "***", "___"].contains(where: { trimmed.hasPrefix($0) && trimmed.allSatisfy { $0 == trimmed.first || $0 == " " } }) {
+                flush()
+                blocks.append(.rule)
+                continue
+            }
             if trimmed.hasPrefix("```") {
                 if let fenced = code {
                     blocks.append(.code(fenced.joined(separator: "\n")))
@@ -84,6 +126,7 @@ public enum MarkdownBlock: Equatable, Sendable {
         if let fenced = code {
             blocks.append(.code(fenced.joined(separator: "\n")))
         }
+        flushTable()
         flush()
         return blocks
     }
