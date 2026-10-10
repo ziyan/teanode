@@ -33,6 +33,14 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [x] (2026-10-10) Researched what the server offers a native client: sign-in, the GraphQL API and its websocket, cards, attachments, voice, location, where unasked messages are delivered, devices, DAV and IMAP. Chose the scope with the person. Wrote this plan.
 - [x] (2026-10-10) Revised after review by the person: app tokens have full access; the app is for anyone with a server, so notifications go through a push relay from the start; the agent helps the person connect and learn the app.
 - [ ] Milestone 0: a build pipeline with no Mac, and the Apple developer setup.
+  - [x] (2026-10-10) The project's developer account is enrolled (an individual membership).
+  - [x] (2026-10-10) `ios/` scaffold: `TeaNodeKit` (server address, connect link, the `graphql-ws` messages, with tests that pass on Linux in the `swift:6.1` container), a first connect screen, `project.yml`, configuration, and `.github/workflows/ios.yml`.
+  - [x] (2026-10-10) The macOS job passes on GitHub: the package tests and an unsigned simulator build of the app.
+  - [x] (2026-10-10) The App IDs `com.teanode.app` (Push Notifications, App Groups, Associated Domains, Siri), `.share` and `.notification` (App Groups), `.widgets` (App Groups, Push Notifications), and the app group `group.com.teanode.app`, attached to all four.
+  - [x] (2026-10-10) The App Store Connect API key (team key, Admin role, in the repository's secrets) and the app record "TeaNode".
+  - [x] (2026-10-10) TestFlight from CI: a push to main or an `ios/...` branch archives, signs automatically with the API key, and uploads. Build 0.1.0 (8) ran on the person's iPhone. (Pulled forward from Milestone 12.)
+  - [ ] The APNs key, created with the push relay (Milestone 3).
+  - [ ] The prototype notification, folded into Milestone 3's test against the real APNs.
 - [ ] Milestone 1: an app can sign in, by OAuth or by scanning a connect code, and get a token for the whole API (draft PR #379).
 - [ ] Milestone 2: phones as devices, and notifications sent to them.
 - [ ] Milestone 3: the push relay.

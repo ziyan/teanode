@@ -1,0 +1,136 @@
+name: iOS
+
+# The iPhone app (ios/). Nobody working on it needs a Mac: the package's
+# tests run on Linux, and the app is built on GitHub's macOS runners, which
+# are free for a public repository.
+on:
+  # Main, and branches named ios/..., which also go to TestFlight so a
+  # change can be tried on a phone before it merges.
+  push:
+    branches: [main, "ios/**"]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    name: TeaNodeKit on Linux
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Test
+        working-directory: ios/TeaNodeKit
+        run: swift test
+
+  app:
+    name: App on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Say which Xcode
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test TeaNodeKit
+        working-directory: ios/TeaNodeKit
+        run: swift test
+
+      - name: Generate the project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      # A simulator build needs no signing, so it needs none of the
+      # developer account's secrets either.
+      - name: Build for the simulator
+        working-directory: ios
+        run: >
+          xcodebuild build
+          -project TeaNode.xcodeproj
+          -scheme TeaNode
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+
+  # Signs the app and uploads it to App Store Connect, where it appears in
+  # TestFlight once Apple has processed it (usually 10 to 30 minutes).
+  # Signing is automatic: the App Store Connect key in the secrets, with
+  # the Admin role, lets Xcode make and fetch the certificate and profile it
+  # needs, so no certificate is kept anywhere. Only a push to main or to an
+  # ios/... branch uploads, never a pull request.
+  testflight:
+    name: TestFlight
+    if: github.event_name != 'pull_request'
+    needs: [kit, app]
+    runs-on: macos-latest
+    env:
+      KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Put the App Store Connect key where Xcode reads it
+        env:
+          KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$KEY" > "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+          printf 'DEVELOPMENT_TEAM = %s\n' "$TEAM" > ios/Configuration/Identity.xcconfig
+
+      - name: Generate the project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      # The build number is the workflow's run number, which only grows, as
+      # App Store Connect requires of builds of one version.
+      - name: Archive
+        working-directory: ios
+        run: >
+          xcodebuild archive
+          -project TeaNode.xcodeproj
+          -scheme TeaNode
+          -destination 'generic/platform=iOS'
+          -archivePath build/TeaNode.xcarchive
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+          -authenticationKeyID "$KEY_ID"
+          -authenticationKeyIssuerID "$ISSUER_ID"
+          CURRENT_PROJECT_VERSION=${{ github.run_number }}
+          -quiet
+
+      - name: Sign and upload to App Store Connect
+        working-directory: ios
+        run: >
+          xcodebuild -exportArchive
+          -archivePath build/TeaNode.xcarchive
+          -exportOptionsPlist Configuration/ExportOptions.plist
+          -exportPath build/export
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+          -authenticationKeyID "$KEY_ID"
+          -authenticationKeyIssuerID "$ISSUER_ID"
+
+      - name: Forget the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys" ios/Configuration/Identity.xcconfig

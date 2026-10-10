@@ -1,0 +1,8 @@
+// Copy this file to Identity.xcconfig, which is not committed, and fill in
+// the developer account that signs your builds.
+
+// The ten characters under Membership details at developer.apple.com.
+DEVELOPMENT_TEAM =
+
+// Only for a build under your own account: an identifier you registered.
+// TEANODE_BUNDLE_IDENTIFIER = com.example.teanode

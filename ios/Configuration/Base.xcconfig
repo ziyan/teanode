@@ -1,0 +1,13 @@
+// What every build of the app shares.
+//
+// The bundle identifier and the team belong to whoever signs the build. The
+// published app is signed by the project's developer account; a person who
+// builds it under their own account sets theirs in Identity.xcconfig, which
+// is not committed (copy Identity.example.xcconfig). A simulator build needs
+// neither.
+
+TEANODE_BUNDLE_IDENTIFIER = com.teanode.app
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+#include? "Identity.xcconfig"
