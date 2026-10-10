@@ -199,7 +199,7 @@ OAuth sign-in:
 
 Connect codes (as built in #379):
 
-- `CreateOAuthConnectCode` (GraphQL, as the signed-in person) makes a 40-character random secret, stores only its hash with the person and an expiry ten minutes on (table `oauth_connect_code`, migration 0159), and answers `{connectLink, qrCodeSvg, expiresAt}`. The QR code is drawn with `rsc.io/qr` (`internal/util/qrcode`).
+- `CreateOAuthConnectCode` (GraphQL, as the signed-in person) makes a 40-character random secret, stores only its hash with the person and an expiry ten minutes on (table `oauth_connect_code`, migration 0159), and answers `{connectLink, qrCodeSvg, expiresAt}`. The QR code is drawn by `internal/util/qrcode`, on a small vendored QR encoder.
 - `POST /oauth/token` with `grant_type=urn:teanode:params:oauth:grant-type:connect-code`, `client_id`, `connect_code` and `device_name` checks that the client is an installed app (`api.IsNativeAppClient`), spends the code in one statement, marks the client approved, and issues the `api` token named "<app> on <device>".
 - The dashboard's `/connect` page shows the code with a warning not to share it, and an "open on this phone" link. `teanode agent phone pair` draws it in the terminal with the link beside it.
 - Names a program or a device gives itself pass through `api.DisplayName`, which drops control and invisible formatting characters (a right-to-left override could disguise one).
