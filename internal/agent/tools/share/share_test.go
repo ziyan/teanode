@@ -43,7 +43,7 @@ func (self *fakeRun) AttachedComputers() []tools.Computer { return []tools.Compu
 func (self *fakeRun) Offered() []*tools.Tool              { return nil }
 
 // lookBytesForTest is the tool's own cap on a picture it may look at.
-const lookBytesForTest = 5 << 20
+const lookBytesForTest = 10 << 20
 
 // A one-pixel PNG.
 var pixel = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89}
