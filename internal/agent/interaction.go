@@ -49,6 +49,7 @@ func (self *AskRun) raiseInteraction(ctx context.Context, interaction *models.Ag
 		log.Warningf("cannot keep the card for call %q: %s", interaction.CallID, err)
 		return nil
 	}
+	self.notifyInteraction(kept)
 	return kept
 }
 

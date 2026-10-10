@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"path"
 	"regexp"
 	"slices"
@@ -112,6 +113,10 @@ type Agent struct {
 	// Finance is which providers people may link institutions through,
 	// and the operator's keys for those that need them.
 	Finance AgentFinance `yaml:"finance,omitempty"`
+
+	// Push is notifications on people's phones, through the TeaNode app:
+	// where this server sends them, and whether it relays them for others.
+	Push AgentPush `yaml:"push,omitempty"`
 }
 
 // AgentProviderKindOpenAI and the others are the values AgentProvider.Kind
@@ -706,6 +711,84 @@ func (self *AgentFinance) Offers(provider string) bool {
 		return self.Plaid.HasKeys()
 	}
 	return true
+}
+
+// DefaultPushRelayURL is the relay the published TeaNode app's notifications
+// go through: a TeaNode server run by whoever publishes the app, holding the
+// app's Apple push key. A server that builds and signs the app itself runs
+// its own relay and points here at it.
+const DefaultPushRelayURL = "https://mail.teanode.com"
+
+// AgentPush is notifications on people's phones.
+//
+// Apple delivers notifications to an app only from a key belonging to the
+// developer account that publishes it, which no TeaNode server but the
+// publisher's can hold. So every server sends its phones' notifications to a
+// relay, a TeaNode server with Relay on, which holds the key and passes them
+// to Apple. What it passes is encrypted for the phone, which only the
+// phone's own server and the phone can read.
+type AgentPush struct {
+	// Enabled switches this server's notifications to phones off. Unset
+	// means on: nothing is sent until somebody connects a phone.
+	Enabled *bool `yaml:"enabled,omitempty"`
+
+	// RelayURL is the relay this server sends through. Empty is
+	// DefaultPushRelayURL. When this server is the relay, it sends to
+	// itself without going over the network.
+	RelayURL string `yaml:"relayUrl,omitempty"`
+
+	// Relay makes this server a relay for every TeaNode server's phones.
+	Relay AgentPushRelay `yaml:"relay,omitempty"`
+}
+
+// IsEnabled reports whether this server sends notifications to phones.
+func (self *AgentPush) IsEnabled() bool {
+	return self.Enabled == nil || *self.Enabled
+}
+
+// ResolvedRelayURL is RelayURL, or DefaultPushRelayURL when it is empty.
+func (self *AgentPush) ResolvedRelayURL() string {
+	if self.RelayURL == "" {
+		return DefaultPushRelayURL
+	}
+	return strings.TrimRight(self.RelayURL, "/")
+}
+
+// DefaultPushTopic is the published TeaNode app's bundle identifier, which
+// Apple calls the topic a notification is for.
+const DefaultPushTopic = "com.teanode.app"
+
+// AgentPushRelay is the relay, off unless the operator holds the app's Apple
+// push key: an APNs authentication key (.p8) from the Apple developer
+// account that signs the app.
+type AgentPushRelay struct {
+	// Enabled serves the relay's endpoints. Off by default.
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// APNSKeyID is the ten-character identifier Apple shows beside the key.
+	APNSKeyID string `yaml:"apnsKeyId,omitempty"`
+
+	// APNSTeamID is the developer account's team identifier.
+	APNSTeamID string `yaml:"apnsTeamId,omitempty"`
+
+	// APNSKey is the key itself, the whole .p8 file.
+	APNSKey string `yaml:"apnsKey,omitempty" secret:"true"`
+
+	// APNSTopic is the app's bundle identifier. Empty is DefaultPushTopic.
+	APNSTopic string `yaml:"apnsTopic,omitempty"`
+}
+
+// HasKey reports whether the relay has what it needs to reach Apple.
+func (self *AgentPushRelay) HasKey() bool {
+	return self.APNSKeyID != "" && self.APNSTeamID != "" && self.APNSKey != ""
+}
+
+// ResolvedTopic is APNSTopic, or DefaultPushTopic when it is empty.
+func (self *AgentPushRelay) ResolvedTopic() string {
+	if self.APNSTopic == "" {
+		return DefaultPushTopic
+	}
+	return self.APNSTopic
 }
 
 // AgentPlaid is the operator's Plaid developer account.
@@ -1404,6 +1487,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		validator.add("agent.search.kind", `must be "brave", or empty for no web search`)
 	}
 	validateAgentFinance(&agent.Finance, validator)
+	validateAgentPush(&agent.Push, validator)
 	if agent.Voice.Enabled {
 		if agent.VoiceProvider() == nil {
 			if agent.Voice.Provider == "" {
@@ -1552,6 +1636,22 @@ func validateAgentFinance(finance *AgentFinance, validator *validator) {
 	}
 	if len(plaid.Products) > 0 && !products[AgentPlaidProductTransactions] {
 		validator.add("agent.finance.plaid.products", "must include transactions, which every finance source is read with")
+	}
+}
+
+// validateAgentPush reports what is wrong with the push section: a relay
+// turned on without its key, and a relay address that is not https, since
+// what goes to it is a phone's registration.
+func validateAgentPush(settings *AgentPush, validator *validator) {
+	if settings.RelayURL != "" {
+		parsed, err := url.Parse(settings.RelayURL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") {
+			validator.add("agent.push.relayUrl", "must be an https address with no path, such as %s", DefaultPushRelayURL)
+		}
+	}
+	relay := &settings.Relay
+	if relay.Enabled && !relay.HasKey() {
+		validator.add("agent.push.relay", "a relay needs apnsKeyId, apnsTeamId and apnsKey: the TeaNode app's Apple push key")
 	}
 }
 

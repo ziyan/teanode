@@ -1,0 +1,174 @@
+package agent
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/push"
+)
+
+// fakeRelay is the relay as a test sees it: what was sent, to which
+// registration, and what it answers.
+type fakeRelay struct {
+	mutex   sync.Mutex
+	sent    map[string][]*push.Delivery
+	answers error
+}
+
+func (self *fakeRelay) Send(_ context.Context, pushRegistration string, delivery *push.Delivery) error {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.sent == nil {
+		self.sent = map[string][]*push.Delivery{}
+	}
+	self.sent[pushRegistration] = append(self.sent[pushRegistration], delivery)
+	return self.answers
+}
+
+func (self *fakeRelay) to(pushRegistration string) []*push.Delivery {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.sent[pushRegistration]
+}
+
+// phoneFixture is a person with an agent and one phone, and a worker that
+// sends through a fake relay.
+type phoneFixture struct {
+	database db.Database
+	worker   *Agent
+	relay    *fakeRelay
+	owner    *models.User
+	agent    *models.Agent
+	phone    *models.AgentPhone
+	key      []byte
+}
+
+func newPhoneFixture(t *testing.T) *phoneFixture {
+	t.Helper()
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	t.Cleanup(closeDatabase)
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	configuration.Server.Secret = "a secret for sealing in this test"
+	worker := New(&Settings{Database: database, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	fixture := &phoneFixture{database: database, worker: worker, relay: &fakeRelay{}, key: make([]byte, push.PhoneKeyBytes)}
+	worker.phones.override = fixture.relay
+	_, _ = rand.Read(fixture.key)
+	sealedKey, err := worker.SealSecret(base64.StdEncoding.EncodeToString(fixture.key))
+	if err != nil {
+		t.Fatalf("SealSecret: %s", err)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if fixture.owner, err = tx.CreateUser(&models.User{Username: "robin"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if fixture.agent, err = tx.CreateAgent(&models.Agent{UserID: fixture.owner.ID, Enabled: true, Name: "Tea"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if fixture.phone, err = tx.PutAgentPhone(&models.AgentPhone{
+			AgentID: fixture.agent.ID, ClientID: "a-phone-client", PhoneName: "A test phone",
+			PushRegistration: "sealed:a-registration", PayloadKey: sealedKey,
+		}); err != nil {
+			t.Fatalf("PutAgentPhone: %s", err)
+		}
+	})
+	// The phone is signed in: its client holds a token.
+	if _, err := database.CreateAuthorizedToken(&models.Token{
+		UserID: fixture.owner.ID, Name: "A test phone", ClientID: "a-phone-client", ExpiresAt: time.Now().Add(time.Hour),
+	}, "a-key-hash", "a-refresh-hash"); err != nil {
+		t.Fatalf("CreateAuthorizedToken: %s", err)
+	}
+	return fixture
+}
+
+// read decrypts what a notification says, as the phone would.
+func (self *phoneFixture) read(t *testing.T, delivery *push.Delivery) *push.Content {
+	t.Helper()
+	content, err := push.DecryptContent(self.key, delivery.Sealed)
+	if err != nil {
+		t.Fatalf("the phone cannot read its notification: %s", err)
+	}
+	return content
+}
+
+// What the agent says on its own after a phone connects reaches the phone,
+// once, however many times the loop looks; what it said before does not.
+func TestThePhoneIsToldWhatTheAgentSaysOnItsOwnOnce(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", "Claude Code asks whether to deploy now.", "a pane asks"); err != nil {
+		t.Fatalf("writeHerdrQuestion: %s", err)
+	}
+	later := time.Now().Add(time.Minute)
+	fixture.worker.pushOwnTurns(context.Background(), later)
+	fixture.worker.pushOwnTurns(context.Background(), later)
+
+	sent := fixture.relay.to("sealed:a-registration")
+	if len(sent) != 1 {
+		t.Fatalf("the phone was sent %d notifications, not one", len(sent))
+	}
+	content := fixture.read(t, sent[0])
+	if content.NotificationKind != models.NotificationMessage || content.Title != "Tea" || content.Body != "Claude Code asks whether to deploy now." {
+		t.Errorf("the phone was told %+v", content)
+	}
+}
+
+// A phone that chose not to be told something is not told it.
+func TestAPhoneIsToldOnlyWhatItChose(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if err := tx.UpdateAgentPhoneSettings(fixture.agent.ID, fixture.phone.ID, "A test phone", []string{models.NotificationApproval}); err != nil {
+			t.Fatalf("UpdateAgentPhoneSettings: %s", err)
+		}
+	})
+	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", "A question nobody asked to hear about.", "a pane asks"); err != nil {
+		t.Fatalf("writeHerdrQuestion: %s", err)
+	}
+	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
+	if sent := fixture.relay.to("sealed:a-registration"); len(sent) != 0 {
+		t.Errorf("a phone that wants approvals only was sent %d messages", len(sent))
+	}
+}
+
+// Apple saying the phone is gone clears its registration, so nothing more is
+// sent until the app registers again.
+func TestAPhoneAppleSaysIsGoneIsNotSentToAgain(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	fixture.relay.answers = push.ErrGone
+	phone := fixture.phone
+	if err := fixture.worker.NotifyPhone(context.Background(), phone, &push.Content{NotificationKind: "test", Title: "Tea", Body: "Hello"}); err == nil {
+		t.Fatal("a gone phone was reported reached")
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		stored, err := tx.GetAgentPhone(fixture.agent.ID, phone.ID)
+		if err != nil || stored == nil {
+			t.Fatalf("GetAgentPhone: %v %s", stored, err)
+		}
+		if stored.CanBeNotified() || stored.LastDeliveryError == "" {
+			t.Errorf("the gone phone is still registered (%v) or its failure unrecorded (%q)", stored.CanBeNotified(), stored.LastDeliveryError)
+		}
+	})
+}
+
+// A phone signed out some other way, its tokens revoked or every session
+// ended, is sent nothing, though its row is still there.
+func TestASignedOutPhoneIsNotSentTo(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	if _, err := fixture.database.RevokeClientTokens(fixture.owner.ID, "a-phone-client", time.Now()); err != nil {
+		t.Fatalf("RevokeClientTokens: %s", err)
+	}
+	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", "Said after the phone was signed out.", "a pane asks"); err != nil {
+		t.Fatalf("writeHerdrQuestion: %s", err)
+	}
+	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
+	if sent := fixture.relay.to("sealed:a-registration"); len(sent) != 0 {
+		t.Errorf("a signed-out phone was sent %d notifications", len(sent))
+	}
+}

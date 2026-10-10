@@ -126,6 +126,9 @@ type Agent struct {
 	// presence is who has a dashboard open; see presence.go.
 	presence presence
 
+	// phones is what sends notifications to the person's phones.
+	phones phoneSenders
+
 	// connections are the sessions with connected servers, per server and
 	// person.
 	connectionsMutex sync.Mutex
@@ -339,6 +342,7 @@ func (self *Agent) Start() {
 	})
 	self.worker.Start()
 	self.startFeed()
+	self.startPhonePushes()
 }
 
 // Stop ends the worker and waits for the runs in flight.

@@ -24,6 +24,9 @@ var authorizing = map[string]bool{
 	// requireSignedIn, plus the account it resolved to. Anything about a
 	// person rather than about the server needs the account itself.
 	"requireAccount": true,
+	// requireAgentPerson, plus the phone, refused unless it is the
+	// caller's.
+	"requirePhone": true,
 	// requireAccount, plus the passkey, which it refuses unless it belongs to
 	// that account.
 	"requireOwnPasskey": true,

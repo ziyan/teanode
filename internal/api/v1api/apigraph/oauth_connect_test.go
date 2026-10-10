@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api/apioauth"
 	"github.com/ziyan/teanode/internal/config"
@@ -26,6 +28,7 @@ import (
 type signInWorld struct {
 	graph         *graph
 	authenticator web.Authenticator
+	database      db.Database
 	router        *mux.Router
 	person        *models.User
 
@@ -39,7 +42,7 @@ func newSignInWorld(t *testing.T) *signInWorld {
 	t.Helper()
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
-	world := &signInWorld{host: "127.0.0.1:10081"}
+	world := &signInWorld{host: "127.0.0.1:10081", database: database}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		user, err := tx.CreateUser(&models.User{Username: "fixture-pairing-person"})
 		if err != nil {
@@ -62,7 +65,8 @@ func newSignInWorld(t *testing.T) *signInWorld {
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}
-	component, err := New(database, store, nil, nil, nil, nil, nil, authenticator, nil, &api.Settings{})
+	worker := agent.New(&agent.Settings{Database: database, Configuration: store.Current, Instance: "test", Tick: time.Hour})
+	component, err := New(database, store, nil, nil, nil, nil, nil, authenticator, nil, &api.Settings{Agent: worker})
 	if err != nil {
 		t.Fatalf("New: %s", err)
 	}

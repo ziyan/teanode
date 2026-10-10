@@ -22,6 +22,7 @@ import (
 	"github.com/ziyan/teanode/internal/api/v1api/apimail"
 	"github.com/ziyan/teanode/internal/api/v1api/apimedia"
 	"github.com/ziyan/teanode/internal/api/v1api/apioauth"
+	"github.com/ziyan/teanode/internal/api/v1api/apipush"
 	"github.com/ziyan/teanode/internal/api/v1api/apisend"
 	"github.com/ziyan/teanode/internal/api/v1api/apisso"
 	"github.com/ziyan/teanode/internal/config"
@@ -85,7 +86,14 @@ func New(
 		return nil, err
 	}
 
-	return &v1{components: []web.Component{graph, send, raw, pictures, signOn, discovery}}, nil
+	// The push relay, which answers only on a server whose operator turned
+	// it on and gave it the TeaNode app's Apple push key.
+	relay, err := apipush.New(configuration)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v1{components: []web.Component{graph, send, raw, pictures, signOn, discovery, relay}}, nil
 }
 
 func (self *v1) AddRoutes(router *mux.Router) error {

@@ -150,6 +150,11 @@ const (
 	// app to scan, signing it in as the person who is signed in there.
 	PathOAuthConnect = "/connect"
 
+	// The push relay's endpoints (internal/api/v1api/apipush): a phone
+	// registering its device token, and a server sending a notification.
+	PathPushRegistrations = Prefix + "/push/registrations"
+	PathPushNotifications = Prefix + "/push/notifications"
+
 	// AppConnectLink is what that code holds: the project's own address,
 	// which the app claims, so a phone's camera opens the app (or the App
 	// Store) with the server and the code. Both go after the "#", which a
@@ -226,6 +231,10 @@ func PublicPaths() []string {
 		// A program reads these precisely because it has no credential
 		// yet; refusing them would refuse the answer to the refusal.
 		PathOAuthProtectedResource, PathOAuthProtectedResourceMCP, PathOAuthAuthorizationServer,
+		// The push relay serves phones and servers that have no account
+		// here; it answers 404 unless the operator turned it on, and limits
+		// what it does per address and per phone.
+		PathPushRegistrations, PathPushNotifications,
 	}
 }
 

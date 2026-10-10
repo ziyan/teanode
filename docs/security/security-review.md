@@ -1899,3 +1899,72 @@ talk to the wrong one. The app asks "Connect to <server> as <account>?" before
 using a code, and refuses plain http to anything but its own machine. The page
 on teanode.com that a link opens without the app must clear the fragment and
 load no other site's scripts.
+
+# Eighth pass: notifications on phones
+
+An adversarial review, on 2026-10-10, of the push relay and the phones that
+register with it (#380): the two public relay endpoints, the sealed
+registrations, what a notification carries, and how a phone is tied to its
+sign-in.
+
+## Summary
+
+No critical finding. A removed phone could stay signed in once its token had
+been renewed, and the relay passed on whatever payload a server wrote. Both
+are fixed, with six smaller findings. One is accepted as designed.
+
+## Findings
+
+### SEC-93: A phone outlived its sign-in (Medium, fixed)
+
+A phone was keyed on the token it registered with, and a refresh replaces
+that token every 30 days. Removing the phone then revoked a token that was
+already retired, the renewed one kept working, and a phone whose token was
+revoked some other way was still listed and notified. A phone is now keyed on
+the OAuth client the app registered as. Removing it revokes every token that
+client holds, and a phone is listed and notified only while its client holds
+a token that works or can be renewed.
+
+### SEC-94: The relay passed on what a server wrote (Medium, fixed)
+
+A server holding a registration, or anybody who copied one out of a database
+or a backup, could send a plain alert in the app's name, and leaving out
+`mutable-content` showed it as written. The relay now writes everything Apple
+shows itself, and takes from a server only the sealed content and two hashed
+identifiers. Registrations expire after 180 days; the app registers again
+each time it starts.
+
+### SEC-95: Smaller findings (Low, fixed)
+
+- The per-phone limit was keyed on the registration's text, which base64 lets
+  a caller spell many ways. It is now keyed on the device token, after the
+  registration is opened.
+- IPv6 callers are limited per /64, and both endpoints have a limit across all
+  callers, so Apple does not see a flood under the relay's key.
+- An error reaching Apple carried the request's address, which ends in the
+  device token, into logs, the answer and the dashboard. It no longer does,
+  and the relay answers an unreachable Apple without detail.
+- An approval's notification carried the card's line, which can quote what a
+  tool was given. It now names only the tool; the card in the app shows the
+  rest.
+- Registrations were sealed with a key from the server secret, so rotating it
+  broke every phone and the failure looked permanent. They are sealed with a
+  key made from the relay's APNs key, with its identifier in front, and one
+  under a replaced key is answered as gone so the phone registers again.
+- The thread and collapse identifiers Apple sees are hashed with the phone's
+  key, so Apple and the relay do not see conversation or card identifiers.
+- The APNs signing token is made again only when Apple says it expired, and a
+  notification expires after an hour by default rather than being tried once.
+
+### Accepted: a turn reaches a phone at most once
+
+The cursor over the agent's own turns moves before the notification is sent,
+so a failed send is not retried, and a turn written more than a few seconds
+after its timestamp can be stepped past. A lost notification is the better
+failure than a second copy; the turn is still in the conversation.
+
+## Left for the app (Milestone 6 of the iPhone app plan)
+
+The Approve and Deny actions on a notification require the phone to be
+unlocked, and the notification shows no preview on a locked phone unless the
+person chooses otherwise.

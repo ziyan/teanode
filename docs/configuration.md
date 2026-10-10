@@ -1580,6 +1580,42 @@ is owed on loans and cards. Must include `transactions` when set. Empty
 means `transactions` alone. Plaid charges a monthly fee per finance source
 for each product on paid plans, which is why the operator chooses.
 
+### `agent.push`
+
+Notifications on people's phones, through the TeaNode app. Apple delivers
+notifications to an app only from a key of the developer account that
+publishes it, so every server sends through a relay: a TeaNode server whose
+operator holds that key. What a server sends is already encrypted for the
+phone, so the relay passes it on without being able to read it.
+
+**`enabled`**: Whether this server sends notifications to phones. Unset
+means on; nothing is sent until somebody connects a phone.
+
+**`relayUrl`**: The relay this server sends through, an https address with
+no path. Empty means `https://mail.teanode.com`, the relay for the published
+app. A server that is itself the relay sends to itself without the network.
+
+### `agent.push.relay`
+
+Makes this server a relay for every TeaNode server's phones. Only for the
+operator who holds the TeaNode app's Apple push key; everybody else leaves it
+off.
+
+**`enabled`**: Serves the relay's two endpoints, `/api/v1/push/registrations`
+and `/api/v1/push/notifications`. Off by default, and they answer 404.
+
+**`apnsKeyId`**: The ten-character identifier Apple shows beside the key.
+
+**`apnsTeamId`**: The Apple developer account's team identifier.
+
+**`apnsKey`**: The key, the whole `.p8` file Apple lets you download once,
+or the base64 between its first and last lines on one line, which is how
+`teanode settings set` reads it from a pipe. A secret. It also seals the registrations phones hand their servers, so after
+it is replaced each phone is sent nothing until the app next starts and
+registers again.
+
+**`apnsTopic`**: The app's bundle identifier. Empty means `com.teanode.app`.
+
 ### `agent.tools`
 
 Risk classes are the floor; this can only make the agent more cautious.
