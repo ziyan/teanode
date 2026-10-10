@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "A coding session asks you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングセッションからの質問"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有个编程会话在问你"
+          }
+        }
+      }
+    },
+    "A coding session finished": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングセッションが終わりました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有个编程会话完成了"
+          }
+        }
+      }
+    },
+    "A goal needs you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標があなたを必要としています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有个目标需要你"
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "ja": {
@@ -49,6 +97,22 @@
         }
       }
     },
+    "Alert from your mail": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールからのお知らせ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自邮件的提醒"
+          }
+        }
+      }
+    },
     "Allow TeaNode to use the camera in Settings, or paste the code's link instead.": {
       "localizations": {
         "ja": {
@@ -61,6 +125,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请在“设置”中允许 TeaNode 使用相机，或改为粘贴二维码的链接。"
+          }
+        }
+      }
+    },
+    "Answered": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已回答"
           }
         }
       }
@@ -97,6 +177,22 @@
         }
       }
     },
+    "Approved after the turn ended": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターン終了後に承認しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在回合结束后批准"
+          }
+        }
+      }
+    },
     "Ask your agent anything: your mail, your calendar, a picture of a receipt.": {
       "localizations": {
         "ja": {
@@ -125,6 +221,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "问问助手…"
+          }
+        }
+      }
+    },
+    "Background command ended": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドのコマンドが終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台命令已结束"
+          }
+        }
+      }
+    },
+    "Background work finished": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドの作業が完了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台工作已完成"
           }
         }
       }
@@ -273,6 +401,22 @@
         }
       }
     },
+    "Declined after the turn ended": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターン終了後に却下しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在回合结束后拒绝"
+          }
+        }
+      }
+    },
     "Do it": {
       "localizations": {
         "ja": {
@@ -317,6 +461,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不要"
+          }
+        }
+      }
+    },
+    "Goal check-in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標のターン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标回合"
           }
         }
       }
@@ -385,18 +545,18 @@
         }
       }
     },
-    "On a computer, open your dashboard. Under Agent, find Phones and choose Connect a phone.": {
+    "On a computer, open your dashboard. In Settings, open Phones and choose Connect a phone.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "パソコンでダッシュボードを開き、「エージェント」の「スマートフォン」で「スマートフォンを接続」を選びます。"
+            "value": "パソコンでダッシュボードを開き、「設定」の「スマートフォン」で「スマートフォンを接続」を選びます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在电脑上打开控制台，在“助手”下找到“手机”，选择“连接手机”。"
+            "value": "在电脑上打开控制台，在“设置”中打开“手机”，选择“连接手机”。"
           }
         }
       }
@@ -493,6 +653,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "扫描页面上显示的二维码。"
+          }
+        }
+      }
+    },
+    "Scheduled turn": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールのターン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定时回合"
           }
         }
       }
@@ -605,6 +781,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "出了点问题"
+          }
+        }
+      }
+    },
+    "Started by the agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントから話しかけました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由助手主动发起"
           }
         }
       }
@@ -752,6 +944,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "要管理这部手机接收哪些通知，请在控制台的“助手”下打开“手机”。"
+          }
+        }
+      }
+    },
+    "Used %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用了 %@"
           }
         }
       }

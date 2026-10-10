@@ -20,6 +20,9 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
         case approval
         /// A question the agent asked the person.
         case question
+        /// A question one of the person's coding sessions asked, with its
+        /// options.
+        case codingQuestion
     }
 
     public let id: String
@@ -38,6 +41,8 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     public var resolution: String
     public var attachments: [AgentAttachment]
     public var at: String?
+    /// For a coding session's question, the question whole.
+    public var codingQuestion: CodingQuestion?
 
     public init(
         id: String, kind: Kind, text: String, detail: String = "", isStreaming: Bool = false, isDone: Bool = false,
@@ -57,6 +62,77 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
         self.attachments = attachments
         self.at = at
     }
+}
+
+/// CodingQuestion is a question one of the person's coding sessions asked,
+/// as the server keeps it beside the agent's telling of it (the
+/// "herdr_asked" note, internal/agent/herdr.go).
+public struct CodingQuestion: Hashable, Sendable {
+    public let computer: String
+    public let paneId: String
+    public let questionFingerprint: String
+    /// "claude" or "codex".
+    public let codingAgentKind: String
+    /// The session's name, or where it works.
+    public let sessionName: String
+    public let questionText: String
+    public let isMultipleChoice: Bool
+    public let options: [Option]
+
+    public struct Option: Hashable, Sendable {
+        public let optionNumber: Int
+        public let optionLabel: String
+        public let optionDescription: String
+        /// "choice", "freeText" or "chat".
+        public let herdrOptionKind: String
+    }
+
+    public var codingAgentName: String { codingAgentKind == "codex" ? "Codex" : "Claude Code" }
+
+    /// The options a person picks, without the ones that ask to type.
+    public var choices: [Option] { options.filter { $0.herdrOptionKind == "choice" } }
+
+    /// Reads a "herdr_asked" note; nil for one that carries no question.
+    static func of(note: String) -> CodingQuestion? {
+        struct Note: Decodable {
+            struct Session: Decodable {
+                struct Question: Decodable {
+                    struct Choice: Decodable {
+                        let optionNumber: Int
+                        let optionLabel: String
+                        let optionDescription: String?
+                        let herdrOptionKind: String?
+                    }
+                    let questionFingerprint: String
+                    let questionText: String
+                    let isMultipleChoice: Bool?
+                    let options: [Choice]?
+                }
+                let paneName: String?
+                let codingAgentKind: String?
+                let workingDirectory: String?
+                let question: Question?
+            }
+            let computer: String
+            let paneId: String
+            let herdrSession: Session?
+        }
+        guard let note = try? JSONDecoder().decode(Note.self, from: Data(note.utf8)),
+            let session = note.herdrSession, let question = session.question
+        else { return nil }
+        let place = session.paneName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? session.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? ""
+        return CodingQuestion(
+            computer: note.computer, paneId: note.paneId, questionFingerprint: question.questionFingerprint,
+            codingAgentKind: session.codingAgentKind ?? "claude", sessionName: place, questionText: question.questionText,
+            isMultipleChoice: question.isMultipleChoice ?? false,
+            options: (question.options ?? []).map {
+                Option(optionNumber: $0.optionNumber, optionLabel: $0.optionLabel, optionDescription: $0.optionDescription ?? "", herdrOptionKind: $0.herdrOptionKind ?? "choice")
+            })
+    }
+
+    /// The card's id, from the pane and the question.
+    var cardId: String { "coding-\(paneId)-\(questionFingerprint)" }
 }
 
 /// CheckInOrigin is where a turn the agent took on its own came from, read
@@ -118,9 +194,35 @@ public struct Transcript: Sendable {
                         isDone: true, callId: call.id, at: message.createdAt))
                 }
             case "note":
-                // The coding session notes are read by the question's line in
-                // the drawer and say nothing on their own.
-                if message.name == "herdr_answered" || message.name == "herdr_asked" { continue }
+                // A coding session's question is drawn as its card, in place
+                // of the agent's telling of it and the turn that told it.
+                if message.name == "herdr_asked" {
+                    if let question = CodingQuestion.of(note: message.content) {
+                        if lines.last?.kind == .answer { lines.removeLast() }
+                        if lines.last?.kind == .checkIn, lines.last?.detail == CheckInOrigin.herdrQuestion.rawValue { lines.removeLast() }
+                        lines.removeAll { $0.id == question.cardId }
+                        var card = TranscriptLine(
+                            id: question.cardId, kind: .codingQuestion, text: question.questionText, detail: question.codingAgentName,
+                            callId: question.questionFingerprint, choices: question.choices.map(\.optionLabel), at: message.createdAt)
+                        card.codingQuestion = question
+                        lines.append(card)
+                    }
+                    continue
+                }
+                if message.name == "herdr_answered" {
+                    struct Answered: Decodable {
+                        let paneId: String
+                        let questionFingerprint: String
+                        let answerText: String?
+                    }
+                    if let answered = try? JSONDecoder().decode(Answered.self, from: Data(message.content.utf8)),
+                        let index = lines.lastIndex(where: { $0.id == "coding-\(answered.paneId)-\(answered.questionFingerprint)" })
+                    {
+                        lines[index].isDone = true
+                        lines[index].resolution = answered.answerText ?? ""
+                    }
+                    continue
+                }
                 lines.append(TranscriptLine(id: message.id, kind: .note, text: message.content, detail: message.name ?? "", at: message.createdAt))
             case "compaction":
                 lines.append(TranscriptLine(id: message.id, kind: .note, text: message.content, detail: "compacted", at: message.createdAt))
@@ -159,9 +261,10 @@ public struct Transcript: Sendable {
         }
     }
 
-    /// The question waiting for the person's answer, if one is.
+    /// The question waiting for the person's answer, if one is: the
+    /// agent's, or a coding session's.
     public var openQuestion: TranscriptLine? {
-        lines.last { $0.kind == .question && !$0.isDone }
+        lines.last { ($0.kind == .question || $0.kind == .codingQuestion) && !$0.isDone }
     }
 
     /// Applies an event of a running turn.

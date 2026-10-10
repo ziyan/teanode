@@ -69,13 +69,19 @@ its pull request is opened.
 
 - Content first, chrome last. A conversation is the messages and the composer;
   everything else is in the toolbar or a menu.
-- The person's messages are bubbles on the right, in the accent color with
-  white text. The agent's answers are not bubbles: plain text on the
-  background, full width, so a long answer reads like a page. Tool lines are
-  one quiet line each (`.footnote`, `.secondary`), expanding on tap.
+- A conversation looks like a messaging app. The person's messages are
+  bubbles on the right, in the accent color with white text; the agent's are
+  bubbles on the left, in `secondarySystemBackground`, with its Markdown drawn
+  as blocks (paragraphs, quotes, lists, code). The time shows between two
+  messages far apart.
+- The tools the agent used in a row are one quiet line ("Used calendar,
+  mail"), `.caption` and `.secondary`, opening on tap.
+- A turn the agent took on its own is one short centered line saying where
+  it came from ("A coding session asks you"), never the instructions it was
+  started with.
 - Cards waiting for the person (approve, a question, a coding session asking)
-  are grouped insets (`.secondarySystemBackground`, continuous corner radius),
-  with their actions as real buttons.
+  are the agent's bubbles with their actions as real buttons: a coding
+  session's options are buttons, not a numbered list to type back.
 - Respect the safe areas and the keyboard; standard system spacing; tap
   targets at least 44 points.
 
