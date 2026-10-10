@@ -23,7 +23,7 @@ type RunCommand struct {
 	// Instance is who said it, filled in on the way out.
 	Instance string `json:"instance"`
 	RunID    string `json:"runId"`
-	// Action is "stop", "answer" or "resolve".
+	// Action is "stop", "answer", "resolve" or "locate".
 	Action  string `json:"action"`
 	CallID  string `json:"callId,omitempty"`
 	Answer  string `json:"answer,omitempty"`
@@ -34,6 +34,9 @@ const (
 	CommandStop    = "stop"
 	CommandAnswer  = "answer"
 	CommandResolve = "resolve"
+	// CommandLocate carries the browser's answer to a location call in
+	// Answer, as JSON (see AnswerLocation).
+	CommandLocate = "locate"
 )
 
 // foreignRunFor is how long a run heard of through the feed is
@@ -56,6 +59,8 @@ func (self *Agent) Apply(run *AskRun, command RunCommand) bool {
 		return run.Answer(command.CallID, command.Answer)
 	case CommandResolve:
 		return run.Resolve(command.CallID, command.Approve)
+	case CommandLocate:
+		return run.AnswerLocation(command.CallID, command.Answer)
 	}
 	return false
 }
