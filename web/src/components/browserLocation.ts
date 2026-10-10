@@ -59,27 +59,34 @@ export function locationErrorMessage(code: number): string {
 }
 
 // How long after the person last sent from a drawer it still counts as
-// the one they are chatting in, for a turn it did not start itself: one
-// the server began after they approved a card, or one their message was
-// handed to while it ran.
+// the one they are chatting in, for a turn no drawer sent: one the server
+// began after they approved a card.
 export const RECENTLY_SENT_MS = 30 * 60_000
 
 // isAskedOfThisDrawer says whether this drawer is the one to answer a
-// location call: it sent the turn, or the person sent from it lately and
-// is looking at it. Another tab, or a phone in a pocket, stays quiet.
+// location call. A turn a drawer sent names it, and only that drawer
+// answers: another left open on a desk would answer first with where the
+// desk is. A turn no drawer sent is answered by the one the person sent
+// from lately, while they are looking at it.
 export function isAskedOfThisDrawer({
-  runId,
-  sentRunIds,
+  askedDrawerId,
+  drawerId,
   lastSentAt,
   now,
   isVisible,
 }: {
-  runId: string
-  sentRunIds: ReadonlySet<string>
+  askedDrawerId: string | undefined
+  drawerId: string
   lastSentAt: number
   now: number
   isVisible: boolean
 }): boolean {
-  if (sentRunIds.has(runId)) return true
+  if (askedDrawerId) return askedDrawerId === drawerId
   return isVisible && lastSentAt > 0 && now - lastSentAt < RECENTLY_SENT_MS
+}
+
+// newDrawerId names one open drawer, for the turns it sends.
+export function newDrawerId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `drawer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }

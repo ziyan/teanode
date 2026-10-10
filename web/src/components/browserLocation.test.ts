@@ -44,17 +44,17 @@ describe('readBrowserLocation', () => {
 
 describe('isAskedOfThisDrawer', () => {
   const now = 1_000_000_000
-  it('answers for a turn this drawer sent, even when hidden', () => {
-    expect(isAskedOfThisDrawer({ runId: 'r1', sentRunIds: new Set(['r1']), lastSentAt: 0, now, isVisible: false })).toBe(true)
+  it('answers a turn that names it, and only that drawer answers', () => {
+    const asked = { askedDrawerId: 'drawer-a', lastSentAt: now - 60_000, now, isVisible: true }
+    expect(isAskedOfThisDrawer({ ...asked, drawerId: 'drawer-a', isVisible: false })).toBe(true)
+    expect(isAskedOfThisDrawer({ ...asked, drawerId: 'drawer-b' })).toBe(false)
   })
 
-  it('answers for another turn only when the person sent from here lately and is looking', () => {
-    const sentRunIds = new Set<string>()
-    expect(isAskedOfThisDrawer({ runId: 'r2', sentRunIds, lastSentAt: now - 60_000, now, isVisible: true })).toBe(true)
-    expect(isAskedOfThisDrawer({ runId: 'r2', sentRunIds, lastSentAt: now - 60_000, now, isVisible: false })).toBe(false)
-    expect(
-      isAskedOfThisDrawer({ runId: 'r2', sentRunIds, lastSentAt: now - RECENTLY_SENT_MS - 1, now, isVisible: true }),
-    ).toBe(false)
-    expect(isAskedOfThisDrawer({ runId: 'r2', sentRunIds, lastSentAt: 0, now, isVisible: true })).toBe(false)
+  it('answers a turn no drawer sent only when the person sent from here lately and is looking', () => {
+    const unnamed = { askedDrawerId: undefined, drawerId: 'drawer-a', now }
+    expect(isAskedOfThisDrawer({ ...unnamed, lastSentAt: now - 60_000, isVisible: true })).toBe(true)
+    expect(isAskedOfThisDrawer({ ...unnamed, lastSentAt: now - 60_000, isVisible: false })).toBe(false)
+    expect(isAskedOfThisDrawer({ ...unnamed, lastSentAt: now - RECENTLY_SENT_MS - 1, isVisible: true })).toBe(false)
+    expect(isAskedOfThisDrawer({ ...unnamed, lastSentAt: 0, isVisible: true })).toBe(false)
   })
 })

@@ -199,6 +199,10 @@ type AskAgentArguments struct {
 	// Effort is how hard the model thinks before it answers: low, medium
 	// or high. Empty leaves it to the agent.
 	Effort string `json:"effort" graphapi:"nullable"`
+
+	// DrawerID names the open drawer that sent the turn, for the browser a
+	// location call asks (agent.AskSettings.DrawerID).
+	DrawerID string `json:"drawerId" graphapi:"nullable"`
 }
 
 // AgentTurnView is the run to follow.
@@ -214,14 +218,18 @@ type ResolveAgentConfirmationArguments struct {
 	Approve bool   `json:"approve"`
 }
 
+// drawerIdLength bounds the drawer id a turn carries: the dashboard makes
+// one of 36 characters.
+const drawerIdLength = 64
+
 // AnswerAgentLocationArguments are the browser's answer to one location
 // call: where it is, as its geolocation measured it, or ErrorMessage.
 type AnswerAgentLocationArguments struct {
-	RunID            string  `json:"runId"`
-	CallID           string  `json:"callId"`
-	LatitudeDegrees  float64 `json:"latitudeDegrees" graphapi:"nullable"`
-	LongitudeDegrees float64 `json:"longitudeDegrees" graphapi:"nullable"`
-	AccuracyMeters   float64 `json:"accuracyMeters" graphapi:"nullable"`
+	RunID            string   `json:"runId"`
+	CallID           string   `json:"callId"`
+	LatitudeDegrees  *float64 `json:"latitudeDegrees" graphapi:"nullable"`
+	LongitudeDegrees *float64 `json:"longitudeDegrees" graphapi:"nullable"`
+	AccuracyMeters   *float64 `json:"accuracyMeters" graphapi:"nullable"`
 	// MeasuredAt is when the browser measured it, RFC 3339; empty is now.
 	MeasuredAt string `json:"measuredAt" graphapi:"nullable"`
 	// ErrorMessage says why the browser cannot say: the person did not
@@ -745,6 +753,10 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	if surface == "" {
 		surface = "drawer"
 	}
+	drawerId := strings.TrimSpace(arguments.DrawerID)
+	if len(drawerId) > drawerIdLength {
+		return nil, fmt.Errorf("%w: a drawer id is at most %d characters", api.ErrInvalidArguments, drawerIdLength)
+	}
 	switch arguments.Effort {
 	case "", llm.EffortLow, llm.EffortMedium, llm.EffortHigh:
 	default:
@@ -793,6 +805,7 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		Message:      arguments.Message,
 		Viewing:      arguments.Viewing,
 		Surface:      surface,
+		DrawerID:     drawerId,
 
 		InterruptedAnswer: arguments.InterruptedAnswer,
 		ReadOnly:          arguments.ReadOnly,
@@ -861,12 +874,17 @@ func (self *graph) AnswerAgentLocation(ctx context.Context, arguments AnswerAgen
 	if worker == nil {
 		return false, agent.ErrUnavailable
 	}
-	answer := agent.LocationAnswer{
-		LatitudeDegrees:  arguments.LatitudeDegrees,
-		LongitudeDegrees: arguments.LongitudeDegrees,
-		AccuracyMeters:   arguments.AccuracyMeters,
-		MeasuredAt:       time.Now(),
-		ErrorMessage:     strings.TrimSpace(arguments.ErrorMessage),
+	// Where it is, or why it cannot say: an answer with neither would be
+	// read as a place at latitude and longitude zero.
+	answer := agent.LocationAnswer{MeasuredAt: time.Now(), ErrorMessage: strings.TrimSpace(arguments.ErrorMessage)}
+	switch {
+	case arguments.LatitudeDegrees != nil && arguments.LongitudeDegrees != nil:
+		answer.LatitudeDegrees, answer.LongitudeDegrees = *arguments.LatitudeDegrees, *arguments.LongitudeDegrees
+		if arguments.AccuracyMeters != nil {
+			answer.AccuracyMeters = *arguments.AccuracyMeters
+		}
+	case answer.ErrorMessage == "":
+		return false, fmt.Errorf("%w: give latitudeDegrees and longitudeDegrees, or errorMessage", api.ErrInvalidArguments)
 	}
 	if measuredAt := strings.TrimSpace(arguments.MeasuredAt); measuredAt != "" {
 		if answer.MeasuredAt, err = time.Parse(time.RFC3339, measuredAt); err != nil {

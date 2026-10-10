@@ -32,11 +32,23 @@ func answerLocationsWith(t *testing.T, run *AskRun, answering *AskRun, answer fu
 	}()
 }
 
-// A turn written in the dashboard asks the browser, and is told where it
-// is.
+// A turn written in the dashboard asks the browser, naming the drawer that
+// sent it, and is told where it is.
 func TestLocateAsksTheBrowserTheTurnWasWrittenIn(t *testing.T) {
 	run := batchRun()
 	defer run.cancel()
+	run.settings.DrawerID = "drawer-1"
+	events, unsubscribe := run.Subscribe()
+	defer unsubscribe()
+	asked := make(chan string, 1)
+	go func() {
+		for event := range events {
+			if event.Kind == EventLocate {
+				asked <- event.DrawerID
+				return
+			}
+		}
+	}()
 	answerLocationsWith(t, run, run, func() LocationAnswer {
 		return LocationAnswer{LatitudeDegrees: 23.45, LongitudeDegrees: -67.89, AccuracyMeters: 20, MeasuredAt: time.Now()}
 	})
@@ -46,6 +58,9 @@ func TestLocateAsksTheBrowserTheTurnWasWrittenIn(t *testing.T) {
 	}
 	if found.LatitudeDegrees != 23.45 || found.LongitudeDegrees != -67.89 || found.AccuracyMeters != 20 {
 		t.Errorf("located at %+v", found)
+	}
+	if drawerId := <-asked; drawerId != "drawer-1" {
+		t.Errorf("the locate event named drawer %q", drawerId)
 	}
 }
 

@@ -71,6 +71,12 @@ type AskSettings struct {
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
+	// DrawerID names the open drawer that sent the turn: the browser a
+	// location call asks, rather than any other the person has open. Empty
+	// for a turn no drawer sent, such as one begun after a card was
+	// approved.
+	DrawerID string
+
 	// Origin is the address the dashboard was reached at, scheme and host,
 	// for a link to a file that has to open somewhere else; empty where the
 	// turn did not come through it.
@@ -255,10 +261,13 @@ type Event struct {
 	Note           string    `json:"note,omitempty"`
 	// NoteKind and NoteDetail are a note's kind and detail, for a client
 	// that words it in the person's language; Note is it in English.
-	NoteKind   string    `json:"noteKind,omitempty"`
-	NoteDetail string    `json:"noteDetail,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	At         time.Time `json:"at"`
+	NoteKind   string `json:"noteKind,omitempty"`
+	NoteDetail string `json:"noteDetail,omitempty"`
+	Error      string `json:"error,omitempty"`
+	// DrawerID is, on a locate event, the drawer that is to answer it
+	// (AskSettings.DrawerID).
+	DrawerID string    `json:"drawerId,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // sayNote tells whoever is watching a note of a kind: in English, and by

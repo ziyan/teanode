@@ -70,7 +70,7 @@ import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
 import { ReferenceChips } from './agentReferenceChips'
-import { isAskedOfThisDrawer, readBrowserLocation } from './browserLocation'
+import { isAskedOfThisDrawer, newDrawerId, readBrowserLocation } from './browserLocation'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -419,6 +419,8 @@ interface RunEvent {
   noteKind?: string
   noteDetail?: string
   error?: string
+  // On a locate event, the drawer that is to answer it.
+  drawerId?: string
 }
 
 // A line of the transcript as the drawer draws it.
@@ -540,13 +542,13 @@ const CITED = `
   }`
 
 const ASK = `
-  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!]) {
-    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references) { runId conversationId }
+  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String) {
+    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId) { runId conversationId }
   }`
 
 const FEED = `
   subscription ($conversationId: String!) {
-    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error }
+    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId }
   }`
 
 const ANSWER = `
@@ -3017,19 +3019,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // offered there.
   const showPage = useShowPage(() => leaving())
   // The location tool asks the browser the person is chatting in where it
-  // is: the drawer that sent the turn, or the one they sent from last. The
+  // is: the drawer that sent the turn, named by the id it sends turns
+  // with, or for a turn no drawer sent the one they sent from last. The
   // browser asks the person the first time; what it says, or why it
   // cannot, goes back to the turn. A call is answered once, though the
   // feed may replay it.
-  const sentRunIds = useRef(new Set<string>())
+  const drawerId = useRef(newDrawerId())
   const lastSent = useRef({ conversationId: '', at: 0 })
   const answeredLocationCalls = useRef(new Set<string>())
   const answerLocation = (event: RunEvent) => {
     const callId = event.callId
     if (!callId || answeredLocationCalls.current.has(callId)) return
     const isAsked = isAskedOfThisDrawer({
-      runId: event.runId,
-      sentRunIds: sentRunIds.current,
+      askedDrawerId: event.drawerId,
+      drawerId: drawerId.current,
       lastSentAt: lastSent.current.conversationId === conversationRef.current ? lastSent.current.at : 0,
       now: Date.now(),
       isVisible: document.visibilityState === 'visible',
@@ -3262,7 +3265,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The run a turn sent from here got: followed through the feed like
   // any other, and noted so that the stop button knows it.
   const follow = (id: string) => {
-    sentRunIds.current.add(id)
     setRuns((previous) => (previous.includes(id) ? previous : [...previous, id]))
   }
 
@@ -3371,6 +3373,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           interruptedAnswer: options?.interruptedAnswer,
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           references: pointed.length > 0 ? pointed : undefined,
+          drawerId: drawerId.current,
         })
       } finally {
         sending.current -= 1

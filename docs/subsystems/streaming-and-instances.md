@@ -23,7 +23,7 @@ per-run sequence and a time.
 | `question` | `ask_user` is waiting: the question and any choices |
 | `note` | queued, stopped, compacted, titled, out of rounds |
 | `navigate` | `open_page` asks the dashboard to show a page of itself: the path |
-| `locate` | the `location` tool asks the browser the person is chatting in where it is; the drawer that sent the turn (or the one they sent from last, while it is in view) answers with `AnswerAgentLocation` |
+| `locate` | the `location` tool asks the browser the person is chatting in where it is; the drawer that sent the turn, named by the `drawerId` it sent with `AskAgent`, answers with `AnswerAgentLocation`; for a turn no drawer sent, the one the person sent from last, while it is in view |
 | `error` | the turn failed |
 | `done` | always last |
 

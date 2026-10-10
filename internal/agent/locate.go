@@ -36,13 +36,9 @@ type LocationAnswer struct {
 // Locate asks the browser the person is writing in where it is
 // (tools.Locating): the drawer that sent the turn answers the event with
 // AnswerLocation. A turn not written in the dashboard in a browser has
-// none to ask, and says so.
+// none to ask, and says so; the tool is not offered there (BrowserOnly),
+// and a subagent's turn is not one.
 func (self *AskRun) Locate(ctx context.Context, callId string) (*tools.BrowserLocation, error) {
-	// A subagent's person is reading the turn that started it, and that
-	// turn's browser is the one to ask.
-	if parent := self.settings.confirmVia; parent != nil {
-		return parent.Locate(ctx, callId)
-	}
 	if self.settings.Headless || !surfaceOf(self.settings.Surface).canLocate {
 		where := strings.TrimSpace(self.settings.Surface)
 		if self.settings.Headless || where == "" || where == backgroundSurface {
@@ -64,13 +60,13 @@ func (self *AskRun) Locate(ctx context.Context, callId string) (*tools.BrowserLo
 		delete(self.locations, callId)
 		self.mutex.Unlock()
 	}()
-	self.emit(Event{Kind: EventLocate, CallID: callId, Tool: "location"})
+	self.emit(Event{Kind: EventLocate, CallID: callId, Tool: "location", DrawerID: self.settings.DrawerID})
 	timer := time.NewTimer(locationWait)
 	defer timer.Stop()
 	select {
 	case said, ok := <-channel:
 		if !ok {
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("location_unavailable: the turn ended before the browser answered")
 		}
 		return locationFrom(said)
 	case <-timer.C:
