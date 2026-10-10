@@ -78,6 +78,7 @@ type AgentSettings struct {
 	Voice        *AgentVoiceSettings         `json:"voice"`
 	MCPServers   []*AgentMCPServerSettings   `json:"mcpServers"`
 	Finance      *AgentFinanceSettings       `json:"finance"`
+	Push         *AgentPushSettings          `json:"push"`
 	Works        []string                    `json:"works"`
 	Families     []string                    `json:"families"`
 	Kinds        []string                    `json:"kinds"`
@@ -248,6 +249,25 @@ type AgentPlaidSettings struct {
 	HasSecret    bool     `json:"hasSecret"`
 	CountryCodes []string `json:"countryCodes"`
 	Products     []string `json:"products"`
+}
+
+// AgentPushSettings is notifications on people's phones: whether this
+// server sends them, the relay it sends through, and the relay it may be
+// itself, without its Apple key.
+type AgentPushSettings struct {
+	Enabled  bool                    `json:"enabled"`
+	RelayURL string                  `json:"relayUrl"`
+	Relay    *AgentPushRelaySettings `json:"relay"`
+}
+
+// AgentPushRelaySettings is the relay this server can be, with whether the
+// Apple key is set in place of the key.
+type AgentPushRelaySettings struct {
+	Enabled    bool   `json:"enabled"`
+	APNSKeyID  string `json:"apnsKeyId"`
+	APNSTeamID string `json:"apnsTeamId"`
+	HasAPNSKey bool   `json:"hasApnsKey"`
+	APNSTopic  string `json:"apnsTopic"`
 }
 
 // AgentToolsSettings is the operator's policy over the catalog.
@@ -424,6 +444,17 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 				Products:     nonNil(agent.Finance.Plaid.Products),
 			},
 		},
+		Push: &AgentPushSettings{
+			Enabled:  agent.Push.IsEnabled(),
+			RelayURL: agent.Push.RelayURL,
+			Relay: &AgentPushRelaySettings{
+				Enabled:    agent.Push.Relay.Enabled,
+				APNSKeyID:  agent.Push.Relay.APNSKeyID,
+				APNSTeamID: agent.Push.Relay.APNSTeamID,
+				HasAPNSKey: agent.Push.Relay.APNSKey != "",
+				APNSTopic:  agent.Push.Relay.APNSTopic,
+			},
+		},
 		Families: config.AgentToolFamilies,
 		Kinds:    config.AgentProviderKinds,
 	}
@@ -519,6 +550,7 @@ type AgentParameters struct {
 	Voice        *AgentVoiceParameters          `json:"voice"`
 	MCPServers   *[]*AgentMCPServerParameters   `json:"mcpServers"`
 	Finance      *AgentFinanceParameters        `json:"finance"`
+	Push         *AgentPushParameters           `json:"push"`
 }
 
 // AgentSkillSecretParameters is one value a skill asks the operator for.
@@ -657,6 +689,23 @@ type AgentPlaidParameters struct {
 	Secret       *string   `json:"secret"`
 	CountryCodes *[]string `json:"countryCodes"`
 	Products     *[]string `json:"products"`
+}
+
+// AgentPushParameters change notifications on phones.
+type AgentPushParameters struct {
+	Enabled  *bool                     `json:"enabled"`
+	RelayURL *string                   `json:"relayUrl"`
+	Relay    *AgentPushRelayParameters `json:"relay"`
+}
+
+// AgentPushRelayParameters change the relay. A key left out or redacted
+// keeps the one stored; an empty one clears it.
+type AgentPushRelayParameters struct {
+	Enabled    *bool   `json:"enabled"`
+	APNSKeyID  *string `json:"apnsKeyId"`
+	APNSTeamID *string `json:"apnsTeamId"`
+	APNSKey    *string `json:"apnsKey"`
+	APNSTopic  *string `json:"apnsTopic"`
 }
 
 // AgentToolsParameters change the tool policy.
@@ -930,6 +979,21 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				}
 			}
 			applyStrings(&finance.Plaid.Products, plaid.Products)
+		}
+	}
+	if parameters.Push != nil {
+		push := &agent.Push
+		if parameters.Push.Enabled != nil {
+			isEnabled := *parameters.Push.Enabled
+			push.Enabled = &isEnabled
+		}
+		applyString(&push.RelayURL, parameters.Push.RelayURL)
+		if relay := parameters.Push.Relay; relay != nil {
+			applyBool(&push.Relay.Enabled, relay.Enabled)
+			applyString(&push.Relay.APNSKeyID, relay.APNSKeyID)
+			applyString(&push.Relay.APNSTeamID, relay.APNSTeamID)
+			applySecret(&push.Relay.APNSKey, relay.APNSKey)
+			applyString(&push.Relay.APNSTopic, relay.APNSTopic)
 		}
 	}
 	if parameters.Tools != nil {
