@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.124.1] - 2026-10-10
+
+### Changed
+
+- The Empty trash button sits at the right end of the row above the trash. (#370)
+
 ## [0.124.0] - 2026-10-09
 
 ### Added
