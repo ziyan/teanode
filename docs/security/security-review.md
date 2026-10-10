@@ -1826,3 +1826,76 @@ No fuzzing and no penetration test. Plaid was exercised through tests with a
 fake server and a manual link outside the server, not yet end to end through
 the server; SimpleFIN against its public demo and a real bridge connection;
 the ECB against its live files.
+
+# Seventh pass: signing a phone in
+
+Two adversarial reviews, on 2026-10-10, of the sign-in the TeaNode phone app
+uses (#379): the scope "api", which gives a token for everything a person
+can do, and the ways a phone gets one.
+
+## Summary
+
+The first design was phishable, and was replaced before it merged. Six
+smaller findings were fixed with it. The second review found no remaining way
+for anybody but the person to end up with a token for their server.
+
+## Findings
+
+### SEC-90: Pairing handed a full token to whoever started it (High, fixed by redesign)
+
+The first version used RFC 8628's device flow: the app showed a short code
+and the person approved it on the dashboard. The token goes to whoever polls
+with the device code, and the server cannot tell the real app from a stranger
+who registered under its name. A stranger could start a pairing as "TeaNode on
+Ana's iPhone", email the person a link to `/connect` on their own server, and
+collect a 30-day, refreshable full-API token from one press of Approve.
+
+Replaced by connect codes, which go the other way: a one-time secret made for
+the person where they are signed in, shown as a QR code, and scanned by their
+own phone (`internal/api/v1api/apigraph/oauth_connect.go`,
+`internal/api/v1api/apioauth/connect.go`). The device flow, its endpoint, its
+operations and its table were removed.
+
+### SEC-91: The consent page could grant the whole API (Low, fixed)
+
+The scope "api" was allowed on the authorization-code flow for any client
+whose return addresses were all an app's own scheme. Registration is open and
+such a scheme proves nothing about who registered it, so it was the same
+phishing shape as SEC-90 with a narrower reach. The consent page now grants
+the agent tools only; "api" comes only from a connect code.
+
+### SEC-92: Smaller findings (Low, fixed)
+
+- A connect code is not made while an operator is signed in as somebody, so
+  every phone belongs to whoever connected it.
+- A connect code is not made over plain http except on the server's own
+  machine, since the link carries it.
+- A disabled account's code issues nothing.
+- The Connect page shows the "open the app" link only on a phone, so a code
+  does not land in a computer's browser history.
+- A client that connects is marked approved, so it is not swept after a day.
+- Names a program or a device gives itself lose control and invisible
+  formatting characters (`api.DisplayName`), so a right-to-left override
+  cannot disguise one.
+
+## Controls verified
+
+- A connect code is 40 random characters, stored only as a hash, spent in one
+  `DELETE ... RETURNING`, and good for ten minutes.
+- The link carries the server and the code after the "#", which no browser
+  sends; `Referrer-Policy: no-referrer` is set; logs carry no code or token.
+- A token limited to the agent tools cannot reach GraphQL, so it cannot make
+  a code. Refreshing keeps a token's resource.
+- Cross-site requests cannot make a code and read it: cookies are SameSite=Lax,
+  GraphQL takes only `application/json`, and no CORS headers are sent.
+- The QR image is built from integers and shown as an image.
+
+## Left for the app (Milestone 5 of the iPhone app plan)
+
+A link names the server the phone connects to, so a doctored link could point
+a phone at somebody else's server with a code for somebody else's account.
+That reaches nothing on the person's own server, but the phone would then
+talk to the wrong one. The app asks "Connect to <server> as <account>?" before
+using a code, and refuses plain http to anything but its own machine. The page
+on teanode.com that a link opens without the app must clear the fragment and
+load no other site's scripts.
