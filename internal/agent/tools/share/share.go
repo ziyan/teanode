@@ -66,8 +66,10 @@ const (
 	// shareBytes is the largest file handed over: what a chat app takes
 	// and a browser shows without fuss.
 	shareBytes = 32 << 20
-	// lookBytes is the largest picture shown to the model.
-	lookBytes = 5 << 20
+	// lookBytes is the largest picture shown to the model: a phone's photo,
+	// the same as a picture attached to a message. A provider that takes
+	// less shrinks it to fit.
+	lookBytes = 10 << 20
 	// sharedMessage marks an attachment as a file the agent handed over.
 	sharedMessage = "shared"
 	// fetchWait is how long the computer has to send a file across.

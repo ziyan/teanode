@@ -78,8 +78,33 @@ type codexTool struct {
 	Parameters  map[string]any `json:"parameters,omitempty"`
 }
 
-// encode turns a request into the protocol's body.
+// codexBodyBytes is the largest body sent to the plan. A larger one is
+// refused before it reaches a model, as a 503 that names no reason
+// ("upstream connect error or disconnect/reset before headers"): a body of
+// about a megabyte, which one phone photo is on its own.
+const codexBodyBytes = 800 << 10
+
+// encode turns a request into the protocol's body, its pictures shrunk
+// when the body would be too large for the plan to take.
 func (self *codex) encode(request *ChatRequest) ([]byte, error) {
+	body, err := self.encodeMessages(request, request.Messages)
+	if err != nil || len(body) <= codexBodyBytes {
+		return body, err
+	}
+	pictureBytes := pictureBytesOf(request.Messages)
+	if pictureBytes == 0 {
+		return body, nil
+	}
+	// What the pictures may take is what the words leave, base64 being
+	// four bytes for every three.
+	wordBytes := len(body) - base64.StdEncoding.EncodedLen(pictureBytes)
+	budgetBytes := (codexBodyBytes - wordBytes) * 3 / 4
+	return self.encodeMessages(request, fitPictures(request.Messages, budgetBytes))
+}
+
+// encodeMessages turns a request with these messages into the protocol's
+// body.
+func (self *codex) encodeMessages(request *ChatRequest, messages []ChatMessage) ([]byte, error) {
 	model := strings.TrimSpace(request.Model)
 	if model == "" {
 		return nil, errors.New("llm: a request to the plan names no model")
@@ -131,7 +156,7 @@ func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 	}
 	body.PromptCacheKey = request.CacheKey
 
-	for _, message := range request.Messages {
+	for _, message := range messages {
 		switch message.Role {
 		case RoleSystem:
 			// The system messages before anything else was said are not
