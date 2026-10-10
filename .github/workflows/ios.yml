@@ -1,0 +1,68 @@
+name: iOS
+
+# The iPhone app (ios/). Nobody working on it needs a Mac: the package's
+# tests run on Linux, and the app is built on GitHub's macOS runners, which
+# are free for a public repository.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    name: TeaNodeKit on Linux
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Test
+        working-directory: ios/TeaNodeKit
+        run: swift test
+
+  app:
+    name: App on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Say which Xcode
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test TeaNodeKit
+        working-directory: ios/TeaNodeKit
+        run: swift test
+
+      - name: Generate the project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      # A simulator build needs no signing, so it needs none of the
+      # developer account's secrets either.
+      - name: Build for the simulator
+        working-directory: ios
+        run: >
+          xcodebuild build
+          -project TeaNode.xcodeproj
+          -scheme TeaNode
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
