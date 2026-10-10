@@ -70,6 +70,7 @@ import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
 import { ReferenceChips } from './agentReferenceChips'
+import { isAskedOfThisDrawer, readBrowserLocation } from './browserLocation'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -403,6 +404,7 @@ interface RunEvent {
     | 'note'
     | 'titled'
     | 'navigate'
+    | 'locate'
     | 'done'
     | 'error'
   runId: string
@@ -550,6 +552,12 @@ const FEED = `
 const ANSWER = `
   mutation ($runId: String!, $callId: String!, $answer: String!) {
     AnswerAgentQuestion(runId: $runId, callId: $callId, answer: $answer)
+  }`
+
+// The browser's answer to a turn that asked where the person is.
+const ANSWER_LOCATION = `
+  mutation ($runId: String!, $callId: String!, $latitudeDegrees: Float, $longitudeDegrees: Float, $accuracyMeters: Float, $measuredAt: String, $errorMessage: String) {
+    AnswerAgentLocation(runId: $runId, callId: $callId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, accuracyMeters: $accuracyMeters, measuredAt: $measuredAt, errorMessage: $errorMessage)
   }`
 
 const RESOLVE = `
@@ -3008,6 +3016,30 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // site the drawer has no dashboard around it to move, and the tool is not
   // offered there.
   const showPage = useShowPage(() => leaving())
+  // The location tool asks the browser the person is chatting in where it
+  // is: the drawer that sent the turn, or the one they sent from last. The
+  // browser asks the person the first time; what it says, or why it
+  // cannot, goes back to the turn. A call is answered once, though the
+  // feed may replay it.
+  const sentRunIds = useRef(new Set<string>())
+  const lastSent = useRef({ conversationId: '', at: 0 })
+  const answeredLocationCalls = useRef(new Set<string>())
+  const answerLocation = (event: RunEvent) => {
+    const callId = event.callId
+    if (!callId || answeredLocationCalls.current.has(callId)) return
+    const isAsked = isAskedOfThisDrawer({
+      runId: event.runId,
+      sentRunIds: sentRunIds.current,
+      lastSentAt: lastSent.current.conversationId === conversationRef.current ? lastSent.current.at : 0,
+      now: Date.now(),
+      isVisible: document.visibilityState === 'visible',
+    })
+    if (!isAsked) return
+    answeredLocationCalls.current.add(callId)
+    void readBrowserLocation()
+      .then((answer) => graphql<{ AnswerAgentLocation: boolean }>(ANSWER_LOCATION, { runId: event.runId, callId, ...answer }))
+      .catch(() => undefined)
+  }
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
@@ -3020,6 +3052,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
     if (event.kind === 'navigate') {
       if (!standalone) showPage(event)
+      return
+    }
+    if (event.kind === 'locate') {
+      answerLocation(event)
       return
     }
     //
@@ -3226,6 +3262,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The run a turn sent from here got: followed through the feed like
   // any other, and noted so that the stop button knows it.
   const follow = (id: string) => {
+    sentRunIds.current.add(id)
     setRuns((previous) => (previous.includes(id) ? previous : [...previous, id]))
   }
 
@@ -3338,6 +3375,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       } finally {
         sending.current -= 1
       }
+      lastSent.current = { conversationId: response.AskAgent.conversationId, at: Date.now() }
       if (conversationRef.current !== sendingConversationId) return
       if (!conversationId) {
         const conversation = response.AskAgent.conversationId

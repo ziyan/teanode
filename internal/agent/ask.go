@@ -236,6 +236,7 @@ const (
 	EventNote         EventKind = "note"         // compaction and the like
 	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
 	EventNavigate     EventKind = "navigate"     // the dashboard is to show a page of itself: Text is its path
+	EventLocate       EventKind = "locate"       // the browser the person writes in is asked where it is: CallID
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
 )
@@ -323,6 +324,10 @@ type AskRun struct {
 
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
+
+	// locations are the location calls waiting for the browser, by call
+	// id; see Locate.
+	locations map[string]chan string
 
 	// recalled is what memory searches found this turn, for the overlay;
 	// promptMemories are the pages the prompt already carries, which the
@@ -796,6 +801,10 @@ func (self *AskRun) finish() {
 	}
 	for id, channel := range self.questions {
 		delete(self.questions, id)
+		close(channel)
+	}
+	for id, channel := range self.locations {
+		delete(self.locations, id)
 		close(channel)
 	}
 	self.mutex.Unlock()

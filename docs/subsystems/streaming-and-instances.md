@@ -23,6 +23,7 @@ per-run sequence and a time.
 | `question` | `ask_user` is waiting: the question and any choices |
 | `note` | queued, stopped, compacted, titled, out of rounds |
 | `navigate` | `open_page` asks the dashboard to show a page of itself: the path |
+| `locate` | the `location` tool asks the browser the person is chatting in where it is; the drawer that sent the turn (or the one they sent from last, while it is in view) answers with `AnswerAgentLocation` |
 | `error` | the turn failed |
 | `done` | always last |
 
@@ -101,7 +102,7 @@ the same way on its own row, renewed every thirty seconds for ninety.
 This is the important list.
 
 - **A run is local.** Reading a run's events, or polling it, only works on the
-  instance running it. Only stop, answer and resolve have a way across.
+  instance running it. Only stop, answer, resolve and locate have a way across.
 - **The one-turn-at-a-time rule is local.** Two instances can run two turns of
   one conversation at once.
 - **Attached tabs and attached computers are local**, held in memory by the

@@ -63,6 +63,11 @@ type AgentAskMutation interface {
 	// to do. Needs agent:use.
 	ResolveAgentConfirmation(ctx context.Context, arguments ResolveAgentConfirmationArguments) (bool, error)
 
+	// Say where the browser is, answering a turn that asked with the
+	// location tool, or why it cannot. Sent by the dashboard the person is
+	// chatting in. Needs agent:use.
+	AnswerAgentLocation(ctx context.Context, arguments AnswerAgentLocationArguments) (bool, error)
+
 	// Stop a turn where it is. Needs agent:use.
 	StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error)
 
@@ -207,6 +212,21 @@ type ResolveAgentConfirmationArguments struct {
 	RunID   string `json:"runId"`
 	CallID  string `json:"callId"`
 	Approve bool   `json:"approve"`
+}
+
+// AnswerAgentLocationArguments are the browser's answer to one location
+// call: where it is, as its geolocation measured it, or ErrorMessage.
+type AnswerAgentLocationArguments struct {
+	RunID            string  `json:"runId"`
+	CallID           string  `json:"callId"`
+	LatitudeDegrees  float64 `json:"latitudeDegrees" graphapi:"nullable"`
+	LongitudeDegrees float64 `json:"longitudeDegrees" graphapi:"nullable"`
+	AccuracyMeters   float64 `json:"accuracyMeters" graphapi:"nullable"`
+	// MeasuredAt is when the browser measured it, RFC 3339; empty is now.
+	MeasuredAt string `json:"measuredAt" graphapi:"nullable"`
+	// ErrorMessage says why the browser cannot say: the person did not
+	// allow it, or it could not find out.
+	ErrorMessage string `json:"errorMessage" graphapi:"nullable"`
 }
 
 // StopAgentRunArguments name the run.
@@ -830,6 +850,34 @@ func (self *graph) commandAgentRun(ctx context.Context, found *models.Agent, wor
 		return false, err
 	}
 	return true, nil
+}
+
+func (self *graph) AnswerAgentLocation(ctx context.Context, arguments AnswerAgentLocationArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return false, agent.ErrUnavailable
+	}
+	answer := agent.LocationAnswer{
+		LatitudeDegrees:  arguments.LatitudeDegrees,
+		LongitudeDegrees: arguments.LongitudeDegrees,
+		AccuracyMeters:   arguments.AccuracyMeters,
+		MeasuredAt:       time.Now(),
+		ErrorMessage:     strings.TrimSpace(arguments.ErrorMessage),
+	}
+	if measuredAt := strings.TrimSpace(arguments.MeasuredAt); measuredAt != "" {
+		if answer.MeasuredAt, err = time.Parse(time.RFC3339, measuredAt); err != nil {
+			return false, fmt.Errorf("%w: measuredAt is an RFC 3339 time", api.ErrInvalidArguments)
+		}
+	}
+	said, err := json.Marshal(answer)
+	if err != nil {
+		return false, err
+	}
+	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandLocate, CallID: arguments.CallID, Answer: string(said)})
 }
 
 func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error) {

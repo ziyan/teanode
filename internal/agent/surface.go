@@ -26,6 +26,13 @@ type surface struct {
 	// framed into another site by the extension cannot: the page around
 	// it is not the dashboard.
 	canShowPages bool
+
+	// canLocate says the person writes the turn in the dashboard in a
+	// browser, which the location tool can ask where it is. Not the
+	// drawer the extension frames into another site: the browser would
+	// ask whether that site may know where they are, and once allowed,
+	// the site could ask it too.
+	canLocate bool
 }
 
 // dashboardOverlay is how to write for the dashboard, which renders
@@ -40,7 +47,7 @@ const picturesLine = "A picture shows in the answer when written as ![what it sh
 var surfaces = map[string]surface{
 	// The drawer says "phone" on a narrow screen and "extension" in the
 	// browser extension.
-	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true},
+	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true, canLocate: true},
 	"extension": {situationLine: talkingThrough("extension"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"page":      {situationLine: talkingThrough("page"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	// A turn the person spoke in the drawer, transcribed. The answer is
@@ -58,12 +65,14 @@ var surfaces = map[string]surface{
 			"Ask at most one question, at the end. When a word they said may have been misheard and it changes what they want, a name, a sum, a day, say what you heard and ask before acting on it.\n</surface>",
 		hasSuggestedReplies: true,
 		canShowPages:        true,
+		canLocate:           true,
 	},
 	"phone": {
 		situationLine:       talkingThrough("phone"),
 		overlay:             "<surface>\nA phone: keep it short, no tables. " + picturesLine + "\n</surface>",
 		hasSuggestedReplies: true,
 		canShowPages:        true,
+		canLocate:           true,
 	},
 	"cli": {
 		situationLine: talkingThrough("cli"),
