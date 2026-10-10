@@ -518,7 +518,7 @@ struct Composer: View {
                     PhotosPicker(selection: $pickedItems, maxSelectionCount: 4, matching: .images) {
                         Image(systemName: "plus")
                             .font(.title3)
-                            .frame(width: 44, height: 44)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("Add pictures")
@@ -536,7 +536,7 @@ struct Composer: View {
                         } label: {
                             Image(systemName: "stop.fill")
                                 .font(.title3)
-                                .frame(width: 44, height: 44)
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         .glassEffect(.regular.interactive(), in: .circle)
                         .accessibilityLabel("Stop")
@@ -547,7 +547,7 @@ struct Composer: View {
                             Image(systemName: "arrow.up")
                                 .font(.title3.bold())
                                 .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
                         .disabled(!model.canSend)
