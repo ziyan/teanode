@@ -36,7 +36,8 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   - [x] (2026-10-10) The project's developer account is enrolled (an individual membership).
   - [x] (2026-10-10) `ios/` scaffold: `TeaNodeKit` (server address, connect link, the `graphql-ws` messages, with tests that pass on Linux in the `swift:6.1` container), a first connect screen, `project.yml`, configuration, and `.github/workflows/ios.yml`.
   - [x] (2026-10-10) The macOS job passes on GitHub: the package tests and an unsigned simulator build of the app.
-  - [ ] The account's App IDs, app group, APNs key, App Store Connect key and app record (checklist in `ios/README.md`).
+  - [x] (2026-10-10) The App IDs `com.teanode.app` (Push Notifications, App Groups, Associated Domains, Siri), `.share` and `.notification` (App Groups), `.widgets` (App Groups, Push Notifications), and the app group `group.com.teanode.app`, attached to all four.
+  - [ ] The APNs key, the App Store Connect key and the app record (checklist in `ios/README.md`).
   - [ ] The prototype notification to a development build.
 - [ ] Milestone 1: an app can sign in, by OAuth or by a pairing code, and get a token for the whole API.
 - [ ] Milestone 2: phones as devices, and notifications sent to them.
