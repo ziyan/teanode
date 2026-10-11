@@ -85,6 +85,14 @@ struct ConversationView: View {
                     .padding(.vertical, 12)
             }
             .scrollPosition($scrollPosition)
+            // The jump to the end is offered only when the end is well out
+            // of sight, judged from where the scroll is rather than from a
+            // last line, which a new conversation may not have laid out.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY < 160
+            } action: { _, isNearEnd in
+                isAtEnd = isNearEnd
+            }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
@@ -143,12 +151,7 @@ struct ConversationView: View {
             if model.isLoaded, model.transcript.lines.isEmpty {
                 EmptyConversation(model: model)
             }
-            // The end of the conversation: whether it is on screen
-            // decides whether the jump to the end is offered.
             Color.clear.frame(height: 1).id(Self.endId)
-                .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-                    isAtEnd = isVisible
-                }
         }
     }
 
@@ -161,6 +164,13 @@ struct ConversationView: View {
             if let reply = model.replyingTo {
                 if let subject = reply.subject {
                     ReferenceBar(subject: subject, from: reply.from ?? "") { model.replyingTo = nil }
+                } else if let path = reply.path {
+                    ReferenceStrip(systemImage: "brain", title: reply.name ?? path, detail: path) { model.replyingTo = nil }
+                } else if reply.financeTransactionId != nil {
+                    ReferenceStrip(
+                        systemImage: "creditcard", title: reply.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reply.description ?? "",
+                        detail: [FinanceMoney.shown(reply.amount, currencyCode: reply.currencyCode), reply.postedOn ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+                    ) { model.replyingTo = nil }
                 } else {
                     ReplyBar(reply: reply) { model.replyingTo = nil }
                 }
@@ -565,30 +575,43 @@ struct EmptyConversation: View {
     let model: ConversationModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Ask about your mail, or ask for something to be done.")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
             if !model.ideas.isEmpty, model.draft.isEmpty {
-                Text("Or start with one of these:")
+                Text("Or start with one of these")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 6)
                 ForEach(model.ideas) { idea in
                     Button {
                         Task { await model.start(idea) }
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        HStack(alignment: .top, spacing: 12) {
                             Text(idea.emoji ?? "💡")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(idea.headline).font(.headline)
+                                .font(.title3)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(idea.headline)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
                                 if let body = idea.body, !body.isEmpty {
-                                    Text(body).font(.footnote).foregroundStyle(.secondary)
+                                    Text(body)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(3)
                                 }
                             }
+                            .multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                         }
+                        .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
+                        .contentShape(.rect(cornerRadius: 18))
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
                 }
             }
         }

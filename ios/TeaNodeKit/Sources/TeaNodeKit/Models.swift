@@ -74,6 +74,16 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var quotedRole: String? = nil
     public var quotedText: String? = nil
 
+    /// A finance transaction the message asks about.
+    public init(transactionId: String, postedOn: String?, amount: String?, currencyCode: String?, merchantName: String?, description: String?) {
+        financeTransactionId = transactionId
+        self.postedOn = postedOn
+        self.amount = amount
+        self.currencyCode = currencyCode
+        self.merchantName = merchantName
+        self.description = description
+    }
+
     /// A page of the agent's knowledge the message asks about.
     public init(path: String, name: String) {
         self.path = path

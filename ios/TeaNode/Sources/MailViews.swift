@@ -536,12 +536,6 @@ struct ThreadList: View {
                     Button("Empty Trash", role: .destructive) { isConfirmingEmpty = true }
                 }
                 Spacer()
-                if list.total > 0 {
-                    Text("\(list.total) conversations")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
                 Button {
                     composing = ComposeStart(kind: .new)
                 } label: {
