@@ -45,6 +45,8 @@ final class ConversationModel {
     /// pages and transactions asked about, several at once as the
     /// dashboard's drawer holds them.
     var references: [AgentReference] = []
+    /// A message opened to select part of its words, from its menu.
+    var selectingText: String?
 
     /// The message replied to, of the references: one at most.
     var replyingTo: AgentReference? {

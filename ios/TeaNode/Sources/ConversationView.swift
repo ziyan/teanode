@@ -74,6 +74,9 @@ struct ConversationView: View {
                     StatusSheet(status: status, connection: connection)
                 }
             }
+            .sheet(item: Binding(get: { model.selectingText.map(SelectingText.init) }, set: { model.selectingText = $0?.text })) { selecting in
+                SelectTextSheet(text: selecting.text)
+            }
     }
 
     /// The messages, scrolling, with the jump to the end.
@@ -414,14 +417,12 @@ struct ConversationItemView: View {
             case .person:
                 PersonBubble(line: line)
                     .contextMenu { LineActions(line: line, model: model) }
-                    .swipeToReplyAndCopy(isReplying: line.messageId != nil) { model.reply(to: line) } onCopy: { UIPasteboard.general.string = line.text }
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
                     AgentBubble {
                         MarkdownView(text: line.text)
                     }
                     .contextMenu { LineActions(line: line, model: model) }
-                    .swipeToReplyAndCopy(isReplying: line.messageId != nil) { model.reply(to: line) } onCopy: { UIPasteboard.general.string = line.text }
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
                             .font(.caption2)
@@ -465,11 +466,6 @@ struct LineActions: View {
     let model: ConversationModel
 
     var body: some View {
-        Button {
-            UIPasteboard.general.string = line.text
-        } label: {
-            Label("Copy", systemImage: "doc.on.doc")
-        }
         if line.messageId != nil {
             Button {
                 model.reply(to: line)
@@ -477,6 +473,68 @@ struct LineActions: View {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
             }
         }
+        Button {
+            UIPasteboard.general.string = line.text
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+        Button {
+            model.selectingText = line.text
+        } label: {
+            Label("Select", systemImage: "selection.pin.in.out")
+        }
+        ShareLink(item: line.text) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+    }
+}
+
+/// SelectingText is a message opened to select from.
+struct SelectingText: Identifiable {
+    let text: String
+    var id: String { text }
+}
+
+/// SelectTextSheet shows a message's words to select part of them, which a
+/// bubble's long press cannot: it opens the menu.
+struct SelectTextSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SelectableText(text: text)
+                .navigationTitle("Select text")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// SelectableText is text to select but not change. SwiftUI's text
+/// selection takes a whole Text at once, so a UITextView does it.
+struct SelectableText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.textColor = .label
+        view.backgroundColor = .clear
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        if view.text != text { view.text = text }
     }
 }
 

@@ -287,7 +287,7 @@ The app:
 - Checks the server's version (`ReadServerVersion` or the existing version query) and says plainly when the server is too old for the app, naming the version it needs.
 - Keeps several servers, like the command line's profiles.
 - Lists conversations, main first. A conversation shows its lines: what the person said, the answer streamed as it is written, tool lines collapsed, notes, pictures, and check-in lines for messages that begin with a marker (`[alert]`, `[herdr question]`, `[goal needs you]` and the rest listed in `agentDrawer.tsx`).
-- Sends with `AskAgent(surface: "ios", drawerId: <this install's ID>)`. Attaches from the camera, Photos and Files. Swipe a line left to reply to it and right to copy it, as in the drawer.
+- Sends with `AskAgent(surface: "ios", drawerId: <this install's ID>)`. Attaches from the camera, Photos and Files. A long press on a message offers Reply, Copy, Select and Share; swipes were dropped because they fought the scrolling.
 - Shows approval cards, question cards and coding-session question cards with buttons, from live events and from `ListAgentInteractions`.
 - Answers `locate` events addressed to its `drawerId` with Core Location while in the foreground, and with an error message ("the app is not open") otherwise.
 - Reports presence with `ReportAgentPresence` when it comes to the foreground and leaves it.
