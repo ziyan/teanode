@@ -42,32 +42,6 @@ struct AskAgentIntent: AppIntent {
     }
 }
 
-/// CallAgentIntent opens TeaNode on a call with the agent.
-struct CallAgentIntent: AppIntent {
-    static var title: LocalizedStringResource { "Call your agent" }
-    static var description: IntentDescription { IntentDescription("Opens TeaNode and starts a voice call with your agent.") }
-    static var openAppWhenRun: Bool { true }
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        AppModel.shared.openedConversationId = ""
-        AppModel.shared.isCallRequested = true
-        return .result()
-    }
-}
-
-/// OpenConversationIntent opens TeaNode on the main conversation.
-struct OpenConversationIntent: AppIntent {
-    static var title: LocalizedStringResource { "Open your main conversation" }
-    static var openAppWhenRun: Bool { true }
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        AppModel.shared.openedConversationId = ""
-        return .result()
-    }
-}
-
 /// TeaNodeShortcuts are the phrases Siri knows without being set up.
 struct TeaNodeShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {

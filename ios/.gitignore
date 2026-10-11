@@ -19,3 +19,5 @@ xcuserdata/
 /TeaNode/Info.plist
 /TeaNodeShare/*.entitlements
 /TeaNodeShare/Info.plist
+/TeaNodeWidgets/*.entitlements
+/TeaNodeWidgets/Info.plist

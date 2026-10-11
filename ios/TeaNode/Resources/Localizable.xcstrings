@@ -1697,6 +1697,22 @@
         }
       }
     },
+    "Ask anything": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何でも聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随便问"
+          }
+        }
+      }
+    },
     "Ask before showing pictures": {
       "localizations": {
         "ja": {
@@ -1773,6 +1789,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "可以问助手任何事：你的邮件、日历，或一张收据的照片。"
+          }
+        }
+      }
+    },
+    "Ask your agent or call it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに聞くか、電話します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问你的助手，或呼叫它。"
           }
         }
       }
@@ -3437,6 +3469,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除…"
+          }
+        }
+      }
+    },
+    "Dentist": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歯医者"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "牙医"
           }
         }
       }
@@ -5745,6 +5793,22 @@
         }
       }
     },
+    "Main conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインの会話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主对话"
+          }
+        }
+      }
+    },
     "Make main": {
       "localizations": {
         "ja": {
@@ -7313,6 +7377,22 @@
         }
       }
     },
+    "Nothing coming up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接下来没有安排"
+          }
+        }
+      }
+    },
     "Nothing done yet": {
       "localizations": {
         "ja": {
@@ -7825,6 +7905,22 @@
         }
       }
     },
+    "Open TeaNode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 TeaNode"
+          }
+        }
+      }
+    },
     "Open TeaNode and connect it to your server first.": {
       "localizations": {
         "ja": {
@@ -8141,6 +8237,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "页面路径"
+          }
+        }
+      }
+    },
+    "Part": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分"
+          }
+        }
+      }
+    },
+    "Part of TeaNode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode の場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 的部分"
           }
         }
       }
@@ -10353,6 +10481,22 @@
         }
       }
     },
+    "Starts a voice call with your agent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントとの音声通話を始めます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和你的助手开始语音通话。"
+          }
+        }
+      }
+    },
     "Starts again %@": {
       "localizations": {
         "ja": {
@@ -10752,6 +10896,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 无法使用麦克风。请在“设置”中允许后再拨打。"
+          }
+        }
+      }
+    },
+    "Team lunch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チームランチ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队午餐"
           }
         }
       }
@@ -11716,6 +11876,22 @@
         }
       }
     },
+    "Today, all day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日、終日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天，全天"
+          }
+        }
+      }
+    },
     "Told": {
       "localizations": {
         "ja": {
@@ -12240,6 +12416,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无标题"
+          }
+        }
+      }
+    },
+    "Up next": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の予定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接下来"
           }
         }
       }
@@ -13152,6 +13344,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的回答"
+          }
+        }
+      }
+    },
+    "Your next events and unread mail.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の予定と未読メール。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你接下来的日程和未读邮件。"
           }
         }
       }
