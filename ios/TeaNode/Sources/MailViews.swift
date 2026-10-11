@@ -63,7 +63,7 @@ struct MailboxesList: View {
     var body: some View {
         List {
             if let leading {
-                Section { leading }
+                Section { leading } footer: { MenuSectionBreak() }
             }
             if let entry = mail.current, let inbox = mail.folder(kind: "inbox") {
                 Section {

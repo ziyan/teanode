@@ -80,6 +80,7 @@ struct ContactsScreen: View {
                 }
             }
             .navigationTitle("Contacts")
+            .withoutSwipeBack()
             .navigationDestination(for: String.self) { contactId in
                 ContactDetailView(model: model, contactId: contactId)
             }

@@ -59,7 +59,7 @@ struct ConversationsSheet: View {
         NavigationStack {
             List {
                 if let leading {
-                    Section { leading }
+                    Section { leading } footer: { MenuSectionBreak() }
                 }
                 if let found {
                     if found.isEmpty {

@@ -138,6 +138,7 @@ struct FinanceScreen: View {
             }
             .id(part)
             .toolbar { MenuButton() }
+            .withoutSwipeBack()
             .navigationDestination(for: TransactionLink.self) { link in
                 TransactionsView(filter: link.filter)
             }

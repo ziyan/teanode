@@ -221,6 +221,7 @@ struct MainView: View {
                 ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
                     .id(conversation?.id ?? "main")
                     .toolbar { MenuButton() }
+                    .withoutSwipeBack()
             }
         case .mail:
             MailScreen(mail: mail, place: $mailPlace, composing: $composing)
@@ -240,6 +241,7 @@ struct MainView: View {
             NavigationStack {
                 SettingsForm()
                     .toolbar { MenuButton() }
+                    .withoutSwipeBack()
             }
             .environment(mail)
         }
@@ -257,6 +259,7 @@ struct KnowledgeStack: View {
         NavigationStack(path: $path) {
             KnowledgeScreen(connection: connection, path: $path)
                 .toolbar { MenuButton() }
+                .withoutSwipeBack()
                 .modifier(KnowledgeDestination(connection: connection, path: $path))
         }
         .onChange(of: app.openedKnowledgePath, initial: true) { _, knowledgePath in
@@ -301,7 +304,7 @@ struct SideMenu: View {
         case .finance:
             NavigationStack {
                 List {
-                    Section { sections }
+                    Section { sections } footer: { MenuSectionBreak() }
                     Section("Finance") {
                         ForEach(FinancePart.allCases) { part in
                             Button {

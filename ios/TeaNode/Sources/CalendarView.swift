@@ -22,6 +22,7 @@ struct CalendarScreen: View {
             content
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.large)
+                .withoutSwipeBack()
                 .toolbar { toolbar }
                 .refreshable {
                     if model.viewMode == .reminders {

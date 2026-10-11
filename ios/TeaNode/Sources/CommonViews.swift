@@ -91,6 +91,9 @@ struct SidePanel<Panel: View, Content: View>: View {
                     .opacity(shift > 0 ? 1 : 0)
                     .accessibilityHidden(!isOpen)
                 content()
+                    // While the panel follows a finger, the screen under it
+                    // holds still rather than scrolling with the same drag.
+                    .scrollDisabled(dragged != 0)
                     .frame(width: geometry.size.width)
                     .clipShape(.rect(cornerRadius: shift > 0 ? 36 : 0, style: .continuous))
                     .shadow(color: .black.opacity(shift > 0 ? 0.3 : 0), radius: 16)
@@ -159,6 +162,45 @@ struct MenuListStyle: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// WithoutSwipeBack turns off going back by swiping in the navigation stack
+/// it is in: from the edge, and, since iOS 26, from anywhere on the screen.
+/// The side menu opens with a drag to the right from anywhere, and the two
+/// moved together, opening the menu and leaving the page at once. The back
+/// button still goes back. SwiftUI has no switch for it, so the navigation
+/// controller is found from a view controller placed in the stack.
+struct WithoutSwipeBack: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController {
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+            navigationController?.interactiveContentPopGestureRecognizer?.isEnabled = false
+        }
+    }
+}
+
+extension View {
+    /// No going back by swiping in this view's navigation stack; see
+    /// WithoutSwipeBack.
+    func withoutSwipeBack() -> some View {
+        background(WithoutSwipeBack().frame(width: 0, height: 0).accessibilityHidden(true))
+    }
+}
+
+/// MenuSectionBreak ends the side menu's parts of TeaNode, above the list
+/// of the part on screen: the two are separate menus, and read as such.
+struct MenuSectionBreak: View {
+    var body: some View {
+        Divider()
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+            .padding(.horizontal, 4)
+            .accessibilityHidden(true)
     }
 }
 
