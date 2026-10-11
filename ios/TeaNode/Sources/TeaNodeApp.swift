@@ -100,43 +100,80 @@ struct MainView: View {
     }
 }
 
-/// ConversationsSheet lists the person's conversations to switch to, and
-/// starts a new one.
+/// ConversationsSheet is the drawer's conversation list: the main one first,
+/// then the others by when they were last used; search across what was
+/// said; the archived ones on request; and renaming, archiving, deleting and
+/// making one the main conversation.
 struct ConversationsSheet: View {
     let connection: Connection
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var conversations: [AgentConversation] = []
+    @State private var archived: [AgentConversation]?
+    @State private var isShowingArchived = false
+    @State private var words = ""
+    @State private var found: [AgentConversation]?
     @State private var isLoaded = false
     @State private var problemText: String?
+    @State private var renaming: AgentConversation?
+    @State private var newTitle = ""
+    @State private var deleting: AgentConversation?
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Button {
-                        onChoose(nil)
-                    } label: {
-                        Label(app.agentTitle, systemImage: "leaf")
+                if let found {
+                    if found.isEmpty {
+                        Text("Nothing matches.").foregroundStyle(.secondary)
                     }
-                }
-                Section("Conversations") {
-                    ForEach(conversations.filter { !$0.isMain }) { conversation in
+                    ForEach(found) { conversation in row(conversation) }
+                } else {
+                    Section {
                         Button {
-                            onChoose(conversation)
+                            onChoose(nil)
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))
-                                    .foregroundStyle(.primary)
-                                if let lastAt = ServerTime.date(conversation.lastAt) {
-                                    Text(lastAt, format: .relative(presentation: .named))
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                            Label(app.agentTitle, systemImage: "star.fill")
+                        }
+                        Button {
+                            Task { await start() }
+                        } label: {
+                            Label("New side chat", systemImage: "plus")
+                        }
+                    }
+                    Section("Conversations") {
+                        ForEach(conversations.filter { !$0.isMain }) { conversation in row(conversation) }
+                    }
+                    Section {
+                        DisclosureGroup("Archived chats", isExpanded: $isShowingArchived) {
+                            if let archived {
+                                if archived.isEmpty {
+                                    Text("Nothing has been archived.").foregroundStyle(.secondary)
                                 }
+                                ForEach(archived) { conversation in row(conversation) }
+                            } else {
+                                ProgressView()
                             }
                         }
                     }
+                }
+            }
+            .searchable(text: $words, prompt: Text("Search conversations"))
+            .task(id: words) {
+                // A quarter of a second after the last key, as the drawer
+                // waits.
+                let typed = words.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !typed.isEmpty else {
+                    found = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                found = try? await connection.conversations(matching: typed)
+            }
+            .onChange(of: isShowingArchived) { _, isShown in
+                if isShown, archived == nil {
+                    Task { archived = (try? await connection.conversations(isArchived: true))?.filter { !$0.isMain } ?? [] }
                 }
             }
             .overlay {
@@ -154,14 +191,97 @@ struct ConversationsSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        Task { await start() }
-                    } label: {
-                        Label("New conversation", systemImage: "square.and.pencil")
-                    }
+            }
+            .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField("Title", text: $newTitle)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") {
+                    guard let conversation = renaming else { return }
+                    let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !title.isEmpty else { return }
+                    Task { await act { try await connection.updateConversation(conversation.id, title: title) } }
                 }
             }
+            .confirmationDialog(
+                "Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible, presenting: deleting
+            ) { conversation in
+                Button("Delete", role: .destructive) {
+                    Task { await act { try await connection.deleteConversation(conversation.id) } }
+                }
+            } message: { conversation in
+                Text("“\(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))” and everything in it, the files that came with it too.")
+            }
+        }
+    }
+
+    private func row(_ conversation: AgentConversation) -> some View {
+        Button {
+            onChoose(conversation.isMain ? nil : conversation)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))
+                    .foregroundStyle(.primary)
+                if let summary = conversation.summary, !summary.isEmpty {
+                    Text(summary).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+                if let lastAt = ServerTime.date(conversation.lastAt) {
+                    Text(lastAt, format: .relative(presentation: .named))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            if !conversation.isMain {
+                Button(role: .destructive) {
+                    deleting = conversation
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                Button {
+                    Task { await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) } }
+                } label: {
+                    if conversation.isArchived {
+                        Label("Unarchive", systemImage: "tray.and.arrow.up")
+                    } else {
+                        Label("Archive", systemImage: "archivebox")
+                    }
+                }
+                .tint(.indigo)
+            }
+        }
+        .swipeActions(edge: .leading) {
+            if !conversation.isMain, !conversation.isArchived {
+                Button {
+                    Task { await act { try await connection.setMainConversation(conversation.id) } }
+                } label: {
+                    Label("Make main", systemImage: "star")
+                }
+                .tint(.accentColor)
+            }
+        }
+        .contextMenu {
+            Button {
+                newTitle = conversation.title ?? ""
+                renaming = conversation
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+        }
+    }
+
+    /// Does a change to the list and reads it again.
+    private func act(_ change: () async throws -> Void) async {
+        do {
+            try await change()
+            archived = nil
+            if isShowingArchived {
+                archived = (try? await connection.conversations(isArchived: true))?.filter { !$0.isMain } ?? []
+            }
+            await load()
+        } catch {
+            problemText = app.describe(error)
         }
     }
 

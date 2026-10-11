@@ -25,55 +25,73 @@ struct ConversationView: View {
     @AppStorage(TranscriptPreference.showUsage) private var isShowingUsage = false
     @AppStorage(TranscriptPreference.showWorkingNotes) private var isShowingWorkingNotes = false
     @State private var isAtEnd = true
+    @State private var status = StatusModel()
+    @State private var isShowingStatus = false
 
     private static let endId = "end"
 
     var body: some View {
+        framed
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active, let connection = app.connection {
+                    await status.follow(connection: connection) { model.conversationId }
+                }
+            }
+            // The feed is followed while the app is in front; iOS closes it in
+            // the background, and coming back opens it again at once.
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active {
+                    await model.follow()
+                }
+            }
+            .environment(\.openURL, OpenURLAction { address in app.route(address) })
+            .environment(\.pictureConversationId, model.conversationId)
+            .quickLookPreview(Bindable(app).previewAddress)
+            .alert("Cannot open the file", isPresented: Bindable(app).isShowingPreviewProblem, presenting: app.previewProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+            .sensoryFeedback(.success, trigger: model.sentCount)
+            .sensoryFeedback(.warning, trigger: model.sendProblemText) { _, new in new != nil }
+            .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+    }
+
+    /// The conversation with its bars, title and status.
+    private var framed: some View {
+        transcript
+            .safeAreaInset(edge: .top, spacing: 0) {
+                ConversationBanners(model: model)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomBar
+            }
+            .overlay { loading }
+            .navigationTitle(model.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    StatusButton(status: status) { isShowingStatus = true }
+                }
+            }
+            .sheet(isPresented: $isShowingStatus) {
+                if let connection = app.connection {
+                    StatusSheet(status: status, connection: connection)
+                }
+            }
+    }
+
+    /// The messages, scrolling, with the jump to the end.
+    private var transcript: some View {
         ScrollViewReader { scroller in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if model.earlierCount > 0 {
-                        // Reaching the top reads the page before it, and the
-                        // line that was first stays where it was.
-                        Button {
-                            loadEarlier(scroller)
-                        } label: {
-                            if model.isLoadingEarlier {
-                                ProgressView()
-                            } else {
-                                Text("\(model.earlierCount) earlier messages")
-                            }
-                        }
-                        .buttonStyle(.glass)
-                        .frame(maxWidth: .infinity)
-                        .onAppear { loadEarlier(scroller) }
-                    }
-                    ForEach(ConversationItem.items(of: shownLines)) { item in
-                        ConversationItemView(
-                            item: item, model: model, isShowingUsage: isShowingUsage,
-                            isShowingToolCalls: isShowingToolCalls || model.conversation?.jobKind == "mcp")
-                            .id(item.id)
-                    }
-                    if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
-                        TypingBubble()
-                    }
-                    if model.runningRunId == nil, !model.transcript.offeredSuggestions.isEmpty {
-                        SuggestionsRow(suggestions: model.transcript.offeredSuggestions) { suggestion in
-                            Task { await model.sendSuggestion(suggestion) }
-                        }
-                    }
-                    if model.isLoaded, model.transcript.lines.isEmpty {
-                        EmptyConversation(model: model)
-                    }
-                    // The end of the conversation: whether it is on screen
-                    // decides whether the jump to the end is offered.
-                    Color.clear.frame(height: 1).id(Self.endId)
-                        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-                            isAtEnd = isVisible
-                        }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 12)
+                messages(scroller)
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -96,63 +114,73 @@ struct ConversationView: View {
                 withAnimation { scroller.scrollTo(Self.endId, anchor: .bottom) }
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            ConversationBanners(model: model)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 8) {
-                if !model.todos.isEmpty, model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }) {
-                    TodoPanel(todos: model.todos)
-                }
-                if let reply = model.replyingTo {
-                    ReplyBar(reply: reply) { model.replyingTo = nil }
-                }
-                Composer(model: model)
-            }
-        }
-        .overlay {
-            if !model.isLoaded {
-                if let problemText = model.loadProblemText {
-                    ContentUnavailableView("Cannot reach your agent", systemImage: "wifi.exclamationmark", description: Text(problemText))
-                } else {
-                    ProgressView()
-                }
-            }
-        }
-        .navigationTitle(model.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Toggle("Show tool calls", isOn: $isShowingToolCalls)
-                    Toggle("Show usage", isOn: $isShowingUsage)
-                    Toggle("Show the agent's working notes", isOn: $isShowingWorkingNotes)
+    }
+
+    private func messages(_ scroller: ScrollViewProxy) -> some View {
+        LazyVStack(alignment: .leading, spacing: 10) {
+            if model.earlierCount > 0 {
+                // Reaching the top reads the page before it, and the
+                // line that was first stays where it was.
+                Button {
+                    loadEarlier(scroller)
                 } label: {
-                    Label("What to show", systemImage: "eye")
+                    if model.isLoadingEarlier {
+                        ProgressView()
+                    } else {
+                        Text("\(model.earlierCount) earlier messages")
+                    }
+                }
+                .buttonStyle(.glass)
+                .frame(maxWidth: .infinity)
+                .onAppear { loadEarlier(scroller) }
+            }
+            ForEach(ConversationItem.items(of: shownLines)) { item in
+                ConversationItemView(
+                    item: item, model: model, isShowingUsage: isShowingUsage,
+                    isShowingToolCalls: isShowingToolCalls || model.conversation?.jobKind == "mcp")
+                    .id(item.id)
+            }
+            if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
+                TypingBubble()
+            }
+            if model.runningRunId == nil, !model.transcript.offeredSuggestions.isEmpty {
+                SuggestionsRow(suggestions: model.transcript.offeredSuggestions) { suggestion in
+                    Task { await model.sendSuggestion(suggestion) }
                 }
             }
-        }
-        // The feed is followed while the app is in front; iOS closes it in
-        // the background, and coming back opens it again at once.
-        .task(id: scenePhase == .active) {
-            if scenePhase == .active {
-                await model.follow()
+            if model.isLoaded, model.transcript.lines.isEmpty {
+                EmptyConversation(model: model)
             }
+            // The end of the conversation: whether it is on screen
+            // decides whether the jump to the end is offered.
+            Color.clear.frame(height: 1).id(Self.endId)
+                .onScrollVisibilityChange(threshold: 0.01) { isVisible in
+                    isAtEnd = isVisible
+                }
         }
-        .environment(\.openURL, OpenURLAction { address in app.route(address) })
-        .environment(\.pictureConversationId, model.conversationId)
-        .quickLookPreview(Bindable(app).previewAddress)
-        .alert("Cannot open the file", isPresented: Bindable(app).isShowingPreviewProblem, presenting: app.previewProblemText) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { text in
-            Text(text)
+    }
+
+    /// The agent's steps, the message replied to, and the composer.
+    private var bottomBar: some View {
+        VStack(spacing: 8) {
+            if !model.todos.isEmpty, model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }) {
+                TodoPanel(todos: model.todos)
+            }
+            if let reply = model.replyingTo {
+                ReplyBar(reply: reply) { model.replyingTo = nil }
+            }
+            Composer(model: model)
         }
-        .sensoryFeedback(.success, trigger: model.sentCount)
-        .sensoryFeedback(.warning, trigger: model.sendProblemText) { _, new in new != nil }
-        .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { text in
-            Text(text)
+    }
+
+    @ViewBuilder
+    private var loading: some View {
+        if !model.isLoaded {
+            if let problemText = model.loadProblemText {
+                ContentUnavailableView("Cannot reach your agent", systemImage: "wifi.exclamationmark", description: Text(problemText))
+            } else {
+                ProgressView()
+            }
         }
     }
 

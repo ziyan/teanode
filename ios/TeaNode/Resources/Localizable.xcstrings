@@ -17,6 +17,22 @@
         }
       }
     },
+    "%@ of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@"
+          }
+        }
+      }
+    },
     "%lld earlier messages": {
       "localizations": {
         "ja": {
@@ -305,6 +321,38 @@
         }
       }
     },
+    "Archive": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーカイブ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归档"
+          }
+        }
+      }
+    },
+    "Archived chats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーカイブしたチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已归档的对话"
+          }
+        }
+      }
+    },
     "Ask %@…": {
       "localizations": {
         "ja": {
@@ -369,6 +417,54 @@
         }
       }
     },
+    "Attached computers": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中のコンピュータ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接的电脑"
+          }
+        }
+      }
+    },
+    "Attached tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中のタブ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接的标签页"
+          }
+        }
+      }
+    },
+    "Background command": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドのコマンド"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台命令"
+          }
+        }
+      }
+    },
     "Background command ended": {
       "localizations": {
         "ja": {
@@ -381,6 +477,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "后台命令已结束"
+          }
+        }
+      }
+    },
+    "Background commands": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドのコマンド"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台命令"
           }
         }
       }
@@ -513,6 +625,22 @@
         }
       }
     },
+    "Computer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンピュータ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电脑"
+          }
+        }
+      }
+    },
     "Connect": {
       "localizations": {
         "ja": {
@@ -641,6 +769,38 @@
         }
       }
     },
+    "Delete": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        }
+      }
+    },
+    "Delete this conversation?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この会話を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这个对话？"
+          }
+        }
+      }
+    },
     "Do it": {
       "localizations": {
         "ja": {
@@ -689,6 +849,38 @@
         }
       }
     },
+    "Errors": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "错误"
+          }
+        }
+      }
+    },
+    "Exited %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了 %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出 %lld"
+          }
+        }
+      }
+    },
     "Files": {
       "localizations": {
         "ja": {
@@ -701,6 +893,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件"
+          }
+        }
+      }
+    },
+    "Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹"
           }
         }
       }
@@ -881,6 +1089,22 @@
         }
       }
     },
+    "Make main": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为主对话"
+          }
+        }
+      }
+    },
     "New conversation": {
       "localizations": {
         "ja": {
@@ -893,6 +1117,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "新对话"
+          }
+        }
+      }
+    },
+    "New side chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいサイドチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新的旁支对话"
+          }
+        }
+      }
+    },
+    "No limit today": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日は上限なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天没有上限"
           }
         }
       }
@@ -925,6 +1181,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有返回结果。"
+          }
+        }
+      }
+    },
+    "Nothing has been archived.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーカイブしたものはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有归档的对话。"
+          }
+        }
+      }
+    },
+    "Nothing matches.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致するものはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的对话。"
+          }
+        }
+      }
+    },
+    "Nothing printed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有输出。"
           }
         }
       }
@@ -1073,6 +1377,22 @@
         }
       }
     },
+    "Output": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出"
+          }
+        }
+      }
+    },
     "Photo library": {
       "localizations": {
         "ja": {
@@ -1137,6 +1457,22 @@
         }
       }
     },
+    "Rename": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名"
+          }
+        }
+      }
+    },
     "Reply": {
       "localizations": {
         "ja": {
@@ -1181,6 +1517,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "回复你自己的消息"
+          }
+        }
+      }
+    },
+    "Running": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
           }
         }
       }
@@ -1245,6 +1613,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "定时回合"
+          }
+        }
+      }
+    },
+    "Search conversations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索对话"
           }
         }
       }
@@ -1409,6 +1793,22 @@
         }
       }
     },
+    "Spent today: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日の費用：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天花费：%@"
+          }
+        }
+      }
+    },
     "Started by the agent": {
       "localizations": {
         "ja": {
@@ -1421,6 +1821,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "由助手主动发起"
+          }
+        }
+      }
+    },
+    "Starts again %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にリセット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 重新开始"
           }
         }
       }
@@ -1453,6 +1869,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "Stopped": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
           }
         }
       }
@@ -1812,6 +2244,22 @@
         }
       }
     },
+    "Title": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题"
+          }
+        }
+      }
+    },
     "To manage what this phone is told about, open Phones under Agent on your dashboard.": {
       "localizations": {
         "ja": {
@@ -1844,6 +2292,22 @@
         }
       }
     },
+    "Unarchive": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーカイブを解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消归档"
+          }
+        }
+      }
+    },
     "Untitled": {
       "localizations": {
         "ja": {
@@ -1856,6 +2320,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无标题"
+          }
+        }
+      }
+    },
+    "Usage today": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日の使用量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日用量"
           }
         }
       }
@@ -2096,6 +2576,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "进行中"
+          }
+        }
+      }
+    },
+    "“%@” and everything in it, the files that came with it too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」とその中身すべて、添付されたファイルも削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”及其中的全部内容，包括随附的文件。"
           }
         }
       }
