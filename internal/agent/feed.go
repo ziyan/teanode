@@ -171,7 +171,11 @@ func (self *Agent) startFeed() {
 			if err := json.Unmarshal([]byte(payload), &received); err != nil || received.Instance == self.settings.Instance {
 				continue
 			}
-			self.noteForeignRun(received.Event.RunID, received.Event.ConversationID)
+			// A title or a reaction is of no run, and there is no run of
+			// it to stop or answer.
+			if received.Event.RunID != "" {
+				self.noteForeignRun(received.Event.RunID, received.Event.ConversationID)
+			}
 			self.publish(received.Event, false)
 		}
 	}()

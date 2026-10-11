@@ -102,6 +102,21 @@ func ResultCharactersOf(run Run) int {
 	return ResultCharacters
 }
 
+// ReactionTelling is a run that can tell whoever watches a conversation
+// that a reaction on one of its messages changed, as the API does when the
+// person reacts, so a drawer open on it shows the agent's reaction at once.
+type ReactionTelling interface {
+	TellReaction(conversationId, messageId, reactionEmoji string, reactorKind models.AgentReactorKind)
+}
+
+// TellReaction tells the watchers of a conversation about a reaction, when
+// the run can; a run in a test cannot, and nothing is told.
+func TellReaction(run Run, conversationId, messageId, reactionEmoji string, reactorKind models.AgentReactorKind) {
+	if telling, ok := run.(ReactionTelling); ok {
+		telling.TellReaction(conversationId, messageId, reactionEmoji, reactorKind)
+	}
+}
+
 // WithRun puts the run into the context for the tools called in it.
 func WithRun(ctx context.Context, run Run) context.Context {
 	return context.WithValue(ctx, runKey{}, run)

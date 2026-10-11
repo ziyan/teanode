@@ -16,6 +16,41 @@ describe('swipeOffset', () => {
 })
 
 describe('SwipeableLine', () => {
+  it('opens its reactions on a finger tap on the bubble, not on a link in it or a mouse click', () => {
+    const onReact = vi.fn()
+    const { unmount } = render(
+      <SwipeableLine
+        className="agent-line assistant"
+        replyLabel="Reply"
+        copyLabel="Copy"
+        reactLabel="React"
+        onReact={onReact}
+        onReply={() => undefined}
+        onCopy={() => Promise.resolve(true)}
+        onCopyFailed={() => undefined}
+      >
+        <p>
+          The answer, with <a href="#elsewhere">a link</a>.
+        </p>
+      </SwipeableLine>,
+    )
+    const words = screen.getByText(/The answer/)
+    fireEvent.pointerDown(words, { pointerType: 'touch', pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.pointerUp(words, { pointerType: 'touch', pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.click(words)
+    expect(onReact).toHaveBeenCalledTimes(1)
+
+    const link = screen.getByText('a link')
+    fireEvent.pointerDown(link, { pointerType: 'touch', pointerId: 2, clientX: 10, clientY: 10 })
+    fireEvent.click(link)
+    expect(onReact).toHaveBeenCalledTimes(1)
+
+    fireEvent.pointerDown(words, { pointerType: 'mouse', pointerId: 3, clientX: 10, clientY: 10 })
+    fireEvent.click(words)
+    expect(onReact).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
   it('copies and replies from its buttons, for a mouse or a keyboard', () => {
     const onReply = vi.fn()
     const onCopy = vi.fn(() => Promise.resolve(true))

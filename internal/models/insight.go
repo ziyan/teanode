@@ -388,6 +388,10 @@ type AgentMessage struct {
 	// References the threads they pointed at when they wrote it.
 	Attachments []AgentAttachment `json:"attachments,omitempty"`
 	References  []AgentReference  `json:"references,omitempty"`
+
+	// Reactions are the emoji the person and the agent put on the
+	// message, at most one each, read with the page the message is on.
+	Reactions []AgentMessageReaction `json:"reactions,omitempty"`
 }
 
 // AgentAttachment is a file a person handed their agent: the row, with the

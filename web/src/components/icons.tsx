@@ -782,6 +782,18 @@ export function ArrowLeftIcon(props: IconProps) {
 
 // Reply: the arrow that turns back on itself, which is what every mail
 // program has drawn for thirty years.
+// A face, for putting a reaction on a message.
+export function SmileIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 14a4 4 0 0 0 7 0" />
+      <path d="M9 9.5h.01" />
+      <path d="M15 9.5h.01" />
+    </Icon>
+  )
+}
+
 export function ReplyIcon(props: IconProps) {
   return (
     <Icon {...props}>

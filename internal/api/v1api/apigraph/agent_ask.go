@@ -71,6 +71,12 @@ type AgentAskMutation interface {
 	// Stop a turn where it is. Needs agent:use.
 	StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error)
 
+	// React to a message of a conversation with an emoji, as the person:
+	// one or two emoji, replacing the person's reaction on it; an empty
+	// emoji takes it away. Whoever has the conversation open is told with
+	// a "reacted" event. Needs agent:use.
+	ReactToAgentMessage(ctx context.Context, arguments ReactToAgentMessageArguments) (bool, error)
+
 	// Have a running turn push its state (working, waiting, done, failed)
 	// to a Live Activity on the person's phone until it ends: the sealed
 	// registration the relay made of the activity's push token. Needs
@@ -139,6 +145,13 @@ type ReadAgentConversationArguments struct {
 	ConversationID string `json:"conversationId" graphapi:"nullable"`
 	First          int    `json:"first" graphapi:"nullable"`
 	Offset         int    `json:"offset" graphapi:"nullable"`
+}
+
+// ReactToAgentMessageArguments name the message and the emoji; an empty
+// emoji takes the person's reaction away.
+type ReactToAgentMessageArguments struct {
+	MessageID string `json:"messageId"`
+	Emoji     string `json:"emoji"`
 }
 
 // AgentConversationView is a conversation, its messages and its task list.
@@ -936,6 +949,52 @@ func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArgum
 		return false, agent.ErrUnavailable
 	}
 	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandStop})
+}
+
+// ReactToAgentMessage is the person's reaction. The message is found by
+// its id and then held to the same rule as reading its conversation: the
+// caller's own, or another person's for an operator with agent:act, who
+// reacts as that person and is logged doing so. A message of anybody else
+// is not found, as their conversation is not.
+func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAgentMessageArguments) (bool, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	reactionEmoji := strings.TrimSpace(arguments.Emoji)
+	if reactionEmoji != "" {
+		if err := models.ValidateReactionEmoji(reactionEmoji); err != nil {
+			return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+	}
+	tx := self.transaction(ctx)
+	message, err := tx.GetAgentMessage(strings.TrimSpace(arguments.MessageID))
+	if err != nil {
+		return false, err
+	}
+	if message == nil {
+		return false, api.ErrNotFound
+	}
+	conversation, other, owner, err := self.conversationFor(tx, principal, found, message.ConversationID, true)
+	if err != nil {
+		return false, err
+	}
+	if !message.CanBeReactedTo() {
+		return false, fmt.Errorf("%w: only what the person or the agent said can carry a reaction", api.ErrInvalidArguments)
+	}
+	reacting := found
+	if other != nil {
+		reacting = other
+		log.Noticef("%s reacted to a message of %s's agent as them", operatorName(ctx), owner.Username)
+	}
+	isChanged, err := tx.SetAgentMessageReaction(reacting.ID, conversation.ID, message.ID, models.ReactorPerson, reactionEmoji)
+	if err != nil {
+		return false, translateError(err)
+	}
+	if worker := self.agentWorker(); worker != nil && isChanged {
+		tx.AfterCommit(func() { worker.PublishReaction(conversation.ID, message.ID, reactionEmoji, models.ReactorPerson) })
+	}
+	return true, nil
 }
 
 func (self *graph) RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error) {

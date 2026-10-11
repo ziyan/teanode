@@ -243,6 +243,7 @@ const (
 	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
 	EventNavigate     EventKind = "navigate"     // the dashboard is to show a page of itself: Text is its path
 	EventLocate       EventKind = "locate"       // the browser the person writes in is asked where it is: CallID
+	EventReacted      EventKind = "reacted"      // a reaction on a message changed: MessageID, Emoji (empty is taken away), ReactorKind
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
 )
@@ -266,8 +267,14 @@ type Event struct {
 	Error      string `json:"error,omitempty"`
 	// DrawerID is, on a locate event, the drawer that is to answer it
 	// (AskSettings.DrawerID).
-	DrawerID string    `json:"drawerId,omitempty"`
-	At       time.Time `json:"at"`
+	DrawerID string `json:"drawerId,omitempty"`
+	// MessageID, Emoji and ReactorKind are, on a reacted event, the
+	// message, the emoji now on it from that reactor, empty when the
+	// reaction was taken away, and who reacted: person or agent.
+	MessageID   string    `json:"messageId,omitempty"`
+	Emoji       string    `json:"emoji,omitempty"`
+	ReactorKind string    `json:"reactorKind,omitempty"`
+	At          time.Time `json:"at"`
 }
 
 // sayNote tells whoever is watching a note of a kind: in English, and by

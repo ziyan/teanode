@@ -72,6 +72,13 @@ import { ZoomablePicture } from './lightbox'
 import { isReplyReference, ReferenceChips, ReplyQuote } from './agentReferenceChips'
 import { isAskedOfThisDrawer, newDrawerId, readBrowserLocation } from './browserLocation'
 import { SwipeableLine } from './swipeableLine'
+import {
+  personReaction,
+  ReactionBadges,
+  ReactionPicker,
+  withReaction,
+  type AgentMessageReaction,
+} from './agentReactions'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -395,6 +402,7 @@ interface StoredMessage {
   usage?: Usage | null
   attachments?: Attachment[] | null
   references?: AgentReference[] | null
+  reactions?: AgentMessageReaction[] | null
 }
 
 interface RunEvent {
@@ -410,6 +418,7 @@ interface RunEvent {
     | 'titled'
     | 'navigate'
     | 'locate'
+    | 'reacted'
     | 'done'
     | 'error'
   runId: string
@@ -426,6 +435,11 @@ interface RunEvent {
   error?: string
   // On a locate event, the drawer that is to answer it.
   drawerId?: string
+  // On a reacted event, the message, the emoji now on it from that
+  // reactor (empty when it was taken away), and who: person or agent.
+  messageId?: string
+  emoji?: string
+  reactorKind?: string
 }
 
 // A line of the transcript as the drawer draws it.
@@ -442,6 +456,7 @@ type Line =
       // The stored message's id, once the transcript is read: what a reply
       // to it names. A line just sent or still arriving has none yet.
       messageId?: string
+      reactions?: AgentMessageReaction[]
     }
   | {
       kind: 'assistant'
@@ -451,6 +466,7 @@ type Line =
       streaming?: boolean
       usage?: Usage | null
       messageId?: string
+      reactions?: AgentMessageReaction[]
     }
   | {
       kind: 'tool'
@@ -544,6 +560,7 @@ const CONVERSATION = `
         usage { promptTokens completionTokens cost }
         attachments { id name contentType size }
         references { itemId threadId subject from path name financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
+        reactions { emoji reactorKind reactedAt }
       }
       total
       todos { id text doneAt }
@@ -572,7 +589,7 @@ const ASK = `
 
 const FEED = `
   subscription ($conversationId: String!) {
-    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId }
+    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind }
   }`
 
 const ANSWER = `
@@ -594,6 +611,12 @@ const RESOLVE = `
 const STOP = `
   mutation ($runId: String!) {
     StopAgentRun(runId: $runId)
+  }`
+
+// The person's reaction on a message; an empty emoji takes it away.
+const REACT = `
+  mutation ($messageId: String!, $emoji: String!) {
+    ReactToAgentMessage(messageId: $messageId, emoji: $emoji)
   }`
 
 // A new conversation starts with nothing but itself: it is named after its
@@ -1260,6 +1283,7 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
             attachments: message.attachments ?? undefined,
             references: message.references ?? undefined,
             messageId: message.id,
+            reactions: message.reactions ?? undefined,
           })
         }
         break
@@ -1278,6 +1302,7 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
             text: message.content,
             at: message.createdAt,
             messageId: message.id,
+            reactions: message.reactions ?? undefined,
           })
           running.lastAnswer = lines.length - 1
         }
@@ -2342,6 +2367,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The agent's own task list for this conversation: its steps and how far
   // it has got, which the person reads and does not change.
   const [todos, setTodos] = useState<Todo[]>([])
+  // The message whose picker of reactions is open, by its id; one at a time.
+  const [pickingReactionFor, setPickingReactionFor] = useState<string | null>(null)
+  const closeReactionPicker = useCallback(() => setPickingReactionFor(null), [])
+  // A second tap on the same message, or its React button again, closes it.
+  const toggleReactionPicker = (messageId: string | null) =>
+    setPickingReactionFor((previous) => (previous === messageId ? null : messageId))
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<File[]>([])
   const [references, setReferences] = useState<AgentReference[]>([])
@@ -3087,8 +3118,27 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!isAsked) return
     answeredLocationCalls.current.add(callId)
     void readBrowserLocation()
-      .then((answer) => graphql<{ AnswerAgentLocation: boolean }>(ANSWER_LOCATION, { runId: event.runId, callId, ...answer }))
+      .then((answer) =>
+        graphql<{ AnswerAgentLocation: boolean }>(ANSWER_LOCATION, { runId: event.runId, callId, ...answer }),
+      )
       .catch(() => undefined)
+  }
+  // applyReaction puts one reactor's emoji on a message, or takes it off
+  // when the emoji is empty: in the messages kept for paging back, and on
+  // the line drawn from it.
+  const applyReaction = (messageId: string, reactorKind: string, emoji: string, reactedAt?: string) => {
+    messages.current = messages.current.map((message) =>
+      message.id === messageId
+        ? { ...message, reactions: withReaction(message.reactions ?? undefined, reactorKind, emoji, reactedAt) }
+        : message,
+    )
+    setLines((previous) =>
+      previous.map((line) =>
+        (line.kind === 'user' || line.kind === 'assistant') && line.messageId === messageId
+          ? { ...line, reactions: withReaction(line.reactions, reactorKind, emoji, reactedAt) }
+          : line,
+      ),
+    )
   }
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
@@ -3106,6 +3156,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
     if (event.kind === 'locate') {
       answerLocation(event)
+      return
+    }
+    // A reaction changed, here or anywhere else the conversation is open:
+    // the badge on the message follows it. A message not drawn yet with
+    // its id, one still arriving, has it when the transcript is read.
+    if (event.kind === 'reacted') {
+      if (event.messageId && event.reactorKind) {
+        applyReaction(event.messageId, event.reactorKind, event.emoji ?? '', event.at)
+      }
       return
     }
     //
@@ -3934,6 +3993,37 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
   const sayCopyFailed = () => toast.failed(t('common.copyFailed'))
+
+  // reactTo puts the person's emoji on a message, or takes it away when
+  // the emoji is empty. The badge changes once the server has it; the
+  // event that follows says the same and changes nothing more.
+  const reactTo = async (messageId: string, emoji: string) => {
+    setPickingReactionFor(null)
+    try {
+      await graphql<{ ReactToAgentMessage: boolean }>(REACT, { messageId, emoji })
+      applyReaction(messageId, 'person', emoji, new Date().toISOString())
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+  // reactionsOn is what a message's line draws under it: the badges, and
+  // the picker while it is open on that message.
+  const reactionsOn = (line: Line & { messageId?: string; reactions?: AgentMessageReaction[] }) => {
+    const messageId = line.messageId
+    if (!messageId) return null
+    return (
+      <>
+        <ReactionBadges reactions={line.reactions} onRemove={() => void reactTo(messageId, '')} />
+        {pickingReactionFor === messageId && (
+          <ReactionPicker
+            current={personReaction(line.reactions)}
+            onPick={(emoji) => void reactTo(messageId, emoji)}
+            onClose={closeReactionPicker}
+          />
+        )}
+      </>
+    )
+  }
   const replying = references.find(isReplyReference)
   const chipped = references.filter((reference) => !isReplyReference(reference))
 
@@ -3955,12 +4045,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onReply={() => replyTo(line)}
               onCopy={() => copyLine(line)}
               onCopyFailed={sayCopyFailed}
+              reactLabel={t('agentDrawer.react')}
+              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
               {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
               {line.text}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+              {reactionsOn(line)}
             </SwipeableLine>
           </Tooltip>
         )
@@ -3975,6 +4068,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onReply={() => replyTo(line)}
               onCopy={() => copyLine(line)}
               onCopyFailed={sayCopyFailed}
+              reactLabel={t('agentDrawer.react')}
+              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               <Markdown
                 text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
@@ -3991,6 +4086,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
                 </div>
               )}
+              {reactionsOn(line)}
             </SwipeableLine>
           </Tooltip>
         )
@@ -4561,13 +4657,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       ? t('agentDrawer.replyingToYourself')
                       : t('agentDrawer.replyingTo', { name: agentName.trim() || t('agent.title') })
                   }
-                  onRemove={() => setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))}
+                  onRemove={() =>
+                    setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))
+                  }
                 />
               )}
               {chipped.length > 0 && (
                 <ReferenceChips
                   references={chipped}
-                  onRemove={(removed) => setReferences((previous) => previous.filter((reference) => reference !== removed))}
+                  onRemove={(removed) =>
+                    setReferences((previous) => previous.filter((reference) => reference !== removed))
+                  }
                 />
               )}
               {pending.length > 0 && (

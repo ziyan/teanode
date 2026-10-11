@@ -41,6 +41,22 @@ written.
 Reading a conversation returns the **newest** page — a drawer opens at the end
 — along with the conversation's open todos.
 
+## Reactions
+
+The person and the agent can each put one reaction on a message somebody
+said, as in a chat app: one or two emoji, replaced by reacting again and
+taken away by reacting with nothing (`agent_message_reaction`, migration
+0162). The person reacts from the drawer's hover actions, with
+`ReactToAgentMessage`, or with `teanode agent react`; the agent with the
+`react` action of the `conversation` tool, on the person's latest message
+unless it names another, without a card. Every change is a `reacted` event
+on the conversation's feed (`streaming-and-instances.md`).
+
+A reaction starts no turn. Messages are read with their reactions, and the
+history the model is sent says each one after its message: "(The person
+reacted 👍)", or "(You reacted 🙏)" for the agent's own. Why is in
+`docs/decisions/20261011-a-reaction-is-a-mark-on-a-message-and-starts-no-turn.md`.
+
 ## Titles and summaries
 
 A background describer names conversations and writes the one line under them.
@@ -155,7 +171,8 @@ transcripts, and it does not read tool results.
 The `conversation` tool gives the agent the same three things: `search` over
 main and named conversations, `list` over every kind including run transcripts,
 and `read` for one conversation from its end, with a note saying how many
-earlier messages there are.
+earlier messages there are, each with its id and reactions. Its fourth action,
+`react`, is the agent's reaction (above).
 
 Two rules hold in `read`. Another agent's conversation reads exactly like one
 that does not exist, and nothing is loaded before that is checked. And a secret
