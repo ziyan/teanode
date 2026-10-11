@@ -1676,8 +1676,11 @@ one that detects speech itself; `gpt-live-transcribe` and
 Empty is `gpt-4o-transcribe`.
 
 **`silenceMS`** — How long a pause ends what somebody is saying, in
-milliseconds, up to 5000. Zero is 500. Longer lets a person think in the
-middle of a sentence; shorter answers sooner. A pause longer than this in the
+milliseconds, up to 5000. Zero, the default, lets the provider judge from
+what was said whether the person has finished, so a pause after the agent's
+name or in the middle of a thought does not end the turn. A number ends every
+turn after a pause that long instead: longer lets a person think in the
+middle of a sentence, shorter answers sooner. A pause longer than this in the
 middle of one request sends it as two turns, the second reaching the agent
 while it works on the first, as a typed follow-up would.
 
