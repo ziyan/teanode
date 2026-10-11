@@ -6,7 +6,7 @@ import UserNotifications
 /// token to register with the relay, and a button pressed on a notification.
 /// It holds the app's model, so the screens and it reach the same one.
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    let app = AppModel()
+    let app = AppModel.shared
 
     func application(
         _ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil

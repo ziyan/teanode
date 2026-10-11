@@ -10,6 +10,9 @@ import UserNotifications
 @MainActor
 @Observable
 final class AppModel {
+    /// The one model: the screens, the notifications and Siri reach it.
+    static let shared = AppModel()
+
     private(set) var account: Account?
     private(set) var connection: Connection?
 
@@ -55,6 +58,9 @@ final class AppModel {
 
     /// A part of the app the agent asked to show.
     var openedSection: AppSection?
+
+    /// Siri asked for a call: the conversation starts one once it can.
+    var isCallRequested = false
 
     /// The open_page events already followed, by run and sequence, so a
     /// feed replayed after the screen comes back does not move the app again.

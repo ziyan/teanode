@@ -254,6 +254,15 @@ struct ConversationFollowing: ViewModifier {
                 model.refer(to: reference)
                 app.askingAbout = nil
             }
+            .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
+            .onChange(of: model.voiceSampleRate) { startRequestedCall() }
+    }
+
+    /// Starts the call Siri asked for, once the server has said calls work.
+    private func startRequestedCall() {
+        guard app.isCallRequested, model.voiceSampleRate != nil else { return }
+        app.isCallRequested = false
+        model.startCall()
     }
 }
 

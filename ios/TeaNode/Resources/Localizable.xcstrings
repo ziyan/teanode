@@ -1729,6 +1729,38 @@
         }
       }
     },
+    "Ask your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问你的助手"
+          }
+        }
+      }
+    },
+    "Ask your agent %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに %@ を聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问你的助手 %@"
+          }
+        }
+      }
+    },
     "Ask your agent anything: your mail, your calendar, a picture of a receipt.": {
       "localizations": {
         "ja": {
@@ -1757,6 +1789,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "问问助手…"
+          }
+        }
+      }
+    },
+    "Asks your agent something in your main conversation, and says the answer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインの会話でエージェントに聞き、答えを読み上げます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在主对话里问你的助手，并说出它的回答。"
           }
         }
       }
@@ -2205,6 +2253,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日历更改已完成"
+          }
+        }
+      }
+    },
+    "Call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "呼叫"
           }
         }
       }
@@ -3517,6 +3581,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "Done.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成了。"
           }
         }
       }
@@ -7777,6 +7857,38 @@
         }
       }
     },
+    "Open your main conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインの会話を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开主对话"
+          }
+        }
+      }
+    },
+    "Opens TeaNode and starts a voice call with your agent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode を開いてエージェントとの音声通話を始めます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 TeaNode 并和你的助手开始语音通话。"
+          }
+        }
+      }
+    },
     "Optional": {
       "localizations": {
         "ja": {
@@ -8861,6 +8973,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "报告货币"
+          }
+        }
+      }
+    },
+    "Request": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "依頼"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求"
           }
         }
       }
@@ -10289,6 +10417,22 @@
         }
       }
     },
+    "Still working on it. The answer comes as a notification.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ作業中です。答えは通知で届きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还在处理，回答会以通知发给你。"
+          }
+        }
+      }
+    },
     "Stop": {
       "localizations": {
         "ja": {
@@ -10736,6 +10880,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个链接里没有连接码。请在控制台的“连接手机”页面生成一个新的。"
+          }
+        }
+      }
+    },
+    "That turn failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このターンは失敗しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一轮失败了。"
           }
         }
       }
@@ -12420,6 +12580,22 @@
         }
       }
     },
+    "What should I ask?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何を聞きますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要问什么？"
+          }
+        }
+      }
+    },
     "What should the reply say? (optional)": {
       "localizations": {
         "ja": {
@@ -12896,6 +13072,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的助手会知道标记为你的联系人就是你。"
+          }
+        }
+      }
+    },
+    "Your agent needs you to look at something in TeaNode first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが TeaNode で確認してほしいことがあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手需要你先在 TeaNode 里确认一下。"
           }
         }
       }
