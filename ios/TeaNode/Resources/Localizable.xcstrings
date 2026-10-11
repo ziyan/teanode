@@ -33,6 +33,38 @@
         }
       }
     },
+    "%@ %@ @ %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ @ %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ @ %3$@"
+          }
+        }
+      }
+    },
+    "%@ %@ since %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%3$@ から %1$@ %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@，自 %3$@ 起"
+          }
+        }
+      }
+    },
     "%@ (missing)": {
       "localizations": {
         "ja": {
@@ -45,6 +77,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@（缺失）"
+          }
+        }
+      }
+    },
+    "%@ available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用可能 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用 %@"
           }
         }
       }
@@ -77,6 +125,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ of %@ by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%3$@ までに %1$@ / %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%3$@ 前 %1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ owed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未払い %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "欠款 %@"
           }
         }
       }
@@ -161,6 +241,22 @@
         }
       }
     },
+    "%lld cards left out: their limits are not known.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 枚のカードを除外：限度額が不明です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 张卡未计入：额度未知。"
+          }
+        }
+      }
+    },
     "%lld conversations": {
       "localizations": {
         "ja": {
@@ -189,6 +285,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "还有 %lld 条更早的消息"
+          }
+        }
+      }
+    },
+    "%lld lines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 行"
           }
         }
       }
@@ -225,6 +337,38 @@
         }
       }
     },
+    "%lld transactions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の取引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 笔交易"
+          }
+        }
+      }
+    },
+    "%lld transactions · %lld duplicates left out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 件の取引 · 重複 %2$lld 件を除外"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 笔交易 · 已排除 %2$lld 笔重复"
+          }
+        }
+      }
+    },
     "%lld unread": {
       "localizations": {
         "ja": {
@@ -237,6 +381,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 封未读"
+          }
+        }
+      }
+    },
+    "(no subject)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（件名なし）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（无主题）"
           }
         }
       }
@@ -257,6 +417,22 @@
         }
       }
     },
+    "30 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 天"
+          }
+        }
+      }
+    },
     "5 days": {
       "localizations": {
         "ja": {
@@ -269,6 +445,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "5 天"
+          }
+        }
+      }
+    },
+    "90 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90 天"
           }
         }
       }
@@ -301,6 +493,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有个编程会话完成了"
+          }
+        }
+      }
+    },
+    "A duplicate's category does not count.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重複した取引のカテゴリは集計されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重复交易的类别不计入。"
           }
         }
       }
@@ -369,6 +577,70 @@
         }
       }
     },
+    "A note about this charge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この支払いについてのメモ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关于这笔扣款的备注"
+          }
+        }
+      }
+    },
+    "A rule files every transaction whose merchant or description has its words, ignoring case.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールは店舗名か説明にその語を含む取引をすべて分類します（大文字小文字は区別しません）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则会归类所有商家或描述中含有这些字词的交易，不区分大小写。"
+          }
+        }
+      }
+    },
+    "A rule now files “%@” here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」はルールでここに分類されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现在有规则会把“%@”归到这里。"
+          }
+        }
+      }
+    },
+    "A setup token works once. To link through Plaid, use the dashboard.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セットアップトークンは一度だけ使えます。Plaid で連携するにはダッシュボードを使ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置令牌只能使用一次。要通过 Plaid 关联，请使用控制台。"
+          }
+        }
+      }
+    },
     "A tool call could not be read, so it was asked for again.": {
       "localizations": {
         "ja": {
@@ -381,6 +653,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有一个工具调用无法读取，已重新请求。"
+          }
+        }
+      }
+    },
+    "A year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1年"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一年"
           }
         }
       }
@@ -449,6 +737,22 @@
         }
       }
     },
+    "Accounts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账户"
+          }
+        }
+      }
+    },
     "Actions": {
       "localizations": {
         "ja": {
@@ -497,6 +801,38 @@
         }
       }
     },
+    "Add a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加收据"
+          }
+        }
+      }
+    },
+    "Add a receipt from a charge, or send one to your agent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払いからレシートを追加するか、エージェントに送ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从某笔扣款添加收据，或发给你的助手。"
+          }
+        }
+      }
+    },
     "Add a reminder with +, or ask your agent to remind you.": {
       "localizations": {
         "ja": {
@@ -509,6 +845,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "点 + 添加提醒，或让你的助手提醒你。"
+          }
+        }
+      }
+    },
+    "Add a value": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "評価額を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加估值"
           }
         }
       }
@@ -577,6 +929,22 @@
         }
       }
     },
+    "Add one with +.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+ で追加します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点 + 添加。"
+          }
+        }
+      }
+    },
     "Add phone": {
       "localizations": {
         "ja": {
@@ -609,6 +977,22 @@
         }
       }
     },
+    "Add value": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
+          }
+        }
+      }
+    },
     "Address": {
       "localizations": {
         "ja": {
@@ -621,6 +1005,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "地址"
+          }
+        }
+      }
+    },
+    "Adds up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合計一致"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金额一致"
           }
         }
       }
@@ -653,6 +1053,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "来自邮件的提醒"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
+    "All accounts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての口座"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有账户"
+          }
+        }
+      }
+    },
+    "All categories": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのカテゴリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有类别"
           }
         }
       }
@@ -721,6 +1169,22 @@
         }
       }
     },
+    "Always for this merchant": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この店舗は常にこれ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此商家总是如此"
+          }
+        }
+      }
+    },
     "Always in its prompt": {
       "localizations": {
         "ja": {
@@ -749,6 +1213,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "始终显示图片"
+          }
+        }
+      }
+    },
+    "Amount": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金额"
           }
         }
       }
@@ -1137,6 +1617,38 @@
         }
       }
     },
+    "Asset added": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資産を追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资产已添加"
+          }
+        }
+      }
+    },
+    "Asset deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資産を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资产已删除"
+          }
+        }
+      }
+    },
     "At a time": {
       "localizations": {
         "ja": {
@@ -1149,6 +1661,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "指定时间"
+          }
+        }
+      }
+    },
+    "At least": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以上"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少"
+          }
+        }
+      }
+    },
+    "At most": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以下"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至多"
+          }
+        }
+      }
+    },
+    "At risk": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要注意"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有风险"
           }
         }
       }
@@ -1329,6 +1889,22 @@
         }
       }
     },
+    "Banks and currency": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "銀行と通貨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行与货币"
+          }
+        }
+      }
+    },
     "Bcc": {
       "localizations": {
         "ja": {
@@ -1357,6 +1933,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "截止日期"
+          }
+        }
+      }
+    },
+    "Behind": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遅れ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "落后"
+          }
+        }
+      }
+    },
+    "Budget ended": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算を終了しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预算已结束"
+          }
+        }
+      }
+    },
+    "Budget set": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算を設定しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预算已设置"
+          }
+        }
+      }
+    },
+    "Budgets": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预算"
+          }
+        }
+      }
+    },
+    "By": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截止"
           }
         }
       }
@@ -1521,6 +2177,54 @@
         }
       }
     },
+    "Cash": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现金"
+          }
+        }
+      }
+    },
+    "Cash flow": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュフロー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现金流"
+          }
+        }
+      }
+    },
+    "Categories": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类别"
+          }
+        }
+      }
+    },
     "Category": {
       "localizations": {
         "ja": {
@@ -1537,6 +2241,22 @@
         }
       }
     },
+    "Category deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类别已删除"
+          }
+        }
+      }
+    },
     "Cc": {
       "localizations": {
         "ja": {
@@ -1549,6 +2269,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "抄送"
+          }
+        }
+      }
+    },
+    "Change budget": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改预算"
           }
         }
       }
@@ -1681,6 +2417,22 @@
         }
       }
     },
+    "Clear note": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモを消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除备注"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "ja": {
@@ -1725,6 +2477,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "关闭这封邮件？"
+          }
+        }
+      }
+    },
+    "Closed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クローズ済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭"
           }
         }
       }
@@ -1921,6 +2689,38 @@
         }
       }
     },
+    "Count this one": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これを集計する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计入这一笔"
+          }
+        }
+      }
+    },
+    "Counted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "集計しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已计入"
+          }
+        }
+      }
+    },
     "Country": {
       "localizations": {
         "ja": {
@@ -1933,6 +2733,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "国家或地区"
+          }
+        }
+      }
+    },
+    "Credit cards": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クレジットカード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信用卡"
+          }
+        }
+      }
+    },
+    "Credit used": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クレジット利用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信用额度使用"
+          }
+        }
+      }
+    },
+    "Currency": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通貨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "货币"
+          }
+        }
+      }
+    },
+    "Currency (USD)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通貨（USD）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "货币（USD）"
           }
         }
       }
@@ -2065,6 +2929,38 @@
         }
       }
     },
+    "Delete asset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資産を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除资产"
+          }
+        }
+      }
+    },
+    "Delete category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除类别"
+          }
+        }
+      }
+    },
     "Delete contact": {
       "localizations": {
         "ja": {
@@ -2129,6 +3025,22 @@
         }
       }
     },
+    "Delete receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除收据"
+          }
+        }
+      }
+    },
     "Delete reminder": {
       "localizations": {
         "ja": {
@@ -2157,6 +3069,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除这个对话？"
+          }
+        }
+      }
+    },
+    "Delete this receipt?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このレシートを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这张收据？"
           }
         }
       }
@@ -2205,6 +3133,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除…"
+          }
+        }
+      }
+    },
+    "Detection decides again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動判定に戻しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新由自动检测判断"
           }
         }
       }
@@ -2385,6 +3329,38 @@
         }
       }
     },
+    "Duplicate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重複"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重复"
+          }
+        }
+      }
+    },
+    "Duplicates not counted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "集計されない重複"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未计入的重复"
+          }
+        }
+      }
+    },
     "Earlier": {
       "localizations": {
         "ja": {
@@ -2413,6 +3389,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑"
+          }
+        }
+      }
+    },
+    "Edit category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑类别"
           }
         }
       }
@@ -2497,6 +3489,22 @@
         }
       }
     },
+    "Edit rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑规则"
+          }
+        }
+      }
+    },
     "Email": {
       "localizations": {
         "ja": {
@@ -2541,6 +3549,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "清空废纸篓？"
+          }
+        }
+      }
+    },
+    "End this budget": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この予算を終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束此预算"
           }
         }
       }
@@ -2721,6 +3745,22 @@
         }
       }
     },
+    "Filed by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ が分類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 %@ 归类"
+          }
+        }
+      }
+    },
     "Filed under": {
       "localizations": {
         "ja": {
@@ -2733,6 +3773,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "归于"
+          }
+        }
+      }
+    },
+    "Filed under %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に分類しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已归入 %@"
           }
         }
       }
@@ -2781,6 +3837,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "筛选"
+          }
+        }
+      }
+    },
+    "Finance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "财务"
+          }
+        }
+      }
+    },
+    "Finance is not set up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計はまだ設定されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未设置财务"
           }
         }
       }
@@ -3009,6 +4097,54 @@
         }
       }
     },
+    "From (2026-10-01)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始（2026-10-01）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从（2026-10-01）"
+          }
+        }
+      }
+    },
+    "From month (2026-10)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始月（2026-10）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起始月份（2026-10）"
+          }
+        }
+      }
+    },
+    "From statements": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細書から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自对账单"
+          }
+        }
+      }
+    },
     "Goal changed: %@": {
       "localizations": {
         "ja": {
@@ -3121,6 +4257,22 @@
         }
       }
     },
+    "Group by": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分组"
+          }
+        }
+      }
+    },
     "Hang up": {
       "localizations": {
         "ja": {
@@ -3137,6 +4289,22 @@
         }
       }
     },
+    "Has a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートあり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有收据"
+          }
+        }
+      }
+    },
     "Hearing you…": {
       "localizations": {
         "ja": {
@@ -3149,6 +4317,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "听到你在说话…"
+          }
+        }
+      }
+    },
+    "Hidden": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已隐藏"
           }
         }
       }
@@ -3297,6 +4481,38 @@
         }
       }
     },
+    "Income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入"
+          }
+        }
+      }
+    },
+    "Investments": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投資"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投资"
+          }
+        }
+      }
+    },
     "Invitations go out by mail when the event is saved.": {
       "localizations": {
         "ja": {
@@ -3357,6 +4573,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "它会从你的日历中移除。"
+          }
+        }
+      }
+    },
+    "Its %lld values go with it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の評価額も削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的 %lld 条估值也会一并删除。"
+          }
+        }
+      }
+    },
+    "Its accounts and transactions are deleted from TeaNode. For SimpleFIN, also revoke the access on its site.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その口座と取引は TeaNode から削除されます。SimpleFIN の場合はそのサイトでもアクセスを取り消してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其账户和交易会从 TeaNode 删除。对于 SimpleFIN，也请在其网站撤销访问权限。"
+          }
+        }
+      }
+    },
+    "Its picture and lines are deleted too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像と明細も削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其图片和明细也会被删除。"
+          }
+        }
+      }
+    },
+    "Its transactions become uncategorized, and its budget and rules are deleted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その取引は未分類になり、予算とルールは削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其交易会变为未分类，预算和规则也会被删除。"
           }
         }
       }
@@ -3489,6 +4769,22 @@
         }
       }
     },
+    "Let detection decide": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動判定に任せる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交给自动检测"
+          }
+        }
+      }
+    },
     "Link": {
       "localizations": {
         "ja": {
@@ -3501,6 +4797,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "链接"
+          }
+        }
+      }
+    },
+    "Link a bank from your dashboard: Settings, then Agent, then Finance.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダッシュボードで銀行を連携してください：設定 › エージェント › 家計。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在控制台关联银行：设置 › 助手 › 财务。"
+          }
+        }
+      }
+    },
+    "Link through SimpleFIN": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SimpleFIN で連携"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 SimpleFIN 关联"
           }
         }
       }
@@ -3581,6 +4909,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "加载图片"
+          }
+        }
+      }
+    },
+    "Loans": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "贷款"
           }
         }
       }
@@ -3921,6 +5265,22 @@
         }
       }
     },
+    "Matched to %lld charges": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の支払いと照合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已匹配 %lld 笔扣款"
+          }
+        }
+      }
+    },
     "Maybe": {
       "localizations": {
         "ja": {
@@ -3933,6 +5293,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "待定"
+          }
+        }
+      }
+    },
+    "Measured by": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "測り方"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "衡量方式"
+          }
+        }
+      }
+    },
+    "Merchant": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "店舗"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商家"
+          }
+        }
+      }
+    },
+    "Merchant or description": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "店舗または説明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商家或描述"
           }
         }
       }
@@ -4065,6 +5473,22 @@
         }
       }
     },
+    "Monthly amount": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月金额"
+          }
+        }
+      }
+    },
     "More": {
       "localizations": {
         "ja": {
@@ -4077,6 +5501,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "更多"
+          }
+        }
+      }
+    },
+    "Mortgages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住宅ローン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "房贷"
           }
         }
       }
@@ -4305,6 +5745,22 @@
         }
       }
     },
+    "Needs %@ a month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎月 %@ 必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月需要 %@"
+          }
+        }
+      }
+    },
     "Needs reply": {
       "localizations": {
         "ja": {
@@ -4321,6 +5777,22 @@
         }
       }
     },
+    "Net worth": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "純資産"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "净资产"
+          }
+        }
+      }
+    },
     "Never": {
       "localizations": {
         "ja": {
@@ -4333,6 +5805,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "永不"
+          }
+        }
+      }
+    },
+    "New asset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規資産"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新资产"
+          }
+        }
+      }
+    },
+    "New category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規カテゴリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新类别"
           }
         }
       }
@@ -4417,6 +5921,38 @@
         }
       }
     },
+    "New rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規ルール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新规则"
+          }
+        }
+      }
+    },
+    "New savings target": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規貯蓄目標"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新储蓄目标"
+          }
+        }
+      }
+    },
     "New side chat": {
       "localizations": {
         "ja": {
@@ -4465,6 +6001,22 @@
         }
       }
     },
+    "No bank linked yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ銀行が連携されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有关联银行。"
+          }
+        }
+      }
+    },
     "No changes recorded.": {
       "localizations": {
         "ja": {
@@ -4509,6 +6061,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有联系人"
+          }
+        }
+      }
+    },
+    "No day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日付なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无日期"
           }
         }
       }
@@ -4577,6 +6145,70 @@
         }
       }
     },
+    "No net worth yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "純資産のデータはまだありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有净资产数据。"
+          }
+        }
+      }
+    },
+    "No receipts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有收据"
+          }
+        }
+      }
+    },
+    "No savings targets": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貯蓄目標はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有储蓄目标"
+          }
+        }
+      }
+    },
+    "No spending this month.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今月の支出はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本月没有支出。"
+          }
+        }
+      }
+    },
     "No summary yet.": {
       "localizations": {
         "ja": {
@@ -4589,6 +6221,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有摘要。"
+          }
+        }
+      }
+    },
+    "No transactions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有交易"
           }
         }
       }
@@ -4609,6 +6257,22 @@
         }
       }
     },
+    "Not counted: it is a duplicate of another charge.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "集計されません：別の支払いの重複です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未计入：这是另一笔扣款的重复。"
+          }
+        }
+      }
+    },
     "Not junk": {
       "localizations": {
         "ja": {
@@ -4621,6 +6285,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不是垃圾邮件"
+          }
+        }
+      }
+    },
+    "Not matched": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未照合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未匹配"
           }
         }
       }
@@ -4641,6 +6321,22 @@
         }
       }
     },
+    "Note": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注"
+          }
+        }
+      }
+    },
     "Note (optional)": {
       "localizations": {
         "ja": {
@@ -4657,6 +6353,38 @@
         }
       }
     },
+    "Note cleared": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモを消去しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注已清除"
+          }
+        }
+      }
+    },
+    "Note saved": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモを保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注已保存"
+          }
+        }
+      }
+    },
     "Notes": {
       "localizations": {
         "ja": {
@@ -4669,6 +6397,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "备注"
+          }
+        }
+      }
+    },
+    "Nothing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无"
           }
         }
       }
@@ -4961,6 +6705,38 @@
         }
       }
     },
+    "Off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭"
+          }
+        }
+      }
+    },
+    "Off by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の差"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相差 %@"
+          }
+        }
+      }
+    },
     "On %@, %@ wrote:": {
       "localizations": {
         "ja": {
@@ -4989,6 +6765,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在电脑上打开控制台，在“设置”中打开“手机”，选择“连接手机”。"
+          }
+        }
+      }
+    },
+    "On track": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "順調"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进度正常"
           }
         }
       }
@@ -5041,6 +6833,38 @@
         }
       }
     },
+    "Only uncategorized": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未分類のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅未分类"
+          }
+        }
+      }
+    },
+    "Only unmatched": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未照合のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅未匹配"
+          }
+        }
+      }
+    },
     "Open": {
       "localizations": {
         "ja": {
@@ -5069,6 +6893,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开设置"
+          }
+        }
+      }
+    },
+    "Optional": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选"
+          }
+        }
+      }
+    },
+    "Or start with one of these": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "またはこれらから始めましょう"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或者从这些开始"
           }
         }
       }
@@ -5105,6 +6961,22 @@
         }
       }
     },
+    "Order (empty is last)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "順番（空欄は最後）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顺序（留空则为最后）"
+          }
+        }
+      }
+    },
     "Organization": {
       "localizations": {
         "ja": {
@@ -5137,6 +7009,38 @@
         }
       }
     },
+    "Other assets": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の資産"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他资产"
+          }
+        }
+      }
+    },
+    "Other debts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の負債"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他负债"
+          }
+        }
+      }
+    },
     "Other names": {
       "localizations": {
         "ja": {
@@ -5165,6 +7069,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "输出"
+          }
+        }
+      }
+    },
+    "Over": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超過"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超支"
           }
         }
       }
@@ -5213,6 +7133,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "页面路径"
+          }
+        }
+      }
+    },
+    "Pending": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待处理"
           }
         }
       }
@@ -5345,6 +7281,22 @@
         }
       }
     },
+    "Posted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "計上日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入账日期"
+          }
+        }
+      }
+    },
     "Priority": {
       "localizations": {
         "ja": {
@@ -5357,6 +7309,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重要"
+          }
+        }
+      }
+    },
+    "Property": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不動産"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "房产"
           }
         }
       }
@@ -5393,6 +7361,22 @@
         }
       }
     },
+    "Range": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "范围"
+          }
+        }
+      }
+    },
     "Read": {
       "localizations": {
         "ja": {
@@ -5421,6 +7405,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "继续阅读（还有 %lld 个字符）"
+          }
+        }
+      }
+    },
+    "Read, but it did not match this charge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取りましたが、この支払いとは一致しませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已读取，但与这笔扣款不匹配"
+          }
+        }
+      }
+    },
+    "Reading the receipt…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを読み取り中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取收据…"
+          }
+        }
+      }
+    },
+    "Receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据"
+          }
+        }
+      }
+    },
+    "Receipt deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据已删除"
+          }
+        }
+      }
+    },
+    "Receipt read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを読み取りました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据已读取"
+          }
+        }
+      }
+    },
+    "Receipts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据"
+          }
+        }
+      }
+    },
+    "Receipts are for money going out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートは支出用です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据只用于支出。"
           }
         }
       }
@@ -5569,6 +7665,38 @@
         }
       }
     },
+    "Remove this bank?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この銀行を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除这家银行？"
+          }
+        }
+      }
+    },
+    "Removed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除"
+          }
+        }
+      }
+    },
     "Rename": {
       "localizations": {
         "ja": {
@@ -5581,6 +7709,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "重命名"
+          }
+        }
+      }
+    },
+    "Reopen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新开启"
+          }
+        }
+      }
+    },
+    "Reopened": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重新开启"
           }
         }
       }
@@ -5713,6 +7873,22 @@
         }
       }
     },
+    "Reporting currency": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レポート通貨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报告货币"
+          }
+        }
+      }
+    },
     "Resolve the pending calendar change first.": {
       "localizations": {
         "ja": {
@@ -5725,6 +7901,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先处理尚未完成的日历更改。"
+          }
+        }
+      }
+    },
+    "Retirement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退職金口座"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退休金"
+          }
+        }
+      }
+    },
+    "Rule deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则已删除"
+          }
+        }
+      }
+    },
+    "Rule made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールを作成しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已创建规则"
+          }
+        }
+      }
+    },
+    "Rules": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则"
           }
         }
       }
@@ -5793,6 +8033,22 @@
         }
       }
     },
+    "Save note": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモを保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存备注"
+          }
+        }
+      }
+    },
     "Saved": {
       "localizations": {
         "ja": {
@@ -5805,6 +8061,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "已保存"
+          }
+        }
+      }
+    },
+    "Saving": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貯蓄"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "储蓄"
+          }
+        }
+      }
+    },
+    "Savings target added": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貯蓄目標を追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "储蓄目标已添加"
+          }
+        }
+      }
+    },
+    "Savings targets": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貯蓄目標"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "储蓄目标"
           }
         }
       }
@@ -5985,6 +8289,22 @@
         }
       }
     },
+    "Security": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "銘柄"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证券"
+          }
+        }
+      }
+    },
     "Select": {
       "localizations": {
         "ja": {
@@ -6129,6 +8449,22 @@
         }
       }
     },
+    "Set a budget": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算を設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置预算"
+          }
+        }
+      }
+    },
     "Settings": {
       "localizations": {
         "ja": {
@@ -6177,6 +8513,22 @@
         }
       }
     },
+    "Show closed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クローズ済みを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示已关闭"
+          }
+        }
+      }
+    },
     "Show dark": {
       "localizations": {
         "ja": {
@@ -6205,6 +8557,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示详情"
+          }
+        }
+      }
+    },
+    "Show duplicates": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重複を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示重复"
           }
         }
       }
@@ -6369,6 +8737,22 @@
         }
       }
     },
+    "Sign-in required": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインが必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要登录"
+          }
+        }
+      }
+    },
     "Signed in": {
       "localizations": {
         "ja": {
@@ -6381,6 +8765,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已登录"
+          }
+        }
+      }
+    },
+    "SimpleFIN setup token": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SimpleFIN セットアップトークン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SimpleFIN 设置令牌"
           }
         }
       }
@@ -6509,6 +8909,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在说话…开口即可打断"
+          }
+        }
+      }
+    },
+    "Spending": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出"
           }
         }
       }
@@ -6653,6 +9069,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "州或地区"
+          }
+        }
+      }
+    },
+    "Still reading. It will appear here when done.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り中です。終わるとここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在读取，完成后会显示在这里。"
           }
         }
       }
@@ -6849,6 +9281,86 @@
         }
       }
     },
+    "Sync": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步"
+          }
+        }
+      }
+    },
+    "Synced %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に同期"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已同步"
+          }
+        }
+      }
+    },
+    "Syncing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在同步"
+          }
+        }
+      }
+    },
+    "Take off this charge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この支払いから外す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从这笔扣款移除"
+          }
+        }
+      }
+    },
+    "Taken off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除"
+          }
+        }
+      }
+    },
     "Talk to your agent from your phone.": {
       "localizations": {
         "ja": {
@@ -6992,6 +9504,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个链接里没有连接码。请在控制台的“连接手机”页面生成一个新的。"
+          }
+        }
+      }
+    },
+    "The agent reading it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが読み取る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手读取"
+          }
+        }
+      }
+    },
+    "The agent's estimate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの見積もり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手估算"
           }
         }
       }
@@ -7316,6 +9860,22 @@
         }
       }
     },
+    "This changes months already past.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去の月が変わります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会更改已经过去的月份。"
+          }
+        }
+      }
+    },
     "This conversation could not be read": {
       "localizations": {
         "ja": {
@@ -7508,6 +10068,22 @@
         }
       }
     },
+    "This month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今月"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本月"
+          }
+        }
+      }
+    },
     "This phone is already connected to %@.": {
       "localizations": {
         "ja": {
@@ -7652,6 +10228,22 @@
         }
       }
     },
+    "To (2026-10-31)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了（2026-10-31）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到（2026-10-31）"
+          }
+        }
+      }
+    },
     "To do": {
       "localizations": {
         "ja": {
@@ -7716,6 +10308,38 @@
         }
       }
     },
+    "Totals are converted to it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合計はこの通貨に換算されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合计会换算为此货币。"
+          }
+        }
+      }
+    },
+    "Transactions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交易"
+          }
+        }
+      }
+    },
     "Trash": {
       "localizations": {
         "ja": {
@@ -7764,6 +10388,38 @@
         }
       }
     },
+    "Turn off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
+    "Turn on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启"
+          }
+        }
+      }
+    },
     "Unarchive": {
       "localizations": {
         "ja": {
@@ -7780,6 +10436,22 @@
         }
       }
     },
+    "Uncategorized": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未分類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未分类"
+          }
+        }
+      }
+    },
     "Unchanged": {
       "localizations": {
         "ja": {
@@ -7792,6 +10464,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不变"
+          }
+        }
+      }
+    },
+    "Under": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "親"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上级"
           }
         }
       }
@@ -7824,6 +10512,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已撤销"
+          }
+        }
+      }
+    },
+    "Unknown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知"
           }
         }
       }
@@ -7888,6 +10592,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消静音"
+          }
+        }
+      }
+    },
+    "Unnamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名"
           }
         }
       }
@@ -8148,6 +10868,102 @@
         }
       }
     },
+    "Value": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "評価額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估值"
+          }
+        }
+      }
+    },
+    "Value added": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "評価額を追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估值已添加"
+          }
+        }
+      }
+    },
+    "Value deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "評価額を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估值已删除"
+          }
+        }
+      }
+    },
+    "Value now (optional)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の評価額（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前估值（可选）"
+          }
+        }
+      }
+    },
+    "Valued by": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "評価方法"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估值方式"
+          }
+        }
+      }
+    },
+    "Vehicles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "車両"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "车辆"
+          }
+        }
+      }
+    },
     "Version": {
       "localizations": {
         "ja": {
@@ -8244,6 +11060,22 @@
         }
       }
     },
+    "What is left each month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎月の残り"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月结余"
+          }
+        }
+      }
+    },
     "What should the reply say? (optional)": {
       "localizations": {
         "ja": {
@@ -8256,6 +11088,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "回复应该说什么？（可选）"
+          }
+        }
+      }
+    },
+    "What to estimate from": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見積もりの根拠"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估算依据"
           }
         }
       }
@@ -8372,6 +11220,22 @@
         }
       }
     },
+    "Where it went": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使い道"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钱花在哪了"
+          }
+        }
+      }
+    },
     "Where these are": {
       "localizations": {
         "ja": {
@@ -8448,6 +11312,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "关键词"
+          }
+        }
+      }
+    },
+    "Words to match": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致させる語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配的字词"
           }
         }
       }
@@ -8772,6 +11652,38 @@
         }
       }
     },
+    "from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自 %@ 起"
+          }
+        }
+      }
+    },
+    "from %@, scheduled": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ から（予定）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自 %@ 起（已计划）"
+          }
+        }
+      }
+    },
     "from a chat": {
       "localizations": {
         "ja": {
@@ -8948,6 +11860,38 @@
         }
       }
     },
+    "heading for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見込み %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预计 %@"
+          }
+        }
+      }
+    },
+    "limit unknown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限度額不明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "额度未知"
+          }
+        }
+      }
+    },
     "met": {
       "localizations": {
         "ja": {
@@ -8960,6 +11904,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已达成"
+          }
+        }
+      }
+    },
+    "of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/ %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共 %@"
           }
         }
       }
@@ -9072,6 +12032,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你"
+          }
+        }
+      }
+    },
+    "“%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”"
           }
         }
       }

@@ -2,14 +2,14 @@ import SwiftUI
 import TeaNodeKit
 
 /// MoreScreen holds what the dashboard has beyond the four tabs: the agent's
-/// knowledge and the settings.
+/// knowledge, finance and the settings.
 struct MoreScreen: View {
     let connection: Connection
     @Environment(AppModel.self) private var app
     @State private var path = NavigationPath()
 
     enum Place: Hashable {
-        case knowledge, settings
+        case knowledge, finance, settings
     }
 
     var body: some View {
@@ -17,6 +17,9 @@ struct MoreScreen: View {
             List {
                 NavigationLink(value: Place.knowledge) {
                     Label("Knowledge", systemImage: "brain")
+                }
+                NavigationLink(value: Place.finance) {
+                    Label("Finance", systemImage: "creditcard")
                 }
                 NavigationLink(value: Place.settings) {
                     Label("Settings", systemImage: "gearshape")
@@ -28,6 +31,8 @@ struct MoreScreen: View {
                 switch place {
                 case .knowledge:
                     KnowledgeScreen(connection: connection, path: $path)
+                case .finance:
+                    FinanceScreen(connection: connection)
                 case .settings:
                     SettingsForm()
                 }
