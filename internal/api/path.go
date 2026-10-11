@@ -121,6 +121,11 @@ const (
 	// kilobytes of base64 through a listing.
 	PathContactPhoto = Prefix + "/contacts/{contactId}/photo"
 
+	// A setup profile for an iPhone or a Mac, downloaded once. The address
+	// is the credential: Safari opens it without the person's session, and
+	// it works for ten minutes.
+	PathMailboxSetupProfile = Prefix + "/mailbox/profile/{token}.mobileconfig"
+
 	// The two documents a program reads before it knows how to ask for a
 	// token. Outside the API prefix and outside the session check, like
 	// PathBimiLogo above, because whatever fetches them has no credential
@@ -259,5 +264,9 @@ func PublicPrefixes() []string {
 	// the drawer framed into another site showed neither, because the
 	// middleware turned the request away before the handler could look at
 	// the token.
-	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/"}
+	//
+	// A setup profile is downloaded by Safari or Settings on the device
+	// that installs it, which has no session: its address is the
+	// credential, and it works once.
+	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/", Prefix + "/mailbox/profile/"}
 }

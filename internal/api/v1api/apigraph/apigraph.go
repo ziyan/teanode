@@ -70,6 +70,10 @@ type graph struct {
 	// caller reads on with result_more; see agent_mcp.go. Nil in a test that
 	// built the graph by hand, where each request holds its own.
 	mcpResults *mcpserve.ResultStore
+
+	// setupProfiles holds each setup profile made until it is downloaded,
+	// once, or ten minutes pass; see mailbox_profile.go.
+	setupProfiles setupProfileStore
 }
 
 // New builds the GraphQL component, generating the schema by reflection over
@@ -134,5 +138,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// A contact's picture, which is inside its card and far too large to
 	// carry through a listing.
 	router.Path(api.PathContactPhoto).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.contactPhotoView)
+	// A setup profile, downloaded once by the device that installs it.
+	router.Path(api.PathMailboxSetupProfile).Methods(http.MethodGet).HandlerFunc(self.setupProfileView)
 	return nil
 }

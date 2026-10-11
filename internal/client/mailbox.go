@@ -112,6 +112,16 @@ type CreatedAppPassword struct {
 	Username    string              `json:"username"`
 }
 
+// CreatedSetupProfile says where a setup profile for a device downloads
+// from, once, before it expires.
+type CreatedSetupProfile struct {
+	DownloadPath            string              `json:"downloadPath"`
+	DownloadLink            string              `json:"downloadLink"`
+	ExpiresAt               time.Time           `json:"expiresAt"`
+	AppPassword             *MailboxAppPassword `json:"appPassword"`
+	HasCalendarsAndContacts bool                `json:"hasCalendarsAndContacts"`
+}
+
 // MailProgramSettings is where a mail program connects.
 type MailProgramSettings struct {
 	IMAPHost       string `json:"imapHost"`
@@ -215,6 +225,11 @@ const (
 	DocumentCreateMailboxAppPassword = `mutation ($mailboxId: String!, $name: String!) {
 		CreateMailboxAppPassword(mailboxId: $mailboxId, name: $name) {
 			password username appPassword { id mailboxId name createdAt lastUsedAt }
+		}
+	}`
+	DocumentCreateMailboxSetupProfile = `mutation ($mailboxId: String!, $deviceName: String!) {
+		CreateMailboxSetupProfile(mailboxId: $mailboxId, deviceName: $deviceName) {
+			downloadPath downloadLink expiresAt hasCalendarsAndContacts appPassword { id mailboxId name createdAt lastUsedAt }
 		}
 	}`
 	DocumentDeleteMailboxAppPassword = `mutation ($appPasswordId: String!) {
@@ -403,6 +418,19 @@ func CreateMailboxAppPassword(ctx context.Context, connection *Client, mailboxId
 		return nil, err
 	}
 	return result.CreateMailboxAppPassword, nil
+}
+
+// CreateMailboxSetupProfile makes an app password for a device and a setup
+// profile holding it, and says where the profile downloads from, once.
+func CreateMailboxSetupProfile(ctx context.Context, connection *Client, mailboxId, deviceName string) (*CreatedSetupProfile, error) {
+	var result struct {
+		CreateMailboxSetupProfile *CreatedSetupProfile `json:"CreateMailboxSetupProfile"`
+	}
+	variables := map[string]any{"mailboxId": mailboxId, "deviceName": deviceName}
+	if err := connection.Execute(ctx, DocumentCreateMailboxSetupProfile, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.CreateMailboxSetupProfile, nil
 }
 
 // DeleteMailboxAppPassword revokes one device's app password.
