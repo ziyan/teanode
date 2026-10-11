@@ -22899,6 +22899,22 @@
         }
       }
     },
+    "Open Goals": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开目标"
+          }
+        }
+      }
+    },
     "Open Settings": {
       "localizations": {
         "ja": {
@@ -29823,6 +29839,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示在 TeaNode 中。可选：未填写时使用用户名。"
+          }
+        }
+      }
+    },
+    "Shows the whole goal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標全体を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示完整目标"
           }
         }
       }
