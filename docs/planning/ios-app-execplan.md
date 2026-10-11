@@ -48,13 +48,13 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [x] (2026-10-11) Milestone 5: the app: connect, conversations, chat, cards, pictures, location. Everything the dashboard's drawer does is in TestFlight: conversations in a side panel, every line kind, cards, coding-session questions, suggested replies, pictures, files, artifacts, the head's usage and devices, and earlier messages.
 - [ ] Milestone 6: notifications in the app, and answering from them. In TestFlight; checked on the person's phone.
 - [ ] Milestone 7: the share extension. Pictures, files, a link or words go to the main conversation with a note; in TestFlight, to be tried on the person's phone.
-- [ ] Milestone 8: voice calls. A CallKit call with voice processing, cutting in, and a choice of where the sound goes, is in TestFlight; hearing the person on every phone is being checked.
+- [ ] Milestone 8: voice calls. A CallKit call with voice processing and cutting in, on the speaker unless headphones are connected, with a lock-screen Live Activity to mute and hang up, is in TestFlight; to be tried on the person's phone.
 - [ ] Milestone 9: Siri and Shortcuts. "Ask TeaNode" waits up to 25 seconds for the answer through `ReadAgentRun` and leaves a longer one to a notification; "Call TeaNode" opens a call. In TestFlight.
 - [x] (2026-10-11) Milestone 10: widgets and Live Activities. "Your agent" (ask, call), "Waiting for you" (`ReadAgentWaiting`, PR #385), "Up next" (events and unread mail), a Control Center call button, and a turn left running as a Live Activity (PR #386).
 - [x] (2026-10-11) Milestone 11: the agent helps the person onboard (PR #387): the account tool's phone actions, and a tour once per phone connected, offering only what the server has on.
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 - [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
-- [x] (2026-10-11) Milestone 14: tabs for the agent, mail, the calendar, contacts and More; asking the agent about a mail, a page or a transaction from where it is.
+- [x] (2026-10-11) Milestone 14: a side menu, as the Claude app's, for the agent, goals, ideas, mail, the calendar, contacts, knowledge, finance and settings; asking the agent about a mail, a page or a transaction from where it is.
 - [ ] Milestone 15: mail. Folders in a side panel, threads, reading with pictures through the server, every action with undo, composing, drafts, invitations, rules (written, ordered and tried on recent mail) and every mailbox setting are in TestFlight; to be tried on the person's phone.
 - [x] (2026-10-11) Milestone 16: mail subscriptions.
 - [x] (2026-10-11) Milestone 17: the calendar, with reminders.
@@ -75,6 +75,8 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - Observation: AVFAudio raises Objective-C exceptions where Swift expects errors, and Swift cannot catch them.
   Evidence: turning voice processing back on after iOS changed the audio route mid-call ended the app (TestFlight build 43). Those calls now go through a small Objective-C catcher, and a restart that fails tries once more without voice processing.
 - Observation: swiping a message sideways fought the transcript's scrolling on a phone; a long-press menu (Reply, Copy, Select, Share) replaced it.
+- Observation: the phone's voice processing gives exact silence until somebody speaks, so a check that took three seconds of silence for a dead microphone turned it off, and the answer from the speaker was transcribed as the person. The check now waits eight seconds, and with voice processing off nothing is sent while an answer plays.
+- Observation: a SwiftUI drag alongside a list does not cancel the touch under the finger, so swiping the side menu open also pressed the row the swipe began on. The side menu's drag is a UIKit pan that cancels touches once it starts.
 
 - Observation: an OAuth token issued today works only on the MCP endpoint.
   Evidence: `agentToolsResource` (`internal/api/v1api/apioauth/oauth.go`) forces the token's resource to `/api/v1/mcp`, and `allowsResource` (`internal/web/session.go`) refuses it on any other path, `/api/v1/graphql` included. The only scope is `mcp` (`apioauth/metadata.go`).
@@ -161,8 +163,11 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - Decision (2026-10-11): a Live Activity is told one word, from a fixed set (working, waiting, done, failed), written into the payload by the relay, which refuses anything else. A running turn keeps its activities' registrations in memory; there is no table.
   Rationale: iOS shows a Live Activity's update as it arrives, with no extension to decrypt it, so Apple and the relay read it; the only safe content is none. An activity lasts as long as its turn, which runs in one process.
   Date/Author: 2026-10-11, the agent, while building Milestone 10.
-- Decision (2026-10-11): a call has no Live Activity of its own. CallKit already shows it in the Dynamic Island and on the lock screen.
+- Decision (2026-10-11, superseded the same day by the next): a call has no Live Activity of its own. CallKit already shows it in the Dynamic Island and on the lock screen.
   Date/Author: 2026-10-11, the agent.
+- Decision (2026-10-11): a call shows a Live Activity on the lock screen, with its length, mute and hang up, updated by the app itself.
+  Rationale: the person asked for it; CallKit's own lock-screen entry has no mute, and a call started from the app does not always show it.
+  Date/Author: 2026-10-11, the person.
 - Decision: when a phone connects for the first time, the agent speaks first in the app: a short tour of what this server lets the phone do, one thing at a time, built from what is turned on (notifications always; voice calls if voice is available; the coding-session notifications if a computer with herdr is attached; sending receipts if Finance is on; the setup profile if the person has a mailbox). A person new to TeaNode altogether gets the existing introduction (`speak_first_onboarding.go`) first, in the app.
   Rationale: features nobody finds are features nobody uses, and the agent knows what the server has turned on where a static tour would not.
   Date/Author: 2026-10-10, agent.
@@ -481,7 +486,7 @@ Milestone 19, finance: accounts and their balances, transactions with filters an
 
 Milestone 20, knowledge: search, a page with its sections, facts, connections, children and history, the graph explorer drawn natively, cited files in Quick Look, and the sources the agent reads.
 
-Milestone 21, account settings: preferences, every tab of the agent's settings (overview, ideas, goals, alerts, mail, sources, memory, dreams, schedules, connections, activity, finance), password, passkeys (with the platform's passkey sheet), API tokens, phones, apps and sessions.
+Milestone 21, account settings: preferences, every tab of the agent's settings (overview, ideas, goals, alerts, mail, sources, memory, dreams, schedules, connections, activity, finance), password, passkeys (listed and removed; added on the dashboard, see the decision log), API tokens, phones, apps and sessions.
 
 Milestone 22, management: domains with their DNS records and keys, people, groups, roles and access, the delivery queue with retry, the audit log, and every server setting.
 
