@@ -31,6 +31,14 @@ public actor Connection {
 
     /// The token to send now, renewed first when it is close to running out.
     public func accessToken(now: Date = Date()) async throws -> String {
+        // The app and its extensions share the stored sign-in. One that
+        // renewed it has stored a newer one, whose refresh token is the
+        // only one still good: it is taken up before renewing again.
+        if account.expiresAt.timeIntervalSince(now) < Self.renewBefore, let stored = try? store?.load(),
+            stored.server == account.server, stored.expiresAt > account.expiresAt
+        {
+            account = stored
+        }
         if account.expiresAt.timeIntervalSince(now) < Self.renewBefore, !account.refreshToken.isEmpty {
             account = try await SignIn(server: account.server, transport: transport).refresh(account, now: now)
             try? store?.save(account)

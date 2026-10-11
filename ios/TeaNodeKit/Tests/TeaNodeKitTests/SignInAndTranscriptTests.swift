@@ -103,6 +103,19 @@ final class SignInTests: XCTestCase {
         XCTAssertEqual(renewed.refreshToken, "another-refresh")
     }
 
+    func testASignInAnotherProcessRenewedIsTakenUpInsteadOfRenewingAgain() async throws {
+        let fake = FakeServer { request in
+            if request.url?.path == "/oauth/token" { return (400, #"{"error":"invalid_grant"}"#) }
+            return (200, #"{"data":{"GetSession":{"username":"robin"}}}"#)
+        }
+        let stale = Account(server: server, clientId: "a-client", accessToken: "tnt_old", refreshToken: "spent-refresh", expiresAt: Date().addingTimeInterval(60), username: "robin")
+        let newer = Account(server: server, clientId: "a-client", accessToken: "tnt_new", refreshToken: "new-refresh", expiresAt: Date().addingTimeInterval(30 * 86400), username: "robin")
+        let connection = Connection(account: stale, transport: fake, store: StoredAccount(account: newer))
+        _ = try await connection.username()
+        XCTAssertEqual(fake.sent.map { $0.url?.path }, ["/api/v1/graphql"], "no renewal with a refresh token the other process spent")
+        XCTAssertEqual(fake.sent[0].value(forHTTPHeaderField: "Authorization"), "Bearer tnt_new")
+    }
+
     func testAnErrorFromTheServerIsShownInItsWords() async {
         let fake = FakeServer { _ in (200, #"{"errors":[{"message":"no such conversation"}]}"#) }
         let account = Account(server: server, clientId: "a-client", accessToken: "tnt", refreshToken: "", expiresAt: .distantFuture, username: "robin")
@@ -374,4 +387,12 @@ final class CalendarTests: XCTestCase {
         XCTAssertEqual(fake.sent.count, 1, "a change that had happened was sent again")
         XCTAssertEqual(change.requestId.count, 32)
     }
+}
+
+/// StoredAccount is a sign-in another process has stored.
+struct StoredAccount: AccountStore {
+    let account: Account
+    func save(_ account: Account) throws {}
+    func load() throws -> Account? { account }
+    func delete() throws {}
 }
