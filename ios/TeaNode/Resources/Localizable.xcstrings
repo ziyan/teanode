@@ -32428,6 +32428,38 @@
         }
       }
     },
+    "That notification came from an account that is no longer on this phone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この通知は、このスマートフォンにはもうないアカウントからのものです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条通知来自一个已不在这部手机上的账户。"
+          }
+        }
+      }
+    },
+    "That notification does not say which account it is from. Answer it in TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この通知はどのアカウントからのものか分かりません。TeaNode で返答してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条通知没有说明来自哪个账户。请在 TeaNode 中回复。"
+          }
+        }
+      }
+    },
     "That turn failed.": {
       "localizations": {
         "ja": {

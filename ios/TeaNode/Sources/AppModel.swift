@@ -24,6 +24,11 @@ final class AppModel {
     var isAddingAccount = false
     private(set) var connection: Connection?
 
+    /// Connections to accounts not in use, made to answer their
+    /// notifications, by account. Each account renews its sign-in through
+    /// one connection, so two never spend the same refresh token.
+    private var otherConnections: [String: Connection] = [:]
+
     /// Why the app signed itself out, shown on the connect screen.
     var signedOutText: String?
 
@@ -253,7 +258,11 @@ final class AppModel {
             try? Keychain.moveToSharedGroup("account")
             defaults.set(true, forKey: "isKeychainShared")
         }
-        if let saved = try? store.load() {
+        let saved = try? store.load()
+        // The key made before each account had its own stays with the
+        // account in use, whose server was given it last.
+        try? PayloadKey.keyring.moveSingleKey(to: saved?.accountKey)
+        if let saved {
             use(saved)
         }
     }
@@ -261,7 +270,7 @@ final class AppModel {
     private func use(_ account: Account) {
         let isChanged = account.accountKey != self.account?.accountKey
         self.account = account
-        connection = Connection(account: account, transport: transport, store: store)
+        connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
@@ -271,6 +280,9 @@ final class AppModel {
     func switchTo(_ chosen: Account) async {
         guard chosen.accountKey != account?.accountKey else { return }
         try? store.activate(chosen.accountKey)
+        if let account, let connection {
+            otherConnections[account.accountKey] = connection
+        }
         agentName = ""
         phone = nil
         use(chosen)
@@ -350,6 +362,9 @@ final class AppModel {
 
     func confirm(_ pending: PendingConnection) async {
         try? store.add(pending.account)
+        // A connection kept for the same account holds the sign-in this one
+        // replaces.
+        otherConnections[pending.account.accountKey] = nil
         isAddingAccount = false
         agentName = ""
         phone = nil
@@ -381,10 +396,10 @@ final class AppModel {
     }
 
     /// Registers the device token with the relay and hands the sealed
-    /// registration, with the key notifications are encrypted with, to the
-    /// server.
+    /// registration to the server of every account, each with the key its
+    /// notifications are encrypted with.
     func register(deviceToken: Data) async {
-        guard let connection else { return }
+        guard let connection, let account else { return }
         #if DEBUG
             // A build installed from Xcode is delivered to by Apple's sandbox.
             let isSandbox = true
@@ -395,11 +410,50 @@ final class AppModel {
             let pushRegistration = try await PushRelay(transport: transport).register(deviceToken: deviceToken, isSandbox: isSandbox)
             phone = try await connection.registerPhone(
                 phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier,
-                pushRegistration: pushRegistration, payloadKey: try PayloadKey.current())
+                pushRegistration: pushRegistration, payloadKey: try PayloadKey.current(for: account.accountKey))
             notificationProblemText = nil
+            await registerOtherAccounts(pushRegistration: pushRegistration)
         } catch {
             notificationProblemText = describe(error)
         }
+    }
+
+    /// Registers the phone with the servers of the accounts not in use, each
+    /// with its own key. A server still holding the key from before each
+    /// account had its own would have its notifications opened as another
+    /// account's. One that cannot be reached is tried again at the next
+    /// launch, and says nothing: the account in use is fine.
+    private func registerOtherAccounts(pushRegistration: String) async {
+        let others = ((try? store.accounts().accounts) ?? []).filter { $0.accountKey != account?.accountKey }
+        for other in others {
+            guard let payloadKey = try? PayloadKey.current(for: other.accountKey) else { continue }
+            _ = try? await connection(for: other).registerPhone(
+                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier, pushRegistration: pushRegistration, payloadKey: payloadKey)
+        }
+    }
+
+    /// The connection to an account: the one in use, or one kept for it.
+    private func connection(for chosen: Account) -> Connection {
+        if chosen.accountKey == account?.accountKey, let connection {
+            return connection
+        }
+        if let kept = otherConnections[chosen.accountKey] {
+            return kept
+        }
+        let made = Connection(account: chosen, transport: transport, store: store)
+        otherConnections[chosen.accountKey] = made
+        return made
+    }
+
+    /// The account a notification came from, while it is on the phone. One
+    /// shown before each account had its own key does not say; it can only
+    /// be the one account when there is one.
+    private func notifyingAccount(_ info: NotificationInfo) -> Account? {
+        let kept = (try? store.accounts().accounts) ?? accounts
+        if info.accountKey.isEmpty {
+            return kept.count == 1 ? kept.first : nil
+        }
+        return kept.first { $0.accountKey == info.accountKey }
     }
 
     func noteNotificationFailure(_ error: Error) {
@@ -431,39 +485,60 @@ final class AppModel {
     }
 
     /// Does what a pressed notification button says, in the background
-    /// when the button does not open the app.
+    /// when the button does not open the app, as the account the
+    /// notification came from. Opening one of another account's switches to
+    /// that account first.
     func perform(_ pressed: PressedButton) async {
         guard let info = pressed.info else { return }
-        if pressed.actionIdentifier == UNNotificationDefaultActionIdentifier || pressed.actionIdentifier == "open" {
+        let isOpening = pressed.actionIdentifier == UNNotificationDefaultActionIdentifier || pressed.actionIdentifier == "open"
+        guard let notifying = notifyingAccount(info) else {
+            let text =
+                info.accountKey.isEmpty
+                ? String(localized: "That notification does not say which account it is from. Answer it in TeaNode.")
+                : String(localized: "That notification came from an account that is no longer on this phone.")
+            if isOpening {
+                openedLinkText = text
+            } else {
+                await tell(text)
+            }
+            return
+        }
+        if isOpening {
+            await switchTo(notifying)
             if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
             return
         }
-        guard let connection else { return }
+        let notifyingConnection = connection(for: notifying)
         do {
             switch pressed.actionIdentifier {
             case "approve", "deny":
-                try await connection.resolveConfirmation(runId: info.runId, callId: info.callId, isApproved: pressed.actionIdentifier == "approve")
+                try await notifyingConnection.resolveConfirmation(runId: info.runId, callId: info.callId, isApproved: pressed.actionIdentifier == "approve")
             case "reply":
                 let text = (pressed.typedText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return }
                 if info.notificationKind == "question", !info.callId.isEmpty {
-                    try await connection.answerQuestion(runId: info.runId, callId: info.callId, answer: text)
+                    try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: text)
                 } else {
-                    _ = try await connection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
+                    _ = try await notifyingConnection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
                 }
             default:
                 guard let answer = info.answers[pressed.actionIdentifier] else { return }
-                try await connection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
+                try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
             }
         } catch {
-            // Nobody is looking at the app: say so where the button was.
-            let content = UNMutableNotificationContent()
-            content.title = "TeaNode"
-            content.body = String(localized: "That did not reach your agent: \(describe(error))")
-            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+            await tell(String(localized: "That did not reach your agent: \(describe(error))"))
         }
+    }
+
+    /// Says something where a notification's button was: nobody is looking
+    /// at the app.
+    private func tell(_ text: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = "TeaNode"
+        content.body = text
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
     /// Gives up a sign-in the person chose not to keep.
@@ -473,13 +548,16 @@ final class AppModel {
 
     /// Signs this phone out: on the server too, unless the server already
     /// ended the sign-in.
-    /// Signs out of the account in use, and puts the next one to use; the
-    /// notification key goes only with the last.
+    /// Signs out of the account in use, forgets the key its notifications
+    /// are encrypted with, and puts the next one to use.
     func signOut(signedOutText: String? = nil) async {
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
         let gone = account?.server.host ?? ""
+        if let account {
+            try? PayloadKey.keyring.forget(for: account.accountKey)
+        }
         try? store.delete()
         phone = nil
         agentName = ""
@@ -491,7 +569,6 @@ final class AppModel {
             await setUpNotifications()
             return
         }
-        try? PayloadKey.forget()
         account = nil
         accounts = []
         connection = nil
@@ -515,6 +592,8 @@ final class AppModel {
             return
         }
         await SignIn(server: other.server, transport: transport).revoke(other)
+        otherConnections[other.accountKey] = nil
+        try? PayloadKey.keyring.forget(for: other.accountKey)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }

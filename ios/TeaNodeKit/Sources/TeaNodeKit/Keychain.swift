@@ -2,8 +2,8 @@
     import Foundation
     import Security
 
-    /// Keychain keeps the app's secrets on this phone: the sign-in, and the
-    /// key notifications are encrypted with. They go in the keychain group the
+    /// Keychain keeps the app's secrets on this phone: the sign-ins, and the
+    /// keys notifications are encrypted with. They go in the keychain group the
     /// app shares with its extensions, the first in its keychain-access-groups,
     /// which is where an item goes when no group is named. They can be read
     /// once the phone has been unlocked after starting, so a notification that
@@ -139,31 +139,32 @@
         }
     }
 
+    /// KeychainSecrets is the keychain as a SecretStore.
+    public struct KeychainSecrets: SecretStore {
+        public init() {}
+
+        public func read(_ name: String) throws -> Data? {
+            try Keychain.read(name)
+        }
+
+        public func write(_ data: Data, as name: String) throws {
+            try Keychain.write(data, as: name)
+        }
+
+        public func delete(_ name: String) throws {
+            try Keychain.delete(name)
+        }
+    }
+
     #if canImport(CryptoKit)
         extension PayloadKey {
-            static let name = "payloadKey"
+            /// Every account's key, in the keychain the app shares with its
+            /// notification extension.
+            public static var keyring: PayloadKeyring { PayloadKeyring(secrets: KeychainSecrets()) }
 
-            /// The phone's key, made the first time it is asked for. It is
-            /// kept for as long as the app is installed: a new one would leave
-            /// every notification already on its way unreadable.
-            public static func current() throws -> String {
-                if let saved = try stored() {
-                    return saved
-                }
-                let made = make()
-                try Keychain.write(Data(made.utf8), as: name)
-                return made
-            }
-
-            /// The phone's key if one was made, for the notification
-            /// extension, which never makes one.
-            public static func stored() throws -> String? {
-                try Keychain.read(name).map { String(decoding: $0, as: UTF8.self) }
-            }
-
-            /// Forgets the key, when the phone signs out.
-            public static func forget() throws {
-                try Keychain.delete(name)
+            /// The account's key, made the first time it is asked for.
+            public static func current(for accountKey: String) throws -> String {
+                try keyring.current(for: accountKey, make: make)
             }
         }
     #endif

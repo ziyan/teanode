@@ -3,8 +3,10 @@ import UserNotifications
 
 /// NotificationService decrypts a notification before iOS shows it. Apple and
 /// the relay carry only "New message" and the content sealed for this phone;
-/// here it is opened with the phone's key, and given its title, its words and
-/// its buttons. A notification that cannot be opened is shown as it came.
+/// here it is opened with the key of each account on the phone in turn, and
+/// given its title, its words, its buttons and the account whose key opened
+/// it, which the buttons act as. A notification that cannot be opened is
+/// shown as it came.
 ///
 /// This target builds in the Swift 5 language mode: the extension's API hands
 /// over a completion handler that is not marked as safe to send between
@@ -24,15 +26,16 @@ final class NotificationService: UNNotificationServiceExtension {
         let content = (request.content.mutableCopy() as? UNMutableNotificationContent) ?? UNMutableNotificationContent()
         shown = content
         guard let sealed = request.content.userInfo["sealed"] as? String,
-            let key = try? PayloadKey.stored(),
-            let opened = try? PayloadKey.open(sealed, key: key)
+            let ring = try? KeychainAccountStore().accounts(),
+            let keys = try? PayloadKey.keyring.keys(for: ring),
+            case let (accountKey, opened)? = PayloadKey.open(sealed, keys: keys)
         else {
             contentHandler(content)
             return
         }
         content.title = opened.title
         content.body = opened.body
-        content.userInfo = [NotificationInfo.key: NotificationInfo(opened).dictionary]
+        content.userInfo = [NotificationInfo.key: NotificationInfo(opened, accountKey: accountKey).dictionary]
         guard let category = NotificationCategories.category(for: opened) else {
             contentHandler(content)
             return

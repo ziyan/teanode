@@ -71,6 +71,9 @@ enum NotificationCategories {
 /// NotificationInfo is what a shown notification carries for the app: where
 /// it came from and what its buttons answer.
 struct NotificationInfo: Sendable {
+    /// The account whose key opened it, which is the account it came from;
+    /// empty on one shown before each account had its own key.
+    let accountKey: String
     let notificationKind: String
     let conversationId: String
     let runId: String
@@ -80,7 +83,8 @@ struct NotificationInfo: Sendable {
 
     static let key = "teanode"
 
-    init(_ content: NotificationContent) {
+    init(_ content: NotificationContent, accountKey: String) {
+        self.accountKey = accountKey
         notificationKind = content.notificationKind
         conversationId = content.conversationId ?? ""
         runId = content.runId ?? ""
@@ -94,6 +98,7 @@ struct NotificationInfo: Sendable {
 
     init?(userInfo: [AnyHashable: Any]) {
         guard let info = userInfo[Self.key] as? [String: Any] else { return nil }
+        accountKey = info["accountKey"] as? String ?? ""
         notificationKind = info["notificationKind"] as? String ?? ""
         conversationId = info["conversationId"] as? String ?? ""
         runId = info["runId"] as? String ?? ""
@@ -103,7 +108,7 @@ struct NotificationInfo: Sendable {
 
     var dictionary: [String: Any] {
         [
-            "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
+            "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
             "answers": answers,
         ]
     }

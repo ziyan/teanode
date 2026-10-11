@@ -145,7 +145,9 @@ struct MainView: View {
         .onChange(of: mail.currentMailboxId) {
             if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
         }
-        .onChange(of: app.openedConversationId) { _, conversationId in
+        // Initially too: a notification of another account asks for its
+        // conversation as the app is drawn anew for that account.
+        .onChange(of: app.openedConversationId, initial: true) { _, conversationId in
             guard let conversationId else { return }
             app.openedConversationId = nil
             section = .agent

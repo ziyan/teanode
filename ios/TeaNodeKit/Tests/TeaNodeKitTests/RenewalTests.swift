@@ -109,6 +109,36 @@ final class MemoryAccountStore: AccountStore, @unchecked Sendable {
     }
 }
 
+/// MemorySecrets keeps named secrets as the keychain does.
+final class MemorySecrets: SecretStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var secrets: [String: Data] = [:]
+
+    func read(_ name: String) throws -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return secrets[name]
+    }
+
+    func write(_ data: Data, as name: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        secrets[name] = data
+    }
+
+    func delete(_ name: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        secrets[name] = nil
+    }
+
+    var names: Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return Set(secrets.keys)
+    }
+}
+
 final class RenewalTests: XCTestCase {
     let server = try! ServerAddress(parsing: "mail.example.com")
 
@@ -233,4 +263,68 @@ final class RenewalTests: XCTestCase {
         let isSignedOut = await connection.isSignedOut
         XCTAssertTrue(isSignedOut)
     }
+}
+
+final class PayloadKeyringTests: XCTestCase {
+    let server = try! ServerAddress(parsing: "mail.example.com")
+
+    func account(_ username: String) -> Account {
+        Account(server: server, clientId: "a-client", accessToken: "a", refreshToken: "r", expiresAt: .distantFuture, username: username)
+    }
+
+    func testTheSingleKeyStaysWithTheAccountInUse() throws {
+        let secrets = MemorySecrets()
+        try secrets.write(Data("the-single-key".utf8), as: "payloadKey")
+        let keyring = PayloadKeyring(secrets: secrets)
+        let ring = AccountRing(accounts: [account("robin"), account("sam")], activeKey: account("sam").accountKey)
+
+        XCTAssertEqual(try keyring.keys(for: ring), [AccountPayloadKey(accountKey: account("sam").accountKey, payloadKey: "the-single-key")])
+        XCTAssertFalse(secrets.names.contains("payloadKey"), "the single key was kept on its own after it was moved")
+
+        // The other account gets a key of its own, and the moved one stays.
+        XCTAssertEqual(try keyring.current(for: account("robin").accountKey, make: { "a-new-key" }), "a-new-key")
+        XCTAssertEqual(try keyring.current(for: account("sam").accountKey, make: { "never-made" }), "the-single-key")
+        XCTAssertEqual(
+            try keyring.keys(for: ring),
+            [
+                AccountPayloadKey(accountKey: account("robin").accountKey, payloadKey: "a-new-key"),
+                AccountPayloadKey(accountKey: account("sam").accountKey, payloadKey: "the-single-key"),
+            ])
+
+        try keyring.forget(for: account("sam").accountKey)
+        XCTAssertNil(try keyring.stored(for: account("sam").accountKey))
+        XCTAssertEqual(try keyring.keys(for: ring).map(\.accountKey), [account("robin").accountKey])
+    }
+
+    func testTheSingleKeyNeverReplacesAnAccountsOwn() throws {
+        let secrets = MemorySecrets()
+        let keyring = PayloadKeyring(secrets: secrets)
+        _ = try keyring.current(for: account("robin").accountKey, make: { "robins-key" })
+        try secrets.write(Data("the-single-key".utf8), as: "payloadKey")
+        try keyring.moveSingleKey(to: account("robin").accountKey)
+        XCTAssertEqual(try keyring.stored(for: account("robin").accountKey), "robins-key")
+        XCTAssertFalse(secrets.names.contains("payloadKey"))
+    }
+
+    func testTheSingleKeyWaitsWhileNoAccountIsKept() throws {
+        let secrets = MemorySecrets()
+        try secrets.write(Data("the-single-key".utf8), as: "payloadKey")
+        XCTAssertEqual(try PayloadKeyring(secrets: secrets).keys(for: AccountRing()), [])
+        XCTAssertTrue(secrets.names.contains("payloadKey"))
+    }
+
+    #if canImport(CryptoKit)
+        func testTheKeyThatOpensANotificationNamesItsAccount() throws {
+            let key = Data((0..<32).map { UInt8($0) }).base64EncodedString()
+            let sealed = "H8RRRtjjpug7CHBstkS2ic1gPC+8v2ETffkv/MTXRhaeqmtyQJlSIczFvR481L+D1BqhO2Yrfj7bLeBSFAqJ6salcR93DzAV0Hleqk+fuO6pBo99yOEC9Th0d3b6jj6DbnbFCqL2MZpVKCm4va3GD+K4WMEw53BqMqCutMuPKvhXNemi9I/xNGgsTk0DwtlofvJaDfsKruPrdHYcbh6GhJnlMoyNoFN89Jyh/44oVcTaSTfMrAwh6hSWET6IAKGuwhUaJl7bpmD3aJJMWjDthHDMClCZB9rbMhezpEl62YAnPDx1iknIqW/yjXFVsqXMv6bv8yMD2jIawXoa2PlPu3qpZXZY6GxXyvgRGazoTJREK2c9gW0="
+            let keys = [
+                AccountPayloadKey(accountKey: account("robin").accountKey, payloadKey: PayloadKey.make()),
+                AccountPayloadKey(accountKey: account("sam").accountKey, payloadKey: key),
+            ]
+            let opened = PayloadKey.open(sealed, keys: keys)
+            XCTAssertEqual(opened?.accountKey, account("sam").accountKey)
+            XCTAssertEqual(opened?.content.notificationKind, "question")
+            XCTAssertNil(PayloadKey.open(sealed, keys: Array(keys.prefix(1))))
+        }
+    #endif
 }
