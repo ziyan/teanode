@@ -961,6 +961,22 @@
         }
       }
     },
+    "Add mail, calendars and contacts to this iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メール、カレンダー、連絡先をこの iPhone に追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把邮件、日历和联系人添加到这台 iPhone"
+          }
+        }
+      }
+    },
     "Add one with +, or save a sender from a message.": {
       "localizations": {
         "ja": {
@@ -9261,6 +9277,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行中"
+          }
+        }
+      }
+    },
+    "Safari downloads a profile; install it in Settings, under Profile Downloaded. It signs in with an app password of its own, listed below.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari がプロファイルをダウンロードします。「設定」の「ダウンロード済みのプロファイル」からインストールしてください。下に表示される専用のアプリパスワードでサインインします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 会下载一个描述文件；在“设置”的“已下载描述文件”中安装。它使用自己的应用密码登录，列在下方。"
           }
         }
       }

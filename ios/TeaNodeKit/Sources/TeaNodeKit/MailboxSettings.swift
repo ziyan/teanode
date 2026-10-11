@@ -86,6 +86,11 @@ extension Documents {
           CreateMailboxAppPassword(mailboxId: $mailboxId, name: $name) { password username appPassword { id name } }
         }
         """
+    public static let createSetupProfile = """
+        mutation ($mailboxId: String!, $deviceName: String!) {
+          CreateMailboxSetupProfile(mailboxId: $mailboxId, deviceName: $deviceName) { downloadLink expiresAt hasCalendarsAndContacts }
+        }
+        """
     public static let deleteMailAppPassword = """
         mutation ($appPasswordId: String!) { DeleteMailboxAppPassword(appPasswordId: $appPasswordId) }
         """
@@ -149,6 +154,20 @@ extension Connection {
         let created = try await execute(Documents.createMailAppPassword, variables: ["mailboxId": .string(mailboxId), "name": .string(name)], as: Answer.self)
             .CreateMailboxAppPassword
         return (created.password, created.username)
+    }
+
+    /// Makes a setup profile for this device, with an app password of its
+    /// own, and returns the address it downloads from, once.
+    public func createSetupProfile(mailboxId: String, deviceName: String) async throws -> URL {
+        struct Answer: Decodable, Sendable {
+            struct Created: Decodable, Sendable { let downloadLink: String }
+            let CreateMailboxSetupProfile: Created
+        }
+        let created = try await execute(
+            Documents.createSetupProfile, variables: ["mailboxId": .string(mailboxId), "deviceName": .string(deviceName)], as: Answer.self
+        ).CreateMailboxSetupProfile
+        guard let link = URL(string: created.downloadLink) else { throw TeaNodeError.unreadableAnswer }
+        return link
     }
 
     public func deleteMailAppPassword(_ appPasswordId: String) async throws {
