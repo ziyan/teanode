@@ -30,19 +30,26 @@ func NewRelay(apns *APNs) (*Relay, error) {
 // 32 bytes today, possibly longer later.
 var deviceTokenPattern = regexp.MustCompile(`^[0-9a-f]{64,200}$`)
 
-// Register seals a phone's device token into the registration it hands its
-// server.
+// Register seals a phone's device token, or one Live Activity's push token,
+// into the registration it hands its server.
 //
-// Only alerts are relayed. A Live Activity's update is shown by iOS as it
-// arrives, with no extension in between to decrypt it, so it would have to
-// cross Apple and the relay readable; those wait for a design of their own.
-func (self *Relay) Register(deviceToken string, isSandbox bool, now time.Time) (string, error) {
+// A Live Activity's update is shown by iOS as it arrives, with no extension
+// in between to decrypt it, so it crosses Apple and the relay readable. It
+// therefore carries no words at all: the relay writes it from one of a few
+// states (activityStates), and the app's widget says what each means.
+func (self *Relay) Register(deviceToken string, isSandbox bool, pushType string, now time.Time) (string, error) {
 	deviceToken = strings.ToLower(strings.TrimSpace(deviceToken))
 	if !deviceTokenPattern.MatchString(deviceToken) {
 		return "", fmt.Errorf("%w: that is not a device token", ErrRefused)
 	}
+	if pushType == "" {
+		pushType = PushTypeAlert
+	}
+	if pushType != PushTypeAlert && pushType != PushTypeLiveActivity {
+		return "", fmt.Errorf("%w: %q pushes are not relayed", ErrRefused, pushType)
+	}
 	return self.sealer.Seal(&Registration{
-		DeviceToken: deviceToken, IsSandbox: isSandbox, PushType: PushTypeAlert, CreatedAt: now.UTC(),
+		DeviceToken: deviceToken, IsSandbox: isSandbox, PushType: pushType, CreatedAt: now.UTC(),
 	})
 }
 
@@ -52,15 +59,22 @@ func (self *Relay) Open(pushRegistration string, now time.Time) (*Registration, 
 	if err != nil {
 		return nil, err
 	}
-	if registration.PushType != PushTypeAlert {
+	if registration.PushType != PushTypeAlert && registration.PushType != PushTypeLiveActivity {
 		return nil, fmt.Errorf("%w: that registration is for %s pushes, which are not relayed", ErrRefused, registration.PushType)
 	}
 	return registration, nil
 }
 
-// DeliverTo sends a delivery to an opened registration's phone.
+// DeliverTo sends a delivery to an opened registration's phone: an alert to
+// the phone, or a state to one Live Activity.
 func (self *Relay) DeliverTo(ctx context.Context, registration *Registration, delivery *Delivery, now time.Time) error {
-	notification, err := delivery.notification(now)
+	var notification *Notification
+	var err error
+	if registration.PushType == PushTypeLiveActivity {
+		notification, err = delivery.activityNotification(now)
+	} else {
+		notification, err = delivery.notification(now)
+	}
 	if err != nil {
 		return err
 	}

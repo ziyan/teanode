@@ -135,7 +135,7 @@ func (self *relayComponent) registerView(response http.ResponseWriter, request *
 		writeError(response, http.StatusBadRequest, push.ErrorCodeRefused, "the body is not a registration")
 		return
 	}
-	sealed, err := relay.Register(asked.DeviceToken, asked.IsSandbox, time.Now())
+	sealed, err := relay.Register(asked.DeviceToken, asked.IsSandbox, asked.PushType, time.Now())
 	if err != nil {
 		writeError(response, http.StatusBadRequest, push.ErrorCodeRefused, err.Error())
 		return
