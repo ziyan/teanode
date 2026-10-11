@@ -157,10 +157,11 @@ func decode(arguments json.RawMessage) (*phoneArguments, error) {
 }
 
 // show takes the dashboard the person reads this in to a page, or says
-// where to find it when there is no dashboard to take.
+// where to find it when there is no dashboard to take: a chat app, the
+// command line, Siri, a mail, or a turn the agent started itself.
 func show(ctx context.Context, path, shownNote, elsewhere string) (*tools.Result, error) {
 	showing, ok := tools.MustRun(ctx).(tools.Showing)
-	if !ok {
+	if !ok || !showing.CanShowPages() {
 		return &tools.Result{Content: fmt.Sprintf(`{"shown": false, "where": %q}`, elsewhere)}, nil
 	}
 	showing.ShowPage(path)
