@@ -1377,6 +1377,22 @@
         }
       }
     },
+    "Choose where you hear the call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話の音声の出力先を選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择通话声音的播放位置"
+          }
+        }
+      }
+    },
     "City": {
       "localizations": {
         "ja": {
@@ -5684,6 +5700,22 @@
     "TeaNode": {
       "shouldTranslate": false
     },
+    "TeaNode may not use the microphone. Allow it in Settings, then call again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はマイクを使えません。設定で許可してから、もう一度かけてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法使用麦克风。请在“设置”中允许后再拨打。"
+          }
+        }
+      }
+    },
     "That card was already answered, or is no longer waiting.": {
       "localizations": {
         "ja": {
@@ -5936,6 +5968,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法启动麦克风：%@"
+          }
+        }
+      }
+    },
+    "The microphone gives no sound. Check that nothing else is using it, or try AirPods or the speaker.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクから音が入りません。ほかのアプリが使っていないか確認するか、AirPods やスピーカーを試してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风没有声音。请确认没有其他应用在使用它，或改用 AirPods 或扬声器。"
           }
         }
       }

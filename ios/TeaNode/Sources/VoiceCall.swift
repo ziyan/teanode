@@ -34,8 +34,14 @@ final class VoiceCall: NSObject {
     private let agentName: String
 
     private var socket: URLSessionWebSocketTask?
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
+    private var engine = AVAudioEngine()
+    private var player = AVAudioPlayerNode()
+    /// The system's voice processing cancels the answer's sound from the
+    /// microphone; on a phone where it gives only silence, the call goes on
+    /// without it.
+    private var isVoiceProcessing = true
+    private var isSilenceRetried = false
+    private var configurationObserver: (any NSObjectProtocol)?
     /// Answers arrive as mono 16-bit PCM at 24000 Hz.
     private let answerFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false)!
     private let capture = CaptureSender()
@@ -77,6 +83,16 @@ final class VoiceCall: NSObject {
     /// Starts the call: CallKit first, and the audio once CallKit has the
     /// audio session ready; without CallKit, the audio at once.
     func start() {
+        Task {
+            guard await AVAudioApplication.requestRecordPermission() else {
+                end(problemText: String(localized: "TeaNode may not use the microphone. Allow it in Settings, then call again."))
+                return
+            }
+            startWithCallKit()
+        }
+    }
+
+    private func startWithCallKit() {
         let configuration = CXProviderConfiguration()
         configuration.supportsVideo = false
         configuration.maximumCallGroups = 1
@@ -127,12 +143,7 @@ final class VoiceCall: NSObject {
         }
         socket = nil
         capture.socket = nil
-        if isAudioRunning {
-            engine.inputNode.removeTap(onBus: 0)
-            player.stop()
-            engine.stop()
-            isAudioRunning = false
-        }
+        stopEngine()
         if provider == nil {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } else {
@@ -150,9 +161,81 @@ final class VoiceCall: NSObject {
 
     private func startAudio() {
         guard !isAudioRunning else { return }
+        guard startEngine() else { return }
+        openSocket()
+        meterTask = Task { [weak self] in
+            var listeningSince: Date?
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard let self else { return }
+                self.level = self.capture.level
+                self.watchForSilence(&listeningSince)
+            }
+        }
+        // While muted nothing is sent; the server is told every twenty
+        // seconds that the call is still there.
+        stillHereTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(20))
+                guard let self else { return }
+                if self.isMuted {
+                    self.socket?.send(.string(#"{"voiceEvent":"stillHere"}"#)) { _ in }
+                }
+            }
+        }
+    }
+
+    /// A microphone that gives nothing for three seconds once the server
+    /// listens (no buffers, or buffers of exact zeros, which a quiet room
+    /// never is) is started again without voice processing; if that is
+    /// silent too, the person is told.
+    private func watchForSilence(_ listeningSince: inout Date?) {
+        guard callState == .listening || callState == .hearing, !isMuted else {
+            listeningSince = nil
+            return
+        }
+        let since = listeningSince ?? Date()
+        listeningSince = since
+        guard Date().timeIntervalSince(since) > 3, capture.loudestLevel < 0.00001 else { return }
+        listeningSince = nil
+        if !isSilenceRetried {
+            isSilenceRetried = true
+            isVoiceProcessing = false
+            restartEngine()
+        } else if problemText == nil {
+            problemText = String(localized: "The microphone gives no sound. Check that nothing else is using it, or try AirPods or the speaker.")
+        }
+    }
+
+    /// Starts the engine afresh, as iOS asks after the route changes: to
+    /// AirPods, the speaker or a car.
+    private func restartEngine() {
+        guard callState != .ended else { return }
+        stopEngine()
+        _ = startEngine()
+    }
+
+    private func stopEngine() {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
+        guard isAudioRunning else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        player.stop()
+        engine.stop()
+        isAudioRunning = false
+    }
+
+    private func startEngine() -> Bool {
+        engine = AVAudioEngine()
+        player = AVAudioPlayerNode()
+        capture.resetLoudest()
         do {
             let input = engine.inputNode
-            try input.setVoiceProcessingEnabled(true)
+            if isVoiceProcessing {
+                try input.setVoiceProcessingEnabled(true)
+            }
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: answerFormat)
             let inputFormat = input.outputFormat(forBus: 0)
@@ -174,27 +257,14 @@ final class VoiceCall: NSObject {
             isAudioRunning = true
         } catch {
             end(problemText: String(localized: "The microphone could not be started: \(error.localizedDescription)"))
-            return
+            return false
         }
-        openSocket()
-        meterTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard let self else { return }
-                self.level = self.capture.level
-            }
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restartEngine() }
         }
-        // While muted nothing is sent; the server is told every twenty
-        // seconds that the call is still there.
-        stillHereTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(20))
-                guard let self else { return }
-                if self.isMuted {
-                    self.socket?.send(.string(#"{"voiceEvent":"stillHere"}"#)) { _ in }
-                }
-            }
-        }
+        return true
     }
 
     private func openSocket() {
@@ -438,12 +508,24 @@ final class CaptureSender: @unchecked Sendable {
 
     var level: Float { lock.withLock { _level } }
 
+    private var _loudestLevel: Float = 0
+    /// The loudest the microphone has been since the engine started; zero
+    /// means it has given nothing at all.
+    var loudestLevel: Float { lock.withLock { _loudestLevel } }
+
+    func resetLoudest() {
+        lock.withLock { _loudestLevel = 0 }
+    }
+
     func send(_ buffer: AVAudioPCMBuffer) {
         if let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 {
             var sum: Float = 0
             for index in 0..<Int(buffer.frameLength) { sum += channel[index] * channel[index] }
             let rootMeanSquare = (sum / Float(buffer.frameLength)).squareRoot()
-            lock.withLock { _level = min(1, rootMeanSquare * 8) }
+            lock.withLock {
+                _level = min(1, rootMeanSquare * 8)
+                _loudestLevel = max(_loudestLevel, rootMeanSquare)
+            }
         }
         guard let socket, !isMuted, let converter, let sendFormat else { return }
         let ratio = sendFormat.sampleRate / buffer.format.sampleRate

@@ -26,6 +26,10 @@ struct ConversationView: View {
     @AppStorage(TranscriptPreference.showUsage) private var isShowingUsage = false
     @AppStorage(TranscriptPreference.showWorkingNotes) private var isShowingWorkingNotes = false
     @State private var isAtEnd = true
+    /// Where the transcript is scrolled: jumping to its bottom edge works
+    /// however far up it is, where scrolling to the last line needs that
+    /// line built, which a long lazy list has not done.
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var status = StatusModel()
     @State private var isShowingStatus = false
 
@@ -69,13 +73,14 @@ struct ConversationView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 12)
             }
+            .scrollPosition($scrollPosition)
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
             .overlay(alignment: .bottomTrailing) {
                 if !isAtEnd {
                     Button {
-                        withAnimation { scroller.scrollTo(Self.endId, anchor: .bottom) }
+                        withAnimation { scrollPosition.scrollTo(edge: .bottom) }
                     } label: {
                         Image(systemName: "arrow.down")
                             .font(.headline)
@@ -87,7 +92,7 @@ struct ConversationView: View {
                 }
             }
             .onChange(of: model.sentCount) {
-                withAnimation { scroller.scrollTo(Self.endId, anchor: .bottom) }
+                withAnimation { scrollPosition.scrollTo(edge: .bottom) }
             }
         }
     }

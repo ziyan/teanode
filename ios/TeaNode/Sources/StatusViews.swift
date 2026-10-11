@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 import TeaNodeKit
 
@@ -207,41 +208,49 @@ struct BackgroundCommandView: View {
 }
 
 /// CallBar is the composer while a call is on: how loud the person is, what
-/// is heard or said, mute and hang up.
+/// is heard or said, where the sound goes, mute and hang up, on one glass
+/// panel so the conversation behind it does not show through its words.
 struct CallBar: View {
     let call: VoiceCall
 
     var body: some View {
-        GlassEffectContainer {
-            HStack(spacing: 12) {
-                CallMeter(level: call.level, isSpeaking: call.callState == .speaking)
-                Text(caption)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button {
-                    call.isMuted.toggle()
-                } label: {
-                    Image(systemName: call.isMuted ? "mic.slash.fill" : "mic.fill")
-                        .font(.title3)
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel(call.isMuted ? Text("Unmute") : Text("Mute"))
-                Button {
-                    call.hangUp()
-                } label: {
-                    Image(systemName: "phone.down.fill")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .glassEffect(.regular.tint(.red).interactive(), in: .circle)
-                .accessibilityLabel("Hang up")
+        HStack(spacing: 10) {
+            CallMeter(level: call.level, isSpeaking: call.callState == .speaking)
+            Text(caption)
+                .font(.callout)
+                .foregroundStyle(call.problemText == nil ? .secondary : .primary)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            AudioRoutePicker()
+                .frame(width: 44, height: 44)
+                .background(Color(.tertiarySystemFill), in: .circle)
+            Button {
+                call.isMuted.toggle()
+            } label: {
+                Image(systemName: call.isMuted ? "mic.slash.fill" : "mic.fill")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .background(call.isMuted ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: .circle)
+                    .foregroundStyle(call.isMuted ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
             }
-            .padding(.leading, 16)
+            .buttonStyle(.plain)
+            .accessibilityLabel(call.isMuted ? Text("Unmute") : Text("Mute"))
+            Button {
+                call.hangUp()
+            } label: {
+                Image(systemName: "phone.down.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.red, in: .circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hang up")
         }
+        .padding(.leading, 16)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 30, style: .continuous))
         .padding(.horizontal)
         .padding(.bottom, 8)
         .sensoryFeedback(.impact, trigger: call.callState == .hearing)
@@ -259,6 +268,21 @@ struct CallBar: View {
         case .ended: return ""
         }
     }
+}
+
+/// AudioRoutePicker is the system's choice of where a call's sound goes:
+/// the iPhone, its speaker, AirPods or other Bluetooth headphones, or a car.
+struct AudioRoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView()
+        picker.prioritizesVideoDevices = false
+        picker.tintColor = .tintColor
+        picker.activeTintColor = .tintColor
+        picker.accessibilityLabel = String(localized: "Choose where you hear the call")
+        return picker
+    }
+
+    func updateUIView(_ picker: AVRoutePickerView, context: Context) {}
 }
 
 /// CallMeter is five bars moving with the microphone, or with the answer
