@@ -106,15 +106,21 @@ func (self *transaction) ListOpenAgentInteractions(conversationId string) ([]*mo
 	return interactions, nil
 }
 
+// waitingCondition is an agent's open cards whose conversation is still
+// there. Deleting a conversation deletes its cards, but a card left from
+// before it did, or raised by a turn still running as its conversation
+// went, has nowhere to be answered and is not waiting for anybody.
+const waitingCondition = `"agent_id" = ? AND "resolved_at" IS NULL
+	AND EXISTS (SELECT 1 FROM "agent_conversation" WHERE "agent_conversation"."id" = "agent_interaction"."conversation_id")`
+
 func (self *transaction) ListAgentWaitingInteractions(agentId string, limit int) ([]*models.AgentInteraction, int64, error) {
-	open := self.tx.Model(&agentInteractionModel{}).Where(`"agent_id" = ? AND "resolved_at" IS NULL`, agentId)
 	var total int64
-	if err := open.Count(&total).Error; err != nil {
+	if err := self.tx.Model(&agentInteractionModel{}).Where(waitingCondition, agentId).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var found []agentInteractionModel
 	if limit > 0 {
-		if err := self.tx.Where(`"agent_id" = ? AND "resolved_at" IS NULL`, agentId).Order(`"created_at" DESC`).Limit(limit).Find(&found).Error; err != nil {
+		if err := self.tx.Where(waitingCondition, agentId).Order(`"created_at" DESC`).Limit(limit).Find(&found).Error; err != nil {
 			return nil, 0, err
 		}
 	}

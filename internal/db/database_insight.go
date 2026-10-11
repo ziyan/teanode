@@ -868,10 +868,20 @@ func (self *transaction) DeleteAgentConversation(conversationId string) error {
 		Updates(map[string]any{"started_conversation_id": "", "modified_at": now}).Error; err != nil {
 		return err
 	}
+	// A card has no foreign key to its conversation, so it would outlive
+	// it, still counted as waiting and with nowhere to be answered.
+	if err := self.tx.Where(`"conversation_id" = ?`, conversationId).Delete(&agentInteractionModel{}).Error; err != nil {
+		return err
+	}
 	return self.tx.Where("\"id\" = ?", conversationId).Delete(&agentConversationModel{}).Error
 }
 
 func (self *transaction) ScavengeAgentConversations(kind models.AgentConversationKind, before time.Time) (int64, error) {
+	// The cards go with their conversations, as in DeleteAgentConversation.
+	if err := self.tx.Where(`"conversation_id" IN (SELECT "id" FROM "agent_conversation" WHERE "kind" = ? AND "last_at" < ?)`, string(kind), before).
+		Delete(&agentInteractionModel{}).Error; err != nil {
+		return 0, err
+	}
 	result := self.tx.Where("\"kind\" = ? AND \"last_at\" < ?", string(kind), before).Delete(&agentConversationModel{})
 	return result.RowsAffected, result.Error
 }
