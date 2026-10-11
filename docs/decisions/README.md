@@ -156,3 +156,8 @@ when it needs the person. Its plan is
 consent page grants the whole account to an app installed on a device that
 asks for the API, and why that cannot be collected by somebody who sent the
 link.
+
+`20261011-a-reaction-is-a-mark-on-a-message-and-starts-no-turn.md` says
+how a reaction on a message of a conversation is kept (a row per reactor
+per message, gone with its message), why it wakes no turn, how the model
+reads one, and why the agent's own is an action of the conversation tool.

@@ -29,6 +29,7 @@ func NewAgentCommand() *cli.Command {
 		Commands: []*cli.Command{
 			newAgentAskCommand(),
 			newAgentChatCommand(),
+			newAgentReactCommand(),
 			newAgentConversationCommand(),
 			newAgentRunCommand(),
 			newAgentToolsCommand(),

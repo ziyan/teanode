@@ -67,6 +67,16 @@ type AgentMessage struct {
 	Usage       *AgentUsageNote   `json:"usage"`
 	Attachments []AgentAttachment `json:"attachments"`
 	References  []AgentReference  `json:"references"`
+	// Reactions are the emoji you and the agent put on the message.
+	Reactions []AgentMessageReaction `json:"reactions"`
+}
+
+// AgentMessageReaction is an emoji on a message, and who put it there:
+// person or agent.
+type AgentMessageReaction struct {
+	Emoji       string    `json:"emoji"`
+	ReactorKind string    `json:"reactorKind"`
+	ReactedAt   time.Time `json:"reactedAt"`
 }
 
 // AgentUsageNote is what one model call cost.
@@ -199,7 +209,7 @@ const (
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
-			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from agentMessageId quotedRole quotedText } }
+			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt } }
 			total
 			todos ` + todoFields + `
 		}
@@ -211,8 +221,19 @@ const (
 	DocumentSetAgentMainConversation = `mutation ($conversationId: String) {
 		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
 	}`
-	DocumentListAgentTools = `query { ListAgentTools { name family risk description confirms core } }`
+	DocumentListAgentTools      = `query { ListAgentTools { name family risk description confirms core } }`
+	DocumentReactToAgentMessage = `mutation ($messageId: String!, $emoji: String!) { ReactToAgentMessage(messageId: $messageId, emoji: $emoji) }`
 )
+
+// ReactToAgentMessage puts your emoji on a message of one of your
+// conversations, replacing the one you had there; an empty emoji takes it
+// away.
+func ReactToAgentMessage(ctx context.Context, connection *Client, messageId, reactionEmoji string) error {
+	var result struct {
+		ReactToAgentMessage bool `json:"ReactToAgentMessage"`
+	}
+	return connection.Execute(ctx, DocumentReactToAgentMessage, map[string]any{"messageId": messageId, "emoji": reactionEmoji}, &result)
+}
 
 // AskAgent says something to the agent and returns the run to follow. A
 // read-only client asks with every changing tool left out, which is why it

@@ -160,6 +160,7 @@ type Transaction interface {
 	IdentityOperation
 	AgentOperation
 	InsightOperation
+	ReactionOperation
 	AttachmentOperation
 	ReplyOperation
 	EmbeddingOperation

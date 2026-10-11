@@ -116,9 +116,12 @@ type InsightOperation interface {
 	ScavengeAgentConversations(kind models.AgentConversationKind, before time.Time) (int64, error)
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
+	// ListAgentMessages is a conversation's messages, oldest first, each
+	// with its reactions.
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
 	// GetAgentConversationMessage is one message of the conversation
-	// given, or nil when the conversation has no message by that id.
+	// given, with its reactions, or nil when the conversation has no
+	// message by that id.
 	GetAgentConversationMessage(conversationId, messageId string) (*models.AgentMessage, error)
 	// ListAgentOwnTurnAnswers is what the agent answered in a conversation
 	// in turns of its own -- its last word of each round, never a round
@@ -964,6 +967,9 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 		}
 		messages = append(messages, message)
 	}
+	if err := self.attachReactions(conversationId, messages); err != nil {
+		return nil, err
+	}
 	return messages, nil
 }
 
@@ -975,7 +981,14 @@ func (self *transaction) GetAgentConversationMessage(conversationId, messageId s
 	if len(found) == 0 {
 		return nil, nil
 	}
-	return messageFromModel(&found[0])
+	message, err := messageFromModel(&found[0])
+	if err != nil {
+		return nil, err
+	}
+	if err := self.attachReactions(conversationId, []*models.AgentMessage{message}); err != nil {
+		return nil, err
+	}
+	return message, nil
 }
 
 func (self *transaction) ListAgentOwnTurnAnswers(conversationId, afterMessageId string, before time.Time, limit int) ([]*models.AgentMessage, error) {

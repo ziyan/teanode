@@ -7194,6 +7194,115 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   color: var(--text);
 }
 
+/* Reactions on a message: small badges on the bubble's lower corner, the
+   outer one, as a chat app draws them. A bubble with any keeps room under
+   it so the badges do not sit on the next message. */
+.agent-line-swipeable:has(.agent-reactions) {
+  margin-bottom: 10px;
+}
+
+.agent-reactions {
+  position: absolute;
+  bottom: -12px;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.agent-line.user .agent-reactions {
+  right: 8px;
+}
+
+.agent-line.assistant .agent-reactions {
+  left: 8px;
+}
+
+.agent-reaction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* The person's own, which a click takes away. */
+button.agent-reaction {
+  cursor: pointer;
+}
+
+.agent-reaction.mine {
+  border-color: var(--accent);
+}
+
+/* The quick reactions, over the message the React button was pressed on,
+   kept inside the drawer's width: the person's bubbles are on the right,
+   so it opens leftward from there, and the agent's rightward. */
+.agent-reaction-picker {
+  position: absolute;
+  top: -42px;
+  z-index: 5;
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  white-space: nowrap;
+}
+
+.agent-line.user .agent-reaction-picker {
+  right: 0;
+}
+
+.agent-line.assistant .agent-reaction-picker {
+  left: 0;
+}
+
+.agent-reaction-choice {
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.agent-reaction-choice:hover,
+.agent-reaction-choice:focus-visible {
+  background: var(--field);
+}
+
+.agent-reaction-choice.current {
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Bigger for a thumb, and still one row across a phone. */
+@media (max-width: 600px) {
+  .agent-reaction-picker {
+    top: -48px;
+  }
+
+  .agent-reaction-choice {
+    width: 36px;
+    height: 36px;
+  }
+}
+
 /* The message the next turn answers, above the box: who said it and its
    start, with a way to drop it. */
 .agent-reply-quote {

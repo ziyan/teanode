@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { CheckIcon, CopyIcon, ReplyIcon } from './icons'
+import { CheckIcon, CopyIcon, ReplyIcon, SmileIcon } from './icons'
 
 // How far a finger has to move sideways before it is a swipe rather than a
 // tap or the start of a scroll (as a mailbox row's), how far a message is
@@ -30,12 +30,18 @@ export function SwipeableLine({
   onReply,
   onCopy,
   onCopyFailed,
+  reactLabel,
+  onReact,
   children,
 }: {
   className: string
   replyLabel: string
   copyLabel: string
   onReply: () => void
+  // onReact opens the picker of reactions, for a line that can carry one;
+  // without it there is no React button.
+  reactLabel?: string
+  onReact?: () => void
   // onCopy copies the line and says whether it took; onCopyFailed is told
   // when a tap or a click could not copy it either.
   onCopy: () => Promise<boolean>
@@ -191,6 +197,11 @@ export function SwipeableLine({
           </span>
         ))}
       <span className="agent-line-actions">
+        {onReact && (
+          <button type="button" className="icon-action" title={reactLabel} aria-label={reactLabel} onClick={onReact}>
+            <SmileIcon size={14} />
+          </button>
+        )}
         <button
           type="button"
           className={['icon-action', isCopied ? 'copied' : ''].filter(Boolean).join(' ')}
