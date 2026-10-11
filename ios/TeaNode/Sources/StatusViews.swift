@@ -243,3 +243,79 @@ struct BackgroundCommandView: View {
         return command.stopReason ?? String(localized: "Stopped")
     }
 }
+
+/// CallBar is the composer while a call is on: how loud the person is, what
+/// is heard or said, mute and hang up.
+struct CallBar: View {
+    let call: VoiceCall
+
+    var body: some View {
+        GlassEffectContainer {
+            HStack(spacing: 12) {
+                CallMeter(level: call.level, isSpeaking: call.callState == .speaking)
+                Text(caption)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    call.isMuted.toggle()
+                } label: {
+                    Image(systemName: call.isMuted ? "mic.slash.fill" : "mic.fill")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel(call.isMuted ? Text("Unmute") : Text("Mute"))
+                Button {
+                    call.hangUp()
+                } label: {
+                    Image(systemName: "phone.down.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .glassEffect(.regular.tint(.red).interactive(), in: .circle)
+                .accessibilityLabel("Hang up")
+            }
+            .padding(.leading, 16)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+        .sensoryFeedback(.impact, trigger: call.callState == .hearing)
+    }
+
+    private var caption: String {
+        if let problemText = call.problemText { return problemText }
+        if !call.captionText.isEmpty { return call.captionText }
+        switch call.callState {
+        case .starting: return String(localized: "Starting the microphone…")
+        case .listening: return call.isMuted ? String(localized: "Muted") : String(localized: "Listening…")
+        case .hearing: return String(localized: "Hearing you…")
+        case .working: return String(localized: "Working on it…")
+        case .speaking: return String(localized: "Speaking… talk to cut in")
+        case .ended: return ""
+        }
+    }
+}
+
+/// CallMeter is five bars moving with the microphone, or with the answer
+/// while it is spoken.
+struct CallMeter: View {
+    let level: Float
+    let isSpeaking: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<5, id: \.self) { index in
+                let scale = [0.5, 0.8, 1, 0.8, 0.5][index]
+                Capsule()
+                    .fill(isSpeaking ? Color.accentColor : Color.primary.opacity(0.6))
+                    .frame(width: 4, height: 6 + 22 * CGFloat(isSpeaking ? 0.6 : Double(level)) * scale)
+            }
+        }
+        .frame(height: 30)
+        .animation(.easeOut(duration: 0.1), value: level)
+        .accessibilityHidden(true)
+    }
+}

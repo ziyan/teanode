@@ -33,6 +33,11 @@ targets:
     # association file), so scanning a connect code with the Camera does.
     # Notifications, and a keychain group the notification extension
     # shares, so it can read the key notifications are encrypted with.
+    # A call goes on with the screen locked: audio, and CallKit's voip.
+    info:
+      path: TeaNode/Info.plist
+      properties:
+        UIBackgroundModes: [audio, voip]
     entitlements:
       path: TeaNode/TeaNode.entitlements
       properties:
@@ -59,6 +64,7 @@ targets:
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Your agent asks where you are when something you asked depends on it, such as the weather or how long a trip takes."
         # The app encrypts nothing beyond the https the system provides, which
         # export rules exempt; saying so here spares every upload the question.

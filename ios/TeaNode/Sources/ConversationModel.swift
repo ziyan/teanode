@@ -59,6 +59,11 @@ final class ConversationModel {
     /// Changes when something is sent or a card is settled, for the haptic.
     private(set) var sentCount = 0
 
+    /// The call with the agent, while there is one, and whether the server
+    /// offers calls and at what rate it takes speech.
+    var call: VoiceCall?
+    private(set) var voiceSampleRate: Int?
+
     private let app: AppModel
     private let connection: Connection
     private var answeredLocationCalls: Set<String> = []
@@ -147,6 +152,38 @@ final class ConversationModel {
         if messages.isEmpty {
             await loadIdeas()
         }
+        if voiceSampleRate == nil, let voice = try? await connection.voiceAvailability(), voice.isVoiceAvailable {
+            voiceSampleRate = voice.sampleRate ?? 24000
+        }
+    }
+
+    /// Calls the agent in this conversation.
+    func startCall() {
+        guard call == nil, let voiceSampleRate else { return }
+        let call = VoiceCall(connection: connection, model: self, sampleRate: voiceSampleRate, agentName: app.agentTitle)
+        self.call = call
+        call.start()
+    }
+
+    /// Sends what was said on a call as a turn, and returns the turn, whose
+    /// answers the call reads out.
+    func sendSpoken(_ text: String, interruptedAnswer: (heardText: String, unheardText: String)?) async -> String? {
+        transcript.addSent(text)
+        do {
+            let asked = try await connection.ask(
+                text, in: conversationId, surface: Surface.voice, drawerId: app.drawerId, interruptedAnswer: interruptedAnswer)
+            if !runningRunIds.contains(asked.runId) {
+                runningRunIds.append(asked.runId)
+            }
+            if conversationId == nil {
+                conversationId = asked.conversationId
+            }
+            return asked.runId
+        } catch {
+            transcript.withdrawSent()
+            sendProblemText = app.describe(error)
+            return nil
+        }
     }
 
     /// Reads the page of messages before those shown.
@@ -174,6 +211,7 @@ final class ConversationModel {
 
     private func apply(_ event: AgentEvent) {
         transcript.apply(event)
+        call?.follow(event)
         switch event.kind {
         case "asked":
             if !runningRunIds.contains(event.runId) {

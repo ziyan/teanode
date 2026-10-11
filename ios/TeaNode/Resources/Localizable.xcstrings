@@ -513,6 +513,22 @@
         }
       }
     },
+    "Call your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに電話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给助手打电话"
+          }
+        }
+      }
+    },
     "Camera": {
       "localizations": {
         "ja": {
@@ -1041,6 +1057,54 @@
         }
       }
     },
+    "Hang up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話を終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "挂断"
+          }
+        }
+      }
+    },
+    "Hearing you…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの声を聞いています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "听到你在说话…"
+          }
+        }
+      }
+    },
+    "I need your approval on screen: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面で承認が必要です：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要你在屏幕上批准：%@"
+          }
+        }
+      }
+    },
     "Jump to the end": {
       "localizations": {
         "ja": {
@@ -1053,6 +1117,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳到末尾"
+          }
+        }
+      }
+    },
+    "Listening…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聞いています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在听…"
           }
         }
       }
@@ -1101,6 +1181,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "设为主对话"
+          }
+        }
+      }
+    },
+    "Mute": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音"
+          }
+        }
+      }
+    },
+    "Muted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ミュート中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已静音"
           }
         }
       }
@@ -1793,6 +1905,22 @@
         }
       }
     },
+    "Speaking… talk to cut in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話しています…話しかけると中断します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在说话…开口即可打断"
+          }
+        }
+      }
+    },
     "Spent today: %@": {
       "localizations": {
         "ja": {
@@ -1821,6 +1949,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "由助手主动发起"
+          }
+        }
+      }
+    },
+    "Starting the microphone…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクを起動しています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动麦克风…"
           }
         }
       }
@@ -2052,6 +2196,22 @@
         }
       }
     },
+    "The call lost its connection.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話の接続が切れました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通话连接已断开。"
+          }
+        }
+      }
+    },
     "The camera is not available": {
       "localizations": {
         "ja": {
@@ -2096,6 +2256,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "这些文件超过 25 MB，超出服务器一条消息能接收的大小。"
+          }
+        }
+      }
+    },
+    "The microphone could not be started: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクを起動できませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动麦克风：%@"
+          }
+        }
+      }
+    },
+    "The microphone's format cannot be sent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクの音声形式を送信できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法发送麦克风的音频格式。"
           }
         }
       }
@@ -2308,6 +2500,22 @@
         }
       }
     },
+    "Unmute": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ミュート解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消静音"
+          }
+        }
+      }
+    },
     "Untitled": {
       "localizations": {
         "ja": {
@@ -2432,6 +2640,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "助理主动说的话"
+          }
+        }
+      }
+    },
+    "Working on it…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応しています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在处理…"
           }
         }
       }

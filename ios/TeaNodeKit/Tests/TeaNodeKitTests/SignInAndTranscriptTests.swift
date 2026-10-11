@@ -312,3 +312,21 @@ final class NotificationTests: XCTestCase {
         }
     #endif
 }
+
+final class VoiceTests: XCTestCase {
+    func testAnAnswerIsSaidWithoutItsMarks() {
+        let said = SpokenText.of("## Tomorrow\n\n- **9:00** Swim. See [the map](https://example.com).\n\n```\ncode\n```\nDone.\n<!--suggestions:[\"Yes\",\"No\"]-->")
+        XCTAssertEqual(said, "Tomorrow 9:00 Swim. See the map. Done.")
+    }
+
+    func testOnlyWholeSentencesAreSpoken() {
+        let split = SpokenText.sentences(in: "It is sunny. Bring a hat! And a coa")
+        XCTAssertEqual(split.sentences, ["It is sunny.", "Bring a hat!"])
+        XCTAssertEqual(String(Array("It is sunny. Bring a hat! And a coa")[split.consumed...]).trimmingCharacters(in: .whitespaces), "And a coa")
+    }
+
+    func testAVoiceEventIsRead() throws {
+        let event = try JSONDecoder().decode(VoiceEvent.self, from: Data(#"{"voiceEvent":"transcriptFinal","utteranceId":"u1","transcriptText":"Hello"}"#.utf8))
+        XCTAssertEqual(event.transcriptText, "Hello")
+    }
+}

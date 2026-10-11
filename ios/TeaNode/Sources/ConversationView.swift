@@ -32,33 +32,8 @@ struct ConversationView: View {
 
     var body: some View {
         framed
-            .task(id: scenePhase == .active) {
-                if scenePhase == .active, let connection = app.connection {
-                    await status.follow(connection: connection) { model.conversationId }
-                }
-            }
-            // The feed is followed while the app is in front; iOS closes it in
-            // the background, and coming back opens it again at once.
-            .task(id: scenePhase == .active) {
-                if scenePhase == .active {
-                    await model.follow()
-                }
-            }
-            .environment(\.openURL, OpenURLAction { address in app.route(address) })
-            .environment(\.pictureConversationId, model.conversationId)
-            .quickLookPreview(Bindable(app).previewAddress)
-            .alert("Cannot open the file", isPresented: Bindable(app).isShowingPreviewProblem, presenting: app.previewProblemText) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { text in
-                Text(text)
-            }
-            .sensoryFeedback(.success, trigger: model.sentCount)
-            .sensoryFeedback(.warning, trigger: model.sendProblemText) { _, new in new != nil }
-            .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { text in
-                Text(text)
-            }
+            .modifier(ConversationFollowing(model: model, status: status))
+            .modifier(ConversationAlerts(model: model))
     }
 
     /// The conversation with its bars, title and status.
@@ -169,7 +144,11 @@ struct ConversationView: View {
             if let reply = model.replyingTo {
                 ReplyBar(reply: reply) { model.replyingTo = nil }
             }
-            Composer(model: model)
+            if let call = model.call {
+                CallBar(call: call)
+            } else {
+                Composer(model: model)
+            }
         }
     }
 
@@ -210,6 +189,56 @@ struct ConversationView: View {
                 return true
             }
         }
+    }
+}
+
+/// ConversationFollowing keeps a conversation and its head up to date while
+/// the app is in front: iOS closes the feed in the background, and coming
+/// back opens it again at once.
+struct ConversationFollowing: ViewModifier {
+    let model: ConversationModel
+    let status: StatusModel
+    @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active, let connection = app.connection {
+                    await status.follow(connection: connection) { model.conversationId }
+                }
+            }
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active {
+                    await model.follow()
+                }
+            }
+            .environment(\.openURL, OpenURLAction { address in app.route(address) })
+            .environment(\.pictureConversationId, model.conversationId)
+    }
+}
+
+/// ConversationAlerts are what a conversation says when something goes
+/// wrong, the haptics of sending, and files opened in Quick Look.
+struct ConversationAlerts: ViewModifier {
+    @Bindable var model: ConversationModel
+    @Environment(AppModel.self) private var app
+
+    func body(content: Content) -> some View {
+        @Bindable var app = app
+        return content
+            .quickLookPreview($app.previewAddress)
+            .alert("Cannot open the file", isPresented: $app.isShowingPreviewProblem, presenting: app.previewProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+            .sensoryFeedback(.success, trigger: model.sentCount)
+            .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
     }
 }
 
@@ -1065,6 +1094,17 @@ struct Composer: View {
                         .padding(.vertical, 12)
                         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
 
+                    if model.voiceSampleRate != nil, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
+                        Button {
+                            model.startCall()
+                        } label: {
+                            Image(systemName: "phone")
+                                .font(.title3)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .glassEffect(.regular.interactive(), in: .circle)
+                        .accessibilityLabel("Call your agent")
+                    }
                     if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
                         Button {
                             Task { await model.stop() }

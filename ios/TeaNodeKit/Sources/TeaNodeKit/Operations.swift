@@ -35,9 +35,12 @@ public enum Documents {
         }
         """
     public static let ask = """
-        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String) {
-          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId) { runId conversationId }
+        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput) {
+          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer) { runId conversationId }
         }
+        """
+    public static let voice = """
+        query { ReadAgentVoice { isVoiceAvailable sampleRate } }
         """
     public static let updateConversation = """
         mutation ($conversationId: String!, $title: String, $archived: Boolean) {
@@ -141,7 +144,7 @@ public enum Documents {
         "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
         "updatePhone": updatePhone, "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
         "updateConversation": updateConversation, "deleteConversation": deleteConversation,
-        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices,
+        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices, "voice": voice,
         "backgroundCommands": backgroundCommands, "backgroundCommand": backgroundCommand, "stopBackgroundCommand": stopBackgroundCommand,
     ]
 }
@@ -296,7 +299,7 @@ extension Connection {
     /// runs in.
     public func ask(
         _ message: String, in conversationId: String?, attachmentIds: [String] = [], references: [AgentReference] = [],
-        surface: String = Surface.typed, drawerId: String
+        surface: String = Surface.typed, drawerId: String, interruptedAnswer: (heardText: String, unheardText: String)? = nil
     ) async throws -> (runId: String, conversationId: String) {
         struct Answer: Decodable, Sendable {
             struct Asked: Decodable, Sendable {
@@ -312,6 +315,11 @@ extension Connection {
         if !references.isEmpty {
             let encoded = try JSONEncoder().encode(references)
             variables["references"] = try JSONDecoder().decode(JSONValue.self, from: encoded)
+        }
+        if let interruptedAnswer {
+            variables["interruptedAnswer"] = .object([
+                "heardText": .string(interruptedAnswer.heardText), "unheardText": .string(interruptedAnswer.unheardText),
+            ])
         }
         if let conversationId { variables["conversationId"] = .string(conversationId) }
         let asked = try await execute(Documents.ask, variables: variables, as: Answer.self).AskAgent
