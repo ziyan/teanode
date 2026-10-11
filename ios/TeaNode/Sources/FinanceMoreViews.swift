@@ -816,19 +816,10 @@ struct ReceiptsView: View {
         List {
             Toggle("Only unmatched", isOn: $isUnmatchedOnly)
             ForEach(receipts) { receipt in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(receipt.merchantName ?? String(localized: "Receipt"))
-                        Spacer()
-                        Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode)).monospacedDigit()
-                    }
-                    HStack {
-                        Text(receipt.purchasedOn.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No day"))
-                        let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
-                        Text(matches.isEmpty ? String(localized: "Not matched") : String(localized: "Matched to \(matches.count) charges"))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                NavigationLink {
+                    ReceiptDetailView(receipt: receipt) { Task { await load() } }
+                } label: {
+                    ReceiptRow(receipt: receipt)
                 }
                 .swipeActions {
                     Button("Delete", systemImage: "trash", role: .destructive) {
@@ -854,6 +845,145 @@ struct ReceiptsView: View {
     private func load() async {
         receipts = (try? await finance.connection.financeReceipts(isUnmatched: isUnmatchedOnly, text: searchText.trimmed, limit: 100).financeReceipts.compactMap { $0 }) ?? []
         isLoaded = true
+    }
+}
+
+/// ReceiptRow is a receipt in a list: where and when, what it came to,
+/// whether its lines add up, and how far it is matched to charges.
+struct ReceiptRow: View {
+    let receipt: FinanceReceipt
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
+                    .foregroundStyle(Color(.label))
+                Spacer()
+                Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(.label))
+            }
+            HStack(spacing: 6) {
+                Text(receipt.purchasedOn.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No day"))
+                let lineCount = (receipt.receiptLines ?? []).compactMap { $0 }.count
+                if lineCount > 0 {
+                    Text("\(lineCount) lines")
+                }
+                let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
+                Text(matches.isEmpty ? String(localized: "Not matched") : String(localized: "Matched to \(matches.count) charges"))
+                if receipt.agentAttachmentId?.isEmpty == false {
+                    Image(systemName: "photo").accessibilityLabel("Has its photo")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Color(.secondaryLabel))
+        }
+    }
+}
+
+/// ReceiptDetailView is one receipt, as the dashboard shows it: the photo it
+/// was read from, opened full size with a tap; what it says about the
+/// purchase; every line; and what it is matched to. A receipt opened from a
+/// charge can be taken off it.
+struct ReceiptDetailView: View {
+    @Environment(FinanceModel.self) private var finance
+    @Environment(\.dismiss) private var dismiss
+    let receipt: FinanceReceipt
+    /// The charge it was opened from, if any.
+    var transactionId: String?
+    let onChange: () -> Void
+    @State private var isConfirmingDelete = false
+
+    var body: some View {
+        List {
+            if let attachmentId = receipt.agentAttachmentId, !attachmentId.isEmpty {
+                Section {
+                    RemotePicture(path: "/api/v1/agent/attachments/\(attachmentId)", name: "receipt.jpg", maxHeight: 360)
+                        .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Tap the photo to see it full size.")
+                }
+            }
+            Section {
+                LabeledContent("Merchant", value: receipt.merchantName ?? "")
+                if let purchasedOn = receipt.purchasedOn, !purchasedOn.isEmpty {
+                    LabeledContent("Bought on", value: purchasedOn)
+                }
+                if let number = receipt.merchantReceiptNumber, !number.isEmpty {
+                    LabeledContent("Receipt number", value: number)
+                }
+                if let subtotal = receipt.subtotalAmount, !subtotal.isEmpty {
+                    LabeledContent("Subtotal", value: FinanceMoney.shown(subtotal, currencyCode: receipt.currencyCode))
+                }
+                LabeledContent("Total", value: FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode))
+                if receipt.receiptCheckState == "balanced" {
+                    Label("The lines add up", systemImage: "checkmark.seal")
+                        .foregroundStyle(Color(.secondaryLabel))
+                } else if let difference = receipt.checkDifferenceAmount, !difference.isEmpty {
+                    Label("The lines are off by \(FinanceMoney.shown(difference, currencyCode: receipt.currencyCode))", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+            }
+            let lines = (receipt.receiptLines ?? []).compactMap { $0 }
+            if !lines.isEmpty {
+                Section("Lines") {
+                    ForEach(lines, id: \.id) { line in
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(line.description.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No description"))
+                                if let quantity = line.quantity, !quantity.isEmpty, quantity != "1" {
+                                    let unitPrice = FinanceMoney.shown(line.unitPriceAmount, currencyCode: receipt.currencyCode)
+                                    Text(verbatim: "\(quantity) \(line.quantityUnit ?? "") × \(unitPrice)")
+                                        .font(.caption)
+                                        .foregroundStyle(Color(.secondaryLabel))
+                                }
+                            }
+                            Spacer()
+                            Text(FinanceMoney.shown(line.lineAmount, currencyCode: receipt.currencyCode))
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+            Section {
+                let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
+                Text(matches.isEmpty ? String(localized: "Not matched to a charge yet.") : String(localized: "Matched to \(matches.count) charges"))
+                    .foregroundStyle(Color(.secondaryLabel))
+                if let transactionId {
+                    Button("Take off this charge") {
+                        Task {
+                            let isDone = await finance.act(saying: String(localized: "Taken off")) {
+                                try await finance.connection.matchReceipt(receipt.id, to: transactionId, amount: nil, isUndone: true)
+                            }
+                            if isDone {
+                                onChange()
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+            }
+            Section {
+                Button("Delete receipt", role: .destructive) { isConfirmingDelete = true }
+            }
+        }
+        .navigationTitle(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+            Button("Delete receipt", role: .destructive) {
+                Task {
+                    let isDone = await finance.act(saying: String(localized: "Receipt deleted")) {
+                        try await finance.connection.deleteReceipt(receipt.id)
+                    }
+                    if isDone {
+                        onChange()
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            Text("Its picture and lines are deleted too.")
+        }
     }
 }
 

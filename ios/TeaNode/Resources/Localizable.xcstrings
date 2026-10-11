@@ -7097,6 +7097,22 @@
         }
       }
     },
+    "Bought on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購入日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买日期"
+          }
+        }
+      }
+    },
     "Bounce": {
       "localizations": {
         "ja": {
@@ -14217,6 +14233,22 @@
         }
       }
     },
+    "Has its photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真あり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附有照片"
+          }
+        }
+      }
+    },
     "Have an agent, grant it own mailboxes, and talk to it": {
       "localizations": {
         "ja": {
@@ -16885,6 +16917,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "限制"
+          }
+        }
+      }
+    },
+    "Lines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明细"
           }
         }
       }
@@ -19865,6 +19913,22 @@
         }
       }
     },
+    "No description": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无描述"
+          }
+        }
+      }
+    },
     "No description.": {
       "localizations": {
         "ja": {
@@ -20949,6 +21013,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未匹配"
+          }
+        }
+      }
+    },
+    "Not matched to a charge yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだどの支払いにも対応していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未对应到任何消费。"
           }
         }
       }
@@ -25045,6 +25125,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "收据已删除"
+          }
+        }
+      }
+    },
+    "Receipt number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシート番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据编号"
           }
         }
       }
@@ -31385,6 +31481,22 @@
         }
       }
     },
+    "Subtotal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小计"
+          }
+        }
+      }
+    },
     "Summaries": {
       "localizations": {
         "ja": {
@@ -31781,6 +31893,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "对话语言"
+          }
+        }
+      }
+    },
+    "Tap the photo to see it full size.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真をタップすると原寸で表示します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按照片可查看原图。"
           }
         }
       }
@@ -32712,6 +32840,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "上次升级未完成：%@"
+          }
+        }
+      }
+    },
+    "The lines add up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細の合計が一致"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各行金额相符"
+          }
+        }
+      }
+    },
+    "The lines are off by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細の合計が %@ ずれています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各行金额相差 %@"
           }
         }
       }

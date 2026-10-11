@@ -902,82 +902,15 @@ struct TransactionDetail: View {
 /// ReceiptCard is a receipt: where it is from, whether its lines add up,
 /// the lines, and taking it off this charge or deleting it.
 struct ReceiptCard: View {
-    @Environment(FinanceModel.self) private var finance
-    @Environment(AppModel.self) private var app
     let receipt: FinanceReceipt
     let transactionId: String
     let onChange: () -> Void
-    @State private var isConfirmingDelete = false
-    @State private var isShowingLines = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(receipt.merchantName ?? String(localized: "Receipt")).font(.headline)
-                Spacer()
-                if receipt.receiptCheckState == "balanced" {
-                    Label("Adds up", systemImage: "checkmark.seal").font(.caption).foregroundStyle(.green)
-                } else if let difference = receipt.checkDifferenceAmount, !difference.isEmpty {
-                    Label("Off by \(FinanceMoney.shown(difference, currencyCode: receipt.currencyCode))", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-            }
-            HStack {
-                Text(receipt.purchasedOn ?? "")
-                Spacer()
-                Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode)).monospacedDigit()
-            }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            if let attachmentId = receipt.agentAttachmentId, !attachmentId.isEmpty {
-                RemotePicture(path: "/api/v1/agent/attachments/\(attachmentId)", name: "receipt.jpg", maxHeight: 220)
-            }
-            let lines = (receipt.receiptLines ?? []).compactMap { $0 }
-            if !lines.isEmpty {
-                DisclosureGroup("\(lines.count) lines", isExpanded: $isShowingLines) {
-                    ForEach(lines, id: \.id) { line in
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading) {
-                                Text(line.description ?? "")
-                                if let quantity = line.quantity, !quantity.isEmpty, quantity != "1" {
-                                    Text("\(quantity) \(line.quantityUnit ?? "") @ \(line.unitPriceAmount ?? "")").font(.caption2).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Text(FinanceMoney.shown(line.lineAmount, currencyCode: receipt.currencyCode)).monospacedDigit()
-                        }
-                        .font(.caption)
-                    }
-                }
-                .font(.footnote)
-            }
-            HStack {
-                Button("Take off this charge") {
-                    Task {
-                        _ = await finance.act(saying: String(localized: "Taken off")) {
-                            try await finance.connection.matchReceipt(receipt.id, to: transactionId, amount: nil, isUndone: true)
-                        }
-                        onChange()
-                    }
-                }
-                Spacer()
-                Button("Delete", role: .destructive) { isConfirmingDelete = true }
-            }
-            .buttonStyle(.borderless)
-            .font(.footnote)
-        }
-        .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete receipt", role: .destructive) {
-                Task {
-                    _ = await finance.act(saying: String(localized: "Receipt deleted")) {
-                        try await finance.connection.deleteReceipt(receipt.id)
-                    }
-                    onChange()
-                }
-            }
-        } message: {
-            Text("Its picture and lines are deleted too.")
+        NavigationLink {
+            ReceiptDetailView(receipt: receipt, transactionId: transactionId, onChange: onChange)
+        } label: {
+            ReceiptRow(receipt: receipt)
         }
     }
 }

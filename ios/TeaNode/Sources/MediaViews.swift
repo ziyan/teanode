@@ -32,7 +32,10 @@ struct RemotePicture: View {
                         .frame(maxHeight: maxHeight)
                         .clipShape(.rect(cornerRadius: 12, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                // Borderless, not plain: in a list a plain button takes the
+                // whole row's taps, and a row with other buttons beside the
+                // picture opened the picture whatever was tapped.
+                .buttonStyle(.borderless)
                 .accessibilityLabel(name)
             } else if isMissing {
                 Label(name, systemImage: "photo")
