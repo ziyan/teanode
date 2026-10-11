@@ -319,6 +319,45 @@ struct SettingsForm: View {
     var body: some View {
         Form {
             AccountsSection()
+            if let connection = app.connection {
+                Section("Your account") {
+                    NavigationLink {
+                        PreferencesView(connection: connection)
+                    } label: {
+                        Label("Profile", systemImage: "person.crop.circle")
+                    }
+                    NavigationLink {
+                        ChangePasswordView(connection: connection)
+                    } label: {
+                        Label("Password", systemImage: "key")
+                    }
+                    NavigationLink {
+                        PasskeysView(connection: connection)
+                    } label: {
+                        Label("Passkeys", systemImage: "person.badge.key")
+                    }
+                    NavigationLink {
+                        PhonesView(connection: connection)
+                    } label: {
+                        Label("Phones", systemImage: "iphone")
+                    }
+                    NavigationLink {
+                        SessionsView(connection: connection)
+                    } label: {
+                        Label("Sessions", systemImage: "macbook.and.iphone")
+                    }
+                    NavigationLink {
+                        TokensView(connection: connection)
+                    } label: {
+                        Label("API tokens", systemImage: "terminal")
+                    }
+                    NavigationLink {
+                        ConnectedAppsView(connection: connection)
+                    } label: {
+                        Label("Apps", systemImage: "app.badge.checkmark")
+                    }
+                }
+            }
             DisplaySection()
             if let mail, mail.mailbox != nil {
                 Section {

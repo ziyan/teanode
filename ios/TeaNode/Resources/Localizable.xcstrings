@@ -113,6 +113,22 @@
         }
       }
     },
+    "%@ is signed out of TeaNode and told nothing more. Connect it again to use it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ は TeaNode からサインアウトされ、以後何も届きません。使うにはもう一度接続してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 将退出 TeaNode，不再收到任何通知。要再次使用，请重新连接。"
+          }
+        }
+      }
+    },
     "%@ of %@": {
       "localizations": {
         "ja": {
@@ -189,6 +205,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "已保存 %@"
+          }
+        }
+      }
+    },
+    "%@ stops being able to sign in. Your password still works, so this does not lock you out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ではサインインできなくなります。パスワードは引き続き使えるので締め出されることはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 将无法再用于登录。你的密码仍然有效，因此不会被锁在外面。"
+          }
+        }
+      }
+    },
+    "%@ stops working at once, and has to be authorized again to come back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はすぐに動かなくなり、戻すには再度許可が必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 会立即停止工作，需要重新授权才能恢复。"
           }
         }
       }
@@ -481,6 +529,22 @@
         }
       }
     },
+    "30 days from now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今から30日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从现在起 30 天"
+          }
+        }
+      }
+    },
     "5 days": {
       "localizations": {
         "ja": {
@@ -509,6 +573,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "90 天"
+          }
+        }
+      }
+    },
+    "90 days from now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今から90日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从现在起 90 天"
+          }
+        }
+      }
+    },
+    "A browser that did not say what it is": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名乗らなかったブラウザー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未表明身份的浏览器"
           }
         }
       }
@@ -641,6 +737,38 @@
         }
       }
     },
+    "A passkey signs a challenge with a key your phone, laptop or security key holds and never gives out. There is no shared secret, so there is nothing to leak or be phished out of you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキーは、スマートフォンやノートパソコン、セキュリティキーが保持し外部に出さない鍵でチャレンジに署名します。共有の秘密がないため、漏えいもフィッシングもできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通行密钥用你的手机、笔记本或安全密钥所持有、从不外传的私钥来签署挑战。没有共享的秘密，也就没有可泄露或被钓走的东西。"
+          }
+        }
+      }
+    },
+    "A phone with no name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前のないスマートフォン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名的手机"
+          }
+        }
+      }
+    },
     "A rule files every transaction whose merchant or description has its words, ignoring case.": {
       "localizations": {
         "ja": {
@@ -689,6 +817,22 @@
         }
       }
     },
+    "A token authenticates the command line tool the way a password authenticates a browser. On the server itself no token is needed; these are for administering it from somewhere else.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウザーにとってのパスワードが、コマンドラインツールにとってのトークンです。サーバー本体ではトークンは要りません。別の場所から管理するためのものです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌之于命令行工具，就像密码之于浏览器。在服务器本机上不需要令牌；令牌是为了从别的机器管理它。"
+          }
+        }
+      }
+    },
     "A tool call could not be read, so it was asked for again.": {
       "localizations": {
         "ja": {
@@ -721,6 +865,22 @@
         }
       }
     },
+    "A year from now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今から1年"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从现在起一年"
+          }
+        }
+      }
+    },
     "A year, a month or a day: 2023, 2023-06 or 2023-06-14.": {
       "localizations": {
         "ja": {
@@ -733,6 +893,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "年、月或日：2023、2023-06 或 2023-06-14。"
+          }
+        }
+      }
+    },
+    "API tokens": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API トークン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 令牌"
           }
         }
       }
@@ -829,6 +1005,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "操作"
+          }
+        }
+      }
+    },
+    "Acts as %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ として動作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以 %@ 身份操作"
           }
         }
       }
@@ -1521,6 +1713,22 @@
         }
       }
     },
+    "Always this zone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常にこのゾーン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定为此时区"
+          }
+        }
+      }
+    },
     "Amount": {
       "localizations": {
         "ja": {
@@ -1533,6 +1741,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "金额"
+          }
+        }
+      }
+    },
+    "An app that gave no name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前のないアプリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未提供名称的应用"
           }
         }
       }
@@ -1649,6 +1873,22 @@
         }
       }
     },
+    "Anything using %@ stops working at once. This cannot be undone; issue a new token instead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を使っているものは直ちに動作しなくなります。取り消せません。新しいトークンを発行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 %@ 的一切会立刻停止工作。此操作无法撤销，请改为签发新的令牌。"
+          }
+        }
+      }
+    },
     "App password": {
       "localizations": {
         "ja": {
@@ -1661,6 +1901,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "应用密码"
+          }
+        }
+      }
+    },
+    "App renamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリの名前を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用已重命名"
           }
         }
       }
@@ -1757,6 +2013,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在回合结束后批准"
+          }
+        }
+      }
+    },
+    "Apps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
           }
         }
       }
@@ -2237,6 +2509,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "附件"
+          }
+        }
+      }
+    },
+    "Authorized %lld times": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 回許可"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已授权 %lld 次"
           }
         }
       }
@@ -2785,6 +3073,22 @@
         }
       }
     },
+    "Change": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改"
+          }
+        }
+      }
+    },
     "Change budget": {
       "localizations": {
         "ja": {
@@ -2797,6 +3101,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "更改预算"
+          }
+        }
+      }
+    },
+    "Change it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认修改"
+          }
+        }
+      }
+    },
+    "Change this token": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このトークンを変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改此令牌"
+          }
+        }
+      }
+    },
+    "Change your username?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ユーザー名を変更しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要修改用户名吗？"
           }
         }
       }
@@ -3329,6 +3681,22 @@
         }
       }
     },
+    "Copy token": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トークンをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制令牌"
+          }
+        }
+      }
+    },
     "Count this one": {
       "localizations": {
         "ja": {
@@ -3393,6 +3761,22 @@
         }
       }
     },
+    "Created %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建于 %@"
+          }
+        }
+      }
+    },
     "Credit cards": {
       "localizations": {
         "ja": {
@@ -3453,6 +3837,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "货币（USD）"
+          }
+        }
+      }
+    },
+    "Current password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のパスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前密码"
           }
         }
       }
@@ -3937,6 +4337,54 @@
         }
       }
     },
+    "Disconnect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切断"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开"
+          }
+        }
+      }
+    },
+    "Disconnect this app?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリを切断しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开此应用？"
+          }
+        }
+      }
+    },
+    "Disconnected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切断しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已断开"
+          }
+        }
+      }
+    },
     "Dismiss": {
       "localizations": {
         "ja": {
@@ -4257,6 +4705,22 @@
         }
       }
     },
+    "Each app here was authorized by you and acts as you. It renews its own access while it is in use, and is disconnected on its own after two months unused.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここにあるアプリはあなたが許可したもので、あなたとして動きます。使われている間は自分でアクセスを更新し、2か月使われないと自動的に切断されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里的每个应用都经你授权，以你的身份行事。使用期间它会自行续期访问权限，两个月不用后会自动断开。"
+          }
+        }
+      }
+    },
     "Earlier": {
       "localizations": {
         "ja": {
@@ -4365,6 +4829,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑页面"
+          }
+        }
+      }
+    },
+    "Edit phone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑手机"
           }
         }
       }
@@ -4529,6 +5009,22 @@
         }
       }
     },
+    "Every browser signed in to this account is signed out and has to sign in again. This iPhone stays connected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントにサインインしているすべてのブラウザーがサインアウトされ、もう一度サインインが必要になります。この iPhone は接続したままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此账号下已登录的所有浏览器都会被登出，需要重新登录。这部 iPhone 保持连接。"
+          }
+        }
+      }
+    },
     "Every day": {
       "localizations": {
         "ja": {
@@ -4593,6 +5089,22 @@
         }
       }
     },
+    "Every time your agent tells you (a reminder, a brief, when a reply goes out) is in this zone. Following the browser means it moves when you travel.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが伝える時刻（リマインダー、要約、返信が送られる時刻）はこのゾーンです。ブラウザに従うと旅先で移動します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手告诉你的每个时间（提醒、简报、回复发出的时刻）都以此时区显示。跟随浏览器意味着你旅行时它会随之变化。"
+          }
+        }
+      }
+    },
     "Every week": {
       "localizations": {
         "ja": {
@@ -4637,6 +5149,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "已退出 %lld"
+          }
+        }
+      }
+    },
+    "Expired": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限切れ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已过期"
+          }
+        }
+      }
+    },
+    "Expires %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に失効"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 过期"
+          }
+        }
+      }
+    },
+    "Expires after": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有效期"
           }
         }
       }
@@ -5021,6 +5581,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在把之前的聊天折叠成一份笔记…"
+          }
+        }
+      }
+    },
+    "Follows my browser (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウザに従う（%@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随浏览器（%@）"
           }
         }
       }
@@ -5665,6 +6241,38 @@
         }
       }
     },
+    "Hide revoked tokens": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失効したトークンを隠す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏已吊销的令牌"
+          }
+        }
+      }
+    },
+    "Hide signed out sessions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインアウト済みのセッションを隠す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏已退出的会话"
+          }
+        }
+      }
+    },
     "High": {
       "localizations": {
         "ja": {
@@ -6161,6 +6769,22 @@
         }
       }
     },
+    "Keep as it is (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このまま（%@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持不变（%@）"
+          }
+        }
+      }
+    },
     "Kept out of the Inbox": {
       "localizations": {
         "ja": {
@@ -6237,6 +6861,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "语言"
+          }
+        }
+      }
+    },
+    "Last notification failed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の通知に失敗"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次通知失败"
           }
         }
       }
@@ -7553,6 +8193,22 @@
         }
       }
     },
+    "Never expires": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "永不过期"
+          }
+        }
+      }
+    },
     "Never used": {
       "localizations": {
         "ja": {
@@ -7713,6 +8369,22 @@
         }
       }
     },
+    "New passkeys are added on the dashboard, in Settings, then Passkeys.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいパスキーはダッシュボードで追加します：設定 › パスキー。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新的通行密钥请在控制台添加：设置 › 通行密钥。"
+          }
+        }
+      }
+    },
     "New password": {
       "localizations": {
         "ja": {
@@ -7725,6 +8397,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "新密码"
+          }
+        }
+      }
+    },
+    "New password again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいパスワード（確認）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次输入新密码"
           }
         }
       }
@@ -7793,6 +8481,22 @@
         }
       }
     },
+    "New token": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいトークン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建令牌"
+          }
+        }
+      }
+    },
     "Next %@": {
       "localizations": {
         "ja": {
@@ -7853,6 +8557,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有可用的发件地址"
+          }
+        }
+      }
+    },
+    "No apps. An app appears here once you authorize it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリはありません。許可するとここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有应用。授权后会显示在这里。"
           }
         }
       }
@@ -8065,6 +8785,70 @@
         }
       }
     },
+    "No notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未开启通知"
+          }
+        }
+      }
+    },
+    "No passkeys. You sign in with your password.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキーはありません。パスワードでサインインします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有通行密钥。你使用密码登录。"
+          }
+        }
+      }
+    },
+    "No phones yet. Connect one to talk to your agent from it and be told when something needs you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンはまだありません。接続すると、そこからエージェントと話し、あなたの対応が必要なときに知らせを受け取れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有手机。连接一部手机，就能用它与助理对话，并在有事需要你时收到通知。"
+          }
+        }
+      }
+    },
+    "No profile": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロフィールがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有个人资料"
+          }
+        }
+      }
+    },
     "No receipts": {
       "localizations": {
         "ja": {
@@ -8161,6 +8945,22 @@
         }
       }
     },
+    "No tokens. Create one to administer this server from another machine.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トークンはありません。作成すると、別のマシンからこのサーバーを管理できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有令牌。创建一个即可从其他机器管理这台服务器。"
+          }
+        }
+      }
+    },
     "No transactions": {
       "localizations": {
         "ja": {
@@ -8253,6 +9053,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "不是这个"
+          }
+        }
+      }
+    },
+    "Not used since it was created": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成後は未使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建后未再使用"
+          }
+        }
+      }
+    },
+    "Not used yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ使われていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未使用"
           }
         }
       }
@@ -8413,6 +9245,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有已完成的"
+          }
+        }
+      }
+    },
+    "Nothing else is signed in to this account.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントに他のサインインはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此账号没有其他已登录的浏览器。"
           }
         }
       }
@@ -8657,6 +9505,22 @@
         }
       }
     },
+    "Notification address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知の宛先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知地址"
+          }
+        }
+      }
+    },
     "Notifications": {
       "localizations": {
         "ja": {
@@ -8685,6 +9549,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 的通知已关闭。打开通知，助手需要你时就能知道。"
+          }
+        }
+      }
+    },
+    "Notifications to phones are off on this server, so phones are told nothing until the operator turns them on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではスマートフォンへの通知がオフになっているため、管理者がオンにするまで何も届きません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器关闭了手机通知，在管理员开启之前，手机不会收到任何通知。"
           }
         }
       }
@@ -8861,6 +9741,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "只有这台手机？用密码登录，或在 Safari 中打开控制台，复制代码的链接并粘贴到这里。"
+          }
+        }
+      }
+    },
+    "Only the hash of this token is stored, so this is the one moment it can be read. Not even an administrator can recover it afterwards.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このトークンはハッシュのみが保存されるため、読み取れるのはこの一度だけです。管理者であっても後から復元できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器只保存此令牌的哈希，因此这是唯一一次可以读到它。之后连管理员也无法找回。"
           }
         }
       }
@@ -9393,6 +10289,22 @@
         }
       }
     },
+    "Passkeys": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通行密钥"
+          }
+        }
+      }
+    },
     "Password": {
       "localizations": {
         "ja": {
@@ -9405,6 +10317,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "密码"
+          }
+        }
+      }
+    },
+    "Password changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを変更しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码已修改。"
           }
         }
       }
@@ -9453,6 +10381,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "电话"
+          }
+        }
+      }
+    },
+    "Phones": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机"
           }
         }
       }
@@ -9613,6 +10557,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "优先级（由助手分类）"
+          }
+        }
+      }
+    },
+    "Profile": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロフィール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "个人资料"
           }
         }
       }
@@ -9889,6 +10849,38 @@
         }
       }
     },
+    "Registered %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に登録"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 注册"
+          }
+        }
+      }
+    },
+    "Registered as %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録名：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册名：%@"
+          }
+        }
+      }
+    },
     "Relation": {
       "localizations": {
         "ja": {
@@ -10049,6 +11041,38 @@
         }
       }
     },
+    "Remove this passkey?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパスキーを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要删除这个通行密钥吗？"
+          }
+        }
+      }
+    },
+    "Remove this phone?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスマートフォンを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除这部手机？"
+          }
+        }
+      }
+    },
     "Removed": {
       "localizations": {
         "ja": {
@@ -10065,6 +11089,22 @@
         }
       }
     },
+    "Removed %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除 %@。"
+          }
+        }
+      }
+    },
     "Rename": {
       "localizations": {
         "ja": {
@@ -10077,6 +11117,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "重命名"
+          }
+        }
+      }
+    },
+    "Rename this app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名此应用"
+          }
+        }
+      }
+    },
+    "Renews until %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ まで更新可能"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可续期至 %@"
           }
         }
       }
@@ -10337,6 +11409,22 @@
         }
       }
     },
+    "Returns to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻り先：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回到 %@"
+          }
+        }
+      }
+    },
     "Revoke": {
       "localizations": {
         "ja": {
@@ -10365,6 +11453,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "撤销 %@？"
+          }
+        }
+      }
+    },
+    "Revoke this token?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このトークンを失効させますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要吊销这个令牌吗？"
           }
         }
       }
@@ -10961,6 +12065,22 @@
         }
       }
     },
+    "Send a test notification": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト通知を送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送测试通知"
+          }
+        }
+      }
+    },
     "Send to %@": {
       "localizations": {
         "ja": {
@@ -11073,6 +12193,22 @@
         }
       }
     },
+    "Sent %@ a notification; it should arrive in a few seconds.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に通知を送りました。数秒で届くはずです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已向 %@ 发送通知，几秒钟内应会到达。"
+          }
+        }
+      }
+    },
     "Separated by commas.": {
       "localizations": {
         "ja": {
@@ -11101,6 +12237,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器"
+          }
+        }
+      }
+    },
+    "Sessions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话"
           }
         }
       }
@@ -11361,6 +12513,38 @@
         }
       }
     },
+    "Show revoked tokens": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失効したトークンを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示已吊销的令牌"
+          }
+        }
+      }
+    },
+    "Show signed out sessions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインアウト済みのセッションを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示已退出的会话"
+          }
+        }
+      }
+    },
     "Show the agent's working notes": {
       "localizations": {
         "ja": {
@@ -11405,6 +12589,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示用量"
+          }
+        }
+      }
+    },
+    "Shown in TeaNode. Optional: without one, your username is used.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode で表示されます。省略可：未設定ならユーザー名を使います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示在 TeaNode 中。可选：未填写时使用用户名。"
           }
         }
       }
@@ -11457,6 +12657,38 @@
         }
       }
     },
+    "Sign out every browser": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのブラウザーをサインアウト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登出所有浏览器"
+          }
+        }
+      }
+    },
+    "Sign out every browser?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのブラウザーをサインアウトしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要登出所有浏览器吗？"
+          }
+        }
+      }
+    },
     "Sign out of %@": {
       "localizations": {
         "ja": {
@@ -11505,6 +12737,38 @@
         }
       }
     },
+    "Sign this browser out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このブラウザーをサインアウト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登出此浏览器"
+          }
+        }
+      }
+    },
+    "Sign this browser out?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このブラウザーをサインアウトしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要登出此浏览器吗？"
+          }
+        }
+      }
+    },
     "Sign-in required": {
       "localizations": {
         "ja": {
@@ -11549,6 +12813,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "已登录"
+          }
+        }
+      }
+    },
+    "Signed in as %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ でサインイン中。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前登录：%@。"
+          }
+        }
+      }
+    },
+    "Signed in as you by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ があなたとしてサインイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 以你的身份登录"
+          }
+        }
+      }
+    },
+    "Signed out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインアウト済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登出"
           }
         }
       }
@@ -12273,6 +13585,22 @@
         }
       }
     },
+    "Synced": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期あり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已同步"
+          }
+        }
+      }
+    },
     "Synced %@": {
       "localizations": {
         "ja": {
@@ -12448,6 +13776,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "告诉它一些事"
+          }
+        }
+      }
+    },
+    "Tell this phone about": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスマートフォンに知らせる内容"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知这部手机的内容"
+          }
+        }
+      }
+    },
+    "Test": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试"
           }
         }
       }
@@ -12692,6 +14052,22 @@
         }
       }
     },
+    "The browsers signed in to this account. Ending one signs that browser out; the others are untouched.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントにサインインしているブラウザーです。一つを終了してもそのブラウザーだけがサインアウトされ、他はそのままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登录此账号的浏览器。结束其中一个只会登出那个浏览器，其余不受影响。"
+          }
+        }
+      }
+    },
     "The call lost its connection.": {
       "localizations": {
         "ja": {
@@ -12852,6 +14228,22 @@
         }
       }
     },
+    "The name stays when the app renews its access.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリがアクセスを更新しても名前は変わりません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用续期访问权限时名称保持不变。"
+          }
+        }
+      }
+    },
     "The newest messages in the Inbox, and which of the rules above would match each. Nothing is moved.": {
       "localizations": {
         "ja": {
@@ -12880,6 +14272,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "尚未完成的更改已停止"
+          }
+        }
+      }
+    },
+    "The phones the TeaNode app is connected on, and what each is told about.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode アプリを接続したスマートフォンと、それぞれに知らせる内容です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接 TeaNode 应用的手机，以及每部手机会收到哪些通知。"
           }
         }
       }
@@ -12980,6 +14388,22 @@
         }
       }
     },
+    "The token itself stays the same, so whatever uses it keeps working.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トークン自体は変わらないので、使っているものはそのまま動きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌本身不变，使用它的程序会继续正常工作。"
+          }
+        }
+      }
+    },
     "The turn failed.": {
       "localizations": {
         "ja": {
@@ -13044,6 +14468,22 @@
         }
       }
     },
+    "These do not match.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力が一致しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两次输入不一致。"
+          }
+        }
+      }
+    },
     "Thinking…": {
       "localizations": {
         "ja": {
@@ -13072,6 +14512,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个账户没有可以在手机上设置的邮箱。"
+          }
+        }
+      }
+    },
+    "This browser": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このブラウザー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前浏览器"
           }
         }
       }
@@ -13124,6 +14580,22 @@
         }
       }
     },
+    "This device only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅此设备"
+          }
+        }
+      }
+    },
     "This document is no longer kept": {
       "localizations": {
         "ja": {
@@ -13136,6 +14608,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "这份文档已不再保存"
+          }
+        }
+      }
+    },
+    "This iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone"
+          }
+        }
+      }
+    },
+    "This iPhone is signed out at once, and has to be connected again to come back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone はすぐにサインアウトされ、戻すには再度接続が必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 会立即登出，需要重新连接才能恢复。"
           }
         }
       }
@@ -13380,6 +14884,38 @@
         }
       }
     },
+    "This server does not offer passkeys.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーはパスキーを提供していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器未提供通行密钥。"
+          }
+        }
+      }
+    },
+    "This server has no accounts, so there is no profile to change.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーにはアカウントがないため、変更できるプロフィールはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器没有账号，因此没有可修改的个人资料。"
+          }
+        }
+      }
+    },
     "Those files come to %@, more than a message may be (%@).": {
       "localizations": {
         "ja": {
@@ -13392,6 +14928,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这些文件共 %1$@，超过了邮件的大小上限（%2$@）。"
+          }
+        }
+      }
+    },
+    "Time zone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイムゾーン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时区"
           }
         }
       }
@@ -13536,6 +15088,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "今天，全天"
+          }
+        }
+      }
+    },
+    "Token changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トークンを変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌已修改"
           }
         }
       }
@@ -13956,6 +15524,22 @@
         }
       }
     },
+    "Unnamed token": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前のないトークン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名的令牌"
+          }
+        }
+      }
+    },
     "Unpin": {
       "localizations": {
         "ja": {
@@ -14228,6 +15812,38 @@
         }
       }
     },
+    "Use it from another machine with:": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のマシンからはこう使います:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在其他机器上这样使用："
+          }
+        }
+      }
+    },
+    "Use it if you have lost a device. This iPhone stays connected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末をなくしたときに使ってください。この iPhone は接続したままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备丢失时可以这样做。这部 iPhone 保持连接。"
+          }
+        }
+      }
+    },
     "Used %@": {
       "localizations": {
         "ja": {
@@ -14245,6 +15861,22 @@
       }
     },
     "User name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ユーザー名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用户名"
+          }
+        }
+      }
+    },
+    "Username": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -14660,6 +16292,38 @@
         }
       }
     },
+    "What will hold it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用途のメモ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用途备注"
+          }
+        }
+      }
+    },
+    "What you sign in with. Changing it takes your sessions and API tokens with it, so nothing has to be signed in again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインに使う名前です。変更してもセッションと API トークンはそのまま引き継がれ、再サインインは不要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于登录的名字。修改后会话和 API 令牌会一并迁移，无需重新登录。"
+          }
+        }
+      }
+    },
     "What your agent did on its own, as it happened. Ask about it here, or go back to the main chat.": {
       "localizations": {
         "ja": {
@@ -14800,6 +16464,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "所在位置"
+          }
+        }
+      }
+    },
+    "Where this server writes to you, such as when a domain’s DNS records stop resolving. Optional.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドメインの DNS レコードが解決しなくなったときなど、このサーバーからの連絡先です。省略可。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本服务器与你联系的地址，例如某个域的 DNS 记录不再解析时。可选。"
           }
         }
       }
@@ -15056,6 +16736,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "你还没有退订任何列表"
+          }
+        }
+      }
+    },
+    "You will sign in as %@ instead of %@ from now on. Your sessions and API tokens move with the account.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以後は %2$@ ではなく %1$@ でサインインします。セッションと API トークンはアカウントとともに移ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今后你将以 %1$@ 而不是 %2$@ 登录。会话和 API 令牌会随账号一起迁移。"
+          }
+        }
+      }
+    },
+    "Your account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのアカウント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的账户"
           }
         }
       }
@@ -15556,6 +17268,22 @@
         }
       }
     },
+    "how you would like to be greeted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "呼ばれたい名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "希望被如何称呼"
+          }
+        }
+      }
+    },
     "is": {
       "localizations": {
         "ja": {
@@ -15600,6 +17328,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "低于"
+          }
+        }
+      }
+    },
+    "laptop": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ノート PC"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "笔记本"
           }
         }
       }
