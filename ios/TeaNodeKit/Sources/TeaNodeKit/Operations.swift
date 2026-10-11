@@ -131,6 +131,11 @@ public enum Documents {
           AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, optionLabels: $optionLabels, freeText: $freeText) { isAnswerAccepted answeredWith }
         }
         """
+    public static let readRun = """
+        query ($runId: String!, $after: Int, $wait: Int) {
+          ReadAgentRun(runId: $runId, after: $after, wait: $wait) { done events { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId } }
+        }
+        """
     public static let conversationEvents = """
         subscription ($conversationId: String!) {
           AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId }
@@ -146,7 +151,64 @@ public enum Documents {
         "updateConversation": updateConversation, "deleteConversation": deleteConversation,
         "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices, "voice": voice,
         "backgroundCommands": backgroundCommands, "backgroundCommand": backgroundCommand, "stopBackgroundCommand": stopBackgroundCommand,
+        "readRun": readRun,
     ]
+}
+
+/// RunAnswer is how a turn ended, for a caller that waits for it without
+/// showing the conversation: Siri, a shortcut.
+public enum RunAnswer: Equatable, Sendable {
+    /// The agent answered: the whole answer.
+    case answered(String)
+    /// The agent waits for the person: an approval or a question, answered in
+    /// the app.
+    case waitingForPerson
+    /// The turn failed: what the server said.
+    case failed(String)
+    /// It was still working when the caller stopped waiting.
+    case stillWorking
+}
+
+extension Connection {
+    /// A run's events from `after` on, waiting up to `waitSeconds` for the
+    /// first (the server waits at most 25).
+    public func runEvents(_ runId: String, after: Int = 0, waitSeconds: Int = 20) async throws -> (events: [AgentEvent], isDone: Bool) {
+        struct Answer: Decodable, Sendable {
+            struct Run: Decodable, Sendable {
+                let done: Bool
+                let events: [AgentEvent]
+            }
+            let ReadAgentRun: Run
+        }
+        let run = try await execute(
+            Documents.readRun, variables: ["runId": .string(runId), "after": .number(Double(after)), "wait": .number(Double(waitSeconds))],
+            as: Answer.self
+        ).ReadAgentRun
+        return (run.events, run.done)
+    }
+
+    /// Waits for a run to end, until `deadline`, and says how it ended. The
+    /// last whole message is the answer: those before it came between tool
+    /// calls.
+    public func answer(to runId: String, until deadline: Date) async throws -> RunAnswer {
+        var after = 0
+        var answer = ""
+        while true {
+            let secondsLeft = Int(deadline.timeIntervalSinceNow.rounded(.down))
+            if secondsLeft <= 0 { return .stillWorking }
+            let read = try await runEvents(runId, after: after, waitSeconds: min(secondsLeft, 20))
+            for event in read.events {
+                after = max(after, event.sequence + 1)
+                switch event.kind {
+                case "message": answer = event.text ?? ""
+                case "confirmation", "question", "locate": return .waitingForPerson
+                case "error": return .failed(event.error ?? event.text ?? "")
+                default: break
+                }
+            }
+            if read.isDone { return .answered(answer) }
+        }
+    }
 }
 
 /// The surface the app names on its turns (internal/agent/surface.go).
