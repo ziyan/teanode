@@ -993,6 +993,22 @@
         }
       }
     },
+    "Add to your calendar?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーに追加しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到日历？"
+          }
+        }
+      }
+    },
     "Add value": {
       "localizations": {
         "ja": {
@@ -1005,6 +1021,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加"
+          }
+        }
+      }
+    },
+    "Added to your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーに追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加到日历"
           }
         }
       }
@@ -1165,6 +1197,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已经连接"
+          }
+        }
+      }
+    },
+    "Already in your contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すでに連絡先にあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在你的联系人中"
           }
         }
       }
@@ -3213,6 +3261,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "丢弃这份草稿？"
+          }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忽略"
+          }
+        }
+      }
+    },
+    "Dismissed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忽略"
           }
         }
       }
@@ -7489,6 +7569,22 @@
         }
       }
     },
+    "Read as a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートとして読む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作为收据读取"
+          }
+        }
+      }
+    },
     "Read on (%lld more characters)": {
       "localizations": {
         "ja": {
@@ -7517,6 +7613,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已读取，但与这笔扣款不匹配"
+          }
+        }
+      }
+    },
+    "Reading it as a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートとして読み取り中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在作为收据读取"
           }
         }
       }
@@ -8145,6 +8257,38 @@
         }
       }
     },
+    "Save sender to contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信者を連絡先に保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将发件人存入联系人"
+          }
+        }
+      }
+    },
+    "Save to your contacts?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先に保存しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存入联系人？"
+          }
+        }
+      }
+    },
     "Saved": {
       "localizations": {
         "ja": {
@@ -8157,6 +8301,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已保存"
+          }
+        }
+      }
+    },
+    "Saved to contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先に保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存入联系人"
           }
         }
       }

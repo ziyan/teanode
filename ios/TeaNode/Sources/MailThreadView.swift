@@ -430,6 +430,17 @@ struct MessageCard: View {
                 Button(isShowingHeaders ? LocalizedStringKey("Hide headers") : "Show headers", systemImage: "list.bullet.rectangle") { isShowingHeaders.toggle() }
                     .disabled((content?.rawHeaders ?? "").isEmpty)
                 if let message {
+                    Button("Save sender to contacts", systemImage: "person.crop.circle.badge.plus") {
+                        Task { await saveSender(message) }
+                    }
+                    Button("Read as a receipt", systemImage: "receipt") {
+                        let itemId = item.id
+                        Task {
+                            _ = await mail.act(saying: String(localized: "Reading it as a receipt")) {
+                                try await mail.connection.readReceipt(mailboxItemId: itemId)
+                            }
+                        }
+                    }
                     Button("Download original", systemImage: "arrow.down.doc") {
                         Task { await app.preview("/api/v1/mail/\(message.id)/raw", name: "\(message.id).eml") }
                     }
@@ -451,6 +462,10 @@ struct MessageCard: View {
             .frame(maxHeight: 240)
         }
         InvitationCard(mail: mail, itemId: item.id)
+        let offers = (item.insight?.proposals ?? []).enumerated().filter { $0.element.status.isEmpty && entry.folderKind != "junk" && entry.folderKind != "trash" }
+        ForEach(offers, id: \.offset) { index, proposal in
+            ProposalCard(mail: mail, itemId: item.id, index: index, proposal: proposal)
+        }
         if let content {
             if !content.available {
                 Label("This message is no longer stored.", systemImage: "exclamationmark.triangle")
@@ -497,6 +512,118 @@ struct MessageCard: View {
         } else {
             ProgressView().frame(maxWidth: .infinity)
         }
+    }
+}
+
+extension MessageCard {
+    /// Saves who the message is from, as the dashboard's Save sender does: an
+    /// address already in the address book is left as it is.
+    func saveSender(_ message: MailMessage) async {
+        let address = MailWords.bareAddress(message.from.isEmpty ? message.sender : message.from)
+        guard !address.isEmpty else { return }
+        do {
+            guard let book = try await mail.connection.addressBooks().first else { return }
+            let known = try await mail.connection.contacts(addressBookId: book.id, matching: address, first: 20)
+            if known.contains(where: { ($0.emails ?? []).contains { $0.lowercased() == address.lowercased() } }) {
+                mail.doneText = String(localized: "Already in your contacts")
+                return
+            }
+            let name = message.fromName.isEmpty ? address : message.fromName
+            _ = await mail.act(saying: String(localized: "Saved to contacts")) {
+                try await mail.connection.saveContact(
+                    addressBookId: book.id, id: nil, name: name, organization: "", emails: [address], phones: [], note: "", addresses: [])
+            }
+        } catch {
+            mail.problemText = error.localizedDescription
+        }
+    }
+}
+
+/// ProposalCard is an event or a contact the agent found in a message,
+/// offered to add, as the dashboard's suggestion cards are.
+struct ProposalCard: View {
+    let mail: MailModel
+    let itemId: String
+    let index: Int
+    let proposal: MailProposal
+    @State private var isDone = false
+
+    var body: some View {
+        if !isDone {
+            CardSurface {
+                VStack(alignment: .leading, spacing: 10) {
+                    CardHeader(
+                        systemImage: proposal.kind == "event" ? "calendar.badge.plus" : "person.crop.circle.badge.plus",
+                        title: proposal.kind == "event" ? String(localized: "Add to your calendar?") : String(localized: "Save to your contacts?"))
+                    if proposal.kind == "event" {
+                        Text(proposal.summary).font(.headline)
+                        Text(when).font(.subheadline).foregroundStyle(.secondary)
+                        if !proposal.location.isEmpty {
+                            Text(proposal.location).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(proposal.name).font(.headline)
+                        let details = [proposal.organization] + proposal.emails + proposal.phones
+                        Text(details.filter { !$0.isEmpty }.joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if !proposal.because.isEmpty {
+                        Text("“\(proposal.because)”").font(.footnote).foregroundStyle(.tertiary).lineLimit(3)
+                    }
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await accept() }
+                        } label: {
+                            Text(proposal.kind == "event" ? LocalizedStringKey("Add") : "Save").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button {
+                            Task { await settle("dismissed", saying: String(localized: "Dismissed")) }
+                        } label: {
+                            Text("Dismiss").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .buttonBorderShape(.capsule)
+                }
+            }
+        }
+    }
+
+    private var when: String {
+        guard let start = ServerTime.date(proposal.starts) else { return proposal.starts }
+        if proposal.allDay { return start.formatted(date: .complete, time: .omitted) }
+        let end = ServerTime.date(proposal.ends)
+        return end.map { "\(start.formatted(date: .abbreviated, time: .shortened)) – \($0.formatted(date: .omitted, time: .shortened))" }
+            ?? start.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func accept() async {
+        do {
+            if proposal.kind == "event" {
+                guard let calendar = try await mail.connection.calendars().first(where: { $0.calendarKind == "events" }) else { return }
+                let change = CalendarChange(operation: "save", summary: proposal.summary, variables: [
+                    "calendarId": .string(calendar.id), "summary": .string(proposal.summary), "location": .string(proposal.location),
+                    "startsAt": .string(proposal.starts), "endsAt": .string(proposal.ends.isEmpty ? proposal.starts : proposal.ends),
+                    "allDay": .bool(proposal.allDay), "timezone": .string(proposal.allDay ? "" : (calendar.timezone ?? "")),
+                ])
+                try await mail.connection.perform(change, isRetry: false)
+            } else {
+                guard let book = try await mail.connection.addressBooks().first else { return }
+                try await mail.connection.saveContact(
+                    addressBookId: book.id, id: nil, name: proposal.name, organization: proposal.organization, emails: proposal.emails,
+                    phones: proposal.phones, note: proposal.note, addresses: [])
+            }
+            await settle("accepted", saying: proposal.kind == "event" ? String(localized: "Added to your calendar") : String(localized: "Saved to contacts"))
+        } catch {
+            mail.problemText = error.localizedDescription
+        }
+    }
+
+    private func settle(_ status: String, saying said: String) async {
+        let isSettled = await mail.act(saying: said) {
+            try await mail.connection.setProposalStatus(itemId: itemId, index: index, status: status)
+        }
+        if isSettled { isDone = true }
     }
 }
 
