@@ -26,7 +26,7 @@ func TestThePersonReactsThroughTheSchemaAndOnlyThePerson(t *testing.T) {
 
 	var person, stranger *models.User
 	var conversation *models.AgentConversation
-	var answer, toolAnswer *models.AgentMessage
+	var asked, answer, toolAnswer *models.AgentMessage
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
 		if person, err = tx.CreateUser(&models.User{Username: "reacting", Name: "Example Person"}); err != nil {
@@ -45,7 +45,7 @@ func TestThePersonReactsThroughTheSchemaAndOnlyThePerson(t *testing.T) {
 		if conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: mine.ID, Kind: models.AgentConversationNamed, Title: "a chat", LastAt: time.Now()}); err != nil {
 			t.Fatalf("CreateAgentConversation: %s", err)
 		}
-		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: "is the boiler booked?"}); err != nil {
+		if asked, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: "is the boiler booked?"}); err != nil {
 			t.Fatalf("AppendAgentMessage: %s", err)
 		}
 		if answer, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "assistant", Content: "Booked for Thursday."}); err != nil {
@@ -157,6 +157,7 @@ func TestThePersonReactsThroughTheSchemaAndOnlyThePerson(t *testing.T) {
 		"a word":          {answer.ID, "yes"},
 		"three emoji":     {answer.ID, "👍👍👍"},
 		"a tool's answer": {toolAnswer.ID, "👍"},
+		"its own message": {asked.ID, "👍"},
 		"no message":      {"nothing", "👍"},
 	} {
 		if errors := react(person, arguments[0], arguments[1]); len(errors) == 0 {
