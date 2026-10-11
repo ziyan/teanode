@@ -84,7 +84,7 @@ final class ConversationModel {
     private(set) var voiceSampleRate: Int?
 
     private let app: AppModel
-    private let connection: Connection
+    let connection: Connection
     private var answeredLocationCalls: Set<String> = []
 
     /// How recent a question must be for typing to answer it rather than

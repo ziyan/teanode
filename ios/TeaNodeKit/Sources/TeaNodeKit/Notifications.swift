@@ -72,15 +72,16 @@ public struct PushRelay: Sendable {
         self.transport = transport
     }
 
-    /// Registers the phone's device token, and returns the sealed
-    /// registration to hand the phone's own server. isSandbox is for a
-    /// build installed from Xcode, which Apple's sandbox delivers to.
-    public func register(deviceToken: Data, isSandbox: Bool) async throws -> String {
+    /// Registers the phone's device token, or a Live Activity's push token
+    /// with pushType "liveactivity", and returns the sealed registration to
+    /// hand the phone's own server. isSandbox is for a build installed from
+    /// Xcode, which Apple's sandbox delivers to.
+    public func register(deviceToken: Data, isSandbox: Bool, pushType: String = "alert") async throws -> String {
         var request = URLRequest(url: relay.endpoint("/api/v1/push/registrations"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
-        request.httpBody = try JSONEncoder().encode(["deviceToken": JSONValue.string(hex), "isSandbox": .bool(isSandbox)])
+        request.httpBody = try JSONEncoder().encode(["deviceToken": JSONValue.string(hex), "isSandbox": .bool(isSandbox), "pushType": .string(pushType)])
         let (data, response) = try await transport.send(request)
         struct Registered: Decodable { let pushRegistration: String }
         struct Refused: Decodable { let errorMessage: String }

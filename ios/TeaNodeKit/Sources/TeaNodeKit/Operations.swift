@@ -131,6 +131,9 @@ public enum Documents {
           AnswerAgentHerdrQuestion(computer: $computer, paneId: $paneId, questionFingerprint: $questionFingerprint, optionNumbers: $optionNumbers, optionLabels: $optionLabels, freeText: $freeText) { isAnswerAccepted answeredWith }
         }
         """
+    public static let registerLiveActivity = """
+        mutation ($runId: String!, $pushRegistration: String!) { RegisterAgentLiveActivity(runId: $runId, pushRegistration: $pushRegistration) }
+        """
     public static let readRun = """
         query ($runId: String!, $after: Int, $wait: Int) {
           ReadAgentRun(runId: $runId, after: $after, wait: $wait) { done events { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId } }
@@ -151,7 +154,7 @@ public enum Documents {
         "updateConversation": updateConversation, "deleteConversation": deleteConversation,
         "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices, "voice": voice,
         "backgroundCommands": backgroundCommands, "backgroundCommand": backgroundCommand, "stopBackgroundCommand": stopBackgroundCommand,
-        "readRun": readRun,
+        "readRun": readRun, "registerLiveActivity": registerLiveActivity,
     ]
 }
 
@@ -185,6 +188,15 @@ extension Connection {
             as: Answer.self
         ).ReadAgentRun
         return (run.events, run.done)
+    }
+
+    /// Has a running turn push its state to a Live Activity: the sealed
+    /// registration the relay made of the activity's push token.
+    public func registerLiveActivity(runId: String, pushRegistration: String) async throws {
+        struct Answer: Decodable, Sendable { let RegisterAgentLiveActivity: Bool? }
+        _ = try await execute(
+            Documents.registerLiveActivity, variables: ["runId": .string(runId), "pushRegistration": .string(pushRegistration)],
+            as: Answer.self)
     }
 
     /// Waits for a run to end, until `deadline`, and says how it ended. The

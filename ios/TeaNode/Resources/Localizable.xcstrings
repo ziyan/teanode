@@ -10801,6 +10801,22 @@
         }
       }
     },
+    "Stopped with a problem": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "問題が起きて止まりました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出了问题，已停止"
+          }
+        }
+      }
+    },
     "Stopped.": {
       "localizations": {
         "ja": {
@@ -13280,6 +13296,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "进行中"
+          }
+        }
+      }
+    },
+    "Working on it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在处理"
           }
         }
       }

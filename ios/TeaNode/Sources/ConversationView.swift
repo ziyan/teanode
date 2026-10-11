@@ -258,6 +258,15 @@ struct ConversationFollowing: ViewModifier {
                 app.askingAbout = nil
             }
             .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
+            .onChange(of: scenePhase) { _, phase in
+                // A turn left running shows on the lock screen until it ends;
+                // a call shows there already, through CallKit.
+                if phase == .background, let runId = model.runningRunId, model.call == nil {
+                    TurnActivities.start(runId: runId, agentTitle: app.agentTitle, connection: model.connection)
+                } else if phase == .active {
+                    TurnActivities.endAll()
+                }
+            }
             .onChange(of: model.voiceSampleRate) { startRequestedCall() }
     }
 

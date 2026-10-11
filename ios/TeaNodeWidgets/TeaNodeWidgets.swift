@@ -1,3 +1,4 @@
+import ActivityKit
 import AppIntents
 import SwiftUI
 import TeaNodeKit
@@ -12,6 +13,7 @@ struct TeaNodeWidgets: WidgetBundle {
         WaitingWidget()
         NextWidget()
         CallControl()
+        TurnActivityWidget()
     }
 }
 
@@ -320,6 +322,51 @@ struct EventTime: View {
             Text(event.startsAt, format: .dateTime.hour().minute())
         } else {
             Text(event.startsAt.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
+        }
+    }
+}
+
+// MARK: A turn left running
+
+/// TurnActivityWidget is a turn left running, on the lock screen and in the
+/// Dynamic Island: the agent's name and one word for where the turn is.
+struct TurnActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: AgentTurnAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image("Logo").resizable().frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(context.attributes.agentTitle).font(.headline)
+                    Label(TurnActivityWords.text(context.state.activityState), systemImage: TurnActivityWords.symbol(context.state.activityState))
+                        .font(.subheadline)
+                        .foregroundStyle(context.state.activityState == "waiting" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                }
+                Spacer()
+            }
+            .padding()
+            .activityBackgroundTint(nil)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image("Logo").resizable().frame(width: 28, height: 28)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 2) {
+                        Text(context.attributes.agentTitle).font(.headline)
+                        Text(TurnActivityWords.text(context.state.activityState)).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Image(systemName: TurnActivityWords.symbol(context.state.activityState)).font(.title3)
+                }
+            } compactLeading: {
+                Image("Logo").resizable().frame(width: 20, height: 20)
+            } compactTrailing: {
+                Image(systemName: TurnActivityWords.symbol(context.state.activityState))
+                    .foregroundStyle(context.state.activityState == "waiting" ? AnyShapeStyle(.orange) : AnyShapeStyle(.tint))
+            } minimal: {
+                Image(systemName: TurnActivityWords.symbol(context.state.activityState))
+            }
         }
     }
 }
