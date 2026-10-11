@@ -36,6 +36,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentSurveyCommand(),
 			newAgentBackgroundCommand(),
 			newAgentGoalCommand(),
+			newAgentWaitingCommand(),
 			newAgentPhoneCommand(),
 			newAgentSkillCommand(),
 			newAgentIdeaCommand(),

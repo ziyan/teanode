@@ -972,7 +972,7 @@ func withChallengeHandler(handler http.Handler, manager autoacme.Manager, redire
 			challengeHandler.ServeHTTP(response, request)
 			return
 		}
-		if redirectToTLS && request.TLS == nil {
+		if redirectToTLS && request.TLS == nil && !isConsoleRequest(request) {
 			target := "https://" + request.Host + request.URL.RequestURI()
 			http.Redirect(response, request, target, http.StatusPermanentRedirect)
 			return
@@ -983,6 +983,25 @@ func withChallengeHandler(handler http.Handler, manager autoacme.Manager, redire
 		}
 		handler.ServeHTTP(response, request)
 	})
+}
+
+// isConsoleRequest says a request is the server's own console talking to
+// it: from this machine, to this machine by its loopback address, which is
+// how the command line on the server reaches the API (client.Local). It is
+// served where it arrives rather than sent to HTTPS, which the console would
+// have to reach at a name its certificate does not carry. A proxy on this
+// machine that forwards visitors over loopback still names their host, and
+// they are still sent to HTTPS.
+func isConsoleRequest(request *http.Request) bool {
+	remote, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil || !api.IsLoopbackHost(remote) {
+		return false
+	}
+	host := request.Host
+	if name, _, err := net.SplitHostPort(host); err == nil {
+		host = name
+	}
+	return api.IsLoopbackHost(host)
 }
 
 // smtpConnectionsAtOnce bounds how many SMTP connections each listener

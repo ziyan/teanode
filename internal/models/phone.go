@@ -50,8 +50,9 @@ const (
 	NotificationApproval = "approval"
 	// NotificationQuestion is the agent asking the person something.
 	NotificationQuestion = "question"
-	// NotificationAnswer is an answer to something asked from the app,
-	// finished after the app was left.
+	// NotificationAnswer is an answer finished after the person left: to
+	// something asked from the app, or asked in the main conversation on
+	// the dashboard.
 	NotificationAnswer = "answer"
 )
 

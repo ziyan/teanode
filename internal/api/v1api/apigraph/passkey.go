@@ -422,6 +422,10 @@ func (self *graph) take(ctx context.Context, ceremonyId string) (*parked, error)
 		}
 		return nil, err
 	}
+	// A setup profile parked in the same store is not a challenge.
+	if found.Kind != "" {
+		return nil, api.ErrInvalidArguments
+	}
 	var sessionData webauthn.SessionData
 	if err := json.Unmarshal([]byte(found.SessionData), &sessionData); err != nil {
 		return nil, err

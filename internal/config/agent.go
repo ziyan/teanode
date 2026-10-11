@@ -871,9 +871,11 @@ type AgentVoice struct {
 	// starts and stops talking. Empty is gpt-4o-transcribe.
 	TranscriptionModel string `yaml:"transcriptionModel,omitempty"`
 
-	// SilenceMS is how long a pause ends what somebody is saying; zero is
-	// 500. Longer lets a person think mid-sentence; shorter answers
-	// sooner.
+	// SilenceMS is how long a pause ends what somebody is saying. Zero
+	// lets the provider judge from what was said whether they have
+	// finished, so a pause after the agent's name or mid-thought does not
+	// send half a sentence; a number ends every turn after that long a
+	// pause instead.
 	SilenceMS int `yaml:"silenceMS,omitempty"`
 
 	// SpeechModel is the text-to-speech model the answers are spoken
@@ -894,7 +896,6 @@ type AgentVoice struct {
 // The defaults of the voice settings.
 const (
 	VoiceTranscriptionModelDefault = "gpt-4o-transcribe"
-	VoiceSilenceMSDefault          = 500
 	VoiceSpeechModelDefault        = "gpt-4o-mini-tts"
 	VoiceSpeechVoiceDefault        = "marin"
 )
@@ -910,14 +911,6 @@ func (self *AgentVoice) EffectiveTranscriptionModel() string {
 		return VoiceTranscriptionModelDefault
 	}
 	return strings.TrimSpace(self.TranscriptionModel)
-}
-
-// EffectiveSilenceMS resolves the zero value.
-func (self *AgentVoice) EffectiveSilenceMS() int {
-	if self.SilenceMS <= 0 {
-		return VoiceSilenceMSDefault
-	}
-	return self.SilenceMS
 }
 
 // EffectiveSpeechModel resolves the empty value.
@@ -1503,7 +1496,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		}
 	}
 	if agent.Voice.SilenceMS < 0 || agent.Voice.SilenceMS > 5000 {
-		validator.add("agent.voice.silenceMS", "must be between 0 (the default, 500) and 5000")
+		validator.add("agent.voice.silenceMS", "must be between 0 (the default, where the provider judges from the words when somebody has finished) and 5000")
 	}
 	if agent.Browser.Enabled && agent.Browser.CDPEndpoint == "" {
 		validator.add("agent.browser.cdpEndpoint", "required when the browser is enabled: host:port of the DevTools debugger, for example chrome:9222")
