@@ -26,54 +26,16 @@ final class StatusModel {
     }
 }
 
-/// StatusButton is the head's marks in one button: the day's budget as a
-/// ring, and a mark each for an attached tab, attached computers and
-/// commands still running. It opens the status sheet.
+/// StatusButton opens the status sheet: one plain button, with the day's
+/// usage, what is attached and what still runs kept inside the sheet.
 struct StatusButton: View {
     let status: StatusModel
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if status.status?.tab?.attached == true {
-                    Image(systemName: "globe")
-                }
-                if !(status.status?.computers.isEmpty ?? true) {
-                    Image(systemName: "desktopcomputer")
-                }
-                if !status.runningCommands.isEmpty {
-                    Image(systemName: "terminal")
-                        .symbolEffect(.pulse, options: .repeating)
-                }
-                BudgetRing(fraction: status.status?.budget?.fraction)
-            }
+            Label("Usage and devices", systemImage: "slider.horizontal.3")
         }
-        .accessibilityLabel("Usage today")
-    }
-}
-
-/// BudgetRing is how much of the day's budget is used, colored as it nears
-/// the limit; an empty ring when there is no limit.
-struct BudgetRing: View {
-    let fraction: Double?
-
-    var body: some View {
-        ZStack {
-            Circle().stroke(.tertiary, lineWidth: 2.5)
-            Circle()
-                .trim(from: 0, to: min(1, max(0, fraction ?? 0)))
-                .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-        .frame(width: 18, height: 18)
-    }
-
-    private var color: Color {
-        guard let fraction else { return .secondary }
-        if fraction >= 0.85 { return .red }
-        if fraction >= 0.6 { return .orange }
-        return .accentColor
     }
 }
 
