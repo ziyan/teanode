@@ -30,6 +30,12 @@
                 answer = Self.mailboxes
             } else if query.contains("ListMailboxThreads") {
                 answer = Self.threads
+            } else if query.contains("AgentGraphChildren") {
+                answer = Self.knowledge
+            } else if query.contains("FinanceProviders") {
+                answer = #"{"data":{"FinanceProviders":[{"providerKind":"simplefin","isBrowserRequired":false}],"FinanceSources":[{"id":"bank"}]}}"#
+            } else if query.contains("ReadAgent") {
+                answer = #"{"data":{"ReadAgent":{"timezone":"UTC","categories":[]}}}"#
             } else if query.contains("ListCalendars") {
                 answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
             } else if query.contains("ListCalendarEvents") {
@@ -96,6 +102,20 @@
                 row("m3", "Bookshop", "orders@bookshop.example", "Your order has shipped", "Your parcel arrives tomorrow.", "low", isSeen: true, 26),
             ]
             return #"{"data":{"ListMailboxThreads":{"total":3,"threads":["# + rows.joined(separator: ",") + "]}}}"
+        }
+
+        static let knowledge = #"""
+            {"data":{"AgentGraphChildren":{"total":5,"rows":[
+              {"node":{"id":"self","path":"self","kind":"person","name":"","summary":"Who you are, as your agent knows you."},"hint":"","children":0},
+              {"node":{"id":"people","path":"people","kind":"folder","name":"People","summary":""},"hint":"Family, friends and the people you work with","children":24},
+              {"node":{"id":"projects","path":"projects","kind":"folder","name":"Projects","summary":""},"hint":"What you are building and planning","children":9},
+              {"node":{"id":"home","path":"home","kind":"topic","name":"Home","summary":"The house, the garden and what needs doing."},"hint":"","children":3},
+              {"node":{"id":"travel","path":"travel","kind":"topic","name":"Travel","summary":"Trips taken and planned."},"hint":"","children":0}]}}}
+            """#
+
+        /// Whether a screenshot opens with the side menu out: `-TeaNodeMenu`.
+        static var isMenuRequested: Bool {
+            ProcessInfo.processInfo.arguments.contains("-TeaNodeMenu")
         }
 
         static let contacts = #"""
