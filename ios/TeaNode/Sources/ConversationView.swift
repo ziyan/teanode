@@ -447,16 +447,17 @@ struct ConversationItemView: View {
         case .line(let line):
             switch line.kind {
             case .person:
-                PersonBubble(line: line) { LineActions(line: line, model: model) }
+                PersonBubble(line: line)
+                    .onLongPressGesture(minimumDuration: 0.35) {
+                        MessageActionsPresenter.present(line: line, model: model)
+                    }
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
                     AgentBubble {
                         MarkdownView(text: line.text)
                     }
-                    .contextMenu {
-                        LineActions(line: line, model: model)
-                    } preview: {
-                        LinePreview(text: line.text)
+                    .onLongPressGesture(minimumDuration: 0.35) {
+                        MessageActionsPresenter.present(line: line, model: model)
                     }
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
@@ -495,32 +496,137 @@ struct ConversationItemView: View {
     }
 }
 
-/// LineActions are what a long press on a message offers.
-struct LineActions: View {
+/// MessageActionsPresenter opens a message's actions over the whole screen,
+/// as Messages does on a long press: everything else dims and blurs, the
+/// message stays readable, and what can be done with it sits under it. It is
+/// shown from the top of the window so it covers the bars and the composer.
+@MainActor
+enum MessageActionsPresenter {
+    static func present(line: TranscriptLine, model: ConversationModel) {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        guard let top else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        weak var shown: UIViewController?
+        let controller = UIHostingController(
+            rootView: MessageActionsView(line: line, model: model) { then in
+                shown?.dismiss(animated: true) { then?() }
+            })
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        controller.view.backgroundColor = .clear
+        shown = controller
+        top.present(controller, animated: true)
+    }
+}
+
+/// MessageActionsView is a message held: the message itself, on its own
+/// side, its whole text scrolling when it is long, and its actions below as
+/// full rows.
+struct MessageActionsView: View {
     let line: TranscriptLine
     let model: ConversationModel
+    /// Closes the view, then does what was chosen, if anything.
+    let onClose: (((() -> Void)?) -> Void)
+    @State private var isShown = false
+
+    private var isPerson: Bool { line.kind == .person }
 
     var body: some View {
-        if line.messageId != nil {
-            Button {
-                model.reply(to: line)
-            } label: {
-                Label("Reply", systemImage: "arrowshape.turn.up.left")
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+                .onTapGesture { onClose(nil) }
+                .accessibilityLabel("Close")
+                .accessibilityAddTraits(.isButton)
+            VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
+                ScrollView {
+                    bubble
+                        .frame(maxWidth: .infinity, alignment: isPerson ? .trailing : .leading)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: 420)
+                .fixedSize(horizontal: false, vertical: true)
+                actions
             }
+            .padding(.horizontal)
+            .scaleEffect(isShown ? 1 : 0.94, anchor: isPerson ? .trailing : .leading)
+            .opacity(isShown ? 1 : 0)
         }
-        Button {
-            UIPasteboard.general.string = line.text
-        } label: {
-            Label("Copy", systemImage: "doc.on.doc")
+        .onAppear {
+            withAnimation(.spring(duration: 0.3, bounce: 0.2)) { isShown = true }
         }
-        Button {
-            model.selectingText = line.text
-        } label: {
-            Label("Select", systemImage: "selection.pin.in.out")
+        .accessibilityAction(.escape) { onClose(nil) }
+    }
+
+    @ViewBuilder
+    private var bubble: some View {
+        if isPerson {
+            Text(line.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+        } else {
+            MarkdownView(text: line.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
         }
-        ShareLink(item: line.text) {
-            Label("Share", systemImage: "square.and.arrow.up")
+    }
+
+    private var actions: some View {
+        VStack(spacing: 0) {
+            if line.messageId != nil {
+                actionRow("Reply", systemImage: "arrowshape.turn.up.left") {
+                    onClose { model.reply(to: line) }
+                }
+                Divider()
+            }
+            actionRow("Copy", systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = line.text
+                onClose(nil)
+            }
+            Divider()
+            actionRow("Select", systemImage: "selection.pin.in.out") {
+                let text = line.text
+                onClose { model.selectingText = text }
+            }
+            Divider()
+            ShareLink(item: line.text) {
+                actionLabel("Share", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.plain)
         }
+        .frame(width: 250)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+    }
+
+    private func actionRow(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            actionLabel(title, systemImage: systemImage)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func actionLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .frame(width: 24)
+            Text(title)
+            Spacer()
+        }
+        .font(.body)
+        .foregroundStyle(Color(.label))
+        .padding(.horizontal, 18)
+        .frame(minHeight: 50)
+        .contentShape(.rect)
     }
 }
 
@@ -594,11 +700,8 @@ enum UsageWords {
 
 /// PersonBubble is what the person said: on the right, in the accent color,
 /// with what it replies to above it.
-struct PersonBubble<Actions: View>: View {
+struct PersonBubble: View {
     let line: TranscriptLine
-    /// The long-press menu, kept to the bubble: on the whole row, iOS lifted
-    /// the empty width beside it too, as a box behind the bubble.
-    @ViewBuilder let actions: () -> Actions
 
     var body: some View {
         HStack {
@@ -632,35 +735,7 @@ struct PersonBubble<Actions: View>: View {
                         .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
                 }
             }
-            .contextMenu {
-                actions()
-            } preview: {
-                LinePreview(text: line.text)
-            }
         }
-    }
-}
-
-/// LinePreview is what a long press lifts above the menu: the start of a
-/// message, at most ten lines. Lifting the whole of a long answer ran past
-/// the screen, over the composer; Select and Copy still take all of it.
-struct LinePreview: View {
-    let text: String
-
-    var body: some View {
-        Text(shownText)
-            .lineLimit(10)
-            .multilineTextAlignment(.leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(width: 320, alignment: .leading)
-            .background(Color(.secondarySystemBackground))
-    }
-
-    /// Bold, italics and links drawn, as in the message, not their marks.
-    private var shownText: AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 }
 
