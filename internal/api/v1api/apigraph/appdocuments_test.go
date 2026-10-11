@@ -28,6 +28,8 @@ const appDocumentsDirectory = "../../../../ios/TeaNodeKit/Sources/TeaNodeKit"
 // form, `static let name = """` to the closing `"""`.
 var appDocumentPattern = regexp.MustCompile(`(?s)static let (\w+) = """\n(.*?)\n\s*"""`)
 
+var appSharedFieldsPattern = regexp.MustCompile(`\\\((\w+)\)`)
+
 func TestTheAppDocumentsMatchTheSchema(t *testing.T) {
 	paths, err := filepath.Glob(filepath.Join(appDocumentsDirectory, "*.swift"))
 	if err != nil || len(paths) == 0 {
@@ -64,8 +66,26 @@ func TestTheAppDocumentsMatchTheSchema(t *testing.T) {
 		t.Fatalf("cannot build the schema: %s", err)
 	}
 
+	// A string that is not an operation is a list of fields the documents
+	// share, written into them as \(name).
+	fields := map[string]string{}
+	var operations [][]string
 	for _, match := range found {
-		name, text := match[1], match[2]
+		trimmed := strings.TrimSpace(match[2])
+		if strings.HasPrefix(trimmed, "query") || strings.HasPrefix(trimmed, "mutation") ||
+			strings.HasPrefix(trimmed, "subscription") || strings.HasPrefix(trimmed, "{") {
+			operations = append(operations, match)
+		} else {
+			fields[match[1]] = match[2]
+		}
+	}
+	for _, match := range operations {
+		name, text := match[1], appSharedFieldsPattern.ReplaceAllStringFunc(match[2], func(written string) string {
+			if shared, isKnown := fields[written[2:len(written)-1]]; isKnown {
+				return shared
+			}
+			return written
+		})
 		document, err := gqlparser.Parse(gqlparser.ParseParams{Source: text})
 		if err != nil {
 			t.Errorf("%s: does not parse: %s\n%s", name, err, text)
