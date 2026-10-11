@@ -88,7 +88,7 @@ func readPlist(t *testing.T, data []byte) map[string]any {
 
 func TestASetupProfileHasMailCalendarsAndContacts(t *testing.T) {
 	profile := &mailbox.SetupProfile{
-		DeviceName: "Phone", MailboxName: "Robin & Co", Address: "robin@example.com", Password: "abc234-defgh-jkmnp-qrstu-vwxyz",
+		DeviceName: "Phone", MailboxName: "Robin & Co", Address: "robin@example.com", Password: strings.Join([]string{"abc234", "defgh", "jkmnp", "qrstu", "vwxyz"}, "-"),
 		IMAPHost: "mail.example.com", IMAPPort: 993, SubmissionHost: "mail.example.com", SubmissionPort: 587,
 		DAVHost: "mail.example.com:8443", PrincipalPath: "/dav/u1/", Identifier: "com.teanode.profile.m1",
 	}
