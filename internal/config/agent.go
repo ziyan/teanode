@@ -1496,7 +1496,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		}
 	}
 	if agent.Voice.SilenceMS < 0 || agent.Voice.SilenceMS > 5000 {
-		validator.add("agent.voice.silenceMS", "must be between 0 (the default, 500) and 5000")
+		validator.add("agent.voice.silenceMS", "must be between 0 (the default, where the provider judges from the words when somebody has finished) and 5000")
 	}
 	if agent.Browser.Enabled && agent.Browser.CDPEndpoint == "" {
 		validator.add("agent.browser.cdpEndpoint", "required when the browser is enabled: host:port of the DevTools debugger, for example chrome:9222")
