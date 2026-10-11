@@ -105,8 +105,17 @@ func (self *Agent) isPresent(userId string, now time.Time) (bool, time.Duration)
 const phoneQuietAfter = 2 * time.Minute
 
 // isWatching says whether the person is looking at a dashboard or the app
-// now, so that their phone need not be told.
-func (self *Agent) isWatching(userId string, now time.Time) bool {
+// now, so that their phone need not be told. lastWroteAt is when they last
+// wrote to the turn at hand, zero when nobody did: typing a question sends
+// no report, so without it somebody who asked a moment ago could be judged
+// away on the strength of a report from before they typed.
+func (self *Agent) isWatching(userId string, lastWroteAt, now time.Time) bool {
 	isPresent, idle := self.isPresent(userId, now)
-	return isPresent && idle < phoneQuietAfter
+	if !isPresent {
+		return false
+	}
+	if !lastWroteAt.IsZero() {
+		idle = min(idle, max(now.Sub(lastWroteAt), 0))
+	}
+	return idle < phoneQuietAfter
 }

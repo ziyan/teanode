@@ -280,7 +280,7 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 	if interaction == nil || self.settings.Agent == nil {
 		return
 	}
-	if self.agent.isWatching(self.settings.Agent.UserID, time.Now()) {
+	if self.isWatched(time.Now()) {
 		return
 	}
 	content := &push.Content{
@@ -320,7 +320,7 @@ func (self *AskRun) notifyAnswer(answer string) {
 	if self.settings.Agent == nil || strings.TrimSpace(answer) == "" || !self.isAnswerForPhone() {
 		return
 	}
-	if self.agent.isWatching(self.settings.Agent.UserID, time.Now()) {
+	if self.isWatched(time.Now()) {
 		return
 	}
 	agentName := self.settings.Agent.Name
@@ -336,6 +336,18 @@ func (self *AskRun) notifyAnswer(answer string) {
 		ThreadID:         self.settings.Conversation.ID,
 		Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 	})
+}
+
+// isWatched says whether the person is looking at a dashboard or the app
+// now, taking a turn they wrote themselves as their latest input.
+func (self *AskRun) isWatched(now time.Time) bool {
+	lastWroteAt := time.Time{}
+	if !self.settings.isUnattended && !self.settings.Headless && self.settings.subagentDepth == 0 && !models.IsOwnTurn(self.settings.Message) {
+		self.mutex.Lock()
+		lastWroteAt = self.lastWroteAt
+		self.mutex.Unlock()
+	}
+	return self.agent.isWatching(self.settings.Agent.UserID, lastWroteAt, now)
 }
 
 // isAnswerForPhone says whether the turn's answer is one a phone is told

@@ -42,6 +42,9 @@ func (self *AskRun) steer(message *AskRun) bool {
 		return false
 	}
 	self.steering = append(self.steering, message)
+	if message.lastWroteAt.After(self.lastWroteAt) {
+		self.lastWroteAt = message.lastWroteAt
+	}
 	return true
 }
 

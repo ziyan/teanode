@@ -181,20 +181,20 @@ func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
 	worker := &Agent{}
 	now := time.Now()
 	worker.ReportPresence("u", "phone", true, 0, now)
-	if !worker.isWatching("u", now) {
+	if !worker.isWatching("u", time.Time{}, now) {
 		t.Fatal("the app in front was not taken as watching")
 	}
 	worker.ReportPresence("u", "phone", false, 0, now.Add(time.Second))
-	if worker.isWatching("u", now.Add(2*time.Second)) {
+	if worker.isWatching("u", time.Time{}, now.Add(2*time.Second)) {
 		t.Error("the app in the background was still taken as watching")
 	}
 	worker.ReportPresence("u", "tab", true, 0, now)
 	worker.ReportPresence("u", "other-tab", false, 0, now.Add(time.Second))
-	if !worker.isWatching("u", now.Add(2*time.Second)) {
+	if !worker.isWatching("u", time.Time{}, now.Add(2*time.Second)) {
 		t.Error("a hidden tab hid a shown one")
 	}
 	worker.ReportPresence("u", "tab", true, 300, now.Add(3*time.Second))
-	if worker.isWatching("u", now.Add(4*time.Second)) {
+	if worker.isWatching("u", time.Time{}, now.Add(4*time.Second)) {
 		t.Error("a tab untouched for five minutes kept the phone quiet")
 	}
 }
@@ -228,6 +228,43 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 	subagent.settings.subagentDepth = 1
 	if subagent.isAnswerForPhone() {
 		t.Error("a subagent's answer was told to the phone")
+	}
+}
+
+// Typing a question sends no presence report, so a turn the person asked a
+// moment ago counts as their latest input: a report from before they typed
+// that already says they were idle does not send the answer to the phone.
+func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
+	worker := &Agent{}
+	now := time.Now()
+	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
+	asked := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
+		Agent:   &models.Agent{UserID: "u"},
+		Surface: "drawer",
+		Message: "Draft the reply.",
+	}}
+	if worker.isWatching("u", time.Time{}, now) {
+		t.Fatal("the report alone was taken as watching; the test proves nothing")
+	}
+	if !asked.isWatched(now) {
+		t.Error("somebody who asked in the drawer ten seconds ago was judged away")
+	}
+	if asked.isWatched(now.Add(3 * time.Minute)) {
+		t.Error("a question asked minutes ago kept a tab that stopped reporting as watched")
+	}
+	worker.ReportPresence("u", "tab", false, 0, now)
+	if asked.isWatched(now.Add(time.Second)) {
+		t.Error("a question just asked kept a hidden tab as watched")
+	}
+
+	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
+	ownTurn := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
+		Agent:   &models.Agent{UserID: "u"},
+		Surface: "drawer",
+		Message: models.ScheduleMarker + " the morning brief",
+	}}
+	if ownTurn.isWatched(now) {
+		t.Error("the agent's own turn was taken as the person typing")
 	}
 }
 
