@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -227,5 +228,29 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 	subagent.settings.subagentDepth = 1
 	if subagent.isAnswerForPhone() {
 		t.Error("a subagent's answer was told to the phone")
+	}
+}
+
+// Each tab names itself afresh when it loads, so a person reloading over and
+// over keeps at most presenceReportersAtMost reporters, losing the oldest.
+func TestPresenceKeepsABoundedNumberOfReporters(t *testing.T) {
+	worker := &Agent{}
+	now := time.Now()
+	for index := range presenceReportersAtMost + 10 {
+		worker.ReportPresence("u", fmt.Sprintf("tab-%d", index), index == 0, 0, now.Add(time.Duration(index)*time.Millisecond))
+	}
+	reporters := worker.presence.reports["u"]
+	if len(reporters) != presenceReportersAtMost {
+		t.Fatalf("kept %d reporters, want %d", len(reporters), presenceReportersAtMost)
+	}
+	if _, isKept := reporters["tab-0"]; isKept {
+		t.Error("the oldest reporter was kept")
+	}
+	if _, isKept := reporters[fmt.Sprintf("tab-%d", presenceReportersAtMost+9)]; !isKept {
+		t.Error("the newest reporter was dropped")
+	}
+	worker.ReportPresence("u", "tab-20", true, 0, now.Add(time.Second))
+	if len(worker.presence.reports["u"]) != presenceReportersAtMost {
+		t.Error("a known reporter reporting again pushed another out")
 	}
 }
