@@ -34,6 +34,12 @@
                 answer = Self.knowledge
             } else if query.contains("FinanceProviders") {
                 answer = #"{"data":{"FinanceProviders":[{"providerKind":"simplefin","isBrowserRequired":false}],"FinanceSources":[{"id":"bank"}]}}"#
+            } else if query.contains("SpendingCategories") {
+                answer = #"{"data":{"SpendingCategories":[]}}"#
+            } else if query.contains("FinanceAccounts") {
+                answer = #"{"data":{"FinanceAccounts":[]}}"#
+            } else if query.contains("ReportingCurrency") {
+                answer = #"{"data":{"ReportingCurrency":{"reportingCurrencyCode":"USD","isChosen":true}}}"#
             } else if query.contains("ReadAgent") {
                 answer = #"{"data":{"ReadAgent":{"timezone":"UTC","categories":[]}}}"#
             } else if query.contains("ListCalendars") {

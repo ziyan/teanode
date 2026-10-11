@@ -72,6 +72,7 @@ struct MenuBrand: ToolbarContent {
                 Text(verbatim: "TeaNode")
                     .font(.title3.weight(.semibold))
             }
+            .fixedSize()
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
         }
@@ -300,10 +301,13 @@ struct SideMenu: View {
                     if part != .agent, part != .mail { onClose() }
                 }
             } label: {
+                // The part on screen is marked by its color and weight; the
+                // highlight is kept for the conversation or folder chosen.
                 Label(part.title(agentTitle: app.agentTitle), systemImage: part.systemImage)
-                    .foregroundStyle(.primary)
+                    .fontWeight(section == part ? .semibold : .regular)
+                    .foregroundStyle(section == part ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
             }
-            .menuRow(isSelected: section == part)
+            .menuRow(isSelected: false)
             .accessibilityAddTraits(section == part ? .isSelected : [])
         }
     }

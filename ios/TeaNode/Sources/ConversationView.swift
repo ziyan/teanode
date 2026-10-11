@@ -1064,7 +1064,7 @@ struct CardView: View {
                     Button {
                         Task { await model.approve(line, isApproved: false) }
                     } label: {
-                        Text("Don’t").frame(maxWidth: .infinity)
+                        Text("Don’t").frame(maxWidth: .infinity).foregroundStyle(.primary)
                     }
                     .buttonStyle(.bordered)
                 }
@@ -1093,7 +1093,7 @@ struct CardView: View {
                     Button {
                         Task { await model.answer(line, with: ConversationModel.chatAboutIt) }
                     } label: {
-                        Text("Chat about it").frame(maxWidth: line.choices.isEmpty ? nil : .infinity)
+                        Text("Chat about it").frame(maxWidth: line.choices.isEmpty ? nil : .infinity).foregroundStyle(.primary)
                     }
                     .buttonStyle(.bordered)
                 }

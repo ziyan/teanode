@@ -701,21 +701,19 @@ struct ThreadRow: View {
                 // and a sender whose checks failed.
                 let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
                 if marks.hasAny {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         if marks.isHigh {
-                            Label("Important", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
+                            RowMark(systemImage: "exclamationmark.circle.fill", text: String(localized: "Important")).foregroundStyle(.red)
                         }
                         if marks.needsReply {
-                            Label("Needs reply", systemImage: "arrowshape.turn.up.left.fill").foregroundStyle(.tint)
+                            RowMark(systemImage: "arrowshape.turn.up.left.fill", text: String(localized: "Needs reply")).foregroundStyle(.tint)
                         }
                         if marks.verdict == .bad {
-                            Label("Not verified", systemImage: "xmark.shield.fill").foregroundStyle(.red)
+                            RowMark(systemImage: "xmark.shield.fill", text: String(localized: "Not verified")).foregroundStyle(.red)
                         } else if marks.verdict == .warn {
-                            Label("Looks like spam", systemImage: "exclamationmark.shield.fill").foregroundStyle(.orange)
+                            RowMark(systemImage: "exclamationmark.shield.fill", text: String(localized: "Looks like spam")).foregroundStyle(.orange)
                         }
                     }
-                    .font(.caption.weight(.medium))
-                    .labelStyle(.titleAndIcon)
                     .padding(.top, 1)
                 }
             }
@@ -728,6 +726,20 @@ struct ThreadRow: View {
         if thread.participants.count > 1 { return thread.participants.joined(separator: ", ") }
         let sender = thread.item?.mail?.shownSender ?? ""
         return sender.isEmpty ? String(localized: "Unknown sender") : sender
+    }
+}
+
+/// RowMark is a small mark on a row: a symbol close to its word.
+struct RowMark: View {
+    let systemImage: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage).imageScale(.small)
+            Text(text)
+        }
+        .font(.caption.weight(.medium))
     }
 }
 

@@ -263,6 +263,7 @@ extension View {
     /// rounded highlight inset from the edges.
     func menuRow(isSelected: Bool) -> some View {
         listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
             .listRowBackground(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(isSelected ? Color(.tertiarySystemFill) : .clear)
