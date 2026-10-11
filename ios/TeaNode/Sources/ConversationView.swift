@@ -454,7 +454,7 @@ struct ConversationItemView: View {
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
                     AgentBubble(reactions: line.reactions) {
-                        MarkdownView(text: line.text)
+                        MarkdownView(text: line.text, isSelectable: false)
                     }
                     .onLongPressGesture(minimumDuration: 0.35) {
                         MessageActionsPresenter.present(line: line, model: model)
@@ -1095,6 +1095,10 @@ struct ReferenceStrip: View {
 /// inline styles. Headings are no larger than a headline.
 struct MarkdownView: View {
     let text: String
+    /// Whether its words can be selected by pressing on them. In a chat
+    /// bubble they cannot: a long press there opens the message's reactions
+    /// and actions, and its Select action selects.
+    var isSelectable = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1103,7 +1107,7 @@ struct MarkdownView: View {
                 case .paragraph(let text):
                     Text(Self.inline(text))
                         .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                        .selectable(isSelectable)
                 case .heading(let text):
                     Text(Self.inline(text)).font(.headline)
                 case .quote(let text):
@@ -1747,6 +1751,18 @@ struct Composer: View {
                 let file = PendingFile(pictureData: data, index: model.pendingFiles.count)
             else { continue }
             model.pendingFiles.append(file)
+        }
+    }
+}
+
+extension View {
+    /// Text that can be selected, or not, as asked.
+    @ViewBuilder
+    func selectable(_ isSelectable: Bool) -> some View {
+        if isSelectable {
+            textSelection(.enabled)
+        } else {
+            textSelection(.disabled)
         }
     }
 }
