@@ -7203,33 +7203,43 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 .agent-reactions {
   position: absolute;
-  bottom: -12px;
+  bottom: -13px;
   display: inline-flex;
-  gap: 2px;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  /* One quiet capsule for all of them, cut out of the bubble by a ring of
+     the drawer's own background, as a chat app sets a tapback. */
+  background: var(--field);
+  box-shadow:
+    0 0 0 2px var(--background),
+    var(--shadow-raised);
 }
 
 .agent-line.user .agent-reactions {
-  right: 8px;
+  right: 10px;
 }
 
 .agent-line.assistant .agent-reactions {
-  left: 8px;
+  left: 10px;
 }
 
 .agent-reaction {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 22px;
+  min-width: 18px;
+  height: 18px;
   min-height: 0;
-  padding: 0 4px;
-  border: 1px solid var(--border);
+  padding: 0;
+  border: 0;
   border-radius: 999px;
-  background: var(--surface);
+  background: none;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: normal;
   line-height: 1;
 }
 
@@ -7238,8 +7248,13 @@ button.agent-reaction {
   cursor: pointer;
 }
 
-.agent-reaction.mine {
-  border-color: var(--accent);
+button.agent-reaction:hover {
+  transform: scale(1.15);
+}
+
+button.agent-reaction:focus-visible {
+  outline: 2px solid var(--leaf);
+  outline-offset: 1px;
 }
 
 /* The quick reactions, over the message the React button was pressed on,
