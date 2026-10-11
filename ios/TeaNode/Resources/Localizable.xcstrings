@@ -12467,6 +12467,22 @@
         }
       }
     },
+    "Everything else": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他すべて"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其余"
+          }
+        }
+      }
+    },
     "Exchange": {
       "localizations": {
         "ja": {
@@ -19295,6 +19311,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "均未对齐"
+          }
+        }
+      }
+    },
+    "Net": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収支"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结余"
           }
         }
       }
@@ -28611,6 +28643,22 @@
         }
       }
     },
+    "Selected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选"
+          }
+        }
+      }
+    },
     "Selector": {
       "localizations": {
         "ja": {
@@ -29823,6 +29871,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示在 TeaNode 中。可选：未填写时使用用户名。"
+          }
+        }
+      }
+    },
+    "Shows its transactions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示其交易"
           }
         }
       }
