@@ -299,8 +299,19 @@ final class AppModel {
         let signIn = SignIn(server: link.server, transport: transport)
         let clientId = try await signIn.register()
         var account = try await signIn.exchange(connectCode: code, clientId: clientId, deviceName: UIDevice.current.name)
-        account.username = try await Connection(account: account, transport: transport).username()
+        account.username = try await username(of: account)
         return PendingConnection(account: account)
+    }
+
+    /// Asks a server being added whose its new sign-in is. That server
+    /// ending the sign-in it just gave is its refusal, said as one: it is no
+    /// reason to sign out of the account in use.
+    private func username(of pending: Account) async throws -> String {
+        do {
+            return try await Connection(account: pending, transport: transport).username()
+        } catch TeaNodeError.signedOut {
+            throw TeaNodeError.refused(String(localized: "\(pending.server.host) did not accept the sign-in it gave this phone."))
+        }
     }
 
     /// Keeps a sign-in the person confirmed, and tells the server which
@@ -321,7 +332,7 @@ final class AppModel {
             throw TeaNodeError.refused(String(localized: "The server did not sign this phone in."))
         }
         var account = try await signIn.exchange(authorizationCode: code, codeVerifier: verifier, clientId: clientId)
-        account.username = try await Connection(account: account, transport: transport).username()
+        account.username = try await username(of: account)
         return PendingConnection(account: account)
     }
 
@@ -487,6 +498,16 @@ final class AppModel {
         self.signedOutText = signedOutText
     }
 
+    /// Signs out of the account in use when its own connection found the
+    /// sign-in ended. Another server ending its sign-in (an account being
+    /// added, another account's notification) says nothing about this one;
+    /// and the same failure reported again by another screen, after the
+    /// sign out, finds another connection in use and does nothing.
+    private func signOut(ifEnded ended: Connection, signedOutText: String) async {
+        guard await ended.isSignedOut, ended === connection else { return }
+        await signOut(signedOutText: signedOutText)
+    }
+
     /// Signs out of an account not in use, keeping the one in use.
     func signOut(of other: Account) async {
         guard other.accountKey != account?.accountKey else {
@@ -498,11 +519,12 @@ final class AppModel {
         accounts = (try? store.accounts().accounts) ?? accounts
     }
 
-    /// What to show for an error from the server. An ended sign-in signs the
-    /// app out, since nothing else will work until it connects again.
+    /// What to show for an error from the server. An ended sign-in of the
+    /// account in use signs the app out of it, since nothing else will work
+    /// until it connects again.
     func describe(_ error: Error) -> String {
-        if let error = error as? TeaNodeError, error == .signedOut {
-            Task { await signOut(signedOutText: error.localizedDescription) }
+        if let error = error as? TeaNodeError, error == .signedOut, let connection {
+            Task { await signOut(ifEnded: connection, signedOutText: error.localizedDescription) }
         }
         if let error = error as? LocalizedError, let description = error.errorDescription {
             return description

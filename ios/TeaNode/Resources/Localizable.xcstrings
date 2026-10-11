@@ -145,6 +145,22 @@
         }
       }
     },
+    "%@ did not accept the sign-in it gave this phone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ は、このスマートフォンに渡したばかりのサインインを受け付けませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不接受它刚给这部手机的登录。"
+          }
+        }
+      }
+    },
     "%@ does not authorize %@ to send for it": {
       "localizations": {
         "ja": {
