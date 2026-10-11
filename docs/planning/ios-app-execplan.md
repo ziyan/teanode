@@ -45,26 +45,32 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [x] (2026-10-10) Milestone 2: phones as devices, and notifications sent to them (PR #380).
 - [x] (2026-10-10) Milestone 3: the push relay, built into the server and turned on for the published app (PR #380). Presence is kept per tab and phone, so a phone is told as soon as the app is left (PR #381).
 - [ ] Milestone 4: the setup profile.
-- [ ] Milestone 5: the app: connect, conversations, chat, cards, pictures, location. Connect, the conversation, cards, coding-session questions, suggested replies, reply and copy, the switches for tool calls, usage and working notes, the agent's steps and ideas, earlier messages, links and universal links are in TestFlight; pictures, files and artifacts are being written.
+- [x] (2026-10-11) Milestone 5: the app: connect, conversations, chat, cards, pictures, location. Everything the dashboard's drawer does is in TestFlight: conversations in a side panel, every line kind, cards, coding-session questions, suggested replies, pictures, files, artifacts, the head's usage and devices, and earlier messages.
 - [ ] Milestone 6: notifications in the app, and answering from them. In TestFlight; checked on the person's phone.
 - [ ] Milestone 7: the share extension.
-- [ ] Milestone 8: voice calls.
+- [ ] Milestone 8: voice calls. A CallKit call with voice processing, cutting in, and a choice of where the sound goes, is in TestFlight; hearing the person on every phone is being checked.
 - [ ] Milestone 9: Siri and Shortcuts.
 - [ ] Milestone 10: widgets and Live Activities.
 - [ ] Milestone 11: the agent helps the person onboard.
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 - [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
-- [ ] Milestone 14: the app becomes the whole dashboard: a tab bar, and the agent reachable from every screen.
-- [ ] Milestone 15: mail: folders, threads, reading, actions, composing, drafts, rules and mailbox settings.
-- [ ] Milestone 16: mail subscriptions.
-- [ ] Milestone 17: the calendar.
-- [ ] Milestone 18: contacts.
-- [ ] Milestone 19: finance.
-- [ ] Milestone 20: knowledge: search, pages, the graph and sources.
+- [x] (2026-10-11) Milestone 14: tabs for the agent, mail, the calendar, contacts and More; asking the agent about a mail, a page or a transaction from where it is.
+- [ ] Milestone 15: mail. Folders in a side panel, threads, reading with pictures through the server, every action with undo, composing, drafts and invitations are in TestFlight; rules and mailbox settings remain.
+- [x] (2026-10-11) Milestone 16: mail subscriptions.
+- [x] (2026-10-11) Milestone 17: the calendar, with reminders.
+- [x] (2026-10-11) Milestone 18: contacts.
+- [ ] Milestone 19: finance. Every tab of the dashboard's Finance page is written; linking a bank through Plaid stays on the dashboard until the server sends a redirect for OAuth banks.
+- [ ] Milestone 20: knowledge. Search, pages, facts, connections, history, recall and documents are in TestFlight; the sources, dreams and memory check belong to the agent's settings (Milestone 21).
 - [ ] Milestone 21: every account setting, the agent's settings included.
 - [ ] Milestone 22: management: domains, people and access, queues, audit, and the server's settings.
 
 ## Surprises & Discoveries
+
+- Observation: the schema test passes documents whose fields have the wrong type in the app.
+  Evidence: an event's `occurrence` is a boolean and credit usage's `usageShare` a number, but the app decoded them as strings, so the calendar showed "cannot read" (2026-10-11). Every read document was then run against a live server through the CLI and decoded with the app's types in a throwaway test; those two were the only mismatches.
+- Observation: a query in a path is escaped. `URLComponents.path = "/a?url=…"` gives `/a%3Furl=…`, so the mail and chat picture proxies answered 404.
+- Observation: Swift 6.3's `ClosureLifetimeFixup` pass crashes on `if await f({ closure }) { … }`; keeping the result in a constant first avoids it.
+- Observation: automatic signing on a fresh CI machine makes a development certificate every run, and Apple caps them; the eleventh build failed to archive. One certificate is now kept in the repository's secrets and imported into a keychain of the run's own.
 
 - Observation: an OAuth token issued today works only on the MCP endpoint.
   Evidence: `agentToolsResource` (`internal/api/v1api/apioauth/oauth.go`) forces the token's resource to `/api/v1/mcp`, and `allowsResource` (`internal/web/session.go`) refuses it on any other path, `/api/v1/graphql` included. The only scope is `mcp` (`apioauth/metadata.go`).
