@@ -322,7 +322,7 @@ struct ArtifactCard: View {
                     if let markdown {
                         ScrollView { MarkdownView(text: markdown) }
                     } else if let address {
-                        WebView(url: address)
+                        ArtifactWebView(address: address)
                     } else {
                         ProgressView().frame(maxWidth: .infinity)
                     }
@@ -337,7 +337,7 @@ struct ArtifactCard: View {
                     if let markdown {
                         ScrollView { MarkdownView(text: markdown).padding() }
                     } else if let address {
-                        WebView(url: address)
+                        ArtifactWebView(address: address)
                     }
                 }
                 .navigationTitle(file.name)
@@ -555,6 +555,56 @@ enum CameraPresenter {
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             picker.dismiss(animated: true)
             CameraPresenter.delegate = nil
+        }
+    }
+}
+
+/// ArtifactWebView shows a page the agent made. Its scripts run, as on the
+/// dashboard, but it stays on its own page: anything it tries to load in
+/// its place is refused, as the dashboard's frame rules refuse it, and a
+/// link the person taps opens in Safari. A page written from a mail it read
+/// could otherwise send itself, and what it shows, somewhere else.
+struct ArtifactWebView: UIViewRepresentable {
+    let address: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator(address: address) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let view = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        view.navigationDelegate = context.coordinator
+        view.load(URLRequest(url: address))
+        return view
+    }
+
+    func updateUIView(_ view: WKWebView, context: Context) {}
+
+    @MainActor
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let address: URL
+
+        init(address: URL) {
+            self.address = address
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            guard let target = navigationAction.request.url else { return .cancel }
+            // The page itself, and frames inside it from the same server.
+            if isSamePage(target) { return .allow }
+            if navigationAction.targetFrame?.isMainFrame == false, target.host() == address.host(), target.scheme == address.scheme {
+                return .allow
+            }
+            if navigationAction.navigationType == .linkActivated, let scheme = target.scheme?.lowercased(), scheme == "https" || scheme == "http" {
+                await UIApplication.shared.open(target)
+            }
+            return .cancel
+        }
+
+        private func isSamePage(_ target: URL) -> Bool {
+            var asked = URLComponents(url: target, resolvingAgainstBaseURL: false)
+            var shown = URLComponents(url: address, resolvingAgainstBaseURL: false)
+            asked?.fragment = nil
+            shown?.fragment = nil
+            return asked?.url == shown?.url
         }
     }
 }

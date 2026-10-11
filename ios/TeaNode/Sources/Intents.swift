@@ -10,6 +10,10 @@ struct AskAgentIntent: AppIntent {
         IntentDescription("Asks your agent something in your main conversation, and says the answer.")
     }
 
+    /// The phone must be unlocked: the agent acts on the person's mail,
+    /// calendar and money, and Siri answers anyone holding a locked phone.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+
     @Parameter(title: "Request", requestValueDialog: "What should I ask?")
     var request: String
 
