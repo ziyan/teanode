@@ -936,6 +936,9 @@ struct DayTimeline: View {
                     }
                     .padding(.horizontal)
                     .padding(.bottom, 6)
+                    // Only as tall as the rows: an event's color stripe
+                    // would otherwise take all the height the bar offers.
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .onAppear {
