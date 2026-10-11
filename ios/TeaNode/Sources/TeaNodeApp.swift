@@ -315,6 +315,9 @@ struct SettingsForm: View {
     @Environment(AppModel.self) private var app
     @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
+    /// Whether the account may open the management pages, as the dashboard
+    /// shows its Manage side.
+    @State private var isOperator = false
 
     var body: some View {
         Form {
@@ -402,6 +405,17 @@ struct SettingsForm: View {
                     }
                 }
             }
+            if isOperator, let connection = app.connection {
+                Section {
+                    NavigationLink {
+                        ManageOverviewView(connection: connection)
+                    } label: {
+                        Label("Manage", systemImage: "server.rack")
+                    }
+                } footer: {
+                    Text("The server: its mail, domains, people and settings.")
+                }
+            }
             DisplaySection()
             if let mail, mail.mailbox != nil {
                 Section {
@@ -426,6 +440,11 @@ struct SettingsForm: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if let connection = app.connection {
+                isOperator = (try? await connection.isOperator()) ?? false
+            }
+        }
         .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) {
                 Task { await app.signOut() }
