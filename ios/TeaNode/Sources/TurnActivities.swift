@@ -13,15 +13,6 @@ enum TurnActivities {
 
     static func start(runId: String, agentTitle: String, connection: Connection) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled, Activity<AgentTurnAttributes>.activities.isEmpty else { return }
-        let activity: Activity<AgentTurnAttributes>
-        do {
-            activity = try Activity.request(
-                attributes: AgentTurnAttributes(agentTitle: agentTitle),
-                content: ActivityContent(state: AgentTurnAttributes.ContentState(activityState: "working"), staleDate: Date().addingTimeInterval(30 * 60)),
-                pushType: .token)
-        } catch {
-            return
-        }
         endBackgroundTask()
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Live Activity") { endBackgroundTask() }
         #if DEBUG
@@ -29,8 +20,20 @@ enum TurnActivities {
         #else
             let isSandbox = false
         #endif
+        // Made inside the task, which then holds it alone: an activity is
+        // not something to hand from one task to another.
         Task {
             defer { endBackgroundTask() }
+            let activity: Activity<AgentTurnAttributes>
+            do {
+                activity = try Activity.request(
+                    attributes: AgentTurnAttributes(agentTitle: agentTitle),
+                    content: ActivityContent(
+                        state: AgentTurnAttributes.ContentState(activityState: "working"), staleDate: Date().addingTimeInterval(30 * 60)),
+                    pushType: .token)
+            } catch {
+                return
+            }
             for await token in activity.pushTokenUpdates {
                 do {
                     let registration = try await PushRelay(transport: URLSessionTransport()).register(
@@ -49,8 +52,10 @@ enum TurnActivities {
     /// Ends every turn's activity: the person is back in the app, where the
     /// turn is on screen.
     static func endAll() {
-        for activity in Activity<AgentTurnAttributes>.activities {
-            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        Task {
+            for activity in Activity<AgentTurnAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
         }
     }
 
