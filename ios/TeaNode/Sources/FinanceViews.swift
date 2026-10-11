@@ -83,58 +83,49 @@ final class FinanceModel {
     }
 }
 
-/// FinanceScreen is the dashboard's Finance page: its sections, each a
-/// screen of its own.
+/// FinancePart is one section of the dashboard's Finance page. The side
+/// menu lists them under Finance, so each is one tap away.
+enum FinancePart: String, CaseIterable, Identifiable, Hashable {
+    case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, setup
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .spending: String(localized: "Spending")
+        case .transactions: String(localized: "Transactions")
+        case .accounts: String(localized: "Accounts")
+        case .budgets: String(localized: "Budgets")
+        case .netWorth: String(localized: "Net worth")
+        case .savingsTargets: String(localized: "Savings targets")
+        case .receipts: String(localized: "Receipts")
+        case .setup: String(localized: "Banks and currency")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .spending: "chart.pie"
+        case .transactions: "list.bullet.rectangle"
+        case .accounts: "building.columns"
+        case .budgets: "gauge.with.dots.needle.33percent"
+        case .netWorth: "chart.line.uptrend.xyaxis"
+        case .savingsTargets: "target"
+        case .receipts: "receipt"
+        case .setup: "link"
+        }
+    }
+}
+
+/// FinanceScreen is one section of the dashboard's Finance page, chosen in
+/// the side menu, with the button that opens the menu at its top left.
 struct FinanceScreen: View {
-    @State private var finance: FinanceModel
-
-    enum Part: String, CaseIterable, Identifiable, Hashable {
-        case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, setup
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .spending: String(localized: "Spending")
-            case .transactions: String(localized: "Transactions")
-            case .accounts: String(localized: "Accounts")
-            case .budgets: String(localized: "Budgets")
-            case .netWorth: String(localized: "Net worth")
-            case .savingsTargets: String(localized: "Savings targets")
-            case .receipts: String(localized: "Receipts")
-            case .setup: String(localized: "Banks and currency")
-            }
-        }
-
-        var systemImage: String {
-            switch self {
-            case .spending: "chart.pie"
-            case .transactions: "list.bullet.rectangle"
-            case .accounts: "building.columns"
-            case .budgets: "gauge.with.dots.needle.33percent"
-            case .netWorth: "chart.line.uptrend.xyaxis"
-            case .savingsTargets: "target"
-            case .receipts: "receipt"
-            case .setup: "link"
-            }
-        }
-    }
-
-    init(connection: Connection) {
-        _finance = State(initialValue: FinanceModel(connection: connection))
-    }
+    let finance: FinanceModel
+    let part: FinancePart
 
     var body: some View {
-        List {
-            ForEach(Part.allCases) { section in
-                NavigationLink(value: section) {
-                    Label(section.title, systemImage: section.systemImage)
-                }
-            }
-        }
-        .navigationTitle("Finance")
-        .navigationDestination(for: Part.self) { section in
+        NavigationStack {
             Group {
-                switch section {
+                switch part {
                 case .spending: SpendingView()
                 case .transactions: TransactionsView(filter: FinanceTransactionFilter())
                 case .accounts: AccountsView()
@@ -145,18 +136,20 @@ struct FinanceScreen: View {
                 case .setup: FinanceSetupView()
                 }
             }
-            .environment(finance)
-        }
-        .navigationDestination(for: TransactionLink.self) { link in
-            TransactionsView(filter: link.filter).environment(finance)
-        }
-        .overlay {
-            if finance.isShown == false {
-                ContentUnavailableView("Finance is not set up", systemImage: "building.columns", description: Text("Link a bank from your dashboard: Settings, then Agent, then Finance."))
+            .id(part)
+            .toolbar { MenuButton() }
+            .navigationDestination(for: TransactionLink.self) { link in
+                TransactionsView(filter: link.filter)
+            }
+            .overlay {
+                if finance.isShown == false, part != .setup {
+                    ContentUnavailableView("Finance is not set up", systemImage: "building.columns", description: Text("Link a bank from your dashboard: Settings, then Agent, then Finance."))
+                }
             }
         }
-        .task { await finance.load() }
-        .toast(done: $finance.doneText, problem: $finance.problemText)
+        .environment(finance)
+        .task { if finance.isShown == nil { await finance.load() } }
+        .toast(done: Bindable(finance).doneText, problem: Bindable(finance).problemText)
     }
 }
 

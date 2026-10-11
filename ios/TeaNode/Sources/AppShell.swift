@@ -92,18 +92,21 @@ struct MainView: View {
     @State private var conversation: AgentConversation?
     @State private var mail: MailModel
     @State private var mailPlace: MailPlace?
+    @State private var finance: FinanceModel
+    @State private var financePart = FinancePart.spending
     @State private var composing: ComposeStart?
 
     init(connection: Connection, username: String) {
         self.connection = connection
         _mail = State(initialValue: MailModel(connection: connection, username: username))
+        _finance = State(initialValue: FinanceModel(connection: connection))
     }
 
     var body: some View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail) {
             SideMenu(
                 connection: connection, mail: mail, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                composing: $composing
+                financePart: $financePart, composing: $composing
             ) {
                 isMenuOpen = false
             }
@@ -212,10 +215,7 @@ struct MainView: View {
         case .knowledge:
             KnowledgeStack(connection: connection)
         case .finance:
-            NavigationStack {
-                FinanceScreen(connection: connection)
-                    .toolbar { MenuButton() }
-            }
+            FinanceScreen(finance: finance, part: financePart)
         case .settings:
             NavigationStack {
                 SettingsForm()
@@ -257,6 +257,7 @@ struct SideMenu: View {
     @Binding var section: AppSection
     @Binding var conversation: AgentConversation?
     @Binding var mailPlace: MailPlace?
+    @Binding var financePart: FinancePart
     @Binding var composing: ComposeStart?
     let onClose: () -> Void
     @Environment(AppModel.self) private var app
@@ -277,6 +278,26 @@ struct SideMenu: View {
                 .menuListStyle()
                 .navigationBarTitleDisplayMode(.inline)
             }
+        case .finance:
+            NavigationStack {
+                List {
+                    Section { sections }
+                    Section("Finance") {
+                        ForEach(FinancePart.allCases) { part in
+                            Button {
+                                financePart = part
+                                onClose()
+                            } label: {
+                                Label(part.title, systemImage: part.systemImage)
+                            }
+                            .menuRow(isSelected: financePart == part)
+                        }
+                    }
+                }
+                .menuListStyle()
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { MenuBrand() }
+            }
         default:
             NavigationStack {
                 List {
@@ -296,9 +317,10 @@ struct SideMenu: View {
                     onClose()
                 } else {
                     section = part
-                    // The agent's conversations and the mail folders stay
-                    // open to choose from; the other parts open at once.
-                    if part != .agent, part != .mail { onClose() }
+                    // The agent's conversations, the mail folders and the
+                    // finance sections stay open to choose from; the other
+                    // parts open at once.
+                    if part != .agent, part != .mail, part != .finance { onClose() }
                 }
             } label: {
                 // The part on screen is marked by its color and weight; the

@@ -113,6 +113,8 @@ jobs:
           shoot menu-light light large -TeaNodeDemo -TeaNodeMenu
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
+          shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
+          shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
 
       - name: Keep the screenshots
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
