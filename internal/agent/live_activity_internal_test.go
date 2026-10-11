@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -121,5 +122,45 @@ func TestALiveActivityIsToldItsStatesInOrder(t *testing.T) {
 	}
 	if told[0].ActivityChangedAt.IsZero() || told[0].ActivityChangedAt.After(told[1].ActivityChangedAt) {
 		t.Errorf("the states' times run %s then %s", told[0].ActivityChangedAt, told[1].ActivityChangedAt)
+	}
+}
+
+// A card nobody answered within the wait stays open after the turn, so the
+// turn ends waiting for the person: ended as done, the lock screen would
+// say there is nothing left to do for fifteen minutes while the card waits.
+func TestATurnThatLeavesACardOpenEndsWaiting(t *testing.T) {
+	relay := &fakeRelay{}
+	run, worker := newLiveActivityRun(relay)
+	if err := run.RegisterLiveActivity("sealed:an-activity"); err != nil {
+		t.Fatalf("RegisterLiveActivity: %s", err)
+	}
+	worker.waitGroup.Wait()
+	run.followLiveActivities(EventConfirmation, time.Now())
+	worker.waitGroup.Wait()
+	if err := run.leaveCardOpen(); !errors.Is(err, ErrLeftOpen) {
+		t.Fatalf("leaveCardOpen said %v", err)
+	}
+	run.followLiveActivities(EventMessage, time.Now())
+	worker.waitGroup.Wait()
+	run.followLiveActivities(EventDone, time.Now())
+	worker.waitGroup.Wait()
+
+	got := toldStates(t, relay.to("sealed:an-activity"))
+	if want := []string{"working", "waiting", "working", "waiting (ended)"}; !sameStates(got, want) {
+		t.Fatalf("told %v, want %v", got, want)
+	}
+
+	// A turn that failed says so, card or not.
+	failing := &fakeRelay{}
+	run, worker = newLiveActivityRun(failing)
+	if err := run.RegisterLiveActivity("sealed:another-activity"); err != nil {
+		t.Fatalf("RegisterLiveActivity: %s", err)
+	}
+	_ = run.leaveCardOpen()
+	run.followLiveActivities(EventError, time.Now())
+	worker.waitGroup.Wait()
+	told := failing.to("sealed:another-activity")
+	if len(told) == 0 || told[len(told)-1].ActivityState != "failed" || !told[len(told)-1].IsActivityEnded {
+		t.Fatalf("a failed turn was told %v", toldStates(t, told))
 	}
 }

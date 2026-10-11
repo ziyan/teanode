@@ -1887,7 +1887,7 @@ func (self *AskRun) confirmWaiting(ctx context.Context, tool *Tool, call *Call, 
 		default:
 		}
 		if interaction != nil {
-			return false, ErrLeftOpen
+			return false, self.leaveCardOpen()
 		}
 		return false, fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
@@ -2489,7 +2489,7 @@ func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []
 		default:
 		}
 		if interaction != nil {
-			return "", ErrLeftOpen
+			return "", self.leaveCardOpen()
 		}
 		return "", fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():

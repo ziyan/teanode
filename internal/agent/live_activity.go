@@ -28,6 +28,11 @@ type liveActivities struct {
 	// pushed again; isEnded says the end was pushed.
 	activityState string
 	isEnded       bool
+	// isCardLeftOpen says a card outlived its wait in this turn
+	// (ErrLeftOpen): it stays open after the turn ends, so the turn ends
+	// waiting for the person, not done.
+	isCardLeftOpen bool
+
 	// pending is the newest state not yet sent, by registration. One
 	// sender per run sends them, one at a time, so each activity is told
 	// its states in the order they happened: sent from a goroutine apiece,
@@ -88,6 +93,15 @@ func (self *AskRun) RegisterLiveActivity(pushRegistration string) error {
 	return nil
 }
 
+// leaveCardOpen records that a card outlived its wait, and is the error
+// that says so.
+func (self *AskRun) leaveCardOpen() error {
+	self.live.mutex.Lock()
+	self.live.isCardLeftOpen = true
+	self.live.mutex.Unlock()
+	return ErrLeftOpen
+}
+
 // followLiveActivities pushes the state an event puts the turn in, when it
 // changes, to every Live Activity following the run.
 func (self *AskRun) followLiveActivities(kind EventKind, at time.Time) {
@@ -97,6 +111,11 @@ func (self *AskRun) followLiveActivities(kind EventKind, at time.Time) {
 	}
 	self.live.mutex.Lock()
 	defer self.live.mutex.Unlock()
+	// A turn that ends with a card still open is waiting for the person:
+	// shown as done, the lock screen would say there is nothing to do.
+	if activityState == "done" && self.live.isCardLeftOpen {
+		activityState = "waiting"
+	}
 	if self.live.isEnded || (activityState == self.live.activityState && !isEnding) {
 		return
 	}
