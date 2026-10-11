@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
-import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
+import { ErrorMessage, Loading, Tag, formatClock, formatTime } from '../components/common'
 import { Tooltip } from '../components/tooltip'
 import { RelativeTime } from '../components/relativeTime'
 import { Combobox, Select } from '../components/select'
@@ -50,6 +50,24 @@ const CREATE_APP_PASSWORD = `
   mutation ($mailboxId: String!, $name: String!) {
     CreateMailboxAppPassword(mailboxId: $mailboxId, name: $name) { password username appPassword { id name } }
   }`
+
+// A setup profile: an app password for the device, inside a file the device
+// installs, which adds the mailbox, its calendars and contacts to its own
+// apps. The file downloads once, within five minutes.
+const CREATE_SETUP_PROFILE = `
+  mutation ($mailboxId: String!, $deviceName: String!) {
+    CreateMailboxSetupProfile(mailboxId: $mailboxId, deviceName: $deviceName) {
+      downloadLink qrCodeSvg expiresAt hasCalendarsAndContacts appPassword { id name }
+    }
+  }`
+
+type SetupProfile = {
+  downloadLink: string
+  qrCodeSvg: string
+  expiresAt: string
+  hasCalendarsAndContacts: boolean
+  appPassword: { id: string; name: string }
+}
 
 const DELETE_APP_PASSWORD = `
   mutation ($appPasswordId: String!) {
@@ -1260,6 +1278,27 @@ function DevicesTab({ view }: { view: MailboxView }) {
   const [error, setError] = useState<unknown>(null)
   const [created, setCreated] = useState<{ password: string; username: string; name: string } | null>(null)
   const [deleting, setDeleting] = useState<AppPassword | null>(null)
+  const [isMakingProfile, setIsMakingProfile] = useState(false)
+  const [profile, setProfile] = useState<SetupProfile | null>(null)
+
+  const makeProfile = async () => {
+    setBusy(true)
+    try {
+      const response = await graphql<{ CreateMailboxSetupProfile: SetupProfile }>(CREATE_SETUP_PROFILE, {
+        mailboxId: view.mailbox.id,
+        deviceName: name.trim(),
+      })
+      setProfile(response.CreateMailboxSetupProfile)
+      setName('')
+      setIsMakingProfile(false)
+      setError(null)
+      await query.reload()
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const create = async () => {
     setBusy(true)
@@ -1311,23 +1350,38 @@ function DevicesTab({ view }: { view: MailboxView }) {
         title={t('mailboxSettings.devices')}
         description={t('mailboxSettings.devicesHint')}
         action={
-          <Tooltip label={address ? '' : t('mailbox.noAddress')}>
-            <button
-              className="primary"
-              type="button"
-              disabled={!address}
-              onClick={() => {
-                setName('')
-                setError(null)
-                setAdding(true)
-              }}
-            >
-              {t('mailboxSettings.newDevice')}
-            </button>
-          </Tooltip>
+          <>
+            <Tooltip label={address ? '' : t('mailbox.noAddress')}>
+              <button
+                type="button"
+                disabled={!address}
+                onClick={() => {
+                  setName('')
+                  setError(null)
+                  setIsMakingProfile(true)
+                }}
+              >
+                {t('mailboxSettings.setUpAppleDevice')}
+              </button>
+            </Tooltip>
+            <Tooltip label={address ? '' : t('mailbox.noAddress')}>
+              <button
+                className="primary"
+                type="button"
+                disabled={!address}
+                onClick={() => {
+                  setName('')
+                  setError(null)
+                  setAdding(true)
+                }}
+              >
+                {t('mailboxSettings.newDevice')}
+              </button>
+            </Tooltip>
+          </>
         }
       >
-        {error && !adding ? <ErrorMessage error={error} /> : null}
+        {error && !adding && !isMakingProfile ? <ErrorMessage error={error} /> : null}
         {appPasswords.length === 0 ? (
           <SettingsEmpty>{t('mailboxSettings.noDevices')}</SettingsEmpty>
         ) : (
@@ -1386,6 +1440,65 @@ function DevicesTab({ view }: { view: MailboxView }) {
             />
           </label>
         </FormDialog>
+      )}
+
+      {isMakingProfile && (
+        <FormDialog
+          title={t('mailboxSettings.setUpAppleDevice')}
+          submitLabel={t('common.create')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          canSubmit={name.trim() !== ''}
+          onClose={() => setIsMakingProfile(false)}
+          onSubmit={() => void makeProfile()}
+        >
+          <p className="muted">{t('mailboxSettings.setupProfileIntro')}</p>
+          <label>
+            <span>{t('mailboxSettings.deviceName')}</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t('mailboxSettings.setupProfileDeviceHint')}
+              autoFocus
+              required
+            />
+          </label>
+        </FormDialog>
+      )}
+
+      {/* The profile holds a password and downloads once, so, like a secret,
+          it is the only thing on the screen until it is dealt with. */}
+      {profile && (
+        <div className="dialog-scrim">
+          <div
+            className="dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={t('mailboxSettings.setupProfileReady', { name: profile.appPassword.name })}
+          >
+            <h3>{t('mailboxSettings.setupProfileReady', { name: profile.appPassword.name })}</h3>
+            <p className="muted">
+              {profile.hasCalendarsAndContacts
+                ? t('mailboxSettings.setupProfileScanAll')
+                : t('mailboxSettings.setupProfileScanMail')}
+            </p>
+            <img
+              className="connect-qr"
+              src={`data:image/svg+xml;utf8,${encodeURIComponent(profile.qrCodeSvg)}`}
+              alt={t('mailboxSettings.setupProfileQrAlt')}
+            />
+            <p className="muted">
+              {t('mailboxSettings.setupProfileExpires', { time: formatClock(profile.expiresAt) })}{' '}
+              <a href={profile.downloadLink}>{t('mailboxSettings.setupProfileOpenHere')}</a>
+            </p>
+            <p className="muted">{t('mailboxSettings.setupProfileWarning')}</p>
+            <div className="dialog-actions">
+              <button className="primary" type="button" onClick={() => setProfile(null)}>
+                {t('common.done')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* The password is shown this once, so it is shown the way every other

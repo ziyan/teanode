@@ -168,3 +168,39 @@ func TestIsSecureBelievesForwardedProtoOnlyFromAProxy(t *testing.T) {
 		t.Error("a TLS connection was not secure")
 	}
 }
+
+// Plain HTTP is allowed only where nothing is on the way, and the Host header
+// is the client's word: a proxy forwarding plain HTTP can set it to
+// 127.0.0.1, from another machine or from this one.
+func TestIsLocalRequestNeedsTheConnectionFromLoopbackAndNoProxy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		remote    string
+		host      string
+		forwarded string
+		want      bool
+	}{
+		{"the console on this machine", "127.0.0.1:50000", "127.0.0.1:10081", "", true},
+		{"a browser on this machine", "[::1]:50000", "localhost:10081", "", true},
+		{"a proxy elsewhere that rewrote the host", "203.0.113.7:44321", "127.0.0.1:10081", "", false},
+		{"a proxy on this machine forwarding somebody", "127.0.0.1:50000", "127.0.0.1:10081", "203.0.113.7", false},
+		{"from this machine, to a public name", "127.0.0.1:50000", "mail.example.com", "", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := &http.Request{RemoteAddr: test.remote, Host: test.host, Header: http.Header{}}
+			if test.forwarded != "" {
+				request.Header.Set("X-Forwarded-For", test.forwarded)
+			}
+			if got := api.IsLocalRequest(request); got != test.want {
+				t.Errorf("IsLocalRequest = %v, want %v", got, test.want)
+			}
+		})
+	}
+	if api.IsLocalRequest(nil) {
+		t.Error("no request was local")
+	}
+}
