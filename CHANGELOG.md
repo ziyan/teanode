@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.131.1] - 2026-10-11
+
+### Fixed
+
+- A phone is told about approvals, questions and answers as soon as you leave the TeaNode app, rather than two minutes later. (#381)
+- The Phones page has its icon in the settings menu and says its list is the notifications each phone gets. (#381)
+- An answer in the main chat, asked on the dashboard, reaches your phone when it finishes after you have left. Before, only answers to what you asked from the app did. Answers asked from the command line or the API are printed there and do not reach the phone. (#381)
+
 ## [0.131.0] - 2026-10-11
 
 ### Added
