@@ -117,6 +117,18 @@ jobs:
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
+          # Settings, and the screens it pushes, named by -TeaNodeScreen.
+          shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
+          shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
+          shoot agent-settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-settings
+          shoot manage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen manage
+          shoot people-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen people
+          shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
+          shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions
+          shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones
+          shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
+          shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
+          shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
 
           # The App Store's set: the largest iPhone, which its listing needs,
           # with the status bar Apple's own screenshots show.

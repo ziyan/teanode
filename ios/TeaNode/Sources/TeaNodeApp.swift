@@ -318,6 +318,12 @@ struct SettingsForm: View {
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
+    #if DEBUG
+        /// Whether the screen a screenshot names (`-TeaNodeScreen`) is
+        /// pushed, and whether it has been once, so coming back stays here.
+        @State private var isShowingDemoScreen = false
+        @State private var hasShownDemoScreen = false
+    #endif
 
     var body: some View {
         Form {
@@ -452,7 +458,39 @@ struct SettingsForm: View {
         } message: {
             Text("This phone stops talking to your agent until you connect it again.")
         }
+        #if DEBUG
+            .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
+            .onAppear {
+                guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings" else { return }
+                hasShownDemoScreen = true
+                isShowingDemoScreen = true
+            }
+        #endif
     }
+
+    #if DEBUG
+        /// The screen `-TeaNodeScreen` names, for the screenshots CI takes.
+        @ViewBuilder
+        private var demoScreen: some View {
+            if let connection = app.connection {
+                switch DemoServer.screen ?? "" {
+                case "agent-settings": AgentSettingsView(connection: connection)
+                case "manage": ManageOverviewView(connection: connection)
+                case "people": PeopleView(connection: connection)
+                case "server": ServerSettingsView(connection: connection)
+                case "sessions": SessionsView(connection: connection)
+                case "phones": PhonesView(connection: connection)
+                case "rules":
+                    if let mail {
+                        MailRulesView(mail: mail, mailboxId: mail.mailbox?.id ?? "")
+                    }
+                case "dreams": DreamsView(connection: connection)
+                case "schedules": SchedulesView(connection: connection)
+                default: EmptyView()
+                }
+            }
+        }
+    #endif
 
     static var version: String {
         let info = Bundle.main.infoDictionary

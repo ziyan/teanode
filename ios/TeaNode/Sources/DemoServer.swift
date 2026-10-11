@@ -40,8 +40,33 @@
                 answer = #"{"data":{"FinanceAccounts":[]}}"#
             } else if query.contains("ReportingCurrency") {
                 answer = #"{"data":{"ReportingCurrency":{"reportingCurrencyCode":"USD","isChosen":true}}}"#
+            } else if query.contains("ReadAgentVoice") {
+                // No voice, so the conversation shows no call button.
+                answer = #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":false,"sampleRate":null}}}"#
             } else if query.contains("ReadAgent") {
-                answer = #"{"data":{"ReadAgent":{"timezone":"UTC","categories":[]}}}"#
+                answer = Self.agent
+            } else if query.contains("ListAgentDreams") {
+                answer = Self.dreams
+            } else if query.contains("AgentDreamState") {
+                answer = #"{"data":{"AgentDreamState":{"dreamJobStatus":"","queuedAt":null,"startedAt":null}}}"#
+            } else if query.contains("AgentReadingProgress") {
+                answer = #"{"data":{"AgentReadingProgress":{"waiting":340,"read":2860,"perHour":410,"hoursLeft":0.83,"bootstrapping":false,"spent":1.84,"costLeft":0.22,"currency":"USD","dreams":5}}}"#
+            } else if query.contains("ListAgentSchedules") {
+                answer = Self.schedules
+            } else if query.contains("ListSessions") {
+                answer = Self.sessions
+            } else if query.contains("ListAgentPhones") {
+                answer = Self.phones
+            } else if query.contains("ListUsers") {
+                answer = Self.people
+            } else if query.contains("ListGroups") {
+                answer = Self.groups
+            } else if query.contains("ListRoles") {
+                answer = Self.roles
+            } else if query.contains("ListDomains") {
+                answer = #"{"data":{"ListDomains":[{"id":"d","domain":"example.com"},{"id":"d2","domain":"example.net"}]}}"#
+            } else if query.contains("GetSettings") {
+                answer = Self.serverSettings
             } else if query.contains("ListCalendars") {
                 answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
             } else if query.contains("ListCalendarEvents") {
@@ -59,7 +84,7 @@
             } else if query.contains("ListAgentGoals") {
                 answer = Self.goals
             } else if query.contains("GetSession") {
-                answer = #"{"data":{"GetSession":{"username":"robin"}}}"#
+                answer = Self.session
             } else {
                 answer = #"{"data":{}}"#
             }
@@ -90,6 +115,13 @@
             return arguments[index + 1]
         }
 
+        /// The screen Settings opens for a screenshot: `-TeaNodeScreen people`.
+        static var screen: String? {
+            let arguments = ProcessInfo.processInfo.arguments
+            guard let index = arguments.firstIndex(of: "-TeaNodeScreen"), index + 1 < arguments.count else { return nil }
+            return arguments[index + 1]
+        }
+
         /// A few events this week, wherever the week falls.
         static var events: String {
             let today = Calendar.current.startOfDay(for: Date())
@@ -109,7 +141,17 @@
         static let mailboxes = #"""
             {"data":{"ListMailboxes":[{"mailbox":{"id":"box","name":"Robin","signatureText":"","signatureHtml":"",
               "addresses":[{"address":"robin@example.com","domain":"example.com","domainId":"d"}],"autoReply":null,
-              "agent":{"granted":true,"draftReplies":true,"triage":{"enabled":true}}},
+              "agent":{"granted":true,"draftReplies":true,"triage":{"enabled":true}},
+              "rules":[
+                {"name":"Receipts to the archive","enabled":true,"stop":false,
+                  "conditions":[{"field":"category","header":null,"operator":"equals","value":"receipt"}],
+                  "actions":[{"kind":"markRead","folderId":null,"address":null},{"kind":"move","folderId":"archive","address":null}]},
+                {"name":"The plumber first","enabled":true,"stop":true,
+                  "conditions":[{"field":"from","header":null,"operator":"equals","value":"plumber@example.com"}],
+                  "actions":[{"kind":"flag","folderId":null,"address":null}]},
+                {"name":"Club newsletter","enabled":false,"stop":false,
+                  "conditions":[{"field":"header","header":"List-Id","operator":"contains","value":"news.example.org"}],
+                  "actions":[{"kind":"move","folderId":"archive","address":null}]}]},
               "folders":[
                 {"id":"inbox","mailboxId":"box","parentId":"","name":"Inbox","kind":"inbox","pinnedAt":null,"unread":2,"total":3,"noteCount":0},
                 {"id":"sent","mailboxId":"box","parentId":"","name":"Sent","kind":"sent","pinnedAt":null,"unread":0,"total":9,"noteCount":0},
@@ -191,6 +233,111 @@
                 {"runId":"r","callId":"c3","interactionKind":"approval","toolName":"mail_send","interactionText":"Send the reply to the plumber: \"Thursday at 9 works, see you then.\"","interactionChoices":null,"createdAt":"2026-10-10T09:01:04Z"}
               ]
             }}
+            """#
+
+        /// Every GetSession the app sends, answered at once: who is signed
+        /// in, and an operator holding every permission the Manage pages
+        /// check.
+        static let session = #"""
+            {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"],"byDomain":[]},
+              "impersonatorUsername":null}}}
+            """#
+
+        /// Every ReadAgent the app sends, answered at once: the agent's
+        /// settings and its upkeep, with no name, so the app still calls it
+        /// "Your agent", and no budget.
+        static let agent = #"""
+            {"data":{"ReadAgent":{
+              "agent":{"id":"agent","name":"","enabled":true,"instructions":"Keep replies short. Ask before booking anything that costs money.",
+                "language":"","knowledgeLanguage":"","askModel":"","speechVoice":"","operatorDisabledAt":null,
+                "confirm":["mail_send","calendar"],"unattendedAllowedRisks":["outward"],"isMemoryCheckEnabled":true,"isIdeasEnabled":true,
+                "voice":{"tone":"casual","length":"short","greeting":"Hi","signoff":"Robin"},
+                "categories":[{"name":"home","description":"The house, the garden and the people who fix things."},{"name":"travel","description":"Tickets, bookings and plans for trips."}],
+                "dreamFrom":"01:00","dreamUntil":"06:00","dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5},
+              "sources":[{"mailboxId":"box","name":"Robin","addresses":["robin@example.com"],"policy":{"granted":true,"draftReplies":true,"search":true,"research":false,
+                "triage":{"enabled":true,"backfill":"recent","replyExpectation":"direct"},"summaries":{"enabled":true,"minimumMessages":3,"style":"brief"},
+                "autoReply":null,"alerts":{"enabled":true}}}],
+              "collections":[{"id":"home","name":"Home","kind":"calendar","granted":true,"items":4},{"id":"book","name":"Contacts","kind":"addressBook","granted":true,"items":4}],
+              "allowed":{"enabled":true,"triage":true,"summaries":true,"draftReplies":true,"search":true,"research":true,"autoReply":true,"ask":true,"schedules":true,"browser":true,"connectedServers":true},
+              "budget":null,"choices":["standard","thorough"],"timezone":"UTC","language":"en","knowledgeLanguage":"en",
+              "categories":["personal","work","newsletter","notification","receipt","promotion","social","invitation","phishing","junk","other","home","travel"]}}}
+            """#
+
+        static let dreams = #"""
+            {"data":{"ListAgentDreams":[
+              {"id":"dream3","jobId":"job3","startedAt":"2026-10-10T02:10:00Z","finishedAt":"2026-10-10T02:31:00Z","digested":46,"filed":38,"merged":3,"rewritten":5,"moved":1,"dormant":2,"embedded":52,"backlog":340,"coarse":false,"strengthened":12,"associated":9,"rehearsed":12,"gaps":2,"unknown":1,"revised":4,"overviewsWritten":1,"themesMade":1,"themesUpdated":2,"reflectionsWritten":1,"lastError":null,"cost":0.41,"currency":"USD"},
+              {"id":"dream2","jobId":"job2","startedAt":"2026-10-09T01:45:00Z","finishedAt":"2026-10-09T02:02:00Z","digested":31,"filed":27,"merged":1,"rewritten":3,"moved":0,"dormant":0,"embedded":35,"backlog":386,"coarse":false,"strengthened":8,"associated":6,"rehearsed":10,"gaps":1,"unknown":0,"revised":2,"overviewsWritten":0,"themesMade":0,"themesUpdated":1,"reflectionsWritten":1,"lastError":null,"cost":0.33,"currency":"USD"},
+              {"id":"dream1","jobId":"job1","startedAt":"2026-10-08T03:05:00Z","finishedAt":"2026-10-08T03:19:00Z","digested":24,"filed":20,"merged":2,"rewritten":1,"moved":2,"dormant":1,"embedded":26,"backlog":417,"coarse":false,"strengthened":5,"associated":4,"rehearsed":0,"gaps":0,"unknown":0,"revised":1,"overviewsWritten":1,"themesMade":0,"themesUpdated":0,"reflectionsWritten":0,"lastError":null,"cost":0.27,"currency":"USD"}
+            ]}}
+            """#
+
+        static let schedules = #"""
+            {"data":{"ListAgentSchedules":[
+              {"id":"brief","name":"Daily brief","cron":"30 7 * * 1-5","prompt":"What is on today, what arrived overnight that needs me, and the weather for the walk to the station.","deliver":"drawer","enabled":true,"lastRunAt":"2026-10-09T07:30:00Z","nextRunAt":"2026-10-12T07:30:00Z"},
+              {"id":"roundup","name":"Friday round-up","cron":"0 17 * * 5","prompt":"Sum up the week: what I answered, what still waits, and what is on next week.","deliver":"mail","enabled":true,"lastRunAt":"2026-10-09T17:00:00Z","nextRunAt":"2026-10-16T17:00:00Z"},
+              {"id":"plants","name":"Water the plants","cron":"0 9 * * 0","prompt":"Remind me to water the plants, and say which ones were watered last week.","deliver":"drawer","enabled":false,"lastRunAt":"2026-09-27T09:00:00Z","nextRunAt":null}
+            ]}}
+            """#
+
+        static let sessions = #"""
+            {"data":{"ListSessions":[
+              {"id":"session1","current":true,"created":"2026-10-01T08:12:00Z","expires":"2026-10-31T08:12:00Z","lastUsed":"2026-10-10T09:04:00Z","ip":"198.51.100.23","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15","revoked":null,"impersonatorUsername":null},
+              {"id":"session2","current":false,"created":"2026-09-28T19:30:00Z","expires":"2026-10-28T19:30:00Z","lastUsed":"2026-10-09T18:40:00Z","ip":"203.0.113.54","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0","revoked":null,"impersonatorUsername":null},
+              {"id":"session3","current":false,"created":"2026-09-20T12:05:00Z","expires":"2026-10-20T12:05:00Z","lastUsed":"2026-10-03T16:15:00Z","ip":"192.0.2.77","userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","revoked":null,"impersonatorUsername":null}
+            ]}}
+            """#
+
+        static let phones = #"""
+            {"data":{"ListAgentPhones":{"phones":[
+              {"id":"phone1","phoneName":"Robin's phone","phoneModel":"iPhone","notificationKinds":["message","approval","question","answer"],"canBeNotified":true,"lastSeenAt":"2026-10-10T09:05:00Z","lastDeliveredAt":"2026-10-10T09:05:02Z","lastDeliveryError":""},
+              {"id":"phone2","phoneName":"Kitchen tablet","phoneModel":"iPad","notificationKinds":["approval","question"],"canBeNotified":true,"lastSeenAt":"2026-10-09T20:10:00Z","lastDeliveredAt":"2026-10-09T20:11:00Z","lastDeliveryError":""},
+              {"id":"phone3","phoneName":"Old phone","phoneModel":"iPhone","notificationKinds":["message","approval","question","answer"],"canBeNotified":false,"lastSeenAt":"2026-06-20T08:00:00Z","lastDeliveredAt":null,"lastDeliveryError":""}
+              ],"isPushEnabled":true,"notificationKinds":["message","approval","question","answer"]}}}
+            """#
+
+        static let people = #"""
+            {"data":{"ListUsers":[
+              {"id":"robin","username":"robin","name":"Robin","email":"robin@example.com","disabledAt":null,"hasPassword":true,"groupIds":["members","operators"],"createdAt":"2026-03-02T10:00:00Z"},
+              {"id":"sam","username":"sam","name":"Sam","email":"sam@example.org","disabledAt":null,"hasPassword":true,"groupIds":["members"],"createdAt":"2026-03-09T14:20:00Z"},
+              {"id":"jordan","username":"jordan","name":"Jordan","email":"jordan@example.net","disabledAt":null,"hasPassword":false,"groupIds":["members"],"createdAt":"2026-05-17T09:45:00Z"},
+              {"id":"frontdesk","username":"frontdesk","name":"Front desk","email":"frontdesk@example.com","disabledAt":null,"hasPassword":true,"groupIds":["members"],"createdAt":"2026-06-01T08:00:00Z"},
+              {"id":"casey","username":"casey","name":null,"email":null,"disabledAt":"2026-09-14T08:00:00Z","hasPassword":true,"groupIds":[],"createdAt":"2026-04-11T11:30:00Z"}
+            ]}}
+            """#
+
+        static let groups = #"""
+            {"data":{"ListGroups":[
+              {"id":"members","name":"Members","description":"Everyone who reads mail here.","idpGroup":null,"userIds":["robin","sam","jordan","frontdesk"],"roleIds":["member"],"domainIds":["d","d2"]},
+              {"id":"operators","name":"Operators","description":"Run the server.","idpGroup":null,"userIds":["robin"],"roleIds":["operator"],"domainIds":["d","d2"]}
+            ]}}
+            """#
+
+        static let roles = #"""
+            {"data":{"ListRoles":[
+              {"id":"member","name":"Member","description":"Reads and sends the mail of the mailboxes they are given.","permissions":["mail:read"]},
+              {"id":"operator","name":"Operator","description":"Everything on the server.","permissions":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"]}
+            ]}}
+            """#
+
+        static let serverSettings = #"""
+            {"data":{"GetSettings":{
+              "s3":{"enabled":false,"bucket":"","region":"","endpoint":null,"pathStyle":false,"accessKeyId":null,"hasSecretAccessKey":false,"credentialsFile":null},
+              "route53":{"enabled":false,"zoneId":"","region":"","accessKeyId":null,"hasSecretAccessKey":false,"credentialsFile":null},
+              "antivirus":{"enabled":false,"host":"","port":3310},
+              "antispam":{"enabled":true,"engine":"builtin","effectiveEngine":"builtin","host":"","port":783,"signalsEnabled":true,"dnsEnabled":true,"bayesEnabled":true,"rulesEnabled":true,"bayesMinimumMessages":200,"bayesLearnedSpam":412,"bayesLearnedHam":1380},
+              "relay":{"enabled":false,"host":"","port":587,"security":"starttls","username":null,"hasPassword":false},
+              "proxy":{"socks5":null},
+              "certificates":{"perDomain":true,"hosts":[],"acmeEnabled":true,"acmeEmail":"postmaster@example.com","acmeDirectoryUrl":null,"acmeChallenge":"http-01","certificateFile":null,"privateKeyFile":null},
+              "smtp":{"maxMessageSize":"25MB","maxRecipientsIncoming":100,"maxRecipientsOutgoing":50,"greylistDelay":"5m","authRateLimit":10,"authRateBurst":20,"trustedSenders":[]},
+              "resolver":{"nameserver":"","checkInterval":"1h","externalAddressServices":[]},
+              "session":{"lifetime":"720h"},
+              "passkey":{"enabled":true,"relyingPartyId":"demo.example.com","displayName":"TeaNode","origins":["https://demo.example.com"],"maximumPerUser":10},
+              "listen":{"smtpIncoming":":25","smtpOutgoing":":587","imap":":143","imaps":":993","http":":80","https":":443","debug":null},
+              "sso":{"providers":[]},
+              "identity":{"name":"demo.example.com","mailServers":["mx.example.com"],"externalAddresses":["203.0.113.10"],"logLevel":"info","dataDirectory":"/var/lib/teanode"},
+              "storage":{"directory":"/var/lib/teanode/messages","spoolRetention":"168h"},
+              "geoip":{"enabled":false,"databaseFile":null}}}}
             """#
     }
 #endif
