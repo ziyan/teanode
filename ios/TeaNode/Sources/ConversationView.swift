@@ -639,26 +639,10 @@ struct ReplyBar: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(reply.quotedRole == "user" ? String(localized: "Replying to your own message") : String(localized: "Replying to \(app.agentTitle)"))
-                    .font(.caption.bold())
-                Text(reply.quotedText ?? "")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            Spacer()
-            Button(action: onCancel) {
-                Image(systemName: "xmark.circle.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(minWidth: 44, minHeight: 44)
-            }
-            .accessibilityLabel("Cancel")
-        }
-        .padding(.leading, 12)
-        .glassEffect(in: .rect(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal)
+        ReferenceStrip(
+            systemImage: "arrowshape.turn.up.left",
+            title: reply.quotedRole == "user" ? String(localized: "Replying to your own message") : String(localized: "Replying to \(app.agentTitle)"),
+            detail: reply.quotedText ?? "", onCancel: onCancel)
     }
 }
 
@@ -669,30 +653,53 @@ struct ReferenceBar: View {
     let onCancel: () -> Void
 
     var body: some View {
-        HStack(alignment: .top) {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(subject.isEmpty ? String(localized: "(no subject)") : subject)
-                        .font(.caption.bold())
-                        .lineLimit(1)
-                    Text(from)
+        ReferenceStrip(
+            systemImage: "envelope", title: subject.isEmpty ? String(localized: "(no subject)") : subject, detail: from, onCancel: onCancel)
+    }
+}
+
+/// ReferenceStrip is what the next message refers to, above the composer:
+/// a small symbol, a line and a line under it, and a quiet way to drop it.
+struct ReferenceStrip: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                if !detail.isEmpty {
+                    Text(detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-            } icon: {
-                Image(systemName: "envelope")
             }
-            Spacer()
+            Spacer(minLength: 4)
             Button(action: onCancel) {
-                Image(systemName: "xmark.circle.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(minWidth: 44, minHeight: 44)
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .background(Color(.tertiarySystemFill), in: .circle)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Cancel")
         }
-        .padding(.leading, 12)
-        .glassEffect(in: .rect(cornerRadius: 16, style: .continuous))
+        .padding(.leading, 14)
+        .padding(.trailing, 2)
+        .padding(.vertical, 2)
+        .glassEffect(in: .rect(cornerRadius: 20, style: .continuous))
         .padding(.horizontal)
     }
 }

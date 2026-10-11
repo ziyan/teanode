@@ -42,6 +42,10 @@ final class ServerAddressTests: XCTestCase {
         XCTAssertEqual(server.endpoint("/api/v1/graphql").absoluteString, "https://mail.example.com:10443/api/v1/graphql")
         XCTAssertEqual(server.endpoint("oauth/token").absoluteString, "https://mail.example.com:10443/oauth/token")
         XCTAssertEqual(
+            server.endpoint("/api/v1/mail/m1/remote?url=https%3A%2F%2Fpictures.example%2Fa.png").absoluteString,
+            "https://mail.example.com:10443/api/v1/mail/m1/remote?url=https%3A%2F%2Fpictures.example%2Fa.png",
+            "a query stays a query, not an escaped part of the path")
+        XCTAssertEqual(
             server.websocketEndpoint("/api/v1/graphql").absoluteString, "wss://mail.example.com:10443/api/v1/graphql")
         XCTAssertEqual(
             try ServerAddress(parsing: "http://localhost:10081").websocketEndpoint("/api/v1/agent/voice").absoluteString,

@@ -40,7 +40,7 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $section) {
-            Tab(app.agentTitle, systemImage: "bubble.left.and.text.bubble.right", value: AppTab.agent) {
+            Tab(app.agentTitle, systemImage: "bubble.left", value: AppTab.agent) {
                 AgentTab(connection: connection)
             }
             Tab("Mail", systemImage: "envelope", value: AppTab.mail) {
@@ -49,7 +49,7 @@ struct MainView: View {
             Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
                 CalendarScreen(connection: connection, username: app.account?.username ?? "")
             }
-            Tab("Contacts", systemImage: "person.crop.circle", value: AppTab.contacts) {
+            Tab("Contacts", systemImage: "person", value: AppTab.contacts) {
                 ContactsScreen(connection: connection)
             }
             Tab("More", systemImage: "ellipsis", value: AppTab.more) {
@@ -57,6 +57,8 @@ struct MainView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        // Outlines, never filled: lighter, and clear of the button's edge.
+        .environment(\.symbolVariants, .none)
         .onAppear {
             #if DEBUG
                 switch DemoServer.tab {
