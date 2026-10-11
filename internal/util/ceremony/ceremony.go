@@ -16,6 +16,10 @@
 // that is a row lock and an explicit delete to get what a map or GETDEL gives,
 // plus an index to find what nothing would otherwise clean up. A challenge
 // that is lost when the server restarts costs one retry.
+//
+// A setup profile waiting for its one download has the same three properties,
+// so it is parked here too, sealed, and marked with its Kind so that neither
+// taker accepts what the other parked.
 package ceremony
 
 import (
@@ -49,7 +53,20 @@ type Ceremony struct {
 	// SessionData is the WebAuthn library's own state, kept opaque here. This
 	// package is about the parking, not about what is parked.
 	SessionData string `json:"sessionData,omitempty"`
+
+	// Kind says what is parked: empty for a WebAuthn challenge, which is
+	// what every ceremony parked before there was a second kind holds, and
+	// KindSetupProfile for a setup profile.
+	Kind string `json:"kind,omitempty"`
+
+	// SealedSetupProfile is a setup profile waiting for its one download,
+	// sealed with the server secret: it holds an app password, and Redis is
+	// not where a password is kept readable.
+	SealedSetupProfile string `json:"sealedSetupProfile,omitempty"`
 }
+
+// KindSetupProfile marks a parked setup profile.
+const KindSetupProfile = "setupProfile"
 
 // Store parks ceremonies.
 type Store interface {

@@ -8696,6 +8696,12 @@ p.notice.domain-logo-note {
   text-overflow: ellipsis;
 }
 
+/* A question or approval waits in this conversation. */
+.agent-drawer-list-waiting {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .agent-drawer-list-actions .icon-button.danger:hover {
   color: var(--bad);
 }

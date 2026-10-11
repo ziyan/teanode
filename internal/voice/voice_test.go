@@ -250,3 +250,61 @@ func TestAProviderErrorIsAProblemNotTheEnd(t *testing.T) {
 		t.Fatalf("estimated %+v", usage)
 	}
 }
+
+// Without a pause set, the provider judges from the words when somebody
+// has finished; a provider that cannot is asked again with a pause.
+func TestATurnEndsByTheWordsOrAfterAPause(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	var mutex sync.Mutex
+	var configurations []string
+	isRefusingWords := false
+	read := func() []string {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return append([]string(nil), configurations...)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			mutex.Lock()
+			configurations = append(configurations, string(message))
+			isRefusing := isRefusingWords
+			mutex.Unlock()
+			if isRefusing && strings.Contains(string(message), `"semantic_vad"`) {
+				_ = conn.WriteJSON(map[string]any{"type": "error", "error": map[string]any{"message": "semantic_vad is not supported"}})
+				continue
+			}
+			_ = conn.WriteJSON(map[string]any{"type": "session.updated"})
+		}
+	}))
+	defer server.Close()
+
+	session, err := Open(context.Background(), &Settings{BaseURL: server.URL, APIKey: "k", TranscriptionModel: "gpt-4o-transcribe"})
+	if err != nil {
+		t.Fatalf("open: %s", err)
+	}
+	_ = session.Close()
+	if sent := read(); len(sent) != 1 || !strings.Contains(sent[0], `"type":"semantic_vad"`) || !strings.Contains(sent[0], `"eagerness":"medium"`) {
+		t.Fatalf("the provider was not asked to judge from the words: %q", sent)
+	}
+
+	mutex.Lock()
+	configurations, isRefusingWords = nil, true
+	mutex.Unlock()
+	session, err = Open(context.Background(), &Settings{BaseURL: server.URL, APIKey: "k", TranscriptionModel: "gpt-4o-transcribe"})
+	if err != nil {
+		t.Fatalf("open with the fallback: %s", err)
+	}
+	_ = session.Close()
+	if sent := read(); len(sent) != 2 || !strings.Contains(sent[1], `"type":"server_vad"`) || !strings.Contains(sent[1], `"silence_duration_ms":500`) {
+		t.Fatalf("the fallback was not a pause: %q", sent)
+	}
+}

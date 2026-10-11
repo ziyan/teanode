@@ -24,9 +24,14 @@ voice socket ── speechStarted, transcriptDelta, transcriptFinal … ──�
                                AskAgent, surface "voice" ◀────────────┘
 ```
 
-**The provider detects speech.** The session asks for `server_vad`: the
+**The provider detects speech.** The session asks for `semantic_vad`: the
 provider says when somebody starts and stops talking and commits each
-utterance itself; nothing in TeaNode decides where a turn ends. That is why
+utterance itself, judging from what was said whether the person has
+finished, so a pause after the agent's name or in the middle of a thought
+does not send half a sentence. Nothing in TeaNode decides where a turn ends.
+When `agent.voice.silenceMS` is set, or the provider refuses `semantic_vad`,
+the session asks for `server_vad` instead, which ends a turn after a pause
+that long (500 milliseconds for the fallback). That is why
 `gpt-live-transcribe` and `gpt-realtime-whisper`, which need the application
 to commit each turn, are refused by the configuration. Speech-start events
 reach the drawer as soon as the provider sends them, which is what cutting in
@@ -45,7 +50,7 @@ microphone sends `stillHere` every 20 seconds instead of audio.
 own `send`, with what the person is viewing, exactly as if typed, except that
 its surface is `voice`. So a spoken turn steers a running turn, answers an open
 question card, and crosses instances the way a typed one does. A pause longer
-than `agent.voice.silenceMS` in the middle of a request makes two utterances,
+than the provider waits in the middle of a request makes two utterances,
 and the second reaches the running turn as a follow-up.
 
 **Order and duplicates.** The provider commits utterances in the order they
@@ -107,7 +112,8 @@ connection, a refused microphone).
 to somebody else without the agent hearing it. The microphone's track is
 disabled, so nothing of them is heard, drawn on the meter, or taken for
 speaking over an answer, and answers go on being read aloud. Silence is sent
-for six seconds, longer than the longest `silenceMS` allowed, so that what
+for six seconds, longer than the longest `silenceMS` allowed and than the
+four seconds the provider waits on an unfinished sentence, so that what
 was being said ends there as an utterance; after that no audio is sent, so
 nothing is transcribed or counted. The mute lasts for that call only.
 

@@ -6,6 +6,48 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.131.1] - 2026-10-11
+
+### Fixed
+
+- A phone is told about approvals, questions and answers as soon as you leave the TeaNode app, rather than two minutes later. (#381)
+- The Phones page has its icon in the settings menu and says its list is the notifications each phone gets. (#381)
+- An answer in the main chat, asked on the dashboard, reaches your phone when it finishes after you have left. Before, only answers to what you asked from the app did. Answers asked from the command line or the API are printed there and do not reach the phone. (#381)
+
+## [0.131.0] - 2026-10-11
+
+### Added
+
+- A turn you start in the TeaNode iPhone app and leave running shows on the lock screen and in the Dynamic Island, saying whether the agent is working, waiting for you, or done. Only that word crosses Apple and the push relay, never what the turn says. (#386)
+
+## [0.130.0] - 2026-10-11
+
+### Added
+
+- The chat drawer's list of conversations says which ones have a question or an approval waiting for you, and `teanode agent waiting` lists them all and answers them from a shell. (#385)
+
+### Fixed
+
+- On a voice call, a pause after the agent's name or in the middle of a thought no longer sends half a sentence as a turn. The provider now judges from what was said whether you have finished. Setting `agent.voice.silenceMS` keeps the old fixed pause. (#390)
+
+## [0.129.2] - 2026-10-11
+
+### Fixed
+
+- On a voice call, a pause after the agent's name or in the middle of a thought no longer sends half a sentence as a turn. The provider now judges from what was said whether you have finished. Setting `agent.voice.silenceMS` keeps the old fixed pause. (#390)
+
+## [0.129.1] - 2026-10-11
+
+### Fixed
+
+- `teanode` commands run on the server itself, without a sign-in, work again on a server that serves HTTPS directly; they failed with "answered with something that is not a GraphQL reply (HTTP 308)". (#389)
+
+## [0.129.0] - 2026-10-11
+
+### Added
+
+- A mailbox's Mail programs tab can set up an iPhone or a Mac in one step: it makes a setup profile with an app password of its own, shown as a QR code and a link that downloads once within five minutes. Installing it adds the mailbox to Mail and, when the server has a name for calendars and contacts, those to Calendar, Reminders and Contacts. `teanode mailbox profile <device>` does the same from the command line. (#384)
+
 ## [0.128.0] - 2026-10-10
 
 ### Added

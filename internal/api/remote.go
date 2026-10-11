@@ -165,6 +165,40 @@ func IsLoopbackHost(host string) bool {
 	return false
 }
 
+// IsLocalRequest says a request came from this machine and named it by its
+// loopback address, with nothing in between: the server's own command line
+// (client.Local), or a browser on the server itself. Plain HTTP is safe
+// there, because nothing else is on the way.
+//
+// The Host header alone does not say so. It is whatever the client wrote,
+// and a proxy that forwards plain HTTP may set it to 127.0.0.1, so the
+// connection has to come from loopback as well. A proxy on this same machine
+// passes both of those, so a request that carries a proxy's forwarding
+// headers is not local either: whoever it is forwarding for is somewhere
+// else.
+func IsLocalRequest(request *http.Request) bool {
+	if request == nil {
+		return false
+	}
+	remote, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil || !IsLoopbackHost(remote) {
+		return false
+	}
+	host := request.Host
+	if name, _, err := net.SplitHostPort(host); err == nil {
+		host = name
+	}
+	if !IsLoopbackHost(host) {
+		return false
+	}
+	for _, header := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-Ip"} {
+		if request.Header.Get(header) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // IsPrivateUseRedirect says whether address is an app's own return address
 // (RFC 8252 section 7.1): a scheme that is a reverse domain name, such as
 // com.example.app:/oauth, with a path and no host.

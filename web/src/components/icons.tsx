@@ -637,6 +637,16 @@ export function PhoneIcon(props: IconProps) {
   )
 }
 
+// SmartphoneIcon is a phone held upright: the phones the TeaNode app runs on.
+export function SmartphoneIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="2" width="12" height="20" rx="2.5" />
+      <path d="M11 18h2" />
+    </Icon>
+  )
+}
+
 // PhoneHangUpIcon is a handset laid down: ending the call.
 export function PhoneHangUpIcon(props: IconProps) {
   return (
