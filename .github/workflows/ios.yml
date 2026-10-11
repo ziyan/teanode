@@ -116,6 +116,27 @@ jobs:
           shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
 
+          # The App Store's set: the largest iPhone, which its listing needs,
+          # with the status bar Apple's own screenshots show.
+          xcrun simctl shutdown "$device"
+          device=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro Max")]
+          print(phones[-1]["udid"])')
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
+          mkdir -p screenshots/store
+          shoot store/1-conversation light large -TeaNodeDemo
+          shoot store/2-mail light large -TeaNodeDemo -TeaNodeTab mail
+          shoot store/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
+          shoot store/4-goals light large -TeaNodeDemo -TeaNodeTab goals
+          shoot store/5-menu dark large -TeaNodeDemo -TeaNodeMenu
+          shoot store/6-conversation-dark dark large -TeaNodeDemo
+
       - name: Keep the screenshots
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
