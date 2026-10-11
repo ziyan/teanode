@@ -287,9 +287,6 @@ struct KnowledgeSourcesView: View {
             Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
             pauseButton(source).tint(.orange)
         }
-        .swipeActions(edge: .leading) {
-            syncButton(source).tint(.indigo)
-        }
         .contextMenu {
             Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
             syncButton(source)
@@ -1890,9 +1887,6 @@ struct SchedulesView: View {
                         }
                         .tint(.orange)
                     }
-                    .swipeActions(edge: .leading) {
-                        runButton(schedule).tint(.indigo)
-                    }
                     .contextMenu {
                         Button("Edit", systemImage: "pencil") { editing = ScheduleEditing(schedule: schedule) }
                         runButton(schedule)
@@ -2817,12 +2811,6 @@ struct ConnectionsView: View {
                     if let channel {
                         Button("Remove", systemImage: "trash", role: .destructive) { removingChannel = channel }
                         switchButton(channel).tint(.orange)
-                    }
-                }
-                .swipeActions(edge: .leading) {
-                    if let channel, channel.linked {
-                        Button("Unlink", systemImage: "link") { unlinking = channel }
-                            .tint(.indigo)
                     }
                 }
                 .contextMenu {

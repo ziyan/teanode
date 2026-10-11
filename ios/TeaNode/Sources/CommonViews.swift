@@ -94,7 +94,7 @@ struct SidePanel<Panel: View, Content: View>: View {
     var isOpenedFromAnywhere = true
     @ViewBuilder var panel: () -> Panel
     @ViewBuilder var content: () -> Content
-    @GestureState private var dragged: CGFloat = 0
+    @State private var dragged: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var isReducingMotion
 
     /// How far from the left edge a swipe must start to open the panel.
@@ -127,29 +127,29 @@ struct SidePanel<Panel: View, Content: View>: View {
                     }
                     .offset(x: shift)
             }
-            // Alongside the screen's own scrolling, which would otherwise
-            // take every drag that starts over it; only a mostly sideways
-            // drag moves the panel.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 16)
-                    .updating($dragged) { value, dragged, _ in
-                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                        if isOpen {
-                            dragged = min(0, value.translation.width)
-                        } else if isOpenedFromAnywhere || value.startLocation.x < Self.edgeWidth {
-                            dragged = max(0, value.translation.width)
-                        }
-                    }
-                    .onEnded { value in
-                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                        if isOpen, value.predictedEndTranslation.width < -width / 3 {
+            // A UIKit pan rather than a SwiftUI drag: once it takes a
+            // sideways drag it cancels the touch under the finger, so the
+            // row, link or button the swipe began on is not pressed when
+            // the finger lifts. It still lets the screen scroll up and down.
+            .gesture(
+                SidePanelPan(
+                    shouldBegin: { start, velocity in
+                        guard abs(velocity.x) > abs(velocity.y) else { return false }
+                        if isOpen { return velocity.x < 0 }
+                        return velocity.x > 0 && (isOpenedFromAnywhere || start.x < Self.edgeWidth)
+                    },
+                    onChange: { translation in
+                        dragged = isOpen ? min(0, translation) : max(0, translation)
+                    },
+                    onEnd: { translation, velocity in
+                        let projected = translation + velocity * 0.2
+                        dragged = 0
+                        if isOpen, projected < -width / 3 {
                             setOpen(false)
-                        } else if !isOpen, isOpenedFromAnywhere || value.startLocation.x < Self.edgeWidth,
-                            value.predictedEndTranslation.width > width / 3
-                        {
+                        } else if !isOpen, projected > width / 3 {
                             setOpen(true)
                         }
-                    })
+                    }))
             .animation(isReducingMotion ? nil : .spring(duration: 0.3), value: isOpen)
         }
         // The whole screen, to its edges: measured inside the safe area, the
@@ -162,6 +162,67 @@ struct SidePanel<Panel: View, Content: View>: View {
 
     private func setOpen(_ isOpened: Bool) {
         isOpen = isOpened
+    }
+}
+
+/// SidePanelPan is the side panel's drag, as a UIKit pan so that it can
+/// cancel the touches of what is under the finger when it starts.
+struct SidePanelPan: UIGestureRecognizerRepresentable {
+    /// Whether a drag starting there with that velocity is the panel's.
+    let shouldBegin: (CGPoint, CGPoint) -> Bool
+    /// How far it has moved sideways.
+    let onChange: (CGFloat) -> Void
+    /// How far it moved sideways, and how fast it was going when it ended.
+    let onEnd: (CGFloat, CGFloat) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.cancelsTouchesInView = true
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator(shouldBegin: shouldBegin)
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.shouldBegin = shouldBegin
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translation = recognizer.translation(in: recognizer.view).x
+        switch recognizer.state {
+        case .began, .changed:
+            onChange(translation)
+        case .ended:
+            onEnd(translation, recognizer.velocity(in: recognizer.view).x)
+        case .cancelled, .failed:
+            onEnd(0, 0)
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var shouldBegin: (CGPoint, CGPoint) -> Bool
+
+        init(shouldBegin: @escaping (CGPoint, CGPoint) -> Bool) {
+            self.shouldBegin = shouldBegin
+        }
+
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer, let view = pan.view else { return false }
+            let start = CGPoint(x: pan.location(in: view).x - pan.translation(in: view).x, y: pan.location(in: view).y)
+            return shouldBegin(start, pan.velocity(in: view))
+        }
+
+        /// Up and down still scroll the screen; only a sideways drag is
+        /// the panel's, and it begins only then.
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
     }
 }
 

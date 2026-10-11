@@ -1028,7 +1028,7 @@ struct FinanceSetupView: View {
                         }
                         .tint(.indigo)
                     }
-                    .swipeActions(edge: .leading) {
+                    .contextMenu {
                         if source.providerKind != "statement" {
                             Button("Sync", systemImage: "arrow.clockwise") {
                                 Task {

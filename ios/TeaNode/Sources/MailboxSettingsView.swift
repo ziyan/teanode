@@ -166,7 +166,7 @@ struct MailFoldersView: View {
                         .tint(.indigo)
                     }
                 }
-                .swipeActions(edge: .leading) {
+                .contextMenu {
                     if folder.kind != "inbox" {
                         Button(folder.pinnedAt == nil ? LocalizedStringKey("Pin") : "Unpin", systemImage: folder.pinnedAt == nil ? "pin" : "pin.slash") {
                             Task {
