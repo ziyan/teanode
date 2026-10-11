@@ -148,6 +148,11 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
+      # Each run makes a development certificate whose key leaves with the
+      # machine; Apple allows only a few, so earlier runs' are revoked.
+      - name: Revoke earlier runs' certificates
+        run: python3 ios/Scripts/revoke-stale-certificates.py "$KEY_ID" "$ISSUER_ID" "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+
       # The build number is the workflow's run number, which only grows, as
       # App Store Connect requires of builds of one version.
       - name: Archive
