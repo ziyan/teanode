@@ -55,6 +55,8 @@ public struct Mailbox: Codable, Hashable, Sendable, Identifiable {
     public let addresses: [Address?]
     public let autoReply: AutoReply?
     public let agent: AgentAccess?
+    /// What sorts mail as it arrives, in the order the rules run.
+    public let rules: [MailRule]?
 
     public var sendingAddresses: [String] { addresses.compactMap { $0?.address } }
 }
@@ -555,6 +557,7 @@ extension Documents {
               addresses { address domain domainId }
               autoReply { enabled from until subject text html sameDomainOnly }
               agent { granted draftReplies triage { enabled } }
+              rules { name enabled stop conditions { field header operator value } actions { kind folderId address } }
             }
             folders { id mailboxId parentId name kind pinnedAt unread total noteCount }
             unread starredUnread priorityUnread maxMessageSize

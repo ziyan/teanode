@@ -51,11 +51,153 @@ public struct MailAutoReplyDraft: Hashable, Sendable {
     }
 }
 
+/// MailRule is one of the rules that sort mail as it arrives: when all of
+/// its conditions match, its actions run, and a rule that stops ends the
+/// run.
+public struct MailRule: Codable, Hashable, Sendable {
+    /// Condition is one test of a message.
+    public struct Condition: Codable, Hashable, Sendable {
+        /// from, to, subject, header, score, sender-known, category,
+        /// priority, needs-reply or any.
+        public var field: String
+        /// The header's name, when the field is header.
+        public var header: String?
+        /// contains, equals, matches, above or below; empty for the fields
+        /// that need no value.
+        public var comparisonOperator: String
+        public var value: String?
+
+        enum CodingKeys: String, CodingKey {
+            case field, header, value
+            case comparisonOperator = "operator"
+        }
+
+        public init(field: String = "from", header: String? = nil, comparisonOperator: String = "contains", value: String? = "") {
+            self.field = field
+            self.header = header
+            self.comparisonOperator = comparisonOperator
+            self.value = value
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            field = try container.decode(String.self, forKey: .field)
+            header = try container.decodeIfPresent(String.self, forKey: .header)
+            comparisonOperator = try container.decodeIfPresent(String.self, forKey: .comparisonOperator) ?? ""
+            value = try container.decodeIfPresent(String.self, forKey: .value)
+        }
+
+        /// The fields that need no value: the condition is the field.
+        public static let bareFields: Set<String> = ["sender-known", "needs-reply", "any"]
+
+        public var isBare: Bool { Self.bareFields.contains(field) }
+
+        /// What a field can be compared with: a score is above or below a
+        /// number, a priority is one of three, everything else matches text.
+        public static func operators(for field: String) -> [String] {
+            if field == "score" { return ["above", "below"] }
+            if field == "priority" { return ["equals"] }
+            if bareFields.contains(field) { return [""] }
+            return ["contains", "equals", "matches"]
+        }
+    }
+
+    /// Action is one thing done to a message a rule matched.
+    public struct Action: Codable, Hashable, Sendable {
+        /// move, markRead, flag, forward or delete.
+        public var kind: String
+        public var folderId: String?
+        public var address: String?
+
+        public init(kind: String = "move", folderId: String? = "", address: String? = nil) {
+            self.kind = kind
+            self.folderId = folderId
+            self.address = address
+        }
+    }
+
+    public var name: String
+    public var enabled: Bool
+    public var stop: Bool
+    public var conditions: [Condition]
+    public var actions: [Action]
+
+    public init(
+        name: String = "", enabled: Bool = true, stop: Bool = false, conditions: [Condition] = [Condition()],
+        actions: [Action] = [Action()]
+    ) {
+        self.name = name
+        self.enabled = enabled
+        self.stop = stop
+        self.conditions = conditions
+        self.actions = actions
+    }
+
+    public static let fields = ["from", "to", "subject", "header", "score", "sender-known", "category", "priority", "needs-reply", "any"]
+    public static let actionKinds = ["move", "markRead", "flag", "forward", "delete"]
+    public static let priorities = ["high", "normal", "low"]
+
+    /// As the server takes it: each part only where it means something, so
+    /// a header name left from a field changed since is not sent.
+    var variables: JSONValue {
+        .object([
+            "name": .string(name), "enabled": .bool(enabled), "stop": .bool(stop),
+            "conditions": .array(conditions.map { condition in
+                .object([
+                    "field": .string(condition.field),
+                    "header": .string(condition.field == "header" ? condition.header ?? "" : ""),
+                    "operator": .string(condition.isBare ? "" : condition.comparisonOperator),
+                    "value": .string(condition.value ?? ""),
+                ])
+            }),
+            "actions": .array(actions.map { action in
+                .object([
+                    "kind": .string(action.kind),
+                    "folderId": .string(action.kind == "move" ? action.folderId ?? "" : ""),
+                    "address": .string(action.kind == "forward" ? action.address ?? "" : ""),
+                ])
+            }),
+        ])
+    }
+}
+
+/// MailRuleTrial is what the rules would do with one recent message: the
+/// places in the list of the rules that match it.
+public struct MailRuleTrial: Codable, Hashable, Sendable {
+    public struct Item: Codable, Hashable, Sendable {
+        public struct Mail: Codable, Hashable, Sendable {
+            public let from: String?
+            public let sender: String?
+            public let subject: String?
+            public let receivedAt: String?
+        }
+        public let id: String
+        public let mail: Mail?
+    }
+    public let matched: [Int]
+    public let item: Item
+}
+
 extension Documents {
     public static let updateMailbox = """
         mutation ($mailboxId: String!, $name: String, $signatureText: String, $signatureHtml: String, $autoReply: MailboxAutoReplyInput) {
           UpdateMailbox(mailboxId: $mailboxId, name: $name, signatureText: $signatureText, signatureHtml: $signatureHtml, autoReply: $autoReply) {
             mailbox { id }
+          }
+        }
+        """
+    public static let updateMailboxRules = """
+        mutation ($mailboxId: String!, $rules: [MailboxRuleInput!]) {
+          UpdateMailbox(mailboxId: $mailboxId, rules: $rules) {
+            mailbox { id }
+          }
+        }
+        """
+    public static let testMailboxRules = """
+        query ($mailboxId: String!, $rules: [MailboxRuleInput!]!, $first: Int) {
+          TestMailboxRules(mailboxId: $mailboxId, rules: $rules, first: $first) {
+            matched
+            item { id mail { from sender subject receivedAt } }
           }
         }
         """
@@ -109,6 +251,25 @@ extension Connection {
         }
         if let autoReply { variables["autoReply"] = autoReply.variables }
         _ = try await execute(Documents.updateMailbox, variables: variables, as: Answer.self)
+    }
+
+    /// Replaces the mailbox's rules with these, in this order.
+    public func updateMailboxRules(_ mailboxId: String, rules: [MailRule]) async throws {
+        struct Answer: Decodable, Sendable { let UpdateMailbox: JSONValue? }
+        _ = try await execute(
+            Documents.updateMailboxRules,
+            variables: ["mailboxId": .string(mailboxId), "rules": .array(rules.map(\.variables))], as: Answer.self)
+    }
+
+    /// What these rules would do with the newest messages in the Inbox;
+    /// nothing is moved.
+    public func testMailboxRules(_ mailboxId: String, rules: [MailRule], first: Int = 20) async throws -> [MailRuleTrial] {
+        struct Answer: Decodable, Sendable { let TestMailboxRules: [MailRuleTrial] }
+        return try await execute(
+            Documents.testMailboxRules,
+            variables: ["mailboxId": .string(mailboxId), "rules": .array(rules.map(\.variables)), "first": .number(Double(first))],
+            as: Answer.self
+        ).TestMailboxRules
     }
 
     public func createMailFolder(mailboxId: String, name: String, parentId: String?) async throws {

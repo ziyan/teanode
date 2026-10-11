@@ -801,6 +801,22 @@
         }
       }
     },
+    "Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作"
+          }
+        }
+      }
+    },
     "Actions": {
       "localizations": {
         "ja": {
@@ -845,6 +861,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加抄送和密送"
+          }
+        }
+      }
+    },
+    "Add a condition": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "条件を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加条件"
           }
         }
       }
@@ -929,6 +961,22 @@
         }
       }
     },
+    "Add a rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加规则"
+          }
+        }
+      }
+    },
     "Add a value": {
       "localizations": {
         "ja": {
@@ -957,6 +1005,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加账户"
+          }
+        }
+      }
+    },
+    "Add an action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加操作"
           }
         }
       }
@@ -1181,6 +1245,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "地址"
+          }
+        }
+      }
+    },
+    "Address to forward to": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送先アドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发到的地址"
           }
         }
       }
@@ -1533,6 +1613,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "任意"
+          }
+        }
+      }
+    },
+    "Any message": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのメッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任何邮件"
           }
         }
       }
@@ -2657,6 +2753,22 @@
         }
       }
     },
+    "Category, as the agent sorted it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリ（エージェントの分類）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类别（由助手分类）"
+          }
+        }
+      }
+    },
     "Cc": {
       "localizations": {
         "ja": {
@@ -2769,6 +2881,22 @@
         }
       }
     },
+    "Choose a folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダーを選択…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件夹…"
+          }
+        }
+      }
+    },
     "Choose a page": {
       "localizations": {
         "ja": {
@@ -2797,6 +2925,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择通话声音的播放位置"
+          }
+        }
+      }
+    },
+    "Choose…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择…"
           }
         }
       }
@@ -3873,6 +4017,22 @@
         }
       }
     },
+    "Do this": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行する操作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -4529,6 +4689,22 @@
         }
       }
     },
+    "Field": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "字段"
+          }
+        }
+      }
+    },
     "File it under": {
       "localizations": {
         "ja": {
@@ -4977,6 +5153,22 @@
         }
       }
     },
+    "Forward to": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发给"
+          }
+        }
+      }
+    },
     "Forwarded message": {
       "localizations": {
         "ja": {
@@ -5345,6 +5537,38 @@
         }
       }
     },
+    "Header": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘッダー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件头"
+          }
+        }
+      }
+    },
+    "Header name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘッダー名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件头名称"
+          }
+        }
+      }
+    },
     "Health": {
       "localizations": {
         "ja": {
@@ -5517,6 +5741,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "住房"
+          }
+        }
+      }
+    },
+    "How it compares": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "比較方法"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "比较方式"
           }
         }
       }
@@ -6497,6 +6737,22 @@
         }
       }
     },
+    "Mark as read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既読にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标为已读"
+          }
+        }
+      }
+    },
     "Mark done": {
       "localizations": {
         "ja": {
@@ -6989,6 +7245,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "移动到"
+          }
+        }
+      }
+    },
+    "Move to folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダーへ移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动到文件夹"
           }
         }
       }
@@ -7805,6 +8077,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有收据"
+          }
+        }
+      }
+    },
+    "No rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无匹配"
+          }
+        }
+      }
+    },
+    "No rules yet. Everything lands in the inbox.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールはまだありません。すべて受信トレイに届きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有规则。所有邮件都会进入收件箱。"
           }
         }
       }
@@ -9297,6 +9601,22 @@
         }
       }
     },
+    "Priority, as the agent sorted it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "優先度（エージェントの分類）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先级（由助手分类）"
+          }
+        }
+      }
+    },
     "Property": {
       "localizations": {
         "ja": {
@@ -9677,6 +9997,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除图片"
+          }
+        }
+      }
+    },
+    "Remove rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除规则"
+          }
+        }
+      }
+    },
+    "Remove the rule “%@”? Mail it would have sorted lands in the inbox.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルール「%@」を削除しますか。振り分けられていたメールは受信トレイに残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要删除规则“%@”吗？原本会被它整理的邮件将留在收件箱。"
           }
         }
       }
@@ -10065,6 +10417,22 @@
         }
       }
     },
+    "Rule name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルール名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则名称"
+          }
+        }
+      }
+    },
     "Rules": {
       "localizations": {
         "ja": {
@@ -10077,6 +10445,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "规则"
+          }
+        }
+      }
+    },
+    "Rules run in order on every message that arrives. When a rule matches, its actions run; a rule marked “stop” ends the run.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールは届いたすべてのメッセージに順番に適用されます。一致したルールのアクションが実行され、「停止」のルールで処理が終わります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则按顺序应用于每封到达的邮件。规则匹配时执行其操作；标记为“停止”的规则会结束后续处理。"
           }
         }
       }
@@ -10621,6 +11005,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "发件人已验证：%@"
+          }
+        }
+      }
+    },
+    "Sender is a contact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差出人が連絡先にある"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发件人在联系人中"
           }
         }
       }
@@ -11297,6 +11697,22 @@
         }
       }
     },
+    "Spam score": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "迷惑メールスコア"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "垃圾邮件评分"
+          }
+        }
+      }
+    },
     "Speaking… talk or tap to cut in": {
       "localizations": {
         "ja": {
@@ -11601,6 +12017,22 @@
         }
       }
     },
+    "Stop after this rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このルールの後で停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此规则之后停止"
+          }
+        }
+      }
+    },
     "Stop the answer": {
       "localizations": {
         "ja": {
@@ -11709,6 +12141,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已停止：同一个调用连续失败了三次。"
+          }
+        }
+      }
+    },
+    "Stops here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到此为止"
           }
         }
       }
@@ -12180,6 +12628,22 @@
         }
       }
     },
+    "The agent says it needs a reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが返信が必要と判断"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手判断需要回复"
+          }
+        }
+      }
+    },
     "The agent's estimate": {
       "localizations": {
         "ja": {
@@ -12384,6 +12848,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法发送麦克风的音频格式。"
+          }
+        }
+      }
+    },
+    "The newest messages in the Inbox, and which of the rules above would match each. Nothing is moved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイの最新メッセージと、上のルールのどれが一致するか。実際には何も移動しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收件箱里最新的邮件，以及上面哪些规则会匹配每一封。不会实际移动任何邮件。"
           }
         }
       }
@@ -13220,6 +13700,22 @@
         }
       }
     },
+    "Try on recent mail": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近のメールで試す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用最近的邮件试试"
+          }
+        }
+      }
+    },
     "Turn off": {
       "localizations": {
         "ja": {
@@ -13440,6 +13936,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未命名"
+          }
+        }
+      }
+    },
+    "Unnamed rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前のないルール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名规则"
           }
         }
       }
@@ -14020,6 +14532,22 @@
         }
       }
     },
+    "What it looks for": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対象の文字列"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配内容"
+          }
+        }
+      }
+    },
     "What should I ask?": {
       "localizations": {
         "ja": {
@@ -14048,6 +14576,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "回复应该说什么？（可选）"
+          }
+        }
+      }
+    },
+    "What the rules would do": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールの結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则会做什么"
           }
         }
       }
@@ -14176,6 +14720,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "时间"
+          }
+        }
+      }
+    },
+    "When %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のとき"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当 %@"
+          }
+        }
+      }
+    },
+    "When all of these match": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてに一致したとき"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当以下条件全部满足"
           }
         }
       }
@@ -14708,6 +15284,22 @@
         }
       }
     },
+    "contains": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "を含む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含"
+          }
+        }
+      }
+    },
     "dropped": {
       "localizations": {
         "ja": {
@@ -14964,6 +15556,54 @@
         }
       }
     },
+    "is": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "と等しい"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等于"
+          }
+        }
+      }
+    },
+    "is above": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "より大きい"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高于"
+          }
+        }
+      }
+    },
+    "is below": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "より小さい"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低于"
+          }
+        }
+      }
+    },
     "limit unknown": {
       "localizations": {
         "ja": {
@@ -14976,6 +15616,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "额度未知"
+          }
+        }
+      }
+    },
+    "matches pattern": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "がパターンに一致"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配模式"
           }
         }
       }
@@ -15012,6 +15668,22 @@
         }
       }
     },
+    "personal, work, newsletter… or one of your own": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "personal、work、newsletter… または自分で決めた名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "personal、work、newsletter… 或你自己起的名字"
+          }
+        }
+      }
+    },
     "reading a source": {
       "localizations": {
         "ja": {
@@ -15040,6 +15712,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "助手"
+          }
+        }
+      }
+    },
+    "then %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "则 %@"
           }
         }
       }

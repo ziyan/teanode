@@ -2,8 +2,8 @@ import SwiftUI
 import TeaNodeKit
 
 /// MailboxSettingsView is the dashboard's mailbox settings: the name and
-/// signature, the auto-reply, the folders, and the passwords mail programs
-/// use.
+/// signature, the auto-reply, the folders, the rules, and the passwords mail
+/// programs use.
 struct MailboxSettingsView: View {
     let mail: MailModel
 
@@ -29,6 +29,15 @@ struct MailboxSettingsView: View {
                         MailFoldersView(mail: mail)
                     } label: {
                         Label("Folders", systemImage: "folder")
+                    }
+                    NavigationLink {
+                        MailRulesView(mail: mail, mailboxId: mailbox.id)
+                    } label: {
+                        LabeledContent {
+                            Text(mailbox.rules?.count ?? 0, format: .number)
+                        } label: {
+                            Label("Rules", systemImage: "line.3.horizontal.decrease.circle")
+                        }
                     }
                     NavigationLink {
                         MailAppPasswordsView(mail: mail, mailboxId: mailbox.id)
