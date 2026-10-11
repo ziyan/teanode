@@ -99,8 +99,12 @@ export function ReactionPicker({
   const { t } = useTranslation()
   const picker = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    // A press on the message it belongs to is left to the message, whose
+    // tap opens and closes the picker on a phone.
     const closeOutside = (event: PointerEvent) => {
-      if (picker.current && !picker.current.contains(event.target as Node)) onClose()
+      const line = picker.current?.closest('.agent-line')
+      if (picker.current && !picker.current.contains(event.target as Node) && !line?.contains(event.target as Node))
+        onClose()
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()

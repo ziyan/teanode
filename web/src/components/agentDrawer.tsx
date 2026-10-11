@@ -2361,6 +2361,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The message whose picker of reactions is open, by its id; one at a time.
   const [pickingReactionFor, setPickingReactionFor] = useState<string | null>(null)
   const closeReactionPicker = useCallback(() => setPickingReactionFor(null), [])
+  // A second tap on the same message, or its React button again, closes it.
+  const toggleReactionPicker = (messageId: string | null) =>
+    setPickingReactionFor((previous) => (previous === messageId ? null : messageId))
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<File[]>([])
   const [references, setReferences] = useState<AgentReference[]>([])
@@ -3095,7 +3098,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!isAsked) return
     answeredLocationCalls.current.add(callId)
     void readBrowserLocation()
-      .then((answer) => graphql<{ AnswerAgentLocation: boolean }>(ANSWER_LOCATION, { runId: event.runId, callId, ...answer }))
+      .then((answer) =>
+        graphql<{ AnswerAgentLocation: boolean }>(ANSWER_LOCATION, { runId: event.runId, callId, ...answer }),
+      )
       .catch(() => undefined)
   }
   // applyReaction puts one reactor's emoji on a message, or takes it off
@@ -4018,7 +4023,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onCopy={() => copyLine(line)}
               onCopyFailed={sayCopyFailed}
               reactLabel={t('agentDrawer.react')}
-              onReact={line.messageId ? () => setPickingReactionFor(line.messageId ?? null) : undefined}
+              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
@@ -4041,7 +4046,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onCopy={() => copyLine(line)}
               onCopyFailed={sayCopyFailed}
               reactLabel={t('agentDrawer.react')}
-              onReact={line.messageId ? () => setPickingReactionFor(line.messageId ?? null) : undefined}
+              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               <Markdown
                 text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
@@ -4629,13 +4634,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       ? t('agentDrawer.replyingToYourself')
                       : t('agentDrawer.replyingTo', { name: agentName.trim() || t('agent.title') })
                   }
-                  onRemove={() => setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))}
+                  onRemove={() =>
+                    setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))
+                  }
                 />
               )}
               {chipped.length > 0 && (
                 <ReferenceChips
                   references={chipped}
-                  onRemove={(removed) => setReferences((previous) => previous.filter((reference) => reference !== removed))}
+                  onRemove={(removed) =>
+                    setReferences((previous) => previous.filter((reference) => reference !== removed))
+                  }
                 />
               )}
               {pending.length > 0 && (
