@@ -865,22 +865,6 @@
         }
       }
     },
-    "%@, %lld events": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@、予定 %2$lld 件"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@，%2$lld 个日程"
-          }
-        }
-      }
-    },
     "%@-day": {
       "localizations": {
         "ja": {
@@ -1399,16 +1383,58 @@
     },
     "%lld events": {
       "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 件の予定"
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld event"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld events"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个日程"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个日程"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个日程"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の予定"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の予定"
+                }
+              }
+            }
           }
         }
       }
@@ -12041,6 +12067,22 @@
         }
       }
     },
+    "Events could not be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定を読み込めませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取日程"
+          }
+        }
+      }
+    },
     "Every %@ at %@": {
       "localizations": {
         "ja": {
@@ -18713,6 +18755,22 @@
         }
       }
     },
+    "More views": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多视图"
+          }
+        }
+      }
+    },
     "Mortgages": {
       "localizations": {
         "ja": {
@@ -19749,6 +19807,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "下次检查"
+          }
+        }
+      }
+    },
+    "Next day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后一天"
           }
         }
       }
@@ -24265,6 +24339,22 @@
         }
       }
     },
+    "Previous day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前の日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前一天"
+          }
+        }
+      }
+    },
     "Price another model": {
       "localizations": {
         "ja": {
@@ -28249,6 +28339,22 @@
         }
       }
     },
+    "Search events": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索日程"
+          }
+        }
+      }
+    },
     "Search lists": {
       "localizations": {
         "ja": {
@@ -28309,6 +28415,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索整个邮箱"
+          }
+        }
+      }
+    },
+    "Search your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索日历"
           }
         }
       }
@@ -32748,6 +32870,22 @@
         }
       }
     },
+    "The calendar is not read yet. Try again in a moment.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーをまだ読み込んでいません。少し待ってからもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历还没有读取，请稍后再试。"
+          }
+        }
+      }
+    },
     "The call lost its connection.": {
       "localizations": {
         "ja": {
@@ -34972,6 +35110,38 @@
         }
       }
     },
+    "Titles and places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトルと場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题和地点"
+          }
+        }
+      }
+    },
+    "Titles and places, from a year back to a year ahead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1年前から1年先までの予定を、タイトルと場所で検索します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按标题和地点搜索，范围为过去一年到未来一年。"
+          }
+        }
+      }
+    },
     "Titling": {
       "localizations": {
         "ja": {
@@ -35096,6 +35266,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "今天"
+          }
+        }
+      }
+    },
+    "Today, %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日、%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天，%@"
           }
         }
       }

@@ -3,8 +3,9 @@ import Observation
 import TeaNodeKit
 
 /// CalendarModel is the calendar as the dashboard's Calendar page shows it:
-/// the events calendar, the window the chosen view covers, and a change in
-/// flight that must be finished or stopped before another is made.
+/// the events calendar, its events read a month at a time and kept by day,
+/// and a change in flight that must be finished or stopped before another
+/// is made.
 @MainActor
 @Observable
 final class CalendarModel {
@@ -14,10 +15,16 @@ final class CalendarModel {
     }
 
     private(set) var calendar: AgentCalendar?
-    private(set) var events: [CalendarEvent] = []
-    private(set) var isLoading = false
+    /// The events on each day of every month read so far. The month view
+    /// reads each month as it scrolls into view, and every other view reads
+    /// the months its days are in, so moving about asks for nothing twice.
+    private(set) var eventsByDay: [CalendarDay: [CalendarEvent]] = [:]
+    private(set) var loadedMonths: Set<CalendarMonth> = []
+    private(set) var loadingMonths: Set<CalendarMonth> = []
     var problemText: String?
     var doneText: String?
+
+    var isLoading: Bool { !loadingMonths.isEmpty }
 
     var viewMode: ViewMode = .month {
         didSet { Task { await load() } }
@@ -26,6 +33,9 @@ final class CalendarModel {
     var focus = Calendar.current.startOfDay(for: Date()) {
         didSet { Task { await load() } }
     }
+    /// The months the month view has on screen, read again on a refresh.
+    @ObservationIgnored var visibleMonths: Set<CalendarMonth> = []
+    @ObservationIgnored private var calendarTask: Task<AgentCalendar?, Never>?
 
     /// A change sent whose answer did not come back, kept on the phone until
     /// it is finished or stopped.
@@ -49,36 +59,95 @@ final class CalendarModel {
         return dates
     }
 
+    /// Reads the months the view needs that are not read yet.
     func load() async {
         guard viewMode != .reminders else { return }
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            if calendar == nil {
-                let calendars = try await connection.calendars()
-                calendar = calendars.first { $0.calendarKind == "events" } ?? calendars.first
+        await loadMonths(neededMonths, isForced: false)
+    }
+
+    /// Reads the months on screen again, and forgets the others, so they are
+    /// read again when they come back into view.
+    func reload() async {
+        guard viewMode != .reminders else { return }
+        let months = neededMonths
+        loadedMonths.formIntersection(months)
+        await loadMonths(months, isForced: true)
+    }
+
+    /// Reads a month the month view is about to show, unless it is read.
+    func ensureMonth(_ month: CalendarMonth) {
+        guard !loadedMonths.contains(month), !loadingMonths.contains(month) else { return }
+        Task { await loadMonths([month], isForced: false) }
+    }
+
+    /// The months the current view draws.
+    private var neededMonths: Set<CalendarMonth> {
+        if viewMode == .month {
+            return visibleMonths.isEmpty ? [CalendarMonth(containing: focus, in: dates)] : visibleMonths
+        }
+        let (from, until) = window
+        let last = until.addingTimeInterval(-1)
+        let firstMonth = CalendarMonth(containing: from, in: dates)
+        let lastMonth = CalendarMonth(containing: last, in: dates)
+        return Set((0...max(0, lastMonth.id - firstMonth.id)).map { firstMonth.adding(months: $0) })
+    }
+
+    private func loadMonths(_ months: Set<CalendarMonth>, isForced: Bool) async {
+        let wanted = months.filter { !loadingMonths.contains($0) && (isForced || !loadedMonths.contains($0)) }
+        guard !wanted.isEmpty else { return }
+        loadingMonths.formUnion(wanted)
+        defer { loadingMonths.subtract(wanted) }
+        guard let calendar = await eventsCalendar() else { return }
+        let dates = self.dates
+        for month in wanted.sorted() {
+            guard let monthWindow = month.window(in: dates) else { continue }
+            do {
+                let events = try await connection.calendarEvents(calendarId: calendar.id, from: monthWindow.from, until: monthWindow.until)
+                var kept = eventsByDay.filter { $0.key.calendarMonth != month }
+                kept.merge(CalendarDates.eventsByDay(events, in: month, calendar: dates)) { _, read in read }
+                eventsByDay = kept
+                loadedMonths.insert(month)
+                problemText = nil
+            } catch {
+                problemText = error.localizedDescription
             }
-            guard let calendar else { return }
-            let (from, until) = window
-            events = try await connection.calendarEvents(calendarId: calendar.id, from: from, until: until)
-            problemText = nil
-        } catch {
-            problemText = error.localizedDescription
         }
     }
 
-    /// The days a view covers: the month's six weeks, a week, five days
+    /// The events calendar, read once however many months ask for it at once.
+    private func eventsCalendar() async -> AgentCalendar? {
+        if let calendar { return calendar }
+        if calendarTask == nil {
+            let connection = self.connection
+            calendarTask = Task {
+                do {
+                    let calendars = try await connection.calendars()
+                    return calendars.first { $0.calendarKind == "events" } ?? calendars.first
+                } catch {
+                    problemText = error.localizedDescription
+                    return nil
+                }
+            }
+        }
+        let found = await calendarTask?.value
+        if found == nil {
+            // Asked again next time, rather than remembered as having none.
+            calendarTask = nil
+        }
+        calendar = found
+        return found
+    }
+
+    /// The days a view covers: the month, a week, five days
     /// from Monday, a day, or a month of agenda.
     var window: (Date, Date) {
         let start: Date
         let days: Int
         switch viewMode {
         case .month:
-            let first = dates.date(from: dates.dateComponents([.year, .month], from: focus)) ?? focus
-            let weekday = dates.component(.weekday, from: first)
-            let back = (weekday - dates.firstWeekday + 7) % 7
-            start = dates.date(byAdding: .day, value: -back, to: first) ?? first
-            days = 42
+            let monthWindow = CalendarMonth(containing: focus, in: dates).window(in: dates)
+            start = monthWindow?.from ?? focus
+            days = monthWindow.flatMap { dates.dateComponents([.day], from: $0.from, to: $0.until).day } ?? 30
         case .week:
             start = dates.dateInterval(of: .weekOfYear, for: focus)?.start ?? focus
             days = 7
@@ -123,17 +192,10 @@ final class CalendarModel {
         }
     }
 
-    /// The events on a day: all-day ones first, then by when they start.
+    /// The events on a day, every one it is part of: all-day ones first,
+    /// then by when they start.
     func events(on day: Date) -> [CalendarEvent] {
-        let wanted = dates.dateComponents([.year, .month, .day], from: day)
-        return events.filter { event in
-            guard let eventDay = CalendarDates.localDay(of: event, in: dates) else { return false }
-            return eventDay.year == wanted.year && eventDay.month == wanted.month && eventDay.day == wanted.day
-        }
-        .sorted { left, right in
-            if left.allDay != right.allDay { return left.allDay }
-            return left.startsAt < right.startsAt
-        }
+        eventsByDay[CalendarDay(containing: day, in: dates)] ?? []
     }
 
     // MARK: Changes
@@ -160,7 +222,7 @@ final class CalendarModel {
             let hadHappened = try await connection.cancel(pending)
             keep(nil)
             doneText = hadHappened ? String(localized: "Calendar change completed") : String(localized: "The pending change was stopped")
-            await load()
+            await reload()
         } catch {
             problemText = error.localizedDescription
         }
@@ -172,7 +234,7 @@ final class CalendarModel {
             keep(nil)
             doneText = change.operation == "delete"
                 ? String(localized: "\(change.summary) removed") : String(localized: "\(change.summary) saved")
-            await load()
+            await reload()
             return true
         } catch {
             problemText = error.localizedDescription

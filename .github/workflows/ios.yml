@@ -107,6 +107,10 @@ jobs:
           shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
           shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
           shoot calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
+          shoot calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
+          shoot calendar-chinese-light light large -TeaNodeDemo -TeaNodeTab calendar -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN
+          shoot calendar-day-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot calendar-day-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu

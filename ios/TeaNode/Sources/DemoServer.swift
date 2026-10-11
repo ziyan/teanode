@@ -68,9 +68,9 @@
             } else if query.contains("GetSettings") {
                 answer = Self.serverSettings
             } else if query.contains("ListCalendars") {
-                answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
+                answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","colour":"#2F7FE0","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
             } else if query.contains("ListCalendarEvents") {
-                answer = Self.events
+                answer = Self.events(answering: request.httpBody)
             } else if query.contains("ListReminders") {
                 answer = #"{"data":{"ListReminders":[]}}"#
             } else if query.contains("ListAddressBooks") {
@@ -122,19 +122,84 @@
             return arguments[index + 1]
         }
 
-        /// A few events this week, wherever the week falls.
-        static var events: String {
-            let today = Calendar.current.startOfDay(for: Date())
-            func at(_ days: Int, _ hours: Double) -> String {
-                CalendarDates.text(today.addingTimeInterval(Double(days) * 86400 + hours * 3600))
+        /// Invented events for the window asked for, the same for a day
+        /// however often it is asked, so the month view finds a believable
+        /// month wherever it scrolls: a few things most days, some busy days,
+        /// weekly classes, a trip over three days each month, and today's
+        /// plumber and lunch from the demo conversation.
+        static func events(answering body: Data?) -> String {
+            let local = Calendar.current
+            let today = local.startOfDay(for: Date())
+            var from = today
+            var until = local.date(byAdding: .day, value: 7, to: today) ?? today
+            if let body, let request = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                let variables = request["variables"] as? [String: Any]
+            {
+                if let text = variables["from"] as? String, let date = ServerTime.date(text) { from = date }
+                if let text = variables["until"] as? String, let date = ServerTime.date(text) { until = date }
             }
-            let day = Calendar.current.dateComponents([.year, .month, .day], from: today)
-            let rows = [
-                #"{"id":"e1","calendarId":"home","summary":"Plumber","location":"Home","startsAt":"\#(at(0, 9))","endsAt":"\#(at(0, 10))","allDay":false,"recurring":false,"occurrence":false,"status":"confirmed"}"#,
-                #"{"id":"e2","calendarId":"home","summary":"Lunch with Sam","location":"The noodle place","startsAt":"\#(at(0, 13.5))","endsAt":"\#(at(0, 14.5))","allDay":false,"recurring":false,"occurrence":false,"status":"confirmed"}"#,
-                #"{"id":"e3","calendarId":"home","summary":"Book club","location":null,"startsAt":"\#(at(2, 19))","endsAt":"\#(at(2, 21))","allDay":false,"recurring":true,"occurrence":false,"status":"confirmed"}"#,
-                #"{"id":"e4","calendarId":"home","summary":"Garden day","location":null,"startsAt":"\#(CalendarDates.allDayText(day))","endsAt":"\#(CalendarDates.allDayText(CalendarDates.dayAfter(day)))","allDay":true,"recurring":false,"occurrence":false,"status":"confirmed"}"#,
+            var rows: [String] = []
+            func timed(_ id: String, _ summary: String, _ location: String?, _ day: Date, _ startHour: Double, _ endHour: Double, isRecurring: Bool = false) {
+                let location = location.map { #""\#($0)""# } ?? "null"
+                let startsAt = CalendarDates.text(day.addingTimeInterval(startHour * 3600))
+                let endsAt = CalendarDates.text(day.addingTimeInterval(endHour * 3600))
+                rows.append(
+                    #"{"id":"\#(id)","calendarId":"home","summary":"\#(summary)","location":\#(location),"startsAt":"\#(startsAt)","endsAt":"\#(endsAt)","allDay":false,"recurring":\#(isRecurring),"occurrence":\#(isRecurring),"status":"confirmed"}"#
+                )
+            }
+            func allDay(_ id: String, _ summary: String, _ first: Date, dayCount: Int) {
+                let firstDay = local.dateComponents([.year, .month, .day], from: first)
+                var endDay = firstDay
+                for _ in 0..<dayCount { endDay = CalendarDates.dayAfter(endDay) }
+                rows.append(
+                    #"{"id":"\#(id)","calendarId":"home","summary":"\#(summary)","location":null,"startsAt":"\#(CalendarDates.allDayText(firstDay))","endsAt":"\#(CalendarDates.allDayText(endDay))","allDay":true,"recurring":false,"occurrence":false,"status":"confirmed"}"#
+                )
+            }
+            let errands: [(String, String?, Double, Double)] = [
+                ("Dentist", "Main Street clinic", 10, 11), ("Haircut", nil, 17.5, 18.25),
+                ("Piano lesson", "Music school", 16, 17), ("Call the bank", nil, 11, 11.5),
+                ("Dinner with friends", "The corner bistro", 19, 21), ("Car service", "Garage", 8.5, 9.5),
+                ("Parent evening", "School", 18, 19.5), ("Farmers market", "Town square", 9, 11),
+                ("Movie night", nil, 20, 22), ("Pick up the bike", "Bike shop", 12, 12.5),
+                ("Coffee with a neighbor", nil, 8, 9), ("Vet for the cat", "Animal clinic", 15, 15.5),
+                ("Team review", "Office", 14, 15), ("Planning session", "Office", 10, 12),
             ]
+            var day = local.startOfDay(for: from)
+            while day < until {
+                let dayNumber = local.ordinality(of: .day, in: .era, for: day) ?? 0
+                let weekday = local.component(.weekday, from: day)
+                let dayOfMonth = local.component(.day, from: day)
+                // The same few numbers for the same day, wherever it is
+                // asked, mixed (SplitMix64) so neighboring days differ.
+                var mixed = UInt64(truncatingIfNeeded: dayNumber) &+ 0x9E37_79B9_7F4A_7C15
+                mixed = (mixed ^ (mixed >> 30)) &* 0xBF58_476D_1CE4_E5B9
+                mixed = (mixed ^ (mixed >> 27)) &* 0x94D0_49BB_1331_11EB
+                let seed = mixed ^ (mixed >> 31)
+                if local.isDate(day, inSameDayAs: today) {
+                    allDay("garden-\(dayNumber)", "Garden day", day, dayCount: 1)
+                    timed("plumber", "Plumber", "Home", day, 9, 10)
+                    timed("lunch", "Lunch with Sam", "The noodle place", day, 13.5, 14.5)
+                } else {
+                    if weekday == 3 { timed("yoga", "Yoga", "Studio", day, 18, 19, isRecurring: true) }
+                    if weekday == 5, dayNumber / 7 % 2 == 0 { timed("book-club", "Book club", nil, day, 19, 21, isRecurring: true) }
+                    if weekday == 7 { timed("football", "Football practice", "Park", day, 10, 11.5, isRecurring: true) }
+                    // Most days one or two things, now and then a busy one.
+                    let errandCount = [0, 1, 1, 0, 2, 1, 0, 1, 3, 2, 1, 4][Int(seed % 12)]
+                    for index in 0..<errandCount {
+                        let errand = errands[Int((seed / 12 + UInt64(index) * 5) % UInt64(errands.count))]
+                        timed("e\(dayNumber)-\(index)", errand.0, errand.1, day, errand.2, errand.3)
+                    }
+                }
+                if dayOfMonth == 17 { allDay("trip-\(dayNumber)", "Trip to the coast", day, dayCount: 3) }
+                if dayOfMonth == 1 { allDay("rent-\(dayNumber)", "Pay the rent", day, dayCount: 1) }
+                day = local.date(byAdding: .day, value: 1, to: day) ?? until
+            }
+            // A trip that began before the window still shows on its days.
+            for back in 1...2 {
+                if let start = local.date(byAdding: .day, value: -back, to: local.startOfDay(for: from)), local.component(.day, from: start) == 17 {
+                    allDay("trip-\(local.ordinality(of: .day, in: .era, for: start) ?? 0)", "Trip to the coast", start, dayCount: 3)
+                }
+            }
             return #"{"data":{"ListCalendarEvents":["# + rows.joined(separator: ",") + "]}}"
         }
 
