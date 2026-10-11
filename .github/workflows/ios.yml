@@ -118,6 +118,15 @@ jobs:
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
           shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
+          # The finance charts: the donut and its rows, a touched month, slice
+          # and day, and the net worth line.
+          shoot finance-dark dark large -TeaNodeDemo -TeaNodeTab finance
+          shoot cash-flow-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen cash-flow-chosen
+          shoot spending-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
+          shoot spending-chosen-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-chosen
+          shoot spending-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
+          shoot net-worth-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth-chosen
+          shoot net-worth-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals

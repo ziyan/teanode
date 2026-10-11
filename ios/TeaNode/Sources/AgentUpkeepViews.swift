@@ -1253,6 +1253,8 @@ struct MemoryCheckScoreRow: View {
     let answerFrom: String
     let latestRun: MemoryCheckRun
     let history: [MemoryCheckRun.MemoryCheckPoint]
+    /// Where a finger is on the score line.
+    @State private var selectedDate: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1263,19 +1265,10 @@ struct MemoryCheckScoreRow: View {
                     Text("Not graded").foregroundStyle(.secondary)
                 }
             }
+            // The callout of a touched grading takes this line's place.
+            .opacity(selectedDate == nil ? 1 : 0)
             if !history.isEmpty {
-                // The whole of zero to a hundred, so a line that moved from
-                // 70 to 72 looks as flat as it is.
-                Chart(history) { point in
-                    LineMark(x: .value("Graded", ServerTime.date(point.startedAt) ?? .now), y: .value("Score", point.scorePercent))
-                    PointMark(x: .value("Graded", ServerTime.date(point.startedAt) ?? .now), y: .value("Score", point.scorePercent))
-                        .symbolSize(20)
-                }
-                .chartYScale(domain: 0...100)
-                .chartXAxis(.hidden)
-                .chartYAxis(.hidden)
-                .frame(height: 44)
-                .accessibilityLabel(Text(verbatim: chartDescription))
+                scoreChart
             }
             if let changeText {
                 Text(verbatim: changeText).font(.footnote).foregroundStyle(.secondary)
@@ -1286,6 +1279,46 @@ struct MemoryCheckScoreRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// The score over the gradings shown, on the whole of zero to a
+    /// hundred, so a line that moved from 70 to 72 looks as flat as it is.
+    /// Touching it shows the nearest grading's day and score, in place of
+    /// the line above it.
+    private var scoreChart: some View {
+        let gradedDates = history.map { ServerTime.date($0.startedAt) ?? .now }
+        let selectedIndex = selectedDate.flatMap { ChartShares.nearestIndex(to: $0, in: gradedDates) }
+        let lineColor = ChartPalette.seriesColor(at: 0)
+        return Chart {
+            ForEach(Array(history.enumerated()), id: \.element.id) { index, point in
+                LineMark(x: .value("Graded", gradedDates[index]), y: .value("Score", point.scorePercent))
+                    .foregroundStyle(lineColor)
+                PointMark(x: .value("Graded", gradedDates[index]), y: .value("Score", point.scorePercent))
+                    .foregroundStyle(lineColor)
+                    .symbolSize(index == selectedIndex ? 60 : 20)
+            }
+            if let selectedIndex {
+                ChartSelectionRule(value: gradedDates[selectedIndex]) {
+                    ChartCallout(
+                        title: gradedDates[selectedIndex].formatted(.dateTime.month(.abbreviated).day()),
+                        figures: [ChartFigure(valueText: MemoryCheckWords.percent(history[selectedIndex].scorePercent))])
+                }
+            }
+        }
+        .chartYScale(domain: 0...100)
+        .chartXAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(values: [0.0, 50.0, 100.0]) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let scorePercent = value.as(Double.self) { Text(verbatim: MemoryCheckWords.percent(scorePercent)) }
+                }
+            }
+        }
+        .chartXSelection(value: $selectedDate)
+        .frame(height: 96)
+        .padding(.top, 4)
+        .accessibilityLabel(Text(verbatim: chartDescription))
     }
 
     private var chartDescription: String {
