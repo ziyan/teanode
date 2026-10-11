@@ -289,6 +289,7 @@ struct SideMenu: View {
                                 onClose()
                             } label: {
                                 Label(part.title, systemImage: part.systemImage)
+                                    .foregroundStyle(.primary)
                             }
                             .menuRow(isSelected: financePart == part)
                         }

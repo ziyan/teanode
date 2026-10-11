@@ -54,6 +54,8 @@
                 answer = Self.contacts
             } else if query.contains("AgentGraphPage") {
                 answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
+            } else if query.contains("ListAgentGoals") {
+                answer = Self.goals
             } else if query.contains("GetSession") {
                 answer = #"{"data":{"GetSession":{"username":"robin"}}}"#
             } else {
@@ -61,6 +63,14 @@
             }
             return (Data(answer.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         }
+
+        static let goals = #"""
+            {"data":{"ListAgentGoals":[
+            {"conversationId":"g1","goalTitle":"Plan the spring trip","goalDescription":"Find dates and a place everyone can make.","goalState":"waiting","goalStatus":"Two weekends work; which one do you prefer?","goalSetAt":"2026-10-01T09:00:00Z","goalNextAt":null,"lastAt":"2026-10-10T08:00:00Z"},
+            {"conversationId":"g2","goalTitle":"Keep the reading list short","goalDescription":"Each week, drop what I will not read.","goalState":"working","goalStatus":"Dropped four articles this week.","goalSetAt":"2026-09-20T09:00:00Z","goalNextAt":"2026-10-17T09:00:00Z","lastAt":"2026-10-10T07:00:00Z"},
+            {"conversationId":"g3","goalTitle":"Renew the passport","goalDescription":"Before the summer.","goalState":"met","goalStatus":"Renewed; the new one arrived.","goalSetAt":"2026-08-01T09:00:00Z","goalNextAt":null,"lastAt":"2026-09-02T07:00:00Z"}
+            ]}}
+            """#
 
         /// The tab a screenshot opens on: `-TeaNodeTab calendar`.
         static var tab: String? {
