@@ -26,7 +26,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("voice")
 
 // SampleRate is the audio this package takes: mono, 16-bit little-endian
 // PCM, 24,000 samples a second.
@@ -190,6 +193,9 @@ func Open(ctx context.Context, settings *Settings) (*Session, error) {
 			if isJudgingFromWords {
 				isJudgingFromWords = false
 				firstRefusal = event.errorMessage()
+				// Said once a call, so an operator learns that calls end
+				// a turn on a pause rather than on the words, and why.
+				log.Noticef("the provider cannot judge from the words when somebody has finished, so this call ends a turn after a %d ms pause: %s", fallbackSilenceMS, firstRefusal)
 				if err := session.send(configuration(settings, turnDetection(fallbackSilenceMS))); err != nil {
 					_ = conn.Close()
 					return nil, err
