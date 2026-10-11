@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -180,20 +181,20 @@ func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
 	worker := &Agent{}
 	now := time.Now()
 	worker.ReportPresence("u", "phone", true, 0, now)
-	if !worker.isWatching("u", now) {
+	if !worker.isWatching("u", time.Time{}, now) {
 		t.Fatal("the app in front was not taken as watching")
 	}
 	worker.ReportPresence("u", "phone", false, 0, now.Add(time.Second))
-	if worker.isWatching("u", now.Add(2*time.Second)) {
+	if worker.isWatching("u", time.Time{}, now.Add(2*time.Second)) {
 		t.Error("the app in the background was still taken as watching")
 	}
 	worker.ReportPresence("u", "tab", true, 0, now)
 	worker.ReportPresence("u", "other-tab", false, 0, now.Add(time.Second))
-	if !worker.isWatching("u", now.Add(2*time.Second)) {
+	if !worker.isWatching("u", time.Time{}, now.Add(2*time.Second)) {
 		t.Error("a hidden tab hid a shown one")
 	}
 	worker.ReportPresence("u", "tab", true, 300, now.Add(3*time.Second))
-	if worker.isWatching("u", now.Add(4*time.Second)) {
+	if worker.isWatching("u", time.Time{}, now.Add(4*time.Second)) {
 		t.Error("a tab untouched for five minutes kept the phone quiet")
 	}
 }
@@ -211,7 +212,8 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 	}{
 		{"asked from the app", run("ios", side, "What is on today?"), true},
 		{"asked in the main chat on the dashboard", run("drawer", main, "Draft the reply."), true},
-		{"asked in the main chat from the command line", run("cli", main, "Summarize the week."), true},
+		{"asked in the main chat from the command line", run("cli", main, "Summarize the week."), false},
+		{"asked in the main chat over the API", run("api", main, "Summarize the week."), false},
 		{"asked in a side chat on the dashboard", run("drawer", side, "Draft the reply."), false},
 		{"asked on a call", run("voice", main, "What is on today?"), false},
 		{"asked from a linked chat", run("telegram", main, "What is on today?"), false},
@@ -226,5 +228,66 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 	subagent.settings.subagentDepth = 1
 	if subagent.isAnswerForPhone() {
 		t.Error("a subagent's answer was told to the phone")
+	}
+}
+
+// Typing a question sends no presence report, so a turn the person asked a
+// moment ago counts as their latest input: a report from before they typed
+// that already says they were idle does not send the answer to the phone.
+func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
+	worker := &Agent{}
+	now := time.Now()
+	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
+	asked := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
+		Agent:   &models.Agent{UserID: "u"},
+		Surface: "drawer",
+		Message: "Draft the reply.",
+	}}
+	if worker.isWatching("u", time.Time{}, now) {
+		t.Fatal("the report alone was taken as watching; the test proves nothing")
+	}
+	if !asked.isWatched(now) {
+		t.Error("somebody who asked in the drawer ten seconds ago was judged away")
+	}
+	if asked.isWatched(now.Add(3 * time.Minute)) {
+		t.Error("a question asked minutes ago kept a tab that stopped reporting as watched")
+	}
+	worker.ReportPresence("u", "tab", false, 0, now)
+	if asked.isWatched(now.Add(time.Second)) {
+		t.Error("a question just asked kept a hidden tab as watched")
+	}
+
+	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
+	ownTurn := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
+		Agent:   &models.Agent{UserID: "u"},
+		Surface: "drawer",
+		Message: models.ScheduleMarker + " the morning brief",
+	}}
+	if ownTurn.isWatched(now) {
+		t.Error("the agent's own turn was taken as the person typing")
+	}
+}
+
+// Each tab names itself afresh when it loads, so a person reloading over and
+// over keeps at most presenceReportersAtMost reporters, losing the oldest.
+func TestPresenceKeepsABoundedNumberOfReporters(t *testing.T) {
+	worker := &Agent{}
+	now := time.Now()
+	for index := range presenceReportersAtMost + 10 {
+		worker.ReportPresence("u", fmt.Sprintf("tab-%d", index), index == 0, 0, now.Add(time.Duration(index)*time.Millisecond))
+	}
+	reporters := worker.presence.reports["u"]
+	if len(reporters) != presenceReportersAtMost {
+		t.Fatalf("kept %d reporters, want %d", len(reporters), presenceReportersAtMost)
+	}
+	if _, isKept := reporters["tab-0"]; isKept {
+		t.Error("the oldest reporter was kept")
+	}
+	if _, isKept := reporters[fmt.Sprintf("tab-%d", presenceReportersAtMost+9)]; !isKept {
+		t.Error("the newest reporter was dropped")
+	}
+	worker.ReportPresence("u", "tab-20", true, 0, now.Add(time.Second))
+	if len(worker.presence.reports["u"]) != presenceReportersAtMost {
+		t.Error("a known reporter reporting again pushed another out")
 	}
 }

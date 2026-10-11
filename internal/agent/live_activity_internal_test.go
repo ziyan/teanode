@@ -1,32 +1,27 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/push"
 )
 
-// A Live Activity is told the turn's state when it starts following it, and
-// again only when the state changes; the end is told once.
-func TestALiveActivityFollowsTheTurnsState(t *testing.T) {
+// newLiveActivityRun is a run of a worker that pushes through sender.
+func newLiveActivityRun(sender push.Sender) (*AskRun, *Agent) {
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
 	worker := New(&Settings{Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
-	relay := &fakeRelay{}
-	worker.phones.override = relay
-	run := &AskRun{ID: "a-run", agent: worker}
+	worker.phones.override = sender
+	return &AskRun{ID: "a-run", agent: worker}, worker
+}
 
-	if err := run.RegisterLiveActivity("sealed:an-activity"); err != nil {
-		t.Fatalf("RegisterLiveActivity: %s", err)
-	}
-	for _, kind := range []EventKind{EventToolCall, EventText, EventConfirmation, EventQuestion, EventToolResult, EventTitled, EventDone, EventMessage} {
-		run.followLiveActivities(kind)
-	}
-	run.followLiveActivities(EventDone)
-	worker.waitGroup.Wait()
-
-	told := relay.to("sealed:an-activity")
+// toldStates is what one activity was told, in order, with the end marked.
+func toldStates(t *testing.T, told []*push.Delivery) []string {
+	t.Helper()
 	var states []string
 	for _, delivery := range told {
 		state := delivery.ActivityState
@@ -38,16 +33,151 @@ func TestALiveActivityFollowsTheTurnsState(t *testing.T) {
 		}
 		states = append(states, state)
 	}
-	// Sent from goroutines, so in any order; what matters is each once.
-	want := map[string]bool{"working": true, "waiting": true, "done (ended)": true}
-	counted := map[string]int{}
-	for _, state := range states {
-		counted[state]++
+	return states
+}
+
+func sameStates(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
 	}
-	if len(states) != 4 || counted["working"] != 2 || counted["waiting"] != 1 || counted["done (ended)"] != 1 {
-		t.Fatalf("told %v, want working on registering and again after waiting, waiting once and the end once (%v)", states, want)
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
+// A Live Activity is told the turn's state when it starts following it, and
+// again only when the state changes; the end is told once.
+func TestALiveActivityFollowsTheTurnsState(t *testing.T) {
+	relay := &fakeRelay{}
+	run, worker := newLiveActivityRun(relay)
+
+	if err := run.RegisterLiveActivity("sealed:an-activity"); err != nil {
+		t.Fatalf("RegisterLiveActivity: %s", err)
+	}
+	worker.waitGroup.Wait()
+	for _, kind := range []EventKind{EventToolCall, EventText, EventConfirmation, EventQuestion, EventToolResult, EventTitled, EventDone, EventMessage, EventDone} {
+		run.followLiveActivities(kind, time.Now())
+		// One state at a time, so that none is replaced before it is sent.
+		worker.waitGroup.Wait()
+	}
+
+	got := toldStates(t, relay.to("sealed:an-activity"))
+	want := []string{"working", "waiting", "working", "done (ended)"}
+	if !sameStates(got, want) {
+		t.Fatalf("told %v, want %v", got, want)
 	}
 	if err := run.RegisterLiveActivity(""); err == nil {
 		t.Error("an empty registration was taken")
+	}
+}
+
+// blockingRelay holds the first delivery until it is let go, the way a slow
+// trip to the relay would, and records every delivery in the order sent.
+type blockingRelay struct {
+	fakeRelay
+	isHolding bool
+	held      chan struct{}
+	release   chan struct{}
+}
+
+func (self *blockingRelay) Send(ctx context.Context, pushRegistration string, delivery *push.Delivery) error {
+	if !self.isHolding {
+		self.isHolding = true
+		close(self.held)
+		<-self.release
+	}
+	return self.fakeRelay.Send(ctx, pushRegistration, delivery)
+}
+
+// Each state used to go out from a goroutine of its own, so a "waiting"
+// could reach the relay after the "working" that followed it and the lock
+// screen would show the older one. One sender per run sends them in the
+// order they happened, and a state replaced while the one before it was on
+// its way is not sent at all.
+func TestALiveActivityIsToldItsStatesInOrder(t *testing.T) {
+	relay := &blockingRelay{held: make(chan struct{}), release: make(chan struct{})}
+	run, worker := newLiveActivityRun(relay)
+
+	if err := run.RegisterLiveActivity("sealed:an-activity"); err != nil {
+		t.Fatalf("RegisterLiveActivity: %s", err)
+	}
+	<-relay.held
+	started := time.Now()
+	run.followLiveActivities(EventConfirmation, started.Add(time.Second))
+	run.followLiveActivities(EventToolCall, started.Add(2*time.Second))
+	run.followLiveActivities(EventQuestion, started.Add(3*time.Second))
+	close(relay.release)
+	worker.waitGroup.Wait()
+
+	told := relay.to("sealed:an-activity")
+	got := toldStates(t, told)
+	if want := []string{"working", "waiting"}; !sameStates(got, want) {
+		t.Fatalf("told %v, want %v: the newest state last, and none in between", got, want)
+	}
+	if !told[1].ActivityChangedAt.Equal(started.Add(3 * time.Second)) {
+		t.Errorf("the last state carries %s, not when it changed", told[1].ActivityChangedAt)
+	}
+	if told[0].ActivityChangedAt.IsZero() || told[0].ActivityChangedAt.After(told[1].ActivityChangedAt) {
+		t.Errorf("the states' times run %s then %s", told[0].ActivityChangedAt, told[1].ActivityChangedAt)
+	}
+}
+
+// A card nobody answered within the wait stays open after the turn, so the
+// turn ends waiting for the person: ended as done, the lock screen would
+// say there is nothing left to do for fifteen minutes while the card waits.
+func TestATurnThatLeavesACardOpenEndsWaiting(t *testing.T) {
+	relay := &fakeRelay{}
+	run, worker := newLiveActivityRun(relay)
+	if err := run.RegisterLiveActivity("sealed:an-activity"); err != nil {
+		t.Fatalf("RegisterLiveActivity: %s", err)
+	}
+	worker.waitGroup.Wait()
+	run.followLiveActivities(EventConfirmation, time.Now())
+	worker.waitGroup.Wait()
+	if err := run.leaveCardOpen(); !errors.Is(err, ErrLeftOpen) {
+		t.Fatalf("leaveCardOpen said %v", err)
+	}
+	run.followLiveActivities(EventMessage, time.Now())
+	worker.waitGroup.Wait()
+	run.followLiveActivities(EventDone, time.Now())
+	worker.waitGroup.Wait()
+
+	got := toldStates(t, relay.to("sealed:an-activity"))
+	if want := []string{"working", "waiting", "working", "waiting (ended)"}; !sameStates(got, want) {
+		t.Fatalf("told %v, want %v", got, want)
+	}
+
+	// A turn that failed says so, card or not.
+	failing := &fakeRelay{}
+	run, worker = newLiveActivityRun(failing)
+	if err := run.RegisterLiveActivity("sealed:another-activity"); err != nil {
+		t.Fatalf("RegisterLiveActivity: %s", err)
+	}
+	_ = run.leaveCardOpen()
+	run.followLiveActivities(EventError, time.Now())
+	worker.waitGroup.Wait()
+	told := failing.to("sealed:another-activity")
+	if len(told) == 0 || told[len(told)-1].ActivityState != "failed" || !told[len(told)-1].IsActivityEnded {
+		t.Fatalf("a failed turn was told %v", toldStates(t, told))
+	}
+}
+
+// The app registers an activity wherever its request lands; another
+// instance forwards it as a command, and the one running the turn follows it.
+func TestAForwardedLiveActivityIsFollowed(t *testing.T) {
+	relay := &fakeRelay{}
+	run, worker := newLiveActivityRun(relay)
+	if !worker.Apply(run, RunCommand{RunID: run.ID, Action: CommandLiveActivity, PushRegistration: "sealed:an-activity"}) {
+		t.Fatal("the forwarded activity was not followed")
+	}
+	if worker.Apply(run, RunCommand{RunID: run.ID, Action: CommandLiveActivity}) {
+		t.Error("a forwarded command with no registration was taken")
+	}
+	worker.waitGroup.Wait()
+	if got := toldStates(t, relay.to("sealed:an-activity")); !sameStates(got, []string{"working"}) {
+		t.Fatalf("told %v", got)
 	}
 }

@@ -319,8 +319,12 @@ type AskRun struct {
 	events       []Event
 	nextSequence int
 	// lastAnswer is the newest answer the turn gave, for the phone
-	// notification sent when a turn asked from the app finishes.
-	lastAnswer     string
+	// notification sent when the turn finishes; see isAnswerForPhone.
+	lastAnswer string
+	// lastWroteAt is when the person last wrote to the turn: when they
+	// asked it, or when a message of theirs was handed to it as it ran.
+	// It stands in for a presence report, which typing does not send.
+	lastWroteAt    time.Time
 	subscribers    map[int]chan Event
 	nextSubscriber int
 	finished       bool
@@ -484,6 +488,7 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	}
 	run := &AskRun{
 		ID:            security.NewULID(),
+		lastWroteAt:   time.Now(),
 		settings:      settings,
 		agent:         self,
 		subscribers:   map[int]chan Event{},
@@ -802,7 +807,7 @@ func (self *AskRun) emit(event Event) {
 	// The conversation's feed, after the run's own lock is released: the
 	// feed replays runs under a lock of its own, and takes theirs too.
 	self.agent.publish(event, true)
-	self.followLiveActivities(event.Kind)
+	self.followLiveActivities(event.Kind, event.At)
 }
 
 func (self *AskRun) finish() {
@@ -835,7 +840,7 @@ func (self *AskRun) finish() {
 	}
 	self.mutex.Unlock()
 	// A turn that ended without saying so still ends what follows it.
-	self.followLiveActivities(EventDone)
+	self.followLiveActivities(EventDone, time.Now())
 	close(self.done)
 	self.cancel()
 	go self.agent.forgetRun(self.ID)
@@ -1894,7 +1899,7 @@ func (self *AskRun) confirmWaiting(ctx context.Context, tool *Tool, call *Call, 
 		default:
 		}
 		if interaction != nil {
-			return false, ErrLeftOpen
+			return false, self.leaveCardOpen()
 		}
 		return false, fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
@@ -2496,7 +2501,7 @@ func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []
 		default:
 		}
 		if interaction != nil {
-			return "", ErrLeftOpen
+			return "", self.leaveCardOpen()
 		}
 		return "", fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():

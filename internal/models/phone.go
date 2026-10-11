@@ -52,7 +52,7 @@ const (
 	NotificationQuestion = "question"
 	// NotificationAnswer is an answer finished after the person left: to
 	// something asked from the app, or asked in the main conversation on
-	// the dashboard, the command line or the API.
+	// the dashboard.
 	NotificationAnswer = "answer"
 )
 

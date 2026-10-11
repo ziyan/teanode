@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { graphql, signedInAsSomebodyElse } from '../api'
+import { newRandomId } from '../randomId'
 
 const REPORT = `
   mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String) {
@@ -9,7 +10,7 @@ const REPORT = `
 // This tab's name in its reports, so the server can tell it from the
 // person's other tabs and their phone: one going out of sight hides only
 // itself.
-const REPORTER_ID = crypto.randomUUID()
+const REPORTER_ID = newRandomId('tab')
 
 // How often a tab says it is still there. The server counts a person as
 // present while a visible tab reported within two minutes, so one report

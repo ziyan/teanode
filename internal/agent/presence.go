@@ -9,6 +9,11 @@ import (
 // dashboard reports every minute, so two minutes is one missed report.
 const presenceFresh = 2 * time.Minute
 
+// presenceReportersAtMost bounds the tabs and phones kept for one person.
+// Each tab names itself afresh when it loads, so somebody reloading over and
+// over within presenceFresh would otherwise add a reporter each time.
+const presenceReportersAtMost = 32
+
 // presenceReport is what one dashboard tab or one phone last said about the
 // person.
 type presenceReport struct {
@@ -62,6 +67,16 @@ func (self *Agent) ReportPresence(userId, reporterId string, isVisible bool, idl
 			delete(reporters, name)
 		}
 	}
+	// The one that reported longest ago makes room for a new one.
+	if _, isKnown := reporters[reporterId]; !isKnown && len(reporters) >= presenceReportersAtMost {
+		oldestName, oldestAt := "", time.Time{}
+		for name, report := range reporters {
+			if oldestAt.IsZero() || report.reportedAt.Before(oldestAt) {
+				oldestName, oldestAt = name, report.reportedAt
+			}
+		}
+		delete(reporters, oldestName)
+	}
 	reporters[reporterId] = presenceReport{reportedAt: now, isVisible: isVisible, idleSeconds: max(idleSeconds, 0)}
 }
 
@@ -90,8 +105,17 @@ func (self *Agent) isPresent(userId string, now time.Time) (bool, time.Duration)
 const phoneQuietAfter = 2 * time.Minute
 
 // isWatching says whether the person is looking at a dashboard or the app
-// now, so that their phone need not be told.
-func (self *Agent) isWatching(userId string, now time.Time) bool {
+// now, so that their phone need not be told. lastWroteAt is when they last
+// wrote to the turn at hand, zero when nobody did: typing a question sends
+// no report, so without it somebody who asked a moment ago could be judged
+// away on the strength of a report from before they typed.
+func (self *Agent) isWatching(userId string, lastWroteAt, now time.Time) bool {
 	isPresent, idle := self.isPresent(userId, now)
-	return isPresent && idle < phoneQuietAfter
+	if !isPresent {
+		return false
+	}
+	if !lastWroteAt.IsZero() {
+		idle = min(idle, max(now.Sub(lastWroteAt), 0))
+	}
+	return idle < phoneQuietAfter
 }

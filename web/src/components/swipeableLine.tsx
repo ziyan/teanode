@@ -54,6 +54,10 @@ export function SwipeableLine({
   // the direction is held: drifting down does not drop the line.
   const touched = useRef<{ pointerId: number; x: number; y: number; isSwiping: boolean } | null>(null)
   const hasSwiped = useRef(false)
+  // Whether the press that ends in a click was a finger: a tap on a bubble
+  // opens its reactions on a phone, where there is no hover to show the
+  // React button.
+  const wasTouch = useRef(false)
   const offsetRef = useRef(0)
   const [offset, setOffset] = useState(0)
   // A line just copied: held out where the swipe left it, its mark a tick,
@@ -130,6 +134,7 @@ export function SwipeableLine({
       className={[className, 'agent-line-swipeable', offset !== 0 ? 'swiping' : ''].filter(Boolean).join(' ')}
       style={offset !== 0 ? { transform: `translateX(${offset}px)` } : undefined}
       onPointerDown={(event) => {
+        wasTouch.current = event.pointerType === 'touch'
         if (event.pointerType !== 'touch') return
         touched.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, isSwiping: false }
         hasSwiped.current = false
@@ -164,6 +169,14 @@ export function SwipeableLine({
         hasSwiped.current = false
         event.preventDefault()
         event.stopPropagation()
+      }}
+      // A finger's tap on the bubble itself, not on a link or a button in it
+      // and not ending a selection, opens or closes its reactions.
+      onClick={(event) => {
+        if (!wasTouch.current || !onReact) return
+        if ((event.target as Element).closest('a, button, input, textarea, select, summary, [role="menu"]')) return
+        if (window.getSelection()?.toString()) return
+        onReact()
       }}
     >
       {children}

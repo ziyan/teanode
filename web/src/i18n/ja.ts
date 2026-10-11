@@ -1756,7 +1756,7 @@ export const ja: Catalog = {
   'agentSettings.voiceProvider': 'プロバイダー（種類 openai）',
   'agentSettings.voiceProviderFirst': '最初のもの',
   'agentSettings.voiceModel': '文字起こしモデル',
-  'agentSettings.voiceSilence': 'ターンを終える間（ミリ秒、500）',
+  'agentSettings.voiceSilence': 'ターンを終える間（ミリ秒、空欄なら話の内容で判断）',
   'agentSettings.voiceAskModel': '通話のモデル（provider:model）',
   'agentSettings.voiceAskModelSame': '入力したターンと同じ',
   'agentSettings.voiceSpeechModel': '音声合成モデル',

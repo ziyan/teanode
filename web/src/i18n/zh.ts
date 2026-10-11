@@ -1712,7 +1712,7 @@ export const zh: Catalog = {
   'agentSettings.voiceProvider': '提供方（类型 openai）',
   'agentSettings.voiceProviderFirst': '第一个',
   'agentSettings.voiceModel': '转写模型',
-  'agentSettings.voiceSilence': '结束一轮的停顿（毫秒，500）',
+  'agentSettings.voiceSilence': '结束一轮的停顿（毫秒，留空则按说话内容判断）',
   'agentSettings.voiceAskModel': '通话所用模型（provider:model）',
   'agentSettings.voiceAskModelSame': '与输入的轮次相同',
   'agentSettings.voiceSpeechModel': '语音合成模型',

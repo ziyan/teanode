@@ -71,17 +71,17 @@ type AgentAskMutation interface {
 	// Stop a turn where it is. Needs agent:use.
 	StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error)
 
-	// Have a running turn push its state (working, waiting, done, failed)
-	// to a Live Activity on the person's phone until it ends: the sealed
-	// registration the relay made of the activity's push token. Needs
-	// agent:use.
-	RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error)
-
 	// React to a message of a conversation with an emoji, as the person:
 	// one or two emoji, replacing the person's reaction on it; an empty
 	// emoji takes it away. Whoever has the conversation open is told with
 	// a "reacted" event. Needs agent:use.
 	ReactToAgentMessage(ctx context.Context, arguments ReactToAgentMessageArguments) (bool, error)
+
+	// Have a running turn push its state (working, waiting, done, failed)
+	// to a Live Activity on the person's phone until it ends: the sealed
+	// registration the relay made of the activity's push token. Needs
+	// agent:use.
+	RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error)
 
 	// Start a named conversation, kept apart from the main one, with a
 	// goal on it if one is given. Needs agent:use.
@@ -951,25 +951,6 @@ func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArgum
 	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandStop})
 }
 
-func (self *graph) RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return false, err
-	}
-	worker := self.agentWorker()
-	if worker == nil {
-		return false, agent.ErrUnavailable
-	}
-	run := worker.FindRun(arguments.RunID)
-	if run == nil || run.Conversation().AgentID != found.ID {
-		return false, api.ErrNotFound
-	}
-	if err := run.RegisterLiveActivity(strings.TrimSpace(arguments.PushRegistration)); err != nil {
-		return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
-	}
-	return true, nil
-}
-
 // ReactToAgentMessage is the person's reaction. The message is found by
 // its id and then held to the same rule as reading its conversation: the
 // caller's own, or another person's for an operator with agent:act, who
@@ -1014,6 +995,33 @@ func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAge
 		tx.AfterCommit(func() { worker.PublishReaction(conversation.ID, message.ID, reactionEmoji, models.ReactorPerson) })
 	}
 	return true, nil
+}
+
+func (self *graph) RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return false, agent.ErrUnavailable
+	}
+	pushRegistration := strings.TrimSpace(arguments.PushRegistration)
+	if pushRegistration == "" {
+		return false, fmt.Errorf("%w: a Live Activity needs its registration", api.ErrInvalidArguments)
+	}
+	if run := worker.FindRun(arguments.RunID); run != nil {
+		if run.Conversation().AgentID != found.ID {
+			return false, api.ErrNotFound
+		}
+		if err := run.RegisterLiveActivity(pushRegistration); err != nil {
+			return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+		return true, nil
+	}
+	// The turn runs on another instance, which follows the activity when
+	// the word reaches it; a refusal there is not heard here.
+	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandLiveActivity, PushRegistration: pushRegistration})
 }
 
 func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error) {
