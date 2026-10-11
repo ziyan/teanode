@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -19,24 +20,35 @@ import (
 // its source and validates them against the schema the server builds, the way
 // TestTheClientQueriesMatchTheSchema does for the command line.
 
-// appDocumentsPath is the Swift file the app's documents live in, relative to
-// this package.
-const appDocumentsPath = "../../../../ios/TeaNodeKit/Sources/TeaNodeKit/Operations.swift"
+// appDocumentsDirectory is where the app's documents live, beside the calls
+// that send them, relative to this package.
+const appDocumentsDirectory = "../../../../ios/TeaNodeKit/Sources/TeaNodeKit"
 
 // appDocumentPattern is one document: a static string in Swift's multi-line
 // form, `static let name = """` to the closing `"""`.
 var appDocumentPattern = regexp.MustCompile(`(?s)static let (\w+) = """\n(.*?)\n\s*"""`)
 
 func TestTheAppDocumentsMatchTheSchema(t *testing.T) {
-	source, err := os.ReadFile(appDocumentsPath)
-	if err != nil {
-		t.Fatalf("cannot read the app's documents: %s", err)
+	paths, err := filepath.Glob(filepath.Join(appDocumentsDirectory, "*.swift"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("cannot find the app's sources in %s: %v", appDocumentsDirectory, err)
 	}
-	found := appDocumentPattern.FindAllStringSubmatch(string(source), -1)
-	// Every multi-line string in the file is a document, so one this
-	// pattern cannot read fails here rather than being skipped.
-	if opened := strings.Count(string(source), `= """`); len(found) == 0 || len(found) != opened {
-		t.Fatalf("read %d documents from %s, which has %d", len(found), appDocumentsPath, opened)
+	var found [][]string
+	for _, path := range paths {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("cannot read %s: %s", path, err)
+		}
+		documents := appDocumentPattern.FindAllStringSubmatch(string(source), -1)
+		// Every static multi-line string is a document, so one this
+		// pattern cannot read fails here rather than being skipped.
+		if strings.Count(string(source), `= """`) != len(documents) {
+			t.Fatalf("read %d documents from %s, which has %d", len(documents), path, strings.Count(string(source), `= """`))
+		}
+		found = append(found, documents...)
+	}
+	if len(found) < 12 {
+		t.Fatalf("read only %d documents", len(found))
 	}
 
 	self := &graph{}

@@ -330,3 +330,32 @@ final class VoiceTests: XCTestCase {
         XCTAssertEqual(event.transcriptText, "Hello")
     }
 }
+
+final class CalendarTests: XCTestCase {
+    func testAnAllDayEventIsReadInUTC() {
+        // Midnight UTC of the 11th is the 10th in New York; the event is on
+        // the 11th all the same.
+        let day = CalendarDates.day(ofAllDay: "2026-10-11T00:00:00Z")
+        XCTAssertEqual(day?.day, 11)
+        XCTAssertEqual(CalendarDates.allDayText(DateComponents(year: 2026, month: 10, day: 11)), "2026-10-11T00:00:00Z")
+        XCTAssertEqual(CalendarDates.dayAfter(DateComponents(year: 2026, month: 10, day: 31)).month, 11)
+        // An all-day event's end is the morning after its last day.
+        XCTAssertEqual(CalendarDates.lastDay(startsAt: "2026-10-11T00:00:00Z", endsAt: "2026-10-13T00:00:00Z")?.day, 12)
+        XCTAssertEqual(CalendarDates.lastDay(startsAt: "2026-10-11T00:00:00Z", endsAt: "2026-10-11T00:00:00Z")?.day, 11)
+    }
+
+    func testAChangeIsAskedAboutBeforeItIsSentAgain() async throws {
+        let server = try ServerAddress(parsing: "mail.example.com")
+        let fake = FakeServer { request in
+            let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            if body.contains("GetCalendarRequest") { return (200, #"{"data":{"GetCalendarRequest":{"requestId":"r","isMissing":false}}}"#) }
+            return (200, #"{"data":{"SaveCalendarEvent":{"id":"e1"}}}"#)
+        }
+        let account = Account(server: server, clientId: "c", accessToken: "t", refreshToken: "", expiresAt: .distantFuture, username: "robin")
+        let connection = Connection(account: account, transport: fake)
+        let change = CalendarChange(operation: "save", summary: "Lunch", variables: ["calendarId": .string("k")])
+        try await connection.perform(change, isRetry: true)
+        XCTAssertEqual(fake.sent.count, 1, "a change that had happened was sent again")
+        XCTAssertEqual(change.requestId.count, 32)
+    }
+}
