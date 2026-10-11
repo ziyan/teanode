@@ -88,6 +88,26 @@ struct ManageOverviewView: View {
                         Text("People and access")
                     }
                 }
+                if access.canManageServer || access.canOpenAgentAdmin {
+                    Section {
+                        if access.canManageServer {
+                            NavigationLink {
+                                ServerSettingsView(connection: connection)
+                            } label: {
+                                Label("Server", systemImage: "server.rack")
+                            }
+                        }
+                        if access.canOpenAgentAdmin {
+                            NavigationLink {
+                                AgentAdminView(connection: connection)
+                            } label: {
+                                Label("Agents", systemImage: "person.2.wave.2")
+                            }
+                        }
+                    } header: {
+                        Text("Server and agents")
+                    }
+                }
             }
         }
         .navigationTitle("Manage")
