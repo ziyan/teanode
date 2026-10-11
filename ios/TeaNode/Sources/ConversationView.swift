@@ -453,7 +453,11 @@ struct ConversationItemView: View {
                     AgentBubble {
                         MarkdownView(text: line.text)
                     }
-                    .contextMenu { LineActions(line: line, model: model) }
+                    .contextMenu {
+                        LineActions(line: line, model: model)
+                    } preview: {
+                        LinePreview(text: line.text)
+                    }
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
                             .font(.caption2)
@@ -626,9 +630,29 @@ struct PersonBubble<Actions: View>: View {
                         .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
                 }
             }
-            .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
-            .contextMenu { actions() }
+            .contextMenu {
+                actions()
+            } preview: {
+                LinePreview(text: line.text)
+            }
         }
+    }
+}
+
+/// LinePreview is what a long press lifts above the menu: the start of a
+/// message, at most ten lines. Lifting the whole of a long answer ran past
+/// the screen, over the composer; Select and Copy still take all of it.
+struct LinePreview: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .lineLimit(10)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(width: 320, alignment: .leading)
+            .background(Color(.secondarySystemBackground))
     }
 }
 
