@@ -60,6 +60,33 @@ public enum Documents {
           StartAgentIdea(ideaId: $ideaId, conversationId: $conversationId, language: $language) { conversation { id } openingRequest }
         }
         """
+    public static let devices = """
+        query {
+          ReadAgentTab { attached title url }
+          ReadAgentComputers { computers { name system description } }
+          ReadAgent { budget { used limit resetsAt cost costLimit currency } timezone }
+        }
+        """
+    public static let backgroundCommands = """
+        query ($conversationId: String) {
+          ListAgentBackgroundCommands(conversationId: $conversationId) {
+            computer id command directory conversationId startedAt endedAt isRunning exitCode stopReason
+          }
+        }
+        """
+    public static let backgroundCommand = """
+        query ($computer: String!, $id: String!) {
+          ReadAgentBackgroundCommand(computer: $computer, id: $id) {
+            computer id command directory conversationId startedAt endedAt isRunning exitCode stopReason
+            stdout stderr isStdoutTruncated isStderrTruncated stdoutByteCount stderrByteCount
+          }
+        }
+        """
+    public static let stopBackgroundCommand = """
+        mutation ($computer: String!, $id: String!) {
+          StopAgentBackgroundCommand(computer: $computer, id: $id) { id isRunning stopReason exitCode endedAt }
+        }
+        """
     public static let shareAttachment = """
         query ($attachmentId: String!) { ShareAgentAttachment(attachmentId: $attachmentId) }
         """
@@ -114,7 +141,8 @@ public enum Documents {
         "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
         "updatePhone": updatePhone, "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
         "updateConversation": updateConversation, "deleteConversation": deleteConversation,
-        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment,
+        "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices,
+        "backgroundCommands": backgroundCommands, "backgroundCommand": backgroundCommand, "stopBackgroundCommand": stopBackgroundCommand,
     ]
 }
 

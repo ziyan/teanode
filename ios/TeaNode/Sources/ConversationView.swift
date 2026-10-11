@@ -65,7 +65,12 @@ struct ConversationView: View {
                     if model.isLoaded, model.transcript.lines.isEmpty {
                         EmptyConversation(model: model)
                     }
+                    // The end of the conversation: whether it is on screen
+                    // decides whether the jump to the end is offered.
                     Color.clear.frame(height: 1).id(Self.endId)
+                        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
+                            isAtEnd = isVisible
+                        }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 12)
@@ -73,11 +78,6 @@ struct ConversationView: View {
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40
-            } action: { _, isNowAtEnd in
-                isAtEnd = isNowAtEnd
-            }
             .overlay(alignment: .bottomTrailing) {
                 if !isAtEnd {
                     Button {
