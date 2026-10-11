@@ -57,15 +57,17 @@ struct IdeasScreen: View {
         Button {
             Task { await start(idea) }
         } label: {
+            // Colors named outright: in a button, primary and secondary are
+            // shades of the tint, which turned every word green.
             HStack(alignment: .top, spacing: 12) {
                 Text(idea.emoji ?? "💡").font(.title2)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(idea.headline).foregroundStyle(.primary)
+                    Text(idea.headline).foregroundStyle(Color(.label))
                     if let body = idea.body, !body.isEmpty {
-                        Text(body).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                        Text(body).font(.subheadline).foregroundStyle(Color(.secondaryLabel)).lineLimit(3)
                     }
                     if let reason = idea.suggestionReason, !reason.isEmpty {
-                        Text(reason).font(.caption).foregroundStyle(.tertiary).lineLimit(2)
+                        Text(reason).font(.caption).foregroundStyle(Color(.tertiaryLabel)).lineLimit(2)
                     }
                 }
                 Spacer(minLength: 0)
