@@ -228,11 +228,18 @@ final class VoiceCall: NSObject {
         openSocket()
         meterTask = Task { [weak self] in
             var listeningSince: Date?
+            var answerHeardUntil = Date.distantPast
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard let self else { return }
                 self.level = self.capture.level
                 self.watchForSilence(&listeningSince)
+                // Without the phone's echo cancelling, the answer from the
+                // speaker reaches the microphone and is heard as the person
+                // speaking. Nothing is sent while it plays, and for a moment
+                // after, for the room to go quiet; a tap still cuts in.
+                if self.isSpeakingAnswer { answerHeardUntil = Date().addingTimeInterval(0.4) }
+                self.capture.isHoldingForAnswer = !self.isVoiceProcessing && Date() < answerHeardUntil
             }
         }
         // While muted nothing is sent; the server is told every twenty
@@ -259,7 +266,10 @@ final class VoiceCall: NSObject {
         }
         let since = listeningSince ?? Date()
         listeningSince = since
-        guard Date().timeIntervalSince(since) > 3, capture.loudestLevel < 0.00001 else { return }
+        // The phone's voice processing gives exact silence until somebody
+        // speaks, so a person who waits before speaking is not a dead
+        // microphone: only a long silence from the start of the call is.
+        guard Date().timeIntervalSince(since) > 8, capture.loudestLevel < 0.00001 else { return }
         listeningSince = nil
         if !isSilenceRetried {
             isSilenceRetried = true
@@ -390,7 +400,8 @@ final class VoiceCall: NSObject {
                 let hello: [String: Any] = [
                     "voiceEvent": "hello", "authorization": "Bearer \(token)",
                     "captureSettings": [
-                        "echoCancellation": true, "noiseSuppression": true, "autoGainControl": true, "sampleRate": Int(sampleRate),
+                        "echoCancellation": isVoiceProcessing, "noiseSuppression": isVoiceProcessing, "autoGainControl": isVoiceProcessing,
+                        "sampleRate": Int(sampleRate),
                     ],
                 ]
                 let data = try JSONSerialization.data(withJSONObject: hello)
@@ -624,6 +635,14 @@ final class CaptureSender: @unchecked Sendable {
         set { lock.withLock { _isMuted = newValue } }
     }
 
+    private var _isHoldingForAnswer = false
+    /// Nothing is sent while an answer plays without the phone's echo
+    /// cancelling, so the answer is not heard back as the person.
+    var isHoldingForAnswer: Bool {
+        get { lock.withLock { _isHoldingForAnswer } }
+        set { lock.withLock { _isHoldingForAnswer = newValue } }
+    }
+
     var level: Float { lock.withLock { _level } }
 
     private var _loudestLevel: Float = 0
@@ -645,7 +664,7 @@ final class CaptureSender: @unchecked Sendable {
                 _loudestLevel = max(_loudestLevel, rootMeanSquare)
             }
         }
-        guard let socket, !isMuted, let converter, let sendFormat else { return }
+        guard let socket, !isMuted, !isHoldingForAnswer, let converter, let sendFormat else { return }
         let ratio = sendFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
         guard let converted = AVAudioPCMBuffer(pcmFormat: sendFormat, frameCapacity: capacity) else { return }
