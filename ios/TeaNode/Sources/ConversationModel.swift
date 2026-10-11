@@ -240,6 +240,11 @@ final class ConversationModel {
     private func apply(_ event: AgentEvent) {
         transcript.apply(event)
         call?.follow(event)
+        // The agent's reaction arriving is felt, as a friend's tapback is:
+        // a double tap, apart from the light one the person's own makes.
+        if event.kind == "reacted", event.reactorKind == "agent", !(event.emoji ?? "").isEmpty {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
         switch event.kind {
         case "asked":
             if !runningRunIds.contains(event.runId) {
@@ -298,6 +303,7 @@ final class ConversationModel {
         guard let messageId = line.messageId else { return }
         let previous = line.reaction(of: "person") ?? ""
         let chosen = previous == emoji ? "" : emoji
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         transcript.react(messageId: messageId, emoji: chosen, reactorKind: "person")
         do {
             try await connection.react(to: messageId, emoji: chosen)
