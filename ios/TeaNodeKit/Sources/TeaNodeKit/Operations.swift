@@ -114,7 +114,9 @@ public enum Documents {
         }
         """
     public static let reportPresence = """
-        mutation ($isVisible: Boolean!, $idleSeconds: Int!) { ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds) }
+        mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String) {
+          ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds, reporterId: $reporterId)
+        }
         """
     public static let registerPhone = """
         mutation ($phoneName: String!, $phoneModel: String!, $pushRegistration: String, $payloadKey: String) {
@@ -477,8 +479,16 @@ extension Connection {
 
     public func reportPresence(isVisible: Bool) async throws {
         struct Answer: Decodable, Sendable { let ReportAgentPresence: Bool? }
-        _ = try await execute(Documents.reportPresence, variables: ["isVisible": .bool(isVisible), "idleSeconds": .number(0)], as: Answer.self)
+        _ = try await execute(
+            Documents.reportPresence,
+            variables: ["isVisible": .bool(isVisible), "idleSeconds": .number(0), "reporterId": .string(Self.presenceReporterId)],
+            as: Answer.self)
     }
+
+    /// This launch of the app's name in its presence reports, so the server
+    /// keeps its report apart from the person's dashboard tabs: the app
+    /// going to the background then counts as leaving at once.
+    public static let presenceReporterId = "app-" + UUID().uuidString
 
     /// Registers this phone with the server; push registration and key come
     /// once the person allows notifications.

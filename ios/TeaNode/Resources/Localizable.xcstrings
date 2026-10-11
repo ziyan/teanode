@@ -2961,6 +2961,22 @@
         }
       }
     },
+    "Answers that come after you have left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "離れた後に届いた答え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你离开后才到的回答"
+          }
+        }
+      }
+    },
     "Answers to what you asked from the phone": {
       "localizations": {
         "ja": {

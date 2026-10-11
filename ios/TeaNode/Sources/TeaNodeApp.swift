@@ -495,7 +495,7 @@ struct NotificationKindToggle: View {
         case "message": String(localized: "What your agent says on its own")
         case "approval": String(localized: "Approvals waiting for you")
         case "question": String(localized: "Questions for you")
-        case "answer": String(localized: "Answers to what you asked from the phone")
+        case "answer": String(localized: "Answers that come after you have left")
         default: notificationKind
         }
     }
