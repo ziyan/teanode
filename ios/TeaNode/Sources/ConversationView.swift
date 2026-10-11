@@ -627,7 +627,9 @@ struct PersonBubble<Actions: View>: View {
                     Text(line.text)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+                        // The person's side in the accent's tint, the agent's in
+                        // grey, so whose each bubble is shows at a glance.
+                        .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
                 }
             }
             .contextMenu {
@@ -662,16 +664,20 @@ struct LinePreview: View {
     }
 }
 
-/// AgentBubble is something from the agent: its words on the page itself,
-/// full width, as the Claude and ChatGPT apps set an answer; only the
-/// person's own messages sit in bubbles.
+/// AgentBubble is something from the agent, in a bubble on the left as a
+/// person's reply sits in Messages: the conversation reads as talking to
+/// someone, with a bubble on each side.
 struct AgentBubble<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 2)
+        HStack {
+            content
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+            Spacer(minLength: 40)
+        }
     }
 }
 
@@ -693,8 +699,8 @@ struct CardSurface<Content: View>: View {
 
 /// TypingBubble says the agent is working on an answer: three dots rising in
 /// turn inside a bubble, as a person typing shows in Messages, so the wait
-/// reads as someone answering. The answer itself is set on the page, without
-/// a bubble, once its first words arrive.
+/// reads as someone answering. The answer takes its place, in a bubble of
+/// the same look, once its first words arrive.
 struct TypingBubble: View {
     @Environment(\.accessibilityReduceMotion) private var isReducingMotion
 

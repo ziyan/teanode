@@ -69,11 +69,12 @@ its pull request is opened.
 
 - Content first, chrome last. A conversation is the messages and the composer;
   everything else is in the toolbar or a menu.
-- A conversation reads like the Claude and ChatGPT apps. The agent's answers
-  are text on the page itself, full width, with no bubble; the person's
-  messages sit on the right in a quiet `secondarySystemBackground` bubble with
-  primary text. Green is kept for what can be pressed: the send button, links,
-  a chosen answer. The time shows between two messages far apart.
+- A conversation reads like talking to a person, as in Messages: both sides
+  are bubbles. The agent's sit on the left in `secondarySystemBackground`; the
+  person's on the right in the accent at 20 percent, with primary text. While
+  the agent works, its bubble shows typing dots. Otherwise green is kept for
+  what can be pressed: the send button, links, a chosen answer. The time shows
+  between two messages far apart.
 - Cards that wait for the person (approve, a question, a coding session
   asking) share one surface: `secondarySystemBackground`, an 18 point corner,
   a hairline edge. A small secondary header says what the card is; answers
