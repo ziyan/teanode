@@ -6977,6 +6977,22 @@
         }
       }
     },
+    "Mute or unmute": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ミュート切り替え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音或取消静音"
+          }
+        }
+      }
+    },
     "Muted": {
       "localizations": {
         "ja": {

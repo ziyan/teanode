@@ -184,6 +184,7 @@ final class ConversationModel {
         guard call == nil, let voiceSampleRate else { return }
         let call = VoiceCall(connection: connection, model: self, sampleRate: voiceSampleRate, agentName: app.agentTitle)
         self.call = call
+        app.currentCall = call
         call.start()
     }
 

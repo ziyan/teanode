@@ -70,6 +70,9 @@ final class AppModel {
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
 
+    /// The call under way, for the buttons on its Live Activity.
+    weak var currentCall: VoiceCall?
+
     /// A conversation opened to send its first message: an idea tried from
     /// the Ideas page.
     var openingRequest: OpeningRequest?

@@ -1,3 +1,4 @@
+import ActivityKit
 import AVFoundation
 import CallKit
 import Foundation
@@ -25,8 +26,18 @@ final class VoiceCall: NSObject {
     /// How loud the microphone is, for the meter: 0 to 1.
     private(set) var level: Float = 0
     var isMuted = false {
-        didSet { capture.isMuted = isMuted }
+        didSet {
+            capture.isMuted = isMuted
+            if let callActivityId {
+                let isMuted = isMuted
+                Task { await CallActivities.update(callActivityId, isMuted: isMuted) }
+            }
+        }
     }
+
+    /// The call's Live Activity: the lock screen's mute and hang up, and
+    /// how long the call has run.
+    private var callActivityId: String?
 
     private let connection: Connection
     private let model: ConversationModel
@@ -42,6 +53,8 @@ final class VoiceCall: NSObject {
     private var isVoiceProcessing = true
     private var isSilenceRetried = false
     private var configurationObserver: (any NSObjectProtocol)?
+    /// Watches headphones and AirPods come and go, to move the sound.
+    private var routeObserver: (any NSObjectProtocol)?
     private var isTapInstalled = false
     private var engineStartedAt = Date.distantPast
     /// Answers arrive as mono 16-bit PCM at 24000 Hz.
@@ -154,6 +167,14 @@ final class VoiceCall: NSObject {
             NotificationCenter.default.removeObserver(configurationObserver)
             self.configurationObserver = nil
         }
+        if let routeObserver {
+            NotificationCenter.default.removeObserver(routeObserver)
+            self.routeObserver = nil
+        }
+        if let callActivityId {
+            self.callActivityId = nil
+            Task { await CallActivities.end(callActivityId) }
+        }
         if provider == nil {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } else {
@@ -167,11 +188,43 @@ final class VoiceCall: NSObject {
         try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
     }
 
+    private func showCallActivity() {
+        guard callActivityId == nil, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let activity = try? Activity.request(
+            attributes: CallActivityAttributes(agentTitle: agentName, startedAt: Date()),
+            content: ActivityContent(state: CallActivityAttributes.ContentState(isMuted: isMuted), staleDate: nil), pushType: nil)
+        callActivityId = activity?.id
+    }
+
+    /// The call is heard on the speaker, as a speakerphone, unless something
+    /// private to the person is connected: headphones, AirPods or other
+    /// Bluetooth, or a car. A call starts on the earpiece otherwise, which
+    /// is hard to hear held away from the ear.
+    private func routeSound() {
+        let session = AVAudioSession.sharedInstance()
+        let privatePorts: Set<AVAudioSession.Port> = [.headphones, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .carAudio, .airPlay, .usbAudio]
+        let outputs = session.currentRoute.outputs
+        // Connecting headphones ends an override by itself; only the move
+        // to the speaker is made here, and only when it is not there, so
+        // the route change it causes does not ask again.
+        guard !outputs.contains(where: { privatePorts.contains($0.portType) }), !outputs.contains(where: { $0.portType == .builtInSpeaker }) else { return }
+        try? session.overrideOutputAudioPort(.speaker)
+    }
+
     // MARK: Audio and the socket
 
     private func startAudio() {
         guard !isAudioRunning else { return }
         guard startEngine() else { return }
+        routeSound()
+        showCallActivity()
+        if routeObserver == nil {
+            routeObserver = NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.routeSound() }
+            }
+        }
         openSocket()
         meterTask = Task { [weak self] in
             var listeningSince: Date?

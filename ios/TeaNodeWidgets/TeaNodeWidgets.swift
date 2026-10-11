@@ -14,6 +14,7 @@ struct TeaNodeWidgets: WidgetBundle {
         NextWidget()
         CallControl()
         TurnActivityWidget()
+        CallActivityWidget()
     }
 }
 
@@ -367,6 +368,88 @@ struct TurnActivityWidget: Widget {
             } minimal: {
                 Image(systemName: TurnActivityWords.symbol(context.state.activityState))
             }
+        }
+    }
+}
+
+// MARK: A call
+
+/// CallActivityWidget is a call with the agent on the lock screen and in
+/// the Dynamic Island: how long it has run, and mute and hang up.
+struct CallActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: CallActivityAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image("Logo").resizable().frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(context.attributes.agentTitle).font(.headline).lineLimit(1)
+                    CallDuration(startedAt: context.attributes.startedAt).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                CallButtons(isMuted: context.state.isMuted)
+            }
+            .padding()
+            .activityBackgroundTint(nil)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image("Logo").resizable().frame(width: 28, height: 28)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 2) {
+                        Text(context.attributes.agentTitle).font(.headline).lineLimit(1)
+                        CallDuration(startedAt: context.attributes.startedAt).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    CallButtons(isMuted: context.state.isMuted)
+                }
+            } compactLeading: {
+                Image(systemName: context.state.isMuted ? "mic.slash.fill" : "waveform").foregroundStyle(.tint)
+            } compactTrailing: {
+                CallDuration(startedAt: context.attributes.startedAt).frame(width: 44)
+            } minimal: {
+                Image(systemName: "waveform").foregroundStyle(.tint)
+            }
+        }
+    }
+}
+
+/// CallDuration counts up from when the call began.
+struct CallDuration: View {
+    let startedAt: Date
+
+    var body: some View {
+        Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
+            .monospacedDigit()
+            .multilineTextAlignment(.trailing)
+    }
+}
+
+/// CallButtons are a call's mute and hang up, run in the app.
+struct CallButtons: View {
+    let isMuted: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(intent: ToggleCallMuteIntent()) {
+                Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .background(isMuted ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary.opacity(0.25)), in: .circle)
+                    .foregroundStyle(isMuted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isMuted ? Text("Unmute") : Text("Mute"))
+            Button(intent: EndCallIntent()) {
+                Image(systemName: "phone.down.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.red, in: .circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hang up")
         }
     }
 }

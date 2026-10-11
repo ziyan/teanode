@@ -233,9 +233,6 @@ struct CallBar: View {
                 .foregroundStyle(call.problemText == nil ? .secondary : .primary)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            AudioRoutePicker()
-                .frame(width: 44, height: 44)
-                .background(Color(.tertiarySystemFill), in: .circle)
             Button {
                 call.isMuted.toggle()
             } label: {
@@ -280,21 +277,6 @@ struct CallBar: View {
         case .ended: return ""
         }
     }
-}
-
-/// AudioRoutePicker is the system's choice of where a call's sound goes:
-/// the iPhone, its speaker, AirPods or other Bluetooth headphones, or a car.
-struct AudioRoutePicker: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let picker = AVRoutePickerView()
-        picker.prioritizesVideoDevices = false
-        picker.tintColor = .tintColor
-        picker.activeTintColor = .tintColor
-        picker.accessibilityLabel = String(localized: "Choose where you hear the call")
-        return picker
-    }
-
-    func updateUIView(_ picker: AVRoutePickerView, context: Context) {}
 }
 
 /// CallMeter is five bars moving with the microphone, or with the answer
