@@ -646,13 +646,19 @@ struct LinePreview: View {
     let text: String
 
     var body: some View {
-        Text(text)
+        Text(shownText)
             .lineLimit(10)
             .multilineTextAlignment(.leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .frame(width: 320, alignment: .leading)
             .background(Color(.secondarySystemBackground))
+    }
+
+    /// Bold, italics and links drawn, as in the message, not their marks.
+    private var shownText: AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 }
 
