@@ -1366,6 +1366,7 @@ struct Composer: View {
                 TextField(placeholder, text: $model.draft, axis: .vertical)
                     .lineLimit(1...8)
                     .focused($isFocused)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
                 HStack(spacing: 4) {
@@ -1452,6 +1453,10 @@ struct Composer: View {
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
             }
+            // A tap anywhere on the panel outside its buttons starts typing,
+            // not only a tap on the words of the placeholder.
+            .contentShape(.rect(cornerRadius: 26, style: .continuous))
+            .onTapGesture { isFocused = true }
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26, style: .continuous))
         }
         .padding(.horizontal)
