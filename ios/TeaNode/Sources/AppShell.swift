@@ -311,7 +311,7 @@ struct SideMenu: View {
         case .finance:
             NavigationStack {
                 List {
-                    Section { sections } footer: { MenuSectionBreak() }
+                    Section { sections }
                     Section("Finance") {
                         ForEach(FinancePart.allCases) { part in
                             Button {

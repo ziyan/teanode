@@ -63,7 +63,7 @@ struct MailboxesList: View {
     var body: some View {
         List {
             if let leading {
-                Section { leading } footer: { MenuSectionBreak() }
+                Section { leading }
             }
             if let entry = mail.current, let inbox = mail.folder(kind: "inbox") {
                 Section {
@@ -76,6 +76,10 @@ struct MailboxesList: View {
                     if mail.mailbox?.agent?.isSorting == true {
                         FolderLink(place: .priority, name: String(localized: "Priority"), systemImage: "exclamationmark.circle", count: entry.priorityUnread, current: current, onChoose: onChoose)
                     }
+                } header: {
+                    // In the side menu, the mail under the parts of TeaNode
+                    // is titled as Finance's sections are.
+                    if leading != nil { Text("Mail") }
                 }
                 let rows = mail.railRows
                 if !rows.pinned.isEmpty {

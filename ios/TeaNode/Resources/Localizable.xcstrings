@@ -2657,6 +2657,22 @@
         }
       }
     },
+    "Chats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话"
+          }
+        }
+      }
+    },
     "Chatting about it instead": {
       "localizations": {
         "ja": {
@@ -10861,6 +10877,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示用量"
+          }
+        }
+      }
+    },
+    "Side chats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旁支对话"
           }
         }
       }

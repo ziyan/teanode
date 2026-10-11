@@ -192,18 +192,6 @@ extension View {
     }
 }
 
-/// MenuSectionBreak ends the side menu's parts of TeaNode, above the list
-/// of the part on screen: the two are separate menus, and read as such.
-struct MenuSectionBreak: View {
-    var body: some View {
-        Divider()
-            .padding(.top, 10)
-            .padding(.bottom, 6)
-            .padding(.horizontal, 4)
-            .accessibilityHidden(true)
-    }
-}
-
 extension View {
     /// The side menu's plain list, when the list is shown in it.
     func menuListStyle(_ isMenu: Bool = true) -> some View {

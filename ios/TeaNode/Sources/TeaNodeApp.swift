@@ -59,7 +59,7 @@ struct ConversationsSheet: View {
         NavigationStack {
             List {
                 if let leading {
-                    Section { leading } footer: { MenuSectionBreak() }
+                    Section { leading }
                 }
                 if let found {
                     if found.isEmpty {
@@ -93,8 +93,10 @@ struct ConversationsSheet: View {
                                 Label("New side chat", systemImage: "plus")
                             }
                         }
+                    } header: {
+                        if leading != nil { Text("Chats") }
                     }
-                    Section("Conversations") {
+                    Section("Side chats") {
                         ForEach(conversations.filter { !$0.isMain }) { conversation in row(conversation) }
                     }
                     Section {
