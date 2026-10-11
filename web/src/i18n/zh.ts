@@ -971,7 +971,7 @@ export const zh: Catalog = {
   'phones.kind.message': '助理主动说的话',
   'phones.kind.approval': '等待你批准的事项',
   'phones.kind.question': '需要你回答的问题',
-  'phones.kind.answer': '在手机上提问的回答',
+  'phones.kind.answer': '你离开后才到的回答',
   'agent.chatApps': '聊天应用',
   'agent.chatAppsHint':
     '通过你自己的机器人，在 Telegram 或 Discord 中与助手的主聊天交谈。在应用里创建机器人，把它的令牌粘贴到这里，然后把显示的代码发给机器人以关联该聊天。只有关联的聊天能联系到你的助手；它工作时会显示正在输入，发送它制作的内容，接收文件和照片，并用抽屉里同样的卡片向你确认。',

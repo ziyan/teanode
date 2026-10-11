@@ -1004,7 +1004,7 @@ export const ja: Catalog = {
   'phones.kind.message': 'エージェントが自分から伝えること',
   'phones.kind.approval': 'あなたの承認待ち',
   'phones.kind.question': 'あなたへの質問',
-  'phones.kind.answer': 'スマートフォンから尋ねたことへの答え',
+  'phones.kind.answer': '離れた後に届いた答え',
   'agent.chatApps': 'チャットアプリ',
   'agent.chatAppsHint':
     '自分のボットを通じて、Telegram や Discord からエージェントのメインチャットと話せます。アプリでボットを作り、そのトークンをここに貼り付け、表示されたコードをボットに送ってそのチャットを結び付けます。結び付けたチャットだけがエージェントに届き、作業中は入力中と表示し、作ったものを送り、ファイルや写真を受け取り、ドロワーと同じカードで確認を求めます。',

@@ -1010,7 +1010,7 @@ export const en = {
   'phones.kind.message': 'What your agent says on its own',
   'phones.kind.approval': 'Approvals waiting for you',
   'phones.kind.question': 'Questions for you',
-  'phones.kind.answer': 'Answers to what you asked from the phone',
+  'phones.kind.answer': 'Answers that come after you have left',
   'agent.chatApps': 'Chat apps',
   'agent.chatAppsHint':
     "Talk to your agent's main chat from Telegram or Discord, through a bot of your own. Make the bot in the app, paste its token here, then send the bot the code shown to link that chat. Only the linked chat reaches your agent; it types while it works, sends what it makes, takes files and photos, and asks on the same cards the drawer shows.",

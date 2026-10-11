@@ -197,3 +197,34 @@ func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
 		t.Error("a tab untouched for five minutes kept the phone quiet")
 	}
 }
+
+func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
+	main := &models.AgentConversation{ID: "main-1", Kind: models.AgentConversationMain}
+	side := &models.AgentConversation{ID: "side-1", Kind: models.AgentConversationNamed}
+	run := func(surface string, conversation *models.AgentConversation, message string) *AskRun {
+		return &AskRun{settings: &AskSettings{Surface: surface, Conversation: conversation, Message: message}}
+	}
+	cases := []struct {
+		name   string
+		run    *AskRun
+		isTold bool
+	}{
+		{"asked from the app", run("ios", side, "What is on today?"), true},
+		{"asked in the main chat on the dashboard", run("drawer", main, "Draft the reply."), true},
+		{"asked in the main chat from the command line", run("cli", main, "Summarize the week."), true},
+		{"asked in a side chat on the dashboard", run("drawer", side, "Draft the reply."), false},
+		{"asked on a call", run("voice", main, "What is on today?"), false},
+		{"asked from a linked chat", run("telegram", main, "What is on today?"), false},
+		{"the agent's own turn", run("drawer", main, models.ScheduleMarker+" the morning brief"), false},
+	}
+	for _, testCase := range cases {
+		if isTold := testCase.run.isAnswerForPhone(); isTold != testCase.isTold {
+			t.Errorf("%s: told %v, want %v", testCase.name, isTold, testCase.isTold)
+		}
+	}
+	subagent := run("drawer", main, "Look into it.")
+	subagent.settings.subagentDepth = 1
+	if subagent.isAnswerForPhone() {
+		t.Error("a subagent's answer was told to the phone")
+	}
+}
