@@ -447,8 +447,7 @@ struct ConversationItemView: View {
         case .line(let line):
             switch line.kind {
             case .person:
-                PersonBubble(line: line)
-                    .contextMenu { LineActions(line: line, model: model) }
+                PersonBubble(line: line) { LineActions(line: line, model: model) }
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
                     AgentBubble {
@@ -591,8 +590,11 @@ enum UsageWords {
 
 /// PersonBubble is what the person said: on the right, in the accent color,
 /// with what it replies to above it.
-struct PersonBubble: View {
+struct PersonBubble<Actions: View>: View {
     let line: TranscriptLine
+    /// The long-press menu, kept to the bubble: on the whole row, iOS lifted
+    /// the empty width beside it too, as a box behind the bubble.
+    @ViewBuilder let actions: () -> Actions
 
     var body: some View {
         HStack {
@@ -624,6 +626,8 @@ struct PersonBubble: View {
                         .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
                 }
             }
+            .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
+            .contextMenu { actions() }
         }
     }
 }
