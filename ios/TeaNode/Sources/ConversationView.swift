@@ -547,7 +547,9 @@ struct MessageActionsView: View {
                 .accessibilityLabel("Close")
                 .accessibilityAddTraits(.isButton)
             VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
-                if line.messageId != nil {
+                // Each side reacts to what the other said: the person to the
+                // agent's answers, not to their own messages.
+                if line.messageId != nil, line.kind == .answer {
                     reactionBar
                 }
                 ScrollView {
@@ -840,7 +842,6 @@ struct ReactionBadge: View {
                 guard isFresh, !isReducingMotion else { return }
                 scale = 0.1
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { scale = 1 }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
     }
 
