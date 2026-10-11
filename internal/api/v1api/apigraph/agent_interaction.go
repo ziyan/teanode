@@ -20,6 +20,45 @@ type AgentInteractionQuery interface {
 	// opened, whether or not the turn that raised them is still running.
 	// Empty is the main conversation. Needs agent:use.
 	ListAgentInteractions(ctx context.Context, arguments ListAgentInteractionsArguments) ([]*models.AgentInteraction, error)
+
+	// What waits for the person across every conversation: how many
+	// questions and approvals are unanswered, and the newest of them, for
+	// a phone's widget or a shell. Needs agent:use.
+	ReadAgentWaiting(ctx context.Context, arguments ReadAgentWaitingArguments) (*AgentWaitingView, error)
+}
+
+// ReadAgentWaitingArguments say how many of the newest cards to return.
+type ReadAgentWaitingArguments struct {
+	// How many of the newest cards to return; 5 when not given, at most 50
+	First int `json:"first" graphapi:"nullable"`
+}
+
+// AgentWaitingView is what waits for the person.
+type AgentWaitingView struct {
+	// How many questions and approvals are unanswered in all
+	WaitingCount int `json:"waitingCount"`
+
+	// The newest of them, newest first
+	Interactions []*models.AgentInteraction `json:"interactions"`
+}
+
+func (self *graph) ReadAgentWaiting(ctx context.Context, arguments ReadAgentWaitingArguments) (*AgentWaitingView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	first := arguments.First
+	if first <= 0 {
+		first = 5
+	}
+	if first > 50 {
+		first = 50
+	}
+	interactions, total, err := self.transaction(ctx).ListAgentWaitingInteractions(found.ID, first)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentWaitingView{WaitingCount: int(total), Interactions: interactions}, nil
 }
 
 // ListAgentInteractionsArguments name the conversation.

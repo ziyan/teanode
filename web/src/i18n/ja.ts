@@ -1165,6 +1165,7 @@ export const ja: Catalog = {
   'agentDrawer.close': '閉じる',
   'agentDrawer.main': 'メインチャット',
   'agentDrawer.untitled': '無題',
+  'agentDrawer.waitingForYou': 'あなたの返事待ち',
   'agentDrawer.new': '新しいサイドチャット',
   'agentDrawer.archive': 'アーカイブ',
   'agentDrawer.unarchive': 'アーカイブ解除',
