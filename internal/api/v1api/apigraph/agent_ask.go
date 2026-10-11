@@ -947,14 +947,22 @@ func (self *graph) RegisterAgentLiveActivity(ctx context.Context, arguments Regi
 	if worker == nil {
 		return false, agent.ErrUnavailable
 	}
-	run := worker.FindRun(arguments.RunID)
-	if run == nil || run.Conversation().AgentID != found.ID {
-		return false, api.ErrNotFound
+	pushRegistration := strings.TrimSpace(arguments.PushRegistration)
+	if pushRegistration == "" {
+		return false, fmt.Errorf("%w: a Live Activity needs its registration", api.ErrInvalidArguments)
 	}
-	if err := run.RegisterLiveActivity(strings.TrimSpace(arguments.PushRegistration)); err != nil {
-		return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	if run := worker.FindRun(arguments.RunID); run != nil {
+		if run.Conversation().AgentID != found.ID {
+			return false, api.ErrNotFound
+		}
+		if err := run.RegisterLiveActivity(pushRegistration); err != nil {
+			return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+		return true, nil
 	}
-	return true, nil
+	// The turn runs on another instance, which follows the activity when
+	// the word reaches it; a refusal there is not heard here.
+	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandLiveActivity, PushRegistration: pushRegistration})
 }
 
 func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error) {

@@ -164,3 +164,20 @@ func TestATurnThatLeavesACardOpenEndsWaiting(t *testing.T) {
 		t.Fatalf("a failed turn was told %v", toldStates(t, told))
 	}
 }
+
+// The app registers an activity wherever its request lands; another
+// instance forwards it as a command, and the one running the turn follows it.
+func TestAForwardedLiveActivityIsFollowed(t *testing.T) {
+	relay := &fakeRelay{}
+	run, worker := newLiveActivityRun(relay)
+	if !worker.Apply(run, RunCommand{RunID: run.ID, Action: CommandLiveActivity, PushRegistration: "sealed:an-activity"}) {
+		t.Fatal("the forwarded activity was not followed")
+	}
+	if worker.Apply(run, RunCommand{RunID: run.ID, Action: CommandLiveActivity}) {
+		t.Error("a forwarded command with no registration was taken")
+	}
+	worker.waitGroup.Wait()
+	if got := toldStates(t, relay.to("sealed:an-activity")); !sameStates(got, []string{"working"}) {
+		t.Fatalf("told %v", got)
+	}
+}
