@@ -61,12 +61,8 @@ extension Connection {
     /// Reads a file the server keeps for this account: an attachment, a
     /// picture an answer shows.
     public func download(_ path: String) async throws -> Data {
-        let token = try await accessToken()
-        var request = URLRequest(url: account.server.endpoint(path))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await transport.send(request)
+        let (data, response) = try await send(authorizing: URLRequest(url: account.server.endpoint(path)))
         guard response.statusCode == 200 else {
-            if response.statusCode == 401 { throw TeaNodeError.signedOut }
             throw TeaNodeError.refused("The file could not be read (\(response.statusCode)).")
         }
         return data

@@ -681,14 +681,10 @@ extension Connection {
     /// A few words in a voice, as a WAV file, to hear it before choosing.
     /// It is paid for like any speech.
     public func speechVoiceSample(_ speechVoice: String) async throws -> Data {
-        let token = try await accessToken()
         var components = URLComponents(url: account.server.endpoint("/api/v1/agent/voice/sample"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "speechVoice", value: speechVoice)]
         guard let address = components?.url else { throw TeaNodeError.unreadableAnswer }
-        var request = URLRequest(url: address)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (sampleData, response) = try await transport.send(request)
-        if response.statusCode == 401 { throw TeaNodeError.signedOut }
+        let (sampleData, response) = try await send(authorizing: URLRequest(url: address))
         guard response.statusCode == 200 else {
             struct Refusal: Decodable { let error: String? }
             let refusalReason = (try? JSONDecoder().decode(Refusal.self, from: sampleData))?.error

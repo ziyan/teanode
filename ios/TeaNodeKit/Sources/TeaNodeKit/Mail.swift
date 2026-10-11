@@ -1073,15 +1073,13 @@ extension Connection {
     public func attachToDraft(
         mailboxId: String, draftItemId: String?, name: String, contentType: String, data: Data
     ) async throws -> (itemId: String, attachments: [MailContent.Attachment]) {
-        let token = try await accessToken()
         let boundary = "teanode-\(UUID().uuidString)"
         let path = draftItemId.map { "/api/v1/mailbox/drafts/\($0)/attachments" } ?? "/api/v1/mailbox/\(mailboxId)/drafts/attachments"
         var request = URLRequest(url: account.server.endpoint(path))
         request.httpMethod = draftItemId == nil ? "POST" : "PUT"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = Upload.body(boundary: boundary, name: name, contentType: contentType, data: data)
-        let (answer, response) = try await transport.send(request)
+        let (answer, response) = try await send(authorizing: request)
         struct Uploaded: Decodable {
             let itemId: String?
             let attachments: [MailContent.Attachment]?
@@ -1089,7 +1087,6 @@ extension Connection {
         }
         let uploaded = try? JSONDecoder().decode(Uploaded.self, from: answer)
         guard response.statusCode == 200, let itemId = uploaded?.itemId else {
-            if response.statusCode == 401 { throw TeaNodeError.signedOut }
             if response.statusCode == 413 { throw TeaNodeError.refused("That file is larger than a message may be.") }
             throw TeaNodeError.refused(uploaded?.error ?? String(decoding: answer.prefix(300), as: UTF8.self))
         }

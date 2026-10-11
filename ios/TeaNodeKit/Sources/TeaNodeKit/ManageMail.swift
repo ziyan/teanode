@@ -1594,17 +1594,14 @@ extension Connection {
     /// the record to copy names it. The server checks the file first and
     /// says what is wrong with one it refuses.
     public func uploadDomainLogo(domainId: String, fileName: String, svgData: Data) async throws {
-        let token = try await accessToken()
         let boundary = "teanode-\(UUID().uuidString)"
         let encodedId = domainId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? domainId
         var request = URLRequest(url: account.server.endpoint("/api/v1/domains/\(encodedId)/logo"))
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = Upload.body(boundary: boundary, name: fileName, contentType: "image/svg+xml", data: svgData)
-        let (answer, response) = try await transport.send(request)
+        let (answer, response) = try await send(authorizing: request)
         guard response.statusCode == 200 else {
-            if response.statusCode == 401 { throw TeaNodeError.signedOut }
             struct Refusal: Decodable { let error: String? }
             let refusal = try? JSONDecoder().decode(Refusal.self, from: answer)
             throw TeaNodeError.refused(refusal?.error ?? String(decoding: answer.prefix(300), as: UTF8.self))

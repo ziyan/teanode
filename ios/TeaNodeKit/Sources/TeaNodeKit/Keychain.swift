@@ -90,6 +90,10 @@
             try accounts().active
         }
 
+        public func load(accountKey: String) throws -> Account? {
+            try accounts().accounts.first { $0.accountKey == accountKey }
+        }
+
         /// Forgets the sign-in in use; the next kept one is in use after it.
         public func delete() throws {
             var ring = try accounts()
