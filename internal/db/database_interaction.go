@@ -23,6 +23,11 @@ type InteractionOperation interface {
 	// oldest first.
 	ListOpenAgentInteractions(conversationId string) ([]*models.AgentInteraction, error)
 
+	// ListAgentWaitingInteractions is an agent's unanswered cards across
+	// all its conversations, newest first, at most limit of them, and how
+	// many there are in all.
+	ListAgentWaitingInteractions(agentId string, limit int) ([]*models.AgentInteraction, int64, error)
+
 	// ClaimAgentInteraction resolves a card with an answer if it is still
 	// open, and says whether it was: of the turn waiting on it and a late
 	// answer, exactly one acts on it.
@@ -99,6 +104,25 @@ func (self *transaction) ListOpenAgentInteractions(conversationId string) ([]*mo
 		interactions = append(interactions, found[index].toModel())
 	}
 	return interactions, nil
+}
+
+func (self *transaction) ListAgentWaitingInteractions(agentId string, limit int) ([]*models.AgentInteraction, int64, error) {
+	open := self.tx.Model(&agentInteractionModel{}).Where(`"agent_id" = ? AND "resolved_at" IS NULL`, agentId)
+	var total int64
+	if err := open.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var found []agentInteractionModel
+	if limit > 0 {
+		if err := self.tx.Where(`"agent_id" = ? AND "resolved_at" IS NULL`, agentId).Order(`"created_at" DESC`).Limit(limit).Find(&found).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+	interactions := make([]*models.AgentInteraction, 0, len(found))
+	for index := range found {
+		interactions = append(interactions, found[index].toModel())
+	}
+	return interactions, total, nil
 }
 
 func (self *transaction) ClaimAgentInteraction(interactionId, interactionAnswer string) (bool, error) {

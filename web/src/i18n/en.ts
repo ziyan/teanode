@@ -1171,6 +1171,7 @@ export const en = {
   'agentDrawer.close': 'Close',
   'agentDrawer.main': 'Main chat',
   'agentDrawer.untitled': 'Untitled',
+  'agentDrawer.waitingForYou': 'Waiting for you',
   'agentDrawer.new': 'New side chat',
   'agentDrawer.archive': 'Archive',
   'agentDrawer.unarchive': 'Unarchive',

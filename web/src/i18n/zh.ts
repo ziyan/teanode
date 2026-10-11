@@ -1129,6 +1129,7 @@ export const zh: Catalog = {
   'agentDrawer.close': '关闭',
   'agentDrawer.main': '主聊天',
   'agentDrawer.untitled': '未命名',
+  'agentDrawer.waitingForYou': '等你回复',
   'agentDrawer.new': '新的侧边聊天',
   'agentDrawer.archive': '归档',
   'agentDrawer.unarchive': '取消归档',
