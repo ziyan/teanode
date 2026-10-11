@@ -1,3 +1,5 @@
+import AuthenticationServices
+import CryptoKit
 import Foundation
 import Observation
 import SwiftUI
@@ -276,6 +278,38 @@ final class AppModel {
 
     /// Keeps a sign-in the person confirmed, and tells the server which
     /// phone it is.
+    /// Signs in with a password on the server's own page, in a browser sheet
+    /// the app cannot read, and returns the sign-in to keep. The page says
+    /// the app gets the whole account; the code it returns is worth nothing
+    /// without the verifier this keeps.
+    func signIn(to server: ServerAddress, with session: WebAuthenticationSession) async throws -> PendingConnection {
+        let signIn = SignIn(server: server, transport: transport)
+        let clientId = try await signIn.register()
+        let verifier = Self.randomText()
+        let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
+        let state = Self.randomText()
+        let returned = try await session.authenticate(
+            using: signIn.authorizationAddress(clientId: clientId, codeChallenge: challenge, state: state), callbackURLScheme: "com.teanode.app")
+        guard let code = SignIn.authorizationCode(in: returned, state: state) else {
+            throw TeaNodeError.refused(String(localized: "The server did not sign this phone in."))
+        }
+        var account = try await signIn.exchange(authorizationCode: code, codeVerifier: verifier, clientId: clientId)
+        account.username = try await Connection(account: account, transport: transport).username()
+        return PendingConnection(account: account)
+    }
+
+    /// Thirty-two random bytes, as the URL-safe text PKCE and a state take.
+    private static func randomText() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return base64URL(Data(bytes))
+    }
+
+    private static func base64URL(_ data: Data) -> String {
+        data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     func confirm(_ pending: PendingConnection) async {
         try? store.save(pending.account)
         use(pending.account)

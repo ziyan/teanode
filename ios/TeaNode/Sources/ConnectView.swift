@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import TeaNodeKit
 
@@ -10,6 +11,9 @@ struct ConnectView: View {
     @State private var isConnecting = false
     @State private var pending: PendingConnection?
     @State private var problemText: String?
+    @State private var isAskingForServer = false
+    @State private var serverText = ""
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
     var body: some View {
         NavigationStack {
@@ -55,7 +59,12 @@ struct ConnectView: View {
                         Task { await connect(text) }
                     }
                     .buttonBorderShape(.capsule)
-                    Text("Only have this phone? Open your dashboard in Safari, copy the code's link, and paste it here.")
+                    Button("Sign in with a password") {
+                        problemText = nil
+                        isAskingForServer = true
+                    }
+                    .font(.subheadline)
+                    Text("Only have this phone? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -89,12 +98,43 @@ struct ConnectView: View {
                     }
                 }
             }
+            .alert("Your server", isPresented: $isAskingForServer) {
+                TextField("mail.example.com", text: $serverText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                Button("Cancel", role: .cancel) {}
+                Button("Continue") { Task { await signInWithPassword() } }
+            } message: {
+                Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
+            }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
             .task(id: app.openedLink?.url) {
                 guard let link = app.openedLink else { return }
                 app.openedLink = nil
                 await connect(link.url.absoluteString)
             }
+        }
+    }
+
+    /// Signs in on the server's own page; the person allows the app there,
+    /// so nothing is asked again here.
+    private func signInWithPassword() async {
+        let written = serverText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !written.isEmpty else { return }
+        guard let server = try? ServerAddress(parsing: written) else {
+            problemText = String(localized: "That is not a server address.")
+            return
+        }
+        isConnecting = true
+        defer { isConnecting = false }
+        do {
+            let pending = try await app.signIn(to: server, with: webAuthenticationSession)
+            await app.confirm(pending)
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            return
+        } catch {
+            problemText = app.describe(error)
         }
     }
 

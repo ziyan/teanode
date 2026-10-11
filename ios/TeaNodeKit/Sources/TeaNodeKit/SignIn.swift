@@ -4,10 +4,10 @@ import Foundation
     import FoundationNetworking
 #endif
 
-/// The app's own return address, which it registers with every server. The
-/// app is never sent anything at it: it connects with a code, which needs no
-/// return. It is what marks the app, to the server, as an app installed on a
-/// device (internal/api/v1api/apioauth/connect.go).
+/// The app's own return address, which it registers with every server. A
+/// connect code needs no return; signing in with a password comes back here
+/// from the server's sign-in page. It is what marks the app, to the server,
+/// as an app installed on a device (internal/api/v1api/apioauth/connect.go).
 public let appRedirectAddress = "com.teanode.app:/oauth"
 
 /// The grant a connect code is exchanged with.
@@ -91,6 +91,44 @@ public struct SignIn: Sendable {
         return Account(
             server: server, clientId: clientId, accessToken: token.accessToken, refreshToken: token.refreshToken ?? "",
             expiresAt: now.addingTimeInterval(token.expiresIn ?? 3600), username: "")
+    }
+
+    /// The server's page where the person signs in and allows this app the
+    /// whole account; it returns to appRedirectAddress with a code. The API
+    /// is named as the resource, which is what asks for the whole account
+    /// rather than the agent tools (docs/decisions/20261011-an-installed-app-may-sign-in-with-a-password.md).
+    public func authorizationAddress(clientId: String, codeChallenge: String, state: String) -> URL {
+        var components = URLComponents(url: server.endpoint("/oauth/authorize"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "redirect_uri", value: appRedirectAddress),
+            URLQueryItem(name: "code_challenge", value: codeChallenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "resource", value: server.endpoint("/api/v1").absoluteString),
+        ]
+        return components.url!
+    }
+
+    /// Exchanges the code the sign-in page returned for the app's sign-in,
+    /// with the verifier whose hash the page was given.
+    public func exchange(authorizationCode: String, codeVerifier: String, clientId: String, now: Date = Date()) async throws -> Account {
+        let token = try await post(form: [
+            "grant_type": "authorization_code", "client_id": clientId, "code": authorizationCode, "code_verifier": codeVerifier,
+            "redirect_uri": appRedirectAddress,
+        ], invalidGrant: .refused("The sign-in expired before it finished. Try again."))
+        return Account(
+            server: server, clientId: clientId, accessToken: token.accessToken, refreshToken: token.refreshToken ?? "",
+            expiresAt: now.addingTimeInterval(token.expiresIn ?? 3600), username: "")
+    }
+
+    /// The code a return to appRedirectAddress carries, when it answers the
+    /// request made with `state`; nil for anything else.
+    public static func authorizationCode(in returned: URL, state: String) -> String? {
+        let items = URLComponents(url: returned, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard items.first(where: { $0.name == "state" })?.value == state else { return nil }
+        return items.first(where: { $0.name == "code" })?.value
     }
 
     /// Renews an account's sign-in. The old refresh token stops working.

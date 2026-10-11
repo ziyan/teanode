@@ -2977,6 +2977,22 @@
         }
       }
     },
+    "Continue": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続ける"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续"
+          }
+        }
+      }
+    },
     "Conversation": {
       "localizations": {
         "ja": {
@@ -7921,6 +7937,22 @@
         }
       }
     },
+    "Only have this phone? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この電話しかない場合は、パスワードでサインインするか、Safari でダッシュボードを開いてコードのリンクをコピーし、ここに貼り付けてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有这台手机？用密码登录，或在 Safari 中打开控制台，复制代码的链接并粘贴到这里。"
+          }
+        }
+      }
+    },
     "Only the newest %lld messages are shown": {
       "localizations": {
         "ja": {
@@ -10273,6 +10305,22 @@
         }
       }
     },
+    "Sign in with a password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードでサインイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用密码登录"
+          }
+        }
+      }
+    },
     "Sign out": {
       "localizations": {
         "ja": {
@@ -11220,6 +11268,22 @@
         }
       }
     },
+    "That is not a server address.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーのアドレスではありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是服务器地址。"
+          }
+        }
+      }
+    },
     "That link has no code in it. Make a new one on your dashboard's Connect a phone page.": {
       "localizations": {
         "ja": {
@@ -11248,6 +11312,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这一轮失败了。"
+          }
+        }
+      }
+    },
+    "The address of your TeaNode dashboard. Its sign-in page opens next.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode ダッシュボードのアドレス。次にそのサインインページが開きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 TeaNode 控制台地址。接下来会打开它的登录页面。"
           }
         }
       }
@@ -11552,6 +11632,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法连接服务器。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "The server did not sign this phone in.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーはこの電話をサインインさせませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器没有让这台手机登录。"
           }
         }
       }
@@ -13616,6 +13712,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你接下来的日程和未读邮件。"
+          }
+        }
+      }
+    },
+    "Your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのサーバー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的服务器"
           }
         }
       }

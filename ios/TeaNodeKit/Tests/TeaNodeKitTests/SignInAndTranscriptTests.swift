@@ -48,6 +48,28 @@ func form(_ request: URLRequest) -> [String: String] {
 final class SignInTests: XCTestCase {
     let server = try! ServerAddress(parsing: "mail.example.com")
 
+    func testSigningInWithAPasswordAsksForTheWholeAccountAndExchangesTheCode() async throws {
+        let signIn = SignIn(server: server, transport: FakeServer { _ in (404, "{}") })
+        let address = signIn.authorizationAddress(clientId: "a-client", codeChallenge: "a-challenge", state: "a-state")
+        let items = Dictionary(uniqueKeysWithValues: (URLComponents(url: address, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(address.path, "/oauth/authorize")
+        XCTAssertEqual(items["redirect_uri"], appRedirectAddress)
+        XCTAssertEqual(items["code_challenge_method"], "S256")
+        XCTAssertEqual(items["resource"], "https://mail.example.com/api/v1")
+
+        let returned = URL(string: "com.teanode.app:/oauth?code=a-code&state=a-state")!
+        XCTAssertEqual(SignIn.authorizationCode(in: returned, state: "a-state"), "a-code")
+        XCTAssertNil(SignIn.authorizationCode(in: returned, state: "another-state"))
+
+        let fake = FakeServer { _ in (200, #"{"access_token":"tnt_access","refresh_token":"a-refresh","expires_in":2592000,"scope":"api"}"#) }
+        let account = try await SignIn(server: server, transport: fake).exchange(authorizationCode: "a-code", codeVerifier: "a-verifier", clientId: "a-client")
+        XCTAssertEqual(account.accessToken, "tnt_access")
+        let sent = form(fake.sent[0])
+        XCTAssertEqual(sent["grant_type"], "authorization_code")
+        XCTAssertEqual(sent["code_verifier"], "a-verifier")
+        XCTAssertEqual(sent["redirect_uri"], appRedirectAddress)
+    }
+
     func testTheAppRegistersAndExchangesItsCode() async throws {
         let fake = FakeServer { request in
             switch request.url?.path {
