@@ -184,7 +184,7 @@ struct FolderLink: View {
             .contentShape(.rect)
         }
         .foregroundStyle(.primary)
-        .listRowBackground(place == current ? Color(.tertiarySystemFill) : nil)
+        .menuRow(isSelected: place == current)
         .accessibilityAddTraits(place == current ? .isSelected : [])
     }
 }

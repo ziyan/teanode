@@ -268,6 +268,7 @@ struct SideMenu: View {
                     mailPlace = chosen
                     onClose()
                 }
+                .menuListStyle()
                 .navigationBarTitleDisplayMode(.inline)
             }
         default:
@@ -275,6 +276,7 @@ struct SideMenu: View {
                 List {
                     Section { sections }
                 }
+                .menuListStyle()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { MenuBrand() }
             }
@@ -296,7 +298,7 @@ struct SideMenu: View {
                 Label(part.title(agentTitle: app.agentTitle), systemImage: part.systemImage)
                     .foregroundStyle(.primary)
             }
-            .listRowBackground(section == part ? Color(.tertiarySystemFill) : nil)
+            .menuRow(isSelected: section == part)
             .accessibilityAddTraits(section == part ? .isSelected : [])
         }
     }

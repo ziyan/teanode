@@ -71,7 +71,7 @@ struct ConversationsSheet: View {
                         } label: {
                             Label(String(localized: "Main chat"), systemImage: "bubble.left")
                         }
-                        .listRowBackground(currentId == nil ? Color(.tertiarySystemFill) : nil)
+                        .menuRow(isSelected: currentId == nil)
                         if !isPanel {
                             Button {
                                 Task { await start() }
@@ -97,6 +97,7 @@ struct ConversationsSheet: View {
                     }
                 }
             }
+            .menuListStyle(isPanel)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
@@ -185,7 +186,7 @@ struct ConversationsSheet: View {
                 }
             }
         }
-        .listRowBackground(conversation.id == currentId ? Color(.tertiarySystemFill) : nil)
+        .menuRow(isSelected: conversation.id == currentId)
         .swipeActions(edge: .trailing) {
             if !conversation.isMain {
                 Button(role: .destructive) {

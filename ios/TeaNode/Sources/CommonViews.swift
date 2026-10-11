@@ -233,3 +233,40 @@ extension View {
         modifier(SwipeToReplyAndCopy(isReplying: isReplying, onReply: onReply, onCopy: onCopy))
     }
 }
+
+/// MenuListStyle is the side menu's look: a plain list on one background,
+/// as the Claude app's menu, instead of grouped boxes.
+struct MenuListStyle: ViewModifier {
+    let isMenu: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isMenu {
+            content
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemBackground))
+                .listRowSeparator(.hidden)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// The side menu's plain list, when the list is shown in it.
+    func menuListStyle(_ isMenu: Bool = true) -> some View {
+        modifier(MenuListStyle(isMenu: isMenu))
+    }
+
+    /// A row of the side menu: no separator, and the one chosen on a
+    /// rounded highlight inset from the edges.
+    func menuRow(isSelected: Bool) -> some View {
+        listRowSeparator(.hidden)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? Color(.tertiarySystemFill) : .clear)
+                    .padding(.horizontal, 10)
+            )
+    }
+}
