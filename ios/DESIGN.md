@@ -92,6 +92,17 @@ its pull request is opened.
   started with.
 - Respect the safe areas and the keyboard; standard system spacing; tap
   targets at least 44 points.
+- Actions are full-size: a row of their own with a symbol, as "Add a
+  receipt", or a standard capsule button. Never a footnote-size link or
+  several small buttons side by side in a row or a card. Destructive ones
+  are red, symbol and words alike.
+- Show content, do not fold it. Lines of a receipt, a quoted message, a
+  summary: show them whole, in body text, one row each. A long list moves to
+  a screen of its own behind a row, as iOS Settings does; it does not open in
+  place with a disclosure arrow.
+- A swipe right anywhere on a screen opens the side menu, so rows have no
+  swipe-right actions there; what a left swipe does not hold goes in the
+  long-press menu.
 
 ## Motion and feel
 
