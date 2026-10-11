@@ -190,7 +190,7 @@ owner; `show` and `update` read and change a mailbox's name and signature.
 `device list|add|remove` the app passwords a mail program signs in with,
 `profile <device>` a setup profile that adds the mailbox, its calendars and
 contacts to an iPhone or a Mac with an app password of its own (it prints an
-address to open on the device, once, within ten minutes; `--output` saves it
+address to open on the device, once, within five minutes; `--output` saves it
 instead),
 `autoreply show|set|off` the out-of-office reply — `set --same-domain-only`
 keeps it to people at the mailbox's own domains — and `programs` the hosts

@@ -61,8 +61,9 @@ type graph struct {
 	// are the only ones a browser calls before it is anybody.
 	authenticator web.Authenticator
 
-	// ceremonies parks half-finished WebAuthn challenges. In this process by
-	// default; in Redis when one is configured, which is what makes passkeys
+	// ceremonies parks half-finished WebAuthn challenges, and setup profiles
+	// until their one download (mailbox_profile.go). In this process by
+	// default; in Redis when one is configured, which is what makes both
 	// work behind a load balancer.
 	ceremonies ceremony.Store
 
@@ -70,10 +71,6 @@ type graph struct {
 	// caller reads on with result_more; see agent_mcp.go. Nil in a test that
 	// built the graph by hand, where each request holds its own.
 	mcpResults *mcpserve.ResultStore
-
-	// setupProfiles holds each setup profile made until it is downloaded,
-	// once, or ten minutes pass; see mailbox_profile.go.
-	setupProfiles setupProfileStore
 }
 
 // New builds the GraphQL component, generating the schema by reflection over

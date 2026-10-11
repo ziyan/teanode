@@ -53,7 +53,7 @@ const CREATE_APP_PASSWORD = `
 
 // A setup profile: an app password for the device, inside a file the device
 // installs, which adds the mailbox, its calendars and contacts to its own
-// apps. The file downloads once, within ten minutes.
+// apps. The file downloads once, within five minutes.
 const CREATE_SETUP_PROFILE = `
   mutation ($mailboxId: String!, $deviceName: String!) {
     CreateMailboxSetupProfile(mailboxId: $mailboxId, deviceName: $deviceName) {

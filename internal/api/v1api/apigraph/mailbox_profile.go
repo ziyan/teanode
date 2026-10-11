@@ -2,10 +2,10 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -14,17 +14,20 @@ import (
 	"github.com/ziyan/teanode/internal/dav"
 	"github.com/ziyan/teanode/internal/mailbox"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/ceremony"
 	"github.com/ziyan/teanode/internal/util/qrcode"
-	"github.com/ziyan/teanode/internal/util/security"
+	"github.com/ziyan/teanode/internal/util/secretbox"
 )
 
 // Setup profiles: one file an iPhone or a Mac installs to read a mailbox in
 // its own Mail, Calendar, Contacts and Reminders. It carries an app password
-// made for the device, so it is kept in memory for one download and never
-// written anywhere.
+// made for the device, so it waits sealed in the ceremony store for one
+// download and is never written anywhere else. That store is a map on one
+// instance and Redis on several, so the download works whichever instance
+// it reaches, including the command line's second request.
 
 type MailboxSetupProfileMutation interface {
-	// Make an app password for a device and a setup profile holding it; the profile downloads once, within ten minutes
+	// Make an app password for a device and a setup profile holding it; the profile downloads once, within five minutes
 	CreateMailboxSetupProfile(ctx context.Context, arguments CreateMailboxSetupProfileArguments) (*CreatedSetupProfile, error)
 }
 
@@ -56,57 +59,13 @@ type CreatedSetupProfile struct {
 	HasCalendarsAndContacts bool `json:"hasCalendarsAndContacts"`
 }
 
-// setupProfileLifetime is how long a download address works.
-const setupProfileLifetime = 10 * time.Minute
+// setupProfileLabel binds the key a parked profile is sealed with to this
+// one use of the server secret.
+const setupProfileLabel = "teanode mailbox: setup profiles waiting to download"
 
-// setupProfileTokenAlphabet is what a download token is made of: letters
-// and digits, safe in a path.
-const setupProfileTokenAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-// setupProfileStore holds the profiles made and not yet downloaded.
-type setupProfileStore struct {
-	lock     sync.Mutex
-	profiles map[string]storedSetupProfile
-}
-
-type storedSetupProfile struct {
-	data      []byte
-	expiresAt time.Time
-}
-
-// put keeps a profile and returns its token, dropping the ones whose time
-// is up.
-func (self *setupProfileStore) put(data []byte, now time.Time) (string, time.Time) {
-	self.lock.Lock()
-	defer self.lock.Unlock()
-	if self.profiles == nil {
-		self.profiles = map[string]storedSetupProfile{}
-	}
-	for token, stored := range self.profiles {
-		if !now.Before(stored.expiresAt) {
-			delete(self.profiles, token)
-		}
-	}
-	token := security.GenerateRandomString(32, setupProfileTokenAlphabet)
-	expiresAt := now.Add(setupProfileLifetime)
-	self.profiles[token] = storedSetupProfile{data: data, expiresAt: expiresAt}
-	return token, expiresAt
-}
-
-// take hands a profile out and forgets it; nil when it was never made, was
-// downloaded already, or its time is up.
-func (self *setupProfileStore) take(token string, now time.Time) []byte {
-	self.lock.Lock()
-	defer self.lock.Unlock()
-	stored, found := self.profiles[token]
-	if !found {
-		return nil
-	}
-	delete(self.profiles, token)
-	if !now.Before(stored.expiresAt) {
-		return nil
-	}
-	return stored.data
+// setupProfileBox seals and opens parked profiles.
+func (self *graph) setupProfileBox() (*secretbox.Box, error) {
+	return secretbox.New(self.settings.Secret, setupProfileLabel)
 }
 
 func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments CreateMailboxSetupProfileArguments) (*CreatedSetupProfile, error) {
@@ -141,6 +100,10 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 	if imapPort == 0 {
 		return nil, fmt.Errorf("%w: this server does not serve IMAP", api.ErrInvalidArguments)
 	}
+	box, err := self.setupProfileBox()
+	if err != nil {
+		return nil, err
+	}
 	created, err := self.CreateMailboxAppPassword(ctx, CreateMailboxAppPasswordArguments{MailboxID: found.ID, Name: deviceName})
 	if err != nil {
 		return nil, err
@@ -162,7 +125,17 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 	if err != nil {
 		return nil, err
 	}
-	token, expiresAt := self.setupProfiles.put(data, time.Now())
+	sealed, err := box.Seal(data)
+	if err != nil {
+		return nil, err
+	}
+	// Taken before parking, so the time shown is never later than the one
+	// the store keeps.
+	expiresAt := time.Now().Add(ceremony.Lifetime)
+	token, err := self.ceremonies.Park(ctx, &ceremony.Ceremony{Kind: ceremony.KindSetupProfile, SealedSetupProfile: sealed})
+	if err != nil {
+		return nil, err
+	}
 	path := strings.Replace(api.PathMailboxSetupProfile, "{token}", token, 1)
 	link := self.originOf(request) + path
 	drawn, err := qrcode.SVG(link)
@@ -181,8 +154,15 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 }
 
 // setupProfileView hands a setup profile to the device installing it, once.
+// Anything else parked under the token, a passkey challenge, is refused
+// the same way as a token that was never made.
 func (self *graph) setupProfileView(response http.ResponseWriter, request *http.Request) {
-	data := self.setupProfiles.take(mux.Vars(request)["token"], time.Now())
+	data, err := self.takeSetupProfile(request.Context(), mux.Vars(request)["token"])
+	if err != nil {
+		log.Errorf("cannot take a setup profile: %s", err)
+		http.Error(response, "The setup profile could not be read. Make another.", http.StatusInternalServerError)
+		return
+	}
 	if data == nil {
 		http.Error(response, "This setup profile was downloaded already or has expired. Make another.", http.StatusNotFound)
 		return
@@ -191,4 +171,30 @@ func (self *graph) setupProfileView(response http.ResponseWriter, request *http.
 	response.Header().Set("Content-Disposition", `attachment; filename="TeaNode.mobileconfig"`)
 	response.Header().Set("Cache-Control", "no-store")
 	_, _ = response.Write(data)
+}
+
+// takeSetupProfile reclaims a parked profile and opens it: nil when there is
+// no profile under the token, because it was never made, was downloaded
+// already, its time is up, or what is there is not a profile.
+func (self *graph) takeSetupProfile(ctx context.Context, token string) ([]byte, error) {
+	found, err := self.ceremonies.Take(ctx, token)
+	if errors.Is(err, ceremony.ErrNoCeremonyInProgress) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if found.Kind != ceremony.KindSetupProfile || found.SealedSetupProfile == "" {
+		return nil, nil
+	}
+	box, err := self.setupProfileBox()
+	if err != nil {
+		return nil, err
+	}
+	data, err := box.Open(found.SealedSetupProfile)
+	if errors.Is(err, secretbox.ErrCipher) {
+		// Sealed under a server secret that has since changed.
+		return nil, nil
+	}
+	return data, err
 }

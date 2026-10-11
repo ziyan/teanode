@@ -123,7 +123,7 @@ const (
 
 	// A setup profile for an iPhone or a Mac, downloaded once. The address
 	// is the credential: Safari opens it without the person's session, and
-	// it works for ten minutes.
+	// it works for five minutes.
 	PathMailboxSetupProfile = Prefix + "/mailbox/profile/{token}.mobileconfig"
 
 	// The two documents a program reads before it knows how to ask for a
