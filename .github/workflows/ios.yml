@@ -118,10 +118,11 @@ jobs:
 
   # Signs the app and uploads it to App Store Connect, where it appears in
   # TestFlight once Apple has processed it (usually 10 to 30 minutes).
-  # Signing is automatic: the App Store Connect key in the secrets, with
-  # the Admin role, lets Xcode make and fetch the certificate and profile it
-  # needs, so no certificate is kept anywhere. Only a push to main or to an
-  # ios/... branch uploads, never a pull request.
+  # Signing is automatic: the development certificate kept in the secrets
+  # signs the archive, and the App Store Connect key, with the Admin role,
+  # lets Xcode fetch the profiles and the distribution certificate it
+  # needs. Only a push to main or to an ios/... branch uploads, never a
+  # pull request.
   testflight:
     name: TestFlight
     if: github.event_name != 'pull_request'
@@ -148,10 +149,24 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
-      # Each run makes a development certificate whose key leaves with the
-      # machine; Apple allows only a few, so earlier runs' are revoked.
-      - name: Revoke earlier runs' certificates
-        run: python3 ios/Scripts/revoke-stale-certificates.py "$KEY_ID" "$ISSUER_ID" "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+      # Archiving signs with a development certificate. One is kept in the
+      # secrets and put in a keychain of the run's own; without it Xcode
+      # would make a new certificate every run, and Apple allows only a few.
+      - name: Put the signing certificate in a keychain
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 16)
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/keys/development.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/keys/development.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/keys/development.p12"
 
       # The build number is the workflow's run number, which only grows, as
       # App Store Connect requires of builds of one version.
@@ -182,6 +197,8 @@ jobs:
           -authenticationKeyID "$KEY_ID"
           -authenticationKeyIssuerID "$ISSUER_ID"
 
-      - name: Forget the key
+      - name: Forget the keys
         if: always()
-        run: rm -rf "$RUNNER_TEMP/keys" ios/Configuration/Identity.xcconfig
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/keys" ios/Configuration/Identity.xcconfig
