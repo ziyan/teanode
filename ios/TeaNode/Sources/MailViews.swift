@@ -653,53 +653,75 @@ struct ThreadRow: View {
         let item = thread.item
         let message = item?.mail
         let isUnread = thread.unread > 0
-        HStack(alignment: .top, spacing: 10) {
-            SenderLogo(domain: message?.logoDomain ?? "", name: message?.shownSender ?? "")
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    if isUnread {
-                        Circle().fill(.tint).frame(width: 8, height: 8)
-                            .accessibilityLabel("Unread")
-                    }
+        let insight = item?.insight
+        HStack(alignment: .top, spacing: 12) {
+            // The unread mark sits in the margin, as Mail draws it.
+            Circle()
+                .fill(isUnread ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear))
+                .frame(width: 8, height: 8)
+                .padding(.top, 16)
+                .accessibilityLabel(isUnread ? Text("Unread") : Text(verbatim: ""))
+            SenderLogo(domain: message?.logoDomain ?? "", name: message?.shownSender ?? "", size: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(senders)
-                        .font(.headline.weight(isUnread ? .semibold : .regular))
+                        .font(.body.weight(isUnread ? .semibold : .regular))
                         .lineLimit(1)
                     if thread.count > 1 {
-                        Text("\(thread.count)").font(.caption).foregroundStyle(.secondary)
+                        Text("\(thread.count)").font(.footnote).foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 4)
-                    VerdictShield(results: message?.authenticationResults)
-                    Text(MailTime.short(message?.receivedAt ?? item?.addedAt ?? ""))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     if thread.flagged {
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(.yellow)
+                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(.orange)
                             .accessibilityLabel("Starred")
                     }
+                    Text(MailTime.short(message?.receivedAt ?? item?.addedAt ?? ""))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     if thread.hasDraft {
-                        Text("Draft").font(.caption.weight(.semibold)).foregroundStyle(.red)
+                        Text("Draft").foregroundStyle(.red)
                     }
                     if let folderName {
-                        Text(folderName).font(.caption).foregroundStyle(.secondary)
+                        Text(folderName).foregroundStyle(.secondary)
                     }
                     Text(message?.subject.isEmpty == false ? message?.subject ?? "" : String(localized: "(no subject)"))
-                        .font(.subheadline)
                         .lineLimit(1)
                 }
-                if let insight = item?.insight {
-                    InsightChips(insight: insight)
-                    if !insight.summary.isEmpty {
-                        Text(insight.summary)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                .font(.subheadline)
+                let preview = insight?.summary ?? ""
+                if !preview.isEmpty {
+                    Text(preview)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                // Only what asks for attention: high priority, a reply owed,
+                // and a sender whose checks failed.
+                let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
+                if marks.hasAny {
+                    HStack(spacing: 10) {
+                        if marks.isHigh {
+                            Label("Important", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
+                        }
+                        if marks.needsReply {
+                            Label("Needs reply", systemImage: "arrowshape.turn.up.left.fill").foregroundStyle(.tint)
+                        }
+                        if marks.verdict == .bad {
+                            Label("Not verified", systemImage: "xmark.shield.fill").foregroundStyle(.red)
+                        } else if marks.verdict == .warn {
+                            Label("Looks like spam", systemImage: "exclamationmark.shield.fill").foregroundStyle(.orange)
+                        }
                     }
+                    .font(.caption.weight(.medium))
+                    .labelStyle(.titleAndIcon)
+                    .padding(.top, 1)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+        .padding(.leading, -12)
     }
 
     private var senders: String {
@@ -707,6 +729,22 @@ struct ThreadRow: View {
         let sender = thread.item?.mail?.shownSender ?? ""
         return sender.isEmpty ? String(localized: "Unknown sender") : sender
     }
+}
+
+/// MailRowMarks are what a mail row says beyond who and what: only what
+/// asks for attention.
+struct MailRowMarks {
+    let isHigh: Bool
+    let needsReply: Bool
+    let verdict: MailVerdict
+
+    init(insight: MailInsight?, verdict: MailVerdict) {
+        isHigh = insight?.priority == "high"
+        needsReply = insight?.needsReply == true
+        self.verdict = verdict
+    }
+
+    var hasAny: Bool { isHigh || needsReply || verdict == .bad || verdict == .warn }
 }
 
 /// InsightChips are the agent's marks on a message: high priority, its

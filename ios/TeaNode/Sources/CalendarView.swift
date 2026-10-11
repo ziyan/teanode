@@ -21,7 +21,7 @@ struct CalendarScreen: View {
         NavigationStack {
             content
                 .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.large)
                 .toolbar { toolbar }
                 .refreshable {
                     if model.viewMode == .reminders {
@@ -87,11 +87,6 @@ struct CalendarScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if model.viewMode != .reminders {
-            ToolbarItem(placement: .principal) {
-                StepBar(model: model, title: title, selectedDay: $selectedDay)
-            }
-        }
         MenuButton()
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
@@ -104,11 +99,24 @@ struct CalendarScreen: View {
                 Label("View", systemImage: model.viewMode.systemImage)
             }
         }
+        // Today and the arrows along the bottom, as Apple's Calendar keeps
+        // them, so the title has the top to itself.
         if model.viewMode != .reminders {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .bottomBar) {
                 Button("Today") {
                     selectedDay = Calendar.current.startOfDay(for: Date())
                     model.focus = selectedDay
+                }
+                Spacer()
+                Button {
+                    step(-1)
+                } label: {
+                    Label("Earlier", systemImage: "chevron.backward")
+                }
+                Button {
+                    step(1)
+                } label: {
+                    Label("Later", systemImage: "chevron.forward")
                 }
             }
         }
@@ -124,6 +132,13 @@ struct CalendarScreen: View {
             }
             .disabled(model.viewMode != .reminders && model.calendar == nil)
         }
+    }
+
+    private func step(_ direction: Int) {
+        model.step(direction)
+        selectedDay = model.viewMode == .month
+            ? model.dates.date(from: model.dates.dateComponents([.year, .month], from: model.focus)) ?? model.focus
+            : model.focus
     }
 
     private var title: String {
@@ -391,7 +406,7 @@ struct EventRow: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 if let location = event.location, !location.isEmpty {
-                    Label(location, systemImage: "mappin")
+                    Text(location)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

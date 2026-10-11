@@ -429,11 +429,11 @@ struct ConversationItemView: View {
             case .note:
                 NoteLine(line: line)
             case .approval, .question:
-                AgentBubble {
+                CardSurface {
                     CardView(line: line, model: model)
                 }
             case .codingQuestion:
-                AgentBubble {
+                CardSurface {
                     CodingQuestionCard(line: line, model: model)
                 }
             }
@@ -518,27 +518,40 @@ struct PersonBubble: View {
                 if !line.text.isEmpty {
                     Text(line.text)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .foregroundStyle(.white)
-                        .background(Color.accentColor, in: .rect(cornerRadius: 20, style: .continuous))
+                        .padding(.vertical, 10)
+                        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
                 }
             }
         }
     }
 }
 
-/// AgentBubble is something from the agent: on the left, in gray.
+/// AgentBubble is something from the agent: its words on the page itself,
+/// full width, as the Claude and ChatGPT apps set an answer; only the
+/// person's own messages sit in bubbles.
 struct AgentBubble<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack {
-            content
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
-            Spacer(minLength: 40)
-        }
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 2)
+    }
+}
+
+/// CardSurface is something that waits for the person, or a file: one quiet
+/// surface with a hairline edge, the same for every card.
+struct CardSurface<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5)
+            }
     }
 }
 
@@ -567,7 +580,9 @@ struct SuggestionsRow: View {
             HStack {
                 ForEach(suggestions, id: \.self) { suggestion in
                     Button(suggestion) { onChoose(suggestion) }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .font(.subheadline)
                 }
             }
         }
@@ -871,7 +886,7 @@ struct ToolLine: View {
                     } else {
                         ProgressView().controlSize(.mini)
                     }
-                    Text(line.resolution.isEmpty ? line.detail : "\(line.detail) · \(line.resolution)")
+                    Text(line.resolution.isEmpty ? ToolWords.name(line.detail) : "\(ToolWords.name(line.detail)) · \(line.resolution)")
                         .lineLimit(1)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -888,6 +903,16 @@ struct ToolLine: View {
             }
         }
         .padding(.leading, 4)
+    }
+}
+
+enum ToolWords {
+    /// A tool's name as words: "mail_draft" is "Mail draft", and a skill's
+    /// or a server's tool is named by its own last part.
+    static func name(_ tool: String) -> String {
+        let last = tool.components(separatedBy: "__").last ?? tool
+        let words = last.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
     }
 }
 
@@ -1011,71 +1036,69 @@ struct CardView: View {
     @State private var chosen: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if line.kind == .approval {
-                Label(line.detail.isEmpty ? String(localized: "Approve?") : line.detail, systemImage: "hand.raised")
-                    .font(.headline)
+                CardHeader(
+                    systemImage: line.risk == "destructive" ? "exclamationmark.triangle" : "hand.raised",
+                    title: line.detail.isEmpty ? String(localized: "Approve?") : ToolWords.name(line.detail))
             } else {
-                Label("Your agent asks", systemImage: "questionmark.bubble")
-                    .font(.headline)
+                CardHeader(systemImage: "questionmark.bubble", title: String(localized: "Your agent asks"))
             }
             MarkdownView(text: line.text)
             if line.isDone {
                 Label(resolutionText, systemImage: "checkmark.circle")
-                    .font(.callout)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else if line.kind == .approval {
-                HStack {
-                    if line.risk == "destructive" {
-                        Button("Do it", role: .destructive) {
-                            Task { await model.approve(line, isApproved: true) }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .tint(.red)
-                    } else {
-                        Button("Do it") {
-                            Task { await model.approve(line, isApproved: true) }
-                        }
-                        .buttonStyle(.glassProminent)
-                    }
-                    Button("Don’t") {
-                        Task { await model.approve(line, isApproved: false) }
-                    }
-                    .buttonStyle(.glass)
-                }
-            } else {
-                ForEach(line.choices, id: \.self) { choice in
-                    Button {
-                        chosen = chosen == choice ? nil : choice
+                HStack(spacing: 10) {
+                    Button(role: line.risk == "destructive" ? .destructive : nil) {
+                        Task { await model.approve(line, isApproved: true) }
                     } label: {
-                        HStack {
-                            Text(choice).multilineTextAlignment(.leading)
-                            Spacer(minLength: 8)
-                            Image(systemName: chosen == choice ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(chosen == choice ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Do it").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glass)
-                    .accessibilityAddTraits(chosen == choice ? .isSelected : [])
+                    .buttonStyle(.borderedProminent)
+                    .tint(line.risk == "destructive" ? .red : .accentColor)
+                    Button {
+                        Task { await model.approve(line, isApproved: false) }
+                    } label: {
+                        Text("Don’t").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                HStack {
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(line.choices.enumerated()), id: \.offset) { index, choice in
+                        if index > 0 { Divider() }
+                        ChoiceRow(title: choice, detail: "", isChosen: chosen == choice, isMultiple: false) {
+                            chosen = chosen == choice ? nil : choice
+                        }
+                    }
+                }
+                HStack(spacing: 10) {
                     if !line.choices.isEmpty {
-                        Button("Send") {
+                        Button {
                             guard let chosen else { return }
                             Task { await model.answer(line, with: chosen) }
+                        } label: {
+                            Text("Send").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent)
                         .disabled(chosen == nil)
                     }
-                    Button("Chat about it") {
+                    Button {
                         Task { await model.answer(line, with: ConversationModel.chatAboutIt) }
+                    } label: {
+                        Text("Chat about it").frame(maxWidth: line.choices.isEmpty ? nil : .infinity)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.bordered)
                 }
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
                 Text("Or type your answer below.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -1099,64 +1122,102 @@ struct CodingQuestionCard: View {
 
     var body: some View {
         if let question = line.codingQuestion {
-            VStack(alignment: .leading, spacing: 10) {
-                Label {
-                    Text(verbatim: question.sessionName.isEmpty ? question.codingAgentName : "\(question.codingAgentName) · \(question.sessionName)")
-                } icon: {
-                    Image(systemName: "terminal")
-                }
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader(
+                    systemImage: "terminal",
+                    title: question.sessionName.isEmpty ? question.codingAgentName : "\(question.codingAgentName) · \(question.sessionName)")
                 MarkdownView(text: question.questionText)
                 if line.isDone {
                     Label(line.resolution.isEmpty ? String(localized: "Answered") : line.resolution, systemImage: "checkmark.circle")
-                        .font(.callout)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(question.choices, id: \.optionNumber) { option in
-                        Button {
-                            if question.isMultipleChoice {
-                                if chosen.contains(option.optionNumber) {
-                                    chosen.remove(option.optionNumber)
-                                } else {
-                                    chosen.insert(option.optionNumber)
-                                }
-                            } else {
-                                Task { await model.answerCodingQuestion(line, options: [option], freeText: nil) }
-                            }
-                        } label: {
-                            HStack {
+                    VStack(spacing: 0) {
+                        ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in
+                            if index > 0 { Divider() }
+                            ChoiceRow(
+                                title: option.optionLabel, detail: option.optionDescription, isChosen: chosen.contains(option.optionNumber),
+                                isMultiple: question.isMultipleChoice
+                            ) {
                                 if question.isMultipleChoice {
-                                    Image(systemName: chosen.contains(option.optionNumber) ? "checkmark.circle.fill" : "circle")
-                                }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(option.optionLabel)
-                                    if !option.optionDescription.isEmpty {
-                                        Text(option.optionDescription).font(.caption).foregroundStyle(.secondary)
+                                    if chosen.contains(option.optionNumber) {
+                                        chosen.remove(option.optionNumber)
+                                    } else {
+                                        chosen.insert(option.optionNumber)
                                     }
+                                } else {
+                                    Task { await model.answerCodingQuestion(line, options: [option], freeText: nil) }
                                 }
-                                Spacer(minLength: 0)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(.glass)
                     }
                     if question.isMultipleChoice {
-                        Button("Send") {
+                        Button {
                             let options = question.choices.filter { chosen.contains($0.optionNumber) }
                             Task { await model.answerCodingQuestion(line, options: options, freeText: nil) }
+                        } label: {
+                            Text("Send").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
                         .disabled(chosen.isEmpty)
                     }
                     if question.options.contains(where: { $0.herdrOptionKind != "choice" }) {
                         Text("Or type your answer below.")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
         }
+    }
+}
+
+/// CardHeader is what a card is, small and quiet above what it says.
+struct CardHeader: View {
+    let systemImage: String
+    let title: String
+
+    var body: some View {
+        Label {
+            Text(verbatim: title)
+        } icon: {
+            Image(systemName: systemImage)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// ChoiceRow is one answer a card offers: a row with a radio or a check, as
+/// a list row is, rather than a button of its own.
+struct ChoiceRow: View {
+    let title: String
+    let detail: String
+    let isChosen: Bool
+    let isMultiple: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: isMultiple ? (isChosen ? "checkmark.square.fill" : "square") : (isChosen ? "largecircle.fill.circle" : "circle"))
+                    .font(.title3)
+                    .foregroundStyle(isChosen ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).multilineTextAlignment(.leading)
+                    if !detail.isEmpty {
+                        Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
     }
 }
 
@@ -1186,8 +1247,16 @@ struct Composer: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            GlassEffectContainer {
-                HStack(alignment: .bottom, spacing: 8) {
+            // One field with its buttons inside it, as the Claude app's: the
+            // words on top, adding files at the bottom left, calling and
+            // sending at the bottom right.
+            VStack(alignment: .leading, spacing: 4) {
+                TextField(placeholder, text: $model.draft, axis: .vertical)
+                    .lineLimit(1...8)
+                    .focused($isFocused)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                HStack(spacing: 4) {
                     Menu {
                         Button {
                             isPickingPhotos = true
@@ -1208,28 +1277,24 @@ struct Composer: View {
                         }
                     } label: {
                         Image(systemName: "plus")
-                            .font(.title3)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, height: 36)
+                            .background(Color(.tertiarySystemFill), in: .circle)
                             .frame(minWidth: 44, minHeight: 44)
                     }
-                    .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("Add files")
-
-                    TextField(placeholder, text: $model.draft, axis: .vertical)
-                        .lineLimit(1...6)
-                        .focused($isFocused)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
-
+                    Spacer()
                     if model.voiceSampleRate != nil, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
                         Button {
                             model.startCall()
                         } label: {
-                            Image(systemName: "phone")
-                                .font(.title3)
+                            Image(systemName: "waveform")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
-                        .glassEffect(.regular.interactive(), in: .circle)
                         .accessibilityLabel("Call your agent")
                     }
                     if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
@@ -1237,27 +1302,32 @@ struct Composer: View {
                             Task { await model.stop() }
                         } label: {
                             Image(systemName: "stop.fill")
-                                .font(.title3)
+                                .font(.footnote)
+                                .foregroundStyle(Color(.systemBackground))
+                                .frame(width: 36, height: 36)
+                                .background(Color.primary, in: .circle)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
-                        .glassEffect(.regular.interactive(), in: .circle)
                         .accessibilityLabel("Stop")
                     } else {
                         Button {
                             Task { await model.send() }
                         } label: {
                             Image(systemName: "arrow.up")
-                                .font(.title3.bold())
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(model.canSend ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
-                        .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
                         .disabled(!model.canSend)
-                        .opacity(model.canSend ? 1 : 0.5)
                         .accessibilityLabel("Send")
                     }
                 }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 4)
             }
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26, style: .continuous))
         }
         .padding(.horizontal)
         .padding(.bottom, 8)

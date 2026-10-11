@@ -69,19 +69,27 @@ its pull request is opened.
 
 - Content first, chrome last. A conversation is the messages and the composer;
   everything else is in the toolbar or a menu.
-- A conversation looks like a messaging app. The person's messages are
-  bubbles on the right, in the accent color with white text; the agent's are
-  bubbles on the left, in `secondarySystemBackground`, with its Markdown drawn
-  as blocks (paragraphs, quotes, lists, code). The time shows between two
-  messages far apart.
+- A conversation reads like the Claude and ChatGPT apps. The agent's answers
+  are text on the page itself, full width, with no bubble; the person's
+  messages sit on the right in a quiet `secondarySystemBackground` bubble with
+  primary text. Green is kept for what can be pressed: the send button, links,
+  a chosen answer. The time shows between two messages far apart.
+- Cards that wait for the person (approve, a question, a coding session
+  asking) share one surface: `secondarySystemBackground`, an 18 point corner,
+  a hairline edge. A small secondary header says what the card is; answers
+  are rows with a radio or a check, not buttons of their own; actions are
+  standard capsule buttons of equal width, the prominent one first.
+- The composer is one rounded field with its buttons inside it: the words on
+  top, adding files at the bottom left, calling and sending at the bottom
+  right.
+- A list row says who, what and when, and only marks what asks for attention
+  (high priority, a reply owed, a sender whose checks failed). Routine
+  categories and passing checks are not drawn.
 - The tools the agent used in a row are one quiet line ("Used calendar,
   mail"), `.caption` and `.secondary`, opening on tap.
 - A turn the agent took on its own is one short centered line saying where
   it came from ("A coding session asks you"), never the instructions it was
   started with.
-- Cards waiting for the person (approve, a question, a coding session asking)
-  are the agent's bubbles with their actions as real buttons: a coding
-  session's options are buttons, not a numbered list to type back.
 - Respect the safe areas and the keyboard; standard system spacing; tap
   targets at least 44 points.
 
