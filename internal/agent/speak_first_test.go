@@ -327,7 +327,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 	}, "a-key-hash", "a-refresh-hash"); err != nil {
 		t.Fatalf("CreateAuthorizedToken: %s", err)
 	}
-	world.worker.ReportPresence(world.owner.ID, true, 0, time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
 	world.tick(t)
 
 	jobs := world.speakFirstJobs(t)
@@ -353,7 +353,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 		}
 	})
 
-	world.worker.ReportPresence(world.owner.ID, true, 0, time.Now().Add(2*time.Minute))
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(2*time.Minute))
 	if err := world.worker.TickAt(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
