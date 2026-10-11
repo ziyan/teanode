@@ -507,6 +507,11 @@ final class AppModel {
         if let error = error as? LocalizedError, let description = error.errorDescription {
             return description
         }
+        // A request called off is not the server failing: it is said as
+        // iOS says it, which the toasts know to leave out.
+        if (error as? URLError)?.code == .cancelled || error is CancellationError {
+            return URLError(.cancelled).localizedDescription
+        }
         if (error as? URLError) != nil {
             return String(localized: "The server could not be reached. Check the connection and try again.")
         }

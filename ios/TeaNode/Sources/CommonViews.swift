@@ -12,8 +12,8 @@ struct Toast: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottom) {
-                if let text = problemText ?? doneText {
-                    let isProblem = problemText != nil
+                if let text = shownProblemText ?? doneText {
+                    let isProblem = shownProblemText != nil
                     HStack(spacing: 12) {
                         Label(text, systemImage: isProblem ? "exclamationmark.triangle" : "checkmark.circle")
                             .foregroundStyle(isProblem ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
@@ -40,7 +40,26 @@ struct Toast: ViewModifier {
                     .sensoryFeedback(isProblem ? .warning : .success, trigger: text)
                 }
             }
-            .animation(.default, value: problemText ?? doneText)
+            .animation(.default, value: shownProblemText ?? doneText)
+            .onChange(of: problemText) { _, text in
+                if let text, Self.isCancellation(text) { problemText = nil }
+            }
+    }
+
+    /// The problem, unless it is a request that was called off: leaving a
+    /// screen, pulling to refresh or typing in a search box cancels what
+    /// was being read, which iOS words as "cancelled". Nothing went wrong,
+    /// so nothing is shown.
+    private var shownProblemText: String? {
+        guard let problemText, !Self.isCancellation(problemText) else { return nil }
+        return problemText
+    }
+
+    static func isCancellation(_ text: String) -> Bool {
+        let cancelledText = URLError(.cancelled).localizedDescription
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed == cancelledText || trimmed.hasSuffix(": \(cancelledText)")
+            || trimmed == CancellationError().localizedDescription
     }
 
     private func clear() {
