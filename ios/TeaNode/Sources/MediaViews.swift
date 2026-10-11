@@ -24,7 +24,7 @@ struct RemotePicture: View {
         Group {
             if let picture {
                 Button {
-                    Task { await app.preview(path, name: name) }
+                    LightboxPresenter.present(picture, name: name)
                 } label: {
                     Image(uiImage: picture)
                         .resizable()
@@ -49,6 +49,166 @@ struct RemotePicture: View {
         .task(id: path) {
             picture = await app.picture(path)
             isMissing = picture == nil
+        }
+    }
+}
+
+/// LightboxPresenter shows a picture full screen over whatever is on
+/// screen, a sheet included, as Photos does: from the top of the window
+/// rather than from the view that was tapped, which inside a list or a
+/// sheet had nothing to present from.
+@MainActor
+enum LightboxPresenter {
+    static func present(_ picture: UIImage, name: String) {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        guard let top else { return }
+        weak var shown: UIViewController?
+        let controller = UIHostingController(rootView: PictureLightbox(picture: picture, name: name) {
+            shown?.dismiss(animated: true)
+        })
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        controller.view.backgroundColor = .clear
+        shown = controller
+        top.present(controller, animated: true)
+    }
+}
+
+/// PictureLightbox is one picture on black: pinch or double-tap to zoom,
+/// drag down or the close button to go back, and share.
+struct PictureLightbox: View {
+    let picture: UIImage
+    let name: String
+    let onClose: () -> Void
+    @State private var isZoomed = false
+    @State private var draggedDown: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            Color.black
+                .opacity(1 - min(0.6, Double(abs(draggedDown)) / 400))
+                .ignoresSafeArea()
+            ZoomablePicture(picture: picture, isZoomed: $isZoomed)
+                .ignoresSafeArea()
+                .offset(y: draggedDown)
+                .gesture(
+                    // Down to close, only when not zoomed in: zoomed, a drag
+                    // moves around the picture.
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            guard !isZoomed, abs(value.translation.height) > abs(value.translation.width) else { return }
+                            draggedDown = value.translation.height
+                        }
+                        .onEnded { value in
+                            guard !isZoomed else { return }
+                            if abs(value.predictedEndTranslation.height) > 200 {
+                                onClose()
+                            } else {
+                                withAnimation(.spring(duration: 0.25)) { draggedDown = 0 }
+                            }
+                        },
+                    isEnabled: !isZoomed)
+        }
+        .overlay(alignment: .top) {
+            HStack {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Close")
+                Spacer()
+                ShareLink(item: Image(uiImage: picture), preview: SharePreview(name, image: Image(uiImage: picture))) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Share")
+            }
+            .padding(.horizontal)
+            .opacity(draggedDown == 0 ? 1 : 0)
+        }
+        .statusBarHidden()
+        .accessibilityAction(.escape, onClose)
+    }
+}
+
+/// ZoomablePicture is a picture in UIKit's zooming scroll view: pinch and
+/// double-tap zoom, and a drag pans while zoomed. SwiftUI has no zooming
+/// container of its own.
+struct ZoomablePicture: UIViewRepresentable {
+    let picture: UIImage
+    @Binding var isZoomed: Bool
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = 5
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.backgroundColor = .clear
+        let imageView = UIImageView(image: picture)
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = true
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+            imageView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+        ])
+        context.coordinator.imageView = imageView
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.zoomOnDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isZoomed: $isZoomed)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        var isZoomed: Binding<Bool>
+        weak var imageView: UIImageView?
+
+        init(isZoomed: Binding<Bool>) {
+            self.isZoomed = isZoomed
+        }
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            let isNowZoomed = scrollView.zoomScale > 1.01
+            if isZoomed.wrappedValue != isNowZoomed { isZoomed.wrappedValue = isNowZoomed }
+        }
+
+        @objc func zoomOnDoubleTap(_ recognizer: UITapGestureRecognizer) {
+            guard let scrollView = recognizer.view as? UIScrollView, let imageView else { return }
+            if scrollView.zoomScale > 1.01 {
+                scrollView.setZoomScale(1, animated: true)
+            } else {
+                let point = recognizer.location(in: imageView)
+                let size = CGSize(width: scrollView.bounds.width / 2.5, height: scrollView.bounds.height / 2.5)
+                scrollView.zoom(to: CGRect(origin: CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2), size: size), animated: true)
+            }
         }
     }
 }
