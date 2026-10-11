@@ -374,3 +374,53 @@ func TestALiveActivityIsToldAStateAndNothingElse(test *testing.T) {
 		test.Errorf("a state sent to the phone came back as %v", err)
 	}
 }
+
+// iOS shows the Live Activity update with the latest aps.timestamp. The
+// relay's own clock would order a turn's states by when each reached it, so
+// it writes when the server says the state changed, and its own clock only
+// when that is missing or not believable.
+func TestALiveActivityIsStampedWithWhenItsStateChanged(test *testing.T) {
+	apple, client, _ := newFakeApple(test)
+	relay, err := NewRelay(client)
+	if err != nil {
+		test.Fatalf("NewRelay: %s", err)
+	}
+	now := time.Now()
+	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, now)
+	if err != nil {
+		test.Fatalf("Register: %s", err)
+	}
+	registration, err := relay.Open(activity, now)
+	if err != nil {
+		test.Fatalf("Open: %s", err)
+	}
+	earlier := now.Add(-20 * time.Second)
+	for index, stamp := range []struct {
+		name      string
+		changedAt time.Time
+		want      int64
+	}{
+		{"a moment ago", earlier, earlier.Unix()},
+		{"not said", time.Time{}, now.Unix()},
+		{"in the future", now.Add(time.Hour), now.Unix()},
+		{"long ago", now.Add(-time.Hour), now.Unix()},
+	} {
+		if err := relay.DeliverTo(context.Background(), registration, &Delivery{ActivityState: "working", ActivityChangedAt: stamp.changedAt}, now); err != nil {
+			test.Fatalf("%s: DeliverTo: %s", stamp.name, err)
+		}
+		var payload struct {
+			Aps struct {
+				Timestamp int64 `json:"timestamp"`
+			} `json:"aps"`
+		}
+		_ = json.Unmarshal(apple.bodies[index], &payload)
+		if payload.Aps.Timestamp != stamp.want {
+			test.Errorf("%s: stamped %d, want %d", stamp.name, payload.Aps.Timestamp, stamp.want)
+		}
+	}
+	// The phone's own alerts carry no state, and so no time of one.
+	phone, _ := relay.Register(testDeviceToken, false, "", now)
+	if err := relay.Send(context.Background(), phone, &Delivery{ActivityChangedAt: now}); !errors.Is(err, ErrRefused) {
+		test.Errorf("a state's time sent to the phone came back as %v", err)
+	}
+}

@@ -88,6 +88,12 @@ type Delivery struct {
 
 	// IsActivityEnded ends the Live Activity, showing ActivityState.
 	IsActivityEnded bool `json:"isActivityEnded,omitempty"`
+
+	// ActivityChangedAt is when the turn came to ActivityState, on the
+	// server's clock. iOS shows the update with the latest aps.timestamp, so
+	// it is what orders a turn's states; the relay's own clock would order
+	// them by when each reached it.
+	ActivityChangedAt time.Time `json:"activityChangedAt,omitzero"`
 }
 
 // activityStates are what a Live Activity may be told: the turn is working,
@@ -97,6 +103,26 @@ var activityStates = map[string]bool{"working": true, "waiting": true, "done": t
 // activityDismissal is how long an ended Live Activity stays on the lock
 // screen, so the person sees how it ended.
 const activityDismissal = 15 * time.Minute
+
+// activityChangedAtAgeMost and activityChangedAtSkewMost bound how far a
+// server's ActivityChangedAt may be from the relay's clock before the relay
+// uses its own instead: a server with a wrong clock, or one that writes a
+// time in the future, must not put its updates ahead of every later one.
+const (
+	activityChangedAtAgeMost  = 5 * time.Minute
+	activityChangedAtSkewMost = 30 * time.Second
+)
+
+// activityTimestamp is the aps.timestamp of a Live Activity's update: when
+// the server says the state changed, when that is believable, and now
+// otherwise.
+func (self *Delivery) activityTimestamp(now time.Time) int64 {
+	changedAt := self.ActivityChangedAt
+	if changedAt.IsZero() || changedAt.Before(now.Add(-activityChangedAtAgeMost)) || changedAt.After(now.Add(activityChangedAtSkewMost)) {
+		changedAt = now
+	}
+	return changedAt.Unix()
+}
 
 const (
 	// deliveryLifetime is how long Apple keeps trying a phone that is off,
@@ -115,7 +141,7 @@ var envelopeIdPattern = regexp.MustCompile(`^[0-9a-f]{1,64}$`)
 // notification is the delivery as Apple takes it, with the payload written
 // here rather than by the server that asked.
 func (self *Delivery) notification(now time.Time) (*Notification, error) {
-	if self.ActivityState != "" || self.IsActivityEnded {
+	if self.ActivityState != "" || self.IsActivityEnded || !self.ActivityChangedAt.IsZero() {
 		return nil, fmt.Errorf("%w: a state is for a Live Activity, and this registration is the phone's", ErrRefused)
 	}
 	if self.Sealed == "" {
@@ -161,7 +187,7 @@ func (self *Delivery) activityNotification(now time.Time) (*Notification, error)
 		return nil, fmt.Errorf("%w: %q is not a state a Live Activity shows", ErrRefused, self.ActivityState)
 	}
 	aps := map[string]any{
-		"timestamp":     now.Unix(),
+		"timestamp":     self.activityTimestamp(now),
 		"event":         "update",
 		"content-state": map[string]string{"activityState": self.ActivityState},
 	}
