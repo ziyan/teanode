@@ -49,6 +49,7 @@ type showingRun struct {
 	shown []string
 }
 
+func (self *showingRun) CanShowPages() bool   { return true }
 func (self *showingRun) ShowPage(path string) { self.shown = append(self.shown, path) }
 
 // elsewhereRun is a run anywhere else.

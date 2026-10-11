@@ -2139,6 +2139,8 @@ export const ja: Catalog = {
 
   'authorize.title': 'アプリを認可する',
   'authorize.intro': 'アプリがあなたのエージェントツールの使用と、このサーバー上であなたとして動作することを求めています。',
+  'authorize.introWholeAccount': 'このデバイス上のアプリが、あなたとしてアカウント全体（メール、エージェント、設定）にサインインしようとしています。',
+  'authorize.grantWholeAccount': 'このデバイスで TeaNode アプリを開いてサインインしたところである場合にだけ許可してください。あなたがここでできることはすべてできるようになります。設定の「電話」または「アプリ」からいつでもサインアウトできます。',
   'authorize.program': 'アプリ',
   'authorize.claimedName': '登録時に名乗った名前',
   'authorize.unnamed': '名前のないアプリ',

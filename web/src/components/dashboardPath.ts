@@ -31,6 +31,9 @@ export function mailPath(itemId: string): string | null {
   return /^[A-Za-z0-9]+$/.test(itemId) ? `/mailbox/starred/${itemId}` : null
 }
 
+// CONNECT_PATH is the page that shows the code a phone scans to connect.
+export const CONNECT_PATH = '/connect'
+
 // FINANCE_LINK_PATH is the page Plaid's window runs on. The server gives
 // this path alone a policy that lets Plaid in, and a policy comes with the
 // document, so the page is only ever loaded at it (in a window of its own),
@@ -54,6 +57,10 @@ export function shownPath(written: string): string | null {
     if (segment === '' || segment === '.' || segment === '..' || !/^[\p{L}\p{N}\-._~]+$/u.test(segment)) return null
   }
   if (path === FINANCE_LINK_PATH) return null
+  // The page with a code to scan that connects the phone app: the agent
+  // takes the person there when asked to connect a phone, and never holds
+  // the code itself (internal/agent/tools/phone).
+  if (path === CONNECT_PATH) return path
   return SHOWN_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ? path : null
 }
 

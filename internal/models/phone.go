@@ -34,6 +34,10 @@ type AgentPhone struct {
 	LastSeenAt        *time.Time `json:"lastSeenAt,omitempty"`
 	LastDeliveredAt   *time.Time `json:"lastDeliveredAt,omitempty"`
 	LastDeliveryError string     `json:"lastDeliveryError,omitempty"`
+
+	// TouredAt is when the agent showed the person around the phone, once,
+	// after it connected.
+	TouredAt *time.Time `json:"touredAt,omitempty"`
 }
 
 // Kinds of notification a phone may receive.

@@ -7,14 +7,15 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
+	_ "github.com/ziyan/teanode/internal/agent/tools/all"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
 )
 
 // Everything a person does with their phones is on every surface they use:
-// the API, the dashboard's Phones page and teanode agent phone. One table
-// names each, and nothing exists on a surface that the table does not list.
-// The agent's phone tool comes with onboarding (milestone 11 of the iPhone
-// app plan) and joins this table then.
+// the API, the dashboard's Phones page, teanode agent phone and the agent's
+// account tool. One table names each, and nothing exists on a surface that
+// the table does not list.
 func TestPhoneParity(test *testing.T) {
 	test.Parallel()
 
@@ -26,6 +27,50 @@ func TestPhoneParity(test *testing.T) {
 		"TestAgentPhone":         {"test"},
 		"CreateOAuthConnectCode": {"pair"},
 	}
+	// operation, then the actions of the agent's account tool that do it.
+	// Pairing is the dashboard's page shown to the person: the agent never
+	// holds a connect code.
+	toolActions := map[string][]string{
+		"ListAgentPhones":        {"phones"},
+		"UpdateAgentPhone":       {"rename_phone", "phone_notifications"},
+		"RemoveAgentPhone":       {"remove_phone"},
+		"TestAgentPhone":         {"test_phone"},
+		"CreateOAuthConnectCode": {"pair_phone"},
+	}
+	accountActions := map[string]bool{}
+	for _, tool := range tools.Build().All() {
+		if tool.Name != "account" {
+			continue
+		}
+		properties, _ := tool.Parameters["properties"].(map[string]any)
+		action, _ := properties["action"].(map[string]any)
+		switch enum := action["enum"].(type) {
+		case []string:
+			for _, name := range enum {
+				accountActions[name] = true
+			}
+		case []any:
+			for _, name := range enum {
+				accountActions[name.(string)] = true
+			}
+		}
+	}
+	for operation, actions := range toolActions {
+		if _, ok := table[operation]; !ok {
+			test.Errorf("the account tool's %v do %s, which the table does not list", actions, operation)
+		}
+		for _, action := range actions {
+			if !accountActions[action] {
+				test.Errorf("the account tool has no action %s", action)
+			}
+		}
+	}
+	for operation := range table {
+		if _, ok := toolActions[operation]; !ok {
+			test.Errorf("%s is not something the agent can do", operation)
+		}
+	}
+
 	// Called by the TeaNode app on the phone itself, with the token it
 	// connected with; a person never registers a phone by hand.
 	appOnly := map[string]bool{"RegisterAgentPhone": true}

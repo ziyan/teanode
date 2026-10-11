@@ -20,12 +20,13 @@ import { useTranslation } from '../i18n/i18n'
 // with passkeys and single sign-on, and this page renders once they are.
 
 const REQUEST = `
-  query ($clientId: String!, $redirectUri: String!) {
-    ReadOAuthAuthorizationRequest(clientId: $clientId, redirectUri: $redirectUri) {
+  query ($clientId: String!, $redirectUri: String!, $resource: String) {
+    ReadOAuthAuthorizationRequest(clientId: $clientId, redirectUri: $redirectUri, resource: $resource) {
       clientName
       redirectHost
       username
       registered
+      isWholeAccount
     }
   }`
 
@@ -47,6 +48,9 @@ type AuthorizationRequest = {
   redirectHost: string
   username: string
   registered: string
+  // An app installed on a device signing in to the whole account, as the
+  // TeaNode app does, rather than a program asking for the agent tools.
+  isWholeAccount: boolean
 }
 
 type Phase = 'reading' | 'asking' | 'working' | 'sending'
@@ -85,7 +89,7 @@ export function AuthorizePage() {
   useEffect(() => {
     if (!asked) return
     let current = true
-    graphql<{ ReadOAuthAuthorizationRequest: AuthorizationRequest }>(REQUEST, { clientId, redirectUri })
+    graphql<{ ReadOAuthAuthorizationRequest: AuthorizationRequest }>(REQUEST, { clientId, redirectUri, resource })
       .then((data) => {
         if (!current) return
         setRequest(data.ReadOAuthAuthorizationRequest)
@@ -99,7 +103,7 @@ export function AuthorizePage() {
     return () => {
       current = false
     }
-  }, [asked, clientId, redirectUri, t])
+  }, [asked, clientId, redirectUri, resource, t])
 
   const allow = useCallback(
     async (event: React.FormEvent) => {
@@ -179,7 +183,9 @@ export function AuthorizePage() {
 
   return (
     <AuthCard purpose={t('authorize.title')} onSubmit={allow}>
-      <p className="authorize-intro">{t('authorize.intro')}</p>
+      <p className="authorize-intro">
+        {request.isWholeAccount ? t('authorize.introWholeAccount') : t('authorize.intro')}
+      </p>
 
       <dl className="authorize-facts">
         <dt>{t('authorize.program')}</dt>
@@ -200,7 +206,9 @@ export function AuthorizePage() {
         <dd>{request.username}</dd>
       </dl>
 
-      <p className="authorize-grant muted">{t('authorize.grant')}</p>
+      <p className="authorize-grant muted">
+        {request.isWholeAccount ? t('authorize.grantWholeAccount') : t('authorize.grant')}
+      </p>
 
       <ErrorMessage error={error} />
 
