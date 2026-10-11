@@ -62,11 +62,13 @@ struct ConnectView: View {
                         Task { await connect(text) }
                     }
                     .buttonBorderShape(.capsule)
-                    Button("Sign in with a password") {
+                    Button("Sign in with a password", systemImage: "key") {
                         problemText = nil
                         isAskingForServer = true
                     }
-                    .font(.subheadline)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
                     Text("Only have this phone? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)

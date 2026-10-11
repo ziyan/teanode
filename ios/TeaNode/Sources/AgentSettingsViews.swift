@@ -752,15 +752,23 @@ struct AgentConfirmView: View {
                                 .foregroundStyle(Color(.secondaryLabel))
                         }
                     }
-                    DisclosureGroup("Tools") {
-                        ForEach(members) { tool in
-                            toolRow(tool, isFamilyAskingFirst: draft.isAskingFirst(family))
+                    // Its tools on a screen of their own, each a full row,
+                    // rather than folded into this one.
+                    NavigationLink {
+                        Form {
+                            Section {
+                                ForEach(members) { tool in
+                                    toolRow(tool, isFamilyAskingFirst: draft.isAskingFirst(family))
+                                }
+                            } footer: {
+                                if members.isEmpty || family == "servers" {
+                                    Text("Connected servers add their own tools to this family as they connect, named the way they name themselves; the family word covers all of them.")
+                                }
+                            }
                         }
-                        if members.isEmpty || family == "servers" {
-                            Text("Connected servers add their own tools to this family as they connect, named the way they name themselves; the family word covers all of them.")
-                                .font(.footnote)
-                                .foregroundStyle(Color(.secondaryLabel))
-                        }
+                        .navigationTitle(Text(verbatim: family))
+                    } label: {
+                        Text("Each tool")
                     }
                 }
             }

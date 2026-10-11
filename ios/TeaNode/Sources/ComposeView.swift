@@ -36,7 +36,6 @@ final class ComposeModel {
     /// The quoted or forwarded message, kept below what is written.
     private(set) var quoteHTML = ""
     private(set) var quoteText = ""
-    var isShowingQuote = false
     /// Attachments already on the server: carried from a forwarded message,
     /// or kept on the draft.
     private(set) var carried: [MailContent.Attachment] = []
@@ -407,18 +406,17 @@ struct ComposeView: View {
                 Section {
                     TextField("Message", text: $model.body, axis: .vertical)
                         .lineLimit(8...)
-                    if !model.quoteText.isEmpty {
-                        DisclosureGroup(isExpanded: $model.isShowingQuote) {
-                            Text(model.quoteText)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        } label: {
-                            Text(model.start.kind == .forward ? LocalizedStringKey("Forwarded message") : "Quoted text")
-                                .font(.footnote)
-                        }
-                    }
                 }
                 .disabled(model.pending != nil)
+                // What is quoted or forwarded, shown whole under the message,
+                // as Mail shows it.
+                if !model.quoteText.isEmpty {
+                    Section(model.start.kind == .forward ? LocalizedStringKey("Forwarded message") : "Quoted text") {
+                        Text(model.quoteText)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
                 Section {
                     ForEach(model.carried, id: \.index) { file in
                         HStack {
@@ -550,7 +548,7 @@ struct AddressField: View {
                         ForEach(suggestions, id: \.self) { suggestion in
                             Button(suggestion) { choose(suggestion) }
                                 .buttonStyle(.bordered)
-                                .font(.footnote)
+                                .buttonBorderShape(.capsule)
                         }
                     }
                 }

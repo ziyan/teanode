@@ -931,9 +931,12 @@ struct ReceiptDetailView: View {
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(line.description.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No description"))
-                                if let quantity = line.quantity, !quantity.isEmpty, quantity != "1" {
+                                // The server keeps quantities to eight places:
+                                // "1.00000000" is one, said by not saying it.
+                                if let quantity = line.quantity.flatMap({ Decimal(string: $0, locale: Locale(identifier: "en_US_POSIX")) }), quantity != 1 {
                                     let unitPrice = FinanceMoney.shown(line.unitPriceAmount, currencyCode: receipt.currencyCode)
-                                    Text(verbatim: "\(quantity) \(line.quantityUnit ?? "") × \(unitPrice)")
+                                    let unitText = line.quantityUnit.map { " \($0)" } ?? ""
+                                    Text(verbatim: "\(quantity.formatted())\(unitText) × \(unitPrice)")
                                         .font(.caption)
                                         .foregroundStyle(Color(.secondaryLabel))
                                 }
@@ -950,7 +953,7 @@ struct ReceiptDetailView: View {
                 Text(matches.isEmpty ? String(localized: "Not matched to a charge yet.") : String(localized: "Matched to \(matches.count) charges"))
                     .foregroundStyle(Color(.secondaryLabel))
                 if let transactionId {
-                    Button("Take off this charge") {
+                    Button("Take off this charge", systemImage: "link.badge.minus") {
                         Task {
                             let isDone = await finance.act(saying: String(localized: "Taken off")) {
                                 try await finance.connection.matchReceipt(receipt.id, to: transactionId, amount: nil, isUndone: true)
@@ -964,7 +967,12 @@ struct ReceiptDetailView: View {
                 }
             }
             Section {
-                Button("Delete receipt", role: .destructive) { isConfirmingDelete = true }
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    Label("Delete receipt", systemImage: "trash")
+                        .foregroundStyle(.red)
+                }
             }
         }
         .navigationTitle(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))

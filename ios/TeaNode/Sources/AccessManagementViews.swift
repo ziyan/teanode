@@ -1308,17 +1308,12 @@ struct AuditLogView: View {
             if let events {
                 Section {
                     if !resourceType.isEmpty {
-                        HStack {
-                            Label {
-                                Text("Changes to \(resourceType)")
-                            } icon: {
-                                Image(systemName: "line.3.horizontal.decrease.circle")
-                            }
-                            Spacer()
-                            Button("Show everything") { resourceType = "" }
-                                .buttonStyle(.borderless)
+                        Label {
+                            Text("Changes to \(resourceType)")
+                        } icon: {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
                         }
-                        .font(.footnote)
+                        Button("Show everything", systemImage: "xmark.circle") { resourceType = "" }
                     }
                     if events.isEmpty {
                         Text("Nothing has been changed yet.").foregroundStyle(.secondary)

@@ -3913,6 +3913,22 @@
         }
       }
     },
+    "Add a fact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事実を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加事实"
+          }
+        }
+      }
+    },
     "Add a model people may pick": {
       "localizations": {
         "ja": {
@@ -11369,6 +11385,22 @@
         }
       }
     },
+    "Each tool": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツールごと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐个工具"
+          }
+        }
+      }
+    },
     "Earlier": {
       "localizations": {
         "ja": {
@@ -11589,6 +11621,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑提供方"
+          }
+        }
+      }
+    },
+    "Edit the reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信を編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑回复"
           }
         }
       }
@@ -14457,6 +14505,22 @@
         }
       }
     },
+    "Hide the reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信を隠す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏回复"
+          }
+        }
+      }
+    },
     "High": {
       "localizations": {
         "ja": {
@@ -17093,6 +17157,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在听…"
+          }
+        }
+      }
+    },
+    "Load the pictures": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像を読み込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载图片"
           }
         }
       }
@@ -29509,6 +29589,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示助手的工作笔记"
+          }
+        }
+      }
+    },
+    "Show the reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示回复"
           }
         }
       }

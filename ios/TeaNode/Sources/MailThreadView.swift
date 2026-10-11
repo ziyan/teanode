@@ -16,7 +16,6 @@ struct MailThreadScreen: View {
     @State private var problemText: String?
     @State private var expanded = Set<String>()
     // Closed at first and remembered, as the dashboard keeps it.
-    @AppStorage("mail-summary-open") private var isSummaryOpen = false
     @State private var isSorting = false
 
     var body: some View {
@@ -35,7 +34,7 @@ struct MailThreadScreen: View {
                         HeldReplyBanner(mail: mail, reply: reply, composing: $composing) { Task { await load() } }
                     }
                     if let summary = thread.summary, !summary.summary.isEmpty || summary.pending {
-                        SummaryStrip(summary: summary, isOpen: $isSummaryOpen)
+                        SummaryStrip(summary: summary)
                     }
                     ForEach(thread.entries, id: \.item?.id) { entry in
                         if let item = entry.item {
@@ -297,12 +296,16 @@ struct HeldReplyBanner: View {
             if isShowingText {
                 Text(reply.text).font(.footnote).textSelection(.enabled)
             }
-            HStack {
-                Button(isShowingText ? LocalizedStringKey("Hide") : "Show") { isShowingText.toggle() }
-                if !reply.draftItemId.isEmpty {
-                    Button("Edit") { composing = ComposeStart(kind: .draft, itemId: reply.draftItemId) }
+            // Full-size buttons, each the width of the card: three small ones
+            // side by side were hard to hit.
+            VStack(spacing: 8) {
+                Button(isShowingText ? LocalizedStringKey("Hide the reply") : "Show the reply", systemImage: isShowingText ? "eye.slash" : "eye") {
+                    isShowingText.toggle()
                 }
-                Button("Cancel reply", role: .destructive) {
+                if !reply.draftItemId.isEmpty {
+                    Button("Edit the reply", systemImage: "pencil") { composing = ComposeStart(kind: .draft, itemId: reply.draftItemId) }
+                }
+                Button("Cancel reply", systemImage: "xmark", role: .destructive) {
                     Task {
                         _ = await mail.act(saying: String(localized: "The agent's reply was cancelled")) {
                             try await mail.connection.cancelAgentReply(reply.id)
@@ -312,7 +315,8 @@ struct HeldReplyBanner: View {
                 }
             }
             .buttonStyle(.bordered)
-            .font(.footnote)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -320,29 +324,28 @@ struct HeldReplyBanner: View {
     }
 }
 
-/// SummaryStrip is the agent's summary of the conversation, folded on a
-/// tap.
+/// SummaryStrip is the agent's summary of the conversation.
 struct SummaryStrip: View {
     let summary: MailThreadView.Summary
-    @Binding var isOpen: Bool
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isOpen) {
-            Text(summary.summary)
-                .font(.callout)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-        } label: {
+        // Shown whole, not folded: it is short, and it is why the strip
+        // is there.
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Label("Summary", systemImage: "text.alignleft")
+                    .font(.headline)
                 if summary.pending {
                     Text(summary.summary.isEmpty ? LocalizedStringKey("writing…") : "catching up…").foregroundStyle(.secondary)
                 } else if summary.stale {
                     Text("from before the newest message").foregroundStyle(.secondary)
                 }
             }
-            .font(.subheadline)
+            if !summary.summary.isEmpty {
+                Text(summary.summary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 12))
@@ -486,15 +489,16 @@ struct MessageCard: View {
                 }
             }
             if content.hasRemoteContent == true, content.imagesAllowed != true, !isLoadingPictures {
-                HStack {
+                VStack(alignment: .leading, spacing: 8) {
                     Label("Pictures from the sender are held back.", systemImage: "photo.badge.exclamationmark")
                         .font(.footnote)
-                    Spacer()
-                    Button("Load them") {
+                        .foregroundStyle(.secondary)
+                    Button("Load the pictures", systemImage: "photo") {
                         isLoadingPictures = true
                         Task { try? await mail.connection.showMailImages([item.id]) }
                     }
-                    .font(.footnote)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 }
             }
             if !content.html.isEmpty {

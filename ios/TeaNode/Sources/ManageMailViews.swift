@@ -2442,7 +2442,8 @@ private struct DNSRecordView: View {
             } label: {
                 Label("Copy", systemImage: "doc.on.doc").labelStyle(.iconOnly)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
         }
     }
 }

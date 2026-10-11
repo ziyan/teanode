@@ -3134,14 +3134,9 @@ struct AgentActivityView: View {
     private var runsSection: some View {
         Section {
             if let dreamJobId {
-                HStack {
-                    Label(
-                        String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars")
-                    Spacer()
-                    Button("Show all") { self.dreamJobId = nil }
-                        .buttonStyle(.borderless)
-                }
-                .font(.footnote)
+                Label(
+                    String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars")
+                Button("Show all", systemImage: "xmark.circle") { self.dreamJobId = nil }
             }
             if let runs, runs.isEmpty {
                 Text("Nothing yet.").foregroundStyle(.secondary)

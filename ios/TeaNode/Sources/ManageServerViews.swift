@@ -2753,7 +2753,7 @@ private struct PlanUsageRows: View {
             }
             let observedText = ServerWords.fullTime(usage.observedAt)
             Text("As of the plan's last answer to this server, \(observedText)")
-                .font(.caption2)
+                .font(.footnote)
                 .foregroundStyle(Color(.secondaryLabel))
         }
     }
@@ -3094,7 +3094,9 @@ private struct ProviderSignInSection: View {
                         UIPasteboard.general.string = waiting.userCode
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
                 }
                 HStack(spacing: 8) {
                     ProgressView()
@@ -3228,14 +3230,12 @@ private struct AgentModelsFormView: View {
             } footer: {
                 Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; embedding enables search by meaning.")
             }
-            Section {
-                DisclosureGroup("Per kind of work") {
-                    ForEach(AgentModelAssignments.workFieldNames, id: \.self) { fieldName in
-                        modelRow(fieldName, known: choices.forWork, draft: draft)
-                    }
-                    modelRow("decide", known: choices.forDeciding, draft: draft)
-                    modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
+            Section("Per kind of work") {
+                ForEach(AgentModelAssignments.workFieldNames, id: \.self) { fieldName in
+                    modelRow(fieldName, known: choices.forWork, draft: draft)
                 }
+                modelRow("decide", known: choices.forDeciding, draft: draft)
+                modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
             }
             Section {
                 ForEach(draft.wrappedValue.choices, id: \.self) { choice in
@@ -3434,15 +3434,23 @@ private struct AgentToolPolicyFormView: View {
                             Text(verbatim: AgentWords.toolCount(members.count)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                         }
                     }
-                    DisclosureGroup("Tools") {
-                        ForEach(members) { tool in
-                            toolRow(tool, familyWord: familyWord, draft: draft)
+                    // Its tools on a screen of their own, each a full row,
+                    // rather than folded into this one.
+                    NavigationLink {
+                        Form {
+                            Section {
+                                ForEach(members) { tool in
+                                    toolRow(tool, familyWord: familyWord, draft: draft)
+                                }
+                            } footer: {
+                                if members.isEmpty || family == "servers" {
+                                    Text("Connected servers add their own tools to this family as they connect, named the way they name themselves; the family word covers all of them.")
+                                }
+                            }
                         }
-                        if members.isEmpty || family == "servers" {
-                            Text("Connected servers add their own tools to this family as they connect, named the way they name themselves; the family word covers all of them.")
-                                .font(.footnote)
-                                .foregroundStyle(Color(.secondaryLabel))
-                        }
+                        .navigationTitle(Text(verbatim: family))
+                    } label: {
+                        Text("Each tool")
                     }
                 }
             }
@@ -4036,7 +4044,8 @@ private struct RegistrySection: View {
                         ProgressView()
                     } else {
                         Button(buttonTitle(offer)) { install(offer) }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
                             .disabled(offer.isCurrent || busyName != nil)
                     }
                 }

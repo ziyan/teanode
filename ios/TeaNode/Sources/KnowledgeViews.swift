@@ -489,13 +489,9 @@ struct KnowledgePageView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            Button("Add a fact", systemImage: "plus") { editingFact = FactDraft() }
         } header: {
-            HStack {
-                Text("Facts")
-                Spacer()
-                Button("Add", systemImage: "plus") { editingFact = FactDraft() }
-                    .labelStyle(.iconOnly)
-            }
+            Text("Facts")
         } footer: {
             if facts.isEmpty { Text("Nothing known here yet.") }
         }
