@@ -29,6 +29,7 @@ targets:
     dependencies:
       - package: TeaNodeKit
       - target: TeaNodeNotification
+      - target: TeaNodeShare
     # teanode.com/app/connect links open the app (the site serves the
     # association file), so scanning a connect code with the Camera does.
     # Notifications, and a keychain group the notification extension
@@ -102,6 +103,45 @@ targets:
         # The Swift 5 language mode: see NotificationService.swift.
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
+
+  # TeaNode in the share sheet: pictures, files, a link or words from any
+  # app, sent to the person's agent with a note. It reads the sign-in from
+  # the keychain group the app shares.
+  TeaNodeShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeaNodeShare
+      - TeaNode/Resources/Localizable.xcstrings
+    dependencies:
+      - package: TeaNodeKit
+    entitlements:
+      path: TeaNodeShare/TeaNodeShare.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+    info:
+      path: TeaNodeShare/Info.plist
+      properties:
+        CFBundleDisplayName: TeaNode
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 8
+              NSExtensionActivationSupportsFileWithMaxCount: 8
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).share
+        # The Swift 5 language mode: see ShareViewController.swift.
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 
 schemes:
   TeaNode:

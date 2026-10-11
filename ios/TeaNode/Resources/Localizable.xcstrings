@@ -417,6 +417,22 @@
         }
       }
     },
+    "(shared files)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（共有したファイル）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（分享的文件）"
+          }
+        }
+      }
+    },
     "30 days": {
       "localizations": {
         "ja": {
@@ -797,6 +813,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加抄送和密送"
+          }
+        }
+      }
+    },
+    "Add a note for your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントへのメモを添える"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给你的助手留句话"
           }
         }
       }
@@ -4961,6 +4993,22 @@
         }
       }
     },
+    "It goes to your main conversation.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインの会話に届きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会发到你的主对话里。"
+          }
+        }
+      }
+    },
     "It is removed from your address book and from every device that reads it.": {
       "localizations": {
         "ja": {
@@ -7697,6 +7745,22 @@
         }
       }
     },
+    "Open TeaNode and connect it to your server first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に TeaNode を開いてサーバーに接続してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先打开 TeaNode 并连接到你的服务器。"
+          }
+        }
+      }
+    },
     "Open its conversation": {
       "localizations": {
         "ja": {
@@ -9389,6 +9453,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "发送"
+          }
+        }
+      }
+    },
+    "Send to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送给 %@"
+          }
+        }
+      }
+    },
+    "Send to your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送给你的助手"
           }
         }
       }
