@@ -50,8 +50,8 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [ ] Milestone 7: the share extension. Pictures, files, a link or words go to the main conversation with a note; in TestFlight, to be tried on the person's phone.
 - [ ] Milestone 8: voice calls. A CallKit call with voice processing, cutting in, and a choice of where the sound goes, is in TestFlight; hearing the person on every phone is being checked.
 - [ ] Milestone 9: Siri and Shortcuts. "Ask TeaNode" waits up to 25 seconds for the answer through `ReadAgentRun` and leaves a longer one to a notification; "Call TeaNode" opens a call. In TestFlight.
-- [ ] Milestone 10: widgets and Live Activities. "Your agent" (ask, call), "Up next" (events and unread mail) and a Control Center call button are in TestFlight; the open-card count and the Live Activities, which need the server, remain. A call needs no Live Activity: CallKit already shows it in the Dynamic Island.
-- [ ] Milestone 11: the agent helps the person onboard.
+- [x] (2026-10-11) Milestone 10: widgets and Live Activities. "Your agent" (ask, call), "Waiting for you" (`ReadAgentWaiting`, PR #385), "Up next" (events and unread mail), a Control Center call button, and a turn left running as a Live Activity (PR #386).
+- [x] (2026-10-11) Milestone 11: the agent helps the person onboard (PR #387): the account tool's phone actions, and a tour once per phone connected, offering only what the server has on.
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 - [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
 - [x] (2026-10-11) Milestone 14: tabs for the agent, mail, the calendar, contacts and More; asking the agent about a mail, a page or a transaction from where it is.
@@ -148,6 +148,14 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   Rationale: whatever the model reads goes to the model's provider. A download link for a profile is an app password in all but name for ten minutes. The person sees and taps it; the model only needs to know it was offered.
   Date/Author: 2026-10-10, agent.
 
+- Decision (2026-10-11, replacing the private cards above): the agent never makes a connect code or a setup profile. `pair_phone` and `set_up_phone_mail`, actions of the account tool, take the dashboard (or the app) to the page where the person makes one with their own session: `/connect`, and the mailbox's Mail programs tab.
+  Rationale: nothing that signs in as the person passes through the model, the conversation or its storage, so there is no card to keep out of the transcript and no new event type for the drawer and the app to draw. The page was already there, and already refuses a session that is impersonating.
+  Date/Author: 2026-10-11, the agent, while building Milestone 11.
+- Decision (2026-10-11): a Live Activity is told one word, from a fixed set (working, waiting, done, failed), written into the payload by the relay, which refuses anything else. A running turn keeps its activities' registrations in memory; there is no table.
+  Rationale: iOS shows a Live Activity's update as it arrives, with no extension to decrypt it, so Apple and the relay read it; the only safe content is none. An activity lasts as long as its turn, which runs in one process.
+  Date/Author: 2026-10-11, the agent, while building Milestone 10.
+- Decision (2026-10-11): a call has no Live Activity of its own. CallKit already shows it in the Dynamic Island and on the lock screen.
+  Date/Author: 2026-10-11, the agent.
 - Decision: when a phone connects for the first time, the agent speaks first in the app: a short tour of what this server lets the phone do, one thing at a time, built from what is turned on (notifications always; voice calls if voice is available; the coding-session notifications if a computer with herdr is attached; sending receipts if Finance is on; the setup profile if the person has a mailbox). A person new to TeaNode altogether gets the existing introduction (`speak_first_onboarding.go`) first, in the app.
   Rationale: features nobody finds are features nobody uses, and the agent knows what the server has turned on where a static tour would not.
   Date/Author: 2026-10-10, agent.
