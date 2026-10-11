@@ -68,7 +68,7 @@
             } else if query.contains("GetSettings") {
                 answer = Self.serverSettings
             } else if query.contains("ListCalendars") {
-                answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","colour":"#2F7FE0","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
+                answer = ##"{"data":{"ListCalendars":[{"id":"home","name":"Home","colour":"#2F7FE0","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"##
             } else if query.contains("ListCalendarEvents") {
                 answer = Self.events(answering: request.httpBody)
             } else if query.contains("ListReminders") {
