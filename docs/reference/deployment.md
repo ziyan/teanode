@@ -266,7 +266,8 @@ Every instance sharing the database needs the same file.
     docker compose --profile cluster up -d
 
 They share the configuration through PostgreSQL, the stored messages through
-MinIO, and half-finished passkey sign-ins through Redis. Uncomment the
+MinIO, and half-finished passkey sign-ins and setup profiles waiting for their
+one download through Redis. Uncomment the
 `TEANODE_S3_*` block in `.env`, set `passkey.redis.address`, and give each
 instance its own `TEANODE_INSTANCE_ID`.
 

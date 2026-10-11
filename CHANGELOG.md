@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.129.0] - 2026-10-11
+
+### Added
+
+- A mailbox's Mail programs tab can set up an iPhone or a Mac in one step: it makes a setup profile with an app password of its own, shown as a QR code and a link that downloads once within five minutes. Installing it adds the mailbox to Mail and, when the server has a name for calendars and contacts, those to Calendar, Reminders and Contacts. `teanode mailbox profile <device>` does the same from the command line. (#384)
+
 ## [0.128.0] - 2026-10-10
 
 ### Added
