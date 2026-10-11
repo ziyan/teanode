@@ -64,6 +64,7 @@ struct MailboxesList: View {
         List {
             if let leading {
                 Section { leading }
+                    .listSectionSeparator(.hidden)
             }
             if let entry = mail.current, let inbox = mail.folder(kind: "inbox") {
                 Section {
@@ -81,6 +82,7 @@ struct MailboxesList: View {
                     // is titled as Finance's sections are.
                     if leading != nil { Text("Mail") }
                 }
+                .listSectionSeparator(.hidden)
                 let rows = mail.railRows
                 if !rows.pinned.isEmpty {
                     Section("Pinned") {
@@ -88,15 +90,18 @@ struct MailboxesList: View {
                             folderLink(row)
                         }
                     }
+                    .listSectionSeparator(.hidden)
                 }
                 Section("Folders") {
                     ForEach(rows.rest.filter { $0.folder.kind != "inbox" && !isUnderInbox($0.folder) }, id: \.folder.id) { row in
                         folderLink(row)
                     }
                 }
+                .listSectionSeparator(.hidden)
                 Section {
                     FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0, current: current, onChoose: onChoose)
                 }
+                .listSectionSeparator(.hidden)
             }
         }
         .refreshable { await mail.load() }

@@ -312,6 +312,7 @@ struct SideMenu: View {
             NavigationStack {
                 List {
                     Section { sections }
+                        .listSectionSeparator(.hidden)
                     Section("Finance") {
                         ForEach(FinancePart.allCases) { part in
                             Button {
@@ -324,6 +325,7 @@ struct SideMenu: View {
                             .menuRow(isSelected: financePart == part)
                         }
                     }
+                    .listSectionSeparator(.hidden)
                 }
                 .menuListStyle()
                 .navigationBarTitleDisplayMode(.inline)
@@ -333,6 +335,7 @@ struct SideMenu: View {
             NavigationStack {
                 List {
                     Section { sections }
+                        .listSectionSeparator(.hidden)
                 }
                 .menuListStyle()
                 .navigationBarTitleDisplayMode(.inline)

@@ -60,6 +60,7 @@ struct ConversationsSheet: View {
             List {
                 if let leading {
                     Section { leading }
+                        .listSectionSeparator(.hidden)
                 }
                 if let found {
                     if found.isEmpty {
@@ -96,9 +97,11 @@ struct ConversationsSheet: View {
                     } header: {
                         if leading != nil { Text("Chats") }
                     }
+                    .listSectionSeparator(.hidden)
                     Section("Side chats") {
                         ForEach(conversations.filter { !$0.isMain }) { conversation in row(conversation) }
                     }
+                    .listSectionSeparator(.hidden)
                     Section {
                         DisclosureGroup("Archived chats", isExpanded: $isShowingArchived) {
                             if let archived {
@@ -111,6 +114,7 @@ struct ConversationsSheet: View {
                             }
                         }
                     }
+                    .listSectionSeparator(.hidden)
                 }
             }
             .menuListStyle(isPanel)
