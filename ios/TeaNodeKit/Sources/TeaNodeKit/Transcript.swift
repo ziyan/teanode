@@ -64,6 +64,13 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     /// For a note, whether it is waiting on something still to happen
     /// (a turn queued behind another, the conversation being folded).
     public var isPending = false
+    /// The person's and the agent's reactions to it, one each at most.
+    public var reactions: [AgentMessageReaction] = []
+
+    /// The emoji one side put on it, if any.
+    public func reaction(of reactorKind: String) -> String? {
+        reactions.first { $0.reactorKind == reactorKind }?.emoji
+    }
 
     public init(
         id: String, kind: Kind, text: String, detail: String = "", isStreaming: Bool = false, isDone: Bool = false,
@@ -238,6 +245,7 @@ public struct Transcript: Sendable {
                 }
                 var line = TranscriptLine(id: message.id, kind: .person, text: message.content, attachments: message.attachments ?? [], at: message.createdAt)
                 line.messageId = message.id
+                line.reactions = message.reactions ?? []
                 if message.content.hasPrefix(answeringMarker) {
                     let rest = message.content.dropFirst(answeringMarker.count).trimmingCharacters(in: .whitespacesAndNewlines)
                     if let gap = rest.range(of: "\n\n") {
@@ -266,6 +274,7 @@ public struct Transcript: Sendable {
                     var line = TranscriptLine(id: message.id, kind: .answer, text: split.text, at: message.createdAt)
                     line.suggestions = split.suggestions
                     line.messageId = message.id
+                    line.reactions = message.reactions ?? []
                     lines.append(line)
                     turnAnswer = lines.count - 1
                 }
@@ -375,6 +384,16 @@ public struct Transcript: Sendable {
     }
 
     /// Applies an event of a running turn.
+    /// Puts one side's reaction on a message, or takes it away when the
+    /// emoji is empty; as the server keeps it, one each at most.
+    public mutating func react(messageId: String, emoji: String, reactorKind: String) {
+        guard let index = lines.lastIndex(where: { $0.messageId == messageId }) else { return }
+        lines[index].reactions.removeAll { $0.reactorKind == reactorKind }
+        if !emoji.isEmpty {
+            lines[index].reactions.append(AgentMessageReaction(emoji: emoji, reactorKind: reactorKind))
+        }
+    }
+
     public mutating func apply(_ event: AgentEvent) {
         // A turn waiting behind another has begun once anything else of it
         // arrives.
@@ -382,6 +401,11 @@ public struct Transcript: Sendable {
             lines.removeAll { $0.id == "\(event.runId)-queued" }
         }
         switch event.kind {
+        case "reacted":
+            if let messageId = event.messageId, let reactorKind = event.reactorKind {
+                react(messageId: messageId, emoji: event.emoji ?? "", reactorKind: reactorKind)
+            }
+            return
         case "asked":
             // A turn began: something the person said, here or anywhere
             // else, or a turn the agent took on its own. One already shown,

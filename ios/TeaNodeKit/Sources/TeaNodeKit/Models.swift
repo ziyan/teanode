@@ -170,6 +170,8 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     public let attachments: [AgentAttachment]?
     public var usage: AgentUsage? = nil
     public var references: [AgentReference]? = nil
+    /// The person's and the agent's reactions to it.
+    public var reactions: [AgentMessageReaction]? = nil
 
     public init(
         id: String, createdAt: String, role: String, content: String, name: String? = nil, toolCallId: String? = nil,
@@ -202,6 +204,21 @@ public struct AgentInteraction: Codable, Hashable, Sendable {
 
 /// AgentEvent is one event of a running turn, as the conversation's feed
 /// streams it.
+/// AgentMessageReaction is an emoji the person or the agent put on a
+/// message, one each at most.
+public struct AgentMessageReaction: Codable, Hashable, Sendable {
+    public let emoji: String
+    /// "person" or "agent".
+    public let reactorKind: String
+    public let reactedAt: String?
+
+    public init(emoji: String, reactorKind: String, reactedAt: String? = nil) {
+        self.emoji = emoji
+        self.reactorKind = reactorKind
+        self.reactedAt = reactedAt
+    }
+}
+
 public struct AgentEvent: Codable, Hashable, Sendable {
     /// asked, text, message, tool_call, tool_result, confirmation, question,
     /// note, titled, navigate, locate, done or error.
@@ -219,12 +236,21 @@ public struct AgentEvent: Codable, Hashable, Sendable {
     public let noteDetail: String?
     public let error: String?
     public let drawerId: String?
+    /// For "reacted": the message, the emoji (empty when taken away) and
+    /// whose.
+    public var messageId: String? = nil
+    public var emoji: String? = nil
+    public var reactorKind: String? = nil
 
     public init(
         kind: String, runId: String, sequence: Int, at: String? = nil, text: String? = nil, tool: String? = nil,
         callId: String? = nil, arguments: String? = nil, risk: String? = nil, note: String? = nil, noteKind: String? = nil,
-        noteDetail: String? = nil, error: String? = nil, drawerId: String? = nil
+        noteDetail: String? = nil, error: String? = nil, drawerId: String? = nil, messageId: String? = nil, emoji: String? = nil,
+        reactorKind: String? = nil
     ) {
+        self.messageId = messageId
+        self.emoji = emoji
+        self.reactorKind = reactorKind
         self.kind = kind
         self.runId = runId
         self.sequence = sequence

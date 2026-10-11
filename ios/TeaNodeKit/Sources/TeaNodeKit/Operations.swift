@@ -27,6 +27,7 @@ public enum Documents {
               usage { promptTokens completionTokens cost }
               attachments { id name contentType size }
               references { itemId threadId subject from path name financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
+              reactions { emoji reactorKind reactedAt }
             }
             total
             todos { id text doneAt }
@@ -113,6 +114,9 @@ public enum Documents {
           AnswerAgentLocation(runId: $runId, callId: $callId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, accuracyMeters: $accuracyMeters, measuredAt: $measuredAt, errorMessage: $errorMessage)
         }
         """
+    public static let reactToMessage = """
+        mutation ($messageId: String!, $emoji: String!) { ReactToAgentMessage(messageId: $messageId, emoji: $emoji) }
+        """
     public static let reportPresence = """
         mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String) {
           ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds, reporterId: $reporterId)
@@ -143,7 +147,7 @@ public enum Documents {
         """
     public static let conversationEvents = """
         subscription ($conversationId: String!) {
-          AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId }
+          AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind }
         }
         """
 
@@ -151,7 +155,7 @@ public enum Documents {
     public static let all: [String: String] = [
         "session": session, "agent": agent, "conversations": conversations, "conversation": conversation, "ask": ask,
         "startConversation": startConversation, "resolveConfirmation": resolveConfirmation, "answerQuestion": answerQuestion,
-        "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "registerPhone": registerPhone,
+        "stopRun": stopRun, "answerLocation": answerLocation, "reportPresence": reportPresence, "reactToMessage": reactToMessage, "registerPhone": registerPhone,
         "updatePhone": updatePhone, "conversationEvents": conversationEvents, "answerCodingQuestion": answerCodingQuestion,
         "updateConversation": updateConversation, "deleteConversation": deleteConversation,
         "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices, "voice": voice,
@@ -475,6 +479,13 @@ extension Connection {
             variables["errorMessage"] = .string(errorMessage ?? "The location is not available.")
         }
         _ = try await execute(Documents.answerLocation, variables: variables, as: Answer.self)
+    }
+
+    /// Puts the person's reaction on a message, replacing theirs; an empty
+    /// emoji takes it away.
+    public func react(to messageId: String, emoji: String) async throws {
+        struct Answer: Decodable, Sendable { let ReactToAgentMessage: Bool? }
+        _ = try await execute(Documents.reactToMessage, variables: ["messageId": .string(messageId), "emoji": .string(emoji)], as: Answer.self)
     }
 
     public func reportPresence(isVisible: Bool) async throws {
