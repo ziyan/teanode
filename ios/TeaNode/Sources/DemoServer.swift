@@ -54,6 +54,8 @@
                 answer = Self.contacts
             } else if query.contains("AgentGraphPage") {
                 answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
+            } else if query.contains("ListAgentIdeas") {
+                answer = Self.ideas
             } else if query.contains("ListAgentGoals") {
                 answer = Self.goals
             } else if query.contains("GetSession") {
@@ -70,6 +72,15 @@
             {"conversationId":"g2","goalTitle":"Keep the reading list short","goalDescription":"Each week, drop what I will not read.","goalState":"working","goalStatus":"Dropped four articles this week.","goalSetAt":"2026-09-20T09:00:00Z","goalNextAt":"2026-10-17T09:00:00Z","lastAt":"2026-10-10T07:00:00Z"},
             {"conversationId":"g3","goalTitle":"Renew the passport","goalDescription":"Before the summer.","goalState":"met","goalStatus":"Renewed; the new one arrived.","goalSetAt":"2026-08-01T09:00:00Z","goalNextAt":null,"lastAt":"2026-09-02T07:00:00Z"}
             ]}}
+            """#
+
+        static let ideas = #"""
+            {"data":{"ListAgentIdeas":{"ideas":[
+            {"id":"i1","ideaKind":"personal","ideaCategory":null,"emoji":"🔧","headline":"Confirm the plumber for Thursday","body":"They asked you to confirm the 9:00 visit.","openingRequest":"Reply to the plumber that Thursday at 9 works.","suggestionReason":"From their message yesterday.","ideaStatus":"open","createdAt":"2026-10-10T08:00:00Z"},
+            {"id":"i2","ideaKind":"catalog","ideaCategory":"home","emoji":"🪴","headline":"Remind me to water the plants","body":"A weekly reminder on the day you choose.","openingRequest":"Remind me every Sunday to water the plants.","ideaStatus":"open","createdAt":"2026-10-01T08:00:00Z"},
+            {"id":"i3","ideaKind":"catalog","ideaCategory":"money","emoji":"💳","headline":"Watch for unusual charges","body":"Tell me when a charge is far above what a merchant usually takes.","openingRequest":"Watch my card for unusual charges.","ideaStatus":"open","createdAt":"2026-10-01T08:00:00Z"},
+            {"id":"i4","ideaKind":"catalog","ideaCategory":"mail","emoji":"📬","headline":"Unsubscribe from what I never read","ideaStatus":"done","createdAt":"2026-09-20T08:00:00Z","closedAt":"2026-09-21T08:00:00Z"}
+            ],"ideaCategories":[{"ideaCategory":"home","emojis":["🪴"]},{"ideaCategory":"money","emojis":["💳"]},{"ideaCategory":"mail","emojis":["📬"]}]}}}
             """#
 
         /// The tab a screenshot opens on: `-TeaNodeTab calendar`.
