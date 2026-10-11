@@ -92,7 +92,9 @@ type Settings struct {
 
 	// TranscriptionModel is the model; TranscriptionPrompt what the
 	// recording is about, which helps with names; SilenceMS the pause that
-	// ends an utterance.
+	// ends an utterance, or zero for the provider to judge from what was
+	// said whether the person has finished, so that a pause after a name
+	// or in the middle of a thought does not end it.
 	TranscriptionModel  string
 	TranscriptionPrompt string
 	SilenceMS           int
@@ -160,11 +162,69 @@ func Open(ctx context.Context, settings *Settings) (*Session, error) {
 		return nil, fmt.Errorf("voice: the provider could not be reached: %w", err)
 	}
 	session := &Session{conn: conn}
+	isJudgingFromWords := settings.SilenceMS <= 0
+	// Why the provider refused the first settings, said if the fallback
+	// fails too: the first refusal is the one that explains.
+	firstRefusal := ""
+	if err := session.send(configuration(settings, turnDetection(settings.SilenceMS))); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(configureWait))
+	for {
+		var event providerEvent
+		if err := conn.ReadJSON(&event); err != nil {
+			_ = conn.Close()
+			if firstRefusal != "" {
+				return nil, fmt.Errorf("voice: the provider refused the session: %s", firstRefusal)
+			}
+			return nil, fmt.Errorf("voice: the provider did not accept the session: %w", err)
+		}
+		switch event.Type {
+		case "session.updated":
+			_ = conn.SetReadDeadline(time.Time{})
+			return session, nil
+		case "error":
+			// A provider that cannot judge from the words still ends a
+			// turn on a pause: the call goes on with that.
+			if isJudgingFromWords {
+				isJudgingFromWords = false
+				firstRefusal = event.errorMessage()
+				if err := session.send(configuration(settings, turnDetection(fallbackSilenceMS))); err != nil {
+					_ = conn.Close()
+					return nil, err
+				}
+				continue
+			}
+			_ = conn.Close()
+			return nil, fmt.Errorf("voice: the provider refused the session: %s", event.errorMessage())
+		}
+	}
+}
+
+// fallbackSilenceMS is the pause that ends a turn when the provider cannot
+// judge from the words.
+const fallbackSilenceMS = 500
+
+// turnDetection is how the provider tells that somebody has finished: from
+// what they said when silenceMS is zero, otherwise after a pause that long.
+// Judging from the words, "medium" waits at most four seconds on somebody
+// who seems to be in the middle of a sentence, less than the six seconds of
+// silence a muted drawer sends, so muting still ends what was being said.
+func turnDetection(silenceMS int) map[string]any {
+	if silenceMS <= 0 {
+		return map[string]any{"type": "semantic_vad", "eagerness": "medium"}
+	}
+	return map[string]any{"type": "server_vad", "threshold": 0.5, "prefix_padding_ms": 300, "silence_duration_ms": silenceMS}
+}
+
+// configuration is the session's settings as the provider takes them.
+func configuration(settings *Settings, detection map[string]any) map[string]any {
 	transcription := map[string]any{"model": settings.TranscriptionModel}
 	if prompt := strings.TrimSpace(settings.TranscriptionPrompt); prompt != "" {
 		transcription["prompt"] = prompt
 	}
-	configure := map[string]any{
+	return map[string]any{
 		"type": "session.update",
 		"session": map[string]any{
 			"type": "transcription",
@@ -174,31 +234,11 @@ func Open(ctx context.Context, settings *Settings) (*Session, error) {
 					"transcription": transcription,
 					// The provider says when somebody starts and stops
 					// talking, and commits each utterance itself.
-					"turn_detection":  map[string]any{"type": "server_vad", "threshold": 0.5, "prefix_padding_ms": 300, "silence_duration_ms": settings.SilenceMS},
+					"turn_detection":  detection,
 					"noise_reduction": map[string]any{"type": "near_field"},
 				},
 			},
 		},
-	}
-	if err := session.send(configure); err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(configureWait))
-	for {
-		var event providerEvent
-		if err := conn.ReadJSON(&event); err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("voice: the provider did not accept the session: %w", err)
-		}
-		switch event.Type {
-		case "session.updated":
-			_ = conn.SetReadDeadline(time.Time{})
-			return session, nil
-		case "error":
-			_ = conn.Close()
-			return nil, fmt.Errorf("voice: the provider refused the session: %s", event.errorMessage())
-		}
 	}
 }
 

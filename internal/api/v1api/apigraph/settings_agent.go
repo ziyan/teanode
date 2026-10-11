@@ -283,7 +283,7 @@ type AgentToolsSettings struct {
 
 // AgentVoiceSettings is talking to the agent: whether it is on, which
 // provider transcribes it, the model, and the pause that ends a turn, zero
-// for the default.
+// for the provider to judge from what was said.
 type AgentVoiceSettings struct {
 	Enabled            bool   `json:"enabled"`
 	Provider           string `json:"provider"`

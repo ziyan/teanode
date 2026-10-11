@@ -1756,7 +1756,7 @@ export const en = {
   'agentSettings.voiceProvider': 'Provider (kind openai)',
   'agentSettings.voiceProviderFirst': 'The first one',
   'agentSettings.voiceModel': 'Transcription model',
-  'agentSettings.voiceSilence': 'Pause that ends a turn, ms (500)',
+  'agentSettings.voiceSilence': 'Pause that ends a turn, ms (empty: judged from the words)',
   'agentSettings.voiceAskModel': 'Model for calls (provider:model)',
   'agentSettings.voiceAskModelSame': 'The one typed turns use',
   'agentSettings.voiceSpeechModel': 'Speech model',

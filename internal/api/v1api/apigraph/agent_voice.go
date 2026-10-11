@@ -252,7 +252,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		BaseURL: provider.BaseURL, APIKey: provider.APIKey,
 		TranscriptionModel:  model,
 		TranscriptionPrompt: voicePrompt(found, owner),
-		SilenceMS:           configuration.Agent.Voice.EffectiveSilenceMS(),
+		SilenceMS:           configuration.Agent.Voice.SilenceMS,
 	})
 	if err != nil {
 		log.Warningf("%s's voice session could not start: %s", username, err)
