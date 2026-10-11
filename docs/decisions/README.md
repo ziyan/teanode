@@ -151,3 +151,8 @@ where a goal's turns run: in a conversation of its own, with an activity log
 and the things it made, and why the main conversation hears from a goal only
 when it needs the person. Its plan is
 `docs/planning/background-goals-execplan.md`.
+
+`20261011-a-reaction-is-a-mark-on-a-message-and-starts-no-turn.md` says
+how a reaction on a message of a conversation is kept (a row per reactor
+per message, gone with its message), why it wakes no turn, how the model
+reads one, and why the agent's own is an action of the conversation tool.

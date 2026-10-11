@@ -24,6 +24,7 @@ per-run sequence and a time.
 | `note` | queued, stopped, compacted, titled, out of rounds |
 | `navigate` | `open_page` asks the dashboard to show a page of itself: the path |
 | `locate` | the `location` tool asks the browser the person is chatting in where it is; the drawer that sent the turn, named by the `drawerId` it sent with `AskAgent`, answers with `AnswerAgentLocation`; for a turn no drawer sent, the one the person sent from last, while it is in view |
+| `reacted` | a reaction on a message changed: `messageId`, `emoji` (empty when it was taken away) and `reactorKind`, `person` or `agent`. Of no run, like a new title: no `runId`, never replayed |
 | `error` | the turn failed |
 | `done` | always last |
 
