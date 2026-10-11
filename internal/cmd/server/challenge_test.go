@@ -37,3 +37,32 @@ func TestThePlainListenerRedirectsToTLSWhenServingIt(t *testing.T) {
 		t.Errorf("got %d, want the dashboard", recorder.Code)
 	}
 }
+
+// The server's own console reaches the API over loopback, by its loopback
+// address, and is served where it arrives; anyone else on plain HTTP is
+// sent to HTTPS, a visitor forwarded over loopback by a proxy on this
+// machine included, since they name the server's public host.
+func TestTheConsoleIsServedOnThePlainListener(t *testing.T) {
+	t.Parallel()
+
+	dashboard := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(http.StatusOK)
+	})
+	redirecting := withChallengeHandler(dashboard, nil, true)
+	ask := func(url, remote string) int {
+		request := httptest.NewRequest(http.MethodPost, url, nil)
+		request.RemoteAddr = remote
+		recorder := httptest.NewRecorder()
+		redirecting.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+	if code := ask("http://127.0.0.1:10080/api/v1/graphql", "127.0.0.1:53000"); code != http.StatusOK {
+		t.Errorf("the console got %d", code)
+	}
+	if code := ask("http://mail.example.com/api/v1/graphql", "127.0.0.1:53000"); code != http.StatusPermanentRedirect {
+		t.Errorf("a visitor forwarded over loopback got %d", code)
+	}
+	if code := ask("http://127.0.0.1:10080/api/v1/graphql", "192.0.2.10:53000"); code != http.StatusPermanentRedirect {
+		t.Errorf("a remote caller naming a loopback host got %d", code)
+	}
+}
