@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.133.0] - 2026-10-11
+
+### Added
+
+- The TeaNode iPhone app can sign in with your username and password on your server's sign-in page, as well as with a connect code. The page says plainly that the app gets your whole account. (#388)
+
 ## [0.132.0] - 2026-10-11
 
 ### Added
