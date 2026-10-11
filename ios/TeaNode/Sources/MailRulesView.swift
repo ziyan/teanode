@@ -396,6 +396,17 @@ struct MailRuleWords {
         }
     }
 
+    /// A field as a rule's line names it: the editor's words say who
+    /// decided a category or a priority, which the line has no room for.
+    func shortField(_ field: String) -> String {
+        switch field {
+        case "category": String(localized: "Category")
+        case "priority": String(localized: "Priority")
+        case "needs-reply": String(localized: "Needs a reply")
+        default: self.field(field)
+        }
+    }
+
     func comparison(_ comparison: String) -> String {
         switch comparison {
         case "equals": String(localized: "is")
@@ -425,7 +436,7 @@ struct MailRuleWords {
     }
 
     private func describe(_ condition: MailRule.Condition) -> String {
-        let name = field(condition.field)
+        let name = shortField(condition.field)
         if condition.isBare { return name }
         let header = condition.field == "header" ? " " + (condition.header ?? "") : ""
         let value = condition.field == "priority" && !(condition.value ?? "").isEmpty ? priority(condition.value ?? "") : condition.value ?? ""

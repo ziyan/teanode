@@ -30,8 +30,13 @@ struct SessionsView: View {
                     }
                 }
                 Section {
-                    Button("Sign out every browser", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                    Button(role: .destructive) {
                         isRevokingAll = true
+                    } label: {
+                        // The symbol in red with its words: in a list it
+                        // would take the green of what can be pressed.
+                        Label("Sign out every browser", systemImage: "rectangle.portrait.and.arrow.right")
+                            .foregroundStyle(.red)
                     }
                 } footer: {
                     Text("Use it if you have lost a device. This iPhone stays connected.")
@@ -676,6 +681,7 @@ private struct StateTag<Style: ShapeStyle>: View {
 
     var body: some View {
         Label(text, systemImage: systemImage)
+            .labelStyle(.tag)
             .font(.caption)
             .foregroundStyle(style)
             .symbolRenderingMode(.hierarchical)

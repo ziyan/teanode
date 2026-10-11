@@ -4289,6 +4289,22 @@
         }
       }
     },
+    "All notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有通知"
+          }
+        }
+      }
+    },
     "All published": {
       "localizations": {
         "ja": {
@@ -18417,6 +18433,22 @@
         }
       }
     },
+    "Needs a reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信が必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要回复"
+          }
+        }
+      }
+    },
     "Needs a reply when": {
       "localizations": {
         "ja": {
@@ -19565,6 +19597,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未开启通知"
+          }
+        }
+      }
+    },
+    "No notifications chosen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知を選んでいません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未选择任何通知"
           }
         }
       }

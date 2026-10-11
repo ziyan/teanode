@@ -192,6 +192,23 @@ extension View {
     }
 }
 
+/// TagLabelStyle draws a small label that tells a row's state, such as
+/// "Disabled" or "No password", as one piece: its symbol just before its
+/// words. In a list a plain Label takes the row's icon column, which set the
+/// words far from their symbol.
+struct TagLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon
+            configuration.title
+        }
+    }
+}
+
+extension LabelStyle where Self == TagLabelStyle {
+    static var tag: TagLabelStyle { TagLabelStyle() }
+}
+
 extension View {
     /// The side menu's plain list, when the list is shown in it.
     func menuListStyle(_ isMenu: Bool = true) -> some View {

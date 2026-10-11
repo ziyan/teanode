@@ -173,7 +173,7 @@ struct PeopleView: View {
                 }
             }
         }
-        .navigationTitle("Users")
+        .navigationTitle("People")
         .searchable(text: $searchText, prompt: "Name, username or address")
         .overlay {
             if !directory.isLoaded && directory.isLoading {
@@ -1565,6 +1565,7 @@ private struct AccessTag<Style: ShapeStyle>: View {
 
     var body: some View {
         Label(text, systemImage: systemImage)
+            .labelStyle(.tag)
             .font(.caption)
             .foregroundStyle(style)
             .symbolRenderingMode(.hierarchical)

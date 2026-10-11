@@ -239,7 +239,7 @@ struct PhonesView: View {
                                 await load()
                             }
                         } label: {
-                            PairedPhoneRow(phone: phone)
+                            PairedPhoneRow(phone: phone, allNotificationKinds: phoneList.notificationKinds)
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = phone }
@@ -322,6 +322,9 @@ struct PhonesView: View {
 /// Only a phone notifications do not reach is marked.
 struct PairedPhoneRow: View {
     let phone: PairedPhone
+    /// Every kind there is, so a phone told about all of them says "All
+    /// notifications" rather than naming each.
+    var allNotificationKinds: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -331,10 +334,12 @@ struct PairedPhoneRow: View {
                 switch phone.notificationState {
                 case .notRegistered:
                     Label("No notifications", systemImage: "bell.slash")
+                        .labelStyle(.tag)
                         .font(.caption)
                         .foregroundStyle(.orange)
                 case .lastFailed:
                     Label("Last notification failed", systemImage: "exclamationmark.triangle")
+                        .labelStyle(.tag)
                         .font(.caption)
                         .foregroundStyle(.red)
                 case .notified:
@@ -342,7 +347,7 @@ struct PairedPhoneRow: View {
                 }
             }
             .symbolRenderingMode(.hierarchical)
-            let detailText = [phone.phoneModel, phone.notificationKinds.map { NotificationKindToggle.label(of: $0) }.joined(separator: ", "), phone.lastDeliveryError]
+            let detailText = [phone.phoneModel, notificationsText, phone.lastDeliveryError]
                 .filter { !$0.isEmpty }
                 .joined(separator: " · ")
             if !detailText.isEmpty {
@@ -357,6 +362,14 @@ struct PairedPhoneRow: View {
     static func displayName(_ phone: PairedPhone?) -> String {
         guard let phone, !phone.phoneName.isEmpty else { return String(localized: "A phone with no name") }
         return phone.phoneName
+    }
+
+    private var notificationsText: String {
+        if phone.notificationKinds.isEmpty { return String(localized: "No notifications chosen") }
+        if !allNotificationKinds.isEmpty, Set(allNotificationKinds).isSubset(of: Set(phone.notificationKinds)) {
+            return String(localized: "All notifications")
+        }
+        return phone.notificationKinds.map { NotificationKindToggle.label(of: $0) }.joined(separator: ", ")
     }
 }
 
@@ -554,6 +567,7 @@ struct PasskeyRow: View {
                 Label(
                     passkey.isSynced ? LocalizedStringKey("Synced") : LocalizedStringKey("This device only"),
                     systemImage: passkey.isSynced ? "icloud" : "key")
+                    .labelStyle(.tag)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .symbolRenderingMode(.hierarchical)
