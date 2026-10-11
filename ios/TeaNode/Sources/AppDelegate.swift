@@ -41,9 +41,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let pressed = PressedButton(response)
+        // iOS hands over this handler to be called once; it is called once,
+        // on the main actor, when the press has been dealt with.
+        nonisolated(unsafe) let finish = completionHandler
         Task { @MainActor in
             await self.perform(pressed)
-            completionHandler()
+            finish()
         }
     }
 
