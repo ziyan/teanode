@@ -2305,6 +2305,22 @@
         }
       }
     },
+    "Business services": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビジネスサービス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商业服务"
+          }
+        }
+      }
+    },
     "By": {
       "localizations": {
         "ja": {
@@ -3633,6 +3649,22 @@
         }
       }
     },
+    "Dining out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外食"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外出就餐"
+          }
+        }
+      }
+    },
     "Discard": {
       "localizations": {
         "ja": {
@@ -4081,6 +4113,22 @@
         }
       }
     },
+    "Education": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "教育"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "教育"
+          }
+        }
+      }
+    },
     "Email": {
       "localizations": {
         "ja": {
@@ -4157,6 +4205,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "结束"
+          }
+        }
+      }
+    },
+    "Entertainment": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "娯楽"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "娱乐"
           }
         }
       }
@@ -4305,6 +4369,22 @@
         }
       }
     },
+    "Fees": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手数料"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "费用"
+          }
+        }
+      }
+    },
     "File it under": {
       "localizations": {
         "ja": {
@@ -4321,6 +4401,38 @@
         }
       }
     },
+    "Filed as a transfer: the same amount went the other way in another of your accounts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "振替として分類：同じ金額が別の口座で逆向きに動きました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按转账归类：同一金额在你另一个账户中反向流动"
+          }
+        }
+      }
+    },
+    "Filed automatically": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動で分類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动归类"
+          }
+        }
+      }
+    },
     "Filed by %@": {
       "localizations": {
         "ja": {
@@ -4333,6 +4445,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "由 %@ 归类"
+          }
+        }
+      }
+    },
+    "Filed by a spending rule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出ルールで分類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由支出规则归类"
+          }
+        }
+      }
+    },
+    "Filed by the model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルが分類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由模型归类"
+          }
+        }
+      }
+    },
+    "Filed from the provider's category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーのカテゴリから分類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按服务商的类别归类"
           }
         }
       }
@@ -4753,6 +4913,22 @@
         }
       }
     },
+    "Gifts and donations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ギフト・寄付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "礼物与捐赠"
+          }
+        }
+      }
+    },
     "Give your agent something to work toward on its own, and it checks in when it needs you.": {
       "localizations": {
         "ja": {
@@ -4897,6 +5073,22 @@
         }
       }
     },
+    "Groceries": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "食料品"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日用杂货"
+          }
+        }
+      }
+    },
     "Group by": {
       "localizations": {
         "ja": {
@@ -4941,6 +5133,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有收据"
+          }
+        }
+      }
+    },
+    "Health": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医療・健康"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医疗健康"
           }
         }
       }
@@ -5069,6 +5277,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "历史"
+          }
+        }
+      }
+    },
+    "Housing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住居"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住房"
           }
         }
       }
@@ -5437,6 +5661,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不再进入收件箱"
+          }
+        }
+      }
+    },
+    "Kids": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子ども"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子女"
           }
         }
       }
@@ -8257,6 +8497,22 @@
         }
       }
     },
+    "Other": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        }
+      }
+    },
     "Other assets": {
       "localizations": {
         "ja": {
@@ -10081,6 +10337,22 @@
         }
       }
     },
+    "Shopping": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショッピング"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物"
+          }
+        }
+      }
+    },
     "Show": {
       "localizations": {
         "ja": {
@@ -11117,6 +11389,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在手机上和你的助手交谈。"
+          }
+        }
+      }
+    },
+    "Taxes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税费"
           }
         }
       }
@@ -12260,6 +12548,38 @@
         }
       }
     },
+    "Transfer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "振替"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转账"
+          }
+        }
+      }
+    },
+    "Transport": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交通"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交通"
+          }
+        }
+      }
+    },
     "Trash": {
       "localizations": {
         "ja": {
@@ -12288,6 +12608,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "废纸篓已清空"
+          }
+        }
+      }
+    },
+    "Travel": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旅行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旅行"
           }
         }
       }
@@ -12832,6 +13168,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "用户名"
+          }
+        }
+      }
+    },
+    "Utilities": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "光熱費"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "水电燃气"
           }
         }
       }

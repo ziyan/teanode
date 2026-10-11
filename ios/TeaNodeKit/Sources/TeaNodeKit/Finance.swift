@@ -127,14 +127,20 @@ public struct SpendingCategory: Codable, Hashable, Sendable, Identifiable {
 /// dashboard does: hidden ones left out, "Parent › Child", Other after the
 /// rest and Transfer last.
 public enum FinanceCategories {
-    public static func label(_ category: SpendingCategory, in categories: [SpendingCategory]) -> String {
+    /// A category as shown, under its parent; `named` is how one name is
+    /// shown, which turns a built-in name into the reader's words.
+    public static func label(
+        _ category: SpendingCategory, in categories: [SpendingCategory], named: (SpendingCategory) -> String = { $0.spendingCategoryName }
+    ) -> String {
         guard let parentId = category.parentSpendingCategoryId, !parentId.isEmpty,
             let parent = categories.first(where: { $0.id == parentId })
-        else { return category.spendingCategoryName }
-        return "\(parent.spendingCategoryName) › \(category.spendingCategoryName)"
+        else { return named(category) }
+        return "\(named(parent)) › \(named(category))"
     }
 
-    public static func pickable(_ categories: [SpendingCategory], keeping chosen: String? = nil) -> [SpendingCategory] {
+    public static func pickable(
+        _ categories: [SpendingCategory], keeping chosen: String? = nil, named: (SpendingCategory) -> String = { $0.spendingCategoryName }
+    ) -> [SpendingCategory] {
         let shown = categories.filter { $0.isHidden != true || $0.id == chosen }
         func rank(_ category: SpendingCategory) -> Int {
             if category.isTransfer == true { return 2 }
@@ -145,7 +151,7 @@ public enum FinanceCategories {
             let leftRank = rank(left)
             let rightRank = rank(right)
             if leftRank != rightRank { return leftRank < rightRank }
-            return label(left, in: categories).localizedStandardCompare(label(right, in: categories)) == .orderedAscending
+            return label(left, in: categories, named: named).localizedStandardCompare(label(right, in: categories, named: named)) == .orderedAscending
         }
     }
 }

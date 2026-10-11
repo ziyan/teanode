@@ -49,12 +49,12 @@ struct BudgetsView: View {
                 Text("Budgets")
             }
             Section("Categories") {
-                ForEach(finance.categories.sorted { ($0.isTransfer == true || $0.isOther == true ? 1 : 0, $0.spendingCategoryName) < ($1.isTransfer == true || $1.isOther == true ? 1 : 0, $1.spendingCategoryName) }) { category in
+                ForEach(finance.categories.sorted { ($0.isTransfer == true || $0.isOther == true ? 1 : 0, finance.label($0)) < ($1.isTransfer == true || $1.isOther == true ? 1 : 0, finance.label($1)) }) { category in
                     Button {
                         editingCategory = CategoryDraft(category)
                     } label: {
                         HStack {
-                            Text(FinanceCategories.label(category, in: finance.categories))
+                            Text(finance.label(category))
                             Spacer()
                             if category.isIncome == true { Chip(text: String(localized: "Income"), isAlert: false) }
                             if category.isHidden == true { Chip(text: String(localized: "Hidden"), isAlert: false) }
@@ -162,8 +162,8 @@ struct BudgetEditor: View {
             Form {
                 Picker("Category", selection: $draft.categoryId) {
                     Text("Choose").tag("")
-                    ForEach(FinanceCategories.pickable(finance.categories, keeping: draft.categoryId).filter { $0.isTransfer != true }) { category in
-                        Text(FinanceCategories.label(category, in: finance.categories)).tag(category.id)
+                    ForEach(finance.pickable(keeping: draft.categoryId).filter { $0.isTransfer != true }) { category in
+                        Text(finance.label(category)).tag(category.id)
                     }
                 }
                 .disabled(draft.isEditing)
@@ -244,7 +244,7 @@ struct CategoryEditor: View {
                     Picker("Under", selection: $draft.parentId) {
                         Text("Nothing").tag("")
                         ForEach(finance.categories.filter { ($0.parentSpendingCategoryId ?? "").isEmpty && $0.id != draft.categoryId && $0.isTransfer != true && $0.isOther != true }) { category in
-                            Text(category.spendingCategoryName).tag(category.id)
+                            Text(FinanceCategoryNames.shown(category)).tag(category.id)
                         }
                     }
                     Toggle("Income", isOn: $draft.isIncome)
@@ -333,8 +333,8 @@ struct RuleEditor: View {
                 TextField("Words to match", text: $draft.matchText)
                 Picker("Category", selection: $draft.categoryId) {
                     Text("Choose").tag("")
-                    ForEach(FinanceCategories.pickable(finance.categories, keeping: draft.categoryId)) { category in
-                        Text(FinanceCategories.label(category, in: finance.categories)).tag(category.id)
+                    ForEach(finance.pickable(keeping: draft.categoryId)) { category in
+                        Text(finance.label(category)).tag(category.id)
                     }
                 }
                 Picker("Account", selection: $draft.accountId) {

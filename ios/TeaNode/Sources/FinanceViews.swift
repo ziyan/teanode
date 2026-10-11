@@ -43,7 +43,18 @@ final class FinanceModel {
 
     func categoryName(_ id: String?) -> String {
         guard let category = category(id) else { return String(localized: "Uncategorized") }
-        return FinanceCategories.label(category, in: categories)
+        return label(category)
+    }
+
+    /// A category as shown: in the reader's words when it is one of the
+    /// built-in ones, under its parent.
+    func label(_ category: SpendingCategory) -> String {
+        FinanceCategories.label(category, in: categories, named: FinanceCategoryNames.shown)
+    }
+
+    /// The categories to choose from, in the order they are shown.
+    func pickable(keeping chosen: String?) -> [SpendingCategory] {
+        FinanceCategories.pickable(categories, keeping: chosen, named: FinanceCategoryNames.shown)
     }
 
     func account(_ id: String?) -> FinanceAccount? {
@@ -251,7 +262,7 @@ struct SpendingView: View {
                     ForEach(rows, id: \.spendingCategoryId) { row in
                         NavigationLink(value: TransactionLink(filter: filter(category: row.spendingCategoryId))) {
                             BudgetRow(
-                                name: row.spendingCategoryName ?? finance.categoryName(row.spendingCategoryId), spent: row.spendingAmount,
+                                name: finance.category(row.spendingCategoryId) != nil ? finance.categoryName(row.spendingCategoryId) : FinanceCategoryNames.shown(row.spendingCategoryName ?? ""), spent: row.spendingAmount,
                                 budget: row.budgetAmount, projected: row.projectedAmount, pace: row.budgetPace, currency: row.currencyCode)
                         }
                     }
@@ -534,8 +545,8 @@ struct TransactionsView: View {
     @ViewBuilder
     private func categoryMenu(_ transaction: FinanceTransaction) -> some View {
         Menu("Category") {
-            ForEach(FinanceCategories.pickable(finance.categories, keeping: transaction.spendingCategoryId)) { category in
-                Button(FinanceCategories.label(category, in: finance.categories)) {
+            ForEach(finance.pickable(keeping: transaction.spendingCategoryId)) { category in
+                Button(finance.label(category)) {
                     Task { await categorize(transaction, category) }
                 }
             }
@@ -543,7 +554,7 @@ struct TransactionsView: View {
     }
 
     private func categorize(_ transaction: FinanceTransaction, _ category: SpendingCategory) async {
-        _ = await finance.act(saying: String(localized: "Filed under \(category.spendingCategoryName)")) {
+        _ = await finance.act(saying: String(localized: "Filed under \(finance.label(category))")) {
             _ = try await finance.connection.categorize(transaction.id, as: category.id, makingRule: false)
         }
         await load(isMore: false)
@@ -629,8 +640,8 @@ struct TransactionFilterSheet: View {
                     }
                     Picker("Category", selection: $draft.spendingCategoryId) {
                         Text("All categories").tag("")
-                        ForEach(FinanceCategories.pickable(finance.categories, keeping: draft.spendingCategoryId)) { category in
-                            Text(FinanceCategories.label(category, in: finance.categories)).tag(category.id)
+                        ForEach(finance.pickable(keeping: draft.spendingCategoryId)) { category in
+                            Text(finance.label(category)).tag(category.id)
                         }
                     }
                     .disabled(draft.isUncategorized)
@@ -696,8 +707,8 @@ struct TransactionDetail: View {
                 Section {
                     Picker("Category", selection: $categoryId) {
                         Text("Uncategorized").tag("")
-                        ForEach(FinanceCategories.pickable(finance.categories, keeping: categoryId)) { category in
-                            Text(FinanceCategories.label(category, in: finance.categories)).tag(category.id)
+                        ForEach(finance.pickable(keeping: categoryId)) { category in
+                            Text(finance.label(category)).tag(category.id)
                         }
                     }
                     .onChange(of: categoryId) { previous, chosen in
@@ -705,7 +716,7 @@ struct TransactionDetail: View {
                         Task { await categorize(chosen, makingRule: false) }
                     }
                     if let by = transaction.categorizedBy, !by.isEmpty, by != "person" {
-                        Text("Filed by \(by)").font(.caption).foregroundStyle(.secondary)
+                        Text(FinanceCategoryNames.filedBy(by)).font(.caption).foregroundStyle(.secondary)
                     }
                     if !categoryId.isEmpty, madeRuleFor == nil {
                         Button("Always for this merchant") {
