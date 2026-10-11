@@ -312,8 +312,12 @@ type AskRun struct {
 	events       []Event
 	nextSequence int
 	// lastAnswer is the newest answer the turn gave, for the phone
-	// notification sent when a turn asked from the app finishes.
-	lastAnswer     string
+	// notification sent when the turn finishes; see isAnswerForPhone.
+	lastAnswer string
+	// lastWroteAt is when the person last wrote to the turn: when they
+	// asked it, or when a message of theirs was handed to it as it ran.
+	// It stands in for a presence report, which typing does not send.
+	lastWroteAt    time.Time
 	subscribers    map[int]chan Event
 	nextSubscriber int
 	finished       bool
@@ -477,6 +481,7 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	}
 	run := &AskRun{
 		ID:            security.NewULID(),
+		lastWroteAt:   time.Now(),
 		settings:      settings,
 		agent:         self,
 		subscribers:   map[int]chan Event{},

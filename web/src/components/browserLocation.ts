@@ -3,6 +3,8 @@
 // What it says goes to the agent, so it is in English, as the tools'
 // words are.
 
+import { newRandomId } from '../randomId'
+
 export interface BrowserLocationAnswer {
   latitudeDegrees?: number
   longitudeDegrees?: number
@@ -87,6 +89,5 @@ export function isAskedOfThisDrawer({
 
 // newDrawerId names one open drawer, for the turns it sends.
 export function newDrawerId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `drawer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return newRandomId('drawer')
 }

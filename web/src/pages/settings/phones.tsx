@@ -103,7 +103,13 @@ export function PhonesPage() {
       >
         {phones.length === 0 ? <SettingsEmpty>{t('phones.none')}</SettingsEmpty> : null}
         {phones.map((phone) => {
-          const detail = [phone.phoneModel, phone.notificationKinds.map(kindName).join(', ')]
+          // What a phone is told about, said as that: it can do everything
+          // the person can, and this is only which notifications reach it.
+          const told =
+            phone.notificationKinds.length === 0 || phone.notificationKinds.length === kinds.length
+              ? t('phones.notificationsAll')
+              : t('phones.notificationsSome', { kinds: phone.notificationKinds.map(kindName).join(', ') })
+          const detail = [phone.phoneModel, phone.canBeNotified ? told : '']
           if (phone.lastDeliveryError) detail.push(phone.lastDeliveryError)
           return (
             <SettingsRow
@@ -178,6 +184,7 @@ export function PhonesPage() {
           </label>
           <fieldset className="field">
             <legend>{t('phones.toldAbout')}</legend>
+            <p className="muted field-hint">{t('phones.toldAboutHint')}</p>
             {kinds.map((kind) => (
               <label key={kind} className="checkbox">
                 <input
