@@ -657,16 +657,36 @@ struct CardSurface<Content: View>: View {
     }
 }
 
-/// TypingBubble says the agent is working on an answer.
+/// TypingBubble says the agent is working on an answer: three dots rising in
+/// turn inside a bubble, as a person typing shows in Messages, so the wait
+/// reads as someone answering. The answer itself is set on the page, without
+/// a bubble, once its first words arrive.
 struct TypingBubble: View {
+    @Environment(\.accessibilityReduceMotion) private var isReducingMotion
+
     var body: some View {
-        AgentBubble {
-            Image(systemName: "ellipsis")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .symbolEffect(.variableColor.iterative, options: .repeating)
-                .frame(height: 20)
+        HStack {
+            TimelineView(.animation(paused: isReducingMotion)) { timeline in
+                let seconds = timeline.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        // Each dot peaks a third of a beat after the one
+                        // before it, and the beat is 1.2 seconds.
+                        let phase = isReducingMotion ? 0 : max(0, sin((seconds / 1.2 - Double(index) / 6) * 2 * .pi))
+                        Circle()
+                            .fill(.secondary)
+                            .frame(width: 8, height: 8)
+                            .opacity(0.4 + 0.6 * phase)
+                            .offset(y: -3 * phase)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+            Spacer(minLength: 56)
         }
+        .accessibilityElement()
         .accessibilityLabel("Thinking…")
     }
 }
