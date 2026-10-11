@@ -1,0 +1,669 @@
+import AuthenticationServices
+import CryptoKit
+import Foundation
+import Observation
+import SwiftUI
+import TeaNodeKit
+import UIKit
+import UserNotifications
+import WidgetKit
+
+/// AppModel is the app's sign-ins: every account kept in the keychain, the
+/// one in use and the connection made from it, and connecting, switching
+/// and signing out.
+@MainActor
+@Observable
+final class AppModel {
+    /// The one model: the screens, the notifications and Siri reach it.
+    static let shared = AppModel()
+
+    private(set) var account: Account?
+    /// Every server the app is signed in to, the one in use among them.
+    private(set) var accounts: [Account] = []
+    /// The Add account sheet, over the signed-in app.
+    var isAddingAccount = false
+    private(set) var connection: Connection?
+
+    /// Connections to accounts not in use, made to answer their
+    /// notifications, by account. Each account renews its sign-in through
+    /// one connection, so two never spend the same refresh token.
+    private var otherConnections: [String: Connection] = [:]
+
+    /// Why the app signed itself out, shown on the connect screen.
+    var signedOutText: String?
+
+    /// A connect link opened from outside the app, for the connect screen.
+    var openedLink: ConnectLink?
+
+    /// What to say about a connect link opened while signed in.
+    var openedLinkText: String?
+
+    var isShowingOpenedLinkText: Bool {
+        get { openedLinkText != nil }
+        set { if !newValue { openedLinkText = nil } }
+    }
+
+    /// This phone as the server knows it, once it has registered.
+    private(set) var phone: AgentPhone?
+
+    /// Whether the person allowed notifications.
+    private(set) var isNotificationAllowed = false
+
+    /// Why notifications could not be set up, for Settings.
+    private(set) var notificationProblemText: String?
+
+    /// A conversation a pressed notification asks to open.
+    var openedConversationId: String?
+
+    /// Something elsewhere in the app the person asked the agent about,
+    /// such as a mail; the conversation takes it as what the next message
+    /// refers to.
+    var askingAbout: AgentReference?
+
+    /// A page of the agent's knowledge a link asks to open.
+    var openedKnowledgePath: String?
+
+    /// A mail a link asks to open.
+    var openedMailItemId: String?
+
+    /// An address to write to, from a contact: compose opens with it.
+    var composingTo: String?
+
+    /// A part of the app the agent asked to show.
+    var openedSection: AppSection?
+    /// The section to open again after the app is drawn anew, as it is when
+    /// the display language changes.
+    var keptSection: AppSection?
+
+    /// Siri asked for a call: the conversation starts one once it can.
+    var isCallRequested = false
+
+    /// The call under way, for the buttons on its Live Activity.
+    weak var currentCall: VoiceCall?
+
+    /// A conversation opened to send its first message: an idea tried from
+    /// the Ideas page.
+    var openingRequest: OpeningRequest?
+
+    /// The agent took the app to the mailbox's mail programs, where the
+    /// person sets the phone up for mail, calendars and contacts.
+    var isShowingMailPrograms = false
+
+    /// The finance section a page of the dashboard's Finance names.
+    var openedFinancePart: FinancePart?
+
+    /// The open_page events already followed, by run and sequence, so a
+    /// feed replayed after the screen comes back does not move the app again.
+    private var shownNavigations: Set<String> = []
+
+    func show(path: String, once key: String) {
+        guard shownNavigations.insert(key).inserted else { return }
+        show(path: path)
+    }
+
+    /// Goes to the dashboard path the agent's open_page names, checked as
+    /// the dashboard checks it: the person's own pages, in plain segments.
+    func show(path written: String) {
+        let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
+        guard path.hasPrefix("/"), path.count <= 600 else { return }
+        let segments = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let isPlain = segments.allSatisfy { segment in
+            !segment.isEmpty && segment != "." && segment != ".."
+                && segment.allSatisfy { $0.isLetter || $0.isNumber || "-._~".contains($0) }
+        }
+        guard isPlain, let first = segments.first else { return }
+        switch first {
+        case "knowledge":
+            let page = segments.dropFirst().joined(separator: "/")
+            if page.isEmpty { openedSection = .knowledge } else { openedKnowledgePath = page }
+        case "mailbox":
+            if segments.count >= 3, segments[1] != "compose", segments[1] != "subscriptions" {
+                openedMailItemId = segments[2]
+            } else {
+                openedSection = .mail
+            }
+        case "finance":
+            guard path != "/finance/link" else { return }
+            // The dashboard's sections are written with dashes: net-worth.
+            if segments.count >= 2, let part = FinancePart.allCases.first(where: { $0.rawValue.lowercased() == segments[1].replacingOccurrences(of: "-", with: "") }) {
+                openedFinancePart = part
+            }
+            openedSection = .finance
+        case "settings":
+            openedSection = .settings
+            if segments.count >= 3, segments[1] == "mailbox", segments[2] == "devices" {
+                isShowingMailPrograms = true
+            }
+        case "connect":
+            // The agent shows the code to scan in the dashboard; this phone
+            // is the one connected.
+            if let account {
+                openedLinkText = String(localized: "This phone is already connected to \(account.server.host).")
+            }
+        default:
+            break
+        }
+    }
+
+    /// The agent's name, for the main conversation's title and the
+    /// composer; empty until read, or when the agent has none.
+    private(set) var agentName = ""
+
+    /// What the main conversation is called: the agent's name.
+    var agentTitle: String { agentName.isEmpty ? String(localized: "Your agent") : agentName }
+
+    /// Where a link in an answer goes. Web links open as they are; a mail
+    /// item or a memory page opens its page on the dashboard; anything else
+    /// is not followed, as the dashboard does not follow it.
+    func route(_ address: URL) -> OpenURLAction.Result {
+        let written = address.absoluteString
+        switch address.scheme?.lowercased() {
+        case "http", "https":
+            return .systemAction(address)
+        case "mail":
+            let itemId = String(written.dropFirst("mail:".count))
+            guard !itemId.isEmpty, itemId.allSatisfy({ $0.isLetter || $0.isNumber }) else { return .discarded }
+            // A mail link opens the conversation in the app's mail.
+            openedMailItemId = itemId
+            return .handled
+        case "memory":
+            let path = String(written.dropFirst("memory:".count).split(separator: "#").first ?? "")
+            let segments = path.split(separator: "/")
+            guard !segments.isEmpty, segments.count <= 8,
+                segments.allSatisfy({ $0.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" } })
+            else { return .discarded }
+            // A memory link opens the page in the app, under More.
+            openedKnowledgePath = path
+            return .handled
+        default:
+            return .discarded
+        }
+    }
+
+    /// A file being shown in Quick Look: pictures with pinch to zoom, and
+    /// any other kind the phone can show.
+    var previewAddress: URL?
+
+    /// Pictures already read, by their address on the server.
+    private var pictures: [String: UIImage] = [:]
+
+    /// Reads a picture the server keeps, once.
+    func picture(_ path: String) async -> UIImage? {
+        if let known = pictures[path] { return known }
+        guard let connection, let data = try? await connection.download(path), let picture = UIImage(data: data) else { return nil }
+        pictures[path] = picture
+        return picture
+    }
+
+    /// Shows a file the server keeps in Quick Look: read, written to a
+    /// place of the app's own under its name, then opened.
+    func preview(_ path: String, name: String) async {
+        guard let connection else { return }
+        do {
+            let data = try await connection.download(path)
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let safeName = name.isEmpty ? "file" : name.replacingOccurrences(of: "/", with: "-")
+            let address = folder.appendingPathComponent(safeName)
+            try data.write(to: address)
+            previewAddress = address
+        } catch {
+            previewProblemText = describe(error)
+        }
+    }
+
+    /// Why a file could not be shown.
+    var previewProblemText: String?
+
+    var isShowingPreviewProblem: Bool {
+        get { previewProblemText != nil }
+        set { if !newValue { previewProblemText = nil } }
+    }
+
+    /// Reads the agent's name.
+    func loadAgentName() async {
+        if let connection, let name = try? await connection.agentName() {
+            agentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    let store = KeychainAccountStore()
+    let transport: any HTTPTransport
+
+    /// Names this install to the server, so that when the agent asks where
+    /// the person is, the app the turn was started from is the one that
+    /// answers.
+    let drawerId: String
+
+    init() {
+        let defaults = UserDefaults.standard
+        if let saved = defaults.string(forKey: "drawerId") {
+            drawerId = saved
+        } else {
+            drawerId = UUID().uuidString
+            defaults.set(drawerId, forKey: "drawerId")
+        }
+        #if DEBUG
+            if DemoServer.isRequested {
+                transport = DemoServer()
+                account = DemoServer.account
+                connection = Connection(account: DemoServer.account, transport: transport)
+                return
+            }
+        #endif
+        transport = URLSessionTransport()
+        // A sign-in kept before the app shared a keychain group with its
+        // notification extension moves into the shared one, once.
+        if !defaults.bool(forKey: "isKeychainShared") {
+            try? Keychain.moveToSharedGroup("account")
+            defaults.set(true, forKey: "isKeychainShared")
+        }
+        let saved = try? store.load()
+        // The key made before each account had its own stays with the
+        // account in use, whose server was given it last.
+        try? PayloadKey.keyring.moveSingleKey(to: saved?.accountKey)
+        if let saved {
+            use(saved)
+        }
+    }
+
+    private func use(_ account: Account) {
+        let isChanged = account.accountKey != self.account?.accountKey
+        self.account = account
+        connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
+        accounts = (try? store.accounts().accounts) ?? [account]
+        // The widgets read the account in use; one that changed is read again.
+        if isChanged { WidgetCenter.shared.reloadAllTimelines() }
+    }
+
+    /// Puts another sign-in to use: the whole app is drawn again for it.
+    func switchTo(_ chosen: Account) async {
+        guard chosen.accountKey != account?.accountKey else { return }
+        try? store.activate(chosen.accountKey)
+        if let account, let connection {
+            otherConnections[account.accountKey] = connection
+        }
+        agentName = ""
+        phone = nil
+        use(chosen)
+        await setUpNotifications()
+    }
+
+    /// Takes a link iOS opened the app with. A connect code is used only
+    /// while the phone is signed out: one opened while signed in is left
+    /// unspent, and the person is told why.
+    func open(_ url: URL) {
+        guard let link = ConnectLink(url) else { return }
+        // Signed in already, the code adds an account beside the others; the
+        // person is shown whose it is before it is kept.
+        openedLink = link
+        if account != nil {
+            isAddingAccount = true
+        }
+    }
+
+    /// Exchanges a connect link's code for a sign-in and finds out whose it
+    /// is. Nothing is kept until the person confirms.
+    func exchange(_ link: ConnectLink) async throws -> PendingConnection {
+        guard let code = link.connectCode else {
+            throw ConnectProblem.hasNoCode
+        }
+        let signIn = SignIn(server: link.server, transport: transport)
+        let clientId = try await signIn.register()
+        var account = try await signIn.exchange(connectCode: code, clientId: clientId, deviceName: UIDevice.current.name)
+        account.username = try await username(of: account)
+        return PendingConnection(account: account)
+    }
+
+    /// Asks a server being added whose its new sign-in is. That server
+    /// ending the sign-in it just gave is its refusal, said as one: it is no
+    /// reason to sign out of the account in use.
+    private func username(of pending: Account) async throws -> String {
+        do {
+            return try await Connection(account: pending, transport: transport).username()
+        } catch TeaNodeError.signedOut {
+            throw TeaNodeError.refused(String(localized: "\(pending.server.host) did not accept the sign-in it gave this phone."))
+        }
+    }
+
+    /// Keeps a sign-in the person confirmed, and tells the server which
+    /// phone it is.
+    /// Signs in with a password on the server's own page, in a browser sheet
+    /// the app cannot read, and returns the sign-in to keep. The page says
+    /// the app gets the whole account; the code it returns is worth nothing
+    /// without the verifier this keeps.
+    func signIn(to server: ServerAddress, with session: WebAuthenticationSession) async throws -> PendingConnection {
+        let signIn = SignIn(server: server, transport: transport)
+        let clientId = try await signIn.register()
+        let verifier = Self.randomText()
+        let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
+        let state = Self.randomText()
+        let returned = try await session.authenticate(
+            using: signIn.authorizationAddress(clientId: clientId, codeChallenge: challenge, state: state), callbackURLScheme: "com.teanode.app")
+        guard let code = SignIn.authorizationCode(in: returned, state: state) else {
+            throw TeaNodeError.refused(String(localized: "The server did not sign this phone in."))
+        }
+        var account = try await signIn.exchange(authorizationCode: code, codeVerifier: verifier, clientId: clientId)
+        account.username = try await username(of: account)
+        return PendingConnection(account: account)
+    }
+
+    /// Thirty-two random bytes, as the URL-safe text PKCE and a state take.
+    private static func randomText() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return base64URL(Data(bytes))
+    }
+
+    private static func base64URL(_ data: Data) -> String {
+        data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    func confirm(_ pending: PendingConnection) async {
+        try? store.add(pending.account)
+        // A connection kept for the same account holds the sign-in this one
+        // replaces.
+        otherConnections[pending.account.accountKey] = nil
+        isAddingAccount = false
+        agentName = ""
+        phone = nil
+        use(pending.account)
+        signedOutText = nil
+        await setUpNotifications()
+    }
+
+    /// Asks to send notifications and registers for them. Done after
+    /// connecting and each time the app starts, so a new device token, or a
+    /// registration the relay no longer takes, heals on its own.
+    func setUpNotifications() async {
+        guard let connection else { return }
+        #if DEBUG
+            // The screenshots CI takes would show the permission prompt.
+            if DemoServer.isRequested { return }
+        #endif
+        let center = UNUserNotificationCenter.current()
+        isNotificationAllowed = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        if isNotificationAllowed {
+            // The device token arrives in AppDelegate, which hands it to
+            // register(deviceToken:).
+            UIApplication.shared.registerForRemoteNotifications()
+        } else {
+            // Listed on the dashboard all the same, as a phone that is told
+            // nothing.
+            phone = try? await connection.registerPhone(phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier)
+        }
+    }
+
+    /// Registers the device token with the relay and hands the sealed
+    /// registration to the server of every account, each with the key its
+    /// notifications are encrypted with.
+    func register(deviceToken: Data) async {
+        guard let connection, let account else { return }
+        #if DEBUG
+            // A build installed from Xcode is delivered to by Apple's sandbox.
+            let isSandbox = true
+        #else
+            let isSandbox = false
+        #endif
+        do {
+            let pushRegistration = try await PushRelay(transport: transport).register(deviceToken: deviceToken, isSandbox: isSandbox)
+            phone = try await connection.registerPhone(
+                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier,
+                pushRegistration: pushRegistration, payloadKey: try PayloadKey.current(for: account.accountKey))
+            notificationProblemText = nil
+            await registerOtherAccounts(pushRegistration: pushRegistration)
+        } catch {
+            notificationProblemText = describe(error)
+        }
+    }
+
+    /// Registers the phone with the servers of the accounts not in use, each
+    /// with its own key. A server still holding the key from before each
+    /// account had its own would have its notifications opened as another
+    /// account's. One that cannot be reached is tried again at the next
+    /// launch, and says nothing: the account in use is fine.
+    private func registerOtherAccounts(pushRegistration: String) async {
+        let others = ((try? store.accounts().accounts) ?? []).filter { $0.accountKey != account?.accountKey }
+        for other in others {
+            guard let payloadKey = try? PayloadKey.current(for: other.accountKey) else { continue }
+            _ = try? await connection(for: other).registerPhone(
+                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier, pushRegistration: pushRegistration, payloadKey: payloadKey)
+        }
+    }
+
+    /// The connection to an account: the one in use, or one kept for it.
+    private func connection(for chosen: Account) -> Connection {
+        if chosen.accountKey == account?.accountKey, let connection {
+            return connection
+        }
+        if let kept = otherConnections[chosen.accountKey] {
+            return kept
+        }
+        let made = Connection(account: chosen, transport: transport, store: store)
+        otherConnections[chosen.accountKey] = made
+        return made
+    }
+
+    /// The account a notification came from, while it is on the phone. One
+    /// shown before each account had its own key does not say; it can only
+    /// be the one account when there is one.
+    private func notifyingAccount(_ info: NotificationInfo) -> Account? {
+        let kept = (try? store.accounts().accounts) ?? accounts
+        if info.accountKey.isEmpty {
+            return kept.count == 1 ? kept.first : nil
+        }
+        return kept.first { $0.accountKey == info.accountKey }
+    }
+
+    func noteNotificationFailure(_ error: Error) {
+        notificationProblemText = error.localizedDescription
+    }
+
+    /// Whether this phone is told about a kind of notification.
+    func wants(_ notificationKind: String) -> Bool {
+        guard let phone else { return true }
+        return phone.notificationKinds.isEmpty || phone.notificationKinds.contains(notificationKind)
+    }
+
+    /// Turns one kind of notification on or off for this phone. At least
+    /// one stays on: none chosen means every kind.
+    func setNotificationKind(_ notificationKind: String, isOn: Bool) async {
+        guard let connection, let phone, wants(notificationKind) != isOn else { return }
+        var kinds = phone.notificationKinds.isEmpty ? AgentPhone.allNotificationKinds : phone.notificationKinds
+        if isOn {
+            kinds.append(notificationKind)
+        } else {
+            kinds.removeAll { $0 == notificationKind }
+        }
+        guard !kinds.isEmpty else { return }
+        do {
+            self.phone = try await connection.updatePhone(phone.id, notificationKinds: kinds)
+        } catch {
+            notificationProblemText = describe(error)
+        }
+    }
+
+    /// Does what a pressed notification button says, in the background
+    /// when the button does not open the app, as the account the
+    /// notification came from. Opening one of another account's switches to
+    /// that account first.
+    func perform(_ pressed: PressedButton) async {
+        guard let info = pressed.info else { return }
+        let isOpening = pressed.actionIdentifier == UNNotificationDefaultActionIdentifier || pressed.actionIdentifier == "open"
+        guard let notifying = notifyingAccount(info) else {
+            let text =
+                info.accountKey.isEmpty
+                ? String(localized: "That notification does not say which account it is from. Answer it in TeaNode.")
+                : String(localized: "That notification came from an account that is no longer on this phone.")
+            if isOpening {
+                openedLinkText = text
+            } else {
+                await tell(text)
+            }
+            return
+        }
+        if isOpening {
+            await switchTo(notifying)
+            if !info.conversationId.isEmpty {
+                openedConversationId = info.conversationId
+            }
+            return
+        }
+        let notifyingConnection = connection(for: notifying)
+        do {
+            switch pressed.actionIdentifier {
+            case "approve", "deny":
+                try await notifyingConnection.resolveConfirmation(runId: info.runId, callId: info.callId, isApproved: pressed.actionIdentifier == "approve")
+            case "reply":
+                let text = (pressed.typedText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                if info.notificationKind == "question", !info.callId.isEmpty {
+                    try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: text)
+                } else {
+                    _ = try await notifyingConnection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
+                }
+            default:
+                guard let answer = info.answers[pressed.actionIdentifier] else { return }
+                try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
+            }
+        } catch {
+            await tell(String(localized: "That did not reach your agent: \(describe(error))"))
+        }
+    }
+
+    /// Says something where a notification's button was: nobody is looking
+    /// at the app.
+    private func tell(_ text: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = "TeaNode"
+        content.body = text
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// Gives up a sign-in the person chose not to keep.
+    func decline(_ pending: PendingConnection) async {
+        await SignIn(server: pending.account.server, transport: transport).revoke(pending.account)
+    }
+
+    /// Signs this phone out: on the server too, unless the server already
+    /// ended the sign-in.
+    /// Signs out of the account in use, forgets the key its notifications
+    /// are encrypted with, and puts the next one to use.
+    func signOut(signedOutText: String? = nil) async {
+        if let account, signedOutText == nil {
+            await SignIn(server: account.server, transport: transport).revoke(account)
+        }
+        let gone = account?.server.host ?? ""
+        if let account {
+            try? PayloadKey.keyring.forget(for: account.accountKey)
+        }
+        try? store.delete()
+        phone = nil
+        agentName = ""
+        if let next = try? store.load() {
+            use(next)
+            if let signedOutText {
+                openedLinkText = String(localized: "Signed out of \(gone): \(signedOutText)")
+            }
+            await setUpNotifications()
+            return
+        }
+        account = nil
+        accounts = []
+        connection = nil
+        self.signedOutText = signedOutText
+    }
+
+    /// Signs out of the account in use when its own connection found the
+    /// sign-in ended. Another server ending its sign-in (an account being
+    /// added, another account's notification) says nothing about this one;
+    /// and the same failure reported again by another screen, after the
+    /// sign out, finds another connection in use and does nothing.
+    private func signOut(ifEnded ended: Connection, signedOutText: String) async {
+        guard await ended.isSignedOut, ended === connection else { return }
+        await signOut(signedOutText: signedOutText)
+    }
+
+    /// Signs out of an account not in use, keeping the one in use.
+    func signOut(of other: Account) async {
+        guard other.accountKey != account?.accountKey else {
+            await signOut()
+            return
+        }
+        await SignIn(server: other.server, transport: transport).revoke(other)
+        otherConnections[other.accountKey] = nil
+        try? PayloadKey.keyring.forget(for: other.accountKey)
+        try? store.remove(other.accountKey)
+        accounts = (try? store.accounts().accounts) ?? accounts
+    }
+
+    /// What to show for an error from the server. An ended sign-in of the
+    /// account in use signs the app out of it, since nothing else will work
+    /// until it connects again.
+    func describe(_ error: Error) -> String {
+        if let error = error as? TeaNodeError, error == .signedOut, let connection {
+            Task { await signOut(ifEnded: connection, signedOutText: error.localizedDescription) }
+        }
+        if let error = error as? LocalizedError, let description = error.errorDescription {
+            return description
+        }
+        // A request called off is not the server failing: it is said as
+        // iOS says it, which the toasts know to leave out.
+        if (error as? URLError)?.code == .cancelled || error is CancellationError {
+            return URLError(.cancelled).localizedDescription
+        }
+        if (error as? URLError) != nil {
+            return String(localized: "The server could not be reached. Check the connection and try again.")
+        }
+        return error.localizedDescription
+    }
+}
+
+/// PendingConnection is a sign-in waiting for the person to say it is the
+/// right server and the right account.
+struct PendingConnection: Identifiable {
+    let id = UUID()
+    let account: Account
+}
+
+/// ConnectProblem is what is wrong with a scanned or pasted link.
+enum ConnectProblem: LocalizedError {
+    case isNotALink
+    case hasNoCode
+
+    var errorDescription: String? {
+        switch self {
+        case .isNotALink:
+            return String(localized: "That is not a TeaNode connect code. Use the code on your dashboard's Connect a phone page.")
+        case .hasNoCode:
+            return String(localized: "That link has no code in it. Make a new one on your dashboard's Connect a phone page.")
+        }
+    }
+}
+
+/// Device is what this phone is.
+enum Device {
+    /// The model's identifier, such as "iPhone17,1".
+    static var modelIdentifier: String {
+        var system = utsname()
+        uname(&system)
+        return withUnsafeBytes(of: &system.machine) { bytes in
+            String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+    }
+}
+
+/// PressedButton is a button pressed on a notification, read out of iOS's
+/// response so it can cross to the main actor.
+struct PressedButton: Sendable {
+    let actionIdentifier: String
+    let typedText: String?
+    let info: NotificationInfo?
+
+    init(_ response: UNNotificationResponse) {
+        actionIdentifier = response.actionIdentifier
+        typedText = (response as? UNTextInputNotificationResponse)?.userText
+        info = NotificationInfo(userInfo: response.notification.request.content.userInfo)
+    }
+}

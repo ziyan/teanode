@@ -7,7 +7,7 @@ import Foundation
 /// People type `mail.example.com`, paste the dashboard's address with a page
 /// on the end, or scan a link that names the server. All of these mean the
 /// same server.
-public struct ServerAddress: Equatable, Hashable, Sendable, CustomStringConvertible {
+public struct ServerAddress: Equatable, Hashable, Sendable, CustomStringConvertible, Codable {
     /// The server's origin, such as `https://mail.example.com:10443`.
     public let origin: URL
 
@@ -61,9 +61,17 @@ public struct ServerAddress: Equatable, Hashable, Sendable, CustomStringConverti
 
     /// The address of one of the server's endpoints, such as
     /// `/api/v1/graphql`.
+    /// An address on the server. A query after "?" stays a query, as it is
+    /// written: put in the path, its "?" would be escaped and the address
+    /// would name nothing.
     public func endpoint(_ path: String) -> URL {
         var components = URLComponents(url: origin, resolvingAgainstBaseURL: false)!
-        components.path = path.hasPrefix("/") ? path : "/" + path
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let pathPart = String(parts.first ?? "")
+        components.path = pathPart.hasPrefix("/") ? pathPart : "/" + pathPart
+        if parts.count > 1 {
+            components.percentEncodedQuery = String(parts[1])
+        }
         return components.url!
     }
 
@@ -77,6 +85,20 @@ public struct ServerAddress: Equatable, Hashable, Sendable, CustomStringConverti
 
     public var description: String {
         origin.absoluteString
+    }
+
+    /// The host alone, as a person reads it: "mail.example.com".
+    public var host: String {
+        origin.host ?? origin.absoluteString
+    }
+
+    public init(from decoder: Decoder) throws {
+        try self.init(parsing: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(description)
     }
 
     static func isLoopback(_ host: String) -> Bool {

@@ -1,0 +1,30 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Ask ${applicationName}" : {
+      "localizations" : {
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "${applicationName} に聞く" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "问 ${applicationName}" } }
+      }
+    },
+    "Ask my agent in ${applicationName}" : {
+      "localizations" : {
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "${applicationName} でエージェントに聞く" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 ${applicationName} 里问我的助手" } }
+      }
+    },
+    "Call ${applicationName}" : {
+      "localizations" : {
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "${applicationName} に電話" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "呼叫 ${applicationName}" } }
+      }
+    },
+    "Talk to ${applicationName}" : {
+      "localizations" : {
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "${applicationName} と話す" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "和 ${applicationName} 说话" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

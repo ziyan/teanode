@@ -70,12 +70,104 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           -quiet
 
+      # What the screens look like, for the review ios/DESIGN.md asks for:
+      # the connect screen, and a conversation of invented data from the
+      # debug build's demo server, in light, dark and the largest text size.
+      - name: Take screenshots
+        working-directory: ios
+        run: |
+          app=build/Build/Products/Debug-iphonesimulator/TeaNode.app
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
+          device=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro")]
+          print(phones[-1]["udid"])')
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          mkdir -p screenshots
+          shoot() {
+            name=$1 appearance=$2 size=$3
+            shift 3
+            xcrun simctl ui "$device" appearance "$appearance"
+            xcrun simctl ui "$device" content_size "$size"
+            xcrun simctl terminate "$device" "$bundle" 2>/dev/null || true
+            xcrun simctl launch "$device" "$bundle" "$@"
+            sleep 8
+            xcrun simctl io "$device" screenshot "screenshots/$name.png"
+          }
+          shoot connect-light light large
+          shoot connect-dark dark large
+          shoot conversation-light light large -TeaNodeDemo
+          shoot conversation-dark dark large -TeaNodeDemo
+          shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
+          shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
+          shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
+          shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
+          shoot calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
+          shoot calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
+          shoot calendar-chinese-light light large -TeaNodeDemo -TeaNodeTab calendar -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN
+          shoot calendar-day-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot calendar-day-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
+          shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
+          shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
+          shoot menu-light light large -TeaNodeDemo -TeaNodeMenu
+          shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
+          shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
+          shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
+          shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
+          shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
+          shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
+          # Settings, and the screens it pushes, named by -TeaNodeScreen.
+          shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
+          shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
+          shoot agent-settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-settings
+          shoot manage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen manage
+          shoot people-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen people
+          shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
+          shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions
+          shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones
+          shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
+          shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
+          shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
+
+          # The App Store's set: the largest iPhone, which its listing needs,
+          # with the status bar Apple's own screenshots show.
+          xcrun simctl shutdown "$device"
+          device=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro Max")]
+          print(phones[-1]["udid"])')
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
+          mkdir -p screenshots/store
+          shoot store/1-conversation light large -TeaNodeDemo
+          shoot store/2-mail light large -TeaNodeDemo -TeaNodeTab mail
+          shoot store/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
+          shoot store/4-goals light large -TeaNodeDemo -TeaNodeTab goals
+          shoot store/5-menu dark large -TeaNodeDemo -TeaNodeMenu
+          shoot store/6-conversation-dark dark large -TeaNodeDemo
+
+      - name: Keep the screenshots
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshots
+          path: ios/screenshots
+
   # Signs the app and uploads it to App Store Connect, where it appears in
   # TestFlight once Apple has processed it (usually 10 to 30 minutes).
-  # Signing is automatic: the App Store Connect key in the secrets, with
-  # the Admin role, lets Xcode make and fetch the certificate and profile it
-  # needs, so no certificate is kept anywhere. Only a push to main or to an
-  # ios/... branch uploads, never a pull request.
+  # Signing is automatic: the development certificate kept in the secrets
+  # signs the archive, and the App Store Connect key, with the Admin role,
+  # lets Xcode fetch the profiles and the distribution certificate it
+  # needs. Only a push to main or to an ios/... branch uploads, never a
+  # pull request.
   testflight:
     name: TestFlight
     if: github.event_name != 'pull_request'
@@ -88,19 +180,40 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The project is generated, with what Homebrew installs, before the
+      # App Store Connect key is on disk: nothing installed reads it.
+      - name: Generate the project
+        working-directory: ios
+        run: |
+          printf 'DEVELOPMENT_TEAM = %s\n' "$TEAM" > Configuration/Identity.xcconfig
+          brew install xcodegen
+          xcodegen generate
+
       - name: Put the App Store Connect key where Xcode reads it
         env:
           KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s' "$KEY" > "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
-          printf 'DEVELOPMENT_TEAM = %s\n' "$TEAM" > ios/Configuration/Identity.xcconfig
 
-      - name: Generate the project
-        working-directory: ios
+      # Archiving signs with a development certificate. One is kept in the
+      # secrets and put in a keychain of the run's own; without it Xcode
+      # would make a new certificate every run, and Apple allows only a few.
+      - name: Put the signing certificate in a keychain
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATE_PASSWORD }}
         run: |
-          brew install xcodegen
-          xcodegen generate
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 16)
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/keys/development.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/keys/development.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/keys/development.p12"
 
       # The build number is the workflow's run number, which only grows, as
       # App Store Connect requires of builds of one version.
@@ -131,6 +244,8 @@ jobs:
           -authenticationKeyID "$KEY_ID"
           -authenticationKeyIssuerID "$ISSUER_ID"
 
-      - name: Forget the key
+      - name: Forget the keys
         if: always()
-        run: rm -rf "$RUNNER_TEMP/keys" ios/Configuration/Identity.xcconfig
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/keys" ios/Configuration/Identity.xcconfig

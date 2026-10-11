@@ -1,0 +1,1768 @@
+import PhotosUI
+import QuickLook
+import SwiftUI
+import TeaNodeKit
+
+/// The switches that choose how much of a conversation shows, kept on the
+/// phone as the dashboard keeps them in the browser.
+enum TranscriptPreference {
+    static let showToolCalls = "showToolCalls"
+    static let showUsage = "showUsage"
+    static let showWorkingNotes = "showWorkingNotes"
+
+    /// Notes about how the agent works rather than what it did, shown only
+    /// with the working notes.
+    static let workingNoteKinds: Set<String> = ["depth", "call_unreadable"]
+}
+
+/// ConversationView is one conversation, laid out like a messaging app: the
+/// person's messages on the right, the agent's on the left, and the composer
+/// floating over them.
+struct ConversationView: View {
+    @State var model: ConversationModel
+    @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(TranscriptPreference.showToolCalls) private var isShowingToolCalls = true
+    @AppStorage(TranscriptPreference.showUsage) private var isShowingUsage = false
+    @AppStorage(TranscriptPreference.showWorkingNotes) private var isShowingWorkingNotes = false
+    @State private var isAtEnd = true
+    /// Where the transcript is scrolled: jumping to its bottom edge works
+    /// however far up it is, where scrolling to the last line needs that
+    /// line built, which a long lazy list has not done.
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    @State private var status = StatusModel()
+    @State private var isShowingStatus = false
+
+    private static let endId = "end"
+
+    var body: some View {
+        framed
+            .modifier(ConversationFollowing(model: model, status: status))
+            .modifier(ConversationAlerts(model: model))
+    }
+
+    /// The conversation with its bars, title and status.
+    private var framed: some View {
+        transcript
+            .safeAreaInset(edge: .top, spacing: 0) {
+                ConversationBanners(model: model)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomBar
+            }
+            .overlay { loading }
+            .navigationTitle(model.title)
+            .navigationBarTitleDisplayMode(.inline)
+            // The bar is see-through: the messages run under it, and only
+            // its buttons and the name float above them.
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(model.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .glassEffect(in: .capsule)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    StatusButton(status: status) { isShowingStatus = true }
+                }
+            }
+            .sheet(isPresented: $isShowingStatus) {
+                if let connection = app.connection {
+                    StatusSheet(status: status, connection: connection)
+                }
+            }
+            .sheet(item: Binding(get: { model.selectingText.map(SelectingText.init) }, set: { model.selectingText = $0?.text })) { selecting in
+                SelectTextSheet(text: selecting.text)
+            }
+    }
+
+    /// The messages, scrolling, with the jump to the end.
+    private var transcript: some View {
+        ScrollViewReader { scroller in
+            ScrollView {
+                messages(scroller)
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+            }
+            .scrollPosition($scrollPosition)
+            // The jump to the end is offered only when the end is well out
+            // of sight, judged from where the scroll is rather than from a
+            // last line, which a new conversation may not have laid out.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY < 160
+            } action: { _, isNearEnd in
+                isAtEnd = isNearEnd
+            }
+            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .scrollDismissesKeyboard(.immediately)
+            .overlay(alignment: .bottomTrailing) {
+                if !isAtEnd {
+                    Button {
+                        withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.headline)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel("Jump to the end")
+                    .padding()
+                }
+            }
+            .onChange(of: model.sentCount) {
+                withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+            }
+        }
+    }
+
+    private func messages(_ scroller: ScrollViewProxy) -> some View {
+        LazyVStack(alignment: .leading, spacing: 10) {
+            if model.earlierCount > 0 {
+                // Reaching the top reads the page before it, and the
+                // line that was first stays where it was.
+                Button {
+                    loadEarlier(scroller)
+                } label: {
+                    if model.isLoadingEarlier {
+                        ProgressView()
+                    } else {
+                        Text("\(model.earlierCount) earlier messages")
+                    }
+                }
+                .buttonStyle(.glass)
+                .frame(maxWidth: .infinity)
+                .onAppear { loadEarlier(scroller) }
+            }
+            ForEach(ConversationItem.items(of: shownLines)) { item in
+                ConversationItemView(
+                    item: item, model: model, isShowingUsage: isShowingUsage,
+                    isShowingToolCalls: isShowingToolCalls || model.conversation?.jobKind == "mcp")
+                    .id(item.id)
+            }
+            if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
+                TypingBubble()
+            }
+            if model.runningRunId == nil, !model.transcript.offeredSuggestions.isEmpty {
+                SuggestionsRow(suggestions: model.transcript.offeredSuggestions) { suggestion in
+                    Task { await model.sendSuggestion(suggestion) }
+                }
+            }
+            if model.isLoaded, model.transcript.lines.isEmpty {
+                EmptyConversation(model: model)
+            }
+            Color.clear.frame(height: 1).id(Self.endId)
+        }
+    }
+
+    /// Whether the agent's steps show: while a turn works through them, and
+    /// after it while any is left.
+    private var isShowingTodos: Bool {
+        !model.todos.isEmpty && (model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }))
+    }
+
+    /// The message replied to, the agent's steps tucked behind the composer,
+    /// and the composer.
+    private var bottomBar: some View {
+        VStack(spacing: 8) {
+            ForEach(model.references, id: \.self) { reference in
+                let drop = { model.references.removeAll { $0 == reference } }
+                if let subject = reference.subject {
+                    ReferenceBar(subject: subject, from: reference.from ?? "", onCancel: drop)
+                } else if let path = reference.path {
+                    ReferenceStrip(systemImage: "brain", title: reference.name ?? path, detail: path, onCancel: drop)
+                } else if reference.financeTransactionId != nil {
+                    ReferenceStrip(
+                        systemImage: "creditcard", title: reference.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reference.description ?? "",
+                        detail: [FinanceMoney.shown(reference.amount, currencyCode: reference.currencyCode), reference.postedOn ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
+                        onCancel: drop)
+                } else {
+                    ReplyBar(reply: reference, onCancel: drop)
+                }
+            }
+            // The steps sit behind the composer and stick out above it,
+            // sliding up from behind it when a turn makes a list and back
+            // down when the turn ends with nothing left.
+            VStack(spacing: -TodoPanel.tuckedUnder) {
+                if isShowingTodos {
+                    TodoPanel(todos: model.todos)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(0)
+                }
+                Group {
+                    if let call = model.call {
+                        CallBar(call: call)
+                    } else {
+                        Composer(model: model)
+                    }
+                }
+                .zIndex(1)
+            }
+            .animation(.spring(duration: 0.4, bounce: 0.15), value: isShowingTodos)
+        }
+    }
+
+    @ViewBuilder
+    private var loading: some View {
+        if !model.isLoaded {
+            if let problemText = model.loadProblemText {
+                ContentUnavailableView("Cannot reach your agent", systemImage: "wifi.exclamationmark", description: Text(problemText))
+            } else {
+                ProgressView()
+            }
+        }
+    }
+
+    private func loadEarlier(_ scroller: ScrollViewProxy) {
+        guard model.isLoaded, !model.isLoadingEarlier else { return }
+        let firstId = ConversationItem.items(of: shownLines).first?.id
+        Task {
+            await model.loadEarlier()
+            if let firstId {
+                scroller.scrollTo(firstId, anchor: .top)
+            }
+        }
+    }
+
+    /// The lines the switches leave on screen.
+    private var shownLines: [TranscriptLine] {
+        let isMCPRecord = model.conversation?.jobKind == "mcp"
+        return model.transcript.lines.filter { line in
+            switch line.kind {
+            case .tool:
+                return isShowingToolCalls || isMCPRecord || !AgentFile.of(toolResult: line.text).isEmpty
+            case .checkIn:
+                return isShowingWorkingNotes || line.detail == CheckInOrigin.goalNeedsYou.rawValue
+            case .note:
+                return isShowingWorkingNotes || !TranscriptPreference.workingNoteKinds.contains(line.detail)
+            default:
+                return true
+            }
+        }
+    }
+}
+
+/// ConversationFollowing keeps a conversation and its head up to date while
+/// the app is in front: iOS closes the feed in the background, and coming
+/// back opens it again at once.
+struct ConversationFollowing: ViewModifier {
+    let model: ConversationModel
+    let status: StatusModel
+    @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active, let connection = app.connection {
+                    await status.follow(connection: connection) { model.conversationId }
+                }
+            }
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active {
+                    await model.follow()
+                }
+            }
+            .environment(\.openURL, OpenURLAction { address in app.route(address) })
+            .environment(\.pictureConversationId, model.conversationId)
+            .onChange(of: app.askingAbout, initial: true) { _, reference in
+                // A mail asked about elsewhere becomes what the next message
+                // refers to.
+                guard let reference else { return }
+                model.refer(to: reference)
+                app.askingAbout = nil
+            }
+            .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
+            .onChange(of: app.openingRequest, initial: true) { _, opening in
+                guard let opening, opening.conversationId == model.conversationId else { return }
+                app.openingRequest = nil
+                Task { await model.sendSuggestion(opening.text) }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // A turn left running shows on the lock screen until it ends;
+                // a call shows there already, through CallKit.
+                if phase == .background, let runId = model.runningRunId, model.call == nil {
+                    TurnActivities.start(runId: runId, agentTitle: app.agentTitle, connection: model.connection)
+                } else if phase == .active {
+                    TurnActivities.endAll()
+                }
+            }
+            .onChange(of: model.voiceSampleRate) { startRequestedCall() }
+    }
+
+    /// Starts the call Siri asked for, once the server has said calls work.
+    private func startRequestedCall() {
+        guard app.isCallRequested, model.voiceSampleRate != nil else { return }
+        app.isCallRequested = false
+        model.startCall()
+    }
+}
+
+/// ConversationAlerts are what a conversation says when something goes
+/// wrong, the haptics of sending, and files opened in Quick Look.
+struct ConversationAlerts: ViewModifier {
+    @Bindable var model: ConversationModel
+    @Environment(AppModel.self) private var app
+
+    func body(content: Content) -> some View {
+        @Bindable var app = app
+        return content
+            .quickLookPreview($app.previewAddress)
+            .alert("Cannot open the file", isPresented: $app.isShowingPreviewProblem, presenting: app.previewProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+            .sensoryFeedback(.success, trigger: model.sentCount)
+            .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+    }
+}
+
+/// ConversationBanners say what kind of conversation this is when it is not
+/// an ordinary one: somebody else's agent, a record of what the agent did on
+/// its own, a goal waiting for the person.
+struct ConversationBanners: View {
+    let model: ConversationModel
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let actingAs = model.actingAs {
+                Banner(systemImage: "person.badge.key", text: String(localized: "This is \(actingAs)'s agent. What you say here reaches it as \(actingAs), and the server log says you did."))
+            }
+            if model.conversation?.kind == "run" {
+                Banner(systemImage: "clock.arrow.circlepath", text: String(localized: "What your agent did on its own, as it happened. Ask about it here, or go back to the main chat.")) {
+                    app.openedConversationId = ""
+                }
+            }
+            if let conversation = model.conversation, conversation.kind == "goal", let goal = conversation.goal, !goal.isEmpty {
+                Banner(systemImage: "target", text: GoalWords.summary(of: conversation)) {
+                    app.openedSection = .goals
+                }
+                if conversation.goalState == "waiting", let note = conversation.goalNote, !note.isEmpty {
+                    Banner(systemImage: "hand.raised", text: note)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+/// Banner is one line of what kind of conversation this is.
+struct Banner: View {
+    let systemImage: String
+    let text: String
+    var action: (() -> Void)?
+
+    var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { label }
+                    .buttonStyle(.plain)
+            } else {
+                label
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(in: .rect(cornerRadius: 14, style: .continuous))
+    }
+
+    private var label: some View {
+        Label(text, systemImage: systemImage)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// GoalWords say where a goal stands, in the dashboard's words.
+enum GoalWords {
+    static func state(_ goalState: String?) -> String {
+        switch goalState {
+        case "working": String(localized: "working")
+        case "waiting": String(localized: "waiting for you")
+        case "met": String(localized: "met")
+        case "dropped": String(localized: "dropped")
+        default: goalState ?? ""
+        }
+    }
+
+    static func summary(of conversation: AgentConversation) -> String {
+        "\(state(conversation.goalState)) · \(conversation.goal ?? "")"
+    }
+}
+
+/// ConversationItem is one thing on the screen: a line of the transcript,
+/// or the day between two lines on different days.
+enum ConversationItem: Identifiable {
+    case line(TranscriptLine)
+    case day(Date)
+
+    var id: String {
+        switch self {
+        case .line(let line): line.id
+        case .day(let date): "day-\(date.timeIntervalSince1970)"
+        }
+    }
+
+    static func items(of lines: [TranscriptLine]) -> [ConversationItem] {
+        var items: [ConversationItem] = []
+        var lastDay: Date?
+        for line in lines {
+            if let date = ServerTime.date(line.at) {
+                let day = Calendar.current.startOfDay(for: date)
+                if day != lastDay {
+                    items.append(.day(day))
+                    lastDay = day
+                }
+            }
+            items.append(.line(line))
+        }
+        return items
+    }
+}
+
+struct ConversationItemView: View {
+    let item: ConversationItem
+    let model: ConversationModel
+    let isShowingUsage: Bool
+    let isShowingToolCalls: Bool
+
+    var body: some View {
+        switch item {
+        case .day(let date):
+            Text(Self.dayText(date))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 6)
+        case .line(let line):
+            switch line.kind {
+            case .person:
+                PersonBubble(line: line)
+                    .onLongPressGesture(minimumDuration: 0.35) {
+                        MessageActionsPresenter.present(line: line, model: model)
+                    }
+            case .answer:
+                VStack(alignment: .leading, spacing: 4) {
+                    AgentBubble(reactions: line.reactions) {
+                        MarkdownView(text: line.text, isSelectable: false)
+                    }
+                    .onLongPressGesture(minimumDuration: 0.35) {
+                        MessageActionsPresenter.present(line: line, model: model)
+                    }
+                    if isShowingUsage, let usage = line.usage {
+                        Text(UsageWords.turn(usage))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, 8)
+                    }
+                }
+            case .tool:
+                VStack(alignment: .leading, spacing: 6) {
+                    if isShowingToolCalls {
+                        ToolLine(line: line)
+                    }
+                    ToolFiles(line: line)
+                }
+            case .checkIn:
+                CheckInLine(line: line)
+            case .note:
+                NoteLine(line: line)
+            case .approval, .question:
+                CardSurface {
+                    CardView(line: line, model: model)
+                }
+            case .codingQuestion:
+                CardSurface {
+                    CodingQuestionCard(line: line, model: model)
+                }
+            }
+        }
+    }
+
+    static func dayText(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) { return String(localized: "Today") }
+        if Calendar.current.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+}
+
+/// MessageActionsPresenter opens a message's actions over the whole screen,
+/// as Messages does on a long press: everything else dims and blurs, the
+/// message stays readable, and what can be done with it sits under it. It is
+/// shown from the top of the window so it covers the bars and the composer.
+@MainActor
+enum MessageActionsPresenter {
+    static func present(line: TranscriptLine, model: ConversationModel) {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        guard let top else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        weak var shown: UIViewController?
+        let controller = UIHostingController(
+            rootView: MessageActionsView(line: line, model: model) { then in
+                shown?.dismiss(animated: true) { then?() }
+            })
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        controller.view.backgroundColor = .clear
+        shown = controller
+        top.present(controller, animated: true)
+    }
+}
+
+/// MessageActionsView is a message held: the message itself, on its own
+/// side, its whole text scrolling when it is long, and its actions below as
+/// full rows.
+struct MessageActionsView: View {
+    let line: TranscriptLine
+    let model: ConversationModel
+    /// Closes the view, then does what was chosen, if anything.
+    let onClose: (((() -> Void)?) -> Void)
+    @State private var isShown = false
+
+    private var isPerson: Bool { line.kind == .person }
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+                .onTapGesture { onClose(nil) }
+                .accessibilityLabel("Close")
+                .accessibilityAddTraits(.isButton)
+            VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
+                if line.messageId != nil {
+                    reactionBar
+                }
+                ScrollView {
+                    bubble
+                        .frame(maxWidth: .infinity, alignment: isPerson ? .trailing : .leading)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: 420)
+                .fixedSize(horizontal: false, vertical: true)
+                actions
+            }
+            .padding(.horizontal)
+            .scaleEffect(isShown ? 1 : 0.94, anchor: isPerson ? .trailing : .leading)
+            .opacity(isShown ? 1 : 0)
+        }
+        .onAppear {
+            withAnimation(.spring(duration: 0.3, bounce: 0.2)) { isShown = true }
+        }
+        .accessibilityAction(.escape) { onClose(nil) }
+    }
+
+    /// The quick reactions, the person's current one marked; choosing it
+    /// again takes it away.
+    private var reactionBar: some View {
+        let current = line.reaction(of: "person")
+        return HStack(spacing: 2) {
+            ForEach(ConversationModel.quickReactions, id: \.self) { emoji in
+                Button {
+                    onClose { Task { await model.react(to: line, with: emoji) } }
+                } label: {
+                    Text(verbatim: emoji)
+                        .font(.title2)
+                        .frame(width: 40, height: 44)
+                        .background(current == emoji ? Color.accentColor.opacity(0.3) : .clear, in: .circle)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(current == emoji ? Text("Take away \(emoji)") : Text("React \(emoji)"))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: .capsule)
+    }
+
+    @ViewBuilder
+    private var bubble: some View {
+        if isPerson {
+            Text(line.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+        } else {
+            MarkdownView(text: line.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+        }
+    }
+
+    private var actions: some View {
+        VStack(spacing: 0) {
+            if line.messageId != nil {
+                actionRow("Reply", systemImage: "arrowshape.turn.up.left") {
+                    onClose { model.reply(to: line) }
+                }
+                Divider()
+            }
+            actionRow("Copy", systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = line.text
+                onClose(nil)
+            }
+            Divider()
+            actionRow("Select", systemImage: "selection.pin.in.out") {
+                let text = line.text
+                onClose { model.selectingText = text }
+            }
+            Divider()
+            ShareLink(item: line.text) {
+                actionLabel("Share", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 250)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+    }
+
+    private func actionRow(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            actionLabel(title, systemImage: systemImage)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func actionLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .frame(width: 24)
+            Text(title)
+            Spacer()
+        }
+        .font(.body)
+        .foregroundStyle(Color(.label))
+        .padding(.horizontal, 18)
+        .frame(minHeight: 50)
+        .contentShape(.rect)
+    }
+}
+
+/// SelectingText is a message opened to select from.
+struct SelectingText: Identifiable {
+    let text: String
+    var id: String { text }
+}
+
+/// SelectTextSheet shows a message's words to select part of them, which a
+/// bubble's long press cannot: it opens the menu.
+struct SelectTextSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SelectableText(text: text)
+                .navigationTitle("Select text")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// SelectableText is text to select but not change. SwiftUI's text
+/// selection takes a whole Text at once, so a UITextView does it.
+struct SelectableText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.textColor = .label
+        view.backgroundColor = .clear
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        if view.text != text { view.text = text }
+    }
+}
+
+/// UsageWords say what a turn cost: tokens in and out, and the money.
+@MainActor
+enum UsageWords {
+    /// The currency the agent's budget is kept in, as the head last read it.
+    static var currency = "USD"
+
+    static func count(_ count: Int) -> String {
+        count.formatted(.number.notation(.compactName))
+    }
+
+    static func money(_ cost: Double) -> String {
+        cost.formatted(.currency(code: currency).precision(.fractionLength(cost < 0.01 ? 4 : 2)))
+    }
+
+    static func turn(_ usage: AgentUsage) -> String {
+        String(localized: "\(count(usage.promptTokens)) in, \(count(usage.completionTokens)) out · \(money(usage.cost))")
+    }
+}
+
+/// PersonBubble is what the person said: on the right, in the accent color,
+/// with what it replies to above it.
+struct PersonBubble: View {
+    let line: TranscriptLine
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 56)
+            VStack(alignment: .trailing, spacing: 4) {
+                if !line.quotedText.isEmpty {
+                    Text(line.quotedText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(.tertiary).frame(width: 3)
+                        }
+                }
+                ForEach(line.references, id: \.self) { reference in
+                    Label(reference.label, systemImage: reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(line.attachments, id: \.id) { attachment in
+                    AttachmentView(attachment: attachment)
+                }
+                if !line.text.isEmpty {
+                    Text(line.text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        // The person's side in the accent's tint, the agent's in
+                        // grey, so whose each bubble is shows at a glance.
+                        .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+                        .overlay(alignment: .bottomLeading) {
+                            ReactionBadges(reactions: line.reactions)
+                                .offset(x: -10, y: 18)
+                        }
+                        .padding(.bottom, line.reactions.isEmpty ? 0 : 18)
+                }
+            }
+        }
+    }
+}
+
+/// AgentBubble is something from the agent, in a bubble on the left as a
+/// person's reply sits in Messages: the conversation reads as talking to
+/// someone, with a bubble on each side.
+struct AgentBubble<Content: View>: View {
+    /// The reactions on it, drawn at its lower corner.
+    var reactions: [AgentMessageReaction] = []
+    @ViewBuilder let content: Content
+
+    init(reactions: [AgentMessageReaction] = [], @ViewBuilder content: () -> Content) {
+        self.reactions = reactions
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack {
+            content
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
+                    ReactionBadges(reactions: reactions)
+                        .offset(x: 10, y: 18)
+                }
+                .padding(.bottom, reactions.isEmpty ? 0 : 18)
+            Spacer(minLength: 40)
+        }
+    }
+}
+
+/// ReactionBadges are the emoji on a message, the person's and the
+/// agent's, in a small capsule at the bubble's corner as Messages draws a
+/// tapback. One just put there pops in.
+struct ReactionBadges: View {
+    let reactions: [AgentMessageReaction]
+
+    var body: some View {
+        if !reactions.isEmpty {
+            HStack(spacing: 2) {
+                ForEach(reactions, id: \.reactorKind) { reaction in
+                    ReactionBadge(reaction: reaction)
+                        .id(reaction.emoji)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.regularMaterial, in: .capsule)
+            .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5))
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// ReactionBadge is one emoji. A reaction made a moment ago, by the person
+/// here or by the agent through the feed, springs in with a tap felt; one
+/// read back with the conversation is simply there, so scrolling does not
+/// set every badge bouncing.
+struct ReactionBadge: View {
+    let reaction: AgentMessageReaction
+    @State private var scale: CGFloat = 1
+    @Environment(\.accessibilityReduceMotion) private var isReducingMotion
+
+    var body: some View {
+        Text(verbatim: reaction.emoji)
+            .font(.body)
+            .scaleEffect(scale)
+            .accessibilityLabel(reaction.reactorKind == "agent" ? Text("The agent reacted \(reaction.emoji)") : Text("You reacted \(reaction.emoji)"))
+            .onAppear {
+                guard isFresh, !isReducingMotion else { return }
+                scale = 0.1
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { scale = 1 }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+    }
+
+    /// Put there in the last few seconds: one this app has just made has no
+    /// time from the server yet.
+    private var isFresh: Bool {
+        guard let reactedAt = ServerTime.date(reaction.reactedAt) else { return true }
+        return Date().timeIntervalSince(reactedAt) < 10
+    }
+}
+
+/// CardSurface is something that waits for the person, or a file: one quiet
+/// surface with a hairline edge, the same for every card.
+struct CardSurface<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5)
+            }
+    }
+}
+
+/// TypingBubble says the agent is working on an answer: three dots rising in
+/// turn inside a bubble, as a person typing shows in Messages, so the wait
+/// reads as someone answering. The answer takes its place, in a bubble of
+/// the same look, once its first words arrive.
+struct TypingBubble: View {
+    @Environment(\.accessibilityReduceMotion) private var isReducingMotion
+
+    var body: some View {
+        HStack {
+            TimelineView(.animation(paused: isReducingMotion)) { timeline in
+                let seconds = timeline.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        // Each dot peaks a third of a beat after the one
+                        // before it, and the beat is 1.2 seconds.
+                        let phase = isReducingMotion ? 0 : max(0, sin((seconds / 1.2 - Double(index) / 6) * 2 * .pi))
+                        Circle()
+                            .fill(.secondary)
+                            .frame(width: 8, height: 8)
+                            .opacity(0.4 + 0.6 * phase)
+                            .offset(y: -3 * phase)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+            Spacer(minLength: 56)
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Thinking…")
+    }
+}
+
+/// SuggestionsRow is the replies the last answer offers, each sent as it is
+/// with a tap.
+struct SuggestionsRow: View {
+    let suggestions: [String]
+    let onChoose: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button(suggestion) { onChoose(suggestion) }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .font(.subheadline)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+}
+
+/// EmptyConversation is what a conversation with nothing in it offers: what
+/// to ask, and a few of the agent's ideas.
+struct EmptyConversation: View {
+    let model: ConversationModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Ask about your mail, or ask for something to be done.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            if !model.ideas.isEmpty, model.draft.isEmpty {
+                Text("Or start with one of these")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 6)
+                ForEach(model.ideas) { idea in
+                    Button {
+                        Task { await model.start(idea) }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(idea.emoji ?? "💡")
+                                .font(.title3)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(idea.headline)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                if let body = idea.body, !body.isEmpty {
+                                    Text(body)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(3)
+                                }
+                            }
+                            .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
+                        .contentShape(.rect(cornerRadius: 18))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, 40)
+    }
+}
+
+/// TodoPanel is the agent's own list of steps for this conversation, while
+/// it works through them: a card behind the composer, narrower than it, its
+/// foot under the composer's top.
+struct TodoPanel: View {
+    let todos: [AgentTodo]
+    @State private var expanded: Set<String> = []
+
+    /// How far the card reaches under the composer.
+    static let tuckedUnder: CGFloat = 20
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(todos) { todo in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(todo.isDone ? Color.accentColor : Color.secondary)
+                            .accessibilityLabel(todo.isDone ? Text("Done") : Text("Still to do"))
+                        Text(todo.text)
+                            .strikethrough(todo.isDone)
+                            .foregroundStyle(todo.isDone ? .secondary : .primary)
+                            .lineLimit(expanded.contains(todo.id) ? nil : 1)
+                            .onTapGesture {
+                                if expanded.contains(todo.id) { expanded.remove(todo.id) } else { expanded.insert(todo.id) }
+                            }
+                    }
+                    .font(.footnote)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 12 + Self.tuckedUnder)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 120 + Self.tuckedUnder)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5)
+        }
+        .padding(.horizontal, 28)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("The agent's steps")
+    }
+}
+
+/// ReplyBar is the message being replied to, above the composer.
+struct ReplyBar: View {
+    let reply: AgentReference
+    let onCancel: () -> Void
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        ReferenceStrip(
+            systemImage: "arrowshape.turn.up.left",
+            title: reply.quotedRole == "user" ? String(localized: "Replying to your own message") : String(localized: "Replying to \(app.agentTitle)"),
+            detail: reply.quotedText ?? "", onCancel: onCancel)
+    }
+}
+
+/// ReferenceBar is a mail the next message asks about.
+struct ReferenceBar: View {
+    let subject: String
+    let from: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        ReferenceStrip(
+            systemImage: "envelope", title: subject.isEmpty ? String(localized: "(no subject)") : subject, detail: from, onCancel: onCancel)
+    }
+}
+
+/// ReferenceStrip is what the next message refers to, above the composer:
+/// a small symbol, a line and a line under it, and a quiet way to drop it.
+struct ReferenceStrip: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .background(Color(.tertiarySystemFill), in: .circle)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 2)
+        .padding(.vertical, 2)
+        .glassEffect(in: .rect(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal)
+    }
+}
+
+/// MarkdownView draws an answer's Markdown: its blocks, each with its
+/// inline styles. Headings are no larger than a headline.
+struct MarkdownView: View {
+    let text: String
+    /// Whether its words can be selected by pressing on them. In a chat
+    /// bubble they cannot: a long press there opens the message's reactions
+    /// and actions, and its Select action selects.
+    var isSelectable = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(MarkdownBlock.parse(text).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .paragraph(let text):
+                    Text(Self.inline(text))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .selectable(isSelectable)
+                case .heading(let text):
+                    Text(Self.inline(text)).font(.headline)
+                case .quote(let text):
+                    HStack(spacing: 8) {
+                        Capsule().fill(.tertiary).frame(width: 3)
+                        Text(Self.inline(text)).foregroundStyle(.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                case .list(let items):
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(item.marker).monospacedDigit().foregroundStyle(.secondary)
+                                Text(Self.inline(item.text))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                case .code(let text):
+                    CodeBlock(text: text)
+                case .table(let header, let rows):
+                    ScrollView(.horizontal) {
+                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+                            GridRow {
+                                ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                                    Text(Self.inline(cell)).font(.subheadline.bold())
+                                }
+                            }
+                            Divider()
+                            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                                GridRow {
+                                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                        Text(Self.inline(cell)).font(.subheadline)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                case .rule:
+                    Divider()
+                case .image(let alt, let address, let link):
+                    AnswerPicture(alt: alt, address: address, link: link)
+                }
+            }
+        }
+    }
+
+    static func inline(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+}
+
+/// CodeBlock is code or a tool's JSON: monospaced, scrolling when long, and
+/// copied with a tap.
+struct CodeBlock: View {
+    let text: String
+    var maxHeight: CGFloat = 400
+    @State private var isCopied = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView([.horizontal, .vertical]) {
+                Text(text)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: maxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            Button {
+                UIPasteboard.general.string = text
+                isCopied = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(900))
+                    isCopied = false
+                }
+            } label: {
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                    .font(.caption)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(minWidth: 32, minHeight: 32)
+            }
+            .sensoryFeedback(.success, trigger: isCopied) { _, isNow in isNow }
+            .accessibilityLabel(isCopied ? Text("Copied") : Text("Copy"))
+        }
+        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
+    }
+
+    /// A tool's arguments or result made readable: the untrusted-data fence
+    /// a result is wrapped in taken off, and JSON indented.
+    static func tidy(_ text: String) -> String {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("<untrusted-data>"), trimmed.hasSuffix("</untrusted-data>") {
+            trimmed = String(trimmed.dropFirst("<untrusted-data>".count).dropLast("</untrusted-data>".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let data = trimmed.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+            !(object is String),
+            let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        {
+            return String(decoding: pretty, as: UTF8.self)
+        }
+        return trimmed
+    }
+}
+
+/// ToolLine is a tool the agent called: its name and how it ended on one
+/// line, what it was given and what came back on a tap.
+struct ToolLine: View {
+    let line: TranscriptLine
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    if line.isDone {
+                        Image(systemName: "checkmark.circle")
+                    } else {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text(line.resolution.isEmpty ? ToolWords.name(line.detail) : "\(ToolWords.name(line.detail)) · \(line.resolution)")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                if !line.arguments.isEmpty {
+                    CodeBlock(text: CodeBlock.tidy(line.arguments), maxHeight: 240)
+                }
+                CodeBlock(text: line.text.isEmpty ? String(localized: "Nothing came back yet.") : CodeBlock.tidy(line.text), maxHeight: 240)
+            }
+        }
+        .padding(.leading, 4)
+    }
+}
+
+enum ToolWords {
+    /// A tool's name as words: "mail_draft" is "Mail draft", and a skill's
+    /// or a server's tool is named by its own last part.
+    static func name(_ tool: String) -> String {
+        let last = tool.components(separatedBy: "__").last ?? tool
+        let words = last.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
+}
+
+/// CheckInLine is a turn the agent took on its own, shown as where it came
+/// from; a tap shows what started it.
+struct CheckInLine: View {
+    let line: TranscriptLine
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                Label(Self.label(of: line.detail), systemImage: Self.symbol(of: line.detail))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                CodeBlock(text: line.text, maxHeight: 240)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
+    }
+
+    static func label(of marker: String) -> String {
+        switch CheckInOrigin(rawValue: marker) {
+        case .goal: String(localized: "Goal check-in")
+        case .goalNeedsYou: String(localized: "A goal needs you")
+        case .background: String(localized: "Background command ended")
+        case .backgroundWork: String(localized: "Background work finished")
+        case .schedule: String(localized: "Scheduled turn")
+        case .speakFirst: String(localized: "Started by the agent")
+        case .alert: String(localized: "Alert from your mail")
+        case .herdrQuestion: String(localized: "A coding session asks you")
+        case .herdrSession: String(localized: "A coding session finished")
+        case .approved: String(localized: "Approved after the turn ended")
+        case .declined: String(localized: "Declined after the turn ended")
+        case nil: marker
+        }
+    }
+
+    static func symbol(of marker: String) -> String {
+        switch CheckInOrigin(rawValue: marker) {
+        case .goal, .goalNeedsYou: "target"
+        case .background, .herdrSession: "terminal"
+        case .herdrQuestion, .alert: "exclamationmark.triangle"
+        case .backgroundWork: "list.bullet"
+        case .schedule: "calendar"
+        case .speakFirst: "sparkles"
+        case .approved: "checkmark"
+        case .declined: "xmark"
+        case nil: "bell"
+        }
+    }
+}
+
+/// NoteLine is something that happened, in the dashboard's words; the note
+/// the earlier chat was folded into opens on a tap.
+struct NoteLine: View {
+    let line: TranscriptLine
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if line.detail == "compacted", !line.text.isEmpty {
+                Button {
+                    withAnimation { isExpanded.toggle() }
+                } label: {
+                    Label(Self.words(of: line), systemImage: isExpanded ? "chevron.down" : "chevron.right")
+                }
+                .buttonStyle(.plain)
+                if isExpanded {
+                    AgentBubble { MarkdownView(text: line.text) }
+                }
+            } else {
+                HStack(spacing: 6) {
+                    if line.isPending { ProgressView().controlSize(.mini) }
+                    Text(Self.words(of: line))
+                }
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    static func words(of line: TranscriptLine) -> String {
+        let detail = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch line.detail {
+        case "queued": return String(localized: "Waiting for the turn before it…")
+        case "stopped": return detail.isEmpty ? String(localized: "Stopped.") : String(localized: "Stopped: \(detail)")
+        case "failed": return detail.isEmpty ? String(localized: "The turn failed.") : String(localized: "The turn failed: \(detail)")
+        case "call_unreadable": return String(localized: "A tool call could not be read, so it was asked for again.")
+        case "repeated_failure": return String(localized: "Stopped: the same call failed three times.")
+        case "round_limit": return String(localized: "Stopped after the most rounds a turn may take.")
+        case "compacting": return String(localized: "Folding the earlier chat into a note…")
+        case "compacted": return String(localized: "The earlier chat was folded into a note.")
+        case "depth": return detail.isEmpty ? String(localized: "Looking into this carefully.") : String(localized: "Looking into this carefully: \(detail)")
+        case "goal_set": return String(localized: "Goal set: \(detail)")
+        case "goal_set_again": return String(localized: "Goal set again: \(detail)")
+        case "goal_changed": return String(localized: "Goal changed: \(detail)")
+        case "goal_cleared": return String(localized: "Goal cleared: \(detail)")
+        case "goal_met": return String(localized: "Goal met: \(detail)")
+        case "goal_stalled": return String(localized: "Goal stalled: \(detail) turns since you last wrote and it is not met. Write to keep going, or clear or change it.")
+        default: return detail
+        }
+    }
+}
+
+/// CardView is something waiting for the person: a tool call to approve, or
+/// the agent's question.
+struct CardView: View {
+    let line: TranscriptLine
+    let model: ConversationModel
+    /// The answer picked, sent only with Send, as the dashboard's card asks:
+    /// one stray tap sends nothing.
+    @State private var chosen: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if line.kind == .approval {
+                CardHeader(
+                    systemImage: line.risk == "destructive" ? "exclamationmark.triangle" : "hand.raised",
+                    title: line.detail.isEmpty ? String(localized: "Approve?") : ToolWords.name(line.detail))
+            } else {
+                CardHeader(systemImage: "questionmark.bubble", title: String(localized: "Your agent asks"))
+            }
+            MarkdownView(text: line.text)
+            if line.isDone {
+                Label(resolutionText, systemImage: "checkmark.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if line.kind == .approval {
+                HStack(spacing: 10) {
+                    Button(role: line.risk == "destructive" ? .destructive : nil) {
+                        Task { await model.approve(line, isApproved: true) }
+                    } label: {
+                        Text("Do it").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(line.risk == "destructive" ? .red : .accentColor)
+                    Button {
+                        Task { await model.approve(line, isApproved: false) }
+                    } label: {
+                        Text("Don’t").frame(maxWidth: .infinity).foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(line.choices.enumerated()), id: \.offset) { index, choice in
+                        if index > 0 { Divider() }
+                        ChoiceRow(title: choice, detail: "", isChosen: chosen == choice, isMultiple: false) {
+                            chosen = chosen == choice ? nil : choice
+                        }
+                    }
+                }
+                HStack(spacing: 10) {
+                    if !line.choices.isEmpty {
+                        Button {
+                            guard let chosen else { return }
+                            Task { await model.answer(line, with: chosen) }
+                        } label: {
+                            Text("Send").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(chosen == nil)
+                    }
+                    Button {
+                        Task { await model.answer(line, with: ConversationModel.chatAboutIt) }
+                    } label: {
+                        Text("Chat about it").frame(maxWidth: line.choices.isEmpty ? nil : .infinity).foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                Text("Or type your answer below.")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var resolutionText: String {
+        switch line.resolution {
+        case "approved": String(localized: "Approved")
+        case "declined": String(localized: "Declined")
+        default: line.resolution
+        }
+    }
+}
+
+/// CodingQuestionCard is a question one of the person's coding sessions
+/// asked, with its options as buttons: one press answers, or with several
+/// allowed, the chosen ones are sent together.
+struct CodingQuestionCard: View {
+    let line: TranscriptLine
+    let model: ConversationModel
+    @State private var chosen: Set<Int> = []
+
+    var body: some View {
+        if let question = line.codingQuestion {
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader(
+                    systemImage: "terminal",
+                    title: question.sessionName.isEmpty ? question.codingAgentName : "\(question.codingAgentName) · \(question.sessionName)")
+                MarkdownView(text: question.questionText)
+                if line.isDone {
+                    Label(line.resolution.isEmpty ? String(localized: "Answered") : line.resolution, systemImage: "checkmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in
+                            if index > 0 { Divider() }
+                            ChoiceRow(
+                                title: option.optionLabel, detail: option.optionDescription, isChosen: chosen.contains(option.optionNumber),
+                                isMultiple: question.isMultipleChoice
+                            ) {
+                                if question.isMultipleChoice {
+                                    if chosen.contains(option.optionNumber) {
+                                        chosen.remove(option.optionNumber)
+                                    } else {
+                                        chosen.insert(option.optionNumber)
+                                    }
+                                } else {
+                                    Task { await model.answerCodingQuestion(line, options: [option], freeText: nil) }
+                                }
+                            }
+                        }
+                    }
+                    if question.isMultipleChoice {
+                        Button {
+                            let options = question.choices.filter { chosen.contains($0.optionNumber) }
+                            Task { await model.answerCodingQuestion(line, options: options, freeText: nil) }
+                        } label: {
+                            Text("Send").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .disabled(chosen.isEmpty)
+                    }
+                    if question.options.contains(where: { $0.herdrOptionKind != "choice" }) {
+                        Text("Or type your answer below.")
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// CardHeader is what a card is, small and quiet above what it says.
+struct CardHeader: View {
+    let systemImage: String
+    let title: String
+
+    var body: some View {
+        Label {
+            Text(verbatim: title)
+        } icon: {
+            Image(systemName: systemImage)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// ChoiceRow is one answer a card offers: a row with a radio or a check, as
+/// a list row is, rather than a button of its own.
+struct ChoiceRow: View {
+    let title: String
+    let detail: String
+    let isChosen: Bool
+    let isMultiple: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: isMultiple ? (isChosen ? "checkmark.square.fill" : "square") : (isChosen ? "largecircle.fill.circle" : "circle"))
+                    .font(.title3)
+                    .foregroundStyle(isChosen ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).multilineTextAlignment(.leading)
+                    if !detail.isEmpty {
+                        Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+}
+
+/// Composer is where the person writes: a glass field floating over the
+/// conversation, with files to add and a button to send, or to stop the
+/// turn that is running.
+struct Composer: View {
+    @Bindable var model: ConversationModel
+    @Environment(AppModel.self) private var app
+    @State private var pickedItems: [PhotosPickerItem] = []
+    @State private var isPickingPhotos = false
+    @State private var isTakingPicture = false
+    @State private var isPickingFiles = false
+    /// Pictures picked and still being read from the library.
+    @State private var loadingPictureCount = 0
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if !model.pendingFiles.isEmpty || loadingPictureCount > 0 {
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(model.pendingFiles) { file in
+                            PendingFileChip(
+                                file: file, isUploading: model.uploadingFileIds.contains(file.id),
+                                isUploaded: model.uploadedFileIds.contains(file.id)
+                            ) {
+                                model.pendingFiles.removeAll { $0.id == file.id }
+                            }
+                        }
+                        ForEach(0..<loadingPictureCount, id: \.self) { _ in
+                            LoadingFileChip()
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+            // One field with its buttons inside it, as the Claude app's: the
+            // words on top, adding files at the bottom left, calling and
+            // sending at the bottom right.
+            VStack(alignment: .leading, spacing: 4) {
+                TextField(placeholder, text: $model.draft, axis: .vertical)
+                    .lineLimit(1...8)
+                    .focused($isFocused)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                HStack(spacing: 4) {
+                    Menu {
+                        Button {
+                            isPickingPhotos = true
+                        } label: {
+                            Label("Photo library", systemImage: "photo.on.rectangle")
+                        }
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                isTakingPicture = true
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        Button {
+                            isPickingFiles = true
+                        } label: {
+                            Label("Files", systemImage: "folder")
+                        }
+                        // A screenshot just taken, pasted as the dashboard
+                        // takes one pasted into its box.
+                        if UIPasteboard.general.hasImages {
+                            Button {
+                                if let picture = UIPasteboard.general.image,
+                                    let file = PendingFile(picture: picture, index: model.pendingFiles.count)
+                                {
+                                    model.pendingFiles.append(file)
+                                }
+                            } label: {
+                                Label("Paste picture", systemImage: "doc.on.clipboard")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, height: 36)
+                            .background(Color(.tertiarySystemFill), in: .circle)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .accessibilityLabel("Add files")
+                    Spacer()
+                    if model.voiceSampleRate != nil, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
+                        Button {
+                            model.startCall()
+                        } label: {
+                            Image(systemName: "waveform")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("Call your agent")
+                    }
+                    if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
+                        Button {
+                            Task { await model.stop() }
+                        } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.footnote)
+                                .foregroundStyle(Color(.systemBackground))
+                                .frame(width: 36, height: 36)
+                                .background(Color.primary, in: .circle)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("Stop")
+                    } else {
+                        Button {
+                            Task { await model.send() }
+                        } label: {
+                            Group {
+                                if model.isSending {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "arrow.up")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .frame(width: 36, height: 36)
+                            .background(model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
+                            .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .disabled(!model.canSend)
+                        .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 4)
+            }
+            // A tap anywhere on the panel outside its buttons starts typing,
+            // not only a tap on the words of the placeholder. The tap is
+            // caught behind the buttons, so it never takes theirs; and the
+            // glass is not interactive, as that is for a control and it
+            // took touches meant for the add menu.
+            .background {
+                Color.clear
+                    .contentShape(.rect(cornerRadius: 26, style: .continuous))
+                    .onTapGesture { isFocused = true }
+            }
+            .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+        .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
+        .cameraPicker(isPresented: $isTakingPicture) { picture in
+            if let file = PendingFile(picture: picture, index: model.pendingFiles.count) {
+                model.pendingFiles.append(file)
+            }
+        }
+        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case .success(let addresses) = result else { return }
+            for address in addresses {
+                if let file = PendingFile(fileAt: address) {
+                    model.pendingFiles.append(file)
+                }
+            }
+        }
+        .onChange(of: pickedItems) { _, items in
+            guard !items.isEmpty else { return }
+            pickedItems = []
+            Task { await add(items) }
+        }
+    }
+
+    private var placeholder: String {
+        if model.freshQuestion != nil { return String(localized: "Your answer") }
+        return app.agentName.isEmpty ? String(localized: "Ask your agent…") : String(localized: "Ask \(app.agentName)…")
+    }
+
+    private func add(_ items: [PhotosPickerItem]) async {
+        loadingPictureCount += items.count
+        for item in items {
+            defer { loadingPictureCount -= 1 }
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                let file = PendingFile(pictureData: data, index: model.pendingFiles.count)
+            else { continue }
+            model.pendingFiles.append(file)
+        }
+    }
+}
+
+extension View {
+    /// Text that can be selected, or not, as asked.
+    @ViewBuilder
+    func selectable(_ isSelectable: Bool) -> some View {
+        if isSelectable {
+            textSelection(.enabled)
+        } else {
+            textSelection(.disabled)
+        }
+    }
+}

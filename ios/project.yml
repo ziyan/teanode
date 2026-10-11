@@ -5,8 +5,9 @@
 name: TeaNode
 
 options:
+  developmentLanguage: en
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
@@ -25,15 +26,40 @@ targets:
     sources:
       - TeaNode/Sources
       - TeaNode/Resources
+      - TeaNode/ObjectiveC
+      - Shared
     dependencies:
       - package: TeaNodeKit
+      - target: TeaNodeNotification
+      - target: TeaNodeShare
+      - target: TeaNodeWidgets
+    # teanode.com/app/connect links open the app (the site serves the
+    # association file), so scanning a connect code with the Camera does.
+    # Notifications, and a keychain group the notification extension
+    # shares, so it can read the key notifications are encrypted with.
+    # A call goes on with the screen locked: audio, and CallKit's voip.
+    info:
+      path: TeaNode/Info.plist
+      properties:
+        UIBackgroundModes: [audio, voip]
+        NSSupportsLiveActivities: true
+    entitlements:
+      path: TeaNode/TeaNode.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:teanode.com
+        aps-environment: development
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER)
         PRODUCT_NAME: TeaNode
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
+        # Shared/ is built into the widgets too; what only the app has is
+        # behind this.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) TEANODE_APP
+        SWIFT_OBJC_BRIDGING_HEADER: TeaNode/ObjectiveC/TeaNode-Bridging-Header.h
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: TeaNode
@@ -42,9 +68,124 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         # The TeaNode leaf on white, from docs/images/logo.svg.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # TeaNode green, the one color of the app's own (DESIGN.md).
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Your agent asks where you are when something you asked depends on it, such as the weather or how long a trip takes."
         # The app encrypts nothing beyond the https the system provides, which
         # export rules exempt; saying so here spares every upload the question.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
+
+  # Decrypts each notification before iOS shows it, and gives it its
+  # buttons. Neither Apple nor the relay can read what a notification says.
+  TeaNodeNotification:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeaNodeNotification
+      # The buttons a notification has, and their words, shared with the app.
+      - TeaNode/Sources/NotificationCategories.swift
+      - TeaNode/Resources/Localizable.xcstrings
+    dependencies:
+      - package: TeaNodeKit
+    entitlements:
+      path: TeaNodeNotification/TeaNodeNotification.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+    info:
+      path: TeaNodeNotification/Info.plist
+      properties:
+        CFBundleDisplayName: TeaNode
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).notification
+        # The Swift 5 language mode: see NotificationService.swift.
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+
+  # TeaNode in the share sheet: pictures, files, a link or words from any
+  # app, sent to the person's agent with a note. It reads the sign-in from
+  # the keychain group the app shares.
+  TeaNodeShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeaNodeShare
+      - TeaNode/Resources/Localizable.xcstrings
+    dependencies:
+      - package: TeaNodeKit
+    entitlements:
+      path: TeaNodeShare/TeaNodeShare.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+    info:
+      path: TeaNodeShare/Info.plist
+      properties:
+        CFBundleDisplayName: TeaNode
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 8
+              NSExtensionActivationSupportsFileWithMaxCount: 8
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).share
+        # The Swift 5 language mode: see ShareViewController.swift.
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+
+  # The widgets, the Lock Screen's and Control Center's: asking or calling
+  # the agent, and what is next. They read the sign-in from the keychain
+  # group the app shares.
+  TeaNodeWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeaNodeWidgets
+      - Shared
+      - path: TeaNode/Resources/Assets.xcassets
+      - TeaNode/Resources/Localizable.xcstrings
+    dependencies:
+      - package: TeaNodeKit
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: TeaNodeWidgets/TeaNodeWidgets.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+    info:
+      path: TeaNodeWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: TeaNode
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).widgets
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 
 schemes:
   TeaNode:
