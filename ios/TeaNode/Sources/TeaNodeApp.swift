@@ -81,6 +81,9 @@ struct ConversationsSheet: View {
                             } icon: {
                                 Image(systemName: "bubble.left")
                             }
+                            // Marked by its highlight when it is the one on
+                            // screen; green only marks what can be pressed.
+                            .foregroundStyle(.primary)
                         }
                         .menuRow(isSelected: currentId == nil)
                         if !isPanel {

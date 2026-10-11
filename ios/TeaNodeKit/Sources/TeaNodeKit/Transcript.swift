@@ -388,8 +388,20 @@ public struct Transcript: Sendable {
             // sent from this app or read back before the feed replayed the
             // turn, is not drawn again.
             guard let text = event.text, !text.isEmpty else { return }
+            // The person's latest words, when they are these, are this turn
+            // read back with the transcript: what came after them is the
+            // turn as far as it was stored, which the replay draws again in
+            // order, so it goes, as the dashboard drops it. However many
+            // tool calls the turn made, nothing of it is drawn twice.
+            if let index = lines.lastIndex(where: { $0.kind == .person }), lines[index].text == text,
+                lines[index].runId.isEmpty || lines[index].runId == event.runId
+            {
+                lines.removeSubrange((index + 1)...)
+                lines[index].runId = event.runId
+                return
+            }
             let recent = lines.indices.suffix(Self.replayLookBack)
-            if let index = recent.last(where: { lines[$0].text == text && (lines[$0].runId.isEmpty || lines[$0].runId == event.runId) && (lines[$0].kind == .person || lines[$0].kind == .checkIn) }) {
+            if let index = recent.last(where: { lines[$0].text == text && (lines[$0].runId.isEmpty || lines[$0].runId == event.runId) && lines[$0].kind == .checkIn }) {
                 lines[index].runId = event.runId
             } else if let index = recent.last(where: { lines[$0].kind == .checkIn && lines[$0].text == text }) {
                 lines[index].runId = event.runId

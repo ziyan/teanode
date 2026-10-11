@@ -248,6 +248,40 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.lines.map(\.kind), [.person, .tool])
     }
 
+    func testALongTurnReadBackMidwayIsDrawnOnceWhenItReplays() {
+        // Coming back to the app while a turn runs: what it stored so far
+        // is read back, more than a few lines of it, a folded note among
+        // them, and then the whole turn replays from its start.
+        var messages = [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "user", content: "Archive the notices."),
+            AgentMessage(id: "2", createdAt: "2026-10-10T09:00:01Z", role: "assistant", content: "I will check the senders first."),
+        ]
+        for index in 0..<10 {
+            messages.append(AgentMessage(
+                id: "t\(index)", createdAt: "2026-10-10T09:00:02Z", role: "assistant", content: "",
+                toolCalls: [AgentToolCall(id: "c\(index)", name: "mail_search", arguments: "{}")]))
+        }
+        messages.append(AgentMessage(id: "n", createdAt: "2026-10-10T09:00:03Z", role: "compaction", content: "The note."))
+        var transcript = Transcript(messages: messages)
+        transcript.apply(AgentEvent(kind: "asked", runId: "r", sequence: 0, text: "Archive the notices."))
+        transcript.apply(AgentEvent(kind: "text", runId: "r", sequence: 1, text: "I will check "))
+        transcript.apply(AgentEvent(kind: "text", runId: "r", sequence: 2, text: "the senders first."))
+        transcript.apply(AgentEvent(kind: "message", runId: "r", sequence: 3, text: "I will check the senders first."))
+        transcript.apply(AgentEvent(kind: "tool_call", runId: "r", sequence: 4, tool: "mail_search", callId: "c0"))
+        XCTAssertEqual(transcript.lines.filter { $0.kind == .person }.count, 1)
+        XCTAssertEqual(transcript.lines.filter { $0.kind == .answer }.map(\.text), ["I will check the senders first."])
+        XCTAssertEqual(transcript.lines.map(\.kind), [.person, .answer, .tool])
+    }
+
+    func testAFileSentFromThisAppKeepsItsFileWhenTheTurnStarts() {
+        var transcript = Transcript(messages: [])
+        transcript.addSent("Here it is.", attachments: [AgentAttachment(id: "a1", name: "receipt.jpg", contentType: "image/jpeg", size: 10)])
+        transcript.apply(AgentEvent(kind: "asked", runId: "r", sequence: 0, text: "Here it is."))
+        XCTAssertEqual(transcript.lines.count, 1)
+        XCTAssertEqual(transcript.lines[0].attachments.map(\.id), ["a1"])
+        XCTAssertEqual(transcript.lines[0].runId, "r")
+    }
+
     func testSuggestionsAreOfferedAndNotShown() {
         let split = Suggestions.split("Shall I book it?\n<!--suggestions:[\"Yes\",\"Not yet\"]-->")
         XCTAssertEqual(split.text, "Shall I book it?")
