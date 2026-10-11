@@ -271,8 +271,10 @@ extension LunarDates {
 }
 
 /// MonthScroll is the month view: months one after another down the
-/// screen, ten years either way, each read from the server as it comes into
-/// view. The weekdays stay at the top.
+/// screen, each read from the server as it comes into view. It starts with
+/// a year back and two ahead and grows at either end as it is reached, so
+/// opening on this month never lays out the years before it. The weekdays
+/// stay at the top.
 struct MonthScroll: View {
     let model: CalendarModel
     @Binding var position: ScrollPosition
@@ -280,7 +282,7 @@ struct MonthScroll: View {
     let onOpenDay: (CalendarDay) -> Void
     @State private var months: [CalendarMonth] = {
         let current = CalendarMonth(containing: Date(), in: .current)
-        return (-120...120).map { current.adding(months: $0) }
+        return (-12...24).map { current.adding(months: $0) }
     }()
 
     var body: some View {
@@ -289,7 +291,10 @@ struct MonthScroll: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(months, id: \.self) { month in
                     MonthSection(model: model, month: month, isLunarShown: isLunarShown, onOpenDay: onOpenDay)
-                        .onAppear { model.ensureMonth(month) }
+                        .onAppear {
+                            model.ensureMonth(month)
+                            extend(reaching: month)
+                        }
                 }
             }
             .scrollTargetLayout()
@@ -329,6 +334,18 @@ struct MonthScroll: View {
         // the first accessibility size; beyond it the numbers would run
         // into each other. The day a tap opens has every size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    }
+}
+
+extension MonthScroll {
+    /// Another year of months past the end that was reached. Months put
+    /// before the top keep the scroll position on the month in view.
+    fileprivate func extend(reaching month: CalendarMonth) {
+        if month == months.last {
+            months.append(contentsOf: (1...12).map { month.adding(months: $0) })
+        } else if month == months.first {
+            months.insert(contentsOf: (1...12).reversed().map { month.adding(months: -$0) }, at: 0)
+        }
     }
 }
 
@@ -373,8 +390,9 @@ struct MonthSection: View {
                 .padding(.bottom, 6)
                 .accessibilityLabel(first.formatted(.dateTime.month(.wide).year()))
                 .accessibilityAddTraits(.isHeader)
+            let monthEvents = model.monthEvents(month)
             ForEach(layout.weeks, id: \.self) { week in
-                MonthWeekRow(model: model, week: week, isLunarShown: isLunarShown, onOpenDay: onOpenDay)
+                MonthWeekRow(model: model, monthEvents: monthEvents, week: week, isLunarShown: isLunarShown, onOpenDay: onOpenDay)
             }
         }
     }
@@ -386,6 +404,7 @@ struct MonthWeekRow: View {
     static let horizontalMargin: CGFloat = 4
 
     let model: CalendarModel
+    let monthEvents: MonthEvents
     let week: MonthLayout.Week
     let isLunarShown: Bool
     let onOpenDay: (CalendarDay) -> Void
@@ -412,7 +431,7 @@ struct MonthWeekRow: View {
                 ForEach(0..<7, id: \.self) { column in
                     if let day = week.days[column], let date = day.firstMoment(in: dates) {
                         MonthDayCell(
-                            day: day, date: date, events: model.eventsByDay[day] ?? [],
+                            day: day, date: date, events: monthEvents.eventsByDay[day] ?? [],
                             isToday: dates.isDateInToday(date), isWeekend: dates.isDateInWeekend(date),
                             lunarName: isLunarShown ? LunarDates.name(of: day, timeZone: dates.timeZone) : nil,
                             lineCount: lineCount, colorOf: model.color(of:)

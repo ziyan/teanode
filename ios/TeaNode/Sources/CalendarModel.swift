@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import TeaNodeKit
 
+/// MonthEvents is one month's events by day. Each month has its own, so a
+/// month read from the server redraws that month and no other.
+@MainActor
+@Observable
+final class MonthEvents {
+    var eventsByDay: [CalendarDay: [CalendarEvent]] = [:]
+}
+
 /// CalendarModel is the calendar as the dashboard's Calendar page shows it:
 /// the events calendar, its events read a month at a time and kept by day,
 /// and a change in flight that must be finished or stopped before another
@@ -15,10 +23,10 @@ final class CalendarModel {
     }
 
     private(set) var calendar: AgentCalendar?
-    /// The events on each day of every month read so far. The month view
-    /// reads each month as it scrolls into view, and every other view reads
-    /// the months its days are in, so moving about asks for nothing twice.
-    private(set) var eventsByDay: [CalendarDay: [CalendarEvent]] = [:]
+    /// The events of every month read so far. The month view reads each
+    /// month as it scrolls into view, and every other view reads the months
+    /// its days are in, so moving about asks for nothing twice.
+    @ObservationIgnored private var monthEventsByMonth: [CalendarMonth: MonthEvents] = [:]
     private(set) var loadedMonths: Set<CalendarMonth> = []
     private(set) var loadingMonths: Set<CalendarMonth> = []
     var problemText: String?
@@ -103,9 +111,7 @@ final class CalendarModel {
             guard let monthWindow = month.window(in: dates) else { continue }
             do {
                 let events = try await connection.calendarEvents(calendarId: calendar.id, from: monthWindow.from, until: monthWindow.until)
-                var kept = eventsByDay.filter { $0.key.calendarMonth != month }
-                kept.merge(CalendarDates.eventsByDay(events, in: month, calendar: dates)) { _, read in read }
-                eventsByDay = kept
+                monthEvents(month).eventsByDay = CalendarDates.eventsByDay(events, in: month, calendar: dates)
                 loadedMonths.insert(month)
                 problemText = nil
             } catch {
@@ -195,7 +201,16 @@ final class CalendarModel {
     /// The events on a day, every one it is part of: all-day ones first,
     /// then by when they start.
     func events(on day: Date) -> [CalendarEvent] {
-        eventsByDay[CalendarDay(containing: day, in: dates)] ?? []
+        let calendarDay = CalendarDay(containing: day, in: dates)
+        return monthEvents(calendarDay.calendarMonth).eventsByDay[calendarDay] ?? []
+    }
+
+    /// A month's events, empty until the month is read.
+    func monthEvents(_ month: CalendarMonth) -> MonthEvents {
+        if let found = monthEventsByMonth[month] { return found }
+        let made = MonthEvents()
+        monthEventsByMonth[month] = made
+        return made
     }
 
     // MARK: Changes
