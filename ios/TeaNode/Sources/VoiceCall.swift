@@ -222,7 +222,13 @@ final class VoiceCall: NSObject {
         // the engine starts; that one needs nothing.
         guard Date().timeIntervalSince(engineStartedAt) > 1 else { return }
         stopEngine()
-        _ = startEngine()
+        // The new route may not take voice processing as the old one did:
+        // without it, the call goes on rather than ending.
+        if !startEngine(isLastTry: !isVoiceProcessing) {
+            isVoiceProcessing = false
+            stopEngine()
+            _ = startEngine()
+        }
     }
 
     /// Tries again in a moment, while the route is still settling.
@@ -234,26 +240,38 @@ final class VoiceCall: NSObject {
     }
 
     private func stopEngine() {
+        let engine = engine
+        let player = player
         if isTapInstalled {
-            engine.inputNode.removeTap(onBus: 0)
+            try? AudioExceptions.run { engine.inputNode.removeTap(onBus: 0) }
             isTapInstalled = false
         }
         guard isAudioRunning else { return }
-        player.stop()
-        engine.stop()
+        try? AudioExceptions.run {
+            player.stop()
+            engine.stop()
+        }
         isAudioRunning = false
     }
 
-    private func startEngine() -> Bool {
+    /// Starts the engine and the microphone's tap. Failing, it ends the call
+    /// unless another try follows.
+    private func startEngine(isLastTry: Bool = true) -> Bool {
         capture.resetLoudest()
         do {
             let input = engine.inputNode
             if input.isVoiceProcessingEnabled != isVoiceProcessing {
-                try input.setVoiceProcessingEnabled(isVoiceProcessing)
+                let isWanted = isVoiceProcessing
+                try AudioExceptions.run { try input.setVoiceProcessingEnabled(isWanted) }
             }
             if player.engine == nil {
-                engine.attach(player)
-                engine.connect(player, to: engine.mainMixerNode, format: answerFormat)
+                let player = player
+                let engine = engine
+                let answerFormat = answerFormat
+                try AudioExceptions.run {
+                    engine.attach(player)
+                    engine.connect(player, to: engine.mainMixerNode, format: answerFormat)
+                }
             }
             let inputFormat = input.outputFormat(forBus: 0)
             // Between routes the microphone can report no format at all; a
@@ -272,16 +290,24 @@ final class VoiceCall: NSObject {
             // A tenth of a second at a time, as the dashboard sends it.
             let frames = AVAudioFrameCount(inputFormat.sampleRate / 10)
             let sender = capture
-            input.installTap(onBus: 0, bufferSize: frames, format: inputFormat) { buffer, _ in
-                sender.send(buffer)
+            try AudioExceptions.run {
+                input.installTap(onBus: 0, bufferSize: frames, format: inputFormat) { buffer, _ in
+                    sender.send(buffer)
+                }
             }
             isTapInstalled = true
-            try engine.start()
-            player.play()
+            let engine = engine
+            let player = player
+            try AudioExceptions.run {
+                try engine.start()
+                player.play()
+            }
             isAudioRunning = true
             engineStartedAt = Date()
         } catch {
-            end(problemText: String(localized: "The microphone could not be started: \(error.localizedDescription)"))
+            if isLastTry {
+                end(problemText: String(localized: "The microphone could not be started: \(error.localizedDescription)"))
+            }
             return false
         }
         if configurationObserver == nil {
@@ -580,5 +606,21 @@ final class CaptureSender: @unchecked Sendable {
         guard error == nil, converted.frameLength > 0, let samples = converted.int16ChannelData?[0] else { return }
         let data = Data(bytes: samples, count: Int(converted.frameLength) * 2)
         socket.send(.data(data)) { _ in }
+    }
+}
+
+/// AudioExceptions runs AVFAudio work that may raise an Objective-C
+/// exception, and throws it as an error: uncaught, it would end the app.
+enum AudioExceptions {
+    static func run(_ work: () throws -> Void) throws {
+        var thrown: Error?
+        try ExceptionCatcher.catchException {
+            do {
+                try work()
+            } catch {
+                thrown = error
+            }
+        }
+        if let thrown { throw thrown }
     }
 }

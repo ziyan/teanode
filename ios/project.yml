@@ -26,6 +26,7 @@ targets:
     sources:
       - TeaNode/Sources
       - TeaNode/Resources
+      - TeaNode/ObjectiveC
       - Shared
     dependencies:
       - package: TeaNodeKit
@@ -58,6 +59,7 @@ targets:
         # Shared/ is built into the widgets too; what only the app has is
         # behind this.
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) TEANODE_APP
+        SWIFT_OBJC_BRIDGING_HEADER: TeaNode/ObjectiveC/TeaNode-Bridging-Header.h
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: TeaNode
