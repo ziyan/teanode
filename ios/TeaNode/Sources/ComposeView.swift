@@ -610,11 +610,8 @@ struct AttachButton: View {
             Label("Attach", systemImage: "paperclip")
         }
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
-        .fullScreenCover(isPresented: $isTakingPicture) {
-            CameraPicker { picture in
-                if let file = PendingFile(picture: picture, index: 0) { onAdd([file]) }
-            }
-            .ignoresSafeArea()
+        .cameraPicker(isPresented: $isTakingPicture) { picture in
+            if let file = PendingFile(picture: picture, index: 0) { onAdd([file]) }
         }
         .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let addresses) = result else { return }

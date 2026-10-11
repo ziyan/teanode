@@ -760,11 +760,8 @@ struct TransactionDetail: View {
             }
         }
         .task { await load() }
-        .fullScreenCover(isPresented: $isTakingPicture) {
-            CameraPicker { picture in
-                if let file = PendingFile(picture: picture, index: 0) { Task { await readReceipt(file) } }
-            }
-            .ignoresSafeArea()
+        .cameraPicker(isPresented: $isTakingPicture) { picture in
+            if let file = PendingFile(picture: picture, index: 0) { Task { await readReceipt(file) } }
         }
     }
 

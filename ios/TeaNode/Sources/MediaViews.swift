@@ -226,6 +226,10 @@ struct ToolFiles: View {
 /// file's name, with a way to take it back out.
 struct PendingFileChip: View {
     let file: PendingFile
+    /// On its way to the server, with the message being sent.
+    var isUploading = false
+    /// On the server, while the rest of the message's files are sent.
+    var isUploaded = false
     let onRemove: () -> Void
 
     var body: some View {
@@ -245,54 +249,149 @@ struct PendingFileChip: View {
                     .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
             }
         }
-        .overlay(alignment: .topTrailing) {
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .symbolRenderingMode(.hierarchical)
+        .overlay {
+            if isUploading {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.black.opacity(isUploaded ? 0.15 : 0.35))
+                Group {
+                    if isUploaded {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.white)
+                            .accessibilityLabel("Sent")
+                    } else {
+                        ProgressView()
+                            .tint(.white)
+                            .accessibilityLabel("Sending…")
+                    }
+                }
             }
-            .accessibilityLabel("Remove")
         }
+        .overlay(alignment: .topTrailing) {
+            if !isUploading {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .accessibilityLabel("Remove")
+            }
+        }
+        .animation(.default, value: isUploaded)
     }
 }
 
-/// CameraPicker takes a picture with the camera. SwiftUI has no camera of
-/// its own, so this wraps UIKit's.
-struct CameraPicker: UIViewControllerRepresentable {
-    let onPicture: (UIImage) -> Void
-    @Environment(\.dismiss) private var dismiss
+/// LoadingFileChip holds a picture's place while it is read from the photo
+/// library, which can take a while for one kept in iCloud.
+struct LoadingFileChip: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(.tertiarySystemFill))
+            .frame(width: 56, height: 56)
+            .overlay { ProgressView() }
+            .accessibilityLabel("Adding a picture…")
+    }
+}
 
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = context.coordinator
-        return picker
+/// CameraPicker takes a picture with the camera when isPresented turns true,
+/// asking for the camera first, and saying how to allow it when it was
+/// refused. SwiftUI has no camera of its own, so UIKit's is presented from
+/// the top of the window: a SwiftUI cover asked for from a menu's button,
+/// while the menu was still closing, did not open.
+struct CameraPicker: ViewModifier {
+    @Binding var isPresented: Bool
+    let onPicture: (UIImage) -> Void
+    @State private var isShowingNoAccess = false
+    @Environment(\.openURL) private var openURL
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isPresented) { _, isAsked in
+                guard isAsked else { return }
+                isPresented = false
+                Task { await open() }
+            }
+            .alert("TeaNode cannot use the camera", isPresented: $isShowingNoAccess) {
+                Button("Open Settings") {
+                    if let address = URL(string: UIApplication.openSettingsURLString) { openURL(address) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow the camera for TeaNode in Settings to take a picture.")
+            }
     }
 
-    func updateUIViewController(_ picker: UIImagePickerController, context: Context) {}
+    private func open() async {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            break
+        case .notDetermined:
+            guard await AVCaptureDevice.requestAccess(for: .video) else { return }
+        default:
+            isShowingNoAccess = true
+            return
+        }
+        // The menu that asked closes first; a presentation started while it
+        // closes is dropped.
+        try? await Task.sleep(for: .milliseconds(350))
+        CameraPresenter.present(onPicture: onPicture)
+    }
+}
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPicture: onPicture, dismiss: { dismiss() })
+extension View {
+    /// Takes a picture with the camera when isPresented turns true.
+    func cameraPicker(isPresented: Binding<Bool>, onPicture: @escaping (UIImage) -> Void) -> some View {
+        modifier(CameraPicker(isPresented: isPresented, onPicture: onPicture))
+    }
+}
+
+/// CameraPresenter shows UIKit's camera over whatever is on screen, and keeps
+/// its delegate while it is open.
+@MainActor
+enum CameraPresenter {
+    private static var delegate: Delegate?
+
+    static func present(onPicture: @escaping (UIImage) -> Void) {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera), let top = topViewController() else { return }
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.modalPresentationStyle = .fullScreen
+        let delegate = Delegate(onPicture: onPicture)
+        Self.delegate = delegate
+        picker.delegate = delegate
+        top.present(picker, animated: true)
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        return top
     }
 
     @MainActor
-    final class Coordinator: NSObject, @preconcurrency UIImagePickerControllerDelegate, @preconcurrency UINavigationControllerDelegate {
+    final class Delegate: NSObject, @preconcurrency UIImagePickerControllerDelegate, @preconcurrency UINavigationControllerDelegate {
         let onPicture: (UIImage) -> Void
-        let dismiss: () -> Void
 
-        init(onPicture: @escaping (UIImage) -> Void, dismiss: @escaping () -> Void) {
+        init(onPicture: @escaping (UIImage) -> Void) {
             self.onPicture = onPicture
-            self.dismiss = dismiss
         }
 
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
             if let picture = info[.originalImage] as? UIImage {
                 onPicture(picture)
             }
-            dismiss()
+            picker.dismiss(animated: true)
+            CameraPresenter.delegate = nil
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            dismiss()
+            picker.dismiss(animated: true)
+            CameraPresenter.delegate = nil
         }
     }
 }
