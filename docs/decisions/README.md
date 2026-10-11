@@ -151,3 +151,8 @@ where a goal's turns run: in a conversation of its own, with an activity log
 and the things it made, and why the main conversation hears from a goal only
 when it needs the person. Its plan is
 `docs/planning/background-goals-execplan.md`.
+
+`20261011-an-installed-app-may-sign-in-with-a-password.md` says why the
+consent page grants the whole account to an app installed on a device that
+asks for the API, and why that cannot be collected by somebody who sent the
+link.

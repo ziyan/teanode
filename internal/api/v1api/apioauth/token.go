@@ -116,7 +116,7 @@ func (self *oauth) exchangeCode(response http.ResponseWriter, request *http.Requ
 	}
 
 	user := self.authenticator.UserByID(authorization.UserID)
-	if user == nil {
+	if user == nil || user.Disabled() {
 		writeOAuthError(response, http.StatusBadRequest, "invalid_grant", "that account no longer exists")
 		return
 	}

@@ -43,6 +43,9 @@ type ReadOAuthAuthorizationRequestArguments struct {
 
 	// RedirectURI it asked to be sent back to
 	RedirectURI string `json:"redirectUri"`
+
+	// Resource it asked a token for, as the approval will be asked
+	Resource *string `json:"resource" graphapi:"nullable"`
 }
 
 // OAuthAuthorizationRequest is what the page shows.
@@ -63,6 +66,9 @@ type OAuthAuthorizationRequest struct {
 	// seconds ago is the one you just started; an old one you do not
 	// recognize is worth a second look.
 	Registered time.Time `json:"registered"`
+
+	// IsWholeAccount says approving gives the whole account, not only the agent tools: an app installed on a device signing in, as a connect code would sign it in
+	IsWholeAccount bool `json:"isWholeAccount"`
 }
 
 type ApproveOAuthAuthorizationArguments struct {
@@ -151,15 +157,20 @@ func (self *graph) ReadOAuthAuthorizationRequest(ctx context.Context, arguments 
 	if err != nil {
 		return nil, err
 	}
+	_, isWholeAccount, err := tokenResource(client, valueOrEmpty(arguments.Resource))
+	if err != nil {
+		return nil, err
+	}
 	host := arguments.RedirectURI
 	if parsed, parseError := url.Parse(arguments.RedirectURI); parseError == nil && parsed.Host != "" {
 		host = parsed.Host
 	}
 	return &OAuthAuthorizationRequest{
-		ClientName:   client.Name,
-		RedirectHost: host,
-		Username:     principal.User.Username,
-		Registered:   client.CreatedAt,
+		ClientName:     client.Name,
+		RedirectHost:   host,
+		Username:       principal.User.Username,
+		Registered:     client.CreatedAt,
+		IsWholeAccount: isWholeAccount,
 	}, nil
 }
 
@@ -185,9 +196,15 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		return nil, fmt.Errorf("%w: this server authorizes only with a PKCE challenge, hashed with S256", api.ErrInvalidArguments)
 	}
 
-	resource, err := agentToolsResource(valueOrEmpty(arguments.Resource))
+	resource, isWholeAccount, err := tokenResource(client, valueOrEmpty(arguments.Resource))
 	if err != nil {
 		return nil, err
+	}
+	// An operator signed in as somebody is not that somebody: an app they
+	// signed in would go on as the whole account after the impersonation
+	// ended, as a phone connected with a code would.
+	if isWholeAccount && principal.IsImpersonation() {
+		return nil, fmt.Errorf("%w: an app is signed in by the person themselves, not while signed in as them", api.ErrPermissionDenied)
 	}
 
 	// The secret half of the approval. The program collects by presenting it
@@ -224,6 +241,28 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 
 	log.Noticef("%s authorized the client %s (%q)", principal.User.Username, client.ID, client.Name)
 	return &OAuthApproval{RedirectURL: redirect.String()}, nil
+}
+
+// tokenResource is what an approved token will be good for, and whether that
+// is the whole account.
+//
+// The agent tools, for every program but one: an app installed on a device
+// (every address it registered is its own private-use scheme, as a connect
+// code requires) that asks for the API itself by naming its path. That is
+// the TeaNode app signing in with a password rather than a code, and it gets
+// what a connect code would give it. Its approval can only return to an app
+// on the device the person approved it on, so a link sent to somebody cannot
+// collect it elsewhere, and the page tells them it is their whole account.
+// A program that names no resource, an installed one included, still gets
+// the agent tools: some desktop programs register a scheme of their own too.
+func tokenResource(client *models.OAuthClient, asked string) (string, bool, error) {
+	if asked != "" && api.IsNativeAppClient(client.RedirectURIs) {
+		if parsed, err := url.Parse(asked); err == nil && parsed.Path == api.Prefix && parsed.RawQuery == "" && parsed.Fragment == "" {
+			return "", true, nil
+		}
+	}
+	resource, err := agentToolsResource(asked)
+	return resource, false, err
 }
 
 // agentToolsResource is what an approved token will be good for: the agent

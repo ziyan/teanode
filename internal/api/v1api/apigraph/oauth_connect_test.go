@@ -210,9 +210,11 @@ func TestNoCodeIsMadeOverPlainHTTP(test *testing.T) {
 	}
 }
 
-// The consent page never grants the whole API, whatever a program registered
-// as: a page anybody can send a link to is where phishing aims. An app
-// approved there gets the agent tools, which GraphQL refuses.
+// The consent page grants the agent tools to a program that names no
+// resource, whatever it registered as: a page anybody can send a link to is
+// where phishing aims. An app approved there gets the agent tools, which
+// GraphQL refuses. (An installed app that names the API is the one exception;
+// see TestAnInstalledAppNamingTheAPISignsInToTheWholeAccount.)
 func TestTheConsentPageNeverGrantsTheWholeAPI(test *testing.T) {
 	world := newSignInWorld(test)
 	appClient := world.register(test, "com.example.app:/oauth")
@@ -233,5 +235,75 @@ func TestTheConsentPageNeverGrantsTheWholeAPI(test *testing.T) {
 	}
 	if world.worksOnTheAPI(token) {
 		test.Error("a token from the consent page was taken by the whole API")
+	}
+}
+
+// An app installed on a device that names the API signs in to the whole
+// account through the consent page, as a connect code would sign it in, and
+// a program on the web asking the same is refused before anybody is asked.
+// docs/decisions/20261011-an-installed-app-may-sign-in-with-a-password.md
+func TestAnInstalledAppNamingTheAPISignsInToTheWholeAccount(test *testing.T) {
+	world := newSignInWorld(test)
+	appClient := world.register(test, "com.example.app:/oauth")
+	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	resource := "https://" + world.host + api.Prefix
+	read, errors := world.ask(test, `query { ReadOAuthAuthorizationRequest(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", resource: "`+resource+`") { isWholeAccount } }`)
+	if len(errors) > 0 || read["ReadOAuthAuthorizationRequest"].(map[string]any)["isWholeAccount"] != true {
+		test.Fatalf("the page must say it is the whole account: %v %v", read, errors)
+	}
+	data, errors := world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", codeChallenge: "`+challenge+`", resource: "`+resource+`") { redirectUrl } }`)
+	if len(errors) > 0 {
+		test.Fatalf("ApproveOAuthAuthorization: %v", errors)
+	}
+	approved, _ := data["ApproveOAuthAuthorization"].(map[string]any)
+	redirect, _ := url.Parse(approved["redirectUrl"].(string))
+	if redirect.Scheme != "com.example.app" {
+		test.Fatalf("the approval must return to the app on this device, not %q", redirect)
+	}
+	_, answer := world.post(test, api.PathOAuthToken, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {"com.example.app:/oauth"},
+		"code": {redirect.Query().Get("code")}, "code_verifier": {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
+	})
+	token, _ := answer["access_token"].(string)
+	if token == "" || answer["scope"] != "api" || !world.worksOnTheAPI(token) {
+		test.Fatalf("the app's sign-in was answered %v", answer)
+	}
+
+	webClient := world.register(test, "https://harness.example.com/callback")
+	if _, errors := world.ask(test, `mutation { ApproveOAuthAuthorization(clientId: "`+webClient+`", redirectUri: "https://harness.example.com/callback", codeChallenge: "`+challenge+`", resource: "`+resource+`") { redirectUrl } }`); len(errors) == 0 {
+		test.Error("a program on the web was given the whole account")
+	}
+}
+
+// An operator signed in as somebody cannot sign an app in to that person's
+// whole account: the app would go on as them after the impersonation ended.
+func TestAnImpersonatorCannotSignAnAppIn(test *testing.T) {
+	world := newSignInWorld(test)
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		operator, err := tx.CreateUser(&models.User{Username: "an-operator"})
+		if err != nil {
+			test.Fatalf("CreateUser: %s", err)
+		}
+		role, err := tx.CreateRole(&models.Role{Name: "operator role", Permissions: models.Permissions()})
+		if err != nil {
+			test.Fatalf("CreateRole: %s", err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "operator group", UserIDs: []string{operator.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			test.Fatalf("CreateGroup: %s", err)
+		}
+	})
+	appClient := world.register(test, "com.example.app:/oauth")
+	resource := "https://" + world.host + api.Prefix
+	query := `mutation { ApproveOAuthAuthorization(clientId: "` + appClient + `", redirectUri: "com.example.app:/oauth", codeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", resource: "` + resource + `") { redirectUrl } }`
+	body, _ := json.Marshal(graphRequest{Query: query})
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(api.AuthenticatedUsernameHeader, world.person.Username)
+	request.Header.Set(api.ImpersonatorUsernameHeader, "an-operator")
+	request.Host = world.host
+	response := httptest.NewRecorder()
+	world.graph.graphView(response, request)
+	if !strings.Contains(response.Body.String(), "signed in by the person themselves") {
+		test.Fatalf("an impersonator signed an app in: %s", response.Body.String())
 	}
 }
