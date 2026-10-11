@@ -84,6 +84,7 @@ type Mutation interface {
 	MailboxMutation
 	MailboxComposeMutation
 	MailboxAppPasswordMutation
+	MailboxSetupProfileMutation
 	AddressBookMutation
 	CalendarMutation
 	ReminderMutation

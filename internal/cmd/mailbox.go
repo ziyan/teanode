@@ -51,6 +51,20 @@ func NewMailboxCommand() *cli.Command {
 			newFolderCommand(),
 			newRuleCommand(),
 			newDeviceCommand(),
+			{
+				Name:      "profile",
+				Usage:     "make a setup profile that adds this mailbox, its calendars and contacts to an iPhone or a Mac",
+				ArgsUsage: "<device-name>",
+				Flags: []cli.Flag{
+					JSONFlag(), mailboxFlag(),
+					&cli.StringFlag{
+						Name:    "output",
+						Aliases: []string{"o"},
+						Usage:   "download it to this file now, instead of printing the address to open on the device",
+					},
+				},
+				Action: runMailboxProfile,
+			},
 			newAutoReplyCommand(),
 			newSubscriptionCommand(),
 			{
@@ -1267,6 +1281,65 @@ func runDeviceRemove(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	fmt.Printf("revoked %s\n", found.Name)
+	return nil
+}
+
+func runMailboxProfile(ctx context.Context, command *cli.Command) error {
+	deviceName := command.Args().First()
+	if deviceName == "" {
+		return usage("what is the device called? usage: teanode mailbox profile <device-name>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	view, err := requireMailbox(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	// With --output the file comes back through this connection, so the
+	// link is never shown and may name the address this program reached the
+	// server at, which on the server itself is 127.0.0.1.
+	output := command.String("output")
+	created, err := client.CreateMailboxSetupProfile(ctx, connection, view.Mailbox.ID, deviceName, output != "")
+	if err != nil {
+		return describeError(command, err)
+	}
+	if output == "" {
+		if command.Bool("json") {
+			return PrintJSON(created)
+		}
+		covers := "mail"
+		if created.HasCalendarsAndContacts {
+			covers = "mail, calendars, reminders and contacts"
+		}
+		return printFields([][2]string{
+			{"device", created.AppPassword.Name},
+			{"adds", covers},
+			{"download", created.DownloadLink},
+			{"expires", formatTime(&created.ExpiresAt)},
+			{"", "open the address on the device, once; then install it in Settings. It holds a password, so share it with nobody"},
+		})
+	}
+	response, err := connection.Download(ctx, created.DownloadPath)
+	if err != nil {
+		return describeError(command, err)
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+	file, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("cannot write %s: %w", output, err)
+	}
+	written, err := io.Copy(file, response.Body)
+	if closeError := file.Close(); err == nil {
+		err = closeError
+	}
+	if err != nil {
+		return fmt.Errorf("cannot write %s: %w", output, err)
+	}
+	fmt.Printf("wrote %s (%d bytes); it holds the password of the app password %s, so keep it private\n", output, written, created.AppPassword.Name)
 	return nil
 }
 
