@@ -47,6 +47,31 @@ struct OpenSectionIntent: AppIntent {
     }
 }
 
+/// OpenConversationIntent opens TeaNode on one conversation: the one a
+/// question or an approval waits in.
+struct OpenConversationIntent: AppIntent {
+    static var title: LocalizedStringResource { "Open a conversation" }
+    static var openAppWhenRun: Bool { true }
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Conversation")
+    var conversationId: String
+
+    init() {}
+
+    init(conversationId: String) {
+        self.conversationId = conversationId
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        #if TEANODE_APP
+            AppModel.shared.openedConversationId = conversationId
+        #endif
+        return .result()
+    }
+}
+
 /// TeaNodePart is a part of TeaNode a widget or a shortcut opens.
 enum TeaNodePart: String, AppEnum {
     case conversation, mail, calendar

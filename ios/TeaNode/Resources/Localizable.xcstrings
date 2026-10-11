@@ -385,6 +385,38 @@
         }
       }
     },
+    "%lld waiting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项待回复"
+          }
+        }
+      }
+    },
+    "%lld waiting for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件があなたの返事待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项等你回复"
+          }
+        }
+      }
+    },
     "(no subject)": {
       "localizations": {
         "ja": {
@@ -1841,6 +1873,22 @@
         }
       }
     },
+    "Asks you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "質問があります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在问你"
+          }
+        }
+      }
+    },
     "Asks your agent something in your main conversation, and says the answer.": {
       "localizations": {
         "ja": {
@@ -2925,6 +2973,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "联系人和日历"
+          }
+        }
+      }
+    },
+    "Conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话"
           }
         }
       }
@@ -7633,6 +7697,22 @@
         }
       }
     },
+    "Nothing waits for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返事待ちはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有等你回复的事"
+          }
+        }
+      }
+    },
     "Notifications": {
       "localizations": {
         "ja": {
@@ -7949,6 +8029,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先打开 TeaNode 并连接到你的服务器。"
+          }
+        }
+      }
+    },
+    "Open a conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开一个对话"
           }
         }
       }
@@ -11364,6 +11460,22 @@
         }
       }
     },
+    "The questions and approvals your agent waits on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが返事を待っている質問と承認。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手在等你回答的问题和批准。"
+          }
+        }
+      }
+    },
     "The sender is told at once, the way the list asks to be left.": {
       "localizations": {
         "ja": {
@@ -13040,6 +13152,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "所在位置"
+          }
+        }
+      }
+    },
+    "Which day suits you for the dentist?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歯医者はどの日がいいですか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "哪天去看牙医合适？"
           }
         }
       }

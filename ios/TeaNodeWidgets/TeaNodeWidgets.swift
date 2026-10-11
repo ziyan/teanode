@@ -9,6 +9,7 @@ import WidgetKit
 struct TeaNodeWidgets: WidgetBundle {
     var body: some Widget {
         AgentWidget()
+        WaitingWidget()
         NextWidget()
         CallControl()
     }
@@ -29,7 +30,10 @@ struct GlanceEntry: TimelineEntry {
             events: [
                 .init(id: "1", title: String(localized: "Team lunch"), location: "", startsAt: Date().addingTimeInterval(3600), endsAt: Date().addingTimeInterval(7200), isAllDay: false),
                 .init(id: "2", title: String(localized: "Dentist"), location: "", startsAt: Date().addingTimeInterval(26 * 3600), endsAt: Date().addingTimeInterval(27 * 3600), isAllDay: false),
-            ], unreadCount: 3, agentName: ""),
+            ], unreadCount: 3, agentName: "", waitingCount: 2,
+            newestWaiting: AgentWaitingInteraction(
+                id: "w1", conversationId: "", interactionKind: "question", interactionText: String(localized: "Which day suits you for the dentist?"),
+                createdAt: "")),
         isConnected: true)
 }
 
@@ -124,6 +128,79 @@ struct AgentWidgetView: View {
                 .tint(.accentColor)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: What waits
+
+/// WaitingWidget is how many questions and approvals wait for the person,
+/// and the newest; a tap opens its conversation.
+struct WaitingWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "waiting", provider: GlanceProvider()) { entry in
+            WaitingWidgetView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
+        .configurationDisplayName("Waiting for you")
+        .description("The questions and approvals your agent waits on.")
+        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
+struct WaitingWidgetView: View {
+    let entry: GlanceEntry
+    @Environment(\.widgetFamily) private var family
+
+    private var count: Int { entry.glance?.waitingCount ?? 0 }
+
+    private var opening: OpenConversationIntent {
+        OpenConversationIntent(conversationId: entry.glance?.newestWaiting?.conversationId ?? "")
+    }
+
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                VStack(spacing: 0) {
+                    Text(count, format: .number).font(.title2.weight(.semibold)).widgetAccentable()
+                    Image(systemName: "questionmark.bubble").font(.caption2)
+                }
+            }
+            .accessibilityLabel(Text("\(count) waiting for you"))
+        case .accessoryRectangular:
+            Button(intent: opening) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Label("\(count) waiting", systemImage: "questionmark.bubble").font(.headline).widgetAccentable()
+                    Text(entry.glance?.newestWaiting?.interactionText ?? String(localized: "Nothing waits for you"))
+                        .font(.caption)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+        default:
+            Button(intent: opening) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "questionmark.bubble").foregroundStyle(count > 0 ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                        Spacer()
+                        Text(count, format: .number).font(.title.weight(.semibold))
+                    }
+                    Spacer(minLength: 4)
+                    if let newest = entry.glance?.newestWaiting {
+                        Text(newest.interactionKind == "approval" ? String(localized: "Approve?") : String(localized: "Asks you"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                        Text(newest.interactionText).font(.footnote).lineLimit(3)
+                    } else {
+                        Text("Nothing waits for you").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .buttonStyle(.plain)
         }
     }
 }

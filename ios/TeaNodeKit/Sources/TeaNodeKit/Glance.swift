@@ -25,11 +25,17 @@ public struct Glance: Codable, Hashable, Sendable {
     public let events: [Event]
     public let unreadCount: Int
     public let agentName: String
+    /// How many questions and approvals wait for the person, and the
+    /// newest of them.
+    public let waitingCount: Int
+    public let newestWaiting: AgentWaitingInteraction?
 
-    public init(events: [Event], unreadCount: Int, agentName: String) {
+    public init(events: [Event], unreadCount: Int, agentName: String, waitingCount: Int = 0, newestWaiting: AgentWaitingInteraction? = nil) {
         self.events = events
         self.unreadCount = unreadCount
         self.agentName = agentName
+        self.waitingCount = waitingCount
+        self.newestWaiting = newestWaiting
     }
 
     /// The events not over yet, soonest first, at most `limit`. An all-day
@@ -68,6 +74,9 @@ extension Connection {
             }
         }
         let unreadCount = ((try? await mailboxes()) ?? []).reduce(0) { $0 + Int($1.unread) }
-        return Glance(events: Glance.upcoming(events, now: now, limit: limit), unreadCount: unreadCount, agentName: agentName)
+        let waiting = try? await waiting(first: 1)
+        return Glance(
+            events: Glance.upcoming(events, now: now, limit: limit), unreadCount: unreadCount, agentName: agentName,
+            waitingCount: waiting?.waitingCount ?? 0, newestWaiting: waiting?.interactions.first)
     }
 }

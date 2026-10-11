@@ -29,4 +29,10 @@ final class GlanceTests: XCTestCase {
         XCTAssertTrue(holiday.isAllDay)
         XCTAssertEqual(calendar.dateComponents([.month, .day, .hour], from: holiday.startsAt), DateComponents(month: 3, day: 11, hour: 0))
     }
+
+    func testWhatWaitsIsCountedByConversation() throws {
+        let json = #"{"waitingCount":3,"interactions":[{"id":"a","conversationId":"c1","interactionKind":"question","interactionText":"Which day?","createdAt":"2026-03-10T17:00:00Z"},{"id":"b","conversationId":"c2","interactionKind":"approval","interactionText":"Send it?","createdAt":"2026-03-10T16:00:00Z"},{"id":"c","conversationId":"c1","interactionKind":"approval","interactionText":"Delete it?","createdAt":"2026-03-10T15:00:00Z"}]}"#
+        let waiting = try JSONDecoder().decode(AgentWaiting.self, from: Data(json.utf8))
+        XCTAssertEqual(waiting.countByConversation, ["c1": 2, "c2": 1])
+    }
 }

@@ -43,6 +43,8 @@ struct ConversationsSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var conversations: [AgentConversation] = []
+    /// How many questions and approvals wait in each conversation.
+    @State private var waitingByConversation: [String: Int] = [:]
     @State private var archived: [AgentConversation]?
     @State private var isShowingArchived = false
     @State private var words = ""
@@ -69,7 +71,16 @@ struct ConversationsSheet: View {
                         Button {
                             onChoose(nil)
                         } label: {
-                            Label(String(localized: "Main chat"), systemImage: "bubble.left")
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Main chat")
+                                    if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
+                                        WaitingMark()
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: "bubble.left")
+                            }
                         }
                         .menuRow(isSelected: currentId == nil)
                         if !isPanel {
@@ -176,6 +187,9 @@ struct ConversationsSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))
                     .foregroundStyle(.primary)
+                if waitingByConversation[conversation.id] != nil {
+                    WaitingMark()
+                }
                 if let summary = conversation.summary, !summary.isEmpty {
                     Text(summary).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -253,6 +267,8 @@ struct ConversationsSheet: View {
         do {
             conversations = try await connection.conversations()
             problemText = nil
+            // The list reads without it; only the marks are missing.
+            waitingByConversation = (try? await connection.waiting(first: 50))?.countByConversation ?? [:]
         } catch {
             problemText = app.describe(error)
         }
@@ -378,5 +394,15 @@ struct NotificationKindToggle: View {
         case "answer": String(localized: "Answers to what you asked from the phone")
         default: notificationKind
         }
+    }
+}
+
+/// WaitingMark says a question or an approval waits in a conversation, in
+/// the orange its card has, as the dashboard's list says it.
+struct WaitingMark: View {
+    var body: some View {
+        Text("Waiting for you")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.orange)
     }
 }
