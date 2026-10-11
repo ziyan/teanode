@@ -211,7 +211,8 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 	}{
 		{"asked from the app", run("ios", side, "What is on today?"), true},
 		{"asked in the main chat on the dashboard", run("drawer", main, "Draft the reply."), true},
-		{"asked in the main chat from the command line", run("cli", main, "Summarize the week."), true},
+		{"asked in the main chat from the command line", run("cli", main, "Summarize the week."), false},
+		{"asked in the main chat over the API", run("api", main, "Summarize the week."), false},
 		{"asked in a side chat on the dashboard", run("drawer", side, "Draft the reply."), false},
 		{"asked on a call", run("voice", main, "What is on today?"), false},
 		{"asked from a linked chat", run("telegram", main, "What is on today?"), false},
