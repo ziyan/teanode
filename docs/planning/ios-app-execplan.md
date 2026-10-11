@@ -55,14 +55,14 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 - [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
 - [x] (2026-10-11) Milestone 14: tabs for the agent, mail, the calendar, contacts and More; asking the agent about a mail, a page or a transaction from where it is.
-- [ ] Milestone 15: mail. Folders in a side panel, threads, reading with pictures through the server, every action with undo, composing, drafts and invitations are in TestFlight; rules and mailbox settings remain.
+- [ ] Milestone 15: mail. Folders in a side panel, threads, reading with pictures through the server, every action with undo, composing, drafts, invitations, rules (written, ordered and tried on recent mail) and every mailbox setting are in TestFlight; to be tried on the person's phone.
 - [x] (2026-10-11) Milestone 16: mail subscriptions.
 - [x] (2026-10-11) Milestone 17: the calendar, with reminders.
 - [x] (2026-10-11) Milestone 18: contacts.
 - [ ] Milestone 19: finance. Its sections are in the side menu under Finance. Every tab of the dashboard's Finance page is written; linking a bank through Plaid stays on the dashboard until the server sends a redirect for OAuth banks.
 - [ ] Milestone 20: knowledge. Search, pages, facts, connections, history, recall and documents are in TestFlight; the sources, dreams and memory check belong to the agent's settings (Milestone 21).
-- [ ] Milestone 21: every account setting, the agent's settings included.
-- [ ] Milestone 22: management: domains, people and access, queues, audit, and the server's settings.
+- [ ] Milestone 21: every account setting, the agent's settings included. Profile, password, passkeys (list and remove), phones, sessions, API tokens and apps, and every tab of the agent page, are in TestFlight; to be tried on the person's phone. Adding a passkey, Herdr panes, the coding-agent harness commands and authorizing a connected server stay on the dashboard.
+- [ ] Milestone 22: management: domains, people and access, queues, audit, and the server's settings. All of it is under Manage in Settings, shown to operators only, in TestFlight; template and layout editors, adding a source type and composing as an operator stay on the dashboard.
 
 ## Surprises & Discoveries
 
@@ -94,6 +94,13 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - Observation: everything else a client needs already exists and is used by the drawer. Sections below name each operation.
 
 ## Decision Log
+
+- Decision: what a phone cannot do well stays on the dashboard, and the app's screen says so in a footer: adding a passkey (an app may only make passkeys for domains it lists ahead of time, and every server has its own), the template and layout editors, pasting a source type, Herdr's terminal panes, the coding-agent harness commands, and authorizing a connected server (the provider returns to the dashboard).
+  Rationale: each needs a large screen, a file from a computer, or a redirect the server sends only to the dashboard. Everything else on those pages is in the app.
+  Date/Author: 2026-10-11, agent.
+- Decision: an answer in the main conversation, asked on the dashboard, the command line or the API, is sent to the phone when it finishes after the person left, as an answer asked from the app always was.
+  Rationale: the person asked for it; a turn started at a desk and left running was never told. Answers that reach the person another way (a call, a linked chat, mail) are not sent twice.
+  Date/Author: 2026-10-11, agent; asked for by the person.
 
 - Decision: the app is native, written in Swift with SwiftUI, for iOS 18 and later. It has no third-party Swift dependencies.
   Rationale: notifications with buttons, a share extension, calls that survive a locked screen, Siri, widgets and Live Activities exist only for native apps. A web view inside a native shell would still need native code for each of them, and would make the chat a second copy of the drawer to keep in step. No dependencies matches the repository's habit of vendoring little, and everything needed (HTTP, websockets, JSON, the keychain, audio) is in Apple's frameworks.
