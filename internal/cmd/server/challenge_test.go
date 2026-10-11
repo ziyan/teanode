@@ -66,4 +66,3 @@ func TestTheConsoleIsServedOnThePlainListener(t *testing.T) {
 		t.Errorf("a remote caller naming a loopback host got %d", code)
 	}
 }
-
