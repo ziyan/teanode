@@ -35,7 +35,7 @@ struct StatusButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label("Usage and devices", systemImage: "slider.horizontal.3")
+            Label("Usage and devices", systemImage: "gearshape")
         }
     }
 }

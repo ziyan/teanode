@@ -53,7 +53,18 @@ struct ConversationView: View {
             .overlay { loading }
             .navigationTitle(model.title)
             .navigationBarTitleDisplayMode(.inline)
+            // The bar is see-through: the messages run under it, and only
+            // its buttons and the name float above them.
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(model.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .glassEffect(in: .capsule)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     StatusButton(status: status) { isShowingStatus = true }
                 }

@@ -65,10 +65,10 @@
             }
             let day = Calendar.current.dateComponents([.year, .month, .day], from: today)
             let rows = [
-                #"{"id":"e1","calendarId":"home","summary":"Plumber","location":"Home","startsAt":"\#(at(0, 9))","endsAt":"\#(at(0, 10))","allDay":false,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
-                #"{"id":"e2","calendarId":"home","summary":"Lunch with Sam","location":"The noodle place","startsAt":"\#(at(0, 13.5))","endsAt":"\#(at(0, 14.5))","allDay":false,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
-                #"{"id":"e3","calendarId":"home","summary":"Book club","location":null,"startsAt":"\#(at(2, 19))","endsAt":"\#(at(2, 21))","allDay":false,"recurring":true,"occurrence":null,"status":"confirmed"}"#,
-                #"{"id":"e4","calendarId":"home","summary":"Garden day","location":null,"startsAt":"\#(CalendarDates.allDayText(day))","endsAt":"\#(CalendarDates.allDayText(CalendarDates.dayAfter(day)))","allDay":true,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
+                #"{"id":"e1","calendarId":"home","summary":"Plumber","location":"Home","startsAt":"\#(at(0, 9))","endsAt":"\#(at(0, 10))","allDay":false,"recurring":false,"occurrence":false,"status":"confirmed"}"#,
+                #"{"id":"e2","calendarId":"home","summary":"Lunch with Sam","location":"The noodle place","startsAt":"\#(at(0, 13.5))","endsAt":"\#(at(0, 14.5))","allDay":false,"recurring":false,"occurrence":false,"status":"confirmed"}"#,
+                #"{"id":"e3","calendarId":"home","summary":"Book club","location":null,"startsAt":"\#(at(2, 19))","endsAt":"\#(at(2, 21))","allDay":false,"recurring":true,"occurrence":false,"status":"confirmed"}"#,
+                #"{"id":"e4","calendarId":"home","summary":"Garden day","location":null,"startsAt":"\#(CalendarDates.allDayText(day))","endsAt":"\#(CalendarDates.allDayText(CalendarDates.dayAfter(day)))","allDay":true,"recurring":false,"occurrence":false,"status":"confirmed"}"#,
             ]
             return #"{"data":{"ListCalendarEvents":["# + rows.joined(separator: ",") + "]}}"
         }

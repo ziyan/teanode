@@ -27,11 +27,12 @@ public struct CalendarEvent: Codable, Identifiable, Hashable, Sendable {
     public let endsAt: String
     public let allDay: Bool
     public let recurring: Bool
-    public let occurrence: String?
+    /// Whether this is one time of a repeating event.
+    public let occurrence: Bool?
     public let status: String?
 
     /// A stable identity for one occurrence of a repeating event.
-    public var occurrenceId: String { "\(id)-\(occurrence ?? startsAt)" }
+    public var occurrenceId: String { "\(id)-\(startsAt)" }
 }
 
 /// CalendarEventDetail is one event whole, read before it is changed: the
