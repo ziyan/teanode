@@ -13,7 +13,7 @@ struct IdeasScreen: View {
     @State private var doneText: String?
     @State private var problemText: String?
 
-    private var language: String { Locale.current.language.languageCode?.identifier ?? "en" }
+    private var language: String { DisplayLanguage.languageCode }
 
     var body: some View {
         NavigationStack {

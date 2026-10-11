@@ -226,7 +226,7 @@ final class ConversationModel {
     }
 
     private func loadIdeas() async {
-        ideas = (try? await connection.ideas(language: Locale.current.language.languageCode?.identifier ?? "en"))?.prefix(3).map { $0 } ?? []
+        ideas = (try? await connection.ideas(language: DisplayLanguage.languageCode))?.prefix(3).map { $0 } ?? []
         if !ideas.isEmpty {
             try? await connection.markIdeasShown(ideas.map(\.id))
         }
@@ -350,7 +350,7 @@ final class ConversationModel {
     /// Starts one of the agent's ideas: what it opens with is sent at once.
     func start(_ idea: AgentIdea) async {
         do {
-            let started = try await connection.startIdea(idea.id, in: conversationId, language: Locale.current.language.languageCode?.identifier ?? "en")
+            let started = try await connection.startIdea(idea.id, in: conversationId, language: DisplayLanguage.languageCode)
             ideas = []
             if let opened = started.conversationId, opened != conversationId {
                 app.openedConversationId = opened

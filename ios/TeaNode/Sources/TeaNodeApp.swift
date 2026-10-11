@@ -7,7 +7,15 @@ import TeaNodeKit
 struct TeaNodeApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
+    @AppStorage(DisplayLanguage.storageKey) private var language = DisplayLanguage.system
+    @Environment(\.scenePhase) private var scenePhase
+
     private var app: AppModel { delegate.app }
+
+    init() {
+        DisplayLanguage.chosen.apply()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -19,8 +27,16 @@ struct TeaNodeApp: App {
                     ConnectView()
                 }
             }
+            // Drawn again whole when the language changes, as words looked
+            // up before would stay in the old one.
+            .id(language)
+            .environment(\.locale, language.locale)
             .environment(app)
             .onOpenURL { url in app.open(url) }
+            .onAppear { appearance.apply() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { appearance.apply() }
+            }
         }
     }
 }
@@ -303,6 +319,7 @@ struct SettingsForm: View {
     var body: some View {
         Form {
             AccountsSection()
+            DisplaySection()
             if let mail, mail.mailbox != nil {
                 Section {
                     NavigationLink {

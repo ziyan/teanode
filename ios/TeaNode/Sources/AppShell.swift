@@ -123,6 +123,10 @@ struct MainView: View {
             ComposeView(mail: mail, start: start).environment(mail)
         }
         .onAppear {
+            if let kept = app.keptSection {
+                section = kept
+                app.keptSection = nil
+            }
             #if DEBUG
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
                 if DemoServer.isMenuRequested { isMenuOpen = true }

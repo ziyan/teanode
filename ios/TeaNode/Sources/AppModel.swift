@@ -66,6 +66,9 @@ final class AppModel {
 
     /// A part of the app the agent asked to show.
     var openedSection: AppSection?
+    /// The section to open again after the app is drawn anew, as it is when
+    /// the display language changes.
+    var keptSection: AppSection?
 
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
