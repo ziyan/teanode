@@ -945,6 +945,22 @@
         }
       }
     },
+    "Add account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加账户"
+          }
+        }
+      }
+    },
     "Add email": {
       "localizations": {
         "ja": {
@@ -5469,6 +5485,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在某个目录中（可选）"
+          }
+        }
+      }
+    },
+    "In use": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在使用"
           }
         }
       }
@@ -10849,6 +10881,38 @@
         }
       }
     },
+    "Sign out of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ からサインアウト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 %@"
+          }
+        }
+      }
+    },
+    "Sign out of %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ からサインアウトしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要退出 %@ 吗？"
+          }
+        }
+      }
+    },
     "Sign out of TeaNode?": {
       "localizations": {
         "ja": {
@@ -10909,6 +10973,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已登录"
+          }
+        }
+      }
+    },
+    "Signed out of %@: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ からサインアウトしました：%2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出 %1$@：%2$@"
           }
         }
       }
@@ -12192,6 +12272,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器没有让这台手机登录。"
+          }
+        }
+      }
+    },
+    "The share sheet, widgets and Siri use the account in use.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有、ウィジェット、Siri は使用中のアカウントを使います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享、小组件和 Siri 使用正在使用的账户。"
           }
         }
       }

@@ -6,9 +6,11 @@ import SwiftUI
 import TeaNodeKit
 import UIKit
 import UserNotifications
+import WidgetKit
 
-/// AppModel is the app's sign-in: the account kept in the keychain, the
-/// connection made from it, and connecting and signing out.
+/// AppModel is the app's sign-ins: every account kept in the keychain, the
+/// one in use and the connection made from it, and connecting, switching
+/// and signing out.
 @MainActor
 @Observable
 final class AppModel {
@@ -16,6 +18,10 @@ final class AppModel {
     static let shared = AppModel()
 
     private(set) var account: Account?
+    /// Every server the app is signed in to, the one in use among them.
+    private(set) var accounts: [Account] = []
+    /// The Add account sheet, over the signed-in app.
+    var isAddingAccount = false
     private(set) var connection: Connection?
 
     /// Why the app signed itself out, shown on the connect screen.
@@ -247,8 +253,22 @@ final class AppModel {
     }
 
     private func use(_ account: Account) {
+        let isChanged = account.accountKey != self.account?.accountKey
         self.account = account
         connection = Connection(account: account, transport: transport, store: store)
+        accounts = (try? store.accounts().accounts) ?? [account]
+        // The widgets read the account in use; one that changed is read again.
+        if isChanged { WidgetCenter.shared.reloadAllTimelines() }
+    }
+
+    /// Puts another sign-in to use: the whole app is drawn again for it.
+    func switchTo(_ chosen: Account) async {
+        guard chosen.accountKey != account?.accountKey else { return }
+        try? store.activate(chosen.accountKey)
+        agentName = ""
+        phone = nil
+        use(chosen)
+        await setUpNotifications()
     }
 
     /// Takes a link iOS opened the app with. A connect code is used only
@@ -256,14 +276,11 @@ final class AppModel {
     /// unspent, and the person is told why.
     func open(_ url: URL) {
         guard let link = ConnectLink(url) else { return }
-        guard let account else {
-            openedLink = link
-            return
-        }
-        if link.server == account.server {
-            openedLinkText = String(localized: "This phone is already connected to \(account.server.host).")
-        } else {
-            openedLinkText = String(localized: "This phone is connected to \(account.server.host). To connect it to \(link.server.host), sign out in Settings first.")
+        // Signed in already, the code adds an account beside the others; the
+        // person is shown whose it is before it is kept.
+        openedLink = link
+        if account != nil {
+            isAddingAccount = true
         }
     }
 
@@ -315,7 +332,10 @@ final class AppModel {
     }
 
     func confirm(_ pending: PendingConnection) async {
-        try? store.save(pending.account)
+        try? store.add(pending.account)
+        isAddingAccount = false
+        agentName = ""
+        phone = nil
         use(pending.account)
         signedOutText = nil
         await setUpNotifications()
@@ -436,16 +456,40 @@ final class AppModel {
 
     /// Signs this phone out: on the server too, unless the server already
     /// ended the sign-in.
+    /// Signs out of the account in use, and puts the next one to use; the
+    /// notification key goes only with the last.
     func signOut(signedOutText: String? = nil) async {
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
+        let gone = account?.server.host ?? ""
         try? store.delete()
+        phone = nil
+        agentName = ""
+        if let next = try? store.load() {
+            use(next)
+            if let signedOutText {
+                openedLinkText = String(localized: "Signed out of \(gone): \(signedOutText)")
+            }
+            await setUpNotifications()
+            return
+        }
         try? PayloadKey.forget()
         account = nil
+        accounts = []
         connection = nil
-        phone = nil
         self.signedOutText = signedOutText
+    }
+
+    /// Signs out of an account not in use, keeping the one in use.
+    func signOut(of other: Account) async {
+        guard other.accountKey != account?.accountKey else {
+            await signOut()
+            return
+        }
+        await SignIn(server: other.server, transport: transport).revoke(other)
+        try? store.remove(other.accountKey)
+        accounts = (try? store.accounts().accounts) ?? accounts
     }
 
     /// What to show for an error from the server. An ended sign-in signs the

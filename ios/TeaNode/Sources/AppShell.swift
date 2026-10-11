@@ -190,8 +190,11 @@ struct MainView: View {
             app.composingTo = nil
             composing = ComposeStart(kind: .new, to: address)
         }
+        .sheet(isPresented: Bindable(app).isAddingAccount) {
+            ConnectView(isAdding: true)
+        }
         .alert(
-            "Already connected",
+            "TeaNode",
             isPresented: Bindable(app).isShowingOpenedLinkText,
             presenting: app.openedLinkText
         ) { _ in

@@ -6,6 +6,9 @@ import TeaNodeKit
 /// server's dashboard: scanned from a computer's screen, or the link pasted
 /// on a phone that is the only device at hand.
 struct ConnectView: View {
+    /// Shown over the signed-in app to add another account, rather than as
+    /// the app's only screen.
+    var isAdding = false
     @Environment(AppModel.self) private var app
     @State private var isScanning = false
     @State private var isConnecting = false
@@ -35,7 +38,7 @@ struct ConnectView: View {
                         Label("Scan the code it shows.", systemImage: "2.circle")
                     }
                     .symbolRenderingMode(.hierarchical)
-                    if let text = problemText ?? app.signedOutText {
+                    if let text = problemText ?? (isAdding ? nil : app.signedOutText) {
                         Label(text, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
                     }
@@ -79,7 +82,17 @@ struct ConnectView: View {
                         .glassEffect(in: .rect(cornerRadius: 16))
                 }
             }
-            .navigationTitle("TeaNode")
+            .navigationTitle(isAdding ? String(localized: "Add account") : "TeaNode")
+            .toolbar {
+                if isAdding {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            app.openedLink = nil
+                            app.isAddingAccount = false
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $isScanning) {
                 ScanSheet { text in
                     isScanning = false

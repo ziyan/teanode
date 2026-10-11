@@ -14,7 +14,7 @@ struct TeaNodeApp: App {
             Group {
                 if let connection = app.connection {
                     MainView(connection: connection, username: app.account?.username ?? "")
-                        .id(app.account?.server.description)
+                        .id(app.account?.accountKey)
                 } else {
                     ConnectView()
                 }
@@ -293,12 +293,7 @@ struct SettingsForm: View {
 
     var body: some View {
         Form {
-            if let account = app.account {
-                Section("Signed in") {
-                    LabeledContent("Server", value: account.server.host)
-                    LabeledContent("Account", value: account.username)
-                }
-            }
+            AccountsSection()
             if let mail, mail.mailbox != nil {
                 Section {
                     NavigationLink {
@@ -310,7 +305,7 @@ struct SettingsForm: View {
             }
             NotificationsSection()
             Section {
-                Button("Sign out", role: .destructive) {
+                Button(app.accounts.count > 1 ? String(localized: "Sign out of \(app.account?.server.host ?? "")") : String(localized: "Sign out"), role: .destructive) {
                     isConfirmingSignOut = true
                 }
             } footer: {
@@ -406,3 +401,63 @@ struct WaitingMark: View {
             .foregroundStyle(.orange)
     }
 }
+
+/// AccountsSection is every server the app is signed in to, as the top of
+/// Settings: the one in use ticked, a tap to switch, a swipe to sign out of
+/// another, and adding one.
+struct AccountsSection: View {
+    @Environment(AppModel.self) private var app
+    @State private var signingOut: Account?
+
+    var body: some View {
+        Section {
+            ForEach(app.accounts, id: \.accountKey) { account in
+                Button {
+                    Task { await app.switchTo(account) }
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(String(account.username.prefix(1)).uppercased())
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.accentColor, in: .circle)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.username).foregroundStyle(.primary)
+                            Text(account.server.host).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if account.accountKey == app.account?.accountKey {
+                            Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityLabel("In use")
+                        }
+                    }
+                }
+                .swipeActions {
+                    if account.accountKey != app.account?.accountKey {
+                        Button("Sign out", role: .destructive) { signingOut = account }
+                    }
+                }
+            }
+            Button {
+                app.isAddingAccount = true
+            } label: {
+                Label("Add account", systemImage: "plus")
+            }
+        } header: {
+            Text("Accounts")
+        } footer: {
+            if app.accounts.count > 1 {
+                Text("The share sheet, widgets and Siri use the account in use.")
+            }
+        }
+        .confirmationDialog(
+            "Sign out of \(signingOut?.server.host ?? "")?", isPresented: Binding(get: { signingOut != nil }, set: { if !$0 { signingOut = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Sign out", role: .destructive) {
+                guard let account = signingOut else { return }
+                Task { await app.signOut(of: account) }
+            }
+        }
+    }
+}
+

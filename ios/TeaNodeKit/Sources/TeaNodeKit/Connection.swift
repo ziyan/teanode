@@ -35,7 +35,7 @@ public actor Connection {
         // renewed it has stored a newer one, whose refresh token is the
         // only one still good: it is taken up before renewing again.
         if account.expiresAt.timeIntervalSince(now) < Self.renewBefore, let stored = try? store?.load(),
-            stored.server == account.server, stored.expiresAt > account.expiresAt
+            stored.accountKey == account.accountKey, stored.expiresAt > account.expiresAt
         {
             account = stored
         }

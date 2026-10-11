@@ -69,22 +69,69 @@
         public let status: OSStatus
     }
 
-    /// KeychainAccountStore keeps the sign-in in the keychain.
+    /// KeychainAccountStore keeps the sign-ins in the keychain: every server
+    /// the app is signed in to, and the one in use, which is what load and
+    /// delete act on. A sign-in kept before there could be several is taken
+    /// into the list the first time it is read.
     public struct KeychainAccountStore: AccountStore {
-        static let name = "account"
+        static let name = "accounts"
+        static let singleName = "account"
 
         public init() {}
 
+        /// Keeps a sign-in, renewed or new, without changing the one in use.
         public func save(_ account: Account) throws {
-            try Keychain.write(JSONEncoder().encode(account), as: Self.name)
+            var ring = try accounts()
+            ring.put(account)
+            try write(ring)
         }
 
         public func load() throws -> Account? {
-            try Keychain.read(Self.name).map { try JSONDecoder().decode(Account.self, from: $0) }
+            try accounts().active
         }
 
+        /// Forgets the sign-in in use; the next kept one is in use after it.
         public func delete() throws {
-            try Keychain.delete(Self.name)
+            var ring = try accounts()
+            if let key = ring.active?.accountKey { ring.remove(key) }
+            try write(ring)
+        }
+
+        /// Every sign-in, and the one in use.
+        public func accounts() throws -> AccountRing {
+            if let data = try Keychain.read(Self.name) {
+                return try JSONDecoder().decode(AccountRing.self, from: data)
+            }
+            guard let data = try Keychain.read(Self.singleName) else { return AccountRing() }
+            let single = try JSONDecoder().decode(Account.self, from: data)
+            let ring = AccountRing(accounts: [single], activeKey: single.accountKey)
+            try write(ring)
+            try Keychain.delete(Self.singleName)
+            return ring
+        }
+
+        /// Keeps a sign-in and puts it to use.
+        public func add(_ account: Account) throws {
+            var ring = try accounts()
+            ring.put(account)
+            ring.activate(account.accountKey)
+            try write(ring)
+        }
+
+        public func activate(_ accountKey: String) throws {
+            var ring = try accounts()
+            ring.activate(accountKey)
+            try write(ring)
+        }
+
+        public func remove(_ accountKey: String) throws {
+            var ring = try accounts()
+            ring.remove(accountKey)
+            try write(ring)
+        }
+
+        func write(_ ring: AccountRing) throws {
+            try Keychain.write(JSONEncoder().encode(ring), as: Self.name)
         }
     }
 
