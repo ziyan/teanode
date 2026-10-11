@@ -218,7 +218,16 @@ struct CallBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            CallMeter(level: call.level, isSpeaking: call.callState == .speaking)
+            Button {
+                call.cutAnswer()
+            } label: {
+                CallMeter(level: call.level, isSpeaking: call.callState == .speaking)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(call.callState != .speaking)
+            .accessibilityLabel("Stop the answer")
             Text(caption)
                 .font(.callout)
                 .foregroundStyle(call.problemText == nil ? .secondary : .primary)
@@ -267,7 +276,7 @@ struct CallBar: View {
         case .listening: return call.isMuted ? String(localized: "Muted") : String(localized: "Listening…")
         case .hearing: return String(localized: "Hearing you…")
         case .working: return String(localized: "Working on it…")
-        case .speaking: return String(localized: "Speaking… talk to cut in")
+        case .speaking: return String(localized: "Speaking… talk or tap to cut in")
         case .ended: return ""
         }
     }

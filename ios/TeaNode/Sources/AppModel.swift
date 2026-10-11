@@ -53,6 +53,48 @@ final class AppModel {
     /// An address to write to, from a contact: compose opens with it.
     var composingTo: String?
 
+    /// A part of the app the agent asked to show.
+    var openedSection: AppSection?
+
+    /// The open_page events already followed, by run and sequence, so a
+    /// feed replayed after the screen comes back does not move the app again.
+    private var shownNavigations: Set<String> = []
+
+    func show(path: String, once key: String) {
+        guard shownNavigations.insert(key).inserted else { return }
+        show(path: path)
+    }
+
+    /// Goes to the dashboard path the agent's open_page names, checked as
+    /// the dashboard checks it: the person's own pages, in plain segments.
+    func show(path written: String) {
+        let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
+        guard path.hasPrefix("/"), path.count <= 600 else { return }
+        let segments = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let isPlain = segments.allSatisfy { segment in
+            !segment.isEmpty && segment != "." && segment != ".."
+                && segment.allSatisfy { $0.isLetter || $0.isNumber || "-._~".contains($0) }
+        }
+        guard isPlain, let first = segments.first else { return }
+        switch first {
+        case "knowledge":
+            let page = segments.dropFirst().joined(separator: "/")
+            if page.isEmpty { openedSection = .knowledge } else { openedKnowledgePath = page }
+        case "mailbox":
+            if segments.count >= 3, segments[1] != "compose", segments[1] != "subscriptions" {
+                openedMailItemId = segments[2]
+            } else {
+                openedSection = .mail
+            }
+        case "finance":
+            if path != "/finance/link" { openedSection = .finance }
+        case "settings":
+            openedSection = .settings
+        default:
+            break
+        }
+    }
+
     /// The agent's name, for the main conversation's title and the
     /// composer; empty until read, or when the agent has none.
     private(set) var agentName = ""

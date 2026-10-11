@@ -64,7 +64,9 @@ struct CalendarScreen: View {
                 }
             }
         case .day:
-            DayTimeline(model: model) { opened = $0 }
+            DayTimeline(model: model) { opened = $0 } onCreate: { start in
+                draft = EventDraft(startingAt: start)
+            }
         case .agenda:
             let days = model.days.filter { !model.events(on: $0).isEmpty }
             List {
@@ -416,6 +418,9 @@ enum EventWords {
 struct DayTimeline: View {
     let model: CalendarModel
     let onOpen: (CalendarEvent) -> Void
+    /// A tap on an empty hour starts an event at that half hour, as the
+    /// dashboard's grid does.
+    let onCreate: (Date) -> Void
     @ScaledMetric private var hourHeight: CGFloat = 56
 
     var body: some View {
@@ -448,6 +453,26 @@ struct DayTimeline: View {
                                 }
                                 .frame(height: hourHeight, alignment: .top)
                                 .id(hour)
+                            }
+                        }
+                        .contentShape(.rect)
+                        .onTapGesture { location in
+                            let halfHours = max(0, min(47, Int((location.y - 6) / (hourHeight / 2))))
+                            let start = Calendar.current.startOfDay(for: model.focus).addingTimeInterval(Double(halfHours) * 1800)
+                            onCreate(start)
+                        }
+                        if Calendar.current.isDateInToday(model.focus) {
+                            // Now, as a line across the hours.
+                            TimelineView(.everyMinute) { context in
+                                let hours = context.date.timeIntervalSince(Calendar.current.startOfDay(for: context.date)) / 3600
+                                HStack(spacing: 0) {
+                                    Circle().fill(.red).frame(width: 8, height: 8)
+                                    Rectangle().fill(.red).frame(height: 1.5)
+                                }
+                                .padding(.leading, 46)
+                                .offset(y: hours * hourHeight + 6 - 4)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
                             }
                         }
                         GeometryReader { geometry in

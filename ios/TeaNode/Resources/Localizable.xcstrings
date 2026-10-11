@@ -8945,6 +8945,22 @@
         }
       }
     },
+    "Speaking… talk or tap to cut in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話しています…話すかタップで割り込めます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在说话…说话或轻点即可打断"
+          }
+        }
+      }
+    },
     "Speaking… talk to cut in": {
       "localizations": {
         "ja": {
@@ -9165,6 +9181,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "Stop the answer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答を止める"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止回答"
           }
         }
       }

@@ -238,6 +238,10 @@ final class ConversationModel {
             if let text = event.text, !text.isEmpty { title = text }
         case "locate":
             answerLocation(event)
+        case "navigate":
+            // The agent's open_page: the app goes there, as the dashboard
+            // does, but only for a turn this phone is following now.
+            if let path = event.text { app.show(path: path, once: "\(event.runId)-\(event.sequence)") }
         default:
             break
         }

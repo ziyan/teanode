@@ -150,6 +150,12 @@ struct MainView: View {
         .onChange(of: app.openedMailItemId) { _, itemId in
             if itemId != nil { section = .mail }
         }
+        .onChange(of: app.openedSection) { _, opened in
+            guard let opened else { return }
+            app.openedSection = nil
+            section = opened
+            isMenuOpen = false
+        }
         .onChange(of: app.composingTo) { _, address in
             guard let address else { return }
             app.composingTo = nil
@@ -164,10 +170,12 @@ struct MainView: View {
         } message: { text in
             Text(text)
         }
-        // While the app is open the person is here: notifications that
-        // would tell them what they are looking at are held back.
-        .task(id: scenePhase) {
-            let isVisible = scenePhase == .active
+        // While the conversation is on screen the person is here, and
+        // notifications that would tell them what they see are held back.
+        // Elsewhere in the app they are away from it, so what the agent says
+        // first still reaches them, as a banner over the app.
+        .task(id: "\(scenePhase)-\(section)") {
+            let isVisible = scenePhase == .active && section == .agent
             try? await connection.reportPresence(isVisible: isVisible)
             if isVisible { await mail.load() }
             while isVisible, !Task.isCancelled {

@@ -133,6 +133,10 @@ struct SidePanel<Panel: View, Content: View>: View {
                     })
             .animation(isReducingMotion ? nil : .spring(duration: 0.3), value: isOpen)
         }
+        // The whole screen, to its edges: measured inside the safe area, the
+        // screens under it ended above the home indicator, over a black band.
+        // They keep their own safe areas.
+        .ignoresSafeArea()
         .toolbarVisibility(isOpen ? .hidden : .automatic, for: .tabBar)
         .sensoryFeedback(.selection, trigger: isOpen)
     }

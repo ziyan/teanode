@@ -467,6 +467,14 @@ final class VoiceCall: NSObject {
         }
     }
 
+    /// Cuts an answer short, as a tap on the dashboard's meter does.
+    func cutAnswer() {
+        guard isSpeakingAnswer || !waitingSentences.isEmpty else { return }
+        stopSpeaking()
+        player.volume = 1
+        callState = spokenRuns.isEmpty ? .listening : .working
+    }
+
     private func stopSpeaking() {
         let pending = segments.filter { !$0.isPlayed }.map(\.segmentId)
         if !pending.isEmpty, let data = try? JSONSerialization.data(withJSONObject: ["voiceEvent": "cancelAnswer", "answerSegmentIds": pending]) {
