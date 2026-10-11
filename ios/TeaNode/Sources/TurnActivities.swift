@@ -34,6 +34,7 @@ enum TurnActivities {
             } catch {
                 return
             }
+            let activityId = activity.id
             for await token in activity.pushTokenUpdates {
                 do {
                     let registration = try await PushRelay(transport: URLSessionTransport()).register(
@@ -42,10 +43,18 @@ enum TurnActivities {
                 } catch {
                     // Nothing would ever update it: better none than one
                     // that says "working" after the turn is over.
-                    await activity.end(nil, dismissalPolicy: .immediate)
+                    await end(activityId: activityId)
                 }
                 break
             }
+        }
+    }
+
+    /// Ends one activity, found again by its id: the one the task holds is
+    /// busy giving its push tokens.
+    private static func end(activityId: String) async {
+        for activity in Activity<AgentTurnAttributes>.activities where activity.id == activityId {
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
 
