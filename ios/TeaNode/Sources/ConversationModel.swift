@@ -287,6 +287,26 @@ final class ConversationModel {
 
     /// Sends what is typed: an answer to the question waiting, when one is
     /// fresh, or a new message.
+    /// The reactions offered first when a message is held, as Messages
+    /// offers its own.
+    static let quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "🎉"]
+
+    /// Puts the person's reaction on a message, or takes it away when it is
+    /// the one already there. It shows at once, and goes back if the server
+    /// refuses it.
+    func react(to line: TranscriptLine, with emoji: String) async {
+        guard let messageId = line.messageId else { return }
+        let previous = line.reaction(of: "person") ?? ""
+        let chosen = previous == emoji ? "" : emoji
+        transcript.react(messageId: messageId, emoji: chosen, reactorKind: "person")
+        do {
+            try await connection.react(to: messageId, emoji: chosen)
+        } catch {
+            transcript.react(messageId: messageId, emoji: previous, reactorKind: "person")
+            sendProblemText = app.describe(error)
+        }
+    }
+
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }

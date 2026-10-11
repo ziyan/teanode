@@ -24841,6 +24841,22 @@
         }
       }
     },
+    "React %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ でリアクション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 %@ 回应"
+          }
+        }
+      }
+    },
     "Read": {
       "localizations": {
         "ja": {
@@ -31865,6 +31881,22 @@
         }
       }
     },
+    "Take away %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を取り消す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消 %@"
+          }
+        }
+      }
+    },
     "Take off this charge": {
       "localizations": {
         "ja": {
@@ -32488,6 +32520,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "助手无法访问此邮箱。"
+          }
+        }
+      }
+    },
+    "The agent reacted %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが %@ でリアクション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手回应了 %@"
           }
         }
       }
@@ -38904,6 +38952,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你可以查看此服务器上的组，但不能查看其中的账号。"
+          }
+        }
+      }
+    },
+    "You reacted %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ でリアクションしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你回应了 %@"
           }
         }
       }

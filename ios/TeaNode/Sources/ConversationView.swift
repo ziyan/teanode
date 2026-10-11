@@ -453,7 +453,7 @@ struct ConversationItemView: View {
                     }
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
-                    AgentBubble {
+                    AgentBubble(reactions: line.reactions) {
                         MarkdownView(text: line.text)
                     }
                     .onLongPressGesture(minimumDuration: 0.35) {
@@ -547,6 +547,9 @@ struct MessageActionsView: View {
                 .accessibilityLabel("Close")
                 .accessibilityAddTraits(.isButton)
             VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
+                if line.messageId != nil {
+                    reactionBar
+                }
                 ScrollView {
                     bubble
                         .frame(maxWidth: .infinity, alignment: isPerson ? .trailing : .leading)
@@ -564,6 +567,29 @@ struct MessageActionsView: View {
             withAnimation(.spring(duration: 0.3, bounce: 0.2)) { isShown = true }
         }
         .accessibilityAction(.escape) { onClose(nil) }
+    }
+
+    /// The quick reactions, the person's current one marked; choosing it
+    /// again takes it away.
+    private var reactionBar: some View {
+        let current = line.reaction(of: "person")
+        return HStack(spacing: 2) {
+            ForEach(ConversationModel.quickReactions, id: \.self) { emoji in
+                Button {
+                    onClose { Task { await model.react(to: line, with: emoji) } }
+                } label: {
+                    Text(verbatim: emoji)
+                        .font(.title2)
+                        .frame(width: 40, height: 44)
+                        .background(current == emoji ? Color.accentColor.opacity(0.3) : .clear, in: .circle)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(current == emoji ? Text("Take away \(emoji)") : Text("React \(emoji)"))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: .capsule)
     }
 
     @ViewBuilder
@@ -733,6 +759,11 @@ struct PersonBubble: View {
                         // The person's side in the accent's tint, the agent's in
                         // grey, so whose each bubble is shows at a glance.
                         .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+                        .overlay(alignment: .bottomLeading) {
+                            ReactionBadges(reactions: line.reactions)
+                                .offset(x: -10, y: 18)
+                        }
+                        .padding(.bottom, line.reactions.isEmpty ? 0 : 18)
                 }
             }
         }
@@ -743,7 +774,14 @@ struct PersonBubble: View {
 /// person's reply sits in Messages: the conversation reads as talking to
 /// someone, with a bubble on each side.
 struct AgentBubble<Content: View>: View {
+    /// The reactions on it, drawn at its lower corner.
+    var reactions: [AgentMessageReaction] = []
     @ViewBuilder let content: Content
+
+    init(reactions: [AgentMessageReaction] = [], @ViewBuilder content: () -> Content) {
+        self.reactions = reactions
+        self.content = content()
+    }
 
     var body: some View {
         HStack {
@@ -751,8 +789,66 @@ struct AgentBubble<Content: View>: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
+                    ReactionBadges(reactions: reactions)
+                        .offset(x: 10, y: 18)
+                }
+                .padding(.bottom, reactions.isEmpty ? 0 : 18)
             Spacer(minLength: 40)
         }
+    }
+}
+
+/// ReactionBadges are the emoji on a message, the person's and the
+/// agent's, in a small capsule at the bubble's corner as Messages draws a
+/// tapback. One just put there pops in.
+struct ReactionBadges: View {
+    let reactions: [AgentMessageReaction]
+
+    var body: some View {
+        if !reactions.isEmpty {
+            HStack(spacing: 2) {
+                ForEach(reactions, id: \.reactorKind) { reaction in
+                    ReactionBadge(reaction: reaction)
+                        .id(reaction.emoji)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.regularMaterial, in: .capsule)
+            .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5))
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// ReactionBadge is one emoji. A reaction made a moment ago, by the person
+/// here or by the agent through the feed, springs in with a tap felt; one
+/// read back with the conversation is simply there, so scrolling does not
+/// set every badge bouncing.
+struct ReactionBadge: View {
+    let reaction: AgentMessageReaction
+    @State private var scale: CGFloat = 1
+    @Environment(\.accessibilityReduceMotion) private var isReducingMotion
+
+    var body: some View {
+        Text(verbatim: reaction.emoji)
+            .font(.body)
+            .scaleEffect(scale)
+            .accessibilityLabel(reaction.reactorKind == "agent" ? Text("The agent reacted \(reaction.emoji)") : Text("You reacted \(reaction.emoji)"))
+            .onAppear {
+                guard isFresh, !isReducingMotion else { return }
+                scale = 0.1
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { scale = 1 }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+    }
+
+    /// Put there in the last few seconds: one this app has just made has no
+    /// time from the server yet.
+    private var isFresh: Bool {
+        guard let reactedAt = ServerTime.date(reaction.reactedAt) else { return true }
+        return Date().timeIntervalSince(reactedAt) < 10
     }
 }
 
