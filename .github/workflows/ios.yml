@@ -114,6 +114,8 @@ jobs:
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
           shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
+          shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
+          shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
 
           # The App Store's set: the largest iPhone, which its listing needs,
