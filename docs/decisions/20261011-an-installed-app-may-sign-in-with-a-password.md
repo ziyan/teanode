@@ -34,9 +34,18 @@ deliver it anywhere but the device it is opened on: the approval returns to a
 private-use scheme, which a browser hands to the app on that device and to
 nothing on the network, and collecting it takes the PKCE verifier the program
 that started the request holds. Somebody who sends the link from elsewhere
-holds the verifier but never sees the approval. An app on the person's own
-device that registered the same scheme could collect it; such an app could
-already ask for a connect code the same way.
+holds the verifier but never sees the approval.
+
+What remains is a hostile program already on the person's device, or their
+computer, that registers a scheme of its own under the name "TeaNode" and
+opens the page: a person who approves it gives it the whole account, where
+before this they gave it the agent tools. The page shows the scheme it
+returns to, and says to allow it only when they have just opened the TeaNode
+app to sign in. Limiting the grant to the published app's scheme would close
+it for the published app and lock out a build of the app made by anyone else.
+
+An operator signed in as somebody cannot approve it, as they cannot make a
+connect code for them: the app would go on as that person afterwards.
 
 A desktop program registered with a scheme of its own keeps getting the agent
 tools: it has to name the API path to get more, and the page tells the person

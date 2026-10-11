@@ -274,3 +274,36 @@ func TestAnInstalledAppNamingTheAPISignsInToTheWholeAccount(test *testing.T) {
 		test.Error("a program on the web was given the whole account")
 	}
 }
+
+// An operator signed in as somebody cannot sign an app in to that person's
+// whole account: the app would go on as them after the impersonation ended.
+func TestAnImpersonatorCannotSignAnAppIn(test *testing.T) {
+	world := newSignInWorld(test)
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		operator, err := tx.CreateUser(&models.User{Username: "an-operator"})
+		if err != nil {
+			test.Fatalf("CreateUser: %s", err)
+		}
+		role, err := tx.CreateRole(&models.Role{Name: "operator role", Permissions: models.Permissions()})
+		if err != nil {
+			test.Fatalf("CreateRole: %s", err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "operator group", UserIDs: []string{operator.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			test.Fatalf("CreateGroup: %s", err)
+		}
+	})
+	appClient := world.register(test, "com.example.app:/oauth")
+	resource := "https://" + world.host + api.Prefix
+	query := `mutation { ApproveOAuthAuthorization(clientId: "` + appClient + `", redirectUri: "com.example.app:/oauth", codeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", resource: "` + resource + `") { redirectUrl } }`
+	body, _ := json.Marshal(graphRequest{Query: query})
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(api.AuthenticatedUsernameHeader, world.person.Username)
+	request.Header.Set(api.ImpersonatorUsernameHeader, "an-operator")
+	request.Host = world.host
+	response := httptest.NewRecorder()
+	world.graph.graphView(response, request)
+	if !strings.Contains(response.Body.String(), "signed in by the person themselves") {
+		test.Fatalf("an impersonator signed an app in: %s", response.Body.String())
+	}
+}

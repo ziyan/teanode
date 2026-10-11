@@ -196,9 +196,15 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		return nil, fmt.Errorf("%w: this server authorizes only with a PKCE challenge, hashed with S256", api.ErrInvalidArguments)
 	}
 
-	resource, _, err := tokenResource(client, valueOrEmpty(arguments.Resource))
+	resource, isWholeAccount, err := tokenResource(client, valueOrEmpty(arguments.Resource))
 	if err != nil {
 		return nil, err
+	}
+	// An operator signed in as somebody is not that somebody: an app they
+	// signed in would go on as the whole account after the impersonation
+	// ended, as a phone connected with a code would.
+	if isWholeAccount && principal.IsImpersonation() {
+		return nil, fmt.Errorf("%w: an app is signed in by the person themselves, not while signed in as them", api.ErrPermissionDenied)
 	}
 
 	// The secret half of the approval. The program collects by presenting it
