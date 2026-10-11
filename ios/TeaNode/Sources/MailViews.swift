@@ -7,6 +7,7 @@ struct MailScreen: View {
     let mail: MailModel
     @Binding var place: MailPlace?
     @Binding var composing: ComposeStart?
+    @Environment(AppModel.self) private var app
     @State private var path = NavigationPath()
 
     var body: some View {
@@ -32,6 +33,12 @@ struct MailScreen: View {
             }
         }
         .onChange(of: place) { path = NavigationPath() }
+        .onChange(of: app.openedMailItemId, initial: true) { _, itemId in
+            guard let itemId else { return }
+            app.openedMailItemId = nil
+            path = NavigationPath()
+            path.append(OpenedThread(itemId: itemId, folderId: nil))
+        }
     }
 }
 
@@ -342,12 +349,10 @@ struct ThreadList: View {
                     }
                     .tint(.blue)
                 }
+                // The first is what a full swipe does: archive, as the
+                // dashboard's swipe does, and delete where there is no
+                // archive or the row is in it.
                 .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
-                        Task { await delete([thread]) }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
                     if let archive = mail.folder(kind: "archive"), folder?.id != archive.id {
                         Button {
                             Task { await move([thread], to: archive, saying: String(localized: "Conversation archived")) }
@@ -355,6 +360,11 @@ struct ThreadList: View {
                             Label("Archive", systemImage: "archivebox")
                         }
                         .tint(.purple)
+                    }
+                    Button(role: .destructive) {
+                        Task { await delete([thread]) }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
                     }
                 }
                 .contextMenu {

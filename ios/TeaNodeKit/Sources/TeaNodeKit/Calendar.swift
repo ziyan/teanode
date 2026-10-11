@@ -33,6 +33,10 @@ public struct CalendarEvent: Codable, Identifiable, Hashable, Sendable {
 
     /// A stable identity for one occurrence of a repeating event.
     public var occurrenceId: String { "\(id)-\(startsAt)" }
+
+    /// Whether it was called off; the server writes the iCalendar status,
+    /// "CANCELLED".
+    public var isCancelled: Bool { status?.uppercased() == "CANCELLED" }
 }
 
 /// CalendarEventDetail is one event whole, read before it is changed: the

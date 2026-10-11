@@ -213,6 +213,7 @@ enum Monogram {
 struct ContactDetailView: View {
     let model: ContactsModel
     let contactId: String
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var contact: ContactDetail?
@@ -245,7 +246,16 @@ struct ContactDetailView: View {
                     if let emails = contact.emails, !emails.isEmpty {
                         Section("Email") {
                             ForEach(emails, id: \.self) { email in
-                                ReachRow(text: email, systemImage: "envelope", address: URL(string: "mailto:\(email)"))
+                                // Written from TeaNode's own mail, as the
+                                // dashboard would.
+                                Button {
+                                    app.composingTo = email
+                                } label: {
+                                    Label(email, systemImage: "envelope")
+                                }
+                                .contextMenu {
+                                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = email }
+                                }
                             }
                         }
                     }

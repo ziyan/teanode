@@ -47,6 +47,12 @@ final class AppModel {
     /// A page of the agent's knowledge a link asks to open.
     var openedKnowledgePath: String?
 
+    /// A mail a link asks to open.
+    var openedMailItemId: String?
+
+    /// An address to write to, from a contact: compose opens with it.
+    var composingTo: String?
+
     /// The agent's name, for the main conversation's title and the
     /// composer; empty until read, or when the agent has none.
     private(set) var agentName = ""
@@ -64,8 +70,10 @@ final class AppModel {
             return .systemAction(address)
         case "mail":
             let itemId = String(written.dropFirst("mail:".count))
-            guard let account, !itemId.isEmpty, itemId.allSatisfy({ $0.isLetter || $0.isNumber }) else { return .discarded }
-            return .systemAction(account.server.endpoint("/mailbox/starred/\(itemId)"))
+            guard !itemId.isEmpty, itemId.allSatisfy({ $0.isLetter || $0.isNumber }) else { return .discarded }
+            // A mail link opens the conversation in the app's mail.
+            openedMailItemId = itemId
+            return .handled
         case "memory":
             let path = String(written.dropFirst("memory:".count).split(separator: "#").first ?? "")
             let segments = path.split(separator: "/")

@@ -469,13 +469,17 @@ struct LineActions: View {
 }
 
 /// UsageWords say what a turn cost: tokens in and out, and the money.
+@MainActor
 enum UsageWords {
+    /// The currency the agent's budget is kept in, as the head last read it.
+    static var currency = "USD"
+
     static func count(_ count: Int) -> String {
         count.formatted(.number.notation(.compactName))
     }
 
     static func money(_ cost: Double) -> String {
-        cost.formatted(.currency(code: "USD").precision(.fractionLength(cost < 0.01 ? 4 : 2)))
+        cost.formatted(.currency(code: currency).precision(.fractionLength(cost < 0.01 ? 4 : 2)))
     }
 
     static func turn(_ usage: AgentUsage) -> String {
@@ -800,6 +804,7 @@ struct MarkdownView: View {
 struct CodeBlock: View {
     let text: String
     var maxHeight: CGFloat = 400
+    @State private var isCopied = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -814,12 +819,19 @@ struct CodeBlock: View {
             .fixedSize(horizontal: false, vertical: true)
             Button {
                 UIPasteboard.general.string = text
+                isCopied = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(900))
+                    isCopied = false
+                }
             } label: {
-                Image(systemName: "doc.on.doc")
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
                     .font(.caption)
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(minWidth: 32, minHeight: 32)
             }
-            .accessibilityLabel("Copy")
+            .sensoryFeedback(.success, trigger: isCopied) { _, isNow in isNow }
+            .accessibilityLabel(isCopied ? Text("Copied") : Text("Copy"))
         }
         .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
     }
@@ -994,6 +1006,9 @@ struct NoteLine: View {
 struct CardView: View {
     let line: TranscriptLine
     let model: ConversationModel
+    /// The answer picked, sent only with Send, as the dashboard's card asks:
+    /// one stray tap sends nothing.
+    @State private var chosen: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1031,16 +1046,33 @@ struct CardView: View {
             } else {
                 ForEach(line.choices, id: \.self) { choice in
                     Button {
-                        Task { await model.answer(line, with: choice) }
+                        chosen = chosen == choice ? nil : choice
                     } label: {
-                        Text(choice).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack {
+                            Text(choice).multilineTextAlignment(.leading)
+                            Spacer(minLength: 8)
+                            Image(systemName: chosen == choice ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(chosen == choice ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.glass)
+                    .accessibilityAddTraits(chosen == choice ? .isSelected : [])
                 }
-                Button("Chat about it") {
-                    Task { await model.answer(line, with: ConversationModel.chatAboutIt) }
+                HStack {
+                    if !line.choices.isEmpty {
+                        Button("Send") {
+                            guard let chosen else { return }
+                            Task { await model.answer(line, with: chosen) }
+                        }
+                        .buttonStyle(.glassProminent)
+                        .disabled(chosen == nil)
+                    }
+                    Button("Chat about it") {
+                        Task { await model.answer(line, with: ConversationModel.chatAboutIt) }
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
                 Text("Or type your answer below.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

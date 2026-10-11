@@ -79,6 +79,9 @@ final class ConversationModel {
         self.title = conversation.map { ConversationModel.title(of: $0, agentTitle: app.agentTitle) } ?? app.agentTitle
         self.app = app
         self.connection = connection
+        // Named once: the main conversation learns its id when it loads,
+        // and a key made from that would never be read at the next launch.
+        self.draftKey = "draft.\(conversation.flatMap { $0.isMain ? nil : $0.id } ?? "main")"
         self.draft = UserDefaults.standard.string(forKey: draftKey) ?? ""
     }
 
@@ -93,7 +96,7 @@ final class ConversationModel {
     }
 
     /// The draft is kept per conversation, as the dashboard keeps it.
-    private var draftKey: String { "draft.\(conversationId ?? "main")" }
+    private let draftKey: String
 
     private func saveDraft() {
         if draft.isEmpty {

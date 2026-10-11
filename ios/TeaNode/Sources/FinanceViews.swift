@@ -58,6 +58,13 @@ final class FinanceModel {
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
+    /// A day written as the server takes it, read back in the person's zone.
+    func date(ofDay text: String) -> Date? {
+        let parts = text.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return dates.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    }
+
     func month(_ date: Date) -> String {
         let parts = dates.dateComponents([.year, .month], from: date)
         return String(format: "%04d-%02d", parts.year ?? 1970, parts.month ?? 1)
@@ -605,12 +612,19 @@ struct TransactionFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft = FinanceTransactionFilter()
 
+    /// A day kept as text for the server, picked as a date.
+    private func dayBinding(_ text: Binding<String>) -> Binding<Date?> {
+        Binding(
+            get: { finance.date(ofDay: text.wrappedValue) },
+            set: { text.wrappedValue = $0.map { finance.day($0) } ?? "" })
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("From (2026-10-01)", text: $draft.from).keyboardType(.numbersAndPunctuation)
-                    TextField("To (2026-10-31)", text: $draft.to).keyboardType(.numbersAndPunctuation)
+                    OptionalDatePicker(title: String(localized: "From"), date: dayBinding($draft.from))
+                    OptionalDatePicker(title: String(localized: "To"), date: dayBinding($draft.to))
                 }
                 Section {
                     Picker("Account", selection: $draft.financeAccountId) {

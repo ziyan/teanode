@@ -147,6 +147,14 @@ struct MainView: View {
         .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
             if knowledgePath != nil { section = .knowledge }
         }
+        .onChange(of: app.openedMailItemId) { _, itemId in
+            if itemId != nil { section = .mail }
+        }
+        .onChange(of: app.composingTo) { _, address in
+            guard let address else { return }
+            app.composingTo = nil
+            composing = ComposeStart(kind: .new, to: address)
+        }
         .alert(
             "Already connected",
             isPresented: Bindable(app).isShowingOpenedLinkText,

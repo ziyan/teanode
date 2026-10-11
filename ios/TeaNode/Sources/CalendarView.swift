@@ -373,12 +373,12 @@ struct EventRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(event.status == "cancelled" ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.tint))
+                .fill(event.isCancelled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.tint))
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.summary.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "(no title)"))
                     .font(.body)
-                    .strikethrough(event.status == "cancelled")
+                    .strikethrough(event.isCancelled)
                 HStack(spacing: 4) {
                     Text(EventWords.when(event))
                     if event.recurring {

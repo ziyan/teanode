@@ -67,6 +67,8 @@ final class RemindersModel {
 struct RemindersList: View {
     let model: RemindersModel
     @State private var editing: AgentReminder?
+    @State private var deleting: AgentReminder?
+    @State private var quickTitle = ""
 
     var body: some View {
         @Bindable var model = model
@@ -80,6 +82,28 @@ struct RemindersList: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
             }
+            if !model.isShowingDone {
+                // Adding is the list's first line, as on the dashboard: type
+                // and press return.
+                HStack(spacing: 12) {
+                    Image(systemName: "plus.circle")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                        .frame(minWidth: 44)
+                    TextField("Add a reminder", text: $quickTitle)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            let title = quickTitle.trimmed
+                            guard !title.isEmpty else { return }
+                            quickTitle = ""
+                            Task {
+                                _ = await model.act(saying: String(localized: "Reminder added")) {
+                                    try await model.connection.saveReminder(nil, fields: ["title": .string(title)])
+                                }
+                            }
+                        }
+                }
+            }
             let reminders = model.isShowingDone ? model.done : model.open
             ForEach(reminders) { reminder in
                 ReminderRow(reminder: reminder) {
@@ -89,7 +113,7 @@ struct RemindersList: View {
                 }
                 .swipeActions {
                     Button("Delete", systemImage: "trash", role: .destructive) {
-                        Task { await model.delete(reminder) }
+                        deleting = reminder
                     }
                 }
             }
@@ -105,6 +129,15 @@ struct RemindersList: View {
         .task { await model.load() }
         .sheet(item: $editing) { reminder in
             ReminderEditor(model: model, reminder: reminder)
+        }
+        .confirmationDialog(
+            "Delete “\(deleting?.title ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete reminder", role: .destructive) {
+                guard let reminder = deleting else { return }
+                Task { await model.delete(reminder) }
+            }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
     }

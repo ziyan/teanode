@@ -157,7 +157,10 @@ struct ConversationsSheet: View {
                 titleVisibility: .visible, presenting: deleting
             ) { conversation in
                 Button("Delete", role: .destructive) {
-                    Task { await act { try await connection.deleteConversation(conversation.id) } }
+                    Task {
+                        await act { try await connection.deleteConversation(conversation.id) }
+                        leaveIfOpen(conversation)
+                    }
                 }
             } message: { conversation in
                 Text("“\(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))” and everything in it, the files that came with it too.")
@@ -191,7 +194,10 @@ struct ConversationsSheet: View {
                     Label("Delete", systemImage: "trash")
                 }
                 Button {
-                    Task { await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) } }
+                    Task {
+                        await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) }
+                        if !conversation.isArchived { leaveIfOpen(conversation) }
+                    }
                 } label: {
                     if conversation.isArchived {
                         Label("Unarchive", systemImage: "tray.and.arrow.up")
@@ -223,6 +229,12 @@ struct ConversationsSheet: View {
     }
 
     /// Does a change to the list and reads it again.
+    /// A conversation deleted or archived while on screen gives way to the
+    /// main one, as the dashboard's drawer does.
+    private func leaveIfOpen(_ conversation: AgentConversation) {
+        if conversation.id == currentId { onChoose(nil) }
+    }
+
     private func act(_ change: () async throws -> Void) async {
         do {
             try await change()

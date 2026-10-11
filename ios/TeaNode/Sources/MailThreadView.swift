@@ -15,7 +15,8 @@ struct MailThreadScreen: View {
     @State private var thread: MailThreadView?
     @State private var problemText: String?
     @State private var expanded = Set<String>()
-    @State private var isSummaryOpen = true
+    // Closed at first and remembered, as the dashboard keeps it.
+    @AppStorage("mail-summary-open") private var isSummaryOpen = false
     @State private var isSorting = false
 
     var body: some View {

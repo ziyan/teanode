@@ -18,6 +18,9 @@ final class StatusModel {
         while !Task.isCancelled {
             if let read = try? await connection.status() {
                 status = read
+                if let currency = read.budget?.currency, !currency.isEmpty {
+                    UsageWords.currency = currency
+                }
             }
             if let commands = try? await connection.backgroundCommands(in: conversationId()) {
                 runningCommands = commands.filter(\.isRunning)
