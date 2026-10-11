@@ -154,7 +154,7 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
   Date/Author: 2026-10-10, the person (the agent helps onboard); actions by agent.
 
 - Decision: what grants access is shown to the person and never to the model. The QR card, the setup profile's download link and the profile's app password are rendered by the drawer and the app as a private card. The tool's result tells the model only that the card was shown and when it expires, and the card is stored with the message but left out when the conversation is sent to the model.
-  Rationale: whatever the model reads goes to the model's provider. A download link for a profile is an app password in all but name for ten minutes. The person sees and taps it; the model only needs to know it was offered.
+  Rationale: whatever the model reads goes to the model's provider. A download link for a profile is an app password in all but name for five minutes. The person sees and taps it; the model only needs to know it was offered.
   Date/Author: 2026-10-10, agent.
 
 - Decision (2026-10-11, replacing the private cards above): the agent never makes a connect code or a setup profile. `pair_phone` and `set_up_phone_mail`, actions of the account tool, take the dashboard (or the app) to the page where the person makes one with their own session: `/connect`, and the mailbox's Mail programs tab.
@@ -305,7 +305,7 @@ The relay is a third program built from this repository, `cmd/teanode-push-relay
 
 At the end, the person presses "Set up an iPhone or Mac" on a mailbox page, opens the downloaded file on the phone, installs it in Settings, and the phone's Mail, Calendar, Contacts and Reminders show their TeaNode data.
 
-- `CreateMailboxSetupProfile(mailboxId, deviceName)` creates an app password named after the device (`CreateMailboxAppPassword`), builds the profile, and returns a one-time download address `/api/v1/mailbox/profile/<random>.mobileconfig` that works for ten minutes, once. The profile is never stored.
+- `CreateMailboxSetupProfile(mailboxId, deviceName)` creates an app password named after the device (`CreateMailboxAppPassword`), builds the profile, and returns a one-time download address `/api/v1/mailbox/profile/<random>.mobileconfig` that works for five minutes, once. The profile waits sealed with the server secret in the store passkey ceremonies use (memory on one instance, Redis on several) and is never written to the database.
 - The profile (`internal/mailbox/profile.go`) is an Apple property list with three payloads, all from `GetMailProgramSettings`: `com.apple.mail.managed` (IMAP on the TLS port, SMTP submission, the address and the app password), `com.apple.caldav.account` (`davHost`, the principal URL `/dav/<userId>/`), and `com.apple.carddav.account`. It is served as `application/x-apple-aspen-config`. It is not signed, so Settings shows it as "Not verified"; signing it with the server's certificate is a later step.
 - Command line: `teanode mailbox profile <mailbox> --device "<name>" --out <file>`. The `phone` tool's `setup_profile` action shows it as a private card (Milestone 11). The app: Settings, "Add mail, calendars and contacts to this iPhone" opens the download address in Safari, which hands it to Settings (an app cannot install a profile itself).
 - Tests: the plist parses, has the three payloads with the advertised hosts and ports, and the download works once.
