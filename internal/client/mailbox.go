@@ -227,8 +227,8 @@ const (
 			password username appPassword { id mailboxId name createdAt lastUsedAt }
 		}
 	}`
-	DocumentCreateMailboxSetupProfile = `mutation ($mailboxId: String!, $deviceName: String!) {
-		CreateMailboxSetupProfile(mailboxId: $mailboxId, deviceName: $deviceName) {
+	DocumentCreateMailboxSetupProfile = `mutation ($mailboxId: String!, $deviceName: String!, $isDownloadOnly: Boolean) {
+		CreateMailboxSetupProfile(mailboxId: $mailboxId, deviceName: $deviceName, isDownloadOnly: $isDownloadOnly) {
 			downloadPath downloadLink expiresAt hasCalendarsAndContacts appPassword { id mailboxId name createdAt lastUsedAt }
 		}
 	}`
@@ -422,11 +422,13 @@ func CreateMailboxAppPassword(ctx context.Context, connection *Client, mailboxId
 
 // CreateMailboxSetupProfile makes an app password for a device and a setup
 // profile holding it, and says where the profile downloads from, once.
-func CreateMailboxSetupProfile(ctx context.Context, connection *Client, mailboxId, deviceName string) (*CreatedSetupProfile, error) {
+// isDownloadOnly says the caller downloads it itself rather than showing the
+// link, which lets a server with no name of its own make one.
+func CreateMailboxSetupProfile(ctx context.Context, connection *Client, mailboxId, deviceName string, isDownloadOnly bool) (*CreatedSetupProfile, error) {
 	var result struct {
 		CreateMailboxSetupProfile *CreatedSetupProfile `json:"CreateMailboxSetupProfile"`
 	}
-	variables := map[string]any{"mailboxId": mailboxId, "deviceName": deviceName}
+	variables := map[string]any{"mailboxId": mailboxId, "deviceName": deviceName, "isDownloadOnly": isDownloadOnly}
 	if err := connection.Execute(ctx, DocumentCreateMailboxSetupProfile, variables, &result); err != nil {
 		return nil, err
 	}

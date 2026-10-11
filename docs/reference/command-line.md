@@ -190,8 +190,8 @@ owner; `show` and `update` read and change a mailbox's name and signature.
 `device list|add|remove` the app passwords a mail program signs in with,
 `profile <device>` a setup profile that adds the mailbox, its calendars and
 contacts to an iPhone or a Mac with an app password of its own (it prints an
-address to open on the device, once, within ten minutes; `--output` saves it
-instead),
+address to open on the device, once, within five minutes; `--output` saves it
+instead, and is the way to make one on a server that has no name set),
 `autoreply show|set|off` the out-of-office reply — `set --same-domain-only`
 keeps it to people at the mailbox's own domains — and `programs` the hosts
 and ports to type into a mail program.
@@ -376,10 +376,8 @@ have made.
 | --- | --- |
 | `teanode agent ask <message \| ->` | say something to your agent and print what it answers; `--new` starts a named conversation, `--conversation` continues one, `--attach FILE` (repeatable) hands it a file — a picture is shown to it, a text file read to it, anything else named — `--reply-to MESSAGE_ID` answers a message of the conversation (ids from `conversation show --json`), `--json` streams every event, `--quiet` prints the answer alone. A tool that needs your word asks on the terminal, y or n — never a flag |
 | `teanode agent chat` | the same, turn by turn, until an empty line |
-| `teanode agent react <message-id> <emoji>` | puts your reaction on a message of a conversation, as the drawer's picker does: one or two emoji, replacing the one you had there; `--remove` takes it away. Message ids come from `conversation show --json`, and `conversation show` prints the reactions under each message |
 | `teanode agent conversation todo list` | the task list a conversation keeps: the agent's own, which it writes as it works through something in several steps and shows itself every round. `todo list <conversation-id>` prints it; only the agent changes it |
 | `teanode agent conversation list\|show\|new\|rename\|goal\|main\|archive\|unarchive\|delete` | the main conversation and the named ones; `list --query` finds one by words in its title or in what was said, and `list --archived` lists the ones put away instead of the open ones; `show` prints the goal above the messages when there is one and the task list under them, the done ones ticked, and pages back through a long one with `--first` and `--offset`; `main` makes a named conversation the main one, or starts a fresh main one and keeps the old as a named one; `archive <id>` puts one away with everything in it and `unarchive <id>` brings it back, neither asking first because neither loses anything; `delete` asks first and takes the files that came with it |
-| `teanode agent waiting [--first N]` | the questions and approvals the agent waits on in every conversation, newest first, with how many there are in all; `waiting approve\|deny <id>` and `waiting answer <id> <answer>` answer one, as its card in the chat would |
 | `teanode agent goal list [--state working\|waiting\|met\|dropped]` | what the agent keeps at in the background between conversations, the most recently active first: each goal's id, where it stands (tracking, needs you, done, dropped), its title and its one-line status; the same list as the Goals tab of the agent's page |
 | `teanode agent goal show <goal-id>` | one goal: what it is for, its status, when it looks again, what it made (schedules, background work, mail rules, reminders, alert mutes) and what happened on it, newest first |
 | `teanode agent goal start <title> <description>` | start a goal in the background: a title of a few words, then what it is for and what done looks like. Its first turn runs at once, in its own conversation; you hear from it in your main conversation only when it needs you |
