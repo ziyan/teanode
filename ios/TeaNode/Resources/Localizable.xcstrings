@@ -1153,6 +1153,22 @@
         }
       }
     },
+    "Adding a picture…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を追加中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在添加图片…"
+          }
+        }
+      }
+    },
     "Address": {
       "localizations": {
         "ja": {
@@ -1309,6 +1325,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请在“设置”中允许 TeaNode 使用相机，或改为粘贴二维码的链接。"
+          }
+        }
+      }
+    },
+    "Allow the camera for TeaNode in Settings to take a picture.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を撮るには、設定で TeaNode にカメラを許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“设置”中允许 TeaNode 使用相机，才能拍照。"
           }
         }
       }
@@ -10609,6 +10641,22 @@
         }
       }
     },
+    "Sending…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在发送…"
+          }
+        }
+      }
+    },
     "Sent": {
       "localizations": {
         "ja": {
@@ -11891,6 +11939,22 @@
     },
     "TeaNode": {
       "shouldTranslate": false
+    },
+    "TeaNode cannot use the camera": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はカメラを使えません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法使用相机"
+          }
+        }
+      }
     },
     "TeaNode may not use the microphone. Allow it in Settings, then call again.": {
       "localizations": {

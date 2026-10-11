@@ -62,6 +62,11 @@ final class ConversationModel {
         if !references.contains(reference) { references.append(reference) }
     }
     private(set) var isSending = false
+    /// The files of the message being sent, and those of them already on
+    /// the server: they stay in the composer, each with its progress, until
+    /// the message is sent.
+    private(set) var uploadingFileIds: Set<UUID> = []
+    private(set) var uploadedFileIds: Set<UUID> = []
     var sendProblemText: String?
 
     /// Whether the send problem is on screen; dismissing it clears it.
@@ -298,20 +303,29 @@ final class ConversationModel {
             sendProblemText = String(localized: "The files come to more than 25 MB, more than the server takes in one message.")
             return
         }
-        isSending = true
-        defer { isSending = false }
         let sending = pendingFiles
+        let sendingIds = Set(sending.map(\.id))
+        isSending = true
+        uploadingFileIds = sendingIds
+        uploadedFileIds = []
+        defer {
+            isSending = false
+            uploadingFileIds = []
+            uploadedFileIds = []
+        }
         let reply = replyingTo
         let referring = references
         draft = ""
-        pendingFiles = []
         references = []
         do {
             var attachments: [AgentAttachment] = []
             for file in sending {
                 let id = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data)
                 attachments.append(AgentAttachment(id: id, name: file.name, contentType: file.contentType, size: file.data.count))
+                uploadedFileIds.insert(file.id)
             }
+            // Files added while these were sent stay for the next message.
+            pendingFiles.removeAll { sendingIds.contains($0.id) }
             let message = text.isEmpty ? "(files)" : text
             transcript.addSent(message, attachments: attachments, replyingTo: reply)
             let asked = try await connection.ask(
@@ -327,8 +341,8 @@ final class ConversationModel {
             ideas = []
         } catch {
             transcript.withdrawSent()
-            draft = text
-            pendingFiles = sending
+            if draft.isEmpty { draft = text }
+            pendingFiles = sending + pendingFiles.filter { !sendingIds.contains($0.id) }
             references = referring
             sendProblemText = app.describe(error)
         }

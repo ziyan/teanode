@@ -1363,17 +1363,25 @@ struct Composer: View {
     @State private var isPickingPhotos = false
     @State private var isTakingPicture = false
     @State private var isPickingFiles = false
+    /// Pictures picked and still being read from the library.
+    @State private var loadingPictureCount = 0
     @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
-            if !model.pendingFiles.isEmpty {
+            if !model.pendingFiles.isEmpty || loadingPictureCount > 0 {
                 ScrollView(.horizontal) {
                     HStack {
                         ForEach(model.pendingFiles) { file in
-                            PendingFileChip(file: file) {
+                            PendingFileChip(
+                                file: file, isUploading: model.uploadingFileIds.contains(file.id),
+                                isUploaded: model.uploadedFileIds.contains(file.id)
+                            ) {
                                 model.pendingFiles.removeAll { $0.id == file.id }
                             }
+                        }
+                        ForEach(0..<loadingPictureCount, id: \.self) { _ in
+                            LoadingFileChip()
                         }
                     }
                 }
@@ -1428,6 +1436,7 @@ struct Composer: View {
                             .frame(width: 36, height: 36)
                             .background(Color(.tertiarySystemFill), in: .circle)
                             .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
                     }
                     .accessibilityLabel("Add files")
                     Spacer()
@@ -1459,36 +1468,45 @@ struct Composer: View {
                         Button {
                             Task { await model.send() }
                         } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .background(model.canSend ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
-                                .frame(minWidth: 44, minHeight: 44)
+                            Group {
+                                if model.isSending {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "arrow.up")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .frame(width: 36, height: 36)
+                            .background(model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
+                            .frame(minWidth: 44, minHeight: 44)
                         }
                         .disabled(!model.canSend)
-                        .accessibilityLabel("Send")
+                        .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
                     }
                 }
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
             }
             // A tap anywhere on the panel outside its buttons starts typing,
-            // not only a tap on the words of the placeholder.
-            .contentShape(.rect(cornerRadius: 26, style: .continuous))
-            .onTapGesture { isFocused = true }
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26, style: .continuous))
+            // not only a tap on the words of the placeholder. The tap is
+            // caught behind the buttons, so it never takes theirs; and the
+            // glass is not interactive, as that is for a control and it
+            // took touches meant for the add menu.
+            .background {
+                Color.clear
+                    .contentShape(.rect(cornerRadius: 26, style: .continuous))
+                    .onTapGesture { isFocused = true }
+            }
+            .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
-        .fullScreenCover(isPresented: $isTakingPicture) {
-            CameraPicker { picture in
-                if let file = PendingFile(picture: picture, index: model.pendingFiles.count) {
-                    model.pendingFiles.append(file)
-                }
+        .cameraPicker(isPresented: $isTakingPicture) { picture in
+            if let file = PendingFile(picture: picture, index: model.pendingFiles.count) {
+                model.pendingFiles.append(file)
             }
-            .ignoresSafeArea()
         }
         .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let addresses) = result else { return }
@@ -1511,7 +1529,9 @@ struct Composer: View {
     }
 
     private func add(_ items: [PhotosPickerItem]) async {
+        loadingPictureCount += items.count
         for item in items {
+            defer { loadingPictureCount -= 1 }
             guard let data = try? await item.loadTransferable(type: Data.self),
                 let file = PendingFile(pictureData: data, index: model.pendingFiles.count)
             else { continue }
