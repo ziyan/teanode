@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.131.0] - 2026-10-11
+
+### Added
+
+- A turn you start in the TeaNode iPhone app and leave running shows on the lock screen and in the Dynamic Island, saying whether the agent is working, waiting for you, or done. Only that word crosses Apple and the push relay, never what the turn says. (#386)
+
 ## [0.130.0] - 2026-10-11
 
 ### Added
