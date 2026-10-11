@@ -535,6 +535,14 @@ export const CONVERSATIONS = `
     }
   }`
 
+// What waits for the person in each conversation: the questions and
+// approvals not yet answered, across all of them, so the list can say which
+// conversation needs them without opening each.
+const WAITING = `
+  query {
+    ReadAgentWaiting(first: 50) { waitingCount interactions { conversationId } }
+  }`
+
 // The agent's task list alone, read again after each change its todo tool
 // makes, so the person watches the steps move while a turn is running.
 const CONVERSATION_TODOS = `
@@ -2325,6 +2333,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     : t('agentDrawer.placeholder')
   const [open, setOpen] = useState(() => standalone || remembered(OPEN_KEY) === '1')
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [waitingByConversation, setWaitingByConversation] = useState<Record<string, number>>({})
   // Words typed into the picker find conversations by title, summary or
   // what was said; the list shows the matches while there are any.
   const [search, setSearch] = useState('')
@@ -2493,6 +2502,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const loadConversations = useCallback(async () => {
     const response = await graphql<{ ListAgentConversations: Conversation[] }>(CONVERSATIONS, { archived: false })
     setConversations(response.ListAgentConversations)
+    graphql<{ ReadAgentWaiting: { interactions: { conversationId: string }[] } }>(WAITING)
+      .then((waiting) => {
+        const counted: Record<string, number> = {}
+        for (const interaction of waiting.ReadAgentWaiting.interactions) {
+          counted[interaction.conversationId] = (counted[interaction.conversationId] ?? 0) + 1
+        }
+        setWaitingByConversation(counted)
+      })
+      .catch(() => {
+        // The list reads without it; only the marks are missing.
+      })
     return response.ListAgentConversations
   }, [])
 
@@ -3773,6 +3793,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             here in place of the time. The summary is the
             row's tooltip. */}
             <span className="agent-drawer-list-summary muted">
+              {waitingByConversation[conversation.id] ? (
+                <span className="agent-drawer-list-waiting">{t('agentDrawer.waitingForYou')} · </span>
+              ) : null}
               <RelativeTime value={conversation.lastAt} />
             </span>
           </button>

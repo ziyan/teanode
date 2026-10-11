@@ -23,11 +23,14 @@ type RunCommand struct {
 	// Instance is who said it, filled in on the way out.
 	Instance string `json:"instance"`
 	RunID    string `json:"runId"`
-	// Action is "stop", "answer", "resolve" or "locate".
+	// Action is "stop", "answer", "resolve", "locate" or "liveActivity".
 	Action  string `json:"action"`
 	CallID  string `json:"callId,omitempty"`
 	Answer  string `json:"answer,omitempty"`
 	Approve bool   `json:"approve,omitempty"`
+	// PushRegistration is the Live Activity a liveActivity command has the
+	// run follow (see RegisterLiveActivity).
+	PushRegistration string `json:"pushRegistration,omitempty"`
 }
 
 const (
@@ -37,6 +40,10 @@ const (
 	// CommandLocate carries the browser's answer to a location call in
 	// Answer, as JSON (see AnswerLocation).
 	CommandLocate = "locate"
+	// CommandLiveActivity has the run push its state to the Live Activity
+	// in PushRegistration. The app registers the activity wherever its
+	// request lands, which need not be the instance running the turn.
+	CommandLiveActivity = "liveActivity"
 )
 
 // foreignRunFor is how long a run heard of through the feed is
@@ -61,6 +68,12 @@ func (self *Agent) Apply(run *AskRun, command RunCommand) bool {
 		return run.Resolve(command.CallID, command.Approve)
 	case CommandLocate:
 		return run.AnswerLocation(command.CallID, command.Answer)
+	case CommandLiveActivity:
+		if err := run.RegisterLiveActivity(command.PushRegistration); err != nil {
+			log.Noticef("a Live Activity was not followed: %s", err)
+			return false
+		}
+		return true
 	}
 	return false
 }

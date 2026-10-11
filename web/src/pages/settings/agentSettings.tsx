@@ -1604,7 +1604,6 @@ function VoiceForm({ settings, onSaved }: Props) {
           <span>{t('agentSettings.voiceSilence')}</span>
           <input
             value={voice.silenceMS}
-            placeholder="500"
             inputMode="numeric"
             onChange={(event) => setVoice({ ...voice, silenceMS: event.target.value })}
           />

@@ -329,6 +329,17 @@ const ScheduleMarker = "[schedule]"
 // last word must pass over.
 var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker}
 
+// IsOwnTurn says whether a turn's opening message is one of the agent's own
+// turns rather than something a person wrote.
+func IsOwnTurn(message string) bool {
+	for _, marker := range OwnTurnMarkers {
+		if strings.HasPrefix(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // SpeakFirstMarker begins the message a turn the agent starts on its own
 // is given: an introduction, a memory check, an idea. Nobody wrote it; the
 // agent is about to speak first.

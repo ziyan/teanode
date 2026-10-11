@@ -215,11 +215,11 @@ func TestTheRelayWritesWhatAppleShows(test *testing.T) {
 	}
 	now := time.Now()
 	for _, token := range []string{"", "not-hex", "abc", strings.Repeat("g", 64)} {
-		if _, err := relay.Register(token, false, now); err == nil {
+		if _, err := relay.Register(token, false, "", now); err == nil {
 			test.Errorf("%q was registered", token)
 		}
 	}
-	sealed, err := relay.Register(strings.ToUpper(testDeviceToken), false, now)
+	sealed, err := relay.Register(strings.ToUpper(testDeviceToken), false, "", now)
 	if err != nil {
 		test.Fatalf("Register: %s", err)
 	}
@@ -313,5 +313,114 @@ func TestALongBodyIsShortenedToFit(test *testing.T) {
 	opened, _ := DecryptContent(key, delivery.Sealed)
 	if !strings.HasSuffix(opened.Body, "…") || len([]rune(opened.Body)) < 100 {
 		test.Errorf("the body came out %d characters", len([]rune(opened.Body)))
+	}
+}
+
+// A Live Activity is shown as it arrives, readable by Apple and the relay,
+// so the relay writes it from a state alone and refuses anything with words.
+func TestALiveActivityIsToldAStateAndNothingElse(test *testing.T) {
+	apple, client, _ := newFakeApple(test)
+	relay, err := NewRelay(client)
+	if err != nil {
+		test.Fatalf("NewRelay: %s", err)
+	}
+	now := time.Now()
+	if _, err := relay.Register(testDeviceToken, false, "voip", now); !errors.Is(err, ErrRefused) {
+		test.Errorf("a voip registration came back as %v", err)
+	}
+	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, now)
+	if err != nil {
+		test.Fatalf("Register: %s", err)
+	}
+	if err := relay.Send(context.Background(), activity, &Delivery{ActivityState: "waiting"}); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	request := apple.requests[0]
+	if request.Header.Get("apns-push-type") != "liveactivity" || request.Header.Get("apns-topic") != "com.example.app.push-type.liveactivity" {
+		test.Errorf("headers %v", request.Header)
+	}
+	var payload struct {
+		Aps struct {
+			Event        string            `json:"event"`
+			ContentState map[string]string `json:"content-state"`
+			Timestamp    int64             `json:"timestamp"`
+		} `json:"aps"`
+	}
+	_ = json.Unmarshal(apple.bodies[0], &payload)
+	if payload.Aps.Event != "update" || payload.Aps.ContentState["activityState"] != "waiting" || payload.Aps.Timestamp == 0 {
+		test.Errorf("Apple was sent %s", apple.bodies[0])
+	}
+	if err := relay.Send(context.Background(), activity, &Delivery{ActivityState: "done", IsActivityEnded: true}); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	if !strings.Contains(string(apple.bodies[1]), `"event":"end"`) || !strings.Contains(string(apple.bodies[1]), "dismissal-date") {
+		test.Errorf("the end was sent as %s", apple.bodies[1])
+	}
+
+	key := make([]byte, PhoneKeyBytes)
+	sealed, _ := EncryptContent(key, &Content{NotificationKind: "answer", Title: "Done", Body: "Your flight is booked."})
+	for _, forged := range []*Delivery{
+		{ActivityState: "Your account is locked. Call us."},
+		{ActivityState: "working", Sealed: sealed.Sealed},
+		{ActivityState: "working", ThreadID: "abc"},
+		sealed,
+	} {
+		if err := relay.Send(context.Background(), activity, forged); !errors.Is(err, ErrRefused) {
+			test.Errorf("%+v to a Live Activity came back as %v", forged, err)
+		}
+	}
+	phone, _ := relay.Register(testDeviceToken, false, "", now)
+	if err := relay.Send(context.Background(), phone, &Delivery{ActivityState: "working"}); !errors.Is(err, ErrRefused) {
+		test.Errorf("a state sent to the phone came back as %v", err)
+	}
+}
+
+// iOS shows the Live Activity update with the latest aps.timestamp. The
+// relay's own clock would order a turn's states by when each reached it, so
+// it writes when the server says the state changed, and its own clock only
+// when that is missing or not believable.
+func TestALiveActivityIsStampedWithWhenItsStateChanged(test *testing.T) {
+	apple, client, _ := newFakeApple(test)
+	relay, err := NewRelay(client)
+	if err != nil {
+		test.Fatalf("NewRelay: %s", err)
+	}
+	now := time.Now()
+	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, now)
+	if err != nil {
+		test.Fatalf("Register: %s", err)
+	}
+	registration, err := relay.Open(activity, now)
+	if err != nil {
+		test.Fatalf("Open: %s", err)
+	}
+	earlier := now.Add(-20 * time.Second)
+	for index, stamp := range []struct {
+		name      string
+		changedAt time.Time
+		want      int64
+	}{
+		{"a moment ago", earlier, earlier.Unix()},
+		{"not said", time.Time{}, now.Unix()},
+		{"in the future", now.Add(time.Hour), now.Unix()},
+		{"long ago", now.Add(-time.Hour), now.Unix()},
+	} {
+		if err := relay.DeliverTo(context.Background(), registration, &Delivery{ActivityState: "working", ActivityChangedAt: stamp.changedAt}, now); err != nil {
+			test.Fatalf("%s: DeliverTo: %s", stamp.name, err)
+		}
+		var payload struct {
+			Aps struct {
+				Timestamp int64 `json:"timestamp"`
+			} `json:"aps"`
+		}
+		_ = json.Unmarshal(apple.bodies[index], &payload)
+		if payload.Aps.Timestamp != stamp.want {
+			test.Errorf("%s: stamped %d, want %d", stamp.name, payload.Aps.Timestamp, stamp.want)
+		}
+	}
+	// The phone's own alerts carry no state, and so no time of one.
+	phone, _ := relay.Register(testDeviceToken, false, "", now)
+	if err := relay.Send(context.Background(), phone, &Delivery{ActivityChangedAt: now}); !errors.Is(err, ErrRefused) {
+		test.Errorf("a state's time sent to the phone came back as %v", err)
 	}
 }
