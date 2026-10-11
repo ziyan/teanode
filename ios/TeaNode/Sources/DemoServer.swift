@@ -155,6 +155,11 @@
             {"data":{
               "ReadAgentConversation":{
                 "conversation":{"id":"main","kind":"main","title":null,"summary":null,"lastAt":"2026-10-10T09:05:00Z"},
+                "todos":[
+                  {"id":"t1","text":"Read the plumber's message","doneAt":"2026-10-10T09:00:03Z"},
+                  {"id":"t2","text":"Reply that Thursday at 9 works","doneAt":null},
+                  {"id":"t3","text":"Put the visit on the calendar","doneAt":null}
+                ],
                 "messages":[
                   {"id":"1","createdAt":"2026-10-10T09:00:00Z","role":"user","content":"What is on my calendar tomorrow?"},
                   {"id":"2","createdAt":"2026-10-10T09:00:02Z","role":"assistant","content":"","toolCalls":[{"id":"c1","name":"calendar","arguments":"{}"}]},

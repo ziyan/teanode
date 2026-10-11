@@ -158,12 +158,16 @@ struct ConversationView: View {
         }
     }
 
-    /// The agent's steps, the message replied to, and the composer.
+    /// Whether the agent's steps show: while a turn works through them, and
+    /// after it while any is left.
+    private var isShowingTodos: Bool {
+        !model.todos.isEmpty && (model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }))
+    }
+
+    /// The message replied to, the agent's steps tucked behind the composer,
+    /// and the composer.
     private var bottomBar: some View {
         VStack(spacing: 8) {
-            if !model.todos.isEmpty, model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }) {
-                TodoPanel(todos: model.todos)
-            }
             ForEach(model.references, id: \.self) { reference in
                 let drop = { model.references.removeAll { $0 == reference } }
                 if let subject = reference.subject {
@@ -179,11 +183,25 @@ struct ConversationView: View {
                     ReplyBar(reply: reference, onCancel: drop)
                 }
             }
-            if let call = model.call {
-                CallBar(call: call)
-            } else {
-                Composer(model: model)
+            // The steps sit behind the composer and stick out above it,
+            // sliding up from behind it when a turn makes a list and back
+            // down when the turn ends with nothing left.
+            VStack(spacing: -TodoPanel.tuckedUnder) {
+                if isShowingTodos {
+                    TodoPanel(todos: model.todos)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(0)
+                }
+                Group {
+                    if let call = model.call {
+                        CallBar(call: call)
+                    } else {
+                        Composer(model: model)
+                    }
+                }
+                .zIndex(1)
             }
+            .animation(.spring(duration: 0.4, bounce: 0.15), value: isShowingTodos)
         }
     }
 
@@ -725,10 +743,14 @@ struct EmptyConversation: View {
 }
 
 /// TodoPanel is the agent's own list of steps for this conversation, while
-/// it works through them.
+/// it works through them: a card behind the composer, narrower than it, its
+/// foot under the composer's top.
 struct TodoPanel: View {
     let todos: [AgentTodo]
     @State private var expanded: Set<String> = []
+
+    /// How far the card reaches under the composer.
+    static let tuckedUnder: CGFloat = 20
 
     var body: some View {
         ScrollView {
@@ -749,13 +771,19 @@ struct TodoPanel: View {
                     .font(.footnote)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 12 + Self.tuckedUnder)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 120)
+        .frame(maxHeight: 120 + Self.tuckedUnder)
         .fixedSize(horizontal: false, vertical: true)
-        .glassEffect(in: .rect(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal)
+        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5)
+        }
+        .padding(.horizontal, 28)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("The agent's steps")
     }
 }
