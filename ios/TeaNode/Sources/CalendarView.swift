@@ -284,6 +284,7 @@ struct MonthScroll: View {
         let current = CalendarMonth(containing: Date(), in: .current)
         return (-12...24).map { current.adding(months: $0) }
     }()
+    @State private var hasPersonScrolled = false
 
     var body: some View {
         let isLunarShown = LunarDates.isShownForAppLanguage
@@ -316,11 +317,25 @@ struct MonthScroll: View {
                 model.ensureMonth(month)
             }
         }
+        .onScrollPhaseChange { _, phase in
+            if phase == .interacting {
+                hasPersonScrolled = true
+            }
+        }
         .task {
-            // This month and its neighbors, whatever the first layout reports.
-            let current = CalendarMonth(containing: Date(), in: model.dates)
+            // The month in view and its neighbors, whatever the first
+            // layout reports.
+            let target = position.viewID(type: CalendarMonth.self) ?? CalendarMonth(containing: Date(), in: model.dates)
             for offset in -1...1 {
-                model.ensureMonth(current.adding(months: offset))
+                model.ensureMonth(target.adding(months: offset))
+            }
+            // The first jump lands where the estimated heights of the months
+            // above put it, which can be a month off; once the months around
+            // it are measured it is placed again, unless the person scrolled.
+            for _ in 0..<2 {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !hasPersonScrolled else { break }
+                position.scrollTo(id: target, anchor: .top)
             }
         }
         .safeAreaBar(edge: .top) {
@@ -976,8 +991,12 @@ struct DayTimeline: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .onAppear {
+            .task {
+                // Once the bar of all-day events above has taken its height,
+                // or the hour would end up under it.
                 let hour = timed.first.map { Int($0.top) } ?? max(0, Calendar.current.component(.hour, from: Date()) - 1)
+                reader.scrollTo(min(hour, 20), anchor: .top)
+                try? await Task.sleep(for: .milliseconds(200))
                 reader.scrollTo(min(hour, 20), anchor: .top)
             }
         }
