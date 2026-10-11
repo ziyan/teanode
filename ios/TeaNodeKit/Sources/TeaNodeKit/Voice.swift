@@ -15,11 +15,17 @@ public struct VoiceEvent: Decodable, Sendable, Equatable {
     public var answerAudio: String? = nil
 }
 
-/// VoiceAvailability is whether the person may call their agent, and the
-/// rate the server takes speech at.
+/// VoiceAvailability is whether the person may call their agent, the rate
+/// the server takes speech at, and the voices answers may be read in.
 public struct VoiceAvailability: Decodable, Sendable {
     public let isVoiceAvailable: Bool
     public let sampleRate: Int?
+    /// The voice answers are read in: the person's choice, or the server's.
+    public var speechVoice: String? = nil
+    /// The voices the person may choose.
+    public var speechVoices: [String]? = nil
+    /// The server's voice, which an empty choice means.
+    public var serverSpeechVoice: String? = nil
 }
 
 extension Connection {

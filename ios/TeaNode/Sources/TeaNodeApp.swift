@@ -358,6 +358,50 @@ struct SettingsForm: View {
                     }
                 }
             }
+            if let connection = app.connection {
+                Section("Your agent") {
+                    NavigationLink {
+                        AgentSettingsView(connection: connection)
+                    } label: {
+                        Label("Agent settings", systemImage: "slider.horizontal.3")
+                    }
+                    NavigationLink {
+                        KnowledgeSourcesView(connection: connection)
+                    } label: {
+                        Label("Sources", systemImage: "tray.2")
+                    }
+                    NavigationLink {
+                        AgentMemorySettingsView(connection: connection)
+                    } label: {
+                        Label("Memory", systemImage: "brain")
+                    }
+                    NavigationLink {
+                        DreamsView(connection: connection)
+                    } label: {
+                        Label("Dreams", systemImage: "moon.zzz")
+                    }
+                    NavigationLink {
+                        SchedulesView(connection: connection)
+                    } label: {
+                        Label("Schedules", systemImage: "clock")
+                    }
+                    NavigationLink {
+                        MutedAlertsView(connection: connection)
+                    } label: {
+                        Label("Alerts", systemImage: "bell.badge")
+                    }
+                    NavigationLink {
+                        ConnectionsView(connection: connection)
+                    } label: {
+                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    NavigationLink {
+                        AgentActivityView(connection: connection)
+                    } label: {
+                        Label("Activity", systemImage: "list.bullet.rectangle")
+                    }
+                }
+            }
             DisplaySection()
             if let mail, mail.mailbox != nil {
                 Section {

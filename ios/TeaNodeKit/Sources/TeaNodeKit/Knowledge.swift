@@ -267,9 +267,56 @@ public struct DocumentExtract: Codable, Hashable, Sendable {
     public let next: Int
 }
 
+/// KnowledgeSource is a place the agent reads: what it is, where, how often,
+/// and how far the reading has got. A list that asks only for the id and the
+/// name gets the rest as empty.
 public struct KnowledgeSource: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String
+    public var kind: String = ""
+    public var specification = Specification()
+    /// Where in the graph what it finds is filed.
+    public var rootPath: String = ""
+    public var enabled: Bool = true
+    public var cron: String = ""
+    public var lastRunAt: String?
+    public var lastError: String = ""
+    public var documentCount: Int = 0
+    public var chunkCount: Int = 0
+    public var refusedCount: Int = 0
+    /// Whether the last pass left work behind and wants another.
+    public var more: Bool = false
+    /// The checkouts under it holding none of the person's commits, kept to
+    /// what git says about them, and how many files that left unread.
+    public var checkoutsKeptToProfile: Int = 0
+    public var filesKeptToProfile: Int = 0
+
+    public init(id: String, name: String, kind: String = "", specification: Specification = Specification(), enabled: Bool = true) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.specification = specification
+        self.enabled = enabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        specification = try container.decodeIfPresent(Specification.self, forKey: .specification) ?? Specification()
+        rootPath = try container.decodeIfPresent(String.self, forKey: .rootPath) ?? ""
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        cron = try container.decodeIfPresent(String.self, forKey: .cron) ?? ""
+        lastRunAt = try container.decodeIfPresent(String.self, forKey: .lastRunAt)
+        lastError = try container.decodeIfPresent(String.self, forKey: .lastError) ?? ""
+        documentCount = try container.decodeIfPresent(Int.self, forKey: .documentCount) ?? 0
+        chunkCount = try container.decodeIfPresent(Int.self, forKey: .chunkCount) ?? 0
+        refusedCount = try container.decodeIfPresent(Int.self, forKey: .refusedCount) ?? 0
+        more = try container.decodeIfPresent(Bool.self, forKey: .more) ?? false
+        checkoutsKeptToProfile = try container.decodeIfPresent(Int.self, forKey: .checkoutsKeptToProfile) ?? 0
+        filesKeptToProfile = try container.decodeIfPresent(Int.self, forKey: .filesKeptToProfile) ?? 0
+    }
 }
 
 /// KnowledgeWords are the fixed vocabularies the page editor offers.

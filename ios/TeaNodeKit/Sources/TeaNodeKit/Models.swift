@@ -40,6 +40,9 @@ public struct AgentUsage: Codable, Hashable, Sendable {
     public var promptTokens: Int
     public var completionTokens: Int
     public var cost: Double
+    /// The prompt tokens read from the provider's cache, where the answer
+    /// says; the run lists ask for it, a turn's rounds do not.
+    public var cacheReadTokens: Int? = nil
 
     public init(promptTokens: Int = 0, completionTokens: Int = 0, cost: Double = 0) {
         self.promptTokens = promptTokens
@@ -48,9 +51,13 @@ public struct AgentUsage: Codable, Hashable, Sendable {
     }
 
     static func + (left: AgentUsage, right: AgentUsage) -> AgentUsage {
-        AgentUsage(
+        var sum = AgentUsage(
             promptTokens: left.promptTokens + right.promptTokens, completionTokens: left.completionTokens + right.completionTokens,
             cost: left.cost + right.cost)
+        if left.cacheReadTokens != nil || right.cacheReadTokens != nil {
+            sum.cacheReadTokens = (left.cacheReadTokens ?? 0) + (right.cacheReadTokens ?? 0)
+        }
+        return sum
     }
 }
 
