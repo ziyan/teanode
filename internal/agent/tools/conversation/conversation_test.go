@@ -177,3 +177,176 @@ func TestConversationSearchesReadsAndRefuses(t *testing.T) {
 		t.Fatal("an unknown action is an error")
 	}
 }
+
+// toldReaction is one reaction a run told the conversation's watchers of.
+type toldReaction struct {
+	conversationId, messageId, reactionEmoji string
+	reactorKind                              models.AgentReactorKind
+}
+
+// reactingRun is a run that can tell the watchers of a conversation about a
+// reaction, and records what it told.
+type reactingRun struct {
+	*fakeRun
+	told []toldReaction
+}
+
+func (self *reactingRun) TellReaction(conversationId, messageId, reactionEmoji string, reactorKind models.AgentReactorKind) {
+	self.told = append(self.told, toldReaction{conversationId, messageId, reactionEmoji, reactorKind})
+}
+
+// The agent reacts to the person's latest message unless it names another,
+// in its own person's conversations only, with an emoji and nothing else,
+// and whoever has the conversation open is told. It asks nobody first.
+func TestConversationReactsToThePersonsMessages(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &reactingRun{fakeRun: &fakeRun{database: database}}
+	var earlier, latest, answer, toolAnswer, stranger *models.AgentMessage
+	var elsewhere *models.AgentConversation
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "reactor", Name: "Example Reactor"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if run.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		appendMessage := func(conversationId, role, content string) *models.AgentMessage {
+			message, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversationId, Role: role, Content: content})
+			if err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+			return message
+		}
+		earlier = appendMessage(run.conversation.ID, "user", "can you find the invoice")
+		answer = appendMessage(run.conversation.ID, "assistant", "Here it is.")
+		toolAnswer = appendMessage(run.conversation.ID, "tool", "{}")
+		latest = appendMessage(run.conversation.ID, "user", "thank you so much")
+		appendMessage(run.conversation.ID, "user", models.ScheduleMarker+" the weekly look")
+		if elsewhere, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationNamed, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		other, err := tx.CreateUser(&models.User{Username: "someone", Name: "Example Someone"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		theirAgent, err := tx.CreateAgent(&models.Agent{UserID: other.ID, Enabled: true, Name: "Robin"})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		theirs, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: theirAgent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		stranger = appendMessage(theirs.ID, "user", "hello")
+	})
+
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+	call := func(arguments string) (map[string]any, error) {
+		result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(arguments)})
+		if err != nil {
+			return nil, err
+		}
+		var answer map[string]any
+		_ = json.Unmarshal([]byte(result.Content), &answer)
+		return answer, nil
+	}
+	reactionsOn := func(message *models.AgentMessage) []models.AgentMessageReaction {
+		var found []models.AgentMessageReaction
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			read, err := tx.GetAgentMessage(message.ID)
+			if err != nil {
+				t.Fatalf("GetAgentMessage: %s", err)
+			}
+			found = read.Reactions
+		})
+		return found
+	}
+
+	// A reaction changes something the person can change back and sends
+	// nothing anywhere: it needs no card. Reading stays a read.
+	reacting := json.RawMessage(`{"action":"react","emoji":"🙏"}`)
+	if tool.RiskFor(reacting) != tools.RiskWrite || tool.RiskFor(json.RawMessage(`{"action":"read"}`)) != tools.RiskRead {
+		t.Fatalf("risks: react %s, read %s", tool.RiskFor(reacting), tool.RiskFor(json.RawMessage(`{"action":"read"}`)))
+	}
+	if tools.NeedsConfirmation(tool, reacting, nil, nil) {
+		t.Fatal("a reaction asks nobody first")
+	}
+
+	// By default, the person's latest message: not a turn the agent took
+	// on its own after it.
+	answered, err := call(`{"action":"react","emoji":"🙏"}`)
+	if err != nil {
+		t.Fatalf("react: %s", err)
+	}
+	if answered["message_id"] != latest.ID || answered["is_changed"] != true {
+		t.Fatalf("reacted to the person's latest message: %v", answered)
+	}
+	if reactions := reactionsOn(latest); len(reactions) != 1 || reactions[0].Emoji != "🙏" || reactions[0].ReactorKind != models.ReactorAgent {
+		t.Fatalf("the agent's reaction is on it: %+v", reactions)
+	}
+	if len(run.told) != 1 || run.told[0] != (toldReaction{run.conversation.ID, latest.ID, "🙏", models.ReactorAgent}) {
+		t.Fatalf("the watchers were told: %+v", run.told)
+	}
+
+	// Another message, named; then taken away again.
+	if _, err := call(`{"action":"react","emoji":"👍","message_id":"` + earlier.ID + `"}`); err != nil {
+		t.Fatalf("react to a named message: %s", err)
+	}
+	if reactions := reactionsOn(earlier); len(reactions) != 1 || reactions[0].Emoji != "👍" {
+		t.Fatalf("on the named message: %+v", reactions)
+	}
+	if _, err := call(`{"action":"react","emoji":"","message_id":"` + earlier.ID + `"}`); err != nil {
+		t.Fatalf("take a reaction away: %s", err)
+	}
+	if reactions := reactionsOn(earlier); len(reactions) != 0 {
+		t.Fatalf("taken away: %+v", reactions)
+	}
+	if last := run.told[len(run.told)-1]; last.messageId != earlier.ID || last.reactionEmoji != "" {
+		t.Fatalf("and the watchers told so: %+v", last)
+	}
+
+	// Reading a conversation shows the reactions, and the ids to name.
+	read, err := call(`{"action":"read","conversation_id":"` + run.conversation.ID + `"}`)
+	if err != nil {
+		t.Fatalf("read: %s", err)
+	}
+	if !strings.Contains(fmt.Sprint(read["messages"]), "🙏") || !strings.Contains(fmt.Sprint(read["messages"]), latest.ID) {
+		t.Fatalf("read shows the reaction and the message ids: %v", read["messages"])
+	}
+
+	told := len(run.told)
+	for name, arguments := range map[string]string{
+		"a word":                        `{"action":"react","emoji":"ok"}`,
+		"three emoji":                   `{"action":"react","emoji":"👍👍👍"}`,
+		"somebody else's message":       `{"action":"react","emoji":"👍","message_id":"` + stranger.ID + `"}`,
+		"a tool's answer":               `{"action":"react","emoji":"👍","message_id":"` + toolAnswer.ID + `"}`,
+		"a message that does not exist": `{"action":"react","emoji":"👍","message_id":"nothing"}`,
+	} {
+		if _, err := call(arguments); err == nil {
+			t.Errorf("%s: reacted", name)
+		}
+	}
+	if reactions := reactionsOn(stranger); len(reactions) != 0 {
+		t.Fatalf("nothing on somebody else's message: %+v", reactions)
+	}
+	if len(run.told) != told {
+		t.Fatalf("nobody was told of a reaction that was refused: %+v", run.told[told:])
+	}
+
+	// Its own answer can carry one too; and in a conversation the person
+	// has not written in there is nothing to react to by default.
+	if _, err := call(`{"action":"react","emoji":"🎉","message_id":"` + answer.ID + `"}`); err != nil {
+		t.Fatalf("react to its own answer: %s", err)
+	}
+	run.conversation = elsewhere
+	if _, err := call(`{"action":"react","emoji":"👍"}`); err == nil {
+		t.Fatal("reacted in a conversation the person never wrote in")
+	}
+}

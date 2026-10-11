@@ -86,14 +86,39 @@ func historyOf(stored []*models.AgentMessage, compactedThrough string) []llm.Cha
 		}
 		switch message.Role {
 		case string(llm.RoleUser):
-			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: historyTurn(message), SourceID: message.ID})
+			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: withReactionNote(historyTurn(message), message.Reactions), SourceID: message.ID})
 		case string(llm.RoleAssistant):
-			history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: message.Content, ToolCalls: toolCallsFrom(message.ToolCalls), SourceID: message.ID})
+			history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: withReactionNote(message.Content, message.Reactions), ToolCalls: toolCallsFrom(message.ToolCalls), SourceID: message.ID})
 		case string(llm.RoleTool):
 			history = append(history, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: message.ToolCallID, Name: message.Name, Content: message.Content, SourceID: message.ID})
 		}
 	}
 	return repairHistory(history)
+}
+
+// withReactionNote is a message's text with its reactions said after it,
+// "(The person reacted 👍)", so the model sees what the person thought
+// of an answer without the reaction being a turn of its own: a reaction
+// starts no turn, and the next turn finds it here.
+func withReactionNote(content string, reactions []models.AgentMessageReaction) string {
+	var said []string
+	for _, reaction := range reactions {
+		switch reaction.ReactorKind {
+		case models.ReactorPerson:
+			said = append(said, "the person reacted "+reaction.Emoji)
+		case models.ReactorAgent:
+			said = append(said, "you reacted "+reaction.Emoji)
+		}
+	}
+	if len(said) == 0 {
+		return content
+	}
+	joined := strings.Join(said, "; ")
+	note := "(" + strings.ToUpper(joined[:1]) + joined[1:] + ")"
+	if strings.TrimSpace(content) == "" {
+		return note
+	}
+	return content + "\n\n" + note
 }
 
 // renderHistory is the history as text, for measuring.
