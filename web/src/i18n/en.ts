@@ -2142,6 +2142,8 @@ export const en = {
 
   'authorize.title': 'Authorize an app',
   'authorize.intro': 'An app is asking to use your agent tools and act as you on this server.',
+  'authorize.introWholeAccount': 'An app on this device is asking to sign in to your whole account: your mail, your agent and your settings, as you.',
+  'authorize.grantWholeAccount': 'Allow it only if you just opened the TeaNode app on this device to sign in. It will be able to do everything you can do here. You can sign it out at any time under Phones or Apps in your settings.',
   'authorize.program': 'App',
   'authorize.claimedName': 'the name it gave when it registered',
   'authorize.unnamed': 'an app that gave no name',
