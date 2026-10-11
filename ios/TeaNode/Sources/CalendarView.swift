@@ -296,10 +296,26 @@ struct MonthScroll: View {
             .padding(.bottom)
         }
         .scrollPosition($position, anchor: .top)
+        // The month at the top names the year. It is read from the scroll
+        // position, which settles where the view settles; the visible months
+        // are also reported while the view first jumps to this month, from
+        // wherever the estimated heights put it.
+        .onChange(of: position.viewID(type: CalendarMonth.self)) { _, month in
+            if let month, month != topMonth {
+                topMonth = month
+            }
+        }
         .onScrollTargetVisibilityChange(idType: CalendarMonth.self, threshold: 0.05) { visibleMonths in
             model.visibleMonths = Set(visibleMonths)
-            if let first = visibleMonths.min(), first != topMonth {
-                topMonth = first
+            for month in visibleMonths {
+                model.ensureMonth(month)
+            }
+        }
+        .task {
+            // This month and its neighbors, whatever the first layout reports.
+            let current = CalendarMonth(containing: Date(), in: model.dates)
+            for offset in -1...1 {
+                model.ensureMonth(current.adding(months: offset))
             }
         }
         .safeAreaBar(edge: .top) {
