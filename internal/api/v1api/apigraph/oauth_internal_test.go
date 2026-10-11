@@ -71,3 +71,37 @@ func TestALoopbackRedirectMatchesOnAnyPort(test *testing.T) {
 		}
 	}
 }
+
+// An app installed on a device that names the API is given the whole
+// account, as a connect code would give it; every other program, and that
+// app when it names nothing or something else, gets the agent tools.
+func TestOnlyAnInstalledAppNamingTheAPIGetsTheWholeAccount(test *testing.T) {
+	installed := &models.OAuthClient{RedirectURIs: []string{"com.example.app:/oauth"}}
+	web := &models.OAuthClient{RedirectURIs: []string{"https://harness.example.com/callback"}}
+	mixed := &models.OAuthClient{RedirectURIs: []string{"com.example.app:/oauth", "https://harness.example.com/callback"}}
+	loopback := &models.OAuthClient{RedirectURIs: []string{"http://127.0.0.1:53121/callback"}}
+
+	for _, asked := range []string{"https://mail.example.com" + api.Prefix, "https://mail.example.com:10443" + api.Prefix} {
+		resource, isWholeAccount, err := tokenResource(installed, asked)
+		if err != nil || resource != "" || !isWholeAccount {
+			test.Errorf("the installed app asking %q got %q, %v, %v", asked, resource, isWholeAccount, err)
+		}
+	}
+	if resource, isWholeAccount, err := tokenResource(installed, ""); err != nil || resource != api.PathAgentMCP || isWholeAccount {
+		test.Errorf("naming nothing gave %q, %v, %v; it should be the agent tools", resource, isWholeAccount, err)
+	}
+	for _, client := range []*models.OAuthClient{web, mixed, loopback} {
+		if _, _, err := tokenResource(client, "https://mail.example.com"+api.Prefix); err == nil {
+			test.Errorf("%v was given the API", client.RedirectURIs)
+		}
+	}
+	for _, refused := range []string{
+		"https://mail.example.com" + api.PathGraphQL,
+		"https://mail.example.com" + api.Prefix + "?all=yes",
+		"https://mail.example.com" + api.Prefix + "/../mcp",
+	} {
+		if _, isWholeAccount, err := tokenResource(installed, refused); err == nil || isWholeAccount {
+			test.Errorf("%q was accepted", refused)
+		}
+	}
+}

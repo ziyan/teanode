@@ -2075,6 +2075,8 @@ export const zh: Catalog = {
 
   'authorize.title': '授权应用',
   'authorize.intro': '有应用请求使用你的助理工具，并在此服务器上以你的身份执行操作。',
+  'authorize.introWholeAccount': '这台设备上的一个应用请求以你的身份登录整个账户：你的邮件、助手和设置。',
+  'authorize.grantWholeAccount': '只有在你刚刚在这台设备上打开 TeaNode 应用登录时才允许。它将能做你在这里能做的一切。你可以随时在设置的“手机”或“应用”中将它退出登录。',
   'authorize.program': '应用',
   'authorize.claimedName': '注册时自称的名称',
   'authorize.unnamed': '未提供名称的应用',
