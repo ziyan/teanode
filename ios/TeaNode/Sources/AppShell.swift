@@ -163,6 +163,26 @@ struct MainView: View {
             section = opened
             isMenuOpen = false
         }
+        .onChange(of: app.openedFinancePart) { _, part in
+            guard let part else { return }
+            app.openedFinancePart = nil
+            financePart = part
+        }
+        .sheet(isPresented: Bindable(app).isShowingMailPrograms) {
+            NavigationStack {
+                if let mailboxId = mail.mailbox?.id {
+                    MailAppPasswordsView(mail: mail, mailboxId: mailboxId)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { app.isShowingMailPrograms = false }
+                            }
+                        }
+                } else {
+                    ContentUnavailableView("No mailbox", systemImage: "envelope", description: Text("This account has no mailbox to set up on the phone."))
+                }
+            }
+            .environment(mail)
+        }
         .onChange(of: app.composingTo) { _, address in
             guard let address else { return }
             app.composingTo = nil

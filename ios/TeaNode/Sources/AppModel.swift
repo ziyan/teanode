@@ -62,6 +62,13 @@ final class AppModel {
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
 
+    /// The agent took the app to the mailbox's mail programs, where the
+    /// person sets the phone up for mail, calendars and contacts.
+    var isShowingMailPrograms = false
+
+    /// The finance section a page of the dashboard's Finance names.
+    var openedFinancePart: FinancePart?
+
     /// The open_page events already followed, by run and sequence, so a
     /// feed replayed after the screen comes back does not move the app again.
     private var shownNavigations: Set<String> = []
@@ -93,9 +100,23 @@ final class AppModel {
                 openedSection = .mail
             }
         case "finance":
-            if path != "/finance/link" { openedSection = .finance }
+            guard path != "/finance/link" else { return }
+            // The dashboard's sections are written with dashes: net-worth.
+            if segments.count >= 2, let part = FinancePart.allCases.first(where: { $0.rawValue.lowercased() == segments[1].replacingOccurrences(of: "-", with: "") }) {
+                openedFinancePart = part
+            }
+            openedSection = .finance
         case "settings":
             openedSection = .settings
+            if segments.count >= 3, segments[1] == "mailbox", segments[2] == "devices" {
+                isShowingMailPrograms = true
+            }
+        case "connect":
+            // The agent shows the code to scan in the dashboard; this phone
+            // is the one connected.
+            if let account {
+                openedLinkText = String(localized: "This phone is already connected to \(account.server.host).")
+            }
         default:
             break
         }

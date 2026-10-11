@@ -7105,6 +7105,22 @@
         }
       }
     },
+    "No mailbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールボックスがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有邮箱"
+          }
+        }
+      }
+    },
     "No mailbox yet": {
       "localizations": {
         "ja": {
@@ -11616,6 +11632,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "思考中…"
+          }
+        }
+      }
+    },
+    "This account has no mailbox to set up on the phone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントには電話で設定できるメールボックスがありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账户没有可以在手机上设置的邮箱。"
           }
         }
       }
