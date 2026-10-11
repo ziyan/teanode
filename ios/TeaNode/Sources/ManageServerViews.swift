@@ -2385,7 +2385,7 @@ private struct AgentUsageView: View {
 
     /// The tokens each row used, one bar a row, all one series in one
     /// color, so it needs no legend. Touching a bar shows its row's
-    /// tokens, cost and calls; the callout rises over the title above it.
+    /// tokens, cost and calls; the callout takes the title's place above it.
     private func chart(_ overview: AgentAdminOverview) -> some View {
         let barColor = ChartPalette.seriesColor(at: 0)
         let selectedRow = overview.usageRows.first { keyLabel($0.usageKey, in: overview) == selectedKeyLabel }
@@ -2394,6 +2394,7 @@ private struct AgentUsageView: View {
                 .font(.subheadline)
                 .foregroundStyle(Color(.secondaryLabel))
                 .frame(minHeight: 44, alignment: .bottomLeading)
+                .opacity(selectedRow == nil ? 1 : 0)
             Chart {
                 ForEach(overview.usageRows, id: \.usageKey) { usageRow in
                     let label = keyLabel(usageRow.usageKey, in: overview)

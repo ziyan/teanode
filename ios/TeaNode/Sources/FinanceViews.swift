@@ -344,9 +344,10 @@ struct SpendingView: View {
         let selectedFlow = months.first { $0.cashFlowMonth == selectedCashFlowMonth }
         return VStack(alignment: .leading, spacing: 8) {
             // The legend's line is tall enough for the callout of a touched
-            // month to cover it rather than the row above.
+            // month to take its place rather than cover the row above.
             ChartKey(entries: [ChartKeyEntry(label: incomeWord, color: incomeColor), ChartKeyEntry(label: spendingWord, color: spendingColor)])
                 .frame(minHeight: 44, alignment: .bottomLeading)
+                .opacity(selectedFlow == nil ? 1 : 0)
             Chart {
                 ForEach(months, id: \.cashFlowMonth) { flow in
                     let opacity = ChartPalette.markOpacity(isChosen: flow.cashFlowMonth == selectedFlow?.cashFlowMonth, isAnyChosen: selectedFlow != nil)
@@ -438,15 +439,17 @@ struct SpendingView: View {
                         Text(verbatim: moneyText(selectedSlice?.amount ?? total))
                             .font(.headline)
                             .monospacedDigit()
+                            .lineLimit(1)
                             .contentTransition(.numericText())
                         if let selectedSlice {
                             Text(verbatim: shareText(selectedSlice.amount, of: total))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
                     .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.6)
+                    .minimumScaleFactor(0.4)
                     .frame(width: holeWidth * 0.82)
                     .position(x: frame.midX, y: frame.midY)
                     .accessibilityHidden(true)
@@ -643,22 +646,28 @@ struct SpendingLineRow: View {
     let color: Color?
     let currency: String
     let shareText: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 12) {
             ChartSwatch(color: color ?? .clear)
-            VStack(alignment: .leading) {
-                Text(line.label).foregroundStyle(.primary)
-                Text("\(line.count) transactions").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            VStack(alignment: .trailing) {
-                Text(FinanceMoney.shown(NSDecimalNumber(decimal: line.amount).stringValue, currencyCode: currency))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                Text(shareText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Side by side, or one under the other at the accessibility
+            // sizes, where side by side breaks the words apart.
+            let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+            layout {
+                VStack(alignment: .leading) {
+                    Text(line.label).foregroundStyle(.primary)
+                    Text("\(line.count) transactions").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing) {
+                    Text(FinanceMoney.shown(NSDecimalNumber(decimal: line.amount).stringValue, currencyCode: currency))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                    Text(shareText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             // A row opens a screen, so it carries the chevron a navigation
             // row would; it is a button so that the tap chooses its slice too.

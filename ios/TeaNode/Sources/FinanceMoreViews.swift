@@ -412,17 +412,21 @@ struct NetWorthView: View {
                 let points = (netWorth?.convertedNetWorthPoints ?? []).compactMap { $0 }
                 if let last = points.last {
                     // The total, its change and the line are one row, so the
-                    // callout of a touched day covers the total, as in Stocks.
+                    // callout of a touched day takes the total's place, as in
+                    // Stocks.
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(FinanceMoney.shown(last.netWorthAmount, currencyCode: netWorth?.reportingCurrencyCode))
-                            .font(.title.weight(.semibold))
-                            .monospacedDigit()
-                        if let first = points.first, let start = FinanceMoney.decimal(first.netWorthAmount), let end = FinanceMoney.decimal(last.netWorthAmount) {
-                            let change = end - start
-                            Text("\(change >= 0 ? "▲" : "▼") \(FinanceMoney.shown(NSDecimalNumber(decimal: abs(change)).stringValue, currencyCode: netWorth?.reportingCurrencyCode)) since \(first.netWorthOn)")
-                                .font(.footnote)
-                                .foregroundStyle(change >= 0 ? .green : .red)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(FinanceMoney.shown(last.netWorthAmount, currencyCode: netWorth?.reportingCurrencyCode))
+                                .font(.title.weight(.semibold))
+                                .monospacedDigit()
+                            if let first = points.first, let start = FinanceMoney.decimal(first.netWorthAmount), let end = FinanceMoney.decimal(last.netWorthAmount) {
+                                let change = end - start
+                                Text("\(change >= 0 ? "▲" : "▼") \(FinanceMoney.shown(NSDecimalNumber(decimal: abs(change)).stringValue, currencyCode: netWorth?.reportingCurrencyCode)) since \(first.netWorthOn)")
+                                    .font(.footnote)
+                                    .foregroundStyle(change >= 0 ? .green : .red)
+                            }
                         }
+                        .opacity(selectedDate == nil ? 1 : 0)
                         netWorthChart(points)
                             .padding(.top, 8)
                     }
@@ -515,6 +519,9 @@ struct NetWorthView: View {
             }
         }
         .chartXSelection(value: $selectedDate)
+        // Not from zero: a net worth moves by a little of itself, and from
+        // zero every line would look flat.
+        .chartYScale(domain: .automatic(includesZero: false))
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                 AxisGridLine()

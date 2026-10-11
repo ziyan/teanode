@@ -1265,6 +1265,8 @@ struct MemoryCheckScoreRow: View {
                     Text("Not graded").foregroundStyle(.secondary)
                 }
             }
+            // The callout of a touched grading takes this line's place.
+            .opacity(selectedDate == nil ? 1 : 0)
             if !history.isEmpty {
                 scoreChart
             }
@@ -1281,8 +1283,8 @@ struct MemoryCheckScoreRow: View {
 
     /// The score over the gradings shown, on the whole of zero to a
     /// hundred, so a line that moved from 70 to 72 looks as flat as it is.
-    /// Touching it shows the nearest grading's day and score; the callout
-    /// rises over the score above it in the row.
+    /// Touching it shows the nearest grading's day and score, in place of
+    /// the line above it.
     private var scoreChart: some View {
         let gradedDates = history.map { ServerTime.date($0.startedAt) ?? .now }
         let selectedIndex = selectedDate.flatMap { ChartShares.nearestIndex(to: $0, in: gradedDates) }
