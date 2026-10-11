@@ -22,6 +22,10 @@ const (
 type RegisterRequest struct {
 	DeviceToken string `json:"deviceToken"`
 	IsSandbox   bool   `json:"isSandbox"`
+
+	// PushType is PushTypeAlert, the phone itself, which is the default, or
+	// PushTypeLiveActivity, one Live Activity's push token.
+	PushType string `json:"pushType,omitempty"`
 }
 
 // RegisterResponse is the sealed registration the phone hands its server.
