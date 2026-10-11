@@ -60,7 +60,7 @@ func runOpenPage(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	showing, ok := tools.MustRun(ctx).(tools.Showing)
-	if !ok {
+	if !ok || !showing.CanShowPages() {
 		return nil, fmt.Errorf("this conversation is not in the dashboard; give the person a link instead")
 	}
 	showing.ShowPage(path)

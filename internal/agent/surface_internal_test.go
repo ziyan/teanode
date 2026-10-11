@@ -65,6 +65,13 @@ func TestSurfaces(t *testing.T) {
 		if surfaceOf(name).canShowPages {
 			t.Errorf("%q can show a page", name)
 		}
+		// And a tool that would open one is told so, to say where to go.
+		if (&AskRun{settings: &AskSettings{Surface: name}}).CanShowPages() {
+			t.Errorf("a run on %q says it can show a page", name)
+		}
+	}
+	if !(&AskRun{settings: &AskSettings{Surface: "drawer"}}).CanShowPages() {
+		t.Error("a run in the drawer says it cannot show a page")
 	}
 }
 

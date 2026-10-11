@@ -305,3 +305,60 @@ func TestAMemoryCheckThatAsksNothingIsNudgedOnce(t *testing.T) {
 		}
 	})
 }
+
+// A phone connected after the introduction is shown around once, in the
+// main conversation, with only what the server has on.
+func TestANewPhoneIsShownAroundOnce(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	now := time.Now()
+	var phone *models.AgentPhone
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, nil, &now, nil); err != nil {
+			t.Fatalf("MarkAgentSpokeFirst: %s", err)
+		}
+		var err error
+		if phone, err = tx.PutAgentPhone(&models.AgentPhone{AgentID: world.agent.ID, ClientID: "a-phone-client", PhoneName: "A test phone"}); err != nil {
+			t.Fatalf("PutAgentPhone: %s", err)
+		}
+	})
+	// The phone is signed in: its client holds a token.
+	if _, err := world.database.CreateAuthorizedToken(&models.Token{
+		UserID: world.owner.ID, Name: "A test phone", ClientID: "a-phone-client", ExpiresAt: time.Now().Add(time.Hour),
+	}, "a-key-hash", "a-refresh-hash"); err != nil {
+		t.Fatalf("CreateAuthorizedToken: %s", err)
+	}
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.tick(t)
+
+	jobs := world.speakFirstJobs(t)
+	if len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstPhoneTour || jobs[0].Status != models.AgentJobDone {
+		t.Fatalf("one phone tour, done: %+v", jobs)
+	}
+	request := fmt.Sprint((*world.requests)[0]["messages"])
+	for _, want := range []string{"A test phone", "Show them around it", "Share button", "Ask TeaNode"} {
+		if !strings.Contains(request, want) {
+			t.Errorf("the tour's message says %q", want)
+		}
+	}
+	// Nothing the server has off: no mailbox, no voice, no computer.
+	for _, unwanted := range []string{"set_up_phone_mail", "Calling you", "coding sessions"} {
+		if strings.Contains(request, unwanted) {
+			t.Errorf("the tour offers %q, which is not on here", unwanted)
+		}
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		after, _ := tx.GetAgentPhone(world.agent.ID, phone.ID)
+		if after == nil || after.TouredAt == nil {
+			t.Fatalf("the phone is marked shown around: %+v", after)
+		}
+	})
+
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(2*time.Minute))
+	if err := world.worker.TickAt(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 {
+		t.Fatalf("shown around once: %+v", jobs)
+	}
+}

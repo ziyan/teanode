@@ -12,12 +12,13 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
+	"github.com/ziyan/teanode/internal/agent/tools/phone"
 	"github.com/ziyan/teanode/internal/models"
 )
 
 func init() {
 	tools.Register(func() []*tools.Tool {
-		return tools.Grouped([]*tools.Tool{
+		return tools.Grouped(append([]*tools.Tool{
 			{
 				Name: "account_get", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Description: "The person's own account: name, username, notification address, language, zone, and their sessions, API tokens and passkeys.",
@@ -332,14 +333,22 @@ func init() {
 					return tools.JSONResult(map[string]any{"may": tools.PermissionWords(permissions), "offered_tools": len(run.Offered()), "switched_off_by_operator": configuration.Agent.Tools.Disabled})
 				},
 			},
-		},
-			// Reading the account and changing it are one tool.
+		}, phone.Tools()...),
+			// Reading the account and changing it are one tool, and the
+			// phones signed in to it are part of it.
 			tools.Group{
 				Name: "account", Family: tools.FamilyAccount,
-				Description: "The person's own account on this server: who they are, how they are reached, what they have chosen.",
+				Description: "The person's own account on this server: who they are, how they are reached, what they have chosen, and their phones running the TeaNode app.",
 				Members: []tools.Member{
 					{Action: "get", Tool: "account_get"},
 					{Action: "update", Tool: "account_update"},
+					{Action: "phones", Tool: "phone_list"},
+					{Action: "pair_phone", Tool: "phone_pair"},
+					{Action: "set_up_phone_mail", Tool: "phone_setup_profile"},
+					{Action: "rename_phone", Tool: "phone_rename"},
+					{Action: "phone_notifications", Tool: "phone_notify"},
+					{Action: "test_phone", Tool: "phone_test"},
+					{Action: "remove_phone", Tool: "phone_remove"},
 				},
 			},
 		)

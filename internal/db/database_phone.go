@@ -39,6 +39,11 @@ type PhoneOperation interface {
 	// nobody moved it since it was read, which is what keeps a turn from
 	// being sent twice when two instances look at once.
 	AdvanceAgentPhonePush(phoneId, fromMessageId, throughMessageId string) (bool, error)
+
+	// MarkAgentPhoneToured says the agent showed the person around the
+	// phone, and whether this call was the one that did: of two instances
+	// starting the tour at once, one goes on.
+	MarkAgentPhoneToured(phoneId string, at time.Time) (bool, error)
 }
 
 type agentPhoneModel struct {
@@ -56,6 +61,7 @@ type agentPhoneModel struct {
 	LastSeenAt        *time.Time `gorm:"column:last_seen_at"`
 	LastDeliveredAt   *time.Time `gorm:"column:last_delivered_at"`
 	LastDeliveryError string     `gorm:"column:last_delivery_error"`
+	TouredAt          *time.Time `gorm:"column:toured_at"`
 }
 
 func (agentPhoneModel) TableName() string { return "agent_phone" }
@@ -69,8 +75,13 @@ func (self *agentPhoneModel) toModel() *models.AgentPhone {
 		ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, ClientID: self.ClientID,
 		PhoneName: self.PhoneName, PhoneModel: self.PhoneModel, PushRegistration: self.PushRegistration, PayloadKey: self.PayloadKey,
 		NotificationKinds: kinds, PushedThrough: self.PushedThrough, LastSeenAt: self.LastSeenAt,
-		LastDeliveredAt: self.LastDeliveredAt, LastDeliveryError: self.LastDeliveryError,
+		LastDeliveredAt: self.LastDeliveredAt, LastDeliveryError: self.LastDeliveryError, TouredAt: self.TouredAt,
 	}
+}
+
+func (self *transaction) MarkAgentPhoneToured(phoneId string, at time.Time) (bool, error) {
+	result := self.tx.Model(&agentPhoneModel{}).Where(`"id" = ? AND "toured_at" IS NULL`, phoneId).Update("toured_at", at)
+	return result.RowsAffected == 1, result.Error
 }
 
 func (self *transaction) PutAgentPhone(phone *models.AgentPhone) (*models.AgentPhone, error) {

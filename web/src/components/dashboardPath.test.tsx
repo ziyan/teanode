@@ -20,6 +20,8 @@ it('shows only the parts of the dashboard the agent may take the person to', () 
   expect(shownPath('/mailbox/starred/item42/')).toBe('/mailbox/starred/item42')
   expect(shownPath('/settings/agent')).toBe('/settings/agent')
   expect(shownPath('/finance/budgets')).toBe('/finance/budgets')
+  expect(shownPath('/connect')).toBe('/connect')
+  expect(shownPath('/connect/extra')).toBeNull()
   for (const path of [
     '',
     '/',
