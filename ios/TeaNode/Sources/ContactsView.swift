@@ -105,6 +105,7 @@ struct ContactsScreen: View {
                 }
             }
             .toolbar {
+                MenuButton()
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isAdding = true

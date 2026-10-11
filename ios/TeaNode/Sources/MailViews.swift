@@ -2,81 +2,36 @@ import SwiftUI
 import TeaNodeKit
 
 /// MailScreen is the dashboard's mailbox on a phone: the folder being read,
-/// the folders in a side panel, a conversation a tap away.
+/// the folders in the side menu, a conversation a tap away.
 struct MailScreen: View {
-    @State private var mail: MailModel
+    let mail: MailModel
+    @Binding var place: MailPlace?
+    @Binding var composing: ComposeStart?
     @State private var path = NavigationPath()
-    @State private var place: MailPlace?
-    @State private var isChoosing = false
-    @State private var composing: ComposeStart?
-    @Environment(\.scenePhase) private var scenePhase
-
-    init(connection: Connection, username: String) {
-        _mail = State(initialValue: MailModel(connection: connection, username: username))
-    }
 
     var body: some View {
-        SidePanel(isOpen: $isChoosing) {
-            NavigationStack {
-                MailboxesList(mail: mail, current: place, composing: $composing) { chosen in
-                    place = chosen
-                    path = NavigationPath()
-                    isChoosing = false
-                }
-            }
-        } content: {
-            NavigationStack(path: $path) {
-                Group {
-                    switch place {
-                    case .subscriptions:
-                        SubscriptionsList(mail: mail)
-                    case .some(let place):
-                        ThreadList(mail: mail, place: place, composing: $composing)
-                            .id(place)
-                    case nil:
-                        if mail.isLoaded {
-                            ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
-                        } else {
-                            ProgressView()
-                        }
+        NavigationStack(path: $path) {
+            Group {
+                switch place {
+                case .subscriptions:
+                    SubscriptionsList(mail: mail)
+                case .some(let place):
+                    ThreadList(mail: mail, place: place, composing: $composing)
+                        .id(place)
+                case nil:
+                    if mail.isLoaded {
+                        ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
+                    } else {
+                        ProgressView()
                     }
                 }
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            isChoosing = true
-                        } label: {
-                            Label("Mailboxes", systemImage: "line.3.horizontal")
-                        }
-                    }
-                }
-                .navigationDestination(for: OpenedThread.self) { opened in
-                    MailThreadScreen(mail: mail, opened: opened, composing: $composing)
-                }
+            }
+            .toolbar { MenuButton() }
+            .navigationDestination(for: OpenedThread.self) { opened in
+                MailThreadScreen(mail: mail, opened: opened, composing: $composing)
             }
         }
-        .task {
-            await mail.load()
-            // Opens on the Inbox, with the folders a swipe away.
-            if place == nil, let inbox = mail.folder(kind: "inbox") {
-                place = .folder(inbox.id)
-            }
-        }
-        .onChange(of: mail.currentMailboxId) {
-            if let inbox = mail.folder(kind: "inbox") { place = .folder(inbox.id) }
-        }
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                await mail.load()
-            }
-        }
-        .sheet(item: $composing) { start in
-            ComposeView(mail: mail, start: start)
-        }
-        .toast(done: $mail.doneText, problem: $mail.problemText, undo: $mail.undo)
-        .environment(mail)
+        .onChange(of: place) { path = NavigationPath() }
     }
 }
 
@@ -93,10 +48,16 @@ struct MailboxesList: View {
     let mail: MailModel
     let current: MailPlace?
     @Binding var composing: ComposeStart?
+    /// Rows shown above the folders, as the side menu puts its sections
+    /// there.
+    var leading: AnyView?
     let onChoose: (MailPlace) -> Void
 
     var body: some View {
         List {
+            if let leading {
+                Section { leading }
+            }
             if let entry = mail.current, let inbox = mail.folder(kind: "inbox") {
                 Section {
                     FolderLink(place: .folder(inbox.id), name: String(localized: "Inbox"), systemImage: "tray", count: inbox.unread, current: current, onChoose: onChoose)
@@ -127,7 +88,6 @@ struct MailboxesList: View {
                 }
             }
         }
-        .navigationTitle(mail.mailbox?.name ?? String(localized: "Mail"))
         .refreshable { await mail.load() }
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {
@@ -137,8 +97,9 @@ struct MailboxesList: View {
             }
         }
         .toolbar {
+            MenuBrand()
             if mail.entries.count > 1 {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Mailbox", selection: Binding(get: { mail.current?.mailbox?.id }, set: { mail.currentMailboxId = $0 })) {
                             ForEach(mail.entries, id: \.mailbox?.id) { entry in

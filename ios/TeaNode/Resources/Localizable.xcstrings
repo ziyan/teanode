@@ -5313,6 +5313,22 @@
         }
       }
     },
+    "Menu": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニュー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单"
+          }
+        }
+      }
+    },
     "Merchant": {
       "localizations": {
         "ja": {

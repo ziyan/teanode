@@ -90,7 +90,8 @@ struct CalendarScreen: View {
                 StepBar(model: model, title: title, selectedDay: $selectedDay)
             }
         }
-        ToolbarItem(placement: .topBarLeading) {
+        MenuButton()
+        ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Picker("View", selection: $model.viewMode) {
                     ForEach(CalendarModel.ViewMode.allCases) { mode in
@@ -272,45 +273,59 @@ struct MonthGrid: View {
     var body: some View {
         let dates = model.dates
         let month = dates.component(.month, from: model.focus)
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
-            ForEach(Array(weekdayNames(dates).enumerated()), id: \.offset) { _, name in
-                Text(name)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(model.days, id: \.self) { day in
-                let isOtherMonth = dates.component(.month, from: day) != month
-                let isToday = dates.isDateInToday(day)
-                let isSelected = dates.isDate(day, inSameDayAs: selectedDay)
-                let count = model.events(on: day).count
-                Button {
-                    selectedDay = day
-                } label: {
-                    VStack(spacing: 3) {
-                        Text(day.formatted(.dateTime.day()))
-                            .font(.callout)
-                            .fontWeight(isToday ? .bold : .regular)
-                            .foregroundStyle(isSelected ? AnyShapeStyle(.background) : isToday ? AnyShapeStyle(.tint) : isOtherMonth ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
-                            .frame(width: 34, height: 34)
-                            .background {
-                                if isSelected {
-                                    Circle().fill(isToday ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-                                }
-                            }
-                        HStack(spacing: 3) {
-                            ForEach(0..<min(count, 3), id: \.self) { _ in
-                                Circle().fill(.secondary).frame(width: 4, height: 4)
-                            }
-                        }
-                        .frame(height: 4)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(.rect)
+        let days = model.days
+        // A plain grid, laid out once: a lazy one in a list row sized itself
+        // again as the list scrolled, and the list jittered.
+        Grid(horizontalSpacing: 0, verticalSpacing: 4) {
+            GridRow {
+                ForEach(Array(weekdayNames(dates).enumerated()), id: \.offset) { _, name in
+                    Text(name)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("\(day.formatted(date: .complete, time: .omitted)), \(count) events"))
+            }
+            ForEach(0..<(days.count / 7), id: \.self) { week in
+                GridRow {
+                    ForEach(days[(week * 7)..<(week * 7 + 7)], id: \.self) { day in
+                        dayCell(day, dates: dates, month: month)
+                    }
+                }
             }
         }
+    }
+
+    private func dayCell(_ day: Date, dates: Calendar, month: Int) -> some View {
+        let isOtherMonth = dates.component(.month, from: day) != month
+        let isToday = dates.isDateInToday(day)
+        let isSelected = dates.isDate(day, inSameDayAs: selectedDay)
+        let count = model.events(on: day).count
+        return Button {
+            selectedDay = day
+        } label: {
+            VStack(spacing: 3) {
+                Text(day.formatted(.dateTime.day()))
+                    .font(.callout)
+                    .fontWeight(isToday ? .bold : .regular)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.background) : isToday ? AnyShapeStyle(.tint) : isOtherMonth ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                    .frame(width: 34, height: 34)
+                    .background {
+                        if isSelected {
+                            Circle().fill(isToday ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                        }
+                    }
+                HStack(spacing: 3) {
+                    ForEach(0..<min(count, 3), id: \.self) { _ in
+                        Circle().fill(.secondary).frame(width: 4, height: 4)
+                    }
+                }
+                .frame(height: 4)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("\(day.formatted(date: .complete, time: .omitted)), \(count) events"))
     }
 
     private func weekdayNames(_ dates: Calendar) -> [String] {

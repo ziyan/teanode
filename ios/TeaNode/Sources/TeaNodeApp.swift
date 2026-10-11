@@ -13,7 +13,7 @@ struct TeaNodeApp: App {
         WindowGroup {
             Group {
                 if let connection = app.connection {
-                    MainView(connection: connection)
+                    MainView(connection: connection, username: app.account?.username ?? "")
                         .id(app.account?.server.description)
                 } else {
                     ConnectView()
@@ -21,128 +21,6 @@ struct TeaNodeApp: App {
             }
             .environment(app)
             .onOpenURL { url in app.open(url) }
-        }
-    }
-}
-
-/// MainView is the signed-in app, in tabs as the dashboard's sidebar has
-/// it: the agent, mail, the calendar, the contacts, and the rest (the
-/// knowledge, settings) under More.
-struct MainView: View {
-    enum AppTab: Hashable {
-        case agent, mail, calendar, contacts, more
-    }
-
-    let connection: Connection
-    @Environment(AppModel.self) private var app
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var section = AppTab.agent
-
-    var body: some View {
-        TabView(selection: $section) {
-            Tab(app.agentTitle, systemImage: "bubble.left", value: AppTab.agent) {
-                AgentTab(connection: connection)
-            }
-            Tab("Mail", systemImage: "envelope", value: AppTab.mail) {
-                MailScreen(connection: connection, username: app.account?.username ?? "")
-            }
-            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                CalendarScreen(connection: connection, username: app.account?.username ?? "")
-            }
-            Tab("Contacts", systemImage: "person", value: AppTab.contacts) {
-                ContactsScreen(connection: connection)
-            }
-            Tab("More", systemImage: "ellipsis", value: AppTab.more) {
-                MoreScreen(connection: connection)
-            }
-        }
-        .tabBarMinimizeBehavior(.onScrollDown)
-        // Outlines, never filled: lighter, and clear of the button's edge.
-        .environment(\.symbolVariants, .none)
-        .onAppear {
-            #if DEBUG
-                switch DemoServer.tab {
-                case "mail": section = .mail
-                case "calendar": section = .calendar
-                case "contacts": section = .contacts
-                case "knowledge": section = .more
-                default: break
-                }
-            #endif
-        }
-        .task {
-            await app.loadAgentName()
-            await app.setUpNotifications()
-        }
-        .onChange(of: app.openedConversationId) { _, conversationId in
-            if conversationId != nil { section = .agent }
-        }
-        .onChange(of: app.askingAbout) { _, reference in
-            if reference != nil { section = .agent }
-        }
-        .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
-            if knowledgePath != nil { section = .more }
-        }
-        // While the app is open the person is here: notifications that
-        // would tell them what they are looking at are held back.
-        .task(id: scenePhase) {
-            let isVisible = scenePhase == .active
-            try? await connection.reportPresence(isVisible: isVisible)
-            while isVisible, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                try? await connection.reportPresence(isVisible: true)
-            }
-        }
-    }
-}
-
-/// AgentTab is one conversation on screen, the main one to begin with, and
-/// the others a tap away.
-struct AgentTab: View {
-    let connection: Connection
-    @Environment(AppModel.self) private var app
-    @State private var conversation: AgentConversation?
-    @State private var isChoosing = false
-
-    var body: some View {
-        SidePanel(isOpen: $isChoosing) {
-            ConversationsSheet(connection: connection, isPanel: true, currentId: conversation?.id) { chosen in
-                conversation = chosen
-                isChoosing = false
-            }
-            // Read again each time it opens, for what changed meanwhile.
-            .id(isChoosing)
-        } content: {
-            NavigationStack {
-                ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
-                    .id(conversation?.id ?? "main")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                isChoosing = true
-                            } label: {
-                                Label("Conversations", systemImage: "line.3.horizontal")
-                            }
-                        }
-                    }
-            }
-        }
-        .onChange(of: app.openedConversationId) { _, conversationId in
-            guard let conversationId else { return }
-            app.openedConversationId = nil
-            isChoosing = false
-            // An empty id is the main conversation; for another, the kind is
-            // learned when the conversation loads.
-            conversation = conversationId.isEmpty ? nil : AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
-        }
-        .alert(
-            "Already connected",
-            isPresented: Bindable(app).isShowingOpenedLinkText,
-            presenting: app.openedLinkText
-        ) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { text in
-            Text(text)
         }
     }
 }
@@ -158,6 +36,9 @@ struct ConversationsSheet: View {
     var isPanel = false
     /// The conversation on screen, marked in the list.
     var currentId: String?
+    /// Rows shown above the conversations, as the side menu puts its
+    /// sections there.
+    var leading: AnyView?
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -175,6 +56,9 @@ struct ConversationsSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                if let leading {
+                    Section { leading }
+                }
                 if let found {
                     if found.isEmpty {
                         Text("Nothing matches.").foregroundStyle(.secondary)
@@ -240,10 +124,11 @@ struct ConversationsSheet: View {
             }
             .refreshable { await load() }
             .task { await load() }
-            .navigationTitle(isPanel ? app.agentTitle : String(localized: "Conversations"))
-            .navigationBarTitleDisplayMode(isPanel ? .large : .inline)
+            .navigationTitle(isPanel ? "" : String(localized: "Conversations"))
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if isPanel {
+                    MenuBrand()
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             Task { await start() }

@@ -70,6 +70,9 @@ extension View {
 /// SwiftUI has no such container, so this one is drawn by hand.
 struct SidePanel<Panel: View, Content: View>: View {
     @Binding var isOpen: Bool
+    /// Whether a drag to the right anywhere opens it, as in the Claude app,
+    /// or only one from the left edge, for screens whose rows swipe.
+    var isOpenedFromAnywhere = true
     @ViewBuilder var panel: () -> Panel
     @ViewBuilder var content: () -> Content
     @GestureState private var dragged: CGFloat = 0
@@ -102,13 +105,16 @@ struct SidePanel<Panel: View, Content: View>: View {
                     }
                     .offset(x: shift)
             }
-            .gesture(
+            // Alongside the screen's own scrolling, which would otherwise
+            // take every drag that starts over it; only a mostly sideways
+            // drag moves the panel.
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 16)
                     .updating($dragged) { value, dragged, _ in
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         if isOpen {
                             dragged = min(0, value.translation.width)
-                        } else if value.startLocation.x < Self.edgeWidth {
+                        } else if isOpenedFromAnywhere || value.startLocation.x < Self.edgeWidth {
                             dragged = max(0, value.translation.width)
                         }
                     }
@@ -116,7 +122,9 @@ struct SidePanel<Panel: View, Content: View>: View {
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         if isOpen, value.predictedEndTranslation.width < -width / 3 {
                             setOpen(false)
-                        } else if !isOpen, value.startLocation.x < Self.edgeWidth, value.predictedEndTranslation.width > width / 3 {
+                        } else if !isOpen, isOpenedFromAnywhere || value.startLocation.x < Self.edgeWidth,
+                            value.predictedEndTranslation.width > width / 3
+                        {
                             setOpen(true)
                         }
                     })

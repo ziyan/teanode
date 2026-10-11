@@ -884,7 +884,7 @@ struct CheckInLine: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             Button {
                 withAnimation { isExpanded.toggle() }
             } label: {
@@ -897,7 +897,7 @@ struct CheckInLine: View {
                 CodeBlock(text: line.text, maxHeight: 240)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
     }
 
@@ -940,7 +940,7 @@ struct NoteLine: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             if line.detail == "compacted", !line.text.isEmpty {
                 Button {
                     withAnimation { isExpanded.toggle() }
@@ -960,8 +960,8 @@ struct NoteLine: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     static func words(of line: TranscriptLine) -> String {
