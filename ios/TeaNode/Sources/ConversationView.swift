@@ -161,18 +161,19 @@ struct ConversationView: View {
             if !model.todos.isEmpty, model.runningRunId != nil || model.todos.contains(where: { !$0.isDone }) {
                 TodoPanel(todos: model.todos)
             }
-            if let reply = model.replyingTo {
-                if let subject = reply.subject {
-                    ReferenceBar(subject: subject, from: reply.from ?? "") { model.replyingTo = nil }
-                } else if let path = reply.path {
-                    ReferenceStrip(systemImage: "brain", title: reply.name ?? path, detail: path) { model.replyingTo = nil }
-                } else if reply.financeTransactionId != nil {
+            ForEach(model.references, id: \.self) { reference in
+                let drop = { model.references.removeAll { $0 == reference } }
+                if let subject = reference.subject {
+                    ReferenceBar(subject: subject, from: reference.from ?? "", onCancel: drop)
+                } else if let path = reference.path {
+                    ReferenceStrip(systemImage: "brain", title: reference.name ?? path, detail: path, onCancel: drop)
+                } else if reference.financeTransactionId != nil {
                     ReferenceStrip(
-                        systemImage: "creditcard", title: reply.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reply.description ?? "",
-                        detail: [FinanceMoney.shown(reply.amount, currencyCode: reply.currencyCode), reply.postedOn ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
-                    ) { model.replyingTo = nil }
+                        systemImage: "creditcard", title: reference.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reference.description ?? "",
+                        detail: [FinanceMoney.shown(reference.amount, currencyCode: reference.currencyCode), reference.postedOn ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
+                        onCancel: drop)
                 } else {
-                    ReplyBar(reply: reply) { model.replyingTo = nil }
+                    ReplyBar(reply: reference, onCancel: drop)
                 }
             }
             if let call = model.call {
@@ -250,7 +251,7 @@ struct ConversationFollowing: ViewModifier {
                 // A mail asked about elsewhere becomes what the next message
                 // refers to.
                 guard let reference else { return }
-                model.replyingTo = reference
+                model.refer(to: reference)
                 app.askingAbout = nil
             }
     }
@@ -1274,6 +1275,19 @@ struct Composer: View {
                             isPickingFiles = true
                         } label: {
                             Label("Files", systemImage: "folder")
+                        }
+                        // A screenshot just taken, pasted as the dashboard
+                        // takes one pasted into its box.
+                        if UIPasteboard.general.hasImages {
+                            Button {
+                                if let picture = UIPasteboard.general.image,
+                                    let file = PendingFile(picture: picture, index: model.pendingFiles.count)
+                                {
+                                    model.pendingFiles.append(file)
+                                }
+                            } label: {
+                                Label("Paste picture", systemImage: "doc.on.clipboard")
+                            }
                         }
                     } label: {
                         Image(systemName: "plus")

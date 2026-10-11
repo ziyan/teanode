@@ -7313,6 +7313,22 @@
         }
       }
     },
+    "Paste picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像をペースト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴图片"
+          }
+        }
+      }
+    },
     "Pending": {
       "localizations": {
         "ja": {

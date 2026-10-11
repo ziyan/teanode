@@ -41,7 +41,24 @@ final class ConversationModel {
     }
     var pendingFiles: [PendingFile] = []
     /// The message being replied to, shown above the composer.
-    var replyingTo: AgentReference?
+    /// What the next message refers to: a message replied to, and mails,
+    /// pages and transactions asked about, several at once as the
+    /// dashboard's drawer holds them.
+    var references: [AgentReference] = []
+
+    /// The message replied to, of the references: one at most.
+    var replyingTo: AgentReference? {
+        get { references.first { $0.agentMessageId != nil } }
+        set {
+            references.removeAll { $0.agentMessageId != nil }
+            if let newValue { references.insert(newValue, at: 0) }
+        }
+    }
+
+    /// Adds something asked about, once.
+    func refer(to reference: AgentReference) {
+        if !references.contains(reference) { references.append(reference) }
+    }
     private(set) var isSending = false
     var sendProblemText: String?
 
@@ -265,7 +282,7 @@ final class ConversationModel {
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
-        if let question = freshQuestion, pendingFiles.isEmpty, replyingTo == nil {
+        if let question = freshQuestion, pendingFiles.isEmpty, references.isEmpty {
             draft = ""
             if question.kind == .codingQuestion {
                 await answerCodingQuestion(question, options: [], freeText: text)
@@ -282,9 +299,10 @@ final class ConversationModel {
         defer { isSending = false }
         let sending = pendingFiles
         let reply = replyingTo
+        let referring = references
         draft = ""
         pendingFiles = []
-        replyingTo = nil
+        references = []
         do {
             var attachments: [AgentAttachment] = []
             for file in sending {
@@ -294,7 +312,7 @@ final class ConversationModel {
             let message = text.isEmpty ? "(files)" : text
             transcript.addSent(message, attachments: attachments, replyingTo: reply)
             let asked = try await connection.ask(
-                message, in: conversationId, attachmentIds: attachments.map(\.id), references: reply.map { [$0] } ?? [],
+                message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
                 drawerId: app.drawerId)
             if !runningRunIds.contains(asked.runId) {
                 runningRunIds.append(asked.runId)
@@ -308,7 +326,7 @@ final class ConversationModel {
             transcript.withdrawSent()
             draft = text
             pendingFiles = sending
-            replyingTo = reply
+            references = referring
             sendProblemText = app.describe(error)
         }
     }
