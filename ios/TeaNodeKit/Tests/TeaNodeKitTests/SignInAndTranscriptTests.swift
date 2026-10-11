@@ -113,6 +113,22 @@ final class SignInTests: XCTestCase {
             XCTAssertEqual(error as? TeaNodeError, .refused("no such conversation"))
         }
     }
+
+    func testARefusedFieldIsShownInItsWordsNotAsUnreadable() async {
+        let fake = FakeServer { _ in
+            (200, #"{"errors":[{"message":"that question was already answered"}],"data":{"AnswerAgentHerdrQuestion":null}}"#)
+        }
+        let account = Account(server: server, clientId: "a-client", accessToken: "tnt", refreshToken: "", expiresAt: .distantFuture, username: "robin")
+        let question = CodingQuestion(
+            computer: "desk", paneId: "pane-1", questionFingerprint: "print", codingAgentKind: "claude", sessionName: "notes",
+            questionText: "Which one?", isMultipleChoice: false, options: [])
+        do {
+            _ = try await Connection(account: account, transport: fake).answerCodingQuestion(question, options: [], freeText: "the first")
+            XCTFail("a refused answer came back as taken")
+        } catch {
+            XCTAssertEqual(error as? TeaNodeError, .refused("that question was already answered"))
+        }
+    }
 }
 
 final class TranscriptTests: XCTestCase {

@@ -382,6 +382,11 @@ final class ConversationModel {
             let answeredWith = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
             transcript.settle(cardId: line.id, resolution: answeredWith)
             sentCount += 1
+        } catch TeaNodeError.refused(let reason) where reason.contains("already answered") {
+            // Answered at the computer, or by another device: the card folds
+            // away so typing goes to the conversation again, as the
+            // dashboard's card does.
+            transcript.settle(cardId: line.id, resolution: String(localized: "Answered elsewhere"))
         } catch {
             sendProblemText = app.describe(error)
         }

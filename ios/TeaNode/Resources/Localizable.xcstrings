@@ -241,6 +241,22 @@
         }
       }
     },
+    "Answered elsewhere": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの場所で回答済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在别处回答"
+          }
+        }
+      }
+    },
     "Answers to what you asked from the phone": {
       "localizations": {
         "ja": {

@@ -55,14 +55,16 @@ public actor Connection {
         if response.statusCode == 401 {
             throw TeaNodeError.signedOut
         }
+        // The errors are read on their own first: a refused field comes back
+        // as null beside them, which the answer's own shape does not allow.
+        if let error = (try? JSONDecoder().decode(GraphQLAnswer<JSONValue>.self, from: data))?.errors?.first {
+            throw TeaNodeError.refused(error.message)
+        }
         let decoded: GraphQLAnswer<Answer>
         do {
             decoded = try JSONDecoder().decode(GraphQLAnswer<Answer>.self, from: data)
         } catch {
             throw TeaNodeError.unreadableAnswer
-        }
-        if let error = decoded.errors?.first {
-            throw TeaNodeError.refused(error.message)
         }
         guard let value = decoded.data else {
             throw TeaNodeError.unreadableAnswer
