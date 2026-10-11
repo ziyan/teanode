@@ -103,6 +103,10 @@ jobs:
           shoot conversation-light light large -TeaNodeDemo
           shoot conversation-dark dark large -TeaNodeDemo
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
+          shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
+          shoot calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
+          shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
+          shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
 
       - name: Keep the screenshots
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -25,15 +25,70 @@ struct TeaNodeApp: App {
     }
 }
 
-/// MainView is the signed-in app: one conversation on screen, the main one
-/// to begin with, and the others a tap away.
+/// MainView is the signed-in app, in tabs as the dashboard's sidebar has
+/// it: the agent, the calendar, the contacts and the settings.
 struct MainView: View {
+    enum AppTab: Hashable {
+        case agent, calendar, contacts, settings
+    }
+
     let connection: Connection
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @State private var section = AppTab.agent
+
+    var body: some View {
+        TabView(selection: $section) {
+            Tab(app.agentTitle, systemImage: "bubble.left.and.text.bubble.right", value: AppTab.agent) {
+                AgentTab(connection: connection)
+            }
+            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
+                CalendarScreen(connection: connection, username: app.account?.username ?? "")
+            }
+            Tab("Contacts", systemImage: "person.crop.circle", value: AppTab.contacts) {
+                ContactsScreen(connection: connection)
+            }
+            Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
+                SettingsView(isSheet: false)
+            }
+        }
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .onAppear {
+            #if DEBUG
+                switch DemoServer.tab {
+                case "calendar": section = .calendar
+                case "contacts": section = .contacts
+                default: break
+                }
+            #endif
+        }
+        .task {
+            await app.loadAgentName()
+            await app.setUpNotifications()
+        }
+        .onChange(of: app.openedConversationId) { _, conversationId in
+            if conversationId != nil { section = .agent }
+        }
+        // While the app is open the person is here: notifications that
+        // would tell them what they are looking at are held back.
+        .task(id: scenePhase) {
+            let isVisible = scenePhase == .active
+            try? await connection.reportPresence(isVisible: isVisible)
+            while isVisible, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                try? await connection.reportPresence(isVisible: true)
+            }
+        }
+    }
+}
+
+/// AgentTab is one conversation on screen, the main one to begin with, and
+/// the others a tap away.
+struct AgentTab: View {
+    let connection: Connection
+    @Environment(AppModel.self) private var app
     @State private var conversation: AgentConversation?
     @State private var isChoosing = false
-    @State private var isShowingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -47,13 +102,6 @@ struct MainView: View {
                             Label("Conversations", systemImage: "list.bullet")
                         }
                     }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            isShowingSettings = true
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                    }
                 }
         }
         .sheet(isPresented: $isChoosing) {
@@ -62,18 +110,10 @@ struct MainView: View {
                 isChoosing = false
             }
         }
-        .sheet(isPresented: $isShowingSettings) {
-            SettingsView()
-        }
-        .task {
-            await app.loadAgentName()
-            await app.setUpNotifications()
-        }
         .onChange(of: app.openedConversationId) { _, conversationId in
             guard let conversationId else { return }
             app.openedConversationId = nil
             isChoosing = false
-            isShowingSettings = false
             // An empty id is the main conversation; for another, the kind is
             // learned when the conversation loads.
             conversation = conversationId.isEmpty ? nil : AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
@@ -86,16 +126,6 @@ struct MainView: View {
             Button("OK", role: .cancel) {}
         } message: { text in
             Text(text)
-        }
-        // While the app is open the person is here: notifications that
-        // would tell them what they are looking at are held back.
-        .task(id: scenePhase) {
-            let isVisible = scenePhase == .active
-            try? await connection.reportPresence(isVisible: isVisible)
-            while isVisible, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                try? await connection.reportPresence(isVisible: true)
-            }
         }
     }
 }
@@ -307,6 +337,8 @@ struct ConversationsSheet: View {
 /// SettingsView says which server and account the phone is signed in to,
 /// and signs it out.
 struct SettingsView: View {
+    /// Shown as a sheet, with a Done button, or as a tab.
+    var isSheet = true
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingSignOut = false
@@ -326,7 +358,7 @@ struct SettingsView: View {
                         isConfirmingSignOut = true
                     }
                 } footer: {
-                    Text("To manage what this phone is told about, open Phones under Agent on your dashboard.")
+                    Text("To manage what this phone is told about, open Settings, then Phones, on your dashboard.")
                 }
                 Section("About") {
                     LabeledContent("Version", value: Self.version)
@@ -335,14 +367,16 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                if isSheet {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
             }
             .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
                 Button("Sign out", role: .destructive) {
                     Task {
-                        dismiss()
+                        if isSheet { dismiss() }
                         await app.signOut()
                     }
                 }

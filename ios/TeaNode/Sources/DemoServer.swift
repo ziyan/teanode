@@ -26,6 +26,18 @@
                 answer = Self.conversation
             } else if query.contains("ListAgentConversations") {
                 answer = Self.conversations
+            } else if query.contains("ListCalendars") {
+                answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
+            } else if query.contains("ListCalendarEvents") {
+                answer = Self.events
+            } else if query.contains("ListReminders") {
+                answer = #"{"data":{"ListReminders":[]}}"#
+            } else if query.contains("ListAddressBooks") {
+                answer = #"{"data":{"ListAddressBooks":[{"id":"book","name":"Contacts","contacts":4}]}}"#
+            } else if query.contains("ListContacts") {
+                answer = Self.contacts
+            } else if query.contains("AgentGraphPage") {
+                answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
             } else if query.contains("GetSession") {
                 answer = #"{"data":{"GetSession":{"username":"robin"}}}"#
             } else {
@@ -33,6 +45,38 @@
             }
             return (Data(answer.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         }
+
+        /// The tab a screenshot opens on: `-TeaNodeTab calendar`.
+        static var tab: String? {
+            let arguments = ProcessInfo.processInfo.arguments
+            guard let index = arguments.firstIndex(of: "-TeaNodeTab"), index + 1 < arguments.count else { return nil }
+            return arguments[index + 1]
+        }
+
+        /// A few events this week, wherever the week falls.
+        static var events: String {
+            let today = Calendar.current.startOfDay(for: Date())
+            func at(_ days: Int, _ hours: Double) -> String {
+                CalendarDates.text(today.addingTimeInterval(Double(days) * 86400 + hours * 3600))
+            }
+            let day = Calendar.current.dateComponents([.year, .month, .day], from: today)
+            let rows = [
+                #"{"id":"e1","calendarId":"home","summary":"Plumber","location":"Home","startsAt":"\#(at(0, 9))","endsAt":"\#(at(0, 10))","allDay":false,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
+                #"{"id":"e2","calendarId":"home","summary":"Lunch with Sam","location":"The noodle place","startsAt":"\#(at(0, 13.5))","endsAt":"\#(at(0, 14.5))","allDay":false,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
+                #"{"id":"e3","calendarId":"home","summary":"Book club","location":null,"startsAt":"\#(at(2, 19))","endsAt":"\#(at(2, 21))","allDay":false,"recurring":true,"occurrence":null,"status":"confirmed"}"#,
+                #"{"id":"e4","calendarId":"home","summary":"Garden day","location":null,"startsAt":"\#(CalendarDates.allDayText(day))","endsAt":"\#(CalendarDates.allDayText(CalendarDates.dayAfter(day)))","allDay":true,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
+            ]
+            return #"{"data":{"ListCalendarEvents":["# + rows.joined(separator: ",") + "]}}"
+        }
+
+        static let contacts = #"""
+            {"data":{"ListContacts":[
+              {"id":"plumber","name":"The plumber","organization":null,"emails":["plumber@example.com"],"phones":["+1 555 0100"],"hasPhoto":false,"addresses":[]},
+              {"id":"robin","name":"Robin","organization":null,"emails":["robin@example.com"],"phones":[],"hasPhoto":false,"addresses":[]},
+              {"id":"sam","name":"Sam","organization":null,"emails":["sam@example.org"],"phones":["+1 555 0142"],"hasPhoto":false,"addresses":[]},
+              {"id":"shop","name":null,"organization":null,"emails":["orders@bookshop.example"],"phones":[],"hasPhoto":false,"addresses":[]}
+            ]}}
+            """#
 
         static let conversations = #"""
             {"data":{"ListAgentConversations":[
