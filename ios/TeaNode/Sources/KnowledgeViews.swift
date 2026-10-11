@@ -361,9 +361,10 @@ struct KnowledgePageView: View {
             Button("Forget page", role: .destructive) {
                 Task {
                     let pagePath = model.pagePath
-                    if await model.act(saying: String(localized: "Forgotten"), { try await model.connection.deleteKnowledgeNode(pagePath) }) {
-                        dismiss()
+                    let isForgotten = await model.act(saying: String(localized: "Forgotten")) {
+                        try await model.connection.deleteKnowledgeNode(pagePath)
                     }
+                    if isForgotten { dismiss() }
                 }
             }
         } message: {
@@ -622,9 +623,10 @@ struct KnowledgePageView: View {
         switch choice.kind {
         case .move:
             var newPath: String?
-            if await model.act(saying: String(localized: "Moved"), {
+            let isMoved = await model.act(saying: String(localized: "Moved")) {
                 newPath = try await model.connection.moveKnowledgeNode(pagePath, under: chosen)
-            }), let newPath, newPath != pagePath {
+            }
+            if isMoved, let newPath, newPath != pagePath {
                 model.moved(to: newPath)
                 await model.load()
             }
@@ -640,9 +642,10 @@ struct KnowledgePageView: View {
     private func merge(into: String) async {
         let pagePath = model.pagePath
         var left: String?
-        if await model.act(saying: String(localized: "Merged"), {
+        let isMerged = await model.act(saying: String(localized: "Merged")) {
             left = try await model.connection.mergeKnowledgeNodes(pagePath, into: into)
-        }) {
+        }
+        if isMerged {
             model.moved(to: left ?? into)
             await model.load()
         }
@@ -786,12 +789,13 @@ struct PageEditor: View {
         // meanwhile is not undone.
         let changed = list == (node.aliases ?? []) ? nil : list
         let pagePath = node.path
+        let newName = name.trimmed
+        let newSummary = summary.trimmed
         Task {
-            if await model.act(saying: String(localized: "Saved"), {
-                try await model.connection.saveKnowledgeNode(path: pagePath, name: name.trimmed, summary: summary.trimmed, aliases: changed, isPinned: nil)
-            }) {
-                dismiss()
+            let isSaved = await model.act(saying: String(localized: "Saved")) {
+                try await model.connection.saveKnowledgeNode(path: pagePath, name: newName, summary: newSummary, aliases: changed, isPinned: nil)
             }
+            if isSaved { dismiss() }
         }
     }
 }
@@ -865,14 +869,16 @@ struct FactEditor: View {
     private func save() {
         let pagePath = model.pagePath
         let audiences = draft.audiences == draft.originalAudiences ? nil : KnowledgeWords.audiences.filter { draft.audiences.contains($0) }
-        let draft = draft
+        let number = draft.number
+        let kind = draft.kind
+        let text = draft.text.trimmed
+        let happened = draft.happened
         Task {
-            if await model.act(saying: String(localized: "Saved"), {
+            let isSaved = await model.act(saying: String(localized: "Saved")) {
                 _ = try await model.connection.saveKnowledgeFact(
-                    path: pagePath, number: draft.number, kind: draft.kind, text: draft.text.trimmed, happened: draft.happened, audiences: audiences)
-            }) {
-                dismiss()
+                    path: pagePath, number: number, kind: kind, text: text, happened: happened, audiences: audiences)
             }
+            if isSaved { dismiss() }
         }
     }
 }
@@ -989,12 +995,14 @@ struct LinkEditor: View {
 
     private func save() {
         let pagePath = model.pagePath
+        let target = to
+        let chosenRelation = relation
+        let writtenNote = note.trimmed
         Task {
-            if await model.act(saying: String(localized: "Linked"), {
-                try await model.connection.linkKnowledgeNodes(path: pagePath, to: to, relation: relation, note: note.trimmed)
-            }) {
-                dismiss()
+            let isLinked = await model.act(saying: String(localized: "Linked")) {
+                try await model.connection.linkKnowledgeNodes(path: pagePath, to: target, relation: chosenRelation, note: writtenNote)
             }
+            if isLinked { dismiss() }
         }
     }
 }

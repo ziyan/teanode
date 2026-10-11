@@ -602,9 +602,10 @@ struct InvitationCard: View {
         UserDefaults.standard.set(requestId, forKey: key)
         isAnswering = true
         defer { isAnswering = false }
-        if await mail.act(saying: String(localized: "Answer sent"), {
+        let isAnswered = await mail.act(saying: String(localized: "Answer sent")) {
             try await mail.connection.answerInvitation(itemId: itemId, answer: answer, requestId: requestId, isRetry: isRetry)
-        }) {
+        }
+        if isAnswered {
             UserDefaults.standard.removeObject(forKey: key)
             invitation = try? await mail.connection.mailInvitation(itemId: itemId)
         }
