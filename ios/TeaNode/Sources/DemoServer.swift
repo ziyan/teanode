@@ -26,6 +26,10 @@
                 answer = Self.conversation
             } else if query.contains("ListAgentConversations") {
                 answer = Self.conversations
+            } else if query.contains("ListMailboxes") {
+                answer = Self.mailboxes
+            } else if query.contains("ListMailboxThreads") {
+                answer = Self.threads
             } else if query.contains("ListCalendars") {
                 answer = #"{"data":{"ListCalendars":[{"id":"home","name":"Home","timezone":null,"weekStart":"monday","calendarKind":"events"}]}}"#
             } else if query.contains("ListCalendarEvents") {
@@ -67,6 +71,31 @@
                 #"{"id":"e4","calendarId":"home","summary":"Garden day","location":null,"startsAt":"\#(CalendarDates.allDayText(day))","endsAt":"\#(CalendarDates.allDayText(CalendarDates.dayAfter(day)))","allDay":true,"recurring":false,"occurrence":null,"status":"confirmed"}"#,
             ]
             return #"{"data":{"ListCalendarEvents":["# + rows.joined(separator: ",") + "]}}"
+        }
+
+        static let mailboxes = #"""
+            {"data":{"ListMailboxes":[{"mailbox":{"id":"box","name":"Robin","signatureText":"","signatureHtml":"",
+              "addresses":[{"address":"robin@example.com","domain":"example.com","domainId":"d"}],"autoReply":null,
+              "agent":{"granted":true,"draftReplies":true,"triage":{"enabled":true}}},
+              "folders":[
+                {"id":"inbox","mailboxId":"box","parentId":"","name":"Inbox","kind":"inbox","pinnedAt":null,"unread":2,"total":3,"noteCount":0},
+                {"id":"sent","mailboxId":"box","parentId":"","name":"Sent","kind":"sent","pinnedAt":null,"unread":0,"total":9,"noteCount":0},
+                {"id":"archive","mailboxId":"box","parentId":"","name":"Archive","kind":"archive","pinnedAt":null,"unread":0,"total":40,"noteCount":0},
+                {"id":"trash","mailboxId":"box","parentId":"","name":"Trash","kind":"trash","pinnedAt":null,"unread":0,"total":0,"noteCount":0}],
+              "unread":2,"starredUnread":0,"priorityUnread":1,"maxMessageSize":26214400}]}}
+            """#
+
+        static var threads: String {
+            func at(_ hours: Double) -> String { CalendarDates.text(Date().addingTimeInterval(-hours * 3600)) }
+            func row(_ id: String, _ sender: String, _ address: String, _ subject: String, _ summary: String, _ priority: String, isSeen: Bool, _ hours: Double) -> String {
+                #"{"threadId":"\#(id)","count":1,"unread":\#(isSeen ? 0 : 1),"flagged":false,"participants":[],"itemIds":["\#(id)"],"hasDraft":false,"item":{"id":"\#(id)","folderId":"inbox","mailId":"\#(id)","seen":\#(isSeen),"flagged":false,"answered":false,"forwarded":false,"draft":false,"addedAt":"\#(at(hours))","subscriptionId":"","insight":{"category":"personal","priority":"\#(priority)","needsReply":\#(priority == "high"),"summary":"\#(summary)","actionItems":[],"notes":"","model":"","runId":"","proposals":[]},"mail":{"id":"\#(id)","from":"\#(address)","fromName":"\#(sender)","sender":"","subject":"\#(subject)","recipients":["robin@example.com"],"receivedAt":"\#(at(hours))","size":100,"messageId":"","listKey":"","listName":"","logoDomain":"","authenticationResults":{"spf":{"result":"pass"},"dkims":[{"result":"pass"}],"dmarc":{"result":"pass"},"spamFilter":{"score":0.2}}}}}"#
+            }
+            let rows = [
+                row("m1", "The plumber", "plumber@example.com", "Thursday at 9", "Asks you to confirm Thursday at 9.", "high", isSeen: false, 1),
+                row("m2", "Sam", "sam@example.org", "Lunch?", "Lunch on Friday at the noodle place.", "normal", isSeen: false, 3),
+                row("m3", "Bookshop", "orders@bookshop.example", "Your order has shipped", "Your parcel arrives tomorrow.", "low", isSeen: true, 26),
+            ]
+            return #"{"data":{"ListMailboxThreads":{"total":3,"threads":["# + rows.joined(separator: ",") + "]}}}"
         }
 
         static let contacts = #"""

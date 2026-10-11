@@ -39,6 +39,11 @@ final class AppModel {
     /// A conversation a pressed notification asks to open.
     var openedConversationId: String?
 
+    /// Something elsewhere in the app the person asked the agent about,
+    /// such as a mail; the conversation takes it as what the next message
+    /// refers to.
+    var askingAbout: AgentReference?
+
     /// The agent's name, for the main conversation's title and the
     /// composer; empty until read, or when the agent has none.
     private(set) var agentName = ""

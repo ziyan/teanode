@@ -103,6 +103,8 @@ jobs:
           shoot conversation-light light large -TeaNodeDemo
           shoot conversation-dark dark large -TeaNodeDemo
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
+          shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
+          shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
           shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
           shoot calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts

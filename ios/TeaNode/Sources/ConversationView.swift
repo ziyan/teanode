@@ -143,7 +143,11 @@ struct ConversationView: View {
                 TodoPanel(todos: model.todos)
             }
             if let reply = model.replyingTo {
-                ReplyBar(reply: reply) { model.replyingTo = nil }
+                if let subject = reply.subject {
+                    ReferenceBar(subject: subject, from: reply.from ?? "") { model.replyingTo = nil }
+                } else {
+                    ReplyBar(reply: reply) { model.replyingTo = nil }
+                }
             }
             if let call = model.call {
                 CallBar(call: call)
@@ -216,6 +220,13 @@ struct ConversationFollowing: ViewModifier {
             }
             .environment(\.openURL, OpenURLAction { address in app.route(address) })
             .environment(\.pictureConversationId, model.conversationId)
+            .onChange(of: app.askingAbout, initial: true) { _, reference in
+                // A mail asked about elsewhere becomes what the next message
+                // refers to.
+                guard let reference else { return }
+                model.replyingTo = reference
+                app.askingAbout = nil
+            }
     }
 }
 
@@ -620,6 +631,41 @@ struct ReplyBar: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+            }
+            Spacer()
+            Button(action: onCancel) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Cancel")
+        }
+        .padding(.leading, 12)
+        .glassEffect(in: .rect(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal)
+    }
+}
+
+/// ReferenceBar is a mail the next message asks about.
+struct ReferenceBar: View {
+    let subject: String
+    let from: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(subject.isEmpty ? String(localized: "(no subject)") : subject)
+                        .font(.caption.bold())
+                        .lineLimit(1)
+                    Text(from)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            } icon: {
+                Image(systemName: "envelope")
             }
             Spacer()
             Button(action: onCancel) {

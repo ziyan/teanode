@@ -26,10 +26,10 @@ struct TeaNodeApp: App {
 }
 
 /// MainView is the signed-in app, in tabs as the dashboard's sidebar has
-/// it: the agent, the calendar, the contacts and the settings.
+/// it: the agent, mail, the calendar, the contacts and the settings.
 struct MainView: View {
     enum AppTab: Hashable {
-        case agent, calendar, contacts, settings
+        case agent, mail, calendar, contacts, settings
     }
 
     let connection: Connection
@@ -41,6 +41,9 @@ struct MainView: View {
         TabView(selection: $section) {
             Tab(app.agentTitle, systemImage: "bubble.left.and.text.bubble.right", value: AppTab.agent) {
                 AgentTab(connection: connection)
+            }
+            Tab("Mail", systemImage: "envelope", value: AppTab.mail) {
+                MailScreen(connection: connection, username: app.account?.username ?? "")
             }
             Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
                 CalendarScreen(connection: connection, username: app.account?.username ?? "")
@@ -56,6 +59,7 @@ struct MainView: View {
         .onAppear {
             #if DEBUG
                 switch DemoServer.tab {
+                case "mail": section = .mail
                 case "calendar": section = .calendar
                 case "contacts": section = .contacts
                 default: break
@@ -68,6 +72,9 @@ struct MainView: View {
         }
         .onChange(of: app.openedConversationId) { _, conversationId in
             if conversationId != nil { section = .agent }
+        }
+        .onChange(of: app.askingAbout) { _, reference in
+            if reference != nil { section = .agent }
         }
         // While the app is open the person is here: notifications that
         // would tell them what they are looking at are held back.

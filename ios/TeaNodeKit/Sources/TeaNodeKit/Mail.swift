@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
+
 /// MailboxEntry is one of the person's mailboxes with its folders and the
 /// unread counts the dashboard's rail shows.
 public struct MailboxEntry: Codable, Hashable, Sendable {
@@ -252,6 +256,25 @@ public struct MailThread: Codable, Hashable, Sendable, Identifiable {
     public let item: MailItem?
 
     public var id: String { item?.id ?? threadId }
+}
+
+extension MailItem {
+    /// The item with its flags changed, as it reads once the server has
+    /// them.
+    public func with(isSeen: Bool? = nil, isFlagged: Bool? = nil) -> MailItem {
+        MailItem(
+            id: id, folderId: folderId, mailId: mailId, seen: isSeen ?? seen, flagged: isFlagged ?? flagged, answered: answered,
+            forwarded: forwarded, draft: draft, addedAt: addedAt, subscriptionId: subscriptionId, insight: insight, mail: mail)
+    }
+}
+
+extension MailThread {
+    /// The row with its flags changed: read clears its unread count.
+    public func with(isSeen: Bool? = nil, isFlagged: Bool? = nil) -> MailThread {
+        MailThread(
+            threadId: threadId, count: count, unread: isSeen.map { $0 ? 0 : max(1, unread) } ?? unread, flagged: isFlagged ?? flagged,
+            participants: participants, itemIds: itemIds, hasDraft: hasDraft, item: item?.with(isSeen: isSeen, isFlagged: isFlagged))
+    }
 }
 
 public struct MailThreadPage: Codable, Hashable, Sendable {
@@ -568,6 +591,9 @@ extension Documents {
           }
         }
         """
+    public static let mailItem = """
+        query ($itemId: String!) { GetMailboxItem(itemId: $itemId) { \(mailItemFields) } }
+        """
     public static let mailContent = """
         query ($mailId: String!) {
           GetMailContent(mailId: $mailId) {
@@ -704,7 +730,7 @@ extension Documents {
 
     /// The mail documents, for the server's schema check.
     public static let mail: [String: String] = [
-        "mailboxes": mailboxes, "mailThreads": mailThreads, "mailThread": mailThread, "mailContent": mailContent,
+        "mailboxes": mailboxes, "mailItem": mailItem, "mailThreads": mailThreads, "mailThread": mailThread, "mailContent": mailContent,
         "setMailFlags": setMailFlags, "moveMail": moveMail, "deleteMail": deleteMail, "reportJunk": reportJunk,
         "emptyTrash": emptyTrash, "newestMailItems": newestMailItems, "sortMail": sortMail, "agentCategories": agentCategories,
         "showMailImages": showMailImages, "cancelAgentReply": cancelAgentReply, "mailDraft": mailDraft,
@@ -802,6 +828,11 @@ extension Connection {
     public func mailThread(itemId: String) async throws -> MailThreadView {
         struct Answer: Decodable, Sendable { let GetMailboxThread: MailThreadView }
         return try await execute(Documents.mailThread, variables: ["itemId": .string(itemId)], as: Answer.self).GetMailboxThread
+    }
+
+    public func mailItem(_ itemId: String) async throws -> MailItem {
+        struct Answer: Decodable, Sendable { let GetMailboxItem: MailItem }
+        return try await execute(Documents.mailItem, variables: ["itemId": .string(itemId)], as: Answer.self).GetMailboxItem
     }
 
     public func mailContent(mailId: String) async throws -> MailContent {
@@ -1029,6 +1060,37 @@ extension Connection {
         _ = try await execute(Documents.setProposalStatus, variables: [
             "itemId": .string(itemId), "index": .number(Double(index)), "status": .string(status),
         ], as: Answer.self)
+    }
+}
+
+extension Connection {
+    /// Adds a file to a draft: to the one given, or to a new draft made
+    /// around it. Returns the draft's item id and its attachments as the
+    /// server now numbers them.
+    public func attachToDraft(
+        mailboxId: String, draftItemId: String?, name: String, contentType: String, data: Data
+    ) async throws -> (itemId: String, attachments: [MailContent.Attachment]) {
+        let token = try await accessToken()
+        let boundary = "teanode-\(UUID().uuidString)"
+        let path = draftItemId.map { "/api/v1/mailbox/drafts/\($0)/attachments" } ?? "/api/v1/mailbox/\(mailboxId)/drafts/attachments"
+        var request = URLRequest(url: account.server.endpoint(path))
+        request.httpMethod = draftItemId == nil ? "POST" : "PUT"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = Upload.body(boundary: boundary, name: name, contentType: contentType, data: data)
+        let (answer, response) = try await transport.send(request)
+        struct Uploaded: Decodable {
+            let itemId: String?
+            let attachments: [MailContent.Attachment]?
+            let error: String?
+        }
+        let uploaded = try? JSONDecoder().decode(Uploaded.self, from: answer)
+        guard response.statusCode == 200, let itemId = uploaded?.itemId else {
+            if response.statusCode == 401 { throw TeaNodeError.signedOut }
+            if response.statusCode == 413 { throw TeaNodeError.refused("That file is larger than a message may be.") }
+            throw TeaNodeError.refused(uploaded?.error ?? String(decoding: answer.prefix(300), as: UTF8.self))
+        }
+        return (itemId, uploaded?.attachments ?? [])
     }
 }
 

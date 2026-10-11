@@ -74,6 +74,14 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var quotedRole: String? = nil
     public var quotedText: String? = nil
 
+    /// A mail the message asks about.
+    public init(itemId: String, threadId: String?, subject: String, from: String) {
+        self.itemId = itemId
+        self.threadId = threadId
+        self.subject = subject
+        self.from = from
+    }
+
     public init(agentMessageId: String, quotedRole: String, quotedText: String) {
         self.agentMessageId = agentMessageId
         self.quotedRole = quotedRole
