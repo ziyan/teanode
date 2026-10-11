@@ -500,6 +500,7 @@ struct EventChip: View {
     let title: String
     let color: Color
     let isCancelled: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(title: String, color: Color, isCancelled: Bool) {
         self.title = title
@@ -515,9 +516,13 @@ struct EventChip: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            Image(systemName: "calendar")
-                .imageScale(.small)
-                .foregroundStyle(color)
+            // At the accessibility sizes the glyph would leave no room for
+            // the words, so the tint alone says which calendar it is.
+            if !dynamicTypeSize.isAccessibilitySize {
+                Image(systemName: "calendar")
+                    .imageScale(.small)
+                    .foregroundStyle(color)
+            }
             Text(title)
                 .lineLimit(1)
                 .strikethrough(isCancelled)
@@ -844,17 +849,6 @@ struct DayTimeline: View {
         ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    PendingChangeBox(model: model)
-                    ForEach(allDay, id: \.occurrenceId) { event in
-                        Button {
-                            onOpen(event)
-                        } label: {
-                            EventRow(event: event, color: model.color(of: event))
-                                .padding(8)
-                                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                    }
                     ZStack(alignment: .topLeading) {
                         VStack(spacing: 0) {
                             ForEach(0..<24, id: \.self) { hour in
@@ -904,7 +898,10 @@ struct DayTimeline: View {
                                     }
                                     .padding(4)
                                     .frame(width: max(0, width / CGFloat(item.columns) - 2), height: max(22, item.height * hourHeight), alignment: .topLeading)
+                                    // The tint over the plain background, so
+                                    // the hour lines do not run through it.
                                     .background(color.opacity(0.2), in: .rect(cornerRadius: 6))
+                                    .background(Color(.systemBackground), in: .rect(cornerRadius: 6))
                                     .overlay(alignment: .leading) {
                                         Rectangle().fill(color).frame(width: 3)
                                     }
@@ -918,6 +915,28 @@ struct DayTimeline: View {
                     .frame(height: hourHeight * 24)
                 }
                 .padding(.horizontal)
+            }
+            // All-day events and a pending change stay above the hours,
+            // as Calendar keeps them, rather than scrolling off with the
+            // morning.
+            .safeAreaBar(edge: .top) {
+                if model.pending != nil || !allDay.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        PendingChangeBox(model: model)
+                        ForEach(allDay, id: \.occurrenceId) { event in
+                            Button {
+                                onOpen(event)
+                            } label: {
+                                EventRow(event: event, color: model.color(of: event))
+                                    .padding(8)
+                                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+                }
             }
             .onAppear {
                 let hour = timed.first.map { Int($0.top) } ?? max(0, Calendar.current.component(.hour, from: Date()) - 1)
