@@ -272,6 +272,7 @@ struct ConversationsSheet: View {
 /// what it is told about, and signs it out.
 struct SettingsForm: View {
     @Environment(AppModel.self) private var app
+    @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
 
     var body: some View {
@@ -280,6 +281,15 @@ struct SettingsForm: View {
                 Section("Signed in") {
                     LabeledContent("Server", value: account.server.host)
                     LabeledContent("Account", value: account.username)
+                }
+            }
+            if let mail, mail.mailbox != nil {
+                Section {
+                    NavigationLink {
+                        MailboxSettingsView(mail: mail)
+                    } label: {
+                        Label("Mailbox", systemImage: "tray")
+                    }
                 }
             }
             NotificationsSection()

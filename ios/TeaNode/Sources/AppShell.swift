@@ -220,6 +220,7 @@ struct MainView: View {
                 SettingsForm()
                     .toolbar { MenuButton() }
             }
+            .environment(mail)
         }
     }
 }
