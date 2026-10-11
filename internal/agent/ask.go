@@ -334,6 +334,9 @@ type AskRun struct {
 	// runSurvey. Under mutex.
 	hasSurveyed bool
 
+	// live are the Live Activities following the run; see live_activity.go.
+	live liveActivities
+
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
 
@@ -792,6 +795,7 @@ func (self *AskRun) emit(event Event) {
 	// The conversation's feed, after the run's own lock is released: the
 	// feed replays runs under a lock of its own, and takes theirs too.
 	self.agent.publish(event, true)
+	self.followLiveActivities(event.Kind, event.At)
 }
 
 func (self *AskRun) finish() {
@@ -823,6 +827,8 @@ func (self *AskRun) finish() {
 		close(channel)
 	}
 	self.mutex.Unlock()
+	// A turn that ended without saying so still ends what follows it.
+	self.followLiveActivities(EventDone, time.Now())
 	close(self.done)
 	self.cancel()
 	go self.agent.forgetRun(self.ID)
@@ -1881,7 +1887,7 @@ func (self *AskRun) confirmWaiting(ctx context.Context, tool *Tool, call *Call, 
 		default:
 		}
 		if interaction != nil {
-			return false, ErrLeftOpen
+			return false, self.leaveCardOpen()
 		}
 		return false, fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
@@ -2483,7 +2489,7 @@ func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []
 		default:
 		}
 		if interaction != nil {
-			return "", ErrLeftOpen
+			return "", self.leaveCardOpen()
 		}
 		return "", fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():

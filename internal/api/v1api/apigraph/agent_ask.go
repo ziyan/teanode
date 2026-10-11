@@ -71,6 +71,12 @@ type AgentAskMutation interface {
 	// Stop a turn where it is. Needs agent:use.
 	StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error)
 
+	// Have a running turn push its state (working, waiting, done, failed)
+	// to a Live Activity on the person's phone until it ends: the sealed
+	// registration the relay made of the activity's push token. Needs
+	// agent:use.
+	RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error)
+
 	// Start a named conversation, kept apart from the main one, with a
 	// goal on it if one is given. Needs agent:use.
 	StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error)
@@ -240,6 +246,14 @@ type AnswerAgentLocationArguments struct {
 // StopAgentRunArguments name the run.
 type StopAgentRunArguments struct {
 	RunID string `json:"runId"`
+}
+
+// RegisterAgentLiveActivityArguments name the turn and the activity.
+type RegisterAgentLiveActivityArguments struct {
+	RunID string `json:"runId"`
+
+	// The registration the relay sealed from the activity's push token
+	PushRegistration string `json:"pushRegistration"`
 }
 
 // StartAgentConversationArguments may name it; the model does otherwise.
@@ -922,6 +936,33 @@ func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArgum
 		return false, agent.ErrUnavailable
 	}
 	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandStop})
+}
+
+func (self *graph) RegisterAgentLiveActivity(ctx context.Context, arguments RegisterAgentLiveActivityArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return false, agent.ErrUnavailable
+	}
+	pushRegistration := strings.TrimSpace(arguments.PushRegistration)
+	if pushRegistration == "" {
+		return false, fmt.Errorf("%w: a Live Activity needs its registration", api.ErrInvalidArguments)
+	}
+	if run := worker.FindRun(arguments.RunID); run != nil {
+		if run.Conversation().AgentID != found.ID {
+			return false, api.ErrNotFound
+		}
+		if err := run.RegisterLiveActivity(pushRegistration); err != nil {
+			return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+		return true, nil
+	}
+	// The turn runs on another instance, which follows the activity when
+	// the word reaches it; a refusal there is not heard here.
+	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandLiveActivity, PushRegistration: pushRegistration})
 }
 
 func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error) {
