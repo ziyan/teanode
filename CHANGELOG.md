@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.132.0] - 2026-10-11
+
+### Added
+
+- Your agent can list your phones, rename them, choose what each is notified of, send a test notification and remove one, and takes you to the page to connect a phone or set up its mail, calendars and contacts. When you connect a phone, it shows you around what the TeaNode app can do on this server, one thing at a time. (#387)
+
 ## [0.131.1] - 2026-10-11
 
 ### Fixed
