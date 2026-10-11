@@ -64,6 +64,10 @@ final class AppModel {
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
 
+    /// A conversation opened to send its first message: an idea tried from
+    /// the Ideas page.
+    var openingRequest: OpeningRequest?
+
     /// The agent took the app to the mailbox's mail programs, where the
     /// person sets the phone up for mail, calendars and contacts.
     var isShowingMailPrograms = false

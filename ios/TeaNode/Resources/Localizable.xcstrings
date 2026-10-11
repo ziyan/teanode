@@ -3729,6 +3729,22 @@
         }
       }
     },
+    "Dismissed. It is under History if you want it back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "却下しました。戻したいときは履歴にあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忽略。想找回时在历史中。"
+          }
+        }
+      }
+    },
     "Do it": {
       "localizations": {
         "ja": {
@@ -4369,6 +4385,22 @@
         }
       }
     },
+    "Family": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家族"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭"
+          }
+        }
+      }
+    },
     "Fees": {
       "localizations": {
         "ja": {
@@ -4705,6 +4737,22 @@
         }
       }
     },
+    "For you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなた向け"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为你"
+          }
+        }
+      }
+    },
     "Forget": {
       "localizations": {
         "ja": {
@@ -4849,6 +4897,38 @@
         }
       }
     },
+    "Found in your own mail, memory and calendar. Nothing starts until you send the request it opens with.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのメール、記憶、カレンダーから見つけたものです。最初の依頼を送るまで何も始まりません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从你的邮件、记忆和日历中发现。在你发出它打开的请求之前，什么都不会开始。"
+          }
+        }
+      }
+    },
+    "Free time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "余暇"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "休闲"
+          }
+        }
+      }
+    },
     "From": {
       "localizations": {
         "ja": {
@@ -4909,6 +4989,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "来自对账单"
+          }
+        }
+      }
+    },
+    "Getting more from your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントをもっと活用する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更好地使用你的助手"
           }
         }
       }
@@ -5281,6 +5377,22 @@
         }
       }
     },
+    "Home": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住まい"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家居"
+          }
+        }
+      }
+    },
     "Housing": {
       "localizations": {
         "ja": {
@@ -5309,6 +5421,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要你在屏幕上批准：%@"
+          }
+        }
+      }
+    },
+    "Ideas": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイデア"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "想法"
           }
         }
       }
@@ -5453,6 +5581,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "会发到你的主对话里。"
+          }
+        }
+      }
+    },
+    "It is back among the open ideas.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いているアイデアに戻しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已放回待选的想法中。"
           }
         }
       }
@@ -6305,6 +6449,22 @@
         }
       }
     },
+    "Marked done.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了にしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已标记为完成。"
+          }
+        }
+      }
+    },
     "Marked met": {
       "localizations": {
         "ja": {
@@ -6557,6 +6717,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "邮件操作"
+          }
+        }
+      }
+    },
+    "Money": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钱"
           }
         }
       }
@@ -7985,6 +8161,22 @@
         }
       }
     },
+    "Nothing yet. Your agent looks for ideas in your own mail and memory each night.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだありません。エージェントは毎晩、あなたのメールと記憶からアイデアを探します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有。你的助手每晚会从你的邮件和记忆中寻找想法。"
+          }
+        }
+      }
+    },
     "Notifications": {
       "localizations": {
         "ja": {
@@ -8561,6 +8753,22 @@
         }
       }
     },
+    "Out of date": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限切れ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已过时"
+          }
+        }
+      }
+    },
     "Outgoing (SMTP)": {
       "localizations": {
         "ja": {
@@ -8653,6 +8861,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "页面路径"
+          }
+        }
+      }
+    },
+    "Paperwork": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文书"
           }
         }
       }
@@ -9549,6 +9773,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先处理尚未完成的日历更改。"
+          }
+        }
+      }
+    },
+    "Restore": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复"
           }
         }
       }
@@ -10925,6 +11165,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "开始"
+          }
+        }
+      }
+    },
+    "Started": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進行中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
           }
         }
       }
@@ -12644,6 +12900,22 @@
         }
       }
     },
+    "Try it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "試す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试试"
+          }
+        }
+      }
+    },
     "Turn off": {
       "localizations": {
         "ja": {
@@ -13744,6 +14016,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "匹配的字词"
+          }
+        }
+      }
+    },
+    "Work": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仕事"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作"
           }
         }
       }

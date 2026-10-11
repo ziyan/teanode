@@ -35,4 +35,25 @@ final class GlanceTests: XCTestCase {
         let waiting = try JSONDecoder().decode(AgentWaiting.self, from: Data(json.utf8))
         XCTAssertEqual(waiting.countByConversation, ["c1": 2, "c2": 1])
     }
+
+    func testIdeasAreGroupedAsTheDashboardGroupsThem() throws {
+        func idea(_ id: String, _ kind: String, _ category: String?, _ status: String, _ at: String, expiredReason: String? = nil) -> String {
+            let category = category.map { #""\#($0)""# } ?? "null"
+            let reason = expiredReason.map { #""\#($0)""# } ?? "null"
+            return #"{"id":"\#(id)","ideaKind":"\#(kind)","ideaCategory":\#(category),"headline":"\#(id)","ideaStatus":"\#(status)","expiredReason":\#(reason),"createdAt":"\#(at)"}"#
+        }
+        let json = #"{"ideas":["# + [
+            idea("mine", "personal", nil, "open", "2026-03-01"),
+            idea("plants", "catalog", "home", "open", "2026-03-02"),
+            idea("budget", "catalog", "money", "open", "2026-03-03"),
+            idea("old", "catalog", "home", "expired", "2026-03-04", expiredReason: "missing_tool"),
+            idea("used", "catalog", "home", "expired", "2026-03-05", expiredReason: "already_used"),
+        ].joined(separator: ",") + #"],"ideaCategories":[{"ideaCategory":"money","emojis":[]},{"ideaCategory":"home","emojis":[]},{"ideaCategory":"fun","emojis":[]}]}"#
+        let list = try JSONDecoder().decode(IdeaList.self, from: Data(json.utf8))
+        XCTAssertEqual(list.forYou.map(\.id), ["mine"])
+        XCTAssertEqual(list.byCategory.map(\.category), ["money", "home"])
+        XCTAssertEqual(list.history.map(\.id), ["used", "old"])
+        XCTAssertEqual(list.history.map(\.canRestore), [true, false])
+    }
 }
+

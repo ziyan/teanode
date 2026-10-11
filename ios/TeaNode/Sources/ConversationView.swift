@@ -258,6 +258,11 @@ struct ConversationFollowing: ViewModifier {
                 app.askingAbout = nil
             }
             .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
+            .onChange(of: app.openingRequest, initial: true) { _, opening in
+                guard let opening, opening.conversationId == model.conversationId else { return }
+                app.openingRequest = nil
+                Task { await model.sendSuggestion(opening.text) }
+            }
             .onChange(of: scenePhase) { _, phase in
                 // A turn left running shows on the lock screen until it ends;
                 // a call shows there already, through CallKit.
