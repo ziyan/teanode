@@ -9,49 +9,89 @@ import (
 // dashboard reports every minute, so two minutes is one missed report.
 const presenceFresh = 2 * time.Minute
 
-// presenceReport is what one dashboard tab last said about the person.
+// presenceReport is what one dashboard tab or one phone last said about the
+// person.
 type presenceReport struct {
 	reportedAt  time.Time
 	isVisible   bool
 	idleSeconds int
 }
 
-// presence is who has a dashboard open, kept in memory and nowhere else:
-// a restart forgets it until each open tab reports again, within a
-// minute. The agent speaks first only to somebody who is there to read
-// it, and offers an idea only to somebody who has gone quiet.
+// presence is who has a dashboard or the app open, kept in memory and
+// nowhere else: a restart forgets it until each open tab or app reports
+// again, within a minute. The agent speaks first only to somebody who is
+// there to read it, offers an idea only to somebody who has gone quiet, and
+// tells a phone what nobody is there to see.
+//
+// Reports are kept per person and per reporter: each tab and each phone
+// names itself, so the app going to the background hides only the app,
+// and a tab hidden in one window does not hide a tab shown in another.
 type presence struct {
 	mutex   sync.Mutex
-	reports map[string]presenceReport
+	reports map[string]map[string]presenceReport
 }
 
-// ReportPresence records a tab's report for a person: whether it is
-// visible, and how long since their last keypress, click or scroll.
-func (self *Agent) ReportPresence(userId string, isVisible bool, idleSeconds int, now time.Time) {
+// ReportPresence records one tab's or one phone's report for a person:
+// whether it is shown, and how long since their last keypress, click or
+// scroll in it. reporterId names the tab or phone; a report without one is
+// an older dashboard, whose hidden tab is not taken to hide a visible one
+// that reported lately, since it cannot say which tab it is.
+func (self *Agent) ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, now time.Time) {
 	if userId == "" {
 		return
 	}
 	self.presence.mutex.Lock()
 	defer self.presence.mutex.Unlock()
 	if self.presence.reports == nil {
-		self.presence.reports = map[string]presenceReport{}
+		self.presence.reports = map[string]map[string]presenceReport{}
 	}
-	// A hidden tab does not hide a visible one: the person with two tabs
-	// open is looking at one of them.
-	if existing, ok := self.presence.reports[userId]; ok && existing.isVisible && !isVisible && now.Sub(existing.reportedAt) < presenceFresh {
-		return
+	reporters := self.presence.reports[userId]
+	if reporters == nil {
+		reporters = map[string]presenceReport{}
+		self.presence.reports[userId] = reporters
 	}
-	self.presence.reports[userId] = presenceReport{reportedAt: now, isVisible: isVisible, idleSeconds: max(idleSeconds, 0)}
+	if reporterId == "" {
+		if existing, ok := reporters[""]; ok && existing.isVisible && !isVisible && now.Sub(existing.reportedAt) < presenceFresh {
+			return
+		}
+	}
+	// Reporters that went quiet are forgotten, so a person who opened many
+	// tabs over a day keeps a short list.
+	for name, report := range reporters {
+		if now.Sub(report.reportedAt) > presenceFresh {
+			delete(reporters, name)
+		}
+	}
+	reporters[reporterId] = presenceReport{reportedAt: now, isVisible: isVisible, idleSeconds: max(idleSeconds, 0)}
 }
 
-// isPresent says whether the person has a visible dashboard tab that
-// reported lately, and how long they have been idle in it.
+// isPresent says whether the person has a visible dashboard tab or the app
+// in front of them that reported lately, and how long they have been idle
+// in the busiest of them.
 func (self *Agent) isPresent(userId string, now time.Time) (bool, time.Duration) {
 	self.presence.mutex.Lock()
 	defer self.presence.mutex.Unlock()
-	report, ok := self.presence.reports[userId]
-	if !ok || !report.isVisible || now.Sub(report.reportedAt) > presenceFresh {
-		return false, 0
+	isPresent, idle := false, time.Duration(0)
+	for _, report := range self.presence.reports[userId] {
+		if !report.isVisible || now.Sub(report.reportedAt) > presenceFresh {
+			continue
+		}
+		reportIdle := time.Duration(report.idleSeconds)*time.Second + now.Sub(report.reportedAt)
+		if !isPresent || reportIdle < idle {
+			isPresent, idle = true, reportIdle
+		}
 	}
-	return true, time.Duration(report.idleSeconds)*time.Second + now.Sub(report.reportedAt)
+	return isPresent, idle
+}
+
+// phoneQuietAfter is how long a visible dashboard may sit untouched before
+// the person is taken to have walked away from it, and their phone is told
+// what waits for them: a tab left open on a desk is not somebody reading.
+const phoneQuietAfter = 2 * time.Minute
+
+// isWatching says whether the person is looking at a dashboard or the app
+// now, so that their phone need not be told.
+func (self *Agent) isWatching(userId string, now time.Time) bool {
+	isPresent, idle := self.isPresent(userId, now)
+	return isPresent && idle < phoneQuietAfter
 }

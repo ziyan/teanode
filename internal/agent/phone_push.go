@@ -280,7 +280,7 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 	if interaction == nil || self.settings.Agent == nil {
 		return
 	}
-	if isPresent, _ := self.agent.isPresent(self.settings.Agent.UserID, time.Now()); isPresent {
+	if self.agent.isWatching(self.settings.Agent.UserID, time.Now()) {
 		return
 	}
 	content := &push.Content{
@@ -313,13 +313,14 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 	self.agent.notifyPhones(self.settings.Agent.ID, notificationKind, content)
 }
 
-// notifyAnswer tells the person's phones that an answer to something asked
-// from the app is ready, when they have left the app.
+// notifyAnswer tells the person's phones that an answer is ready, when
+// nobody is looking at a dashboard or the app; see isAnswerForPhone for
+// which answers.
 func (self *AskRun) notifyAnswer(answer string) {
-	if self.settings.Agent == nil || strings.TrimSpace(answer) == "" || !isAppSurface(self.settings.Surface) {
+	if self.settings.Agent == nil || strings.TrimSpace(answer) == "" || !self.isAnswerForPhone() {
 		return
 	}
-	if isPresent, _ := self.agent.isPresent(self.settings.Agent.UserID, time.Now()); isPresent {
+	if self.agent.isWatching(self.settings.Agent.UserID, time.Now()) {
 		return
 	}
 	agentName := self.settings.Agent.Name
@@ -335,6 +336,33 @@ func (self *AskRun) notifyAnswer(answer string) {
 		ThreadID:         self.settings.Conversation.ID,
 		Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 	})
+}
+
+// isAnswerForPhone says whether the turn's answer is one a phone is told
+// about: one to something asked from the app, in any conversation, and one
+// in the main conversation to something asked where the answer otherwise
+// waits unread, the dashboard, the command line or the API. The agent's own
+// turns in the main conversation reach the phone through pushOwnTurns, an
+// answer on a call is heard, and one asked from a linked chat or by mail is
+// sent there.
+func (self *AskRun) isAnswerForPhone() bool {
+	if self.settings.isUnattended || self.settings.subagentDepth > 0 {
+		return false
+	}
+	if isAppSurface(self.settings.Surface) {
+		return true
+	}
+	if self.settings.Conversation == nil || self.settings.Conversation.Kind != models.AgentConversationMain {
+		return false
+	}
+	if models.IsOwnTurn(self.settings.Message) {
+		return false
+	}
+	switch self.settings.Surface {
+	case "drawer", "extension", "page", "cli", "api":
+		return true
+	}
+	return false
 }
 
 // phoneBody is text as a notification shows it: plain, and short enough that

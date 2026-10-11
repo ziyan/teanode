@@ -172,3 +172,59 @@ func TestASignedOutPhoneIsNotSentTo(t *testing.T) {
 		t.Errorf("a signed-out phone was sent %d notifications", len(sent))
 	}
 }
+
+// The app going to the background hides the app at once, whatever it said a
+// moment before, while another tab still shown keeps the person present; and
+// a dashboard left untouched on a desk does not keep the phone quiet.
+func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
+	worker := &Agent{}
+	now := time.Now()
+	worker.ReportPresence("u", "phone", true, 0, now)
+	if !worker.isWatching("u", now) {
+		t.Fatal("the app in front was not taken as watching")
+	}
+	worker.ReportPresence("u", "phone", false, 0, now.Add(time.Second))
+	if worker.isWatching("u", now.Add(2*time.Second)) {
+		t.Error("the app in the background was still taken as watching")
+	}
+	worker.ReportPresence("u", "tab", true, 0, now)
+	worker.ReportPresence("u", "other-tab", false, 0, now.Add(time.Second))
+	if !worker.isWatching("u", now.Add(2*time.Second)) {
+		t.Error("a hidden tab hid a shown one")
+	}
+	worker.ReportPresence("u", "tab", true, 300, now.Add(3*time.Second))
+	if worker.isWatching("u", now.Add(4*time.Second)) {
+		t.Error("a tab untouched for five minutes kept the phone quiet")
+	}
+}
+
+func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
+	main := &models.AgentConversation{ID: "main-1", Kind: models.AgentConversationMain}
+	side := &models.AgentConversation{ID: "side-1", Kind: models.AgentConversationNamed}
+	run := func(surface string, conversation *models.AgentConversation, message string) *AskRun {
+		return &AskRun{settings: &AskSettings{Surface: surface, Conversation: conversation, Message: message}}
+	}
+	cases := []struct {
+		name   string
+		run    *AskRun
+		isTold bool
+	}{
+		{"asked from the app", run("ios", side, "What is on today?"), true},
+		{"asked in the main chat on the dashboard", run("drawer", main, "Draft the reply."), true},
+		{"asked in the main chat from the command line", run("cli", main, "Summarize the week."), true},
+		{"asked in a side chat on the dashboard", run("drawer", side, "Draft the reply."), false},
+		{"asked on a call", run("voice", main, "What is on today?"), false},
+		{"asked from a linked chat", run("telegram", main, "What is on today?"), false},
+		{"the agent's own turn", run("drawer", main, models.ScheduleMarker+" the morning brief"), false},
+	}
+	for _, testCase := range cases {
+		if isTold := testCase.run.isAnswerForPhone(); isTold != testCase.isTold {
+			t.Errorf("%s: told %v, want %v", testCase.name, isTold, testCase.isTold)
+		}
+	}
+	subagent := run("drawer", main, "Look into it.")
+	subagent.settings.subagentDepth = 1
+	if subagent.isAnswerForPhone() {
+		t.Error("a subagent's answer was told to the phone")
+	}
+}
