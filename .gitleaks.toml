@@ -48,4 +48,8 @@ regexes = [
   # they open nothing anywhere.
   '''^plaid-secret-invented-0001$''',
   '''^aW52ZW50ZWQtc2V0dXAtdG9rZW4=$''',
+  # The setup profile test's invented app password, five groups of the app
+  # password alphabet in order, in one commit of the setup-profile branch
+  # before it was assembled at run time. It opens nothing anywhere.
+  '''^abc234-defgh-jkmnp-qrstu-vwxyz$''',
 ]
