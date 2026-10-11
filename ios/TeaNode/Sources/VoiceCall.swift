@@ -107,7 +107,11 @@ final class VoiceCall: NSObject {
         let handle = CXHandle(type: .generic, value: agentName)
         let action = CXStartCallAction(call: callUUID, handle: handle)
         action.isVideo = false
-        callController.request(CXTransaction(action: action)) { error in
+        // CallKit answers on a queue of its own: the closures handed to it,
+        // to the audio engine and to the socket are Sendable, so none of them
+        // claims the main actor on a thread that is not the main one, which
+        // Swift checks at run time and stops the app over.
+        callController.request(CXTransaction(action: action)) { @Sendable error in
             if error != nil {
                 Task { @MainActor in self.startWithoutCallKit() }
             }
@@ -128,7 +132,7 @@ final class VoiceCall: NSObject {
     /// Ends the call: hung up by the person, by CallKit, or by a problem.
     func hangUp() {
         if provider != nil {
-            callController.request(CXTransaction(action: CXEndCallAction(call: callUUID))) { _ in }
+            callController.request(CXTransaction(action: CXEndCallAction(call: callUUID))) { @Sendable _ in }
         }
         end(problemText: nil)
     }
@@ -140,7 +144,7 @@ final class VoiceCall: NSObject {
         meterTask?.cancel()
         stillHereTask?.cancel()
         if let socket {
-            socket.send(.string(#"{"voiceEvent":"stop"}"#)) { _ in }
+            socket.send(.string(#"{"voiceEvent":"stop"}"#)) { @Sendable _ in }
             socket.cancel(with: .goingAway, reason: nil)
         }
         socket = nil
@@ -185,7 +189,7 @@ final class VoiceCall: NSObject {
                 try? await Task.sleep(for: .seconds(20))
                 guard let self else { return }
                 if self.isMuted {
-                    self.socket?.send(.string(#"{"voiceEvent":"stillHere"}"#)) { _ in }
+                    self.socket?.send(.string(#"{"voiceEvent":"stillHere"}"#)) { @Sendable _ in }
                 }
             }
         }
@@ -291,7 +295,7 @@ final class VoiceCall: NSObject {
             let frames = AVAudioFrameCount(inputFormat.sampleRate / 10)
             let sender = capture
             try AudioExceptions.run {
-                input.installTap(onBus: 0, bufferSize: frames, format: inputFormat) { buffer, _ in
+                input.installTap(onBus: 0, bufferSize: frames, format: inputFormat) { @Sendable buffer, _ in
                     sender.send(buffer)
                 }
             }
@@ -457,7 +461,7 @@ final class VoiceCall: NSObject {
             segments.append(Segment(segmentId: segmentId, text: text))
             let request: [String: Any] = ["voiceEvent": "speakAnswer", "answerSegmentId": segmentId, "answerText": text]
             if let data = try? JSONSerialization.data(withJSONObject: request) {
-                socket?.send(.string(String(decoding: data, as: UTF8.self))) { _ in }
+                socket?.send(.string(String(decoding: data, as: UTF8.self))) { @Sendable _ in }
             }
         }
     }
@@ -476,7 +480,7 @@ final class VoiceCall: NSObject {
             }
         }
         callState = .speaking
-        player.scheduleBuffer(buffer) { [weak self] in
+        player.scheduleBuffer(buffer) { @Sendable [weak self] in
             Task { @MainActor in self?.played(segmentId) }
         }
     }
@@ -504,7 +508,7 @@ final class VoiceCall: NSObject {
     private func stopSpeaking() {
         let pending = segments.filter { !$0.isPlayed }.map(\.segmentId)
         if !pending.isEmpty, let data = try? JSONSerialization.data(withJSONObject: ["voiceEvent": "cancelAnswer", "answerSegmentIds": pending]) {
-            socket?.send(.string(String(decoding: data, as: UTF8.self))) { _ in }
+            socket?.send(.string(String(decoding: data, as: UTF8.self))) { @Sendable _ in }
         }
         player.stop()
         player.play()
@@ -605,7 +609,7 @@ final class CaptureSender: @unchecked Sendable {
         }
         guard error == nil, converted.frameLength > 0, let samples = converted.int16ChannelData?[0] else { return }
         let data = Data(bytes: samples, count: Int(converted.frameLength) * 2)
-        socket.send(.data(data)) { _ in }
+        socket.send(.data(data)) { @Sendable _ in }
     }
 }
 
