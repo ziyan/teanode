@@ -299,7 +299,9 @@ struct ConversationBanners: View {
                 }
             }
             if let conversation = model.conversation, conversation.kind == "goal", let goal = conversation.goal, !goal.isEmpty {
-                Banner(systemImage: "target", text: GoalWords.summary(of: conversation))
+                Banner(systemImage: "target", text: GoalWords.summary(of: conversation)) {
+                    app.openedSection = .goals
+                }
                 if conversation.goalState == "waiting", let note = conversation.goalNote, !note.isEmpty {
                     Banner(systemImage: "hand.raised", text: note)
                 }

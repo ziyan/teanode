@@ -3425,6 +3425,54 @@
         }
       }
     },
+    "Drop goal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標をやめる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放弃目标"
+          }
+        }
+      }
+    },
+    "Drop this goal?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この目標をやめますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放弃这个目标？"
+          }
+        }
+      }
+    },
+    "Dropped": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やめました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已放弃"
+          }
+        }
+      }
+    },
     "Due": {
       "localizations": {
         "ja": {
@@ -4257,6 +4305,22 @@
         }
       }
     },
+    "Give your agent something to work toward on its own, and it checks in when it needs you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに自分で進める目標を与えると、必要なときに声をかけてきます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给你的助手一个可以自行推进的目标，需要你时它会来找你。"
+          }
+        }
+      }
+    },
     "Goal changed: %@": {
       "localizations": {
         "ja": {
@@ -4365,6 +4429,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "目标停滞：自你上次发言后已过 %@ 轮，目标仍未达成。发消息以继续，或清除、更改目标。"
+          }
+        }
+      }
+    },
+    "Goals": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标"
           }
         }
       }
@@ -4701,6 +4781,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "它会从你的日历中移除。"
+          }
+        }
+      }
+    },
+    "It reads this at its next turn.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のターンで読みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它会在下一次运行时读到。"
+          }
+        }
+      }
+    },
+    "It takes no more turns. You can reopen it later.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これ以上ターンを取りません。後で再開できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它将不再运行。你之后可以重新开启。"
           }
         }
       }
@@ -5297,6 +5409,22 @@
         }
       }
     },
+    "Mark met": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "達成にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标记为达成"
+          }
+        }
+      }
+    },
     "Mark not done": {
       "localizations": {
         "ja": {
@@ -5373,6 +5501,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已标记为完成"
+          }
+        }
+      }
+    },
+    "Marked met": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "達成にしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已标记为达成"
           }
         }
       }
@@ -6049,6 +6193,22 @@
         }
       }
     },
+    "New goal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい目標"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新目标"
+          }
+        }
+      }
+    },
     "New message": {
       "localizations": {
         "ja": {
@@ -6125,6 +6285,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "新的旁支对话"
+          }
+        }
+      }
+    },
+    "Next %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一次：%@"
+          }
+        }
+      }
+    },
+    "Next check-in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下次检查"
           }
         }
       }
@@ -6237,6 +6429,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无日期"
+          }
+        }
+      }
+    },
+    "No goals yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標はまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有目标"
           }
         }
       }
@@ -6865,6 +7073,22 @@
         }
       }
     },
+    "Now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "ja": {
@@ -7069,6 +7293,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开设置"
+          }
+        }
+      }
+    },
+    "Open its conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开它的对话"
           }
         }
       }
@@ -8465,6 +8705,22 @@
         }
       }
     },
+    "Schedules": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划"
+          }
+        }
+      }
+    },
     "Search": {
       "localizations": {
         "ja": {
@@ -9281,6 +9537,22 @@
         }
       }
     },
+    "Start": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始"
+          }
+        }
+      }
+    },
     "Started by the agent": {
       "localizations": {
         "ja": {
@@ -9696,6 +9968,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 无法使用麦克风。请在“设置”中允许后再拨打。"
+          }
+        }
+      }
+    },
+    "Tell it something": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伝えたいこと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告诉它一些事"
           }
         }
       }
@@ -10612,6 +10900,22 @@
         }
       }
     },
+    "Told": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伝えました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已告知"
+          }
+        }
+      }
+    },
     "Totals are converted to it.": {
       "localizations": {
         "ja": {
@@ -11316,6 +11620,22 @@
         }
       }
     },
+    "Waiting for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你处理"
+          }
+        }
+      }
+    },
     "Week": {
       "localizations": {
         "ja": {
@@ -11348,6 +11668,22 @@
         }
       }
     },
+    "What done looks like, and anything it should know": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了の条件と、知っておくべきこと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "怎样算完成，以及它应知道的事"
+          }
+        }
+      }
+    },
     "What is known": {
       "localizations": {
         "ja": {
@@ -11376,6 +11712,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "每月结余"
+          }
+        }
+      }
+    },
+    "What it did": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "したこと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "做了什么"
           }
         }
       }
@@ -11424,6 +11776,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示内容"
+          }
+        }
+      }
+    },
+    "What to work toward": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目指すこと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要达成什么"
           }
         }
       }
@@ -11648,6 +12016,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "推断得出，并非被告知"
+          }
+        }
+      }
+    },
+    "Working": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進行中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
           }
         }
       }
