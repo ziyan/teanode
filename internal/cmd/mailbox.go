@@ -1297,11 +1297,14 @@ func runMailboxProfile(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	created, err := client.CreateMailboxSetupProfile(ctx, connection, view.Mailbox.ID, deviceName)
+	// With --output the file comes back through this connection, so the
+	// link is never shown and may name the address this program reached the
+	// server at, which on the server itself is 127.0.0.1.
+	output := command.String("output")
+	created, err := client.CreateMailboxSetupProfile(ctx, connection, view.Mailbox.ID, deviceName, output != "")
 	if err != nil {
 		return describeError(command, err)
 	}
-	output := command.String("output")
 	if output == "" {
 		if command.Bool("json") {
 			return PrintJSON(created)

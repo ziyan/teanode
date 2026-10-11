@@ -191,7 +191,7 @@ owner; `show` and `update` read and change a mailbox's name and signature.
 `profile <device>` a setup profile that adds the mailbox, its calendars and
 contacts to an iPhone or a Mac with an app password of its own (it prints an
 address to open on the device, once, within five minutes; `--output` saves it
-instead),
+instead, and is the way to make one on a server that has no name set),
 `autoreply show|set|off` the out-of-office reply — `set --same-domain-only`
 keeps it to people at the mailbox's own domains — and `programs` the hosts
 and ports to type into a mail program.

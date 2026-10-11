@@ -36,6 +36,9 @@ type CreateMailboxSetupProfileArguments struct {
 
 	// What the device is called: "Phone", "Laptop"; the app password is named for it
 	DeviceName string `json:"deviceName"`
+
+	// True when the caller downloads the file itself through the API rather than opening the link on the device; the link may then point at this server's own loopback address
+	IsDownloadOnly *bool `json:"isDownloadOnly" graphapi:"nullable"`
 }
 
 // CreatedSetupProfile says where a setup profile can be downloaded, once.
@@ -68,6 +71,29 @@ func (self *graph) setupProfileBox() (*secretbox.Box, error) {
 	return secretbox.New(self.settings.Secret, setupProfileLabel)
 }
 
+// setupProfileOrigin is the scheme and host the download link starts with:
+// one the device can open.
+//
+// The name the dashboard was opened at, when it is not this machine's own:
+// it reached this server, over https, and carries its port. Otherwise the
+// server's configured name, as in every other link a person opens from
+// outside. The command line on the server talks to 127.0.0.1, which the
+// phone cannot open, so without a configured name the link is refused before
+// an app password is spent on it, unless the caller downloads the file
+// itself and never shows the link.
+func (self *graph) setupProfileOrigin(request *http.Request, isDownloadOnly bool) (string, error) {
+	if !api.IsLoopbackHost(hostOnly(request.Host)) {
+		return self.originOf(request), nil
+	}
+	if base := self.config.Current().DashboardBase(); base != "" {
+		return base, nil
+	}
+	if isDownloadOnly {
+		return self.originOf(request), nil
+	}
+	return "", fmt.Errorf("%w: this server has no name a device can reach it at, so the link would point at this machine itself; set server.name, or save the profile to a file (teanode mailbox profile --output) and move it to the device", api.ErrInvalidArguments)
+}
+
 func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments CreateMailboxSetupProfileArguments) (*CreatedSetupProfile, error) {
 	found, err := self.requireMailbox(ctx, models.PermissionMailboxManage, arguments.MailboxID)
 	if err != nil {
@@ -83,8 +109,12 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 	if request == nil {
 		return nil, fmt.Errorf("%w: a setup profile is made over the API", api.ErrInvalidArguments)
 	}
-	if !api.IsSecure(request, self.config.Current().Server.TrustedProxies) && !api.IsLoopbackHost(hostOnly(request.Host)) {
+	if !api.IsSecure(request, self.config.Current().Server.TrustedProxies) && !api.IsLocalRequest(request) {
 		return nil, fmt.Errorf("%w: open the dashboard over https to make a setup profile; one fetched over plain http could be read on the way", api.ErrInvalidArguments)
+	}
+	origin, err := self.setupProfileOrigin(request, arguments.IsDownloadOnly != nil && *arguments.IsDownloadOnly)
+	if err != nil {
+		return nil, err
 	}
 	settings, err := self.GetMailProgramSettings(ctx)
 	if err != nil {
@@ -137,7 +167,7 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 		return nil, err
 	}
 	path := strings.Replace(api.PathMailboxSetupProfile, "{token}", token, 1)
-	link := self.originOf(request) + path
+	link := origin + path
 	drawn, err := qrcode.SVG(link)
 	if err != nil {
 		return nil, err
