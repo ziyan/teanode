@@ -9,6 +9,8 @@ import Foundation
 public struct AgentCalendar: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
+    /// What its events are painted, as "#rrggbb"; nil when none was chosen.
+    public let colour: String?
     public let timezone: String?
     /// "sunday" or "monday".
     public let weekStart: String?
@@ -191,7 +193,7 @@ public struct ContactDetail: Codable, Hashable, Sendable {
 
 extension Documents {
     public static let calendars = """
-        query { ListCalendars { id name timezone weekStart calendarKind } }
+        query { ListCalendars { id name colour timezone weekStart calendarKind } }
         """
     public static let calendarEvents = """
         query ($calendarId: String!, $from: String!, $until: String!) {
