@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.130.0] - 2026-10-11
+
+### Added
+
+- The chat drawer's list of conversations says which ones have a question or an approval waiting for you, and `teanode agent waiting` lists them all and answers them from a shell. (#385)
+
+### Fixed
+
+- On a voice call, a pause after the agent's name or in the middle of a thought no longer sends half a sentence as a turn. The provider now judges from what was said whether you have finished. Setting `agent.voice.silenceMS` keeps the old fixed pause. (#390)
+
 ## [0.129.2] - 2026-10-11
 
 ### Fixed
