@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.0] - 2026-10-11
+
+### Added
+
+- Reactions on the messages of a conversation with the agent. The person can react with an emoji from the drawer, from the app or with `teanode agent react`, and the agent can react too, sparingly. Reactions show on every open drawer at once, and the agent sees them the next time it reads the conversation. The upgrade adds one table. (#391)
+
 ## [0.133.0] - 2026-10-11
 
 ### Added
