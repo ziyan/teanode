@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.129.1] - 2026-10-11
+
+### Fixed
+
+- `teanode` commands run on the server itself, without a sign-in, work again on a server that serves HTTPS directly; they failed with "answered with something that is not a GraphQL reply (HTTP 308)". (#389)
+
 ## [0.129.0] - 2026-10-11
 
 ### Added
