@@ -402,12 +402,14 @@ struct ConversationItemView: View {
             case .person:
                 PersonBubble(line: line)
                     .contextMenu { LineActions(line: line, model: model) }
+                    .swipeToReplyAndCopy(isReplying: line.messageId != nil) { model.reply(to: line) } onCopy: { UIPasteboard.general.string = line.text }
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
                     AgentBubble {
                         MarkdownView(text: line.text)
                     }
                     .contextMenu { LineActions(line: line, model: model) }
+                    .swipeToReplyAndCopy(isReplying: line.messageId != nil) { model.reply(to: line) } onCopy: { UIPasteboard.general.string = line.text }
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
                             .font(.caption2)
