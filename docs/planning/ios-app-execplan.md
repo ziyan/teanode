@@ -44,13 +44,13 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [x] (2026-10-10) Milestone 1: an app can sign in by scanning a connect code and get a token for the whole API (PR #379).
 - [x] (2026-10-10) Milestone 2: phones as devices, and notifications sent to them (PR #380).
 - [x] (2026-10-10) Milestone 3: the push relay, built into the server and turned on for the published app (PR #380). Presence is kept per tab and phone, so a phone is told as soon as the app is left (PR #381).
-- [ ] Milestone 4: the setup profile.
+- [x] (2026-10-11) Milestone 4: the setup profile (PR #384): `CreateMailboxSetupProfile`, a QR code and link on the Mail programs tab, `teanode mailbox profile`, and "Add mail, calendars and contacts to this iPhone" in the app. The agent's action waits for Milestone 11's private cards.
 - [x] (2026-10-11) Milestone 5: the app: connect, conversations, chat, cards, pictures, location. Everything the dashboard's drawer does is in TestFlight: conversations in a side panel, every line kind, cards, coding-session questions, suggested replies, pictures, files, artifacts, the head's usage and devices, and earlier messages.
 - [ ] Milestone 6: notifications in the app, and answering from them. In TestFlight; checked on the person's phone.
-- [ ] Milestone 7: the share extension.
+- [ ] Milestone 7: the share extension. Pictures, files, a link or words go to the main conversation with a note; in TestFlight, to be tried on the person's phone.
 - [ ] Milestone 8: voice calls. A CallKit call with voice processing, cutting in, and a choice of where the sound goes, is in TestFlight; hearing the person on every phone is being checked.
-- [ ] Milestone 9: Siri and Shortcuts.
-- [ ] Milestone 10: widgets and Live Activities.
+- [ ] Milestone 9: Siri and Shortcuts. "Ask TeaNode" waits up to 25 seconds for the answer through `ReadAgentRun` and leaves a longer one to a notification; "Call TeaNode" opens a call. In TestFlight.
+- [ ] Milestone 10: widgets and Live Activities. "Your agent" (ask, call), "Up next" (events and unread mail) and a Control Center call button are in TestFlight; the open-card count and the Live Activities, which need the server, remain. A call needs no Live Activity: CallKit already shows it in the Dynamic Island.
 - [ ] Milestone 11: the agent helps the person onboard.
 - [ ] Milestone 12: TestFlight and the App Store, documentation, decision record.
 - [ ] Milestone 13 (later, after the first App Store release): health data from the iPhone, synced into TeaNode.
@@ -59,7 +59,7 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - [x] (2026-10-11) Milestone 16: mail subscriptions.
 - [x] (2026-10-11) Milestone 17: the calendar, with reminders.
 - [x] (2026-10-11) Milestone 18: contacts.
-- [ ] Milestone 19: finance. Every tab of the dashboard's Finance page is written; linking a bank through Plaid stays on the dashboard until the server sends a redirect for OAuth banks.
+- [ ] Milestone 19: finance. Its sections are in the side menu under Finance. Every tab of the dashboard's Finance page is written; linking a bank through Plaid stays on the dashboard until the server sends a redirect for OAuth banks.
 - [ ] Milestone 20: knowledge. Search, pages, facts, connections, history, recall and documents are in TestFlight; the sources, dreams and memory check belong to the agent's settings (Milestone 21).
 - [ ] Milestone 21: every account setting, the agent's settings included.
 - [ ] Milestone 22: management: domains, people and access, queues, audit, and the server's settings.
@@ -71,6 +71,10 @@ Mail, calendar, contacts, finance and memory get no screens of their own in the 
 - Observation: a query in a path is escaped. `URLComponents.path = "/a?url=…"` gives `/a%3Furl=…`, so the mail and chat picture proxies answered 404.
 - Observation: Swift 6.3's `ClosureLifetimeFixup` pass crashes on `if await f({ closure }) { … }`; keeping the result in a constant first avoids it.
 - Observation: automatic signing on a fresh CI machine makes a development certificate every run, and Apple caps them; the eleventh build failed to archive. One certificate is now kept in the repository's secrets and imported into a keychain of the run's own.
+
+- Observation: AVFAudio raises Objective-C exceptions where Swift expects errors, and Swift cannot catch them.
+  Evidence: turning voice processing back on after iOS changed the audio route mid-call ended the app (TestFlight build 43). Those calls now go through a small Objective-C catcher, and a restart that fails tries once more without voice processing.
+- Observation: swiping a message sideways fought the transcript's scrolling on a phone; a long-press menu (Reply, Copy, Select, Share) replaced it.
 
 - Observation: an OAuth token issued today works only on the MCP endpoint.
   Evidence: `agentToolsResource` (`internal/api/v1api/apioauth/oauth.go`) forces the token's resource to `/api/v1/mcp`, and `allowsResource` (`internal/web/session.go`) refuses it on any other path, `/api/v1/graphql` included. The only scope is `mcp` (`apioauth/metadata.go`).
