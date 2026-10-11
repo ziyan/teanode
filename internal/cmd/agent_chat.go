@@ -41,6 +41,18 @@ func newAgentAskCommand() *cli.Command {
 	}
 }
 
+func newAgentReactCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "react",
+		Usage:     "put an emoji on a message of a conversation, as in a chat app, replacing yours; --remove takes it away",
+		ArgsUsage: "<message-id> <emoji>",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "remove", Usage: "take your reaction off the message instead"},
+		},
+		Action: runAgentReact,
+	}
+}
+
 func newAgentChatCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "chat",
@@ -410,6 +422,54 @@ func runAgentConversationShow(ctx context.Context, command *cli.Command) error {
 	return printTranscript(command, view)
 }
 
+// runAgentReact is the person's reaction to a message, as the drawer's
+// picker puts it: one or two emoji, or none to take it away.
+func runAgentReact(ctx context.Context, command *cli.Command) error {
+	messageId := strings.TrimSpace(command.Args().First())
+	if messageId == "" {
+		return fmt.Errorf("which message? give its id, as conversation show --json lists them")
+	}
+	reactionEmoji := strings.TrimSpace(command.Args().Get(1))
+	isRemoving := command.Bool("remove")
+	switch {
+	case isRemoving && reactionEmoji != "":
+		return fmt.Errorf("give an emoji or --remove, not both")
+	case !isRemoving && reactionEmoji == "":
+		return fmt.Errorf("give the emoji to react with, or --remove to take yours away")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.ReactToAgentMessage(ctx, connection, messageId, reactionEmoji); err != nil {
+		return describeError(command, err)
+	}
+	if isRemoving {
+		_, _ = fmt.Fprintf(command.Writer, "%s: reaction taken away\n", messageId)
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s: reacted %s\n", messageId, reactionEmoji)
+	return nil
+}
+
+// reactionLine is a message's reactions as the transcript prints them,
+// under the message, or empty when it has none.
+func reactionLine(reactions []client.AgentMessageReaction) string {
+	said := make([]string, 0, len(reactions))
+	for _, reaction := range reactions {
+		switch reaction.ReactorKind {
+		case string(models.ReactorPerson):
+			said = append(said, "you reacted "+reaction.Emoji)
+		case string(models.ReactorAgent):
+			said = append(said, "the agent reacted "+reaction.Emoji)
+		}
+	}
+	if len(said) == 0 {
+		return ""
+	}
+	return "        (" + strings.Join(said, "; ") + ")"
+}
+
 func printTranscript(command *cli.Command, view *client.AgentConversationView) error {
 	title := view.Conversation.Title
 	if view.Conversation.Kind == "main" {
@@ -430,9 +490,15 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 				}
 			}
 			_, _ = fmt.Fprintf(command.Writer, "[%s] you: %s\n", when, message.Content)
+			if line := reactionLine(message.Reactions); line != "" {
+				_, _ = fmt.Fprintln(command.Writer, line)
+			}
 		case "assistant":
 			if strings.TrimSpace(message.Content) != "" {
 				_, _ = fmt.Fprintf(command.Writer, "[%s] agent: %s\n", when, models.StripSuggestedReplies(message.Content))
+				if line := reactionLine(message.Reactions); line != "" {
+					_, _ = fmt.Fprintln(command.Writer, line)
+				}
 			}
 			for _, call := range message.ToolCalls {
 				_, _ = fmt.Fprintf(command.Writer, "[%s] → %s %s\n", when, call.Name, call.Arguments)
