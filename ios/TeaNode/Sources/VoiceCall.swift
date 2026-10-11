@@ -34,14 +34,16 @@ final class VoiceCall: NSObject {
     private let agentName: String
 
     private var socket: URLSessionWebSocketTask?
-    private var engine = AVAudioEngine()
-    private var player = AVAudioPlayerNode()
+    private let engine = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
     /// The system's voice processing cancels the answer's sound from the
     /// microphone; on a phone where it gives only silence, the call goes on
     /// without it.
     private var isVoiceProcessing = true
     private var isSilenceRetried = false
     private var configurationObserver: (any NSObjectProtocol)?
+    private var isTapInstalled = false
+    private var engineStartedAt = Date.distantPast
     /// Answers arrive as mono 16-bit PCM at 24000 Hz.
     private let answerFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false)!
     private let capture = CaptureSender()
@@ -144,6 +146,10 @@ final class VoiceCall: NSObject {
         socket = nil
         capture.socket = nil
         stopEngine()
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
         if provider == nil {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } else {
@@ -207,38 +213,55 @@ final class VoiceCall: NSObject {
         }
     }
 
-    /// Starts the engine afresh, as iOS asks after the route changes: to
-    /// AirPods, the speaker or a car.
+    /// Starts the audio again, as iOS asks after the route changes: to
+    /// AirPods, the speaker or a car. The same engine is used: a second one
+    /// would contend for the voice processing the first still holds.
     private func restartEngine() {
         guard callState != .ended else { return }
+        // Turning voice processing on reports a change of its own just as
+        // the engine starts; that one needs nothing.
+        guard Date().timeIntervalSince(engineStartedAt) > 1 else { return }
         stopEngine()
         _ = startEngine()
     }
 
+    /// Tries again in a moment, while the route is still settling.
+    private func restartSoon() {
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            self?.restartEngine()
+        }
+    }
+
     private func stopEngine() {
-        if let configurationObserver {
-            NotificationCenter.default.removeObserver(configurationObserver)
-            self.configurationObserver = nil
+        if isTapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
         }
         guard isAudioRunning else { return }
-        engine.inputNode.removeTap(onBus: 0)
         player.stop()
         engine.stop()
         isAudioRunning = false
     }
 
     private func startEngine() -> Bool {
-        engine = AVAudioEngine()
-        player = AVAudioPlayerNode()
         capture.resetLoudest()
         do {
             let input = engine.inputNode
-            if isVoiceProcessing {
-                try input.setVoiceProcessingEnabled(true)
+            if input.isVoiceProcessingEnabled != isVoiceProcessing {
+                try input.setVoiceProcessingEnabled(isVoiceProcessing)
             }
-            engine.attach(player)
-            engine.connect(player, to: engine.mainMixerNode, format: answerFormat)
+            if player.engine == nil {
+                engine.attach(player)
+                engine.connect(player, to: engine.mainMixerNode, format: answerFormat)
+            }
             let inputFormat = input.outputFormat(forBus: 0)
+            // Between routes the microphone can report no format at all; a
+            // tap installed then would stop the app.
+            guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+                restartSoon()
+                return true
+            }
             guard let sendFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true),
                 let converter = AVAudioConverter(from: inputFormat, to: sendFormat)
             else {
@@ -252,17 +275,21 @@ final class VoiceCall: NSObject {
             input.installTap(onBus: 0, bufferSize: frames, format: inputFormat) { buffer, _ in
                 sender.send(buffer)
             }
+            isTapInstalled = true
             try engine.start()
             player.play()
             isAudioRunning = true
+            engineStartedAt = Date()
         } catch {
             end(problemText: String(localized: "The microphone could not be started: \(error.localizedDescription)"))
             return false
         }
-        configurationObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.restartEngine() }
+        if configurationObserver == nil {
+            configurationObserver = NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.restartEngine() }
+            }
         }
         return true
     }

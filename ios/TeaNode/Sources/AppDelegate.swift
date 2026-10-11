@@ -28,14 +28,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// A notification arriving while the app is open is shown all the same:
     /// the server holds back what the person is looking at already.
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    /// A notification or one of its buttons pressed. iOS is told it is done
+    /// on the main thread: UIKit stops the app when the async form of this
+    /// finishes on another.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
         let pressed = PressedButton(response)
-        await perform(pressed)
+        Task { @MainActor in
+            await self.perform(pressed)
+            completionHandler()
+        }
     }
 
     private func perform(_ pressed: PressedButton) async {
