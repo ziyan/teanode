@@ -26,10 +26,11 @@ struct TeaNodeApp: App {
 }
 
 /// MainView is the signed-in app, in tabs as the dashboard's sidebar has
-/// it: the agent, mail, the calendar, the contacts and the settings.
+/// it: the agent, mail, the calendar, the contacts, and the rest (the
+/// knowledge, settings) under More.
 struct MainView: View {
     enum AppTab: Hashable {
-        case agent, mail, calendar, contacts, settings
+        case agent, mail, calendar, contacts, more
     }
 
     let connection: Connection
@@ -51,8 +52,8 @@ struct MainView: View {
             Tab("Contacts", systemImage: "person.crop.circle", value: AppTab.contacts) {
                 ContactsScreen(connection: connection)
             }
-            Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
-                SettingsView(isSheet: false)
+            Tab("More", systemImage: "ellipsis", value: AppTab.more) {
+                MoreScreen(connection: connection)
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
@@ -62,6 +63,7 @@ struct MainView: View {
                 case "mail": section = .mail
                 case "calendar": section = .calendar
                 case "contacts": section = .contacts
+                case "knowledge": section = .more
                 default: break
                 }
             #endif
@@ -75,6 +77,9 @@ struct MainView: View {
         }
         .onChange(of: app.askingAbout) { _, reference in
             if reference != nil { section = .agent }
+        }
+        .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
+            if knowledgePath != nil { section = .more }
         }
         // While the app is open the person is here: notifications that
         // would tell them what they are looking at are held back.
@@ -341,55 +346,40 @@ struct ConversationsSheet: View {
     }
 }
 
-/// SettingsView says which server and account the phone is signed in to,
-/// and signs it out.
-struct SettingsView: View {
-    /// Shown as a sheet, with a Done button, or as a tab.
-    var isSheet = true
+/// SettingsForm says which server and account the phone is signed in to,
+/// what it is told about, and signs it out.
+struct SettingsForm: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingSignOut = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                if let account = app.account {
-                    Section("Signed in") {
-                        LabeledContent("Server", value: account.server.host)
-                        LabeledContent("Account", value: account.username)
-                    }
-                }
-                NotificationsSection()
-                Section {
-                    Button("Sign out", role: .destructive) {
-                        isConfirmingSignOut = true
-                    }
-                } footer: {
-                    Text("To manage what this phone is told about, open Settings, then Phones, on your dashboard.")
-                }
-                Section("About") {
-                    LabeledContent("Version", value: Self.version)
+        Form {
+            if let account = app.account {
+                Section("Signed in") {
+                    LabeledContent("Server", value: account.server.host)
+                    LabeledContent("Account", value: account.username)
                 }
             }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if isSheet {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
-            }
-            .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+            NotificationsSection()
+            Section {
                 Button("Sign out", role: .destructive) {
-                    Task {
-                        if isSheet { dismiss() }
-                        await app.signOut()
-                    }
+                    isConfirmingSignOut = true
                 }
-            } message: {
-                Text("This phone stops talking to your agent until you connect it again.")
+            } footer: {
+                Text("To manage what this phone is told about, open Settings, then Phones, on your dashboard.")
             }
+            Section("About") {
+                LabeledContent("Version", value: Self.version)
+            }
+        }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) {
+                Task { await app.signOut() }
+            }
+        } message: {
+            Text("This phone stops talking to your agent until you connect it again.")
         }
     }
 

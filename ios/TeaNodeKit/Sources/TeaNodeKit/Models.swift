@@ -74,6 +74,12 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var quotedRole: String? = nil
     public var quotedText: String? = nil
 
+    /// A page of the agent's knowledge the message asks about.
+    public init(path: String, name: String) {
+        self.path = path
+        self.name = name
+    }
+
     /// A mail the message asks about.
     public init(itemId: String, threadId: String?, subject: String, from: String) {
         self.itemId = itemId

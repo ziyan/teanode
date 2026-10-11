@@ -44,6 +44,9 @@ final class AppModel {
     /// refers to.
     var askingAbout: AgentReference?
 
+    /// A page of the agent's knowledge a link asks to open.
+    var openedKnowledgePath: String?
+
     /// The agent's name, for the main conversation's title and the
     /// composer; empty until read, or when the agent has none.
     private(set) var agentName = ""
@@ -66,10 +69,12 @@ final class AppModel {
         case "memory":
             let path = String(written.dropFirst("memory:".count).split(separator: "#").first ?? "")
             let segments = path.split(separator: "/")
-            guard let account, !segments.isEmpty, segments.count <= 8,
+            guard !segments.isEmpty, segments.count <= 8,
                 segments.allSatisfy({ $0.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" } })
             else { return .discarded }
-            return .systemAction(account.server.endpoint("/knowledge/\(path)"))
+            // A memory link opens the page in the app, under More.
+            openedKnowledgePath = path
+            return .handled
         default:
             return .discarded
         }

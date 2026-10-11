@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "#%lld %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#%1$lld %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#%1$lld %2$@"
+          }
+        }
+      }
+    },
+    "#%lld %@ · folded into #%lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#%1$lld %2$@ · #%3$lld に統合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#%1$lld %2$@ · 已并入 #%3$lld"
+          }
+        }
+      }
+    },
+    "%@ (missing)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（見つかりません）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（缺失）"
+          }
+        }
+      }
+    },
     "%@ in, %@ out · %@": {
       "localizations": {
         "ja": {
@@ -81,6 +129,22 @@
         }
       }
     },
+    "%@ · %@ · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ · %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ · %3$@"
+          }
+        }
+      }
+    },
     "%@, %lld events": {
       "localizations": {
         "ja": {
@@ -141,6 +205,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 封邮件"
+          }
+        }
+      }
+    },
+    "%lld more links not shown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示していないリンクがあと %lld 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有 %lld 个链接未显示"
           }
         }
       }
@@ -241,6 +321,22 @@
         }
       }
     },
+    "A guess": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推測"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推测"
+          }
+        }
+      }
+    },
     "A mailbox is made when an address is given to you on your server.": {
       "localizations": {
         "ja": {
@@ -285,6 +381,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有一个工具调用无法读取，已重新请求。"
+          }
+        }
+      }
+    },
+    "A year, a month or a day: 2023, 2023-06 or 2023-06-14.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年・月・日のいずれか：2023、2023-06、2023-06-14。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年、月或日：2023、2023-06 或 2023-06-14。"
           }
         }
       }
@@ -353,6 +465,22 @@
         }
       }
     },
+    "Add": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
+          }
+        }
+      }
+    },
     "Add Cc and Bcc": {
       "localizations": {
         "ja": {
@@ -397,6 +525,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加邮箱"
+          }
+        }
+      }
+    },
+    "Add fact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事実を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加事实"
           }
         }
       }
@@ -561,6 +705,38 @@
         }
       }
     },
+    "Also called %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別名 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "也叫 %@"
+          }
+        }
+      }
+    },
+    "Always in its prompt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常にプロンプトに含む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终在提示中"
+          }
+        }
+      }
+    },
     "Always show pictures": {
       "localizations": {
         "ja": {
@@ -653,6 +829,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "任意"
+          }
+        }
+      }
+    },
+    "Any source": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのソース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意来源"
           }
         }
       }
@@ -817,6 +1009,22 @@
         }
       }
     },
+    "Ask": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问"
+          }
+        }
+      }
+    },
     "Ask %@": {
       "localizations": {
         "ja": {
@@ -877,6 +1085,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示图片前询问"
+          }
+        }
+      }
+    },
+    "Ask the memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記憶に聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问记忆"
           }
         }
       }
@@ -1377,6 +1601,38 @@
         }
       }
     },
+    "Choose": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择"
+          }
+        }
+      }
+    },
+    "Choose a page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページを選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择页面"
+          }
+        }
+      }
+    },
     "Choose where you hear the call": {
       "localizations": {
         "ja": {
@@ -1533,6 +1789,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在连接…"
+          }
+        }
+      }
+    },
+    "Connections": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "つながり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关联"
           }
         }
       }
@@ -1709,6 +1981,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在回合结束后拒绝"
+          }
+        }
+      }
+    },
+    "Defined in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定義場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定义于"
           }
         }
       }
@@ -2145,6 +2433,38 @@
         }
       }
     },
+    "Edit fact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事実を編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑事实"
+          }
+        }
+      }
+    },
+    "Edit page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑页面"
+          }
+        }
+      }
+    },
     "Edit reminder": {
       "localizations": {
         "ja": {
@@ -2353,6 +2673,70 @@
         }
       }
     },
+    "Facts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事実"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事实"
+          }
+        }
+      }
+    },
+    "File it under": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归到"
+          }
+        }
+      }
+    },
+    "Filed under": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所属"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归于"
+          }
+        }
+      }
+    },
+    "Filed under this": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページの下"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归在此页下"
+          }
+        }
+      }
+    },
     "Files": {
       "localizations": {
         "ja": {
@@ -2381,6 +2765,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "筛选"
+          }
+        }
+      }
+    },
+    "Fold %@ into %@. Its %lld facts, its links and the %lld pages under it move there, and %@ is gone afterwards.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ を %2$@ に統合します。%3$lld 件の事実、リンク、下にある %4$lld ページが移り、%5$@ はなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将 %1$@ 并入 %2$@。它的 %3$lld 条事实、链接和其下的 %4$lld 个页面都会移过去，之后 %5$@ 将不复存在。"
           }
         }
       }
@@ -2433,6 +2833,102 @@
         }
       }
     },
+    "Forget": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘れる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记"
+          }
+        }
+      }
+    },
+    "Forget %@, its %lld facts and the %lld pages under it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ と、その %2$lld 件の事実、下にある %3$lld ページを忘れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记 %1$@、它的 %2$lld 条事实以及其下的 %3$lld 个页面。"
+          }
+        }
+      }
+    },
+    "Forget page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページを忘れる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记页面"
+          }
+        }
+      }
+    },
+    "Forget this fact?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この事実を忘れますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记这条事实？"
+          }
+        }
+      }
+    },
+    "Forget this page?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページを忘れますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记这个页面？"
+          }
+        }
+      }
+    },
+    "Forgotten": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘れました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忘记"
+          }
+        }
+      }
+    },
     "Forward": {
       "localizations": {
         "ja": {
@@ -2461,6 +2957,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "转发的邮件"
+          }
+        }
+      }
+    },
+    "Found by words alone, not by meaning.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "意味ではなく語句だけで見つかりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅按字词匹配，而非按含义。"
           }
         }
       }
@@ -2705,6 +3217,22 @@
         }
       }
     },
+    "History": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "履歴"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史"
+          }
+        }
+      }
+    },
     "I need your approval on screen: %@": {
       "localizations": {
         "ja": {
@@ -2717,6 +3245,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要你在屏幕上批准：%@"
+          }
+        }
+      }
+    },
+    "In a directory (optional)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディレクトリ内（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在某个目录中（可选）"
           }
         }
       }
@@ -2849,6 +3393,38 @@
         }
       }
     },
+    "Kind": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "種類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
+          }
+        }
+      }
+    },
+    "Knowledge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナレッジ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识"
+          }
+        }
+      }
+    },
     "Later": {
       "localizations": {
         "ja": {
@@ -2893,6 +3469,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "已退订 %@"
+          }
+        }
+      }
+    },
+    "Link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接"
+          }
+        }
+      }
+    },
+    "Link to": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンク先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接到"
+          }
+        }
+      }
+    },
+    "Link to another page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのページにリンク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接到其他页面"
+          }
+        }
+      }
+    },
+    "Linked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已链接"
           }
         }
       }
@@ -3265,6 +3905,86 @@
         }
       }
     },
+    "Merge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并"
+          }
+        }
+      }
+    },
+    "Merge into…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并到…"
+          }
+        }
+      }
+    },
+    "Merge it into": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并到"
+          }
+        }
+      }
+    },
+    "Merge this page?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページを統合しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并这个页面？"
+          }
+        }
+      }
+    },
+    "Merged": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已合并"
+          }
+        }
+      }
+    },
     "Message": {
       "localizations": {
         "ja": {
@@ -3329,6 +4049,38 @@
         }
       }
     },
+    "Move": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动"
+          }
+        }
+      }
+    },
+    "Move it to": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动到"
+          }
+        }
+      }
+    },
     "Move to…": {
       "localizations": {
         "ja": {
@@ -3341,6 +4093,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "移动到…"
+          }
+        }
+      }
+    },
+    "Moved": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移动"
           }
         }
       }
@@ -3665,6 +4433,22 @@
         }
       }
     },
+    "No changes recorded.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更の記録はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有记录到更改。"
+          }
+        }
+      }
+    },
     "No contact is you now": {
       "localizations": {
         "ja": {
@@ -3761,6 +4545,22 @@
         }
       }
     },
+    "No summary yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ要約はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有摘要。"
+          }
+        }
+      }
+    },
     "Normal": {
       "localizations": {
         "ja": {
@@ -3805,6 +4605,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不是这个"
+          }
+        }
+      }
+    },
+    "Note (optional)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモ（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注（可选）"
           }
         }
       }
@@ -3857,6 +4673,22 @@
         }
       }
     },
+    "Nothing filed here yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ何も整理されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里还没有内容"
+          }
+        }
+      }
+    },
     "Nothing has been archived.": {
       "localizations": {
         "ja": {
@@ -3905,6 +4737,22 @@
         }
       }
     },
+    "Nothing in memory answers that.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記憶には答えがありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记忆中没有答案。"
+          }
+        }
+      }
+    },
     "Nothing in the next month": {
       "localizations": {
         "ja": {
@@ -3933,6 +4781,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有加星标的邮件"
+          }
+        }
+      }
+    },
+    "Nothing known here yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ何も分かっていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里还没有已知内容。"
           }
         }
       }
@@ -4241,6 +5105,22 @@
         }
       }
     },
+    "Other names": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他名称"
+          }
+        }
+      }
+    },
     "Output": {
       "localizations": {
         "ja": {
@@ -4253,6 +5133,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "输出"
+          }
+        }
+      }
+    },
+    "Overview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "概要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "概览"
+          }
+        }
+      }
+    },
+    "Page actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページの操作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "页面操作"
+          }
+        }
+      }
+    },
+    "Page path": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページのパス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "页面路径"
           }
         }
       }
@@ -4337,6 +5265,22 @@
         }
       }
     },
+    "Pin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定"
+          }
+        }
+      }
+    },
     "Pinned": {
       "localizations": {
         "ja": {
@@ -4417,6 +5361,38 @@
         }
       }
     },
+    "Read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阅读"
+          }
+        }
+      }
+    },
+    "Read on (%lld more characters)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続きを読む（残り %lld 文字）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续阅读（还有 %lld 个字符）"
+          }
+        }
+      }
+    },
     "Received": {
       "localizations": {
         "ja": {
@@ -4429,6 +5405,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "收到时间"
+          }
+        }
+      }
+    },
+    "Reflections": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "振り返り"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反思"
+          }
+        }
+      }
+    },
+    "Relation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "関係"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关系"
           }
         }
       }
@@ -4753,6 +5761,22 @@
         }
       }
     },
+    "Saved": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存"
+          }
+        }
+      }
+    },
     "Saving…": {
       "localizations": {
         "ja": {
@@ -4865,6 +5889,22 @@
         }
       }
     },
+    "Search documents": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドキュメントを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索文档"
+          }
+        }
+      }
+    },
     "Search lists": {
       "localizations": {
         "ja": {
@@ -4877,6 +5917,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索邮件列表"
+          }
+        }
+      }
+    },
+    "Search pages and facts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページと事実を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索页面和事实"
           }
         }
       }
@@ -5009,6 +6065,22 @@
         }
       }
     },
+    "Separated by commas.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カンマで区切ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用逗号分隔。"
+          }
+        }
+      }
+    },
     "Server": {
       "localizations": {
         "ja": {
@@ -5053,6 +6125,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示"
+          }
+        }
+      }
+    },
+    "Show %lld more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに %lld 件表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再显示 %lld 条"
           }
         }
       }
@@ -5117,6 +6205,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示邮件头"
+          }
+        }
+      }
+    },
+    "Show history": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "履歴を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示历史"
+          }
+        }
+      }
+    },
+    "Show more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示更多"
           }
         }
       }
@@ -5325,6 +6445,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已分类"
+          }
+        }
+      }
+    },
+    "Source": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源"
           }
         }
       }
@@ -6116,6 +7252,22 @@
         }
       }
     },
+    "There is no page here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここにページはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里没有页面"
+          }
+        }
+      }
+    },
     "Thinking…": {
       "localizations": {
         "ja": {
@@ -6144,6 +7296,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法读取这个对话"
+          }
+        }
+      }
+    },
+    "This could not be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込めませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取"
+          }
+        }
+      }
+    },
+    "This document is no longer kept": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このドキュメントはもう保存されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这份文档已不再保存"
           }
         }
       }
@@ -6628,6 +7812,38 @@
         }
       }
     },
+    "Unlink": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンク解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消链接"
+          }
+        }
+      }
+    },
+    "Unlinked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを解除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消链接"
+          }
+        }
+      }
+    },
     "Unmute": {
       "localizations": {
         "ja": {
@@ -6640,6 +7856,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消静音"
+          }
+        }
+      }
+    },
+    "Unpin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定を解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消固定"
+          }
+        }
+      }
+    },
+    "Unpinned": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定を解除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消固定"
           }
         }
       }
@@ -6932,6 +8180,38 @@
         }
       }
     },
+    "What do you want to know?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何を知りたいですか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你想知道什么？"
+          }
+        }
+      }
+    },
+    "What is known": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分かっていること"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已知内容"
+          }
+        }
+      }
+    },
     "What should the reply say? (optional)": {
       "localizations": {
         "ja": {
@@ -7044,6 +8324,54 @@
         }
       }
     },
+    "When it was true (2023-06)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "いつのことか（2023-06）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何时成立（2023-06）"
+          }
+        }
+      }
+    },
+    "Where these are": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所在位置"
+          }
+        }
+      }
+    },
+    "Which runs read it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どの実行が読むか"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "哪些任务会读取"
+          }
+        }
+      }
+    },
     "With attachments": {
       "localizations": {
         "ja": {
@@ -7076,6 +8404,38 @@
         }
       }
     },
+    "Words": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词"
+          }
+        }
+      }
+    },
+    "Worked out, not told": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推測で、伝えられたものではない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推断得出，并非被告知"
+          }
+        }
+      }
+    },
     "Working on it…": {
       "localizations": {
         "ja": {
@@ -7088,6 +8448,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在处理…"
+          }
+        }
+      }
+    },
+    "Written %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写于 %@"
           }
         }
       }
@@ -7188,6 +8564,22 @@
         }
       }
     },
+    "Your agent is shown it as an example of what not to keep: “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントには覚えるべきでない例として示されます：「%@」"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手会把它当作不该记住的例子：“%@”"
+          }
+        }
+      }
+    },
     "Your agent is working": {
       "localizations": {
         "ja": {
@@ -7284,6 +8676,22 @@
         }
       }
     },
+    "a dream": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドリーム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次梦境"
+          }
+        }
+      }
+    },
     "catching up…": {
       "localizations": {
         "ja": {
@@ -7316,6 +8724,134 @@
         }
       }
     },
+    "filing a conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話の整理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理对话"
+          }
+        }
+      }
+    },
+    "from a chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自聊天"
+          }
+        }
+      }
+    },
+    "from a commit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コミットから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自提交"
+          }
+        }
+      }
+    },
+    "from a contact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自联系人"
+          }
+        }
+      }
+    },
+    "from a conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自对话"
+          }
+        }
+      }
+    },
+    "from a document": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドキュメントから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自文档"
+          }
+        }
+      }
+    },
+    "from a dream": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドリームから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自梦境"
+          }
+        }
+      }
+    },
+    "from a repository": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自代码库"
+          }
+        }
+      }
+    },
     "from before the newest message": {
       "localizations": {
         "ja": {
@@ -7328,6 +8864,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "写于最新邮件之前"
+          }
+        }
+      }
+    },
+    "from mail": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自邮件"
+          }
+        }
+      }
+    },
+    "from memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記憶から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自记忆"
+          }
+        }
+      }
+    },
+    "from you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你"
           }
         }
       }
@@ -7348,6 +8932,38 @@
         }
       }
     },
+    "reading a source": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソースの読み込み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取来源"
+          }
+        }
+      }
+    },
+    "the agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手"
+          }
+        }
+      }
+    },
     "waiting for you": {
       "localizations": {
         "ja": {
@@ -7360,6 +8976,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "等你回应"
+          }
+        }
+      }
+    },
+    "was: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更前：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原为：%@"
           }
         }
       }
@@ -7392,6 +9024,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在撰写…"
+          }
+        }
+      }
+    },
+    "you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなた"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你"
+          }
+        }
+      }
+    },
+    "“%@” %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」%2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” %2$@"
           }
         }
       }
