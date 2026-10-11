@@ -43,6 +43,7 @@ struct UpkeepTag: View {
         Group {
             if let symbolName = tone.symbolName {
                 Label(text, systemImage: symbolName)
+                    .labelStyle(.tag)
             } else {
                 Text(text)
             }
@@ -122,6 +123,28 @@ enum UpkeepWords {
         case .themesMade: return String(localized: "\(outcomeCount) themes made")
         case .themesUpdated: return String(localized: "\(outcomeCount) themes updated")
         case .reflectionsWritten: return String(localized: "\(outcomeCount) reflections written")
+        }
+    }
+
+    /// When a schedule comes round, in a person's words, "Weekdays at 7:30
+    /// AM", with the time and the days' names as the locale writes them; nil
+    /// for a line of any other kind, which is shown as it is written.
+    static func scheduleTimingText(_ cron: String) -> String? {
+        guard let timing = ScheduleTiming(cron: cron) else { return nil }
+        let timeText = timing.timeText()
+        switch timing.dayPattern {
+        case .everyDay:
+            return String(localized: "Every day at \(timeText)")
+        case .weekdays:
+            return String(localized: "Weekdays at \(timeText)")
+        case .weekends:
+            return String(localized: "Weekends at \(timeText)")
+        case .oneDay(let dayNumber):
+            let dayName = ScheduleWeekday.name(dayNumber)
+            return String(localized: "\(dayName)s at \(timeText)", comment: "A weekly schedule on one day, as \"Fridays at 5:00 PM\": the day's name, then the time.")
+        case .someDays(let dayNumbers):
+            let dayNames = dayNumbers.map { ScheduleWeekday.shortName($0) }.formatted(.list(type: .and))
+            return String(localized: "Every \(dayNames) at \(timeText)", comment: "A weekly schedule on a few days, as \"Every Mon, Wed, and Fri at 9:00 AM\".")
         }
     }
 
@@ -1591,9 +1614,14 @@ struct DreamsView: View {
                     }
                     Text(verbatim: progressText(progress)).font(.footnote)
                     if progress.spent > 0 && progress.dreams > 0 {
-                        Text("Measured over the last \(progress.dreams) dreams, which cost \(UpkeepWords.money(progress.spent, currency: progress.currency)).")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        let spentText = UpkeepWords.money(progress.spent, currency: progress.currency)
+                        Text(
+                            progress.dreams == 1
+                                ? String(localized: "Measured over the last dream, which cost \(spentText).")
+                                : String(localized: "Measured over the last \(progress.dreams) dreams, which cost \(spentText).")
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
                     Text(
                         progress.waiting > 0
@@ -1761,10 +1789,14 @@ struct DreamsView: View {
     }
 }
 
-/// AgentDreamRow is one dream: when it started, how long it took, what it
-/// did, what it cost and what was still waiting.
+/// AgentDreamRow is one dream: when it started and how long it took, then
+/// what matters most, what it read, filed and cost; then, smaller, the rest
+/// of what it did and what was still waiting.
 struct AgentDreamRow: View {
     let dream: AgentDream
+
+    /// What a dream did that its row leads with.
+    private static let headlineKinds: Set<AgentDream.OutcomeKind> = [.read, .filed]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -1777,28 +1809,31 @@ struct AgentDreamRow: View {
                     UpkeepTag(text: String(localized: "Still working."), tone: .good)
                 }
             }
-            if !didText.isEmpty {
-                Text(verbatim: didText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+            if !headlineText.isEmpty {
+                Text(verbatim: headlineText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             }
             if let lastError = dream.lastError, !lastError.isEmpty {
                 Text(verbatim: lastError).font(.footnote).foregroundStyle(.red)
             }
-            if !amountsText.isEmpty {
-                Text(verbatim: amountsText).font(.caption).foregroundStyle(Color(.secondaryLabel))
+            if !moreText.isEmpty {
+                Text(verbatim: moreText).font(.caption).foregroundStyle(Color(.secondaryLabel))
             }
         }
     }
 
-    private var didText: String {
-        let outcomes = dream.outcomes.map(UpkeepWords.dreamOutcome)
-        if !outcomes.isEmpty { return outcomes.joined(separator: " · ") }
-        guard dream.finishedAt != nil else { return "" }
-        return (dream.lastError ?? "").isEmpty ? String(localized: "Nothing needed doing.") : String(localized: "Cut short.")
+    /// Read, filed and cost, or that there was nothing to do.
+    private var headlineText: String {
+        var parts = dream.outcomes.filter { Self.headlineKinds.contains($0.outcomeKind) }.map(UpkeepWords.dreamOutcome)
+        if dream.cost > 0 { parts.append(String(localized: "Cost: \(UpkeepWords.money(dream.cost, currency: dream.currency))")) }
+        if dream.outcomes.isEmpty, dream.finishedAt != nil {
+            parts.insert((dream.lastError ?? "").isEmpty ? String(localized: "Nothing needed doing.") : String(localized: "Cut short."), at: 0)
+        }
+        return parts.joined(separator: " · ")
     }
 
-    private var amountsText: String {
-        var parts: [String] = []
-        if dream.cost > 0 { parts.append(String(localized: "Cost: \(UpkeepWords.money(dream.cost, currency: dream.currency))")) }
+    /// Everything else it counted, and what was still waiting.
+    private var moreText: String {
+        var parts = dream.outcomes.filter { !Self.headlineKinds.contains($0.outcomeKind) }.map(UpkeepWords.dreamOutcome)
         if dream.backlog > 0 { parts.append(String(localized: "Waiting: \(dream.backlog.formatted())")) }
         return parts.joined(separator: " · ")
     }
@@ -1813,7 +1848,7 @@ struct SchedulesView: View {
     let connection: Connection
     @State private var schedules: [AgentSchedule]?
     @State private var briefTime = "07:30"
-    @State private var briefDays = "1-5"
+    @State private var briefDayNumbers: Set<Int> = Set(1...5)
     @State private var editing: ScheduleEditing?
     @State private var removing: AgentSchedule?
     @State private var isBusy = false
@@ -1827,6 +1862,11 @@ struct SchedulesView: View {
     }
 
     private var brief: AgentSchedule? { DailyBrief.schedule(in: schedules ?? []) }
+
+    /// Whether the time or the days differ from what the brief has.
+    private var hasBriefChanged: Bool {
+        briefTime != DailyBrief.time(fromCron: brief?.cron) || briefDayNumbers != Set(DailyBrief.dayNumbers(fromCron: brief?.cron))
+    }
 
     var body: some View {
         List {
@@ -1908,28 +1948,28 @@ struct SchedulesView: View {
             DatePicker(
                 "At", selection: Binding(get: { UpkeepWords.clockDate(briefTime) }, set: { briefTime = UpkeepWords.clockText($0) }),
                 displayedComponents: .hourAndMinute)
-            LabeledContent("On days (1 Monday to 7 Sunday)") {
-                TextField("On days (1 Monday to 7 Sunday)", text: $briefDays, prompt: Text(verbatim: "1-5"))
-                    .keyboardType(.numbersAndPunctuation)
-                    .multilineTextAlignment(.trailing)
-                    .fontDesign(.monospaced)
-            }
+            WeekdayToggles(dayNumbers: $briefDayNumbers)
             if brief?.enabled == true {
-                Button("Save") { Task { await saveBrief(isEnabled: true) } }
+                if hasBriefChanged {
+                    Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
+                        .disabled(briefDayNumbers.isEmpty)
+                }
                 Button("Send one now", systemImage: "paperplane") {
                     Task { await act(saying: String(localized: "Sending one now; it will arrive in a moment.")) { try await connection.runDailyBrief() } }
                 }
                 Button("Stop", role: .destructive) { Task { await saveBrief(isEnabled: false) } }
             } else {
                 Button("Send me a brief", systemImage: "sun.max") { Task { await saveBrief(isEnabled: true) } }
+                    .disabled(briefDayNumbers.isEmpty)
             }
         } header: {
             Text("A brief each morning")
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("What the day holds and what is waiting for you, sent to you as mail. It is an ordinary schedule called \"Daily brief\"; change what it asks for in Schedules below.")
-                Text(brief == nil ? LocalizedStringKey("Nothing is scheduled yet.") : "It is in Schedules below, as \"Daily brief\".")
-            }
+            Text(
+                brief == nil
+                    ? LocalizedStringKey("What the day holds and what is waiting for you, sent to you as mail. Turning it on adds an ordinary schedule called “Daily brief” below, where you can change what it asks for.")
+                    : "What the day holds and what is waiting for you, sent to you as mail. It is the schedule called “Daily brief” below, where you can change what it asks for."
+            )
         }
     }
 
@@ -1939,7 +1979,7 @@ struct SchedulesView: View {
             schedules = read
             let brief = DailyBrief.schedule(in: read)
             briefTime = DailyBrief.time(fromCron: brief?.cron)
-            briefDays = DailyBrief.days(fromCron: brief?.cron)
+            briefDayNumbers = Set(DailyBrief.dayNumbers(fromCron: brief?.cron))
         } catch {
             problemText = error.localizedDescription
             if schedules == nil { schedules = [] }
@@ -1947,7 +1987,7 @@ struct SchedulesView: View {
     }
 
     private func saveBrief(isEnabled: Bool) async {
-        let days = DailyBrief.dayNumbers(briefDays)
+        let days = briefDayNumbers.sorted()
         await act(saying: isEnabled ? String(localized: "The brief is on.") : String(localized: "The brief is off. The schedule is still there.")) {
             try await connection.setDailyBrief(isEnabled: isEnabled, at: briefTime, days: days)
         }
@@ -1966,8 +2006,9 @@ struct SchedulesView: View {
     }
 }
 
-/// AgentScheduleRow is a schedule: its name and cron line, whether it is
-/// off, what it asks, where the answer goes and when it runs next.
+/// AgentScheduleRow is a schedule: its name, whether it is off, when it
+/// comes round in a person's words, what it asks, where the answer goes and
+/// when it runs next.
 struct AgentScheduleRow: View {
     let schedule: AgentSchedule
 
@@ -1975,8 +2016,12 @@ struct AgentScheduleRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Text(verbatim: schedule.name).foregroundStyle(schedule.enabled ? Color(.label) : Color(.secondaryLabel))
-                Text(verbatim: schedule.cron).font(.caption.monospaced()).foregroundStyle(Color(.secondaryLabel))
                 if !schedule.enabled { UpkeepTag(text: String(localized: "off"), tone: .warning) }
+            }
+            if let timingText = UpkeepWords.scheduleTimingText(schedule.cron) {
+                Text(verbatim: timingText).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
+            } else {
+                Text(verbatim: schedule.cron).font(.subheadline.monospaced()).foregroundStyle(Color(.secondaryLabel))
             }
             Text(verbatim: schedule.prompt).font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(3)
             Text(verbatim: whereAndWhen).font(.caption).foregroundStyle(Color(.secondaryLabel))
@@ -1987,6 +2032,53 @@ struct AgentScheduleRow: View {
         let deliverText = schedule.isDeliveredByMail ? String(localized: "By mail") : String(localized: "Into the conversation")
         guard let next = schedule.nextRunAt, ServerTime.date(next) != nil else { return deliverText }
         return deliverText + " · " + String(localized: "next \(UpkeepWords.when(next))")
+    }
+}
+
+/// WeekdayToggles is the days of the week something comes on, a toggle
+/// each, in the order the person's calendar starts its week and named as
+/// their locale names them. Short names in one row when they fit; at large
+/// text sizes, a switch a day with the whole name.
+struct WeekdayToggles: View {
+    @Binding var dayNumbers: Set<Int>
+
+    private var orderedDayNumbers: [Int] { ScheduleWeekday.weekOrder(firstWeekday: Calendar.current.firstWeekday) }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                ForEach(orderedDayNumbers, id: \.self) { dayNumber in
+                    Toggle(isOn: isChosen(dayNumber)) {
+                        Text(verbatim: ScheduleWeekday.shortName(dayNumber))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .accessibilityLabel(Text(verbatim: ScheduleWeekday.name(dayNumber)))
+                }
+            }
+            .toggleStyle(.button)
+            // Its own button each, so a tap in the row turns one day, not
+            // every day of the row.
+            .buttonStyle(.bordered)
+            VStack(spacing: 12) {
+                ForEach(orderedDayNumbers, id: \.self) { dayNumber in
+                    Toggle(isOn: isChosen(dayNumber)) {
+                        Text(verbatim: ScheduleWeekday.name(dayNumber))
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("On days"))
+        .sensoryFeedback(.selection, trigger: dayNumbers)
+    }
+
+    private func isChosen(_ dayNumber: Int) -> Binding<Bool> {
+        Binding(
+            get: { dayNumbers.contains(dayNumber) },
+            set: { isOn in
+                if isOn { dayNumbers.insert(dayNumber) } else { dayNumbers.remove(dayNumber) }
+            })
     }
 }
 
@@ -2026,6 +2118,9 @@ struct AgentScheduleEditor: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .fontDesign(.monospaced)
+                    if let timingText = UpkeepWords.scheduleTimingText(cron) {
+                        Text(verbatim: timingText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                    }
                     Picker("Where the answer goes", selection: $deliver) {
                         Text("Into the conversation").tag("drawer")
                         Text("By mail").tag("mail")

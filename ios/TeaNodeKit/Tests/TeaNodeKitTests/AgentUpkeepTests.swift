@@ -228,15 +228,67 @@ final class AgentUpkeepTests: XCTestCase {
     func testReadsAndWritesTheBriefsTimes() async throws {
         XCTAssertEqual(DailyBrief.time(fromCron: "5 8 * * 1-5"), "08:05")
         XCTAssertEqual(DailyBrief.time(fromCron: nil), "07:30")
-        XCTAssertEqual(DailyBrief.days(fromCron: "30 7 * * 6,0"), "6,0")
-        XCTAssertEqual(DailyBrief.dayNumbers("1-5"), [1, 2, 3, 4, 5])
-        XCTAssertEqual(DailyBrief.dayNumbers("6, 0, 9, x"), [6, 7])
+        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * 6,0"), [6, 7])
+        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * 1-5"), [1, 2, 3, 4, 5])
+        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: nil), [1, 2, 3, 4, 5])
+        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * */2"), [1, 2, 3, 4, 5])
         let schedules = [AgentSchedule(id: "schedule-1", name: "Round-up", cron: "0 17 * * 5"), AgentSchedule(id: "schedule-2", name: "Daily brief", cron: "30 7 * * 1-5")]
         XCTAssertEqual(DailyBrief.schedule(in: schedules)?.id, "schedule-2")
 
         let (connection, fake) = connection(answering: #"{"data":{"SetAgentBrief":{"id":"schedule-2"}}}"#)
         try await connection.setDailyBrief(isEnabled: true, at: "07:30", days: [1, 2])
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["enabled": .bool(true), "at": .string("07:30"), "days": .array([.number(1), .number(2)])])
+    }
+
+    func testReadsTheDaysOfACronLineForTheDayToggles() {
+        XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "*"), [1, 2, 3, 4, 5, 6, 7])
+        XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "1-5"), [1, 2, 3, 4, 5])
+        XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "5,1,3"), [1, 3, 5])
+        // Cron has Sunday as both 0 and 7; the server counts it as 7.
+        XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "0"), [7])
+        XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "0-2"), [1, 2, 7])
+        XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "6,7,0"), [6, 7])
+        XCTAssertNil(ScheduleWeekday.dayNumbers(fromCronField: "*/2"))
+        XCTAssertNil(ScheduleWeekday.dayNumbers(fromCronField: "5-1"))
+        XCTAssertNil(ScheduleWeekday.dayNumbers(fromCronField: "8"))
+        XCTAssertNil(ScheduleWeekday.dayNumbers(fromCronField: "1,"))
+        XCTAssertNil(ScheduleWeekday.dayNumbers(fromCronField: "MON"))
+    }
+
+    func testOrdersAndNamesTheDaysAsTheLocaleDoes() {
+        XCTAssertEqual(ScheduleWeekday.weekOrder(firstWeekday: 2), [1, 2, 3, 4, 5, 6, 7])
+        XCTAssertEqual(ScheduleWeekday.weekOrder(firstWeekday: 1), [7, 1, 2, 3, 4, 5, 6])
+        for dayNumber in 1...7 {
+            XCTAssertEqual(ScheduleWeekday.dayNumber(fromCalendarWeekday: ScheduleWeekday.calendarWeekday(fromDayNumber: dayNumber)), dayNumber)
+        }
+        let english = Locale(identifier: "en_US")
+        XCTAssertEqual(ScheduleWeekday.name(1, locale: english), "Monday")
+        XCTAssertEqual(ScheduleWeekday.name(7, locale: english), "Sunday")
+        XCTAssertEqual(ScheduleWeekday.shortName(5, locale: english), "Fri")
+        XCTAssertNotEqual(ScheduleWeekday.name(5, locale: Locale(identifier: "ja_JP")), "Friday")
+    }
+
+    func testDescribesAPlainCronLineAndLeavesTheRest() throws {
+        let weekdays = try XCTUnwrap(ScheduleTiming(cron: "30 7 * * 1-5"))
+        XCTAssertEqual(weekdays.dayPattern, .weekdays)
+        XCTAssertEqual(weekdays.hour, 7)
+        XCTAssertEqual(weekdays.minute, 30)
+        XCTAssertEqual(ScheduleTiming(cron: "0 17 * * 5")?.dayPattern, .oneDay(5))
+        XCTAssertEqual(ScheduleTiming(cron: "0 9 * * *")?.dayPattern, .everyDay)
+        XCTAssertEqual(ScheduleTiming(cron: "0 9 * * 0")?.dayPattern, .oneDay(7))
+        XCTAssertEqual(ScheduleTiming(cron: "0 9 * * 1,2,3,4,5,6,0")?.dayPattern, .everyDay)
+        XCTAssertEqual(ScheduleTiming(cron: "0 10 * * 6,0")?.dayPattern, .weekends)
+        XCTAssertEqual(ScheduleTiming(cron: "0 9 * * 1,3,5")?.dayPattern, .someDays([1, 3, 5]))
+        for unplainCron in ["*/15 * * * *", "0 9 1 * *", "0 9 * 6 1", "0 9 * * 1-5/2", "@in 20m", "@at 2030-01-02 09:00", "60 9 * * *", "0 24 * * *", "0 +9 * * *", "0 9 * *"] {
+            XCTAssertNil(ScheduleTiming(cron: unplainCron), unplainCron)
+        }
+
+        // A time the locale's way. Some locales put a narrow space before
+        // AM, so spaces are compared as spaces.
+        func spaced(_ text: String) -> String { text.replacingOccurrences(of: "\u{202F}", with: " ") }
+        XCTAssertEqual(spaced(weekdays.timeText(locale: Locale(identifier: "en_US"))), "7:30 AM")
+        XCTAssertEqual(spaced(ScheduleTiming(cron: "0 17 * * 5")?.timeText(locale: Locale(identifier: "en_US")) ?? ""), "5:00 PM")
+        XCTAssertEqual(ScheduleTiming(cron: "0 17 * * 5")?.timeText(locale: Locale(identifier: "en_GB")), "17:00")
     }
 
     func testTurnsAScheduleOffWithoutTouchingTheRest() async throws {

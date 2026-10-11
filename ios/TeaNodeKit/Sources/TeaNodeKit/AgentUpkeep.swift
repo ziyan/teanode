@@ -819,28 +819,131 @@ public enum DailyBrief {
         return String(repeating: "0", count: max(0, 2 - hour.count)) + hour + ":" + String(repeating: "0", count: max(0, 2 - minute.count)) + minute
     }
 
-    /// The days a cron line says, as typed: "1-5".
-    public static func days(fromCron cron: String?) -> String {
+    /// The days a cron line says, as the numbers the server takes, Monday 1
+    /// to Sunday 7; weekdays when there is no line or its days cannot be
+    /// read.
+    public static func dayNumbers(fromCron cron: String?) -> [Int] {
         let fields = (cron ?? defaultCron).split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        return fields.count > 4 ? fields[4] : "1-5"
+        guard fields.count == 5, let dayNumbers = ScheduleWeekday.dayNumbers(fromCronField: fields[4]), !dayNumbers.isEmpty else {
+            return Array(1...5)
+        }
+        return dayNumbers
+    }
+}
+
+/// ScheduleWeekday is a day of the week as the server numbers it, Monday 1
+/// to Sunday 7, and how a locale names it.
+public enum ScheduleWeekday {
+    /// Every day of the week, Monday first.
+    public static let allDayNumbers = Array(1...7)
+
+    /// The days a cron line's weekday field says, Monday 1 to Sunday 7 in
+    /// order: "*", a number, a range or a list of them, with 0 and 7 both
+    /// Sunday as cron has them. Nil for anything else, such as a step.
+    public static func dayNumbers(fromCronField cronField: String) -> [Int]? {
+        if cronField == "*" { return allDayNumbers }
+        var dayNumbers = Set<Int>()
+        for piece in cronField.split(separator: ",", omittingEmptySubsequences: false) {
+            let ends = piece.split(separator: "-", omittingEmptySubsequences: false)
+            guard (1...2).contains(ends.count), let low = Int(ends[0]), let high = Int(ends[ends.count - 1]), (0...7).contains(low),
+                (0...7).contains(high), low <= high
+            else { return nil }
+            for cronDay in low...high {
+                dayNumbers.insert(cronDay == 0 ? 7 : cronDay)
+            }
+        }
+        return dayNumbers.sorted()
     }
 
-    /// The days typed, as the numbers the server takes, Monday 1 to Sunday
-    /// 7: ranges opened, a 0 read as Sunday, anything else dropped.
-    public static func dayNumbers(_ text: String) -> [Int] {
-        text.split(separator: ",").flatMap { part -> [Int] in
-            let range = part.split(separator: "-", omittingEmptySubsequences: false)
-            if range.count == 2 {
-                guard let from = Int(range[0].trimmingCharacters(in: .whitespaces)), let until = Int(range[1].trimmingCharacters(in: .whitespaces)),
-                    from <= until
-                else { return [] }
-                return Array(from...until)
-            }
-            guard let day = Int(part.trimmingCharacters(in: .whitespaces)) else { return [] }
-            return [day == 0 ? 7 : day]
-        }
-        .filter { (1...7).contains($0) }
+    /// The days of a week in the order a calendar starts it, for a
+    /// calendar's firstWeekday (1 Sunday, 2 Monday).
+    public static func weekOrder(firstWeekday: Int) -> [Int] {
+        let firstDayNumber = dayNumber(fromCalendarWeekday: firstWeekday)
+        return (0..<7).map { offset in (firstDayNumber - 1 + offset) % 7 + 1 }
     }
+
+    /// The weekday a Calendar numbers this day as, Sunday 1 to Saturday 7.
+    public static func calendarWeekday(fromDayNumber dayNumber: Int) -> Int {
+        dayNumber % 7 + 1
+    }
+
+    /// The day a Calendar weekday is, Monday 1 to Sunday 7.
+    public static func dayNumber(fromCalendarWeekday calendarWeekday: Int) -> Int {
+        (calendarWeekday + 5) % 7 + 1
+    }
+
+    /// The day's name in the locale, as it stands on its own: "Friday".
+    public static func name(_ dayNumber: Int, locale: Locale = .current) -> String {
+        symbol(dayNumber, in: calendar(locale).standaloneWeekdaySymbols)
+    }
+
+    /// The day's short name in the locale: "Fri".
+    public static func shortName(_ dayNumber: Int, locale: Locale = .current) -> String {
+        symbol(dayNumber, in: calendar(locale).shortStandaloneWeekdaySymbols)
+    }
+
+    private static func symbol(_ dayNumber: Int, in symbols: [String]) -> String {
+        let symbolIndex = calendarWeekday(fromDayNumber: dayNumber) - 1
+        return symbols.indices.contains(symbolIndex) ? symbols[symbolIndex] : String(dayNumber)
+    }
+
+    private static func calendar(_ locale: Locale) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        return calendar
+    }
+}
+
+/// ScheduleTiming is when a cron line of the plain kind comes round: a
+/// minute and an hour on some days of the week, every week. Any other line,
+/// with steps, days of the month or months, has no timing and is shown as
+/// it is written.
+public struct ScheduleTiming: Hashable, Sendable {
+    public let hour: Int
+    public let minute: Int
+    /// The days it comes on, Monday 1 to Sunday 7, in order.
+    public let dayNumbers: [Int]
+
+    /// DayPattern is how the days read to a person.
+    public enum DayPattern: Hashable, Sendable {
+        case everyDay, weekdays, weekends
+        case oneDay(Int)
+        case someDays([Int])
+    }
+
+    /// Reads "minute hour * * days", or nil for any other line.
+    public init?(cron: String) {
+        let fields = cron.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard fields.count == 5, fields[2] == "*", fields[3] == "*", fields[0].allSatisfy(\.isASCIIDigit), fields[1].allSatisfy(\.isASCIIDigit),
+            let minute = Int(fields[0]), let hour = Int(fields[1]), (0..<60).contains(minute), (0..<24).contains(hour),
+            let dayNumbers = ScheduleWeekday.dayNumbers(fromCronField: fields[4])
+        else { return nil }
+        self.hour = hour
+        self.minute = minute
+        self.dayNumbers = dayNumbers
+    }
+
+    public var dayPattern: DayPattern {
+        switch dayNumbers {
+        case ScheduleWeekday.allDayNumbers: .everyDay
+        case Array(1...5): .weekdays
+        case [6, 7]: .weekends
+        case let oneDayNumbers where oneDayNumbers.count == 1: .oneDay(oneDayNumbers[0])
+        default: .someDays(dayNumbers)
+        }
+    }
+
+    /// The time of day as the locale writes it: "7:30 AM", "07:30".
+    public func timeText(locale: Locale = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
+        let date = calendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute)) ?? Date(timeIntervalSinceReferenceDate: 0)
+        return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone))
+    }
+}
+
+extension Character {
+    fileprivate var isASCIIDigit: Bool { isASCII && isNumber }
 }
 
 // MARK: - Alerts

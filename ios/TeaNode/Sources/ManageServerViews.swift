@@ -240,11 +240,53 @@ struct IntegrationsView: View {
     }
 }
 
-/// ServerSettingsRows is the rows of the server's tabs, a group each, every
-/// card of a tab a row of its group.
+/// ServerSettingsRows is the rows of the server's tabs, in a few groups of
+/// rows that belong together rather than a group per tab, so a header
+/// never only repeats the one row under it.
 private struct ServerSettingsRows: View {
     let model: ServerSettingsModel
     let tabs: [ServerSettingsTab]
+
+    /// SettingsRow is one card of the server's settings, a row of the list.
+    enum SettingsRow: CaseIterable {
+        case identity, listeners, certificates, route53, resolver
+        case limits, relay, proxy
+        case scanner, antispam, geoIP
+        case messageStorage, objectStore
+        case sessions, passkeys, identityProviders
+
+        /// The tab of the dashboard's Server page the card is on.
+        var tab: ServerSettingsTab {
+            switch self {
+            case .identity: .identity
+            case .listeners: .listeners
+            case .certificates, .route53: .certificates
+            case .resolver: .resolver
+            case .limits: .mail
+            case .relay, .proxy: .sending
+            case .scanner: .scanning
+            case .antispam: .spam
+            case .geoIP, .messageStorage, .objectStore: .storage
+            case .sessions, .passkeys: .sessions
+            case .identityProviders: .sso
+            }
+        }
+    }
+
+    /// SettingsGroup is the rows under one header.
+    struct SettingsGroup: Identifiable {
+        let title: LocalizedStringKey
+        let rows: [SettingsRow]
+        var id: SettingsRow { rows[0] }
+    }
+
+    static let groups = [
+        SettingsGroup(title: "Network", rows: [.identity, .listeners, .certificates, .route53, .resolver]),
+        SettingsGroup(title: "Mail", rows: [.limits, .relay, .proxy]),
+        SettingsGroup(title: "Filtering", rows: [.scanner, .antispam, .geoIP]),
+        SettingsGroup(title: "Storage", rows: [.messageStorage, .objectStore]),
+        SettingsGroup(title: "Sign-in", rows: [.sessions, .passkeys, .identityProviders]),
+    ]
 
     var body: some View {
         if tabs.contains(.about) || tabs.contains(.setup) {
@@ -267,64 +309,54 @@ private struct ServerSettingsRows: View {
                 Text("Setting this server up, what it talks to, and which version it is running.")
             }
         }
-        ForEach(tabs.filter { $0 != .about && $0 != .setup }) { tab in
-            Section {
-                rows(tab)
-            } header: {
-                Text(title(tab))
+        ForEach(Self.groups) { group in
+            let shownRows = group.rows.filter { tabs.contains($0.tab) }
+            if !shownRows.isEmpty {
+                Section {
+                    ForEach(shownRows, id: \.self) { settingsRow in
+                        row(settingsRow)
+                    }
+                } header: {
+                    Text(group.title)
+                }
             }
         }
     }
 
-    private func title(_ tab: ServerSettingsTab) -> LocalizedStringKey {
-        switch tab {
-        case .about: "About"
-        case .setup: "Setup"
-        case .identity: "Identity"
-        case .mail: "Mail"
-        case .sending: "Sending"
-        case .listeners: "Listeners"
-        case .certificates: "Certificates"
-        case .storage: "Storage"
-        case .resolver: "Resolver"
-        case .scanning: "Scanning"
-        case .spam: "Spam"
-        case .sessions: "Sessions"
-        case .sso: "Single sign-on"
-        }
-    }
-
     @ViewBuilder
-    private func rows(_ tab: ServerSettingsTab) -> some View {
-        switch tab {
-        case .about, .setup:
-            EmptyView()
+    private func row(_ settingsRow: SettingsRow) -> some View {
+        switch settingsRow {
         case .identity:
             NavigationLink { IdentityFormView(model: model) } label: { Label("This server", systemImage: "server.rack") }
-        case .mail:
-            NavigationLink { SMTPLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.33percent") }
-        case .sending:
-            NavigationLink { RelayFormView(model: model) } label: { Label("Outgoing relay", systemImage: "paperplane") }
-            NavigationLink { ProxyFormView(model: model) } label: { Label("Outgoing proxy", systemImage: "point.3.connected.trianglepath.dotted") }
         case .listeners:
             NavigationLink { ListenFormView(model: model) } label: { Label("Listeners", systemImage: "antenna.radiowaves.left.and.right") }
         case .certificates:
             NavigationLink { CertificatesFormView(model: model) } label: { Label("Certificates", systemImage: "lock.shield") }
+        case .route53:
             NavigationLink { Route53FormView(model: model) } label: { Label("Route53", systemImage: "globe") }
-        case .storage:
-            NavigationLink { MessageStorageFormView(model: model) } label: { Label("On this machine", systemImage: "internaldrive") }
-            NavigationLink { ObjectStoreFormView(model: model) } label: { Label("Object store", systemImage: "externaldrive.connected.to.line.below") }
-            NavigationLink { GeoIPFormView(model: model) } label: { Label("Where senders connect from", systemImage: "mappin.and.ellipse") }
         case .resolver:
             NavigationLink { ResolverFormView(model: model) } label: { Label("Resolver", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
-        case .scanning:
+        case .limits:
+            NavigationLink { SMTPLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.33percent") }
+        case .relay:
+            NavigationLink { RelayFormView(model: model) } label: { Label("Outgoing relay", systemImage: "paperplane") }
+        case .proxy:
+            NavigationLink { ProxyFormView(model: model) } label: { Label("Outgoing proxy", systemImage: "point.3.connected.trianglepath.dotted") }
+        case .scanner:
             NavigationLink { ScannerFormView(model: model) } label: { Label("Virus scanning", systemImage: "cross.case") }
-        case .spam:
+        case .antispam:
             NavigationLink { AntispamFormView(model: model) } label: { Label("Spam scoring", systemImage: "xmark.bin") }
+        case .geoIP:
+            NavigationLink { GeoIPFormView(model: model) } label: { Label("Where senders connect from", systemImage: "mappin.and.ellipse") }
+        case .messageStorage:
+            NavigationLink { MessageStorageFormView(model: model) } label: { Label("On this machine", systemImage: "internaldrive") }
+        case .objectStore:
+            NavigationLink { ObjectStoreFormView(model: model) } label: { Label("Object store", systemImage: "externaldrive.connected.to.line.below") }
         case .sessions:
             NavigationLink { SessionFormView(model: model) } label: { Label("Sessions", systemImage: "clock") }
+        case .passkeys:
             NavigationLink { PasskeyFormView(model: model) } label: { Label("Passkeys", systemImage: "person.badge.key") }
-        case .sso:
+        case .identityProviders:
             NavigationLink { SSOFormView(model: model) } label: { Label("Identity providers", systemImage: "person.crop.circle.badge.checkmark") }
         }
     }
