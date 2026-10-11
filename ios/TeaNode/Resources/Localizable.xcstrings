@@ -1697,6 +1697,22 @@
         }
       }
     },
+    "Close the list": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リストを閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭列表"
+          }
+        }
+      }
+    },
     "Close this message?": {
       "localizations": {
         "ja": {
@@ -3709,6 +3725,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "邮箱"
+          }
+        }
+      }
+    },
+    "Main chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主对话"
           }
         }
       }

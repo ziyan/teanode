@@ -1,11 +1,13 @@
 import SwiftUI
 import TeaNodeKit
 
-/// MailScreen is the dashboard's mailbox on a phone: the mailboxes list
-/// behind, the Inbox in front, a conversation a tap away.
+/// MailScreen is the dashboard's mailbox on a phone: the folder being read,
+/// the folders in a side panel, a conversation a tap away.
 struct MailScreen: View {
     @State private var mail: MailModel
     @State private var path = NavigationPath()
+    @State private var place: MailPlace?
+    @State private var isChoosing = false
     @State private var composing: ComposeStart?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -14,25 +16,54 @@ struct MailScreen: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            MailboxesList(mail: mail, composing: $composing)
-                .navigationDestination(for: MailPlace.self) { place in
-                    if case .subscriptions = place {
+        SidePanel(isOpen: $isChoosing) {
+            NavigationStack {
+                MailboxesList(mail: mail, current: place, composing: $composing) { chosen in
+                    place = chosen
+                    path = NavigationPath()
+                    isChoosing = false
+                }
+            }
+        } content: {
+            NavigationStack(path: $path) {
+                Group {
+                    switch place {
+                    case .subscriptions:
                         SubscriptionsList(mail: mail)
-                    } else {
+                    case .some(let place):
                         ThreadList(mail: mail, place: place, composing: $composing)
+                            .id(place)
+                    case nil:
+                        if mail.isLoaded {
+                            ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
+                        } else {
+                            ProgressView()
+                        }
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            isChoosing = true
+                        } label: {
+                            Label("Mailboxes", systemImage: "line.3.horizontal")
+                        }
                     }
                 }
                 .navigationDestination(for: OpenedThread.self) { opened in
                     MailThreadScreen(mail: mail, opened: opened, composing: $composing)
                 }
+            }
         }
         .task {
             await mail.load()
-            // Opens on the Inbox, with the mailboxes a step back, as Mail does.
-            if path.isEmpty, let inbox = mail.folder(kind: "inbox") {
-                path.append(MailPlace.folder(inbox.id))
+            // Opens on the Inbox, with the folders a swipe away.
+            if place == nil, let inbox = mail.folder(kind: "inbox") {
+                place = .folder(inbox.id)
             }
+        }
+        .onChange(of: mail.currentMailboxId) {
+            if let inbox = mail.folder(kind: "inbox") { place = .folder(inbox.id) }
         }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
@@ -60,20 +91,22 @@ struct OpenedThread: Hashable {
 /// Priority, the pinned folders, the rest of the tree and the lists.
 struct MailboxesList: View {
     let mail: MailModel
+    let current: MailPlace?
     @Binding var composing: ComposeStart?
+    let onChoose: (MailPlace) -> Void
 
     var body: some View {
         List {
             if let entry = mail.current, let inbox = mail.folder(kind: "inbox") {
                 Section {
-                    FolderLink(place: .folder(inbox.id), name: String(localized: "Inbox"), systemImage: "tray", count: inbox.unread)
+                    FolderLink(place: .folder(inbox.id), name: String(localized: "Inbox"), systemImage: "tray", count: inbox.unread, current: current, onChoose: onChoose)
                     ForEach(childRows(of: inbox.id), id: \.folder.id) { row in
-                        FolderLink(place: .folder(row.folder.id), name: row.folder.name, systemImage: "folder", count: row.folder.unread)
+                        FolderLink(place: .folder(row.folder.id), name: row.folder.name, systemImage: "folder", count: row.folder.unread, current: current, onChoose: onChoose)
                             .padding(.leading, CGFloat(min(row.depth, 3)) * 16)
                     }
-                    FolderLink(place: .starred, name: String(localized: "Starred"), systemImage: "star", count: entry.starredUnread)
+                    FolderLink(place: .starred, name: String(localized: "Starred"), systemImage: "star", count: entry.starredUnread, current: current, onChoose: onChoose)
                     if mail.mailbox?.agent?.isSorting == true {
-                        FolderLink(place: .priority, name: String(localized: "Priority"), systemImage: "exclamationmark.circle", count: entry.priorityUnread)
+                        FolderLink(place: .priority, name: String(localized: "Priority"), systemImage: "exclamationmark.circle", count: entry.priorityUnread, current: current, onChoose: onChoose)
                     }
                 }
                 let rows = mail.railRows
@@ -90,7 +123,7 @@ struct MailboxesList: View {
                     }
                 }
                 Section {
-                    FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0)
+                    FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0, current: current, onChoose: onChoose)
                 }
             }
         }
@@ -131,7 +164,7 @@ struct MailboxesList: View {
     private func folderLink(_ row: (folder: MailFolder, depth: Int)) -> some View {
         FolderLink(
             place: .folder(row.folder.id), name: MailNames.folder(row.folder), systemImage: MailNames.symbol(row.folder),
-            count: row.folder.kind == "archive" ? 0 : row.folder.unread
+            count: row.folder.kind == "archive" ? 0 : row.folder.unread, current: current, onChoose: onChoose
         )
         .padding(.leading, CGFloat(min(row.depth, 3)) * 16)
     }
@@ -165,9 +198,13 @@ struct FolderLink: View {
     let name: String
     let systemImage: String
     let count: Int64
+    let current: MailPlace?
+    let onChoose: (MailPlace) -> Void
 
     var body: some View {
-        NavigationLink(value: place) {
+        Button {
+            onChoose(place)
+        } label: {
             LabeledContent {
                 if count > 0 {
                     Text(count, format: .number)
@@ -176,7 +213,11 @@ struct FolderLink: View {
             } label: {
                 Label(name, systemImage: systemImage)
             }
+            .contentShape(.rect)
         }
+        .foregroundStyle(.primary)
+        .listRowBackground(place == current ? Color(.tertiarySystemFill) : nil)
+        .accessibilityAddTraits(place == current ? .isSelected : [])
     }
 }
 

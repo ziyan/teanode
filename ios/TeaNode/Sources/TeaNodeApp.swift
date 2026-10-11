@@ -103,23 +103,26 @@ struct AgentTab: View {
     @State private var isChoosing = false
 
     var body: some View {
-        NavigationStack {
-            ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
-                .id(conversation?.id ?? "main")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            isChoosing = true
-                        } label: {
-                            Label("Conversations", systemImage: "list.bullet")
-                        }
-                    }
-                }
-        }
-        .sheet(isPresented: $isChoosing) {
-            ConversationsSheet(connection: connection) { chosen in
+        SidePanel(isOpen: $isChoosing) {
+            ConversationsSheet(connection: connection, isPanel: true, currentId: conversation?.id) { chosen in
                 conversation = chosen
                 isChoosing = false
+            }
+            // Read again each time it opens, for what changed meanwhile.
+            .id(isChoosing)
+        } content: {
+            NavigationStack {
+                ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
+                    .id(conversation?.id ?? "main")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                isChoosing = true
+                            } label: {
+                                Label("Conversations", systemImage: "line.3.horizontal")
+                            }
+                        }
+                    }
             }
         }
         .onChange(of: app.openedConversationId) { _, conversationId in
@@ -148,6 +151,11 @@ struct AgentTab: View {
 /// making one the main conversation.
 struct ConversationsSheet: View {
     let connection: Connection
+    /// Shown in the side panel, under the agent's name, rather than as a
+    /// sheet with a Done button.
+    var isPanel = false
+    /// The conversation on screen, marked in the list.
+    var currentId: String?
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -175,12 +183,15 @@ struct ConversationsSheet: View {
                         Button {
                             onChoose(nil)
                         } label: {
-                            Label(app.agentTitle, systemImage: "star.fill")
+                            Label(String(localized: "Main chat"), systemImage: "bubble.left")
                         }
-                        Button {
-                            Task { await start() }
-                        } label: {
-                            Label("New side chat", systemImage: "plus")
+                        .listRowBackground(currentId == nil ? Color(.tertiarySystemFill) : nil)
+                        if !isPanel {
+                            Button {
+                                Task { await start() }
+                            } label: {
+                                Label("New side chat", systemImage: "plus")
+                            }
                         }
                     }
                     Section("Conversations") {
@@ -227,11 +238,21 @@ struct ConversationsSheet: View {
             }
             .refreshable { await load() }
             .task { await load() }
-            .navigationTitle("Conversations")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(isPanel ? app.agentTitle : String(localized: "Conversations"))
+            .navigationBarTitleDisplayMode(isPanel ? .large : .inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                if isPanel {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            Task { await start() }
+                        } label: {
+                            Label("New side chat", systemImage: "square.and.pencil")
+                        }
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
             }
             .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -274,6 +295,7 @@ struct ConversationsSheet: View {
                 }
             }
         }
+        .listRowBackground(conversation.id == currentId ? Color(.tertiarySystemFill) : nil)
         .swipeActions(edge: .trailing) {
             if !conversation.isMain {
                 Button(role: .destructive) {
