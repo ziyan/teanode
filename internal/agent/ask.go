@@ -795,7 +795,7 @@ func (self *AskRun) emit(event Event) {
 	// The conversation's feed, after the run's own lock is released: the
 	// feed replays runs under a lock of its own, and takes theirs too.
 	self.agent.publish(event, true)
-	self.followLiveActivities(event.Kind)
+	self.followLiveActivities(event.Kind, event.At)
 }
 
 func (self *AskRun) finish() {
@@ -828,7 +828,7 @@ func (self *AskRun) finish() {
 	}
 	self.mutex.Unlock()
 	// A turn that ended without saying so still ends what follows it.
-	self.followLiveActivities(EventDone)
+	self.followLiveActivities(EventDone, time.Now())
 	close(self.done)
 	self.cancel()
 	go self.agent.forgetRun(self.ID)
