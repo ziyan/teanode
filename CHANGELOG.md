@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.1] - 2026-10-11
+
+### Fixed
+
+- Reactions on a message in the agent drawer are drawn as one small capsule at the bubble's corner, without the bright ring the dark theme gave your own. (#392)
+
 ## [0.134.0] - 2026-10-11
 
 ### Added
