@@ -300,6 +300,11 @@ type AskRun struct {
 	hasDepthNote bool
 	depthReason  string
 
+	// lateDepth carries the depth judgement of a turn that starts on the
+	// quick model, made beside its first round; see judgeBesideTurn. The
+	// turn's own goroutine takes it at a round boundary and sets it to nil.
+	lateDepth chan depthJudgement
+
 	// modelName is the model the turn runs on, written provider:model, so
 	// the agent can say which it is when asked rather than guess.
 	modelName string
@@ -1179,6 +1184,9 @@ func (self *AskRun) turn() error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// The depth judgement made beside the first rounds, if it has
+		// come: a dig hands the turn over below, as think_harder does.
+		self.takeLateDepth(recalledThisTurn)
 		// The small model handed the turn to the larger one: the rounds
 		// from here are the larger model's.
 		if self.isThinkingHarder.Load() && !settings.isPastQuickModel {

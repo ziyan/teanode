@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // How hard a turn somebody typed thinks and looks before it answers.
@@ -91,22 +92,107 @@ func (self *AskRun) chooseDepth() {
 		settings.Effort, settings.Research = setting, true
 		return
 	}
+	// A turn that starts on the quick model answers a greeting in about a
+	// second and a half, and the judgement took two to three before it:
+	// most of what the person waited for. The judgement is made beside
+	// the turn's first round instead, and what it finds is taken at the
+	// next round boundary; see takeLateDepth. A turn that does not start
+	// on the quick model is judged first, as it always was.
+	if startingModel(self.agent.settings.Configuration(), settings) != "" {
+		self.judgeBesideTurn()
+		return
+	}
 	judgedFrom := time.Now()
 	judgement := self.judgeDepth()
-	depth, reason := judgement.depth, judgement.reason
-	settings.Effort, settings.Research = deepenedTurn(depth)
-	if depth != depthAnswer {
+	self.logDepth(judgement, judgedFrom)
+	settings.Effort, settings.Research = deepenedTurn(judgement.depth)
+	if judgement.depth != depthAnswer {
 		self.plan = &RetrievalPlan{Searches: judgement.searches, IsBroad: judgement.isBroad}
 	}
-	log.Infof("the agent of %q judged a message worth %s in %s: %s", settings.Owner.Username, depth, time.Since(judgedFrom).Round(time.Millisecond), reason)
-	if depth != depthDig {
+	if judgement.depth != depthDig {
 		return
 	}
 	// Said in the transcript as well as live, so that a reload, or a
 	// person reading the conversation later, can see why this answer took
 	// longer and looked further than the others. Written once the message
 	// it is about is, by the turn; see sayDepth.
-	self.hasDepthNote, self.depthReason = true, reason
+	self.hasDepthNote, self.depthReason = true, judgement.reason
+}
+
+// logDepth says in the log what a judgement found and how long it took.
+func (self *AskRun) logDepth(judgement depthJudgement, judgedFrom time.Time) {
+	log.Infof("the agent of %q judged a message worth %s in %s: %s", self.settings.Owner.Username, judgement.depth, time.Since(judgedFrom).Round(time.Millisecond), judgement.reason)
+}
+
+// judgeBesideTurn judges the message in a goroutine of its own and leaves
+// the result in lateDepth, for the turn to take at a round boundary. The
+// goroutine only hands a result over: it never writes the turn's settings
+// or its retrieval plan, which belong to the turn's own goroutine. The
+// channel holds one result, so a turn that ended first drops it, and the
+// judgement stops with the turn's context. A judgement that fails or times
+// out is logged by judgeDepth and arrives as an answer, which changes
+// nothing.
+func (self *AskRun) judgeBesideTurn() {
+	late := make(chan depthJudgement, 1)
+	self.lateDepth = late
+	self.agent.waitGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer self.agent.waitGroup.Done()
+		judgedFrom := time.Now()
+		judgement := self.judgeDepth()
+		self.logDepth(judgement, judgedFrom)
+		late <- judgement
+	}()
+}
+
+// takeLateDepth takes the judgement made beside the turn if it has come,
+// without waiting for it. The turn calls it at the start of each round,
+// where it reads isThinkingHarder, and hasRecalled says recall has begun.
+//
+// The retrieval plan is only useful before recall runs, so one that
+// arrives after is dropped; recall never waits for the judgement. A dig
+// moves the rest of the turn to the larger model exactly as if the quick
+// model had called think_harder, with the effort and research procedure
+// of a turn judged to dig, and says why in the transcript.
+//
+// A dig that arrives after the quick model handed the turn over itself, at
+// an earlier boundary, is dropped: the larger model has begun its answer
+// with the prompt and the reasoning it was given, and changing both under
+// it in the middle would only discard its cached prompt. One that arrives
+// at the same boundary as the hand-off is applied, since the larger model
+// has not been asked anything yet.
+func (self *AskRun) takeLateDepth(hasRecalled bool) {
+	if self.lateDepth == nil {
+		return
+	}
+	var judgement depthJudgement
+	select {
+	case judgement = <-self.lateDepth:
+		self.lateDepth = nil
+	default:
+		return
+	}
+	settings := self.settings
+	if judgement.depth != depthAnswer && !hasRecalled {
+		self.plan = &RetrievalPlan{Searches: judgement.searches, IsBroad: judgement.isBroad}
+	}
+	if judgement.depth != depthDig {
+		return
+	}
+	if settings.isPastQuickModel {
+		log.Debugf("the judgement to dig came after the larger model began, and was dropped")
+		return
+	}
+	settings.Effort, settings.Research = deepenedTurn(depthDig)
+	self.isThinkingHarder.Store(true)
+	self.hasDepthNote, self.depthReason = true, judgement.reason
+	// The turn has begun, so the note goes under the rounds so far. A note
+	// that cannot be written is not worth failing an answer already under
+	// way for.
+	if err := self.agent.settings.Database.TransactionContext(self.ctx, self.sayDepth); err != nil {
+		log.Warningf("cannot write why the agent of %q looked further: %s", settings.Owner.Username, err)
+	}
 }
 
 // depthJudgement is what the fast model said of a message: how deep it
