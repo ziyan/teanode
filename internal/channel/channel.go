@@ -734,10 +734,10 @@ func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat,
 			}
 			switch event.Kind {
 			case agent.EventText:
-				live.update(ctx, models.StripSuggestedReplies(event.Text))
+				live.update(ctx, event.Text)
 			case agent.EventMessage:
 				answered = true
-				live.finish(ctx, models.StripSuggestedReplies(event.Text))
+				live.finish(ctx, event.Text)
 				live = &preview{chat: chat, dashboard: dashboard}
 			case agent.EventToolCall:
 				live.reset(ctx)
@@ -913,7 +913,10 @@ func (self *preview) update(ctx context.Context, delta string) {
 }
 
 func (self *preview) flush(ctx context.Context) {
-	text := models.LinkDashboardLinks(strings.TrimSpace(self.text), self.dashboard)
+	// Taken off the whole of what has come, not off each piece as it
+	// arrives: the hidden line reaches here a few characters at a time, and
+	// no piece of it is the line.
+	text := models.LinkDashboardLinks(models.StripHiddenMarkers(strings.TrimSpace(self.text)), self.dashboard)
 	if text == "" || text == self.shown {
 		return
 	}
@@ -946,9 +949,9 @@ func (self *preview) reset(ctx context.Context) {
 // of it, the rest sent after, or the preview alone when nothing final
 // came.
 func (self *preview) finish(ctx context.Context, whole string) {
-	whole = strings.TrimSpace(whole)
+	whole = models.StripHiddenMarkers(strings.TrimSpace(whole))
 	if whole == "" {
-		whole = strings.TrimSpace(self.text)
+		whole = models.StripHiddenMarkers(strings.TrimSpace(self.text))
 	}
 	if whole == "" {
 		if self.messageId != "" {
