@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.137.1] - 2026-10-12
+
+### Fixed
+
+- No user-facing change: a test that failed on main once the quick model and the server's reactions were both in. (#418)
+
 ## [0.137.0] - 2026-10-12
 
 ### Added
