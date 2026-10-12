@@ -3,6 +3,7 @@ package db_test
 import (
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,7 +255,7 @@ func TestRecordingKnowledgeCorrectionsDoNotRestartStoppedReading(test *testing.T
 			test.Fatal(err)
 		}
 		reading, err = transaction.ReadRecordingLearning(fixture.userId, source.ID)
-		if err != nil || reading.KnowledgeSource != nil {
+		if err != nil || (reading.KnowledgeSource != nil || !reading.HasStoppedReading) {
 			test.Fatal("correction restarted stopped reading", err)
 		}
 		retired, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
@@ -277,7 +278,7 @@ func TestRecordingKnowledgeDoesNotCreateSourceWithoutSpeech(test *testing.T) {
 			test.Fatal(err)
 		}
 		reading, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
-		if err != nil || reading.KnowledgeSource != nil {
+		if err != nil || (reading.KnowledgeSource != nil || reading.HasStoppedReading) {
 			test.Fatal("incomplete recording created an empty source", err)
 		}
 	})
@@ -294,8 +295,93 @@ func TestRecordingKnowledgeDoesNotCreateSourceWithoutSpeech(test *testing.T) {
 			test.Fatal(err)
 		}
 		reading, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
-		if err != nil || reading.KnowledgeSource != nil {
+		if err != nil || (reading.KnowledgeSource != nil || reading.HasStoppedReading) {
 			test.Fatal("no-speech version created an empty source", err)
 		}
 	})
+}
+
+func TestRecordingKnowledgeExplicitResumeUsesCurrentCorrections(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	completeLegacyRecording(test, fixture)
+	var sourceGeneration int64
+	var resumedSourceId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		reading, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.DeleteAgentSource(fixture.agentId, reading.KnowledgeSource.ID); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		segments, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingTranscriptText(fixture.userId, db.RecordingTranscriptTextCorrectionInput{RecordingID: source.ID, RecordingTranscriptSegmentID: segments[0].ID, ClientCorrectionID: "resume-current-edit", ExpectedSourceGeneration: source.SourceGeneration, CorrectedTranscriptText: "The synthetic proposal remains optional."}); err != nil {
+			test.Fatal(err)
+		}
+		source, err = transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		sourceGeneration = source.SourceGeneration
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		reading, err = transaction.ReadRecordingLearning(fixture.userId, source.ID)
+		if err != nil || !reading.HasStoppedReading || reading.KnowledgeSource != nil {
+			test.Fatal("edit resumed without explicit intent", err)
+		}
+		resumed, err := transaction.ResumeRecordingLearning(fixture.userId, source.ID, source.SourceGeneration)
+		if err != nil || resumed.HasStoppedReading || resumed.KnowledgeSource == nil || !resumed.KnowledgeSource.Enabled || resumed.PendingDocumentCount != 1 {
+			test.Fatal("explicit resume did not publish pending current evidence", err)
+		}
+		resumedSourceId = resumed.KnowledgeSource.ID
+		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(documents) != 1 {
+			test.Fatal(err)
+		}
+		chunks, err := transaction.ListAgentChunks(fixture.agentId, documents[0].ID)
+		if err != nil || len(chunks) != 1 || !strings.Contains(chunks[0].Text, "The synthetic proposal remains optional.") {
+			test.Fatal("resume used obsolete transcript", err)
+		}
+		repeated, err := transaction.ResumeRecordingLearning(fixture.userId, source.ID, source.SourceGeneration)
+		if err != nil || repeated.KnowledgeSource.ID != resumedSourceId || repeated.PendingDocumentCount != 1 {
+			test.Fatal("repeat resume duplicated source", err)
+		}
+		resumed.KnowledgeSource.Enabled = false
+		if _, err := transaction.PutAgentSource(resumed.KnowledgeSource); err != nil {
+			test.Fatal(err)
+		}
+		paused, err := transaction.ResumeRecordingLearning(fixture.userId, source.ID, source.SourceGeneration)
+		if err != nil || paused.KnowledgeSource.Enabled {
+			test.Fatal("resume bypassed paused source control", err)
+		}
+		runs, err := transaction.ListRecordingTranscriptRuns(fixture.userId, source.ID)
+		if err != nil || len(runs) != 1 {
+			test.Fatal("resume requested paid reprocessing", err)
+		}
+	})
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "resume-other-owner")
+	for _, resumeRequest := range []struct {
+		ownerId       string
+		generation    int64
+		expectedError error
+	}{{fixture.userId, sourceGeneration - 1, db.ErrAlreadyExists}, {otherOwnerId, sourceGeneration, db.ErrNotFound}} {
+		err := fixture.database.Transaction(func(transaction db.Transaction) error {
+			_, err := transaction.ResumeRecordingLearning(resumeRequest.ownerId, fixture.media.RecordingID, resumeRequest.generation)
+			return err
+		})
+		if !errors.Is(err, resumeRequest.expectedError) {
+			test.Fatal("invalid resume was admitted", err)
+		}
+	}
 }

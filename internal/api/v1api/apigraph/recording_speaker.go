@@ -17,6 +17,7 @@ type RecordingSpeakerQuery interface {
 
 // RecordingSpeakerMutation applies explicit user confirmations without retranscription.
 type RecordingSpeakerMutation interface {
+	ResumeRecordingLearning(context.Context, ResumeRecordingLearningArguments) (*models.RecordingLearningView, error)
 	CorrectRecordingSpeaker(context.Context, CorrectRecordingSpeakerArguments) (*RecordingSpeakersView, error)
 	RenameRecordingSpeaker(context.Context, RenameRecordingSpeakerArguments) (*RecordingSpeakersView, error)
 	RemoveRecordingSpeakerCorrection(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)

@@ -5,6 +5,7 @@ package models
 type RecordingLearningView struct {
 	SourceGeneration              int64                 `json:"sourceGeneration"`
 	HasAgent                      bool                  `json:"hasAgent"`
+	HasStoppedReading             bool                  `json:"hasStoppedReading"`
 	KnowledgeSource               *AgentKnowledgeSource `json:"knowledgeSource" graphapi:"nullable"`
 	PendingDocumentCount          int64                 `json:"pendingDocumentCount"`
 	DigestedDocumentCount         int64                 `json:"digestedDocumentCount"`

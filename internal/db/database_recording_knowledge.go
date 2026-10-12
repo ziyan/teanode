@@ -19,6 +19,7 @@ type RecordingKnowledgeOperation interface {
 	InitializeRecordingKnowledge(userId, recordingId string) (bool, error)
 	ReadRecordingLearning(userId, recordingId string) (*models.RecordingLearningView, error)
 	SyncRecordingKnowledge(userId, recordingId string) error
+	ResumeRecordingLearning(userId, recordingId string, expectedSourceGeneration int64) (*models.RecordingLearningView, error)
 	CheckRecordingKnowledgeEvidence(userId string, documents []*models.AgentDocument) error
 	ReconcileDeletedRecordingKnowledge(recordingId string) error
 }
@@ -81,6 +82,24 @@ func (self *transaction) InitializeRecordingKnowledge(userId, recordingId string
 }
 
 func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) error {
+	return self.syncRecordingKnowledge(userId, recordingId, false)
+}
+
+func (self *transaction) ResumeRecordingLearning(userId, recordingId string, expectedSourceGeneration int64) (*models.RecordingLearningView, error) {
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return nil, err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return nil, ErrAlreadyExists
+	}
+	if err := self.syncRecordingKnowledge(userId, recordingId, true); err != nil {
+		return nil, err
+	}
+	return self.ReadRecordingLearning(userId, recordingId)
+}
+
+func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shouldResumeReading bool) error {
 	recordingSource, err := self.LockRecording(userId, recordingId)
 	if err != nil {
 		return err
@@ -104,7 +123,12 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 			return err
 		}
 		if retainedDocumentCount > 0 {
-			return self.reconcileRetainedRecordingKnowledge(recordingId)
+			if err := self.reconcileRetainedRecordingKnowledge(recordingId); err != nil {
+				return err
+			}
+			if !shouldResumeReading {
+				return nil
+			}
 		}
 		var hasLearnablePassage bool
 		if err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM recording_transcript_run transcript_run
@@ -442,8 +466,14 @@ func (self *transaction) ReadRecordingLearning(userId, recordingId string) (*mod
 	}
 	learning.HasAgent = true
 	learning.KnowledgeSource, err = self.GetAgentSourceByName(ownerAgent.ID, recordingKnowledgeName(recordingId))
-	if err != nil || learning.KnowledgeSource == nil {
-		return learning, err
+	if err != nil {
+		return nil, err
+	}
+	if learning.KnowledgeSource == nil {
+		if err := self.tx.Raw("SELECT EXISTS (SELECT 1 FROM recording_knowledge_document WHERE recording_id = ? AND agent_id = ?)", recordingId, ownerAgent.ID).Scan(&learning.HasStoppedReading).Error; err != nil {
+			return nil, err
+		}
+		return learning, nil
 	}
 	if learning.KnowledgeSource.Kind != models.SourceRecording {
 		return nil, ErrNotFound
