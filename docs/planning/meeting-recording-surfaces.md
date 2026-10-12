@@ -25,13 +25,15 @@ native support is coordinated with the capture stream. This plan supplements
 | --- | --- | --- | --- | --- |
 | Library and original metadata | Implemented | Implemented | Implemented | Capture stream |
 | Original playback/download | Implemented | Verified download | Private playback path | Capture stream |
-| Audio/video file import | Implemented | Implemented | Attachment API integration pending | Capture stream |
-| Recoverable original upload | Exact manifest resume | Exact manifest resume | Attachment API integration pending | Capture stream |
+| Audio/video file import | Implemented | Implemented | Delivered attachment import, live smoke pending | Capture stream |
+| Recoverable original upload | Exact manifest resume | Exact manifest resume | Exact attachment manifest resume, live smoke pending | Capture stream |
 | Delete recording | Confirmation dialog | Confirmation/force | Destructive risk | Capture stream |
-| Transcription model/providers/budgets | Existing settings, explicit model pending | Existing settings, explicit model pending | Existing settings, explicit model pending | Native settings pending |
-| Transcript versions/status/cancel/reprocess | Worker API integration pending | Pending | Pending | Capture stream |
-| Metadata and occurrence date editing | API integration pending | Pending | Pending | Capture stream |
-| Speaker corrections/reference management | Learning API integration pending | Pending | Pending | Capture stream |
+| Transcription model/providers/budgets | Explicit Off and known capability display | Settings and capability read | Existing operator settings and capability read | Native stream, review pending |
+| Timeline/versions/status/cancel/retry/reprocess | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
+| Metadata and occurrence date editing | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
+| Speaker corrections/reference management | Canonical projection, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
+| Recognized-text edit/reset/history | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
+| Learning/invalidated-reference evidence | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
 
 No row constitutes end-to-end completion while an applicable surface is pending.
 
@@ -96,16 +98,17 @@ explicit so a title edit cannot silently replace the occurrence date.
 
 The dashboard implements these processing and editing controls with original
 passage playback and immutable generated text alongside effective corrections.
-Manual confirmation requires a full covering media/time interval; a newer
-removed interval does not restore an old label. Partial corrections remain
-separate evidence. Automatically returned speaker labels remain unconfirmed.
+Canonical server projection confirms speakers with original attempt and local
+speaker binding. Reprocessed segments require unique source and destination
+intervals; ambiguous or partial corrections remain separate evidence. Clients
+never label equal-time overlapping speakers by interval alone. Automatically returned speaker labels remain unconfirmed.
 Recording knowledge sources have a human label and retain pause/sync/removal
 controls while excluding the unrelated generic path editor.
 
 These interfaces are not yet accepted as ready: live contract smoke, desktop
 and phone Chrome interaction checks, integrated review, complete naming lint,
 iOS parity checks and the new correction backend integration remain required.
-Focused Go race tests and 19 dashboard tests currently pass; no paid provider
+Focused Go race tests and 18 dashboard tests currently pass; no paid provider
 call or real-phone validation has been performed.
 
 The full recording timeline interface uses the latest completed version per
@@ -117,3 +120,12 @@ and phone widths. Phone measurements show matching viewport/document width,
 zero horizontal scroll and the main content at the left edge. Processing,
 correction, timeline and learning interactions still need the integrated APIs
 before their live visual checks can be accepted.
+
+Integrated review found and fixed passage playback seeking: absolute segment
+and reference bounds subtract the selected original's timeline offset before
+seeking. A regression covers a later capture chunk. Review also removed
+client time-only speaker inference in favor of canonical server projection;
+equal-time overlapping speakers and ambiguous reruns cannot inherit a name
+from another group. The UI test verifies confirmation and unresolved interval
+warnings. Formatting tests caught incorrect interpolation braces and those
+were corrected to the existing catalog convention.

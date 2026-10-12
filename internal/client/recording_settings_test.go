@@ -17,7 +17,11 @@ func (self recordingSettingsTransport) RoundTrip(request *http.Request) (*http.R
 
 func TestRecordingSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
 	for _, isUpdating := range []bool{false, true} {
-		for _, hasRecordingLimits := range []bool{true, false} {
+		for _, serverCapabilities := range []struct {
+			hasRecordingLimits bool
+			hasTranscription   bool
+		}{{true, true}, {true, false}, {false, true}, {false, false}} {
+			hasRecordingLimits, hasTranscription := serverCapabilities.hasRecordingLimits, serverCapabilities.hasTranscription
 			transport := recordingSettingsTransport(func(request *http.Request) (*http.Response, error) {
 				var body struct {
 					Query string `json:"query"`
@@ -37,7 +41,7 @@ func TestRecordingSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
 					}
 				}
 				if strings.Contains(body.Query, "models { transcription }") {
-					if hasRecordingLimits {
+					if hasTranscription {
 						responseJSON = `{"data":{"GetSettings":{"agent":{"models":{"transcription":"fixture:audio"}}}}}`
 					} else {
 						responseJSON = `{"errors":[{"message":"Cannot query field \"transcription\" on type \"AgentModelsSettings\"."}]}`
@@ -71,7 +75,7 @@ func TestRecordingSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
 			if agentSettings.Models["default"] != "fixture:chat" {
 				test.Fatal("model settings replaced existing assignments")
 			}
-			if hasRecordingLimits && agentSettings.Models["transcription"] != "fixture:audio" {
+			if hasTranscription && agentSettings.Models["transcription"] != "fixture:audio" {
 				test.Fatal("CLI omitted transcription assignment")
 			}
 			if hasRecordingLimits && agentSettings.Limits["maxRecordingMediaBytes"] != "3GB" {

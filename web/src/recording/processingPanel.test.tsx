@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
-import { recordingOperation } from './processing'
+import { recordingOperation, type TranscriptSegment } from './processing'
 import { RecordingProcessingPanel } from './processingPanel'
 import { type RecordingMedia } from './api'
 vi.mock('./processing', async (importOriginal) => ({
@@ -14,7 +14,7 @@ afterEach(() => {
   cleanup()
   vi.resetAllMocks()
 })
-function showFixture() {
+function showFixture(extraSegments: Partial<TranscriptSegment>[] = []) {
   vi.mocked(recordingOperation).mockImplementation(async (operationName) => {
     const responses: Record<string, unknown> = {
       ReadRecordingProcessing: {
@@ -50,6 +50,18 @@ function showFixture() {
             effectiveTranscriptText: 'Generated evidence',
             appliedTextCorrectionId: '',
           },
+          ...extraSegments.map((segment) => ({
+            id: 'extra-segment',
+            recordingTranscriptRunId: 'fixture-run',
+            recordingTranscriptionAttemptId: 'fixture-attempt',
+            localSpeakerId: 'local-one',
+            segmentStartMS: 2000,
+            segmentEndMS: 4000,
+            transcriptText: 'Separate overlapping speech',
+            effectiveTranscriptText: 'Separate overlapping speech',
+            appliedTextCorrectionId: '',
+            ...segment,
+          })),
         ],
         attempts: [],
         segmentCount: 1,
@@ -141,4 +153,27 @@ it('requires explicit paid confirmation and retains the new version request key 
   expect(calls[0][1]).toEqual(calls[1][1])
   expect(calls[0][1].clientRunId).not.toBe('initial')
   expect(calls[0][1].isReprocessingRequested).toBe(true)
+})
+
+it('uses canonical speaker projection instead of labeling all equal-time speakers', async () => {
+  showFixture([
+    {
+      id: 'confirmed-segment',
+      localSpeakerId: 'local-two',
+      effectiveSpeakerIdentityId: 'fixture-identity',
+      effectiveSpeakerName: 'Speaker Fixture',
+      hasUserConfirmedSpeaker: true,
+    },
+    {
+      id: 'unaligned-segment',
+      localSpeakerId: 'local-three',
+      effectiveSpeakerName: 'Speaker Fixture',
+      hasUserConfirmedSpeaker: false,
+      hasUnalignedSpeakerCorrection: true,
+    },
+  ])
+  expect(await screen.findByText(/Unconfirmed speaker local-one/)).toBeTruthy()
+  expect(await screen.findByText(/Unconfirmed speaker local-three/)).toBeTruthy()
+  expect(await screen.findByText(/A retained speaker correction does not align uniquely/)).toBeTruthy()
+  expect(screen.getAllByText(/Speaker Fixture/)).toHaveLength(1)
 })

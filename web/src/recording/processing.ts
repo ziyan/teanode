@@ -22,6 +22,11 @@ export interface TranscriptSegment {
   transcriptText: string
   effectiveTranscriptText: string
   appliedTextCorrectionId: string
+  effectiveSpeakerIdentityId: string
+  effectiveSpeakerName: string
+  hasUserConfirmedSpeaker: boolean
+  hasUnalignedSpeakerCorrection: boolean
+  appliedSpeakerCorrectionId: string
 }
 export interface TranscriptionAttempt {
   id: string
@@ -127,23 +132,11 @@ export async function recordingOperation<T>(
   const response = await graphql<Record<string, T>>(RECORDING_PROCESSING_DOCUMENTS[operationName], variables, signal)
   return response[operationName]
 }
-// A removed newest interval must never restore an older confirmed identity.
-// Partial edits stay visible as intervals rather than attributing the entire text.
-export function confirmedSegmentIdentity(
-  segment: TranscriptSegment,
-  recordingMediaId: string,
-  speakers: SpeakersView,
-): SpeakerIdentity | null {
-  const correction = speakers.speakerCorrections
-    .filter(
-      (candidate) =>
-        candidate.recordingMediaId === recordingMediaId &&
-        candidate.passageStartMS <= segment.segmentStartMS &&
-        candidate.passageEndMS >= segment.segmentEndMS,
-    )
-    .sort((left, right) => right.sourceGeneration - left.sourceGeneration)[0]
-  return correction && !correction.isRemoved
-    ? (speakers.speakerIdentities.find((identity) => identity.id === correction.speakerIdentityId) ?? null)
+// Only the server's canonical projection can confirm a segment speaker.
+// Equal-time overlapping speakers and ambiguous reruns remain unconfirmed.
+export function confirmedSegmentName(segment: TranscriptSegment): string | null {
+  return segment.hasUserConfirmedSpeaker && segment.effectiveSpeakerIdentityId && segment.effectiveSpeakerName
+    ? segment.effectiveSpeakerName
     : null
 }
 export const passagePlaybackPath = (mediaId: string, startMS: number, endMS: number, timelineStartMS: number) =>

@@ -14,6 +14,7 @@ func recordingActionCommands() []*cli.Command {
 		operationName, commandUsage string
 		flagNames                   []string
 	}{
+		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
 		{"timeline", "read the latest completed original versions in absolute chronological order", []string{"recording-id", "segment-offset", "page-size"}},
 		{"versions", "inspect immutable transcript versions and processing status", []string{"recording-id"}},
 		{"transcript", "read a transcript page, request-local speakers and provider usage evidence", []string{"transcript-run-id", "segment-offset", "page-size"}},

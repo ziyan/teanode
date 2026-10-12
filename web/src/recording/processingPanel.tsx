@@ -9,7 +9,7 @@ import { useTranslation } from '../i18n/i18n'
 import { type RecordingMedia } from './api'
 import { RECORDING_PROCESSING_DOCUMENTS } from './processingDocuments'
 import {
-  confirmedSegmentIdentity,
+  confirmedSegmentName,
   passagePlaybackPath,
   recordingOperation,
   type RecordingLearning,
@@ -328,9 +328,7 @@ export function RecordingProcessingPanel({
           {effectiveView?.segments.map((segment) => {
             const segmentRun = displayedRuns.find((run) => run.id === segment.recordingTranscriptRunId)
             if (!segmentRun) return null
-            const identity = speakers.data
-              ? confirmedSegmentIdentity(segment, segmentRun.recordingMediaId, speakers.data)
-              : null
+            const confirmedName = confirmedSegmentName(segment)
             const automaticIsUncertain = (invalidations.data ?? []).some(
               (invalidation) =>
                 invalidation.recordingTranscriptionAttemptId === segment.recordingTranscriptionAttemptId,
@@ -352,7 +350,7 @@ export function RecordingProcessingPanel({
                     >
                       {timelineTime(segment.segmentStartMS)}–{timelineTime(segment.segmentEndMS)}
                     </a>{' '}
-                    {identity?.confirmedName ??
+                    {confirmedName ??
                       t(
                         automaticIsUncertain
                           ? 'recordingProcessing.speakerUncertain'
@@ -363,6 +361,9 @@ export function RecordingProcessingPanel({
                 }
                 subtitle={
                   <>
+                    {segment.hasUnalignedSpeakerCorrection ? (
+                      <p className="muted">{t('recordingProcessing.unalignedSpeakerCorrection')}</p>
+                    ) : null}
                     <p className="recording-transcript-text">
                       {segment.effectiveTranscriptText ?? segment.transcriptText}
                     </p>
@@ -394,7 +395,7 @@ export function RecordingProcessingPanel({
                             {
                               fieldName: 'confirmedName',
                               labelKey: 'confirmedName',
-                              fieldValue: identity?.confirmedName ?? '',
+                              fieldValue: confirmedName ?? '',
                             },
                             {
                               fieldName: 'passageStartMS',
