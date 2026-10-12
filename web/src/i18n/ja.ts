@@ -1633,9 +1633,10 @@ export const ja: Catalog = {
   'agentSettings.addProvider': 'プロバイダーを追加',
   'agentSettings.models': 'モデル',
   'agentSettings.modelsDescription':
-    'どの作業にどのモデルを使うか。既定は指定のないすべて。高速は上書きがなければ仕分け・要約・圧縮に使われます。埋め込みは意味検索を有効にします。',
+    'どの作業にどのモデルを使うか。既定は指定のないすべて。高速は上書きがなければ仕分け・要約・圧縮に使われます。埋め込みは意味検索を有効にします。クイックは入力されたメッセージにまず答え、推論が必要なものは会話用モデルに渡します。',
   'agentSettings.model.default': '既定',
   'agentSettings.model.fast': '高速',
+  'agentSettings.model.quick': 'クイック',
   'agentSettings.model.embedding': '埋め込み',
   'agentSettings.modelOverrides': '作業ごとの指定と選択肢',
   'agentSettings.work.triage': '仕分け',
@@ -1928,6 +1929,7 @@ export const ja: Catalog = {
   'agentSettings.removeProviderConfirm':
     '{name} を削除しますか？そのモデルに割り当てた作業は、他のプロバイダーが提供するまで止まります。',
   'agentSettings.modelNone': 'なし',
+  'agentSettings.modelQuickOff': 'なし：入力したメッセージは会話用モデルが答えます',
   'agentSettings.modelInherit': '既定と同じ（仕分け・要約・圧縮は高速モデル）',
   'agentSettings.fewerModels': '閉じる',
   'agentSettings.addChoice': '選べるモデルを追加…',

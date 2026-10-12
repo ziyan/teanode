@@ -52,9 +52,10 @@ type AskSettings struct {
 	// person heard before they talked over it, when they did.
 	InterruptedAnswer *InterruptedAnswer
 
-	// isPastVoiceModel is a spoken turn handed from the model for calls to
-	// the larger one (think_harder).
-	isPastVoiceModel bool
+	// isPastQuickModel is a turn handed from the small model it started on,
+	// the model for calls or the quick model, to the larger one
+	// (think_harder).
+	isPastQuickModel bool
 
 	// Attachments are the files that came with the message, uploaded
 	// already; References the threads the person pointed at.
@@ -1033,10 +1034,11 @@ func (self *AskRun) turn() error {
 		self.offered = append(self.offered, work)
 		self.loaded[work.Name] = true
 	}
-	// A spoken turn answered by the small model for calls may hand itself
-	// to the larger one, in the round from the start: the decision is the
-	// first thing the small model makes.
-	if spoken := voiceModel(configuration, settings); spoken != "" && spoken != self.askModelName(configuration, registry, true) {
+	// A turn that starts on a small model, the one for calls or the quick
+	// one for typed turns, may hand itself to the larger one, in the round
+	// from the start: the decision is the first thing the small model
+	// makes.
+	if starting := startingModel(configuration, settings); starting != "" && starting != self.askModelName(configuration, registry, true) {
 		if thinkHarder := self.agent.thinkHarderTool(); !listed(configuration.Agent.Tools.Disabled, thinkHarder) {
 			self.offered = append(self.offered, thinkHarder)
 			self.loaded[thinkHarder.Name] = true
@@ -1177,10 +1179,10 @@ func (self *AskRun) turn() error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// The small model for calls handed the turn to the larger one: the
-		// rounds from here are the larger model's.
-		if self.isThinkingHarder.Load() && !settings.isPastVoiceModel {
-			settings.isPastVoiceModel = true
+		// The small model handed the turn to the larger one: the rounds
+		// from here are the larger model's.
+		if self.isThinkingHarder.Load() && !settings.isPastQuickModel {
+			settings.isPastQuickModel = true
 			if provider, model, err = self.chooseModel(configuration, registry); err != nil {
 				return err
 			}
@@ -1464,32 +1466,91 @@ func historyLimit(contextLength int) int {
 	return max(askHistoryTokens, contextLength/askHistoryWindowShare)
 }
 
-// voiceModel is the model a spoken turn is answered with, where the
-// operator chose one for calls; empty otherwise, and once the turn has been
-// handed to the larger model (think_harder).
-func voiceModel(configuration *config.Configuration, settings *AskSettings) string {
-	if settings.Surface != "voice" || settings.isPastVoiceModel {
+// isSpokenSurface says a turn was spoken, in the drawer's voice mode or on
+// a call in the app, so its answer is read aloud.
+func isSpokenSurface(surfaceName string) bool {
+	return surfaceName == "voice" || surfaceName == "ios_voice"
+}
+
+// isQuickSurface says a turn on the surface is a person's own typed
+// message, in a place they read the answer: the dashboard, the extension,
+// the app, Siri and the chat apps. Not a terminal, the API, mail, nor a
+// run the agent started for itself.
+func isQuickSurface(surfaceName string) bool {
+	switch surfaceName {
+	case "drawer", "extension", "page", "phone", "ios", "siri":
+		return true
+	}
+	for _, kind := range models.AgentChannelKinds {
+		if surfaceName == string(kind) {
+			return true
+		}
+	}
+	return false
+}
+
+// startingModel is the small model a turn starts on, which may hand the
+// rest of it to the larger one (think_harder); empty when the turn starts
+// on the model it would use anyway, and once it has been handed over.
+//
+// A spoken turn starts on the operator's model for calls. A turn a person
+// typed starts on the quick model, because a large reasoning model takes
+// seconds to answer even a greeting. Neither applies to a turn that is
+// not the person's own message, to one that already names its model, to
+// one whose person chose their model, nor to one that is to dig: the
+// model for that is the large one from the first round.
+func startingModel(configuration *config.Configuration, settings *AskSettings) string {
+	if settings.isPastQuickModel {
 		return ""
 	}
-	return strings.TrimSpace(configuration.Agent.Voice.AskModel)
+	if isSpokenSurface(settings.Surface) {
+		return strings.TrimSpace(configuration.Agent.Voice.AskModel)
+	}
+	quick := strings.TrimSpace(configuration.Agent.Models.Quick)
+	if quick == "" || !isQuickSurface(settings.Surface) {
+		return ""
+	}
+	if settings.Headless || settings.isUnattended || settings.subagentDepth > 0 || settings.Model != "" || settings.Work != "" {
+		return ""
+	}
+	if settings.Effort == llm.EffortHigh || settings.Research {
+		return ""
+	}
+	if settings.Agent != nil && strings.TrimSpace(settings.Agent.AskModel) != "" {
+		return ""
+	}
+	// A message the agent wrote to itself, or one that carries on after a
+	// card the person answered, continues work the larger model began.
+	if models.IsOwnTurn(settings.Message) {
+		return ""
+	}
+	for _, marker := range []string{AnsweringMarker, ApprovedMarker, DeclinedMarker} {
+		if strings.HasPrefix(settings.Message, marker) {
+			return ""
+		}
+	}
+	if quick == configuration.Agent.Models.ForWork(config.AgentWorkAsk) {
+		return ""
+	}
+	return quick
 }
 
 // askModelName is the name of the model this turn is answered with, as
 // chooseModel chooses it; isTyped asks for the one it would be answered
-// with typed, leaving out the model for calls.
+// with once it is past the small model it starts on.
 func (self *AskRun) askModelName(configuration *config.Configuration, registry *llm.Registry, isTyped bool) string {
 	settings := self.settings
-	spoken := ""
+	starting := ""
 	if !isTyped {
-		spoken = voiceModel(configuration, settings)
+		starting = startingModel(configuration, settings)
 	}
 	switch {
 	case settings.Model != "":
 		return settings.Model
 	case settings.Work != "":
 		return registry.Configuration().Models.ForWork(settings.Work)
-	case spoken != "":
-		return spoken
+	case starting != "":
+		return starting
 	case settings.Agent.AskModel != "":
 		return settings.Agent.AskModel
 	}
@@ -1503,8 +1564,8 @@ func (self *AskRun) chooseModel(configuration *config.Configuration, registry *l
 	if self.settings.Work != "" {
 		return registry.ForWork(self.settings.Work)
 	}
-	if spoken := voiceModel(configuration, self.settings); spoken != "" {
-		return registry.ForModel(spoken)
+	if starting := startingModel(configuration, self.settings); starting != "" {
+		return registry.ForModel(starting)
 	}
 	if chosen := strings.TrimSpace(self.settings.Agent.AskModel); chosen != "" {
 		for _, choice := range configuration.Agent.Models.Choices {

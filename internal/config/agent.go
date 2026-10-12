@@ -335,6 +335,11 @@ type AgentModels struct {
 	Fast      string `yaml:"fast,omitempty"`
 	Embedding string `yaml:"embedding,omitempty"`
 
+	// Quick is the model a person's typed turn starts on; it hands
+	// anything that needs reasoning to the ask model with think_harder.
+	// Empty: typed turns start on the ask model.
+	Quick string `yaml:"quick,omitempty"`
+
 	// Decide is the model for a question whose answers are known in
 	// advance: is this file worth opening, which of these folders does
 	// this belong under. It writes nothing and cannot be asked to.
@@ -1397,6 +1402,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	checkModel("agent.models.decide", agent.Models.Decide)
 	checkModel("agent.models.categorize", agent.Models.Categorize)
 	checkModel("agent.models.fast", agent.Models.Fast)
+	checkModel("agent.models.quick", agent.Models.Quick)
 	checkModel("agent.models.embedding", agent.Models.Embedding)
 	checkModel("agent.models.triage", agent.Models.Triage)
 	checkModel("agent.models.research", agent.Models.Research)

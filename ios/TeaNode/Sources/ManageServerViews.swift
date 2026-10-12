@@ -2024,6 +2024,7 @@ private enum AgentWords {
         switch fieldName {
         case "default": "Default"
         case "fast": "Fast"
+        case "quick": "Quick"
         case "embedding": "Embedding"
         case "triage": "Sorting"
         case "research": "Research"
@@ -2044,6 +2045,7 @@ private enum AgentWords {
     static func modelPlaceholder(_ fieldName: String) -> String {
         switch fieldName {
         case "default", "fast", "embedding": String(localized: "None")
+        case "quick": String(localized: "None: what you type starts on the conversations model")
         case "synthesize": String(localized: "Same as research (the default when research is not set)")
         case "decide": String(localized: "None: a language model decides instead")
         case "categorize": String(localized: "Same as deciding, or the scan model when deciding is not set")
@@ -3244,10 +3246,10 @@ private struct ModelChoiceList: View {
     }
 }
 
-/// AgentModelsFormView assigns work to models: three every deployment
-/// needs, then one per kind of work, and the models a person may pick for
-/// their own conversations. A deciding provider's models are offered only
-/// where the server takes them.
+/// AgentModelsFormView assigns work to models: the default, fast, quick
+/// and embedding ones, then one per kind of work, and the models a person
+/// may pick for their own conversations. A deciding provider's models are
+/// offered only where the server takes them.
 private struct AgentModelsFormView: View {
     let model: AgentAdminModel
 
@@ -3259,7 +3261,7 @@ private struct AgentModelsFormView: View {
                     modelRow(fieldName, known: choices.forWork, draft: draft)
                 }
             } footer: {
-                Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; embedding enables search by meaning.")
+                Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.")
             }
             Section("Per kind of work") {
                 ForEach(AgentModelAssignments.workFieldNames, id: \.self) { fieldName in

@@ -21253,6 +21253,22 @@
         }
       }
     },
+    "None: what you type starts on the conversations model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし：入力したメッセージは会話用モデルが答えます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无：您输入的消息由对话模型回答"
+          }
+        }
+      }
+    },
     "Normal": {
       "localizations": {
         "ja": {
@@ -25185,6 +25201,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已排队；答复会送到定时任务指定的地方。"
+          }
+        }
+      }
+    },
+    "Quick": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快捷"
           }
         }
       }
@@ -39140,6 +39172,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "各项工作使用的模型。默认用于未指定的一切；快速模型在未覆盖时用于分拣、摘要和压缩；嵌入模型启用语义搜索。"
+          }
+        }
+      }
+    },
+    "Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どの作業にどのモデルを使うか。既定は指定のないすべて。高速は上書きがなければ仕分け・要約・圧縮に使われます。クイックは入力されたメッセージにまず答え、推論が必要なものは会話用モデルに渡します。埋め込みは意味検索を有効にします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各项工作使用的模型。默认用于未指定的一切；快速模型在未覆盖时用于分拣、摘要和压缩；快捷模型先回答您输入的消息，需要推理的交给对话模型；嵌入模型启用语义搜索。"
           }
         }
       }
