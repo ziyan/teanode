@@ -459,3 +459,11 @@ meeting evaluation remains required, and provider names cannot count as user
 confirmation. Production configuration stayed Off throughout this evaluation.
 Native package tests, simulator builds and actual physical-device evidence are
 tracked separately; no real-iPhone capture or lock-screen acceptance is claimed.
+
+The merged worker was also exercised with the real configured provider in an
+isolated disposable database and authenticated HTTP API. A synthetic original
+was uploaded, verified, decoded and processed into one immutable paid attempt
+and five timestamped segments. The attempt reported 199 audio input and 549
+output tokens; original playback remained byte-identical, and anonymous
+transcript reads were refused. This is an isolated real-worker result, not
+production provider activation, representative-meeting quality or invoice evidence.
