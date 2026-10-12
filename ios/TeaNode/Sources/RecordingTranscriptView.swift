@@ -45,6 +45,8 @@ struct RecordingTranscriptScreen: View {
                             if !attempt.hasProviderUsage { Text("Provider usage unavailable").font(.caption).foregroundStyle(.secondary) }
                         }
                     }
+                } header: {
+                    Text("Transcription usage")
                 } footer: {
                     Text("Estimates use configured pricing. Actual cost is shown only when billing evidence exists.")
                 }
@@ -92,7 +94,9 @@ struct RecordingTranscriptScreen: View {
                         Label("Load more passages", systemImage: "chevron.down")
                     }
                 }
-            } header: { Text("Transcript") } footer: {
+            } header: {
+                Text("Transcript")
+            } footer: {
                 Text("Speaker groups are local to each provider request. Only your confirmed names connect people across chunks and versions.")
             }
             if let speakers {
@@ -214,7 +218,9 @@ struct RecordingSpeakersScreen: View {
                     }.swipeActions { Button("Remove voice reference", role: .destructive) { Task { await removeReference(reference) } } }
                 }
                 if speakers.voiceReferences.allSatisfy(\.isRevoked) { Text("No clean reference samples available").foregroundStyle(.secondary) }
-            } header: { Text("Voice references") } footer: {
+            } header: {
+                Text("Voice references")
+            } footer: {
                 Text(
                     "References are curated only from names you confirm. Removing or correcting a label invalidates affected samples. Reprocessing is a separate paid pass."
                 )

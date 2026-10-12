@@ -44311,6 +44311,22 @@
           }
         }
       }
+    },
+    "Managed from the recording library": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从录音库管理"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音ライブラリから管理"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -278,26 +278,47 @@ struct KnowledgeSourcesView: View {
         .toast(done: $doneText, problem: $problemText)
     }
 
+    @ViewBuilder
     private func row(_ source: KnowledgeSource) -> some View {
-        Button {
-            editing = SourceEditing(source: source)
-        } label: {
-            KnowledgeSourceRow(
-                source: source, attachments: attachmentsBySourceId[source.id], isLocalType: sourceTypes.contains { $0.name == source.specification.type && $0.isLocal },
-                whereText: source.whereItReads(mailboxNames: mailboxNames))
-        }
-        .swipeActions {
-            Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
-            pauseButton(source).tint(.orange)
-        }
-        .contextMenu {
-            Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
-            syncButton(source)
-            pauseButton(source)
-            if (attachmentsBySourceId[source.id]?.declined ?? 0) > 0 {
-                Button("Files it decided against opening", systemImage: "doc.badge.ellipsis") { declinedSource = source }
+        if source.kind == "recording" {
+            NavigationLink {
+                RecordingsScreen(connection: connection)
+            } label: {
+                KnowledgeSourceRow(
+                    source: source, attachments: attachmentsBySourceId[source.id], isLocalType: false,
+                    whereText: String(localized: "Managed from the recording library"))
             }
-            Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+            .swipeActions {
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                pauseButton(source).tint(.orange)
+            }
+            .contextMenu {
+                syncButton(source)
+                pauseButton(source)
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+            }
+        } else {
+            Button {
+                editing = SourceEditing(source: source)
+            } label: {
+                KnowledgeSourceRow(
+                    source: source, attachments: attachmentsBySourceId[source.id],
+                    isLocalType: sourceTypes.contains { $0.name == source.specification.type && $0.isLocal },
+                    whereText: source.whereItReads(mailboxNames: mailboxNames))
+            }
+            .swipeActions {
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                pauseButton(source).tint(.orange)
+            }
+            .contextMenu {
+                Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
+                syncButton(source)
+                pauseButton(source)
+                if (attachmentsBySourceId[source.id]?.declined ?? 0) > 0 {
+                    Button("Files it decided against opening", systemImage: "doc.badge.ellipsis") { declinedSource = source }
+                }
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+            }
         }
     }
 
@@ -360,7 +381,9 @@ struct KnowledgeSourceRow: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(source.name).foregroundStyle(Color(.label))
             HStack(spacing: 8) {
-                if source.specification.type.isEmpty {
+                if source.kind == "recording" {
+                    UpkeepTag(text: String(localized: "Recording"))
+                } else if source.specification.type.isEmpty {
                     UpkeepTag(text: UpkeepWords.shapeName(source.shape))
                 } else {
                     UpkeepTag(text: source.specification.type)

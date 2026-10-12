@@ -79,7 +79,7 @@ public struct RecordingSpeakersView: Codable, Hashable, Sendable {
         let correction = speakerCorrections.filter { correction in
             correction.recordingMediaId == mediaId
                 && ((correction.passageStartMS >= 0 && correction.passageEndMS > correction.passageStartMS
-                    && correction.passageStartMS <= segment.segmentStartMS && correction.passageEndMS >= segment.segmentEndMS)
+                    && correction.passageStartMS < segment.segmentEndMS && correction.passageEndMS > segment.segmentStartMS)
                     || (correction.passageStartMS == -1 && correction.passageEndMS == -1
                         && correction.recordingTranscriptionAttemptId == segment.recordingTranscriptionAttemptId
                         && correction.localSpeakerId == segment.localSpeakerId))
@@ -87,7 +87,10 @@ public struct RecordingSpeakersView: Codable, Hashable, Sendable {
             if (left.passageStartMS >= 0) != (right.passageStartMS >= 0) { return left.passageStartMS >= 0 }
             return left.sourceGeneration > right.sourceGeneration
         }.first
-        guard let correction, !correction.isRemoved else { return nil }
+        guard let correction, !correction.isRemoved,
+            correction.passageStartMS == -1
+                || (correction.passageStartMS <= segment.segmentStartMS && correction.passageEndMS >= segment.segmentEndMS)
+        else { return nil }
         return speakerIdentities.first { $0.id == correction.speakerIdentityId }?.confirmedName
     }
 }

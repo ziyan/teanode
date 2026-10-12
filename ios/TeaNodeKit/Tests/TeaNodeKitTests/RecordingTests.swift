@@ -226,3 +226,19 @@ extension RecordingTests {
         XCTAssertTrue(published.isCurationPending)
     }
 }
+
+extension RecordingTests {
+    func testPartialNewerCorrectionCannotLabelAnEntireGeneratedStatement() throws {
+        let speakers = try JSONDecoder().decode(
+            RecordingSpeakersView.self,
+            from: Data(
+                #"{"sourceGeneration":3,"speakerIdentities":[{"id":"identity-a","confirmedName":"Speaker A"},{"id":"identity-b","confirmedName":"Speaker B"}],"speakerCorrections":[{"id":"old","recordingMediaId":"media-a","recordingTranscriptionAttemptId":"old-attempt","speakerIdentityId":"identity-a","localSpeakerId":"old-local","passageStartMS":1000,"passageEndMS":5000,"sourceGeneration":1,"isRemoved":false},{"id":"new","recordingMediaId":"media-a","recordingTranscriptionAttemptId":"new-attempt","speakerIdentityId":"identity-b","localSpeakerId":"new-local","passageStartMS":2000,"passageEndMS":3000,"sourceGeneration":3,"isRemoved":false}],"voiceReferences":[]}"#
+                    .utf8))
+        let segment = try JSONDecoder().decode(
+            RecordingTranscriptSegment.self,
+            from: Data(
+                #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"rerun-attempt","localSpeakerId":"local-a","segmentStartMS":1000,"segmentEndMS":5000,"transcriptText":"One statement with corrected attribution inside it."}"#
+                    .utf8))
+        XCTAssertNil(speakers.confirmedName(for: segment, mediaId: "media-a"))
+    }
+}
