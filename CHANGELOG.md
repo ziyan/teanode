@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.139.1] - 2026-10-12
+
+### Fixed
+
+- Switching to another person's account no longer shows "api: not found" in the chat drawer; it opens their main conversation. (#428)
+
 ## [0.139.0] - 2026-10-12
 
 ### Added
