@@ -30,6 +30,12 @@ struct ConversationView: View {
     /// however far up it is, where scrolling to the last line needs that
     /// line built, which a long lazy list has not done.
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    /// Whether the person has scrolled the transcript themselves. Until
+    /// they have, the earlier-messages row is not read on sight: a lazy
+    /// list lays itself out from the top for a moment when it comes back,
+    /// and reading the page before then left the conversation at that
+    /// page's edge, in the middle, rather than at its end.
+    @State private var hasPersonScrolled = false
     @State private var status = StatusModel()
     @State private var isShowingStatus = false
 
@@ -96,6 +102,9 @@ struct ConversationView: View {
             } action: { _, isNearEnd in
                 isAtEnd = isNearEnd
             }
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { hasPersonScrolled = true }
+            }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
@@ -116,6 +125,14 @@ struct ConversationView: View {
             .onChange(of: model.sentCount) {
                 withAnimation { scrollPosition.scrollTo(edge: .bottom) }
             }
+            // Read, or read again on coming back: opened at its end, where
+            // the newest message is, whatever the lazy list measured first.
+            .onChange(of: model.isLoaded) { _, isLoaded in
+                if isLoaded { scrollPosition.scrollTo(edge: .bottom) }
+            }
+            .onAppear {
+                if model.isLoaded { scrollPosition.scrollTo(edge: .bottom) }
+            }
         }
     }
 
@@ -135,7 +152,9 @@ struct ConversationView: View {
                 }
                 .buttonStyle(.glass)
                 .frame(maxWidth: .infinity)
-                .onAppear { loadEarlier(scroller) }
+                .onAppear {
+                    if hasPersonScrolled { loadEarlier(scroller) }
+                }
             }
             ForEach(ConversationItem.items(of: shownLines)) { item in
                 ConversationItemView(
