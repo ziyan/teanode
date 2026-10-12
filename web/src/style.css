@@ -14123,3 +14123,7 @@ button.herdr-question-head {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+
+.recording-original + .recording-original { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem; }
+.recording-player { display: block; width: 100%; max-height: 65vh; margin-bottom: 1rem; }
+.recording-progress { width: 100%; }

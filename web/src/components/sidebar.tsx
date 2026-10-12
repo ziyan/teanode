@@ -69,6 +69,7 @@ const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   mailbox: <MailIcon />,
   knowledge: <GridIcon />,
   finance: <WalletIcon />,
+  recordings: <GridIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -227,7 +228,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/finance', '/calendar', '/contacts', '/reminders'].some(
+    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||
@@ -244,6 +245,7 @@ export function Sidebar({
   const finance = useAgentFinancePresence(inAccount || inMailbox)
   const permitted = (item: Item) =>
     isPathAvailable(item.to, session.services) &&
+    (item.to !== '/recordings' || hasPermission(session.permissions, 'agent:use')) &&
     (item.shownWhen !== 'finance' || finance.isShown === true) &&
     (item.shownWhen !== 'mailbox' || hasMailbox) &&
     (!item.anyOf ||
@@ -507,6 +509,12 @@ export function Sidebar({
                 <NavLink to="/knowledge">
                   <GridIcon />
                   <span className="sidebar-label">{t('knowledge.title')}</span>
+                </NavLink>
+              )}
+              {hasPermission(session.permissions, 'agent:use') && (
+                <NavLink to="/recordings">
+                  <GridIcon />
+                  <span className="sidebar-label">{t('recordings.title')}</span>
                 </NavLink>
               )}
               {session.services?.isCalendarEnabled && hasPermission(session.permissions, 'calendar:use') && (

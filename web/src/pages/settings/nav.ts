@@ -103,6 +103,14 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     category: 'account',
     rail: 'mailbox',
   },
+  {
+    segment: 'recordings',
+    path: '/recordings',
+    label: 'recordings.title',
+    description: 'recordings.hint',
+    category: 'account',
+    rail: 'mailbox',
+  },
   // What the institutions a person linked report: spending, budgets, net
   // worth. Beside Knowledge and for the same reason, a place somebody reads
   // rather than a setting, and not under /settings for it. Linking them and
