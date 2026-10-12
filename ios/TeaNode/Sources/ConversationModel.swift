@@ -223,9 +223,10 @@ final class ConversationModel {
         do {
             let page = try await connection.conversation(conversationId, first: 100, offset: messages.count)
             let known = Set(messages.map(\.id))
-            messages = page.messages.filter { !known.contains($0.id) } + messages
+            let earlierMessages = page.messages.filter { !known.contains($0.id) }
+            messages = earlierMessages + messages
             total = page.total
-            transcript = Transcript(messages: messages, interactions: interactions)
+            transcript.prepend(messages: messages, interactions: interactions)
         } catch {
             sendProblemText = app.describe(error)
         }

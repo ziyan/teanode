@@ -347,6 +347,16 @@ public struct Transcript: Sendable {
     /// says which turn it began.
     static let sentPrefix = "sent-"
 
+    /// Adds older history without rebuilding lines changed by the live feed
+    /// or by an optimistic action while the history request was in flight.
+    /// Supply the complete stored history so tool results and card answers
+    /// can be matched across page boundaries.
+    public mutating func prepend(messages: [AgentMessage], interactions: [AgentInteraction] = []) {
+        let earlier = Transcript(messages: messages, interactions: interactions)
+        let knownLineIds = Set(lines.map(\.id))
+        lines.insert(contentsOf: earlier.lines.filter { !knownLineIds.contains($0.id) }, at: 0)
+    }
+
     /// How far back a turn's opening is looked for, so one the feed replays
     /// is matched with the line already there rather than drawn again.
     static let replayLookBack = 8
