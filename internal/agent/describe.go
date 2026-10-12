@@ -86,6 +86,25 @@ func (self *Agent) describeDue(ctx context.Context, now time.Time) {
 	}
 }
 
+// describedAs is the title and the summary the model gave, as the picker
+// and the list show them: plain text, with no Markdown or hidden line the
+// model copied from the conversation, the title at most 80 characters and
+// the summary 300.
+func describedAs(answer describeAnswer) (title, summary string) {
+	title = strings.Trim(strings.TrimSpace(strings.Split(models.PlainText(answer.Title), "\n")[0]), `"'. `)
+	if len(title) > 80 {
+		// By character. A title cut at the 80th byte can end in the middle
+		// of one, and PostgreSQL refuses the whole statement rather than
+		// storing half a character.
+		title = cutRunes(title, 80)
+	}
+	summary = models.PlainText(answer.Summary)
+	if len(summary) > 300 {
+		summary = cutRunes(summary, 300)
+	}
+	return title, summary
+}
+
 // describeConversation writes a conversation's title and summary from the
 // tail of what was said, and returns the title when it changed. The
 // conversation is marked described whatever happened, so that one the
@@ -128,8 +147,10 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 		case string(llm.RoleUser):
 			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: message.Content})
 		case string(llm.RoleAssistant):
-			if strings.TrimSpace(message.Content) != "" {
-				history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: message.Content})
+			// Without the hidden lines the dashboard reads, so that the
+			// model has nothing of them to copy into a title.
+			if content := models.StripHiddenMarkers(message.Content); strings.TrimSpace(content) != "" {
+				history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: content})
 			}
 		}
 	}
@@ -184,16 +205,6 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 		}
 		return "", fmt.Errorf("reading the answer: %w", err)
 	}
-	title := strings.Trim(strings.TrimSpace(strings.Split(answer.Title, "\n")[0]), `"'. `)
-	if len(title) > 80 {
-		// By character. A title cut at the 80th byte can end in the middle
-		// of one, and PostgreSQL refuses the whole statement rather than
-		// storing half a character.
-		title = cutRunes(title, 80)
-	}
-	summary := strings.TrimSpace(answer.Summary)
-	if len(summary) > 300 {
-		summary = cutRunes(summary, 300)
-	}
+	title, summary := describedAs(answer)
 	return mark(title, summary)
 }
