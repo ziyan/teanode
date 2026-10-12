@@ -93,7 +93,7 @@ struct RecordingsScreen: View {
                                 .monospacedDigit().contentTransition(.numericText())
                             Text(
                                 recorder.isCapturing
-                                    ? String(localized: "Recording locally") : String(localized: "Paused. Resume when you are ready.")
+                                    ? String(localized: "Recording locally") : (current.recordingCaptureState == "interrupted" ? String(localized: "Interrupted. Resume when you are ready.") : String(localized: "Paused. Resume when you are ready."))
                             ).foregroundStyle(.secondary)
                         }
                         Button {
@@ -334,7 +334,9 @@ struct RecordingDetailScreen: View {
                         Text("Waiting for a completed transcript").foregroundStyle(.secondary)
                     }
                     if learning.isCurationPending { Text("Voice reference curation pending").foregroundStyle(.secondary) }
-                } header: { Text("Learning") } footer: {
+                } header: {
+                    Text("Learning")
+                } footer: {
                     Text(
                         "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories."
                     )

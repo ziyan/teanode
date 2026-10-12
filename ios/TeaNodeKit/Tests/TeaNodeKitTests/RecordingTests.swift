@@ -88,9 +88,9 @@ final class RecordingTests: XCTestCase {
         } catch { XCTAssertNotEqual(error as? TeaNodeError, .unreadableAnswer) }
     }
 
-    private func media(receiptState: String, digest: String, verifiedAt: String?) throws -> RecordingMedia {
+    private func media(receiptState: String, digest: String, verifiedAt: String?, clientMediaId: String = "client-media-a") throws -> RecordingMedia {
         let object: [String: Any] = [
-            "id": "media-a", "recordingId": "recording-a", "clientMediaId": "client-media-a", "originalFilename": "audio.wav",
+            "id": "media-a", "recordingId": "recording-a", "clientMediaId": clientMediaId, "originalFilename": "audio.wav",
             "originalContentType": "audio/wav", "originalSizeBytes": 3, "originalSha256": digest, "timelineStartMS": 0, "mediaDurationMS": 1000,
             "partCount": 1, "recordingUploadState": receiptState, "verifiedAt": verifiedAt as Any? ?? NSNull(),
         ]
@@ -240,5 +240,35 @@ extension RecordingTests {
                 #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"rerun-attempt","localSpeakerId":"local-a","segmentStartMS":1000,"segmentEndMS":5000,"transcriptText":"One statement with corrected attribution inside it."}"#
                     .utf8))
         XCTAssertNil(speakers.confirmedName(for: segment, mediaId: "media-a"))
+    }
+}
+
+extension RecordingTests {
+    func testReceiptJournalSurvivesRestartBeforeIdempotentOriginalRelease() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try RecordingJournal(directory: directory)
+        var recording = LocalRecording(accountKey: "account-a", recordingTitle: "", recordingOrigin: "audioImport")
+        var original = LocalRecordingMedia(originalFilename: "audio.wav", originalContentType: "audio/wav", timelineStartMS: 0)
+        original.originalSizeBytes = 3
+        original.originalSha256 = String(repeating: "a", count: 64)
+        recording.localMedia.append(original)
+        try await journal.create(recording)
+        let source = directory.appendingPathComponent("test-original")
+        try Data([1, 2, 3]).write(to: source)
+        try await journal.importOriginal(from: source, recordingId: recording.id, mediaId: original.id, accountKey: recording.accountKey)
+        recording.localMedia[0].mediaManifest = try media(
+            receiptState: "pending", digest: original.originalSha256!, verifiedAt: nil, clientMediaId: original.id.uuidString)
+        recording.localMedia[0].completionReceipt = try media(
+            receiptState: "complete", digest: original.originalSha256!, verifiedAt: "2030-01-02T03:04:05Z", clientMediaId: original.id.uuidString)
+        try await journal.save(recording)
+        let reopened = try RecordingJournal(directory: directory)
+        let kept = try await reopened.read(recording.id, accountKey: recording.accountKey)
+        XCTAssertTrue(kept.localMedia[0].isDurablyUploaded)
+        let originalURL = try await reopened.originalURL(recordingId: recording.id, mediaId: original.id, accountKey: recording.accountKey)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: originalURL.path))
+        try await reopened.releaseUploadedOriginal(recordingId: recording.id, mediaId: original.id, accountKey: recording.accountKey)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: originalURL.path))
+        try await reopened.releaseUploadedOriginal(recordingId: recording.id, mediaId: original.id, accountKey: recording.accountKey)
     }
 }

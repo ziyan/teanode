@@ -87,7 +87,10 @@ final class RecordingUploads: NSObject {
             guard limits.uploadPartBytes == 8 * 1024 * 1024 else { throw TeaNodeError.unreadableAnswer }
             for mediaIndex in recording.localMedia.indices {
                 let localMedia = recording.localMedia[mediaIndex]
-                if localMedia.isDurablyUploaded { continue }
+                if localMedia.isDurablyUploaded {
+                    try await journal.releaseUploadedOriginal(recordingId: recording.id, mediaId: localMedia.id, accountKey: recording.accountKey)
+                    continue
+                }
                 guard let digest = localMedia.originalSha256, localMedia.originalSizeBytes > 0 else { continue }
                 let original = try await journal.originalURL(recordingId: recording.id, mediaId: localMedia.id, accountKey: recording.accountKey)
                 if localMedia.mediaManifest == nil {

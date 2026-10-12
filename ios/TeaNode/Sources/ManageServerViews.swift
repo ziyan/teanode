@@ -3281,7 +3281,7 @@ private struct AgentModelsFormView: View {
                 modelRow("decide", known: choices.forDeciding, draft: draft)
                 modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
             }
-            Section("Recording transcription") {
+            Section {
                 modelRow("transcription", known: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
                 if let capability = model.recordingModelCapabilities.first(where: { $0.name == draft.wrappedValue.transcription }), capability.canAttributeRecordingSpeakers {
                     LabeledContent("Voice references", value: capability.hasSpeakerReferences == true ? String(localized: "Supported") : String(localized: "Unavailable"))
@@ -3289,7 +3289,7 @@ private struct AgentModelsFormView: View {
                         LabeledContent("Audio per provider request", value: ByteCountFormatter.string(fromByteCount: maximumAudioBytes, countStyle: .file))
                     }
                 }
-            } footer: { Text("Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.") }
+            } header: { Text("Recording transcription") } footer: { Text("Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.") }
 
             Section {
                 ForEach(draft.wrappedValue.choices, id: \.self) { choice in

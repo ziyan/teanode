@@ -513,7 +513,7 @@ struct RecordingActivityWidget: Widget {
         if captureState.recordingCaptureState == "active" {
             Text(captureState.updatedAt.addingTimeInterval(-Double(captureState.elapsedMS) / 1000), style: .timer).monospacedDigit()
         } else {
-            Label("Paused", systemImage: "pause").foregroundStyle(.secondary)
+            Label(captureState.recordingCaptureState == "interrupted" ? String(localized: "Interrupted") : String(localized: "Paused"), systemImage: "pause").foregroundStyle(.secondary)
             Text(Duration.milliseconds(captureState.elapsedMS).formatted(.time(pattern: .hourMinuteSecond))).monospacedDigit()
         }
     }

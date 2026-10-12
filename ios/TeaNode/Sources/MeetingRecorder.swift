@@ -240,8 +240,11 @@ final class MeetingRecorder: NSObject {
             localRecording = recording
             return
         }
-        let audio = try AVAudioFile(forReading: original)
-        recording.localMedia[mediaIndex].mediaDurationMS = Int64(Double(audio.length) / audio.fileFormat.sampleRate * 1000)
+        if let audio = try? AVAudioFile(forReading: original) {
+            recording.localMedia[mediaIndex].mediaDurationMS = Int64(Double(audio.length) / audio.fileFormat.sampleRate * 1000)
+        } else {
+            problemText = String(localized: "This audio segment cannot be read locally. Its original is kept for recovery.")
+        }
         let originalSize = try original.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         recording.localMedia[mediaIndex].originalSizeBytes = Int64(originalSize)
         recording.localMedia[mediaIndex].originalSha256 = try await Task.detached { try Self.digest(original) }.value
