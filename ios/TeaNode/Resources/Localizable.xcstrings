@@ -44439,6 +44439,22 @@
           }
         }
       }
+    },
+    "Open TeaNode to resume this recording.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请打开 TeaNode 以继续此录音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode を開いてこの録音を再開してください。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

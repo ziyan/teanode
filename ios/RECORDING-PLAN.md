@@ -20,6 +20,9 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
   usage/status/cancel/reprocessing controls, confirmed speaker and reference management.
 - Live Activity elapsed time and explicit pause/resume/stop intents bind to the local
   session ID so an old activity cannot control a new session.
+- Recording-specific system intents require a matching active Live Activity before
+  lock-screen resume. Foreground resume can create one when permitted. This follows
+  [Apple recording intent documentation](https://developer.apple.com/documentation/AppIntents/AudioRecordingIntent); it still needs real-device evidence.
 
 ## Checks and review
 

@@ -3,6 +3,7 @@ import ActivityKit
 import CryptoKit
 import Observation
 import TeaNodeKit
+import UIKit
 
 /// MeetingRecorder records locally without opening a conversation or contacting a provider.
 @MainActor
@@ -22,6 +23,8 @@ final class MeetingRecorder: NSObject {
     private var timelineAtStartMS: Int64 = 0
     private var isChangingCapture = false
     private var hasPendingInterruption = false
+    private var hasPendingPause = false
+    private var hasPendingStop = false
 
     var isCapturing: Bool { localRecording?.recordingCaptureState == "active" }
     var hasSession: Bool { localRecording != nil && localRecording?.recordingCaptureState != "stopped" }
@@ -51,18 +54,11 @@ final class MeetingRecorder: NSObject {
             elapsedMS = 0
             startedUptime = ProcessInfo.processInfo.systemUptime
             timelineAtStartMS = 0
+            _ = ensureRecordingActivity(canCreate: true)
             try await startSegment()
             recording = localRecording ?? recording
             observeInterruptions()
             startClock()
-            if ActivityAuthorizationInfo().areActivitiesEnabled {
-                let activity = try? Activity.request(
-                    attributes: RecordingActivityAttributes(localRecordingId: recording.id.uuidString),
-                    content: ActivityContent(
-                        state: RecordingActivityAttributes.ContentState(recordingCaptureState: "active", elapsedMS: 0, updatedAt: Date()),
-                        staleDate: nil), pushType: nil)
-                activityId = activity?.id
-            }
             problemText = nil
         } catch { await fail(error) }
     }
@@ -70,7 +66,7 @@ final class MeetingRecorder: NSObject {
     func pause(isInterruption: Bool = false) async {
         guard isCapturing else { return }
         if isChangingCapture {
-            if isInterruption { hasPendingInterruption = true }
+            if isInterruption { hasPendingInterruption = true } else { hasPendingPause = true }
             return
         }
         isChangingCapture = true
@@ -87,11 +83,15 @@ final class MeetingRecorder: NSObject {
         } catch { await fail(error) }
     }
 
-    func resume(localRecordingId: String? = nil) async {
+    func resume(localRecordingId: String? = nil, requiresExistingActivity: Bool = false) async {
         guard let current = localRecording, localRecordingId == nil || current.id.uuidString == localRecordingId,
             ["paused", "interrupted"].contains(current.recordingCaptureState), !isChangingCapture,
             AppModel.shared.currentCall == nil
         else { return }
+        if !ensureRecordingActivity(canCreate: !requiresExistingActivity), requiresExistingActivity {
+            problemText = String(localized: "Open TeaNode to resume this recording.")
+            return
+        }
         isChangingCapture = true
         defer { finishChangingCapture() }
         do {
@@ -127,7 +127,7 @@ final class MeetingRecorder: NSObject {
         } catch { await fail(error) }
     }
 
-    func recover(accountKey: String, localRecordingId: UUID? = nil, shouldEndOldActivities: Bool = true) async {
+    func recover(accountKey: String, localRecordingId: UUID? = nil) async {
         guard !hasSession else { return }
         do {
             journal = try Self.makeJournal()
@@ -157,7 +157,7 @@ final class MeetingRecorder: NSObject {
             startClock()
             problemText = String(localized: "Recovered local audio. Resume when you are ready; the interruption is marked as a gap.")
             for activity in Activity<RecordingActivityAttributes>.activities {
-                if !shouldEndOldActivities && activity.attributes.localRecordingId == recording.id.uuidString {
+                if activity.attributes.localRecordingId == recording.id.uuidString {
                     activityId = activity.id
                 } else {
                     await activity.end(nil, dismissalPolicy: .immediate)
@@ -184,7 +184,7 @@ final class MeetingRecorder: NSObject {
                 let recovered = try await journal.recoverableRecording(
                     localRecordingId: localRecordingId, retainedAccountKeys: retainedAccounts.map(\.accountKey))
             else { return false }
-            await recover(accountKey: recovered.accountKey, localRecordingId: recovered.id, shouldEndOldActivities: false)
+            await recover(accountKey: recovered.accountKey, localRecordingId: recovered.id)
             return hasSession && localRecording?.id == recovered.id
         } catch {
             problemText = error.localizedDescription
@@ -194,9 +194,17 @@ final class MeetingRecorder: NSObject {
 
     private func finishChangingCapture() {
         isChangingCapture = false
-        if hasPendingInterruption {
+        if hasPendingStop {
+            hasPendingStop = false
+            hasPendingPause = false
             hasPendingInterruption = false
-            Task { await pause(isInterruption: true) }
+            let sessionId = localRecording?.id.uuidString
+            Task { await stop(localRecordingId: sessionId) }
+        } else if hasPendingPause || hasPendingInterruption {
+            let isInterruption = hasPendingInterruption
+            hasPendingPause = false
+            hasPendingInterruption = false
+            Task { await pause(isInterruption: isInterruption) }
         }
     }
 
@@ -305,6 +313,27 @@ final class MeetingRecorder: NSObject {
         ) { [weak self] _ in
             Task { @MainActor in await self?.pause(isInterruption: true) }
         }
+    }
+
+    private func ensureRecordingActivity(canCreate: Bool) -> Bool {
+        guard let localRecording else { return false }
+        if let existing = Activity<RecordingActivityAttributes>.activities.first(where: {
+            $0.attributes.localRecordingId == localRecording.id.uuidString && ($0.activityState == .active || $0.activityState == .stale)
+        }) {
+            activityId = existing.id
+            return true
+        }
+        guard canCreate, ActivityAuthorizationInfo().areActivitiesEnabled, UIApplication.shared.applicationState == .active else { return false }
+        do {
+            let activity = try Activity.request(
+                attributes: RecordingActivityAttributes(localRecordingId: localRecording.id.uuidString),
+                content: ActivityContent(
+                    state: RecordingActivityAttributes.ContentState(
+                        recordingCaptureState: localRecording.recordingCaptureState, elapsedMS: elapsedMS, updatedAt: Date()), staleDate: nil),
+                pushType: nil)
+            activityId = activity.id
+            return true
+        } catch { return false }
     }
 
     private func updateActivity() async {

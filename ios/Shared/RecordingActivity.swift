@@ -11,7 +11,7 @@ struct RecordingActivityAttributes: ActivityAttributes {
     var localRecordingId: String
 }
 
-struct ToggleRecordingPauseIntent: LiveActivityIntent {
+struct ToggleRecordingPauseIntent: LiveActivityIntent, AudioRecordingIntent {
     static var title: LocalizedStringResource { "Pause or resume recording" }
     static var isDiscoverable: Bool { false }
     @Parameter(title: "Recording") var localRecordingId: String
@@ -27,14 +27,18 @@ struct ToggleRecordingPauseIntent: LiveActivityIntent {
         #if TEANODE_APP
             let recorder = MeetingRecorder.shared
             if await recorder.restoreForActivity(localRecordingId: localRecordingId) {
-                if shouldResume { await recorder.resume(localRecordingId: localRecordingId) } else { await recorder.pause() }
+                if shouldResume {
+                    await recorder.resume(localRecordingId: localRecordingId, requiresExistingActivity: true)
+                } else {
+                    await recorder.pause()
+                }
             }
         #endif
         return .result()
     }
 }
 
-struct StopRecordingIntent: LiveActivityIntent {
+struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static var title: LocalizedStringResource { "Stop recording" }
     static var isDiscoverable: Bool { false }
     @Parameter(title: "Recording") var localRecordingId: String
