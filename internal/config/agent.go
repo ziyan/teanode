@@ -335,13 +335,9 @@ type AgentModels struct {
 	Fast      string `yaml:"fast,omitempty"`
 	Embedding string `yaml:"embedding,omitempty"`
 
-	// Quick is the model a person's typed turn starts on, in the
-	// dashboard, the browser extension, the iPhone app and the chat apps.
-	// It answers quick things itself and hands anything that needs
-	// reasoning to the ask model with think_harder. A large reasoning
-	// model takes seconds to answer even a greeting, and most of what a
-	// person types is not a question that needs one. Empty: typed turns
-	// start on the ask model, as before.
+	// Quick is the model a person's typed turn starts on; it hands
+	// anything that needs reasoning to the ask model with think_harder.
+	// Empty: typed turns start on the ask model.
 	Quick string `yaml:"quick,omitempty"`
 
 	// Decide is the model for a question whose answers are known in
