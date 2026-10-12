@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -377,9 +378,22 @@ func (self *AskRun) isAnswerForPhone() bool {
 	return false
 }
 
+// hiddenCommentPattern is an HTML comment: the markers an answer carries
+// for the dashboard and the app to read, never to show.
+var hiddenCommentPattern = regexp.MustCompile(`(?s)<!--.*?(-->|$)`)
+
+// linkPattern is a Markdown link or picture, [words](target) or
+// ![words](target); a notification keeps the words.
+var linkPattern = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+
 // phoneBody is text as a notification shows it: plain, and short enough that
-// a lock screen is not the place it is read in full.
+// a lock screen is not the place it is read in full. The suggested replies
+// and any other hidden marker go first, since a notification is plain text
+// and would print them, and a link keeps its words without its target.
 func phoneBody(text string) string {
+	text = models.StripSuggestedReplies(text)
+	text = hiddenCommentPattern.ReplaceAllString(text, "")
+	text = linkPattern.ReplaceAllString(text, "$1")
 	text = strings.Join(strings.Fields(text), " ")
 	for _, mark := range []string{"**", "__", "`"} {
 		text = strings.ReplaceAll(text, mark, "")

@@ -291,3 +291,27 @@ func TestPresenceKeepsABoundedNumberOfReporters(t *testing.T) {
 		t.Error("a known reporter reporting again pushed another out")
 	}
 }
+
+// A notification is plain text: the suggested replies an answer ends with,
+// any other hidden marker and a link's target are not printed on a lock
+// screen.
+func TestAPhoneBodyLeavesOutWhatIsHidden(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		text string
+		want string
+	}{
+		"suggested replies": {
+			"You're welcome! Want to hear about another feature?\n<!--suggestions:[\"Show me how sharing works\",\"Not now\"]-->",
+			"You're welcome! Want to hear about another feature?",
+		},
+		"suggested replies cut off": {"Done ✅\n<!--suggestions:[\"Thanks", "Done ✅"},
+		"another hidden marker":     {"Saved. <!-- kept: 3 --> Anything else?", "Saved. Anything else?"},
+		"a link":                    {"See [the invoice](mail:01abc) from the plumber.", "See the invoice from the plumber."},
+		"a picture":                 {"Here it is: ![the driveway](https://example.org/a.jpg)", "Here it is: the driveway"},
+		"bold and code":             {"**Paid** `INV-1`", "Paid INV-1"},
+	} {
+		if got := phoneBody(testCase.text); got != testCase.want {
+			t.Errorf("%s: phoneBody(%q) = %q, want %q", name, testCase.text, got, testCase.want)
+		}
+	}
+}
