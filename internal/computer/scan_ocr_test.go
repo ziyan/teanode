@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,9 +85,23 @@ func TestEveryPageOfALongScanIsRead(t *testing.T) {
 	ocrCacheDirectory = func() string { return cache }
 	defer func() { ocrCacheDirectory = original }()
 
-	text, err := readPages(context.Background(), path, "a long scan")
-	if err != nil {
-		t.Fatalf("readPages: %s", err)
+	var text string
+	previousReadPageCount := 0
+	// A slow reader can need several bounded passes even for this fixture.
+	for passIndex := 0; passIndex < pageCount; passIndex++ {
+		var err error
+		text, err = readPages(t.Context(), path, "a long scan")
+		if err == nil {
+			break
+		}
+		var unreadPagesError *pagesUnreadError
+		if !errors.As(err, &unreadPagesError) || unreadPagesError.reason != "out of time for this pass" || unreadPagesError.readCount <= previousReadPageCount {
+			t.Fatalf("readPages did not make recoverable progress: %s", err)
+		}
+		if text != "" {
+			t.Fatal("an unfinished pass returned partial text as the whole scan")
+		}
+		previousReadPageCount = unreadPagesError.readCount
 	}
 	if found := strings.Count(text, "Receipt 4471"); found != pageCount {
 		t.Fatalf("every one of the %d pages is read, not %d", pageCount, found)
