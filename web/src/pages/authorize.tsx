@@ -218,7 +218,7 @@ export function AuthorizePage() {
         <dt>{t('authorize.actsAs')}</dt>
         <dd>
           <span className="authorize-name">{request.username}</span>
-          <button
+          <button /* link-button: goes to the sign-in form, under the account it changes */
             className="link authorize-switch"
             type="button"
             onClick={switchAccount}
