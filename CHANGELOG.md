@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.2] - 2026-10-12
+
+### Fixed
+
+- In the iPhone app, a goal's conversation shows its goal as one line at the top, opening the whole of it on a tap, instead of covering half the screen. (#393)
+
 ## [0.134.1] - 2026-10-11
 
 ### Fixed
