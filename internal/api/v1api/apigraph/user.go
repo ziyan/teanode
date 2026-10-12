@@ -206,8 +206,10 @@ func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if _, err := access.EnsureMailbox(tx, stored); err != nil {
-		return nil, err
+	if self.isServiceEnabled(models.ServiceMailboxes) {
+		if _, err := access.EnsureMailbox(tx, stored); err != nil {
+			return nil, err
+		}
 	}
 	log.Noticef("%s created the account %q", operatorName(ctx), stored.Username)
 	return describeUser(stored), nil

@@ -92,9 +92,12 @@ func backfillNotes(ctx context.Context, database db.Database, store storage.Stor
 // backfillAllNotes runs batches until one finds nothing, or the server
 // stops. A batch that fails is tried again a minute later rather than given
 // up on until the next start.
-func backfillAllNotes(ctx context.Context, database db.Database, store storage.Storage) {
+func backfillAllNotes(ctx context.Context, database db.Database, store storage.Storage, isEnabled ...func() bool) {
 	lastMailId := ""
 	for ctx.Err() == nil {
+		if len(isEnabled) > 0 && !isEnabled[0]() {
+			return
+		}
 		examined, examinedThrough, err := backfillNotes(ctx, database, store, lastMailId)
 		if err != nil {
 			if ctx.Err() != nil {

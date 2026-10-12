@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/op/go-logging"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Error is a single problem found in the configuration file. Path is the YAML
@@ -53,6 +54,9 @@ func (self *validator) add(path, format string, arguments ...interface{}) {
 func (self *Configuration) Validate() error {
 	validator := &validator{}
 
+	if self.Services.Mailboxes.Enabled() && !self.Services.MailRouting.Enabled() {
+		validator.add("services.mailboxes.isEnabled", "mailboxes require mail routing; disable mailboxes or enable mail routing")
+	}
 	self.validateServer(validator)
 	if self.GraphQL.MaximumDepth < 1 || self.GraphQL.MaximumDepth > 256 {
 		validator.add("graphql.maximumDepth", "must be between 1 and 256")
@@ -72,9 +76,13 @@ func (self *Configuration) Validate() error {
 	self.validateListen(validator)
 	self.validateTls(validator)
 	self.validateDatabase(validator)
-	self.validateSmtp(validator)
+	if self.Services.MailRouting.Enabled() {
+		self.validateSmtp(validator)
+	}
 	self.validateAgent(validator)
-	self.validateDkim(validator)
+	if self.Services.MailRouting.Enabled() {
+		self.validateDkim(validator)
+	}
 	self.validateSession(validator)
 	self.validateIntegrations(validator)
 	self.validateSSO(validator)
@@ -86,9 +94,9 @@ func (self *Configuration) Validate() error {
 }
 
 func (self *Configuration) validateServer(validator *validator) {
-	if self.Server.Name == "" {
+	if self.Server.Name == "" && self.Services.MailRouting.Enabled() {
 		validator.add("server.name", "required: the host name this server announces over SMTP, for example mail.example.com")
-	} else if !isHostname(self.Server.Name) {
+	} else if self.Server.Name != "" && !isHostname(self.Server.Name) {
 		validator.add("server.name", "%q is not a host name", self.Server.Name)
 	}
 	for index, host := range self.Server.MailServers {
@@ -139,8 +147,16 @@ func (self *Configuration) validateListen(validator *validator) {
 		"listen.debug":        self.Listen.Debug,
 	}
 	required := map[string]bool{
-		"listen.smtpIncoming": true,
-		"listen.smtpOutgoing": true,
+		"listen.smtpIncoming": self.Services.MailRouting.Enabled(),
+		"listen.smtpOutgoing": self.Services.MailRouting.Enabled(),
+	}
+	if !self.Services.MailRouting.Enabled() {
+		delete(addresses, "listen.smtpIncoming")
+		delete(addresses, "listen.smtpOutgoing")
+	}
+	if !self.Services.IsEnabled(models.ServiceMailboxes) {
+		delete(addresses, "listen.imap")
+		delete(addresses, "listen.imaps")
 	}
 	seen := make(map[string]string, len(addresses))
 	for path, address := range addresses {
@@ -382,7 +398,7 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		}
 	}
 
-	if self.Antivirus.Enabled {
+	if self.Services.IsEnabled(models.ServiceMailRouting) && self.Antivirus.Enabled {
 		if self.Antivirus.Host == "" {
 			validator.add("antivirus.host", "required when antivirus is enabled: where clamd is listening")
 		}
@@ -390,7 +406,7 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 			validator.add("antivirus.port", "required when antivirus is enabled, usually 3310")
 		}
 	}
-	if self.Antispam.Enabled {
+	if self.Services.IsEnabled(models.ServiceMailRouting) && self.Antispam.Enabled {
 		switch self.Antispam.Engine {
 		case "", AntispamEngineBuiltin, AntispamEngineSpamd:
 		default:
@@ -416,7 +432,7 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 			}
 		}
 	}
-	if self.GeoIP.Enabled {
+	if self.Services.IsEnabled(models.ServiceMailRouting) && self.GeoIP.Enabled {
 		if self.GeoIP.DatabaseFile == "" {
 			validator.add("geoip.databaseFile", "required when geoip is enabled: a MaxMind .mmdb file, which you supply yourself")
 		}
@@ -494,7 +510,7 @@ func (self *Configuration) ValidateFiles() error {
 		}
 	}
 
-	if self.GeoIP.Enabled && self.GeoIP.DatabaseFile != "" {
+	if self.Services.IsEnabled(models.ServiceMailRouting) && self.GeoIP.Enabled && self.GeoIP.DatabaseFile != "" {
 		if _, err := os.Stat(self.Path(self.GeoIP.DatabaseFile)); err != nil {
 			validator.add("geoip.databaseFile", "%q cannot be read: %s", self.Path(self.GeoIP.DatabaseFile), err)
 		}

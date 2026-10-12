@@ -145,6 +145,16 @@ see what is left rather than guessing.
 
 ## Getting started
 
+For a personal assistant without hosting email, use the
+[assistant compose file](deploy/docker-compose.assistant.yml) and
+[deployment guide](docs/reference/deployment.md#assistant-without-hosted-mail).
+Claim your account, choose services in Server > Setup, configure a model and
+enable the assistant. No mail domain, MX records or SMTP ports are needed.
+Calendar, reminders and contacts are independent choices. Existing mail
+installations retain their behavior when upgraded.
+
+The instructions below configure hosted mail.
+
 Download the two programs, describe the server, run it:
 
     curl -L -o /usr/local/bin/teanode-server \
@@ -154,7 +164,7 @@ Download the two programs, describe the server, run it:
     chmod +x /usr/local/bin/teanode-server /usr/local/bin/teanode
 
     mkdir -p /opt/teanode && cd /opt/teanode
-    teanode-server config env --output .env \
+    teanode-server config env --preset mail --output .env \
       --hostname mail.example.com --domain example.com
 
 Edit `.env` — it needs a PostgreSQL you can reach and an address for the

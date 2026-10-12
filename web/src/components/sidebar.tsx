@@ -1,3 +1,5 @@
+import { isPathAvailable } from '../services'
+import type { ServiceCapabilities } from '../api'
 import React, { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
@@ -61,6 +63,7 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
 }
 
 const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
+  sync: <SmartphoneIcon />,
   preference: <UserIcon />,
   agent: <SparkIcon />,
   mailbox: <MailIcon />,
@@ -106,10 +109,13 @@ const MAILBOX_RAIL_ITEMS: Item[] = ACCOUNT_GROUP.items.filter((item) => item.rai
 // nothing when they may open none. Exported because the account menu offers
 // the way in, and should not have to know how the management side is
 // arranged to do it.
-export function firstManagementPath(permissions: ApiPermissions | undefined | null): string | undefined {
+export function firstManagementPath(
+  permissions: ApiPermissions | undefined | null,
+  services?: ServiceCapabilities,
+): string | undefined {
   const allowed = (item: Item) =>
     !item.anyOf || item.anyOf.some((key) => hasPermission(permissions, key) || hasAnywhere(permissions, key))
-  return GROUPS.flatMap((group) => group.items).find(allowed)?.to
+  return GROUPS.flatMap((group) => group.items).find((item) => allowed(item) && isPathAvailable(item.to, services))?.to
 }
 
 const GROUPS: Group[] = [
@@ -221,6 +227,9 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
+    ['/agent', '/knowledge', '/finance', '/calendar', '/contacts', '/reminders'].some(
+      (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
+    ) ||
     location.pathname === '/mailbox' ||
     location.pathname.startsWith('/mailbox/') ||
     (hasMailbox && (location.pathname === '/agent' || surface?.rail === 'mailbox'))
@@ -234,6 +243,7 @@ export function Sidebar({
   // rail that can hold it is the one shown.
   const finance = useAgentFinancePresence(inAccount || inMailbox)
   const permitted = (item: Item) =>
+    isPathAvailable(item.to, session.services) &&
     (item.shownWhen !== 'finance' || finance.isShown === true) &&
     (item.shownWhen !== 'mailbox' || hasMailbox) &&
     (!item.anyOf ||
@@ -453,18 +463,22 @@ export function Sidebar({
                 </span>
                 <span className="sidebar-label">{t('nav.subscriptions')}</span>
               </NavLink>
-              <NavLink to="/mailbox/contacts" title={collapsed ? t('nav.contacts') : undefined}>
-                <span className="sidebar-icon">
-                  <UserIcon />
-                </span>
-                <span className="sidebar-label">{t('nav.contacts')}</span>
-              </NavLink>
-              <NavLink to="/mailbox/calendar" title={collapsed ? t('nav.calendar') : undefined}>
-                <span className="sidebar-icon">
-                  <CalendarIcon />
-                </span>
-                <span className="sidebar-label">{t('nav.calendar')}</span>
-              </NavLink>
+              {session.services?.isContactsEnabled !== false && (
+                <NavLink to="/contacts" title={collapsed ? t('nav.contacts') : undefined}>
+                  <span className="sidebar-icon">
+                    <UserIcon />
+                  </span>
+                  <span className="sidebar-label">{t('nav.contacts')}</span>
+                </NavLink>
+              )}
+              {(session.services?.isCalendarEnabled !== false || session.services?.isRemindersEnabled) && (
+                <NavLink to="/calendar" title={collapsed ? t('nav.calendar') : undefined}>
+                  <span className="sidebar-icon">
+                    <CalendarIcon />
+                  </span>
+                  <span className="sidebar-label">{t('nav.calendar')}</span>
+                </NavLink>
+              )}
               {/* What the agent knows and what the person's money did, under
                   the calendar: pages read often, not settings. The mailbox's
                   own settings are with the rest of the person's, in the
@@ -478,6 +492,49 @@ export function Sidebar({
                   </NavLink>
                 )
               })}
+            </div>
+          )}
+
+          {!current && !inManagement && (
+            <div className="sidebar-group">
+              {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (
+                <NavLink to="/agent">
+                  <SparkIcon />
+                  <span className="sidebar-label">{t('agent.title')}</span>
+                </NavLink>
+              )}
+              {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (
+                <NavLink to="/knowledge">
+                  <GridIcon />
+                  <span className="sidebar-label">{t('knowledge.title')}</span>
+                </NavLink>
+              )}
+              {session.services?.isCalendarEnabled && hasPermission(session.permissions, 'calendar:use') && (
+                <NavLink to="/calendar">
+                  <CalendarIcon />
+                  <span className="sidebar-label">{t('nav.calendar')}</span>
+                </NavLink>
+              )}
+              {session.services?.isRemindersEnabled &&
+                hasPermission(session.permissions, 'calendar:use') &&
+                !session.services.isCalendarEnabled && (
+                  <NavLink to="/reminders">
+                    <CalendarIcon />
+                    <span className="sidebar-label">{t('services.remindersLabel')}</span>
+                  </NavLink>
+                )}
+              {session.services?.isContactsEnabled && hasPermission(session.permissions, 'contacts:use') && (
+                <NavLink to="/contacts">
+                  <UserIcon />
+                  <span className="sidebar-label">{t('nav.contacts')}</span>
+                </NavLink>
+              )}
+              {finance.isShown && (
+                <NavLink to="/finance">
+                  <WalletIcon />
+                  <span className="sidebar-label">{t('finance.title')}</span>
+                </NavLink>
+              )}
             </div>
           )}
 

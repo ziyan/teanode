@@ -60,7 +60,7 @@ export function AccountMenu({
 }) {
   const { t } = useTranslation()
   const session = useSession()
-  const managePath = firstManagementPath(session.permissions)
+  const managePath = firstManagementPath(session.permissions, session.services)
   const [signingOut, setSigningOut] = useState(false)
   const [returning, setReturning] = useState(false)
   const toast = useToast()
@@ -130,11 +130,7 @@ export function AccountMenu({
                 things it was hiding. */}
             {onToggleSidebar && (
               <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={onToggleSidebar}
-                >
+                <button type="button" role="menuitem" onClick={onToggleSidebar}>
                   {/* Which way the rail is about to go: left to narrow it,
                       right to bring it back. One arrow for both said the
                       control did the same thing twice. */}

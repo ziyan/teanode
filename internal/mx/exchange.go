@@ -114,6 +114,9 @@ func (self *exchange) Close() error {
 }
 
 func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.Envelope) error {
+	if err := self.requireService(models.ServiceMailRouting); err != nil {
+		return err
+	}
 	defer func() {
 		log.Debugf("took %s handle mail %q", time.Since(envelope.ReceivedAt), envelope.ID)
 	}()
@@ -256,4 +259,11 @@ func (self *exchange) scavengeOnce(ctx context.Context) error {
 		log.Warningf("failed to scavenge credential usages: %s", err)
 	}
 	return nil
+}
+
+func (self *exchange) requireService(service models.Service) error {
+	if self.config == nil {
+		return nil
+	}
+	return self.config.Current().RequireService(service)
 }

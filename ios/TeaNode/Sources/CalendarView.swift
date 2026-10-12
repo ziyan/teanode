@@ -7,6 +7,7 @@ import TeaNodeKit
 /// switch to the agenda, a day, a week or five days as a list of days, and
 /// the reminders.
 struct CalendarScreen: View {
+    @Environment(AppModel.self) private var app
     @State private var model: CalendarModel
     @State private var draft: EventDraft?
     @State private var opened: CalendarEvent?
@@ -48,7 +49,16 @@ struct CalendarScreen: View {
                     }
                 }
         }
-        .task {
+        .task(id: app.services) {
+            if app.services?.isCalendarEnabled == false {
+                model.viewMode = .reminders
+                path = []
+                draft = nil
+                opened = nil
+                isSearching = false
+            } else if app.services?.isRemindersEnabled == false && model.viewMode == .reminders {
+                model.viewMode = .month
+            }
             await model.load()
             #if DEBUG
                 // The screenshots photograph a day opened from the month.
@@ -157,11 +167,13 @@ struct CalendarScreen: View {
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItemGroup(placement: .bottomBar) {
-            modeToggle(.agenda)
-            modeToggle(.day)
+            if app.services?.isCalendarEnabled != false {
+                modeToggle(.agenda)
+                modeToggle(.day)
+            }
             Menu {
                 Picker("View", selection: $model.viewMode) {
-                    ForEach(CalendarModel.ViewMode.allCases) { mode in
+                    ForEach(CalendarModel.ViewMode.allCases.filter { $0 == .reminders ? app.services?.isRemindersEnabled != false : app.services?.isCalendarEnabled != false }) { mode in
                         Label(mode.title, systemImage: mode.systemImage).tag(mode)
                     }
                 }

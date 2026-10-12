@@ -6,7 +6,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
 import { INTEGRATION_SECTIONS, IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
-import { SetupPage } from './setup'
+import { SetupPage } from './serviceSetup'
 
 // Everything about this server, in one place with tabs across the top.
 //
@@ -41,7 +41,11 @@ export function ServerPage() {
   // The rail's dot says "there is something on the Server page"; this one
   // says which tab it is on.
   const TABS: Tab[] = hasPermission(session.permissions, 'server:manage')
-    ? SERVER_TABS.map((candidate) =>
+    ? SERVER_TABS.filter(
+        (candidate) =>
+          session.services?.isMailRoutingEnabled !== false ||
+          !['mail', 'sending', 'resolver', 'scanning', 'spam'].includes(candidate.id),
+      ).map((candidate) =>
         candidate.id === 'about' && upgradeAvailable
           ? { ...candidate, marked: true, markedLabel: t('nav.upgradeAvailable') }
           : candidate,

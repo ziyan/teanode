@@ -50,6 +50,7 @@ func newConfigEnvCommand() *cli.Command {
 			"ignored, so treat this as a starting point rather than as the place to\n" +
 			"change settings later.",
 		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "preset", Usage: "assistant, mail or legacy (mail when a domain is supplied, assistant otherwise)"},
 			&cli.StringFlag{
 				Name:    "output",
 				Aliases: []string{"o"},
@@ -103,6 +104,16 @@ POSTGRES_PASSWORD=%s
 }
 
 func runConfigEnv(ctx context.Context, command *cli.Command) error {
+	preset := command.String("preset")
+	if preset == "" {
+		preset = "assistant"
+		if command.String("domain") != "" {
+			preset = "mail"
+		}
+	}
+	if preset != "assistant" && preset != "mail" && preset != "legacy" {
+		return fmt.Errorf("preset must be assistant, mail or legacy")
+	}
 	hostname := command.String("hostname")
 	domain := command.String("domain")
 
@@ -223,6 +234,30 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 		bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix,
 	)
 
+	if preset == "assistant" {
+		if command.String("domain") != "" {
+			return fmt.Errorf("the assistant preset does not host a domain; choose the mail preset")
+		}
+		lines := strings.Split(content, "\n")
+		kept := make([]string, 0, len(lines))
+		for _, line := range lines {
+			if strings.HasPrefix(line, "TEANODE_SERVER_DOMAIN=") || strings.HasPrefix(line, "TEANODE_SERVER_NAME=") || strings.HasPrefix(line, "TEANODE_TLS_HOSTS=") || strings.HasPrefix(line, "TEANODE_LISTEN_SMTP_") || strings.HasPrefix(line, "TEANODE_LISTEN_IMAP") {
+				continue
+			}
+			if line == "TEANODE_LISTEN_HTTP=:80" {
+				line = "TEANODE_LISTEN_HTTP=127.0.0.1:8080"
+			}
+			if line == "TEANODE_LISTEN_HTTPS=:443" {
+				line = "TEANODE_LISTEN_HTTPS="
+			}
+			if line == "TEANODE_TLS_ACME_ENABLED=true" {
+				line = "TEANODE_TLS_ACME_ENABLED=false"
+			}
+			kept = append(kept, line)
+		}
+		content = strings.Join(kept, "\n")
+	}
+	content += "\nTEANODE_SERVICE_PRESET=" + preset + "\n"
 	filename := command.String("output")
 	if filename == "-" {
 		fmt.Print(content)
@@ -238,6 +273,10 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 	}
 
 	fmt.Printf("wrote %s\n\n", filename)
+	if preset == "assistant" {
+		fmt.Printf("Next steps: configure secure web access, start the server, claim your account, and choose services in Server > Setup. Hosted mail is off.\n")
+		return nil
+	}
 	fmt.Printf("Next steps:\n")
 	fmt.Printf("  1. edit %s: set the host name, the domain, and an ACME contact address\n", filename)
 	fmt.Printf("  2. docker compose up -d\n")

@@ -64,17 +64,18 @@ extension Connection {
     /// events calendar, and the unread mail in every mailbox. A part the
     /// person cannot read is left empty rather than failing the rest.
     public func glance(now: Date = Date(), hours: Int = 48, limit: Int = 6) async throws -> Glance {
-        let agentName = (try? await agentName()) ?? ""
+        let services = (try? await serviceCapabilities()) ?? .unavailable
+        let agentName = services.isAssistantEnabled ? (try? await agentName()) ?? "" : ""
         var events: [CalendarEvent] = []
-        if let calendars = try? await calendars() {
+        if services.isCalendarEnabled, let calendars = try? await calendars() {
             for calendar in calendars where calendar.calendarKind != "reminders" {
                 if let read = try? await calendarEvents(calendarId: calendar.id, from: now, until: now.addingTimeInterval(Double(hours) * 3600)) {
                     events += read
                 }
             }
         }
-        let unreadCount = ((try? await mailboxes()) ?? []).reduce(0) { $0 + Int($1.unread) }
-        let waiting = try? await waiting(first: 1)
+        let unreadCount = services.isMailboxEnabled ? ((try? await mailboxes()) ?? []).reduce(0) { $0 + Int($1.unread) } : 0
+        let waiting = services.isAssistantEnabled ? try? await waiting(first: 1) : nil
         return Glance(
             events: Glance.upcoming(events, now: now, limit: limit), unreadCount: unreadCount, agentName: agentName,
             waitingCount: waiting?.waitingCount ?? 0, newestWaiting: waiting?.interactions.first)

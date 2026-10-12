@@ -10,6 +10,9 @@ package apigraph
 
 // Query is every read operation.
 type Query interface {
+	ServiceQuery
+	ServiceSetupQuery
+	SyncQuery
 	SendQuery
 	DomainQuery
 	AliasQuery
@@ -76,6 +79,8 @@ var _ Query = &graph{}
 
 // Mutation is every write operation.
 type Mutation interface {
+	ServiceMutation
+	SyncMutation
 	DomainMutation
 	AliasMutation
 	UserMutation

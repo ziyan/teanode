@@ -6,12 +6,13 @@ FROM node:22 AS dashboard
 WORKDIR /src
 # Install dependencies first so that a source-only change does not repeat it.
 COPY web/package.json web/package-lock.json ./web/
+COPY web/scripts/patch-braces.cjs ./web/scripts/
 RUN cd web && npm ci --no-audit --no-fund
 COPY web ./web
 # The build writes into internal/frontend/static, which the Go build embeds.
 RUN mkdir -p internal/frontend/static && cd web && npm run build
 
-FROM golang:1.26 AS server
+FROM golang:1.26.9 AS server
 # Passed by the release workflow so the binary can report what it is. Without
 # them "teanode-server version" says 0.0.0-dev, which is useless in a bug
 # report.

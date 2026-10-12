@@ -22,7 +22,9 @@
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if query.contains("ReadAgentConversation") {
+            if query.contains("GetServiceCapabilities") {
+                answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
+            } else if query.contains("ReadAgentConversation") {
                 answer = Self.conversation
             } else if query.contains("ListAgentConversations") {
                 answer = Self.conversations

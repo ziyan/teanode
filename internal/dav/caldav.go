@@ -62,6 +62,9 @@ func (self *calendarBackend) ListCalendars(ctx context.Context) ([]caldav.Calend
 	var calendars []*models.Calendar
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		for _, kind := range []models.CalendarKind{models.CalendarEvents, models.CalendarReminders} {
+			if !self.component.allows(signedIn, calendarService(kind)) {
+				continue
+			}
 			if _, err := tx.EnsureCalendar(signedIn.userID, kind, nil); err != nil {
 				return unexpectedCalendar(err)
 			}
@@ -74,6 +77,9 @@ func (self *calendarBackend) ListCalendars(ctx context.Context) ([]caldav.Calend
 	}
 	listed := make([]caldav.Calendar, 0, len(calendars))
 	for _, found := range calendars {
+		if !self.component.allows(signedIn, calendarService(found.CalendarKind)) {
+			continue
+		}
 		listed = append(listed, self.describe(signedIn, found))
 	}
 	return listed, nil
@@ -410,7 +416,7 @@ func (self *calendarBackend) calendarAt(ctx context.Context, signedIn *session, 
 	}); err != nil {
 		return nil, err
 	}
-	if found == nil || found.UserID != signedIn.userID {
+	if found == nil || found.UserID != signedIn.userID || !self.component.allows(signedIn, calendarService(found.CalendarKind)) {
 		return nil, refuse(http.StatusNotFound, "no such calendar")
 	}
 	return found, nil
@@ -503,4 +509,11 @@ func unexpectedCalendar(err error) error {
 	log.Errorf("a calendar request could not be served: %s", err)
 	return webdav.NewHTTPError(http.StatusInternalServerError,
 		fmt.Errorf("this server could not do that just now"))
+}
+
+func calendarService(kind models.CalendarKind) models.Service {
+	if kind == models.CalendarReminders {
+		return models.ServiceReminders
+	}
+	return models.ServiceCalendar
 }

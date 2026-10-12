@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "check-catalogs": "node scripts/check-catalogs.mjs",
     "check-queries": "node scripts/check-queries.mjs",
-    "test": "vitest run"
+    "test": "vitest run && npm run test:dependencies",
+    "postinstall": "node scripts/patch-braces.cjs",
+    "test:dependencies": "node --test scripts/dependency-security.test.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

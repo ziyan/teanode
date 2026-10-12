@@ -18,6 +18,9 @@ import (
 
 // Settings are what the worker needs.
 type Settings struct {
+	IsCalendarEnabled func() bool
+	IsMailEnabled     func() bool
+
 	// Tick is how often to look for messages waiting to be read. An
 	// invitation is not urgent -- somebody reads their mail in minutes, not
 	// milliseconds -- but it should be there by the time they open it.
@@ -96,6 +99,9 @@ func (self *Scheduler) Stop() {
 //
 // The rows that turn out to be nothing are swept up afterwards; see sweep.
 func (self *Scheduler) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail) {
+	if (self.settings.IsCalendarEnabled != nil && !self.settings.IsCalendarEnabled()) || (self.settings.IsMailEnabled != nil && !self.settings.IsMailEnabled()) {
+		return
+	}
 	if mailbox == nil || item == nil || mail == nil {
 		return
 	}
@@ -113,6 +119,13 @@ func (self *Scheduler) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mail
 // Tick reads what is waiting. Exported so a test can run one turn of the
 // worker without starting it and waiting.
 func (self *Scheduler) Tick(ctx context.Context) error {
+	if self.settings.IsCalendarEnabled != nil && !self.settings.IsCalendarEnabled() {
+		return nil
+	}
+	if self.settings.IsMailEnabled != nil && !self.settings.IsMailEnabled() {
+		self.reindex(ctx)
+		return nil
+	}
 	var claimed []*models.CalendarInvitation
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		claimed, err = tx.ClaimCalendarInvitations(self.settings.Instance, self.settings.PerTick, time.Now())

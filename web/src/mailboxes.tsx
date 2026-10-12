@@ -70,7 +70,7 @@ export function MailboxesProvider({ children }: { children: React.ReactNode }) {
 
   // The console and a person with no mail:read anywhere own no mailboxes,
   // and asking would only be refused.
-  const eligible = Boolean(session.userId)
+  const eligible = Boolean(session.userId) && session.services?.isMailboxEnabled !== false
 
   const refresh = useCallback(async () => {
     if (!eligible) {

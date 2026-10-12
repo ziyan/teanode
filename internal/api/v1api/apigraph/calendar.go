@@ -224,6 +224,9 @@ const longestWindow = 5 * 366 * 24 * time.Hour
 
 // requireCalendarPerson is the caller, if they may keep a calendar.
 func (self *graph) requireCalendarPerson(ctx context.Context) (*api.Principal, error) {
+	if !self.isServiceEnabled(models.ServiceCalendar) && !self.isServiceEnabled(models.ServiceReminders) {
+		return nil, &models.ServiceUnavailableError{Service: models.ServiceCalendar}
+	}
 	principal, err := self.requirePermission(ctx, models.PermissionCalendarUse)
 	if err != nil {
 		return nil, err
@@ -249,6 +252,9 @@ func (self *graph) requireOwnCalendar(ctx context.Context, calendarId string) (*
 	if found == nil || found.UserID != principal.User.ID {
 		return nil, api.ErrNotFound
 	}
+	if err := self.requireService(calendarService(found.CalendarKind)); err != nil {
+		return nil, err
+	}
 	return found, nil
 }
 
@@ -262,13 +268,17 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 		// Nobody should have to make a calendar before they can put
 		// something in it, and the CalDAV layout needs one to exist
 		// before a phone can be pointed at it.
-		if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarEvents, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
-			return err
+		if self.isServiceEnabled(models.ServiceCalendar) {
+			if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarEvents, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
+				return err
+			}
 		}
 		// And the reminders list beside it, so that the switch that gives
 		// it to the agent is there before anything has been put in it.
-		if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarReminders, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
-			return err
+		if self.isServiceEnabled(models.ServiceReminders) {
+			if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarReminders, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
+				return err
+			}
 		}
 		found, err := tx.ListCalendars(principal.User.ID)
 		calendars = found
@@ -278,6 +288,9 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 	}
 	views := make([]*CalendarView, 0, len(calendars))
 	for _, found := range calendars {
+		if !self.isServiceEnabled(calendarService(found.CalendarKind)) {
+			continue
+		}
 		count, err := self.transaction(ctx).CountCalendarObjects(found.ID)
 		if err != nil {
 			return nil, err
@@ -491,6 +504,9 @@ func (self *graph) saveCalendarEvent(ctx context.Context, arguments SaveCalendar
 		parsed, err := buildSaved(&arguments, existing, organizer)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", db.ErrInvalidArguments, err)
+		}
+		if len(parsed.Attendees) > 0 && !self.isServiceEnabled(models.ServiceMailboxes) {
+			return nil, &models.ServiceUnavailableError{Service: models.ServiceMailboxes}
 		}
 		return parsed, nil
 	}, func(ctx context.Context, transaction db.Transaction, kept, before *models.CalendarObject) error {
@@ -901,4 +917,11 @@ func noReplyAddress(address string) bool {
 		return true
 	}
 	return false
+}
+
+func calendarService(kind models.CalendarKind) models.Service {
+	if kind == models.CalendarReminders {
+		return models.ServiceReminders
+	}
+	return models.ServiceCalendar
 }

@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 /// the rows of the dashboard's rail this person may open, as /manage sends
 /// them to the first of them.
 struct ManageOverviewView: View {
+    @Environment(AppModel.self) private var app
     let connection: Connection
     @State private var access: OperatorAccess?
     @State private var isLoading = true
@@ -22,7 +23,7 @@ struct ManageOverviewView: View {
     var body: some View {
         List {
             if let access {
-                if access.canOpenMailDelivery {
+                if access.canOpenMailDelivery && app.services?.isMailRoutingEnabled != false {
                     Section {
                         if access.canAuditMail {
                             NavigationLink {
@@ -91,6 +92,7 @@ struct ManageOverviewView: View {
                 if access.canManageServer || access.canOpenAgentAdmin {
                     Section {
                         if access.canManageServer {
+                            NavigationLink { ServerServicesView(connection: connection) } label: { Label("Services", systemImage: "switch.2") }
                             NavigationLink {
                                 ServerSettingsView(connection: connection)
                             } label: {

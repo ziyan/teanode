@@ -84,6 +84,9 @@ type Bootstrap struct {
 	// when the environment named none; the web UI adds domains afterwards.
 	SeedDomain string
 
+	// ServicePreset applies only when creating a new configuration.
+	ServicePreset string
+
 	// seeded names the variables that went into Seed, in the order they were
 	// read, and pairs each with what it does, so that a start which ignores
 	// them can say which ones actually disagree with what is stored.
@@ -460,6 +463,9 @@ func (self *Bootstrap) loadSeed() error {
 		self.seeded = append(self.seeded, seededVariable{name: variable.name, apply: variable.apply, value: value})
 	}
 
+	if preset, ok := lookup("SERVICE_PRESET"); ok {
+		self.ServicePreset = preset
+	}
 	self.Seed.Database = self.Database
 	return nil
 }
@@ -492,6 +498,37 @@ func (self *Bootstrap) SeedConfiguration() (*config.Configuration, error) {
 		return nil, err
 	}
 
+	preset := self.ServicePreset
+	if preset == "" && self.SeedDomain == "" && seed.Server.Name == "" {
+		preset = "assistant"
+	}
+	switch preset {
+	case "assistant":
+		if self.SeedDomain != "" {
+			return nil, fmt.Errorf("bootstrap: an assistant preset cannot seed a hosted mail domain")
+		}
+		for _, variable := range self.seeded {
+			if (variable.name == "LISTEN_SMTP_INCOMING" || variable.name == "LISTEN_SMTP_OUTGOING") && variable.value != "" {
+				return nil, fmt.Errorf("bootstrap: an assistant preset cannot select SMTP listeners")
+			}
+		}
+		seed.Services = config.AssistantServices()
+		if seed.Server.Name == "" {
+			if _, isSpecified := lookup("LISTEN_HTTP"); !isSpecified {
+				seed.Listen.HTTP = "127.0.0.1:8080"
+			}
+			seed.Listen.HTTPS = ""
+			seed.TLS.ACME.Enabled = false
+		}
+	case "mail":
+		seed.Services = config.AssistantServices()
+		seed.Services.MailRouting.IsEnabled = new(true)
+		seed.Services.Mailboxes.IsEnabled = new(true)
+	case "", "legacy":
+	default:
+		return nil, fmt.Errorf("bootstrap: service preset must be assistant, mail or legacy")
+	}
+
 	// A certificate is for the name this server answers to, which is the one
 	// already given.
 	if len(seed.TLS.Hosts) == 0 && seed.Server.Name != "" {
@@ -506,7 +543,7 @@ func (self *Bootstrap) SeedConfiguration() (*config.Configuration, error) {
 	if err := seed.Validate(); err != nil {
 		return nil, fmt.Errorf("bootstrap: this database has no configuration yet, and the environment "+
 			"does not describe a server to create:\n%w\n\nSet the variables for those settings — "+
-			"%sSERVER_NAME and %sSERVER_DOMAIN are the two a first run always needs — "+
+			"%sSERVER_NAME identifies a public server; %sSERVER_DOMAIN seeds hosted mail only — "+
 			"or run \"teanode config import\" to load an existing teanode.yaml",
 			err, Prefix, Prefix)
 	}

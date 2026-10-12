@@ -179,7 +179,7 @@ func (self *graph) resolvePrincipal(tx db.Transaction, username string, user *mo
 		for _, permission := range models.Permissions() {
 			grants = append(grants, models.Grant{Permission: permission})
 		}
-		return &api.Principal{Console: true, Permissions: models.NewEffectivePermissions(grants)}, nil
+		return &api.Principal{IsServiceEnabled: self.isServiceEnabled, Console: true, Permissions: models.NewEffectivePermissions(grants)}, nil
 	}
 	if user == nil {
 		return nil, nil
@@ -188,7 +188,7 @@ func (self *graph) resolvePrincipal(tx db.Transaction, username string, user *mo
 	if err != nil {
 		return nil, err
 	}
-	return &api.Principal{User: user, Permissions: permissions}, nil
+	return &api.Principal{IsServiceEnabled: self.isServiceEnabled, User: user, Permissions: permissions}, nil
 }
 
 // auditPrincipal is who the audit rows this request writes will name.

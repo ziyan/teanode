@@ -30,6 +30,9 @@ const searchDocumentNames = 200
 // deliverToMailbox places a message in a mailbox's Inbox and records the
 // delivery, already delivered: there is nothing to queue.
 func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbox, alias *models.Alias, recipient string, mail *models.Mail) (*models.Delivery, error) {
+	if err := self.requireService(models.ServiceMailboxes); err != nil {
+		return nil, err
+	}
 	inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
 	if err != nil {
 		return nil, err
@@ -339,6 +342,9 @@ func (self *exchange) scavengeRetention() time.Duration {
 // retention, and what is stored for them, on one instance at a time: the
 // advisory lock is what stops two sweeps racing a new item.
 func (self *exchange) scavengeMailOnce(ctx context.Context) error {
+	if err := self.requireService(models.ServiceMailRouting); err != nil {
+		return nil
+	}
 	retention := self.scavengeRetention()
 	if retention <= 0 {
 		return nil

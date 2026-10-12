@@ -57,24 +57,35 @@ var displayable = map[string]bool{
 }
 
 type media struct {
-	database db.Database
-	config   config.Store
-	storage  storage.Storage
+	database        db.Database
+	config          config.Store
+	storage         storage.Storage
+	runningServices config.Services
 }
 
 // New builds the media component.
 func New(database db.Database, configuration config.Store, files storage.Storage) (web.Component, error) {
-	return &media{database: database, config: configuration, storage: files}, nil
+	return &media{database: database, config: configuration, storage: files, runningServices: configuration.Current().Services}, nil
 }
 
 func (self *media) AddRoutes(router *mux.Router) error {
-	router.Path(api.PathMediaUpload).Methods(http.MethodPost).HandlerFunc(self.uploadView)
+	router.Path(api.PathMediaUpload).Methods(http.MethodPost).HandlerFunc(self.withMailRouting(self.uploadView))
 	router.Path(api.PathMediaFile).Methods(http.MethodGet).HandlerFunc(self.fileView)
 	router.Path(api.PathMediaLink).Methods(http.MethodGet).HandlerFunc(self.linkView)
-	router.Path(api.PathBimiLogoUpload).Methods(http.MethodPost).HandlerFunc(self.logoUploadView)
+	router.Path(api.PathBimiLogoUpload).Methods(http.MethodPost).HandlerFunc(self.withMailRouting(self.logoUploadView))
 	router.Path(api.PathBimiLogo).Methods(http.MethodGet).HandlerFunc(self.logoView)
 	router.Path(api.PathDomainLogo).Methods(http.MethodGet).HandlerFunc(self.domainLogoView)
 	return nil
+}
+
+func (self *media) withMailRouting(handler http.HandlerFunc) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		if !self.config.Current().Services.IsEnabled(models.ServiceMailRouting) || !self.runningServices.IsEnabled(models.ServiceMailRouting) {
+			http.Error(response, "Hosted mail routing is disabled", http.StatusServiceUnavailable)
+			return
+		}
+		handler(response, request)
+	}
 }
 
 // linkView serves a picture at an address belonging to one sent message, and

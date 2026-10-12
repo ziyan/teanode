@@ -36,6 +36,9 @@ func ReminderObject(calendarId, objectId string, reminder *calendar.Reminder) *m
 // new one when reminderId is empty, in their reminders list, which is made
 // when they have none.
 func (self *Commands) SaveReminder(ctx context.Context, principal *access.Principal, reminderId string, fields *calendar.ReminderFields) (*models.CalendarObject, error) {
+	if err := principal.RequireService(models.ServiceReminders); err != nil {
+		return nil, err
+	}
 	if !canUseCalendar(principal) {
 		return nil, db.ErrNotFound
 	}
@@ -85,6 +88,9 @@ func (self *Commands) SaveReminder(ctx context.Context, principal *access.Princi
 
 // DeleteReminder removes one of the person's reminders.
 func (self *Commands) DeleteReminder(ctx context.Context, principal *access.Principal, reminderId string) error {
+	if err := principal.RequireService(models.ServiceReminders); err != nil {
+		return err
+	}
 	if !canUseCalendar(principal) {
 		return db.ErrNotFound
 	}

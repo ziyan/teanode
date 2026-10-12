@@ -193,6 +193,9 @@ func (self *verifier) refreshExternalAddresses(ctx context.Context) ExternalAddr
 
 func (self *verifier) CheckAll(ctx context.Context) error {
 	configuration := self.config.Current()
+	if !configuration.Services.IsEnabled(models.ServiceMailRouting) {
+		return nil
+	}
 	domains, err := self.listDomains()
 	if err != nil {
 		return err

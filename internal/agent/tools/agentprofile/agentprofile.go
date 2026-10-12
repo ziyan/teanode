@@ -398,7 +398,7 @@ func overlay(ctx context.Context) string {
 		open = append(open, "what they want help with first")
 	}
 	if len(open) == 0 {
-		return "<introduction>\nYour introduction is open and everything is answered: offer to connect a mailbox or a source, then call agent_profile with onboarding_done.\n</introduction>"
+		return "<introduction>\nYour introduction is open and everything is answered: offer to connect a computer or a source (a mailbox only when hosted mailboxes are enabled), then call agent_profile with onboarding_done.\n</introduction>"
 	}
 	return "<introduction>\nYou are introducing yourself; still to ask, one at a time and only if they are willing: " + strings.Join(open, "; ") + ". Save each answer as it comes. If they want to skip it, call agent_profile with onboarding_done.\n</introduction>"
 }

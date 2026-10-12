@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -130,6 +131,20 @@ func Merge(merged MergedTool) *Tool {
 	properties["action"] = EnumProperty("what to do", verbs...)
 
 	return &Tool{
+		ForServices: func(services *config.Services) *Tool {
+			available := merged
+			available.Actions = nil
+			configuration := &config.Configuration{Services: *services}
+			for _, action := range merged.Actions {
+				if RequireServices(action.Tool, configuration) == nil {
+					available.Actions = append(available.Actions, action)
+				}
+			}
+			if len(available.Actions) == 0 {
+				return nil
+			}
+			return Merge(available)
+		},
 		Name:        merged.Name,
 		Family:      merged.Family,
 		Description: strings.Join(lines, "\n"),
@@ -186,8 +201,11 @@ func Merge(merged MergedTool) *Tool {
 			}
 			// The catalog admitted the tool on the union of what its
 			// actions ask for. This action asks for its own.
-			if run, err := RunFrom(ctx); err == nil && run.Operations() != nil {
-				if !AllowedByPermissions(tool, run.Operations().Permissions()) {
+			if run, err := RunFrom(ctx); err == nil {
+				if err := RequireServices(tool, run.Configuration()); err != nil {
+					return nil, err
+				}
+				if run.Operations() != nil && !AllowedByPermissions(tool, run.Operations().Permissions()) {
 					return nil, fmt.Errorf("%s %s is not something they may do", merged.Name, name)
 				}
 			}

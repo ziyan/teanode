@@ -188,6 +188,9 @@ func (self *session) Unselect() error {
 }
 
 func (self *session) requireSelected() (*view, error) {
+	if err := self.requireMailbox(); err != nil {
+		return nil, err
+	}
 	if self.view == nil {
 		return nil, &goimap.Error{Type: goimap.StatusResponseTypeBad, Text: "No folder selected"}
 	}
