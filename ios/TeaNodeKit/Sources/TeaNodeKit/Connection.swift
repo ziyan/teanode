@@ -25,6 +25,8 @@ extension AccountStore {
 /// HTTPS with the account's token, renewed before it runs out and kept
 /// wherever the store keeps it.
 public actor Connection {
+    /// The account identity remains the same when its tokens are renewed.
+    public nonisolated let accountKey: String
     public private(set) var account: Account
     let transport: any HTTPTransport
     let store: (any AccountStore)?
@@ -43,6 +45,7 @@ public actor Connection {
     static let renewBefore: TimeInterval = 24 * 60 * 60
 
     public init(account: Account, transport: any HTTPTransport, store: (any AccountStore)? = nil) {
+        self.accountKey = account.accountKey
         self.account = account
         self.transport = transport
         self.store = store

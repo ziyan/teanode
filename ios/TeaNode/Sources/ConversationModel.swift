@@ -105,7 +105,8 @@ final class ConversationModel {
         self.connection = connection
         // Named once: the main conversation learns its id when it loads,
         // and a key made from that would never be read at the next launch.
-        self.draftKey = "draft.\(conversation.flatMap { $0.isMain ? nil : $0.id } ?? "main")"
+        self.draftKey = ConversationDraft.storageKey(
+            accountKey: connection.accountKey, conversationId: conversation.flatMap { $0.isMain ? nil : $0.id })
         self.draft = UserDefaults.standard.string(forKey: draftKey) ?? ""
     }
 
