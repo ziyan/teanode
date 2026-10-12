@@ -330,8 +330,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // The view and the day are in the address, so that a link to a week is a
   // link to that week and the back button goes where it looks like it goes.
   const serviceCapabilities = useSession().services
+  const requestedView = (parameters.get('view') as View) || 'month'
   const view =
-    serviceCapabilities?.isCalendarEnabled === false ? 'reminders' : (parameters.get('view') as View) || 'month'
+    serviceCapabilities?.isCalendarEnabled === false
+      ? 'reminders'
+      : requestedView === 'reminders' && serviceCapabilities?.isRemindersEnabled === false
+        ? 'month'
+        : requestedView
   const selectedDay = parameters.get('on')
   const on = useMemo(() => parseDay(selectedDay), [selectedDay])
   const move = (next: { view?: View; on?: Date }) => {

@@ -49,8 +49,16 @@ struct CalendarScreen: View {
                     }
                 }
         }
-        .task {
-            if app.services?.isCalendarEnabled == false { model.viewMode = .reminders }
+        .task(id: app.services) {
+            if app.services?.isCalendarEnabled == false {
+                model.viewMode = .reminders
+                path = []
+                draft = nil
+                opened = nil
+                isSearching = false
+            } else if app.services?.isRemindersEnabled == false && model.viewMode == .reminders {
+                model.viewMode = .month
+            }
             await model.load()
             #if DEBUG
                 // The screenshots photograph a day opened from the month.
@@ -159,8 +167,10 @@ struct CalendarScreen: View {
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItemGroup(placement: .bottomBar) {
-            modeToggle(.agenda)
-            modeToggle(.day)
+            if app.services?.isCalendarEnabled != false {
+                modeToggle(.agenda)
+                modeToggle(.day)
+            }
             Menu {
                 Picker("View", selection: $model.viewMode) {
                     ForEach(CalendarModel.ViewMode.allCases.filter { $0 == .reminders ? app.services?.isRemindersEnabled != false : app.services?.isCalendarEnabled != false }) { mode in
