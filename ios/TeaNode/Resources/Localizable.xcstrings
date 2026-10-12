@@ -44455,6 +44455,666 @@
           }
         }
       }
+    },
+    "Use a recording title of at most 255 UTF-8 bytes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use a recording title of at most 255 UTF-8 bytes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音タイトルは UTF-8 で255バイト以内にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音标题最多可包含 255 个 UTF-8 字节。"
+          }
+        }
+      }
+    },
+    "Corrected transcript": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrected transcript"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修正した文字起こし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更正的转写"
+          }
+        }
+      }
+    },
+    "Edit transcript": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit transcript"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑转写"
+          }
+        }
+      }
+    },
+    "Text corrected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text corrected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキスト修正済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字已更正"
+          }
+        }
+      }
+    },
+    "Original transcript": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original transcript"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の文字起こし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始转写"
+          }
+        }
+      }
+    },
+    "Retry edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry edit"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集を再試行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试编辑"
+          }
+        }
+      }
+    },
+    "Text edits are free metadata. The original transcript is retained, and learning is reconciled without another provider call.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text edits are free metadata. The original transcript is retained, and learning is reconciled without another provider call."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキスト編集は無料のメタデータ変更です。元の文字起こしを保持し、プロバイダーを再度呼び出さずに学習内容を調整します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字编辑是免费的元数据修改。原始转写会保留，学习内容会自动协调，无需再次调用提供商。"
+          }
+        }
+      }
+    },
+    "This edit has an unconfirmed response. Retry the same edit before changing its text.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This edit has an unconfirmed response. Retry the same edit before changing its text."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この編集の応答を確認できていません。テキストを変更する前に同じ編集を再試行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此次编辑的响应尚未确认。修改文字前，请先重试同一次编辑。"
+          }
+        }
+      }
+    },
+    "Transcript edit history": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcript edit history"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしの編集履歴"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转写编辑历史"
+          }
+        }
+      }
+    },
+    "Correction removed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Correction removed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修正を削除済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更正已移除"
+          }
+        }
+      }
+    },
+    "Remove text correction": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove text correction"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキスト修正を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除文字更正"
+          }
+        }
+      }
+    },
+    "No transcript text corrections": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No transcript text corrections"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしのテキスト修正はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无转写文字更正"
+          }
+        }
+      }
+    },
+    "Corrections retain their original passage and version. Changed passage boundaries may keep a correction in history instead of applying it to unrelated text.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrections retain their original passage and version. Changed passage boundaries may keep a correction in history instead of applying it to unrelated text."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修正には元の区間とバージョンを保持します。区間の境界が変わった場合、無関係なテキストに適用せず履歴に保持することがあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更正保留原始片段和版本。如果片段边界变化，更正可能只保留在历史记录中，而不会应用到无关文字。"
+          }
+        }
+      }
+    },
+    "Remove text correction?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove text correction?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキスト修正を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除文字更正？"
+          }
+        }
+      }
+    },
+    "The generated transcript remains intact. Learning is reconciled without a paid reprocessing pass.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The generated transcript remains intact. Learning is reconciled without a paid reprocessing pass."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成された文字起こしはそのまま保持します。有料の再処理を行わずに学習内容を調整します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成的转写会完整保留。学习内容会自动协调，无需付费重新处理。"
+          }
+        }
+      }
+    },
+    "Full recording transcript": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full recording transcript"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整录音转写"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音全体の文字起こし"
+          }
+        }
+      }
+    },
+    "No completed transcript passages yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No completed transcript passages yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无已完成的转写片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了した文字起こしの区間はまだありません"
+          }
+        }
+      }
+    },
+    "Play local original": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play local original"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放本机原始文件"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの原本を再生"
+          }
+        }
+      }
+    },
+    "Local original media": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local original media"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机原始媒体"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの元メディア"
+          }
+        }
+      }
+    },
+    "Local original": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local original"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机原始文件"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの原本"
+          }
+        }
+      }
+    },
+    "Load more recordings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load more recordings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载更多录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音をさらに読み込む"
+          }
+        }
+      }
+    },
+    "Only audio and video are saved as recordings. The other shared attachments are not included.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only audio and video are saved as recordings. The other shared attachments are not included."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有音频和视频会保存为录音，其他共享附件不会包含在内。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音として保存するのは音声と動画のみです。他の共有添付ファイルは含めません。"
+          }
+        }
+      }
+    },
+    "Passage start (milliseconds)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passage start (milliseconds)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "片段开始（毫秒）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "区間の開始（ミリ秒）"
+          }
+        }
+      }
+    },
+    "Passage end (milliseconds)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passage end (milliseconds)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "片段结束（毫秒）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "区間の終了（ミリ秒）"
+          }
+        }
+      }
+    },
+    "Choose a positive interval within this passage.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a positive interval within this passage."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择此片段内长度为正的区间。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この区間内で開始より後の終了時刻を指定してください。"
+          }
+        }
+      }
+    },
+    "Play reference passage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play reference passage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放参考片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参照区間を再生"
+          }
+        }
+      }
+    },
+    "This label has an unconfirmed response. Retry the same label before changing it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This label has an unconfirmed response. Retry the same label before changing it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此标签的响应尚未确认。修改标签前，请先重试同一个标签。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このラベルの応答を確認できていません。変更する前に同じラベルを再試行してください。"
+          }
+        }
+      }
+    },
+    "Voice references per provider request": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice references per provider request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次提供商请求的声纹参考数量"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダー要求ごとの声紋参照数"
+          }
+        }
+      }
+    },
+    "Text correction remains in history": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text correction remains in history"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字更正保留在历史记录中"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキスト修正は履歴に保持しています"
+          }
+        }
+      }
+    },
+    "The full timeline uses the latest completed version of each original. Pending versions and incomplete originals remain available in the recording library.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The full timeline uses the latest completed version of each original. Pending versions and incomplete originals remain available in the recording library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整时间线采用每个原始文件最新完成的版本。待处理版本和未完成的原始文件仍可在录音库中查看。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体のタイムラインは各原本の最新の完了したバージョンを使います。処理中のバージョンと未完了の原本は録音ライブラリで確認できます。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

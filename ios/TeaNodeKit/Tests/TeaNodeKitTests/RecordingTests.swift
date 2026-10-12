@@ -297,3 +297,86 @@ extension RecordingTests {
         XCTAssertEqual(fake.sent[0].url?.path, "/api/v1/graphql")
     }
 }
+
+extension RecordingTests {
+    @MainActor
+    func testTextDraftRetainsExactSubmittedRequestAndSeparatesAccounts() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        var draft = RecordingTextCorrectionDraft(
+            accountKey: "account-a", recordingId: "recording-a", recordingTranscriptSegmentId: "segment-a",
+            correctedTranscriptText: "Corrected words", expectedSourceGeneration: 4)
+        draft.hasSubmittedRequest = true
+        try RecordingTextCorrectionDrafts.save(draft, in: defaults)
+        let reopened = RecordingTextCorrectionDrafts.read(accountKey: "account-a", segmentId: "segment-a", in: defaults)
+        XCTAssertEqual(reopened, draft)
+        XCTAssertNil(RecordingTextCorrectionDrafts.read(accountKey: "account-b", segmentId: "segment-a", in: defaults))
+        let replacement = RecordingTextCorrectionDraft(
+            accountKey: "account-a", recordingId: "recording-a", recordingTranscriptSegmentId: "segment-a",
+            correctedTranscriptText: "Newer draft", expectedSourceGeneration: 5)
+        try RecordingTextCorrectionDrafts.save(replacement, in: defaults)
+        RecordingTextCorrectionDrafts.finish(draft, in: defaults)
+        XCTAssertEqual(RecordingTextCorrectionDrafts.read(accountKey: "account-a", segmentId: "segment-a", in: defaults), replacement)
+        RecordingTextCorrectionDrafts.finish(replacement, in: defaults)
+        XCTAssertNil(RecordingTextCorrectionDrafts.read(accountKey: "account-a", segmentId: "segment-a", in: defaults))
+    }
+
+    func testEffectiveTranscriptDoesNotReplaceOriginalEvidence() throws {
+        let segment = try JSONDecoder().decode(
+            RecordingTranscriptSegment.self,
+            from: Data(
+                #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"attempt-a","localSpeakerId":"local-a","segmentStartMS":1000,"segmentEndMS":5000,"transcriptText":"Generated words","effectiveTranscriptText":"Corrected words","appliedTextCorrectionId":"correction-a"}"#
+                    .utf8))
+        XCTAssertEqual(segment.transcriptText, "Generated words")
+        XCTAssertEqual(segment.displayedTranscriptText, "Corrected words")
+        XCTAssertEqual(segment.appliedTextCorrectionId, "correction-a")
+    }
+
+    @MainActor
+    func testMismatchedTextCorrectionReceiptCannotReleaseDraft() async throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let fake = FakeServer { _ in
+            (
+                200,
+                #"{"data":{"CorrectRecordingTranscriptText":{"id":"correction-a","recordingId":"wrong-recording","recordingMediaId":"media-a","recordingTranscriptRunId":"run-a","recordingTranscriptSegmentId":"segment-a","clientCorrectionId":"wrong-request","passageStartMS":0,"passageEndMS":1000,"originalTranscriptText":"Generated words","correctedTranscriptText":"Corrected words","sourceGeneration":5,"createdAt":"2030-01-02T03:04:05Z","isRemoved":false}}}"#
+            )
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "test-token", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(40 * 86400), username: "test")
+        let connection = Connection(account: account, transport: fake)
+        var draft = RecordingTextCorrectionDraft(
+            accountKey: connection.accountKey, recordingId: "recording-a", recordingTranscriptSegmentId: "segment-a",
+            correctedTranscriptText: "Corrected words", expectedSourceGeneration: 4)
+        draft.hasSubmittedRequest = true
+        try RecordingTextCorrectionDrafts.save(draft, in: defaults)
+        do {
+            _ = try await connection.correctRecordingTranscriptText(draft)
+            XCTFail("Mismatched correction receipt was accepted")
+        } catch { XCTAssertEqual(error as? TeaNodeError, .unreadableAnswer) }
+        XCTAssertEqual(RecordingTextCorrectionDrafts.read(accountKey: connection.accountKey, segmentId: "segment-a", in: defaults), draft)
+        XCTAssertEqual(fake.sent.count, 1)
+    }
+}
+
+extension RecordingTests {
+    @MainActor
+    func testSpeakerDraftRetainsRequestLocalGroupAndOriginalPassageAcrossRelaunch() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let segment = try JSONDecoder().decode(
+            RecordingTranscriptSegment.self,
+            from: Data(
+                #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"attempt-a","localSpeakerId":"local-a","segmentStartMS":1000,"segmentEndMS":5000,"transcriptText":"Source words"}"#
+                    .utf8))
+        var draft = RecordingSpeakerDraft(accountKey: "account-a", recordingId: "recording-a", segment: segment, expectedSourceGeneration: 4)
+        draft.confirmedName = "Speaker A"
+        draft.isWholeGroup = true
+        draft.hasSubmittedRequest = true
+        try RecordingSpeakerDrafts.save(draft, in: defaults)
+        XCTAssertEqual(RecordingSpeakerDrafts.read(accountKey: "account-a", segmentId: "segment-a", in: defaults), draft)
+        XCTAssertNil(RecordingSpeakerDrafts.read(accountKey: "account-b", segmentId: "segment-a", in: defaults))
+        let newer = RecordingSpeakerDraft(accountKey: "account-a", recordingId: "recording-a", segment: segment, expectedSourceGeneration: 5)
+        try RecordingSpeakerDrafts.save(newer, in: defaults)
+        RecordingSpeakerDrafts.finish(draft, in: defaults)
+        XCTAssertEqual(RecordingSpeakerDrafts.read(accountKey: "account-a", segmentId: "segment-a", in: defaults), newer)
+    }
+}

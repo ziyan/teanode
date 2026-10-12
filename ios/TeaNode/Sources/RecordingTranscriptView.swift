@@ -4,31 +4,48 @@ import TeaNodeKit
 struct RecordingTranscriptScreen: View {
     let connection: Connection
     let recording: Recording
-    let transcriptRun: RecordingTranscriptRun
+    let transcriptRun: RecordingTranscriptRun?
+    @State private var timelineView: RecordingTranscriptTimeline?
     @State private var transcriptView: RecordingTranscriptView?
     @State private var segments: [RecordingTranscriptSegment] = []
     @State private var speakers: RecordingSpeakersView?
     @State private var invalidations: [RecordingReferenceInvalidation] = []
     @State private var problemText: String?
+    @State private var editingSegment: RecordingTranscriptSegment?
     @State private var selectedSegment: RecordingTranscriptSegment?
     @State private var confirmedName = ""
+    @State private var correctionStartMS = ""
+    @State private var correctionEndMS = ""
     @State private var isWholeGroup = false
     @State private var isNaming = false
     @State private var isSaving = false
-    @State private var correctionRequestId = UUID().uuidString
+    @State private var speakerDraft: RecordingSpeakerDraft?
     @State private var playbackMedia: RecordingMedia?
     @State private var passageStartMS: Int64 = 0
 
+    init(connection: Connection, recording: Recording, transcriptRun: RecordingTranscriptRun? = nil) {
+        self.connection = connection
+        self.recording = recording
+        self.transcriptRun = transcriptRun
+    }
+
+    private func mediaId(for segment: RecordingTranscriptSegment) -> String? {
+        transcriptRun?.recordingMediaId ?? timelineView?.transcriptRuns.first { $0.id == segment.recordingTranscriptRunId }?.recordingMediaId
+    }
+
     var body: some View {
         List {
-            Section {
-                LabeledContent(
-                    "Processing",
-                    value: RecordingWords.processing(transcriptView?.transcriptRun.recordingProcessingState ?? transcriptRun.recordingProcessingState)
-                )
-                LabeledContent("Provider model", value: transcriptRun.providerModelName)
-                if let processingError = transcriptView?.transcriptRun.processingErrorMessage, !processingError.isEmpty {
-                    Text(processingError).foregroundStyle(.secondary)
+            if let transcriptRun {
+                Section {
+                    LabeledContent(
+                        "Processing",
+                        value: RecordingWords.processing(
+                            transcriptView?.transcriptRun.recordingProcessingState ?? transcriptRun.recordingProcessingState)
+                    )
+                    LabeledContent("Provider model", value: transcriptRun.providerModelName)
+                    if let processingError = transcriptView?.transcriptRun.processingErrorMessage, !processingError.isEmpty {
+                        Text(processingError).foregroundStyle(.secondary)
+                    }
                 }
             }
             if !invalidations.isEmpty {
@@ -75,20 +92,32 @@ struct RecordingTranscriptScreen: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(
-                                speakers?.confirmedName(for: segment, mediaId: transcriptRun.recordingMediaId)
+                                speakers?.confirmedName(for: segment, mediaId: mediaId(for: segment) ?? "")
                                     ?? String(localized: "Unconfirmed speaker")
                             ).font(.headline)
                             Spacer()
                             Text(Duration.milliseconds(segment.segmentStartMS).formatted(.time(pattern: .hourMinuteSecond))).font(.caption)
                                 .foregroundStyle(.secondary).monospacedDigit()
                         }
-                        Text(segment.transcriptText).textSelection(.enabled)
+                        Text(segment.displayedTranscriptText).textSelection(.enabled)
+                        if segment.hasUnalignedTextCorrection == true {
+                            Label("Text correction remains in history", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(
+                                .secondary)
+                        }
+                        if segment.appliedTextCorrectionId != nil {
+                            Label("Text corrected", systemImage: "pencil").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Button {
+                            editingSegment = segment
+                        } label: {
+                            Label("Edit transcript", systemImage: "pencil")
+                        }
                         Button {
                             Task {
                                 do {
                                     passageStartMS = segment.segmentStartMS
                                     playbackMedia = try await connection.recording(recording.id).mediaFiles.first {
-                                        $0.id == transcriptRun.recordingMediaId
+                                        $0.id == mediaId(for: segment)
                                     }
                                 } catch { problemText = error.localizedDescription }
                             }
@@ -96,27 +125,40 @@ struct RecordingTranscriptScreen: View {
                             Label("Play passage", systemImage: "play")
                         }
                         Button {
-                            selectedSegment = segment
-                            confirmedName = speakers?.confirmedName(for: segment, mediaId: transcriptRun.recordingMediaId) ?? ""
-                            isWholeGroup = false
-                            correctionRequestId = UUID().uuidString
+                            let retained = RecordingSpeakerDrafts.read(accountKey: connection.accountKey, segmentId: segment.id)
+                            selectedSegment = retained?.segment ?? segment
+                            speakerDraft = retained
+                            confirmedName =
+                                retained?.confirmedName ?? speakers?.confirmedName(for: segment, mediaId: mediaId(for: segment) ?? "") ?? ""
+                            correctionStartMS = String(retained?.passageStartMS ?? segment.segmentStartMS)
+                            correctionEndMS = String(retained?.passageEndMS ?? segment.segmentEndMS)
+                            isWholeGroup = retained?.isWholeGroup ?? false
                             isNaming = true
                         } label: {
                             Label("Name speaker", systemImage: "person.crop.circle.badge.checkmark")
                         }
                     }.padding(.vertical, 4)
                 }
-                if transcriptView?.hasMoreSegments == true {
+                if transcriptView?.hasMoreSegments == true || timelineView?.hasMoreSegments == true {
                     Button {
                         Task { await loadPage(isAdditional: true) }
                     } label: {
                         Label("Load more passages", systemImage: "chevron.down")
                     }
                 }
+                if segments.isEmpty { Text("No completed transcript passages yet").foregroundStyle(.secondary) }
             } header: {
                 Text("Transcript")
             } footer: {
+                if transcriptRun == nil {
+                    Text("The full timeline uses the latest completed version of each original. Pending versions and incomplete originals remain available in the recording library.")
+                }
                 Text("Speaker groups are local to each provider request. Only your confirmed names connect people across chunks and versions.")
+            }
+            NavigationLink {
+                RecordingTextHistoryScreen(connection: connection, recordingId: recording.id)
+            } label: {
+                Label("Transcript edit history", systemImage: "clock.arrow.circlepath")
             }
             if let speakers {
                 NavigationLink {
@@ -131,16 +173,27 @@ struct RecordingTranscriptScreen: View {
         .task { await loadPage(isAdditional: false) }
         .refreshable { await loadPage(isAdditional: false) }
         .sheet(item: $playbackMedia) { media in RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: passageStartMS) }
+        .sheet(item: $editingSegment) { segment in
+            RecordingTextEditor(connection: connection, recordingId: recording.id, segment: segment) { await loadPage(isAdditional: false) }
+        }
         .sheet(isPresented: $isNaming) {
             NavigationStack {
                 Form {
                     Section {
                         TextField("Confirmed name", text: $confirmedName)
                         Toggle("Apply to this speaker group", isOn: $isWholeGroup)
+                        if !isWholeGroup {
+                            TextField("Passage start (milliseconds)", text: $correctionStartMS).keyboardType(.numberPad)
+                            TextField("Passage end (milliseconds)", text: $correctionEndMS).keyboardType(.numberPad)
+                        }
                     } footer: {
                         Text(
                             "Off changes this passage only. Naming is free metadata. Suitable voice samples are selected automatically, and learned material is reconciled."
                         )
+                    }
+                    .disabled(speakerDraft?.hasSubmittedRequest == true)
+                    if speakerDraft?.hasSubmittedRequest == true {
+                        Text("This label has an unconfirmed response. Retry the same label before changing it.").foregroundStyle(.secondary)
                     }
                     if let problemText { Text(problemText).foregroundStyle(.secondary) }
                 }
@@ -158,13 +211,25 @@ struct RecordingTranscriptScreen: View {
 
     private func loadPage(isAdditional: Bool) async {
         do {
-            let page = try await connection.recordingTranscript(
-                recordingTranscriptRunId: transcriptRun.id, segmentOffset: isAdditional ? segments.count : 0)
-            transcriptView = page
-            if isAdditional { segments.append(contentsOf: page.segments) } else { segments = page.segments }
+            if let transcriptRun {
+                let page = try await connection.recordingTranscript(
+                    recordingTranscriptRunId: transcriptRun.id, segmentOffset: isAdditional ? segments.count : 0)
+                transcriptView = page
+                if isAdditional { segments.append(contentsOf: page.segments) } else { segments = page.segments }
+            } else {
+                let page = try await connection.recordingTranscriptTimeline(
+                    recordingId: recording.id, segmentOffset: isAdditional ? segments.count : 0)
+                if isAdditional, let current = timelineView, current.sourceGeneration != page.sourceGeneration {
+                    // A new publication invalidates page offsets; refresh rather than duplicate or skip evidence.
+                    await loadPage(isAdditional: false)
+                    return
+                }
+                timelineView = page
+                if isAdditional { segments.append(contentsOf: page.segments) } else { segments = page.segments }
+            }
             speakers = try await connection.recordingSpeakers(recordingId: recording.id)
             invalidations = try await connection.recordingReferenceInvalidations(recordingId: recording.id).filter {
-                $0.recordingTranscriptRunId == transcriptRun.id
+                transcriptRun == nil || $0.recordingTranscriptRunId == transcriptRun?.id
             }
             problemText = nil
         } catch { problemText = error.localizedDescription }
@@ -174,18 +239,47 @@ struct RecordingTranscriptScreen: View {
         guard !isSaving, let selectedSegment, let speakers else { return }
         isSaving = true
         defer { isSaving = false }
+        var draft =
+            speakerDraft
+            ?? RecordingSpeakerDraft(
+                accountKey: connection.accountKey, recordingId: recording.id, segment: selectedSegment,
+                expectedSourceGeneration: speakers.sourceGeneration)
         do {
+            if !draft.hasSubmittedRequest {
+                guard let passageStartMS = Int64(correctionStartMS), let passageEndMS = Int64(correctionEndMS),
+                    isWholeGroup
+                        || (passageStartMS >= selectedSegment.segmentStartMS && passageEndMS <= selectedSegment.segmentEndMS
+                            && passageStartMS < passageEndMS)
+                else { throw TeaNodeError.refused(String(localized: "Choose a positive interval within this passage.")) }
+                draft.confirmedName = confirmedName.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft.isWholeGroup = isWholeGroup
+                draft.passageStartMS = passageStartMS
+                draft.passageEndMS = passageEndMS
+                draft.expectedSourceGeneration = speakers.sourceGeneration
+                draft.hasSubmittedRequest = true
+                try RecordingSpeakerDrafts.save(draft)
+                speakerDraft = draft
+            }
             self.speakers = try await connection.correctRecordingSpeaker(
-                recordingId: recording.id, expectedSourceGeneration: speakers.sourceGeneration,
-                clientCorrectionId: correctionRequestId, confirmedName: confirmedName.trimmingCharacters(in: .whitespacesAndNewlines),
-                segment: selectedSegment, isWholeGroup: isWholeGroup)
+                recordingId: draft.recordingId, expectedSourceGeneration: draft.expectedSourceGeneration,
+                clientCorrectionId: draft.clientCorrectionId, confirmedName: draft.confirmedName,
+                segment: draft.segment, isWholeGroup: draft.isWholeGroup, passageStartMS: draft.passageStartMS, passageEndMS: draft.passageEndMS)
+            RecordingSpeakerDrafts.finish(draft)
+            speakerDraft = nil
             isNaming = false
             problemText = nil
         } catch {
             problemText = error.localizedDescription
             self.speakers = try? await connection.recordingSpeakers(recordingId: recording.id)
+            if let refusal = error as? TeaNodeError, case .refused = refusal {
+                draft.hasSubmittedRequest = false
+                draft.expectedSourceGeneration = self.speakers?.sourceGeneration ?? draft.expectedSourceGeneration
+                speakerDraft = draft
+                try? RecordingSpeakerDrafts.save(draft)
+            }
         }
     }
+
 }
 
 struct RecordingSpeakersScreen: View {
@@ -193,6 +287,8 @@ struct RecordingSpeakersScreen: View {
     let recording: Recording
     @State private var speakers: RecordingSpeakersView
     @State private var problemText: String?
+    @State private var playbackMedia: RecordingMedia?
+    @State private var referenceStartMS: Int64 = 0
     @State private var renamedIdentity: RecordingSpeakerIdentity?
     @State private var confirmedName = ""
     @State private var isRenaming = false
@@ -237,6 +333,18 @@ struct RecordingSpeakersScreen: View {
                                 ?? String(localized: "Unconfirmed speaker"))
                         Text(Duration.milliseconds(reference.passageEndMS - reference.passageStartMS).formatted(.time(pattern: .hourMinuteSecond)))
                             .font(.caption).foregroundStyle(.secondary)
+                        Button {
+                            Task {
+                                do {
+                                    referenceStartMS = reference.passageStartMS
+                                    playbackMedia = try await connection.recording(recording.id).mediaFiles.first {
+                                        $0.id == reference.recordingMediaId
+                                    }
+                                } catch { problemText = error.localizedDescription }
+                            }
+                        } label: {
+                            Label("Play reference passage", systemImage: "play")
+                        }
                     }.swipeActions { Button("Remove voice reference", role: .destructive) { Task { await removeReference(reference) } } }
                 }
                 if speakers.voiceReferences.allSatisfy(\.isRevoked) { Text("No clean reference samples available").foregroundStyle(.secondary) }
@@ -253,6 +361,7 @@ struct RecordingSpeakersScreen: View {
         .refreshable {
             do { speakers = try await connection.recordingSpeakers(recordingId: recording.id) } catch { problemText = error.localizedDescription }
         }
+        .sheet(item: $playbackMedia) { media in RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: referenceStartMS) }
         .alert("Rename speaker", isPresented: $isRenaming) {
             TextField("Confirmed name", text: $confirmedName)
             Button("Save") { Task { await rename() } }

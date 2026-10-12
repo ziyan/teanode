@@ -280,7 +280,15 @@ struct MainView: View {
         case .finance:
             FinanceScreen(finance: finance, part: financePart)
         case .recordings:
+            #if DEBUG
+            if DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("recording-") {
+                RecordingDemoScreen(connection: connection, screen: screen)
+            } else {
+                RecordingsScreen(connection: connection)
+            }
+            #else
             RecordingsScreen(connection: connection)
+            #endif
         case .settings:
             NavigationStack {
                 SettingsForm()

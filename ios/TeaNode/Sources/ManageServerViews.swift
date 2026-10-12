@@ -3288,6 +3288,9 @@ private struct AgentModelsFormView: View {
                     if let maximumAudioBytes = capability.maximumAudioBytes, maximumAudioBytes > 0 {
                         LabeledContent("Audio per provider request", value: ByteCountFormatter.string(fromByteCount: maximumAudioBytes, countStyle: .file))
                     }
+                    if let maximumSpeakerReferenceCount = capability.maximumSpeakerReferenceCount, maximumSpeakerReferenceCount > 0 {
+                        LabeledContent("Voice references per provider request", value: String(maximumSpeakerReferenceCount))
+                    }
                 }
             } header: { Text("Recording transcription") } footer: { Text("Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.") }
 

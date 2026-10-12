@@ -22,7 +22,9 @@
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if query.contains("ListRecordings") {
+            if let recordingAnswer = Self.recordingAnswer(query: query) {
+                answer = recordingAnswer
+            } else if query.contains("ListRecordings") {
                 answer = #"{"data":{"ListRecordings":[{"id":"recording-a","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","clientRecordingId":"local-a","recordingTitle":"Design discussion","recordingOrigin":"audioImport","recordingCaptureState":"imported","timelineDurationMS":3600000,"sourceGeneration":1,"captureGaps":[]},{"id":"recording-b","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","clientRecordingId":"local-b","recordingTitle":"Project planning and follow-up questions","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":2400000,"sourceGeneration":2,"captureGaps":[]}]}}"#
             } else if query.contains("ReadRecordingLimits") {
                 answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608}}}"#

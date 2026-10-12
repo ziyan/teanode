@@ -44,9 +44,13 @@ enum ShareRecordingImport {
     }
 
     static func save(_ file: SharedRecordingFile, accountKey: String, title: String) async throws {
+        guard try KeychainAccountStore().load(accountKey: accountKey) != nil else { throw TeaNodeError.signedOut }
+        guard title.utf8.count <= 255 else { throw TeaNodeError.refused(String(localized: "Use a recording title of at most 255 UTF-8 bytes.")) }
         let journal = try RecordingJournal(directory: RecordingJournal.sharedDirectory())
+        let importedTitle = (file.originalFilename as NSString).deletingPathExtension
         var recording = LocalRecording(
-            accountKey: accountKey, recordingTitle: title.isEmpty ? (file.originalFilename as NSString).deletingPathExtension : title,
+            accountKey: accountKey,
+            recordingTitle: title.isEmpty ? (importedTitle.utf8.count <= 255 ? importedTitle : String(localized: "Recording")) : title,
             recordingOrigin: file.isVideo ? "videoImport" : "audioImport", localRecordingId: file.id)
         let duration = try? await AVURLAsset(url: file.originalURL).load(.duration)
         let seconds = duration.map { CMTimeGetSeconds($0) } ?? 0
@@ -70,7 +74,16 @@ enum ShareRecordingImport {
             try await journal.create(recording)
         }
         let originalURL = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
-        if !FileManager.default.fileExists(atPath: originalURL.path) {
+        guard try KeychainAccountStore().load(accountKey: accountKey) != nil else { throw TeaNodeError.signedOut }
+        if FileManager.default.fileExists(atPath: originalURL.path) {
+            let retained = try FileHandle(forReadingFrom: originalURL)
+            defer { try? retained.close() }
+            var retainedHash = SHA256()
+            while let chunk = try retained.read(upToCount: 1024 * 1024), !chunk.isEmpty { retainedHash.update(data: chunk) }
+            guard retainedHash.finalize().map({ String(format: "%02x", $0) }).joined() == media.originalSha256 else {
+                throw TeaNodeError.unreadableAnswer
+            }
+        } else {
             try await journal.importOriginal(from: file.originalURL, recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
         }
     }

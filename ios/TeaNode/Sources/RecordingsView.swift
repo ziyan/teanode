@@ -13,14 +13,19 @@ final class RecordingsModel {
     var problemText: String?
     var isLoaded = false
     var isImporting = false
+    var hasMoreRecordings = false
+    var isLoadingPage = false
 
     init(connection: Connection) { self.connection = connection }
 
     func load() async {
         do {
-            let journal = try MeetingRecorder.makeJournal()
-            localRecordings = try await journal.recordings(accountKey: connection.accountKey)
+            do {
+                let journal = try MeetingRecorder.makeJournal()
+                localRecordings = try await journal.recordings(accountKey: connection.accountKey)
+            } catch { localRecordings = [] }
             recordings = try await connection.recordings()
+            hasMoreRecordings = recordings.count == 50
             isLoaded = true
             problemText = nil
             RecordingUploads.shared.resume(connection: connection)
@@ -28,6 +33,19 @@ final class RecordingsModel {
             problemText = error.localizedDescription
             isLoaded = true
         }
+    }
+
+    func loadMore() async {
+        guard hasMoreRecordings, !isLoadingPage, let beforeRecordingId = recordings.last?.id else { return }
+        isLoadingPage = true
+        defer { isLoadingPage = false }
+        do {
+            let page = try await connection.recordings(beforeRecordingId: beforeRecordingId)
+            let knownIds = Set(recordings.map(\.id))
+            recordings.append(contentsOf: page.filter { !knownIds.contains($0.id) })
+            hasMoreRecordings = page.count == 50 && page.last?.id != beforeRecordingId
+            problemText = nil
+        } catch { problemText = error.localizedDescription }
     }
 
     func importFile(_ source: URL) async {
@@ -43,15 +61,17 @@ final class RecordingsModel {
                 throw TeaNodeError.refused(String(localized: "Choose an audio or video file."))
             }
             let sizeBytes = Int64(try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
-            let limits = try await connection.recordingLimits()
-            guard sizeBytes > 0, sizeBytes <= limits.maximumMediaBytes else {
+            let limits = try? await connection.recordingLimits()
+            guard sizeBytes > 0, limits.map { sizeBytes <= $0.maximumMediaBytes } ?? true else {
                 throw TeaNodeError.refused(
                     String(
                         localized: "The file exceeds this server's recording limit. Choose a smaller file or ask the operator to adjust the limit."))
             }
             let journal = try MeetingRecorder.makeJournal()
             var recording = LocalRecording(
-                accountKey: connection.accountKey, recordingTitle: source.deletingPathExtension().lastPathComponent,
+                accountKey: connection.accountKey,
+                recordingTitle: source.deletingPathExtension().lastPathComponent.utf8.count <= 255
+                    ? source.deletingPathExtension().lastPathComponent : String(localized: "Recording"),
                 recordingOrigin: contentType.conforms(to: .movie) ? "videoImport" : "audioImport")
             let duration = try? await AVURLAsset(url: source).load(.duration)
             let durationSeconds = duration.map { CMTimeGetSeconds($0) } ?? 0
@@ -79,6 +99,7 @@ struct RecordingsScreen: View {
     @State private var recorder = MeetingRecorder.shared
     @State private var isDiscarding = false
     @State private var discardedRecording: LocalRecording?
+    @State private var localPlayback: LocalRecording?
 
     init(connection: Connection) { _model = State(initialValue: RecordingsModel(connection: connection)) }
 
@@ -127,6 +148,15 @@ struct RecordingsScreen: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
                                 Text(recording.startedAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                                if ["stopped", "imported"].contains(recording.recordingCaptureState),
+                                    recording.localMedia.contains(where: { !$0.isDurablyUploaded && $0.originalSha256 != nil })
+                                {
+                                    Button {
+                                        localPlayback = recording
+                                    } label: {
+                                        Label("Play local original", systemImage: "play")
+                                    }
+                                }
                                 if let error = recording.uploadErrorMessage {
                                     Text(error).font(.callout).foregroundStyle(.secondary)
                                 } else {
@@ -167,6 +197,14 @@ struct RecordingsScreen: View {
                             }
                         }
                     }
+                    if model.hasMoreRecordings {
+                        Button {
+                            Task { await model.loadMore() }
+                        } label: {
+                            Label("Load more recordings", systemImage: "chevron.down")
+                        }
+                        .disabled(model.isLoadingPage)
+                    }
                     if model.isLoaded && model.recordings.isEmpty {
                         ContentUnavailableView(
                             "No recordings", systemImage: "waveform", description: Text("Start a recording or import audio or video."))
@@ -198,6 +236,9 @@ struct RecordingsScreen: View {
             .task {
                 await recorder.recover(accountKey: model.connection.accountKey)
                 await model.load()
+            }
+            .sheet(item: $localPlayback) { recording in
+                RecordingLocalPlaybackScreen(recording: recording, accountKey: model.connection.accountKey)
             }
             .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio, .movie]) { selected in
                 switch selected {
@@ -285,6 +326,11 @@ struct RecordingDetailScreen: View {
                 } header: {
                     Text("Original media")
                 }
+                NavigationLink {
+                    RecordingTranscriptScreen(connection: connection, recording: recordingView.recording)
+                } label: {
+                    Label("Full recording transcript", systemImage: "text.alignleft")
+                }
                 if let runs = recordingView.transcriptRuns, !runs.isEmpty {
                     Section("Transcript versions") {
                         ForEach(runs) { run in
@@ -296,7 +342,7 @@ struct RecordingDetailScreen: View {
                                     Text(RecordingWords.processing(run.recordingProcessingState)).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
-                            if ["failed", "canceled"].contains(run.recordingProcessingState) {
+                            if ["queued", "preparing", "transcribing", "failed", "canceled"].contains(run.recordingProcessingState) {
                                 Button {
                                     Task {
                                         do {
@@ -503,5 +549,57 @@ struct RecordingPlaybackScreen: View {
                 localURL = nil
             }
         }
+    }
+}
+
+private struct RecordingLocalPlaybackScreen: View {
+    let recording: LocalRecording
+    let accountKey: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var player: AVPlayer?
+    @State private var problemText: String?
+    @State private var selectedMediaId: UUID?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let player { VideoPlayer(player: player).frame(minHeight: 220) }
+                Section("Local original media") {
+                    ForEach(recording.localMedia.filter { !$0.isDurablyUploaded && $0.originalSha256 != nil }) { media in
+                        Button {
+                            Task { await play(media) }
+                        } label: {
+                            Label(
+                                Duration.milliseconds(media.timelineStartMS).formatted(.time(pattern: .hourMinuteSecond)),
+                                systemImage: selectedMediaId == media.id ? "speaker.wave.2" : "play")
+                        }
+                    }
+                }
+                if let problemText { Text(problemText).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Local original")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .task {
+                if let media = recording.localMedia.first(where: { !$0.isDurablyUploaded && $0.originalSha256 != nil }) { await play(media) }
+            }
+            .onDisappear {
+                player?.pause()
+                player = nil
+            }
+        }
+    }
+
+    private func play(_ media: LocalRecordingMedia) async {
+        do {
+            guard try KeychainAccountStore().load(accountKey: accountKey) != nil else { throw TeaNodeError.signedOut }
+            let journal = try MeetingRecorder.makeJournal()
+            let source = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
+            guard FileManager.default.fileExists(atPath: source.path) else { throw TeaNodeError.unreadableAnswer }
+            player?.pause()
+            player = AVPlayer(url: source)
+            selectedMediaId = media.id
+            player?.play()
+            problemText = nil
+        } catch { problemText = error.localizedDescription }
     }
 }

@@ -16,8 +16,20 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
   originals available after the extension exits.
 - File-backed background upload tasks, receipt-based resume, and local retention on
   missing, incorrect or failed receipts. Uploads begin after capture stops.
-- Native library, original playback, metadata editing, transcript versions and
-  usage/status/cancel/reprocessing controls, confirmed speaker and reference management.
+- Native paged library, retained local and verified remote original playback, metadata
+  editing, per-original transcript versions and a full chronological recording timeline.
+- Processing, cancellation, safe same-version retry and explicit paid reprocessing.
+  Paid run keys remain stable through an unknown response.
+- Confirmed group or selected interval labels, automatic reference state and original
+  reference-passage playback/revocation. Submitted correction drafts survive relaunch.
+- Free recognized-text edits and immutable original/version history, effective text
+  projection and reset. Unknown response drafts retain their exact key and payload.
+- Learning/source progress, existing source pause/sync/Stop reading controls, reference
+  invalidation warnings and explicit raw deletion remain separate native operations.
+- Deferred capture transitions retain recorder identity across journal saves. Pending
+  stop or interruption wins over rollover; stale callbacks cannot start another segment.
+- Upload owners are queued across retained profiles. Signout cancels their file tasks
+  and prevents a suspended metadata operation from scheduling another upload.
 - Live Activity elapsed time and explicit pause/resume/stop intents bind to the local
   session ID so an old activity cannot control a new session.
 - Recording-specific system intents require a matching active Live Activity before
@@ -30,6 +42,12 @@ Swift package tests run in the Linux Swift container. They cover account isolati
 retaining unverified originals, pause/interruption history, rejected completion
 receipts, and corrected interval attribution across reruns including explicit removal.
 No test contacts a real server or provider.
+
+The initial native increment passed the Xcode simulator build, including the widget
+and share targets. The follow-up text/timeline/recovery code still needs a fresh native
+build. Simulator screenshot collection has not completed, so no layout inspection is
+claimed. The package suite passed 305 tests after the text, timeline and coordination edits.
+Full project lint passed, including naming, and the secret scan reported no secrets.
 
 Native compilation and simulator screenshots require macOS CI. Screens need light,
 dark and largest Dynamic Type inspection, with VoiceOver ordering checked separately.
@@ -47,3 +65,19 @@ No physical-device result or actual provider bill has been measured here.
   invalidation and learning reconciliation end to end.
 - Record real-iPhone evidence and representative meeting/billing evaluation before the
   parent feature is considered complete.
+
+
+## Native parity matrix
+
+| Capability | Native implementation | Remaining evidence |
+| --- | --- | --- |
+| Provider, transcription, request capabilities and storage quotas | Existing operator forms extended; explicit off assignment | Fresh SDK build and form layout inspection |
+| Existing global/person token and cost caps | Existing budget forms retained | Integrated authorization checks |
+| Browse, Files/share imports, local and remote playback | Native library and players; byte-preserving local retention | Simulator layout; real-device transfer and video alignment |
+| Versioned and full timeline transcripts, processing and usage | Paged native views; estimate and verified actual cost distinct | Integrated provider run and real billing |
+| Cancel, safe retry and explicit paid reprocess | Native actions; stable paid key | Shared error/auth tests and request recovery |
+| Speaker group/interval correction and reference management | Native confirmation, history, original passage player and revoke | End-to-end curation and device playback |
+| Recognized text edit/history/reset | Independent immutable correction APIs and retained request drafts | Fresh native build and shared projection integration |
+| Learning and reference invalidations | Existing source controls and provenance warnings | Integrated reconciliation evidence |
+| Metadata and raw deletion | Native generation-aware title/time, explicit deletion | Account isolation smoke against integrated server |
+| Local capture and lock-screen controls | Rolling originals, durable recovery and recording-specific intents | Physical iPhone lock/interruption/relaunch evidence |

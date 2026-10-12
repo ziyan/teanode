@@ -20,6 +20,10 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     public let segmentStartMS: Int64
     public let segmentEndMS: Int64
     public let transcriptText: String
+    public var effectiveTranscriptText: String? = nil
+    public var appliedTextCorrectionId: String? = nil
+    public var hasUnalignedTextCorrection: Bool? = nil
+    public var displayedTranscriptText: String { effectiveTranscriptText ?? transcriptText }
 }
 
 public struct RecordingTranscriptionAttempt: Codable, Hashable, Sendable, Identifiable {
@@ -51,6 +55,7 @@ public struct RecordingSpeakerCorrection: Codable, Hashable, Sendable, Identifia
     public let recordingMediaId: String
     public let recordingTranscriptionAttemptId: String
     public let speakerIdentityId: String
+    public var clientCorrectionId: String? = nil
     public let localSpeakerId: String
     public let passageStartMS: Int64
     public let passageEndMS: Int64
@@ -99,9 +104,9 @@ extension Documents {
     static let recordingTranscriptRunFields =
         "id recordingId recordingMediaId versionNumber recordingProcessingState providerModelName processingErrorMessage createdAt"
     static let recordingSpeakersFields =
-        "sourceGeneration speakerIdentities { id confirmedName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId speakerIdentityId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences { id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }"
+        "sourceGeneration speakerIdentities { id confirmedName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences { id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }"
     public static let readRecordingTranscript =
-        "query ($recordingTranscriptRunId: String!, $segmentOffset: Int!, $pageSize: Int!) { ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize) { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }"
+        "query ($recordingTranscriptRunId: String!, $segmentOffset: Int!, $pageSize: Int!) { ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize) { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText appliedTextCorrectionId hasUnalignedTextCorrection } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }"
     public static let requestRecordingTranscription =
         "mutation ($recordingMediaId: String!, $clientRunId: String!, $isReprocessingRequested: Boolean!) { RequestRecordingTranscription(recordingMediaId: $recordingMediaId, clientRunId: $clientRunId, isReprocessingRequested: $isReprocessingRequested) { \(recordingTranscriptRunFields) } }"
     public static let retryRecordingTranscription =
@@ -165,19 +170,28 @@ extension Connection {
     }
     public func correctRecordingSpeaker(
         recordingId: String, expectedSourceGeneration: Int64, clientCorrectionId: String, confirmedName: String, segment: RecordingTranscriptSegment,
-        isWholeGroup: Bool
+        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil
     ) async throws -> RecordingSpeakersView {
         struct Answer: Decodable, Sendable { let CorrectRecordingSpeaker: RecordingSpeakersView }
-        return try await execute(
+        let response = try await execute(
             Documents.correctRecordingSpeaker,
             variables: [
                 "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
                 "clientCorrectionId": .string(clientCorrectionId), "confirmedName": .string(confirmedName),
                 "recordingTranscriptionAttemptId": .string(segment.recordingTranscriptionAttemptId),
-                "localSpeakerId": .string(segment.localSpeakerId), "passageStartMS": .number(Double(isWholeGroup ? -1 : segment.segmentStartMS)),
-                "passageEndMS": .number(Double(isWholeGroup ? -1 : segment.segmentEndMS)),
+                "localSpeakerId": .string(segment.localSpeakerId),
+                "passageStartMS": .number(Double(isWholeGroup ? -1 : passageStartMS ?? segment.segmentStartMS)),
+                "passageEndMS": .number(Double(isWholeGroup ? -1 : passageEndMS ?? segment.segmentEndMS)),
             ], as: Answer.self
         ).CorrectRecordingSpeaker
+        guard
+            response.speakerCorrections.contains(where: { correction in
+                correction.clientCorrectionId == clientCorrectionId
+                    && correction.recordingTranscriptionAttemptId == segment.recordingTranscriptionAttemptId
+                    && correction.localSpeakerId == segment.localSpeakerId
+            })
+        else { throw TeaNodeError.unreadableAnswer }
+        return response
     }
     public func renameRecordingSpeaker(recordingId: String, expectedSourceGeneration: Int64, speakerIdentityId: String, confirmedName: String)
         async throws -> RecordingSpeakersView
