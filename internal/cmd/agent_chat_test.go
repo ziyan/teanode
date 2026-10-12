@@ -274,3 +274,25 @@ func TestKnowledgeSearchAndReadAreWired(test *testing.T) {
 		test.Errorf("and the refusal says where the identifier comes from: %s", err)
 	}
 }
+
+// A terminal shows the Markdown of an answer as it was written, and not the
+// hidden lines the dashboard and the app read.
+func TestTheTranscriptLeavesOutWhatTheDashboardHides(test *testing.T) {
+	test.Parallel()
+
+	written := &bytes.Buffer{}
+	command := &cli.Command{Name: "show", Writer: written}
+	view := &client.AgentConversationView{
+		Conversation: &client.AgentConversation{ID: "cnv_1", Kind: "named", Title: "The lease"},
+		Messages: []*client.AgentMessage{
+			{CreatedAt: time.Now(), Role: "assistant", Content: "Signed. <!-- kept: 1 -->\n<!--suggestions:[\"Send it\",\"Not now\"]-->"},
+		},
+		Total: 1,
+	}
+	if err := printTranscript(command, view); err != nil {
+		test.Fatal(err)
+	}
+	if printed := written.String(); strings.Contains(printed, "<!--") || !strings.Contains(printed, "agent: Signed.") {
+		test.Errorf("the transcript printed:\n%s", printed)
+	}
+}

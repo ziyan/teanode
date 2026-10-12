@@ -64,7 +64,7 @@ public enum MarkdownBlock: Equatable, Sendable {
             items = []
         }
 
-        let allLines = text.components(separatedBy: "\n")
+        let allLines = HiddenMarkers.removed(from: text).components(separatedBy: "\n")
         var index = 0
         var table: (header: [String], rows: [[String]])?
         func flushTable() {

@@ -198,7 +198,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		}
 		switch event.Kind {
 		case EventMessage:
-			answer = models.StripSuggestedReplies(event.Text)
+			answer = mailedAnswer(event.Text)
 		case EventError:
 			failure = event.Error
 		}
@@ -361,12 +361,27 @@ func scheduledMessage(schedule *models.AgentSchedule) string {
 // account's notification address, the first line as its subject when that
 // line is short enough.
 func (self *Agent) deliverSchedule(ctx context.Context, run *Run, schedule *models.AgentSchedule, answer string) error {
-	subject := schedule.Name
-	body := strings.TrimSpace(answer)
-	if first, rest, ok := strings.Cut(body, "\n"); ok && len(first) < 120 {
-		subject, body = strings.TrimSpace(first), strings.TrimSpace(rest)
-	}
+	subject, body := scheduleMail(schedule.Name, answer)
 	return self.mailToPerson(ctx, run, subject, body)
+}
+
+// mailedAnswer is an answer as a plain-text mail carries it: the lines the
+// dashboard hides are gone, and a link to one of its pages, which opens
+// nowhere from a mail, is its words.
+func mailedAnswer(answer string) string {
+	return models.UnlinkDashboardLinks(models.StripHiddenMarkers(answer))
+}
+
+// scheduleMail splits a mailed answer into its subject and its body: the
+// first line is the subject, as plain text, when it is short enough, and
+// the schedule's name is when it is not.
+func scheduleMail(scheduleName, answer string) (subject, body string) {
+	subject = scheduleName
+	body = strings.TrimSpace(answer)
+	if first, rest, ok := strings.Cut(body, "\n"); ok && len(first) < 120 {
+		subject, body = models.PlainText(first), strings.TrimSpace(rest)
+	}
+	return subject, body
 }
 
 // AssetEstimatePrompt is the standing instruction of the schedule that

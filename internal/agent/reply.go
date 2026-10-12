@@ -443,7 +443,9 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 	answer := *written
 	text := ""
 	if answer.Reply != nil {
-		text = strings.TrimSpace(*answer.Reply)
+		// The reply goes out under the person's name, to someone who cannot
+		// see a hidden line, so none of the answer's goes with it.
+		text = strings.TrimSpace(models.StripHiddenMarkers(*answer.Reply))
 	}
 	if text == "" {
 		reason := "the agent declined"

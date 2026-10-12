@@ -492,9 +492,9 @@ final class VoiceCall: NSObject {
             speak(SpokenText.of(event.text ?? ""))
         case "question":
             let choices = (event.text ?? "").split(separator: "\n").joined(separator: ", ")
-            speak([event.note ?? "", choices].filter { !$0.isEmpty }.joined(separator: " "))
+            speak(SpokenText.of([event.note ?? "", choices].filter { !$0.isEmpty }.joined(separator: " ")))
         case "confirmation":
-            speak(String(localized: "I need your approval on screen: \(event.note ?? "")"))
+            speak(String(localized: "I need your approval on screen: \(SpokenText.of(event.note ?? ""))"))
         case "done", "error":
             spokenRuns.remove(event.runId)
             if !isSpeakingAnswer, waitingSentences.isEmpty, callState == .working { callState = .listening }

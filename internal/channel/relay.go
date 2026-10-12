@@ -146,11 +146,7 @@ func (self *chatState) relayOnce(ctx context.Context, now time.Time) (string, er
 	}
 	dashboard := self.manager.settings.Configuration().DashboardBase()
 	for _, answer := range answers {
-		text := models.StripSuggestedReplies(answer.Content)
-		if text == "" {
-			continue
-		}
-		(&preview{chat: chat, dashboard: dashboard}).finish(ctx, text)
+		(&preview{chat: chat, dashboard: dashboard}).finish(ctx, answer.Content)
 	}
 	return conversationId, nil
 }

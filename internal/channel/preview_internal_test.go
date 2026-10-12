@@ -2,7 +2,9 @@ package channel
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 )
 
 // recordingChat keeps what was sent to it.
@@ -42,5 +44,37 @@ func TestAnswerLinksTheDashboard(t *testing.T) {
 	(&preview{chat: unnamed}).finish(context.Background(), answer)
 	if len(unnamed.sent) != 1 || unnamed.sent[0] != "He is on Some Person, from Mooring invoice." {
 		t.Fatalf("with no name, sent %q", unnamed.sent)
+	}
+}
+
+// A chat app shows the words of an answer and nothing the dashboard hides:
+// not the suggested replies, which arrive a few characters at a time while
+// the answer streams, and not any other comment.
+func TestAnswerLeavesOutWhatIsHidden(t *testing.T) {
+	t.Parallel()
+
+	chat := &recordingChat{}
+	live := &preview{chat: chat}
+	for _, piece := range []string{"Booked", " for Friday.", "\n<!--sugg", "estions:[\"Thanks\",", "\"Not now\"]-->"} {
+		live.text += piece
+		live.lastEdit = time.Time{}
+		live.flush(context.Background())
+	}
+	live.finish(context.Background(), "Booked for Friday. <!-- kept: 2 -->\n<!--suggestions:[\"Thanks\",\"Not now\"]-->")
+	for _, sent := range chat.sent {
+		if strings.Contains(sent, "<!--") || strings.Contains(sent, "sugg") {
+			t.Errorf("a chat app was sent %q", sent)
+		}
+	}
+	if last := chat.sent[len(chat.sent)-1]; last != "Booked for Friday." {
+		t.Errorf("the answer ended as %q", last)
+	}
+
+	// Only the pieces were heard, and the turn ended without a whole answer.
+	unfinished := &recordingChat{}
+	live = &preview{chat: unfinished, text: "Done.\n<!--suggestions:[\"A\",\"B\"]-->"}
+	live.finish(context.Background(), "")
+	if len(unfinished.sent) != 1 || unfinished.sent[0] != "Done." {
+		t.Errorf("a chat app was sent %q", unfinished.sent)
 	}
 }

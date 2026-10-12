@@ -305,7 +305,7 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 			if index == 3 {
 				break
 			}
-			content.Buttons = append(content.Buttons, push.Button{Label: choice, ButtonAction: fmt.Sprintf("answer:%d", index+1)})
+			content.Buttons = append(content.Buttons, push.Button{Label: models.PlainText(choice), ButtonAction: fmt.Sprintf("answer:%d", index+1)})
 		}
 		content.Buttons = append(content.Buttons, push.Button{Label: "Reply", ButtonAction: "reply"})
 	}
@@ -378,12 +378,11 @@ func (self *AskRun) isAnswerForPhone() bool {
 }
 
 // phoneBody is text as a notification shows it: plain, and short enough that
-// a lock screen is not the place it is read in full.
+// a lock screen is not the place it is read in full. A notification is
+// plain text, so the suggested replies and any other hidden marker, a
+// link's target and the Markdown marks are taken off first.
 func phoneBody(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	for _, mark := range []string{"**", "__", "`"} {
-		text = strings.ReplaceAll(text, mark, "")
-	}
+	text = strings.Join(strings.Fields(models.PlainText(text)), " ")
 	runes := []rune(text)
 	if len(runes) > 600 {
 		return string(runes[:600]) + "…"

@@ -52,3 +52,16 @@ export function withoutPartialMarker(text: string): string {
     tail.length <= MARKER_OPENING.length ? MARKER_OPENING.startsWith(tail) : tail.startsWith(MARKER_OPENING)
   return isMarker ? text.slice(0, start).trimEnd() : text
 }
+
+// A fenced code block, a code span, or an HTML comment, whole or cut off by
+// the end of the text. Code is matched so that a comment shown as an
+// example inside it is left alone.
+const COMMENT_PATTERN = /```[\s\S]*?(?:```|$)|`[^`\n]*`|<!--[\s\S]*?(?:-->|$)/g
+
+// withoutHiddenComments is Markdown without its HTML comments: nothing in
+// the dashboard interprets HTML, so a comment the agent wrote for nobody
+// would be drawn as the text it is, the same as the server leaves it off
+// anywhere an answer is plain text (models.StripHiddenMarkers).
+export function withoutHiddenComments(text: string): string {
+  return text.replace(COMMENT_PATTERN, (found) => (found.startsWith('<!--') ? '' : found))
+}

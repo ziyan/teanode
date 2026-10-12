@@ -46,7 +46,7 @@ public enum SpokenText {
         var text = Suggestions.split(markdown).text
         // Code is for the screen.
         text = text.replacingOccurrences(of: #"```[\s\S]*?(```|$)"#, with: " ", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"<!--[\s\S]*?-->"#, with: " ", options: .regularExpression)
+        text = HiddenMarkers.removed(from: text)
         // A picture says nothing; a link says its words.
         text = text.replacingOccurrences(of: #"!\[[^\]]*\]\([^)]*\)"#, with: " ", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
