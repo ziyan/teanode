@@ -34,18 +34,24 @@ const (
 )
 
 type component struct {
-	database      db.Database
-	configuration config.Store
-	authenticator web.Authenticator
-	service       *sso.Service
+	database        db.Database
+	configuration   config.Store
+	authenticator   web.Authenticator
+	service         *sso.Service
+	runningServices config.Services
 }
 
 func New(database db.Database, configuration config.Store, authenticator web.Authenticator, settings *api.Settings) (web.Component, error) {
+	runningServices := configuration.Current().Services
+	if settings.RunningServices != nil {
+		runningServices = *settings.RunningServices
+	}
 	return &component{
-		database:      database,
-		configuration: configuration,
-		authenticator: authenticator,
-		service:       sso.New(settings.Secret),
+		runningServices: runningServices,
+		database:        database,
+		configuration:   configuration,
+		authenticator:   authenticator,
+		service:         sso.New(settings.Secret),
 	}, nil
 }
 
@@ -174,7 +180,7 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 			Name:     claims.Name,
 			Username: claims.Username,
 			Groups:   claims.Groups,
-		}, provider.CreateUsers)
+		}, provider.CreateUsers, self.configuration.Current().Services.IsEnabled(models.ServiceMailboxes) && self.runningServices.IsEnabled(models.ServiceMailboxes))
 		if err != nil {
 			return err
 		}

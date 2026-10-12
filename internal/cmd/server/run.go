@@ -1225,6 +1225,9 @@ func (self *server) serve(ctx context.Context) error {
 	// an app password. The exchange checks the sender against the mailbox's
 	// addresses when the message arrives, so the domain is left to it.
 	authenticateMailbox := func(username, password string) (string, string, bool) {
+		if !self.store.Current().Services.IsEnabled(models.ServiceMailboxes) {
+			return "", "", false
+		}
 		var mailbox *models.Mailbox
 		if err := self.database.Transaction(func(tx db.Transaction) error {
 			var err error
@@ -1294,11 +1297,12 @@ func (self *server) serve(ctx context.Context) error {
 	// port, TLS from the first byte on the other, which is what most
 	// programs try first.
 	imapSettings := &imap.Settings{
-		Database:    self.database,
-		Storage:     self.storage,
-		TLSConfig:   tlsConfig,
-		MaxSize:     int(configuration.SMTP.MaxMessageSize.Bytes()),
-		AuthLimiter: authLimiter,
+		IsMailboxEnabled: func() bool { return self.store.Current().Services.IsEnabled(models.ServiceMailboxes) },
+		Database:         self.database,
+		Storage:          self.storage,
+		TLSConfig:        tlsConfig,
+		MaxSize:          int(configuration.SMTP.MaxMessageSize.Bytes()),
+		AuthLimiter:      authLimiter,
 		// The same ceiling the mail listeners have had since an earlier
 		// audit, on the listeners it was not applied to. A mail program
 		// holds one connection per mailbox and idles on it, so a person

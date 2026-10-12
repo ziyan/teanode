@@ -520,7 +520,7 @@ var (
 // when the provider may make accounts, with the groups that name an
 // identity-provider group reconciled against what was claimed. Returns the
 // user and whether they were just created.
-func SignInWithIdentity(tx db.Transaction, provider string, claims *IdentityClaims, createUsers bool) (*models.User, bool, error) {
+func SignInWithIdentity(tx db.Transaction, provider string, claims *IdentityClaims, createUsers, shouldProvisionMailbox bool) (*models.User, bool, error) {
 	identity, err := tx.GetIdentity(provider, claims.Subject)
 	if err != nil {
 		return nil, false, err
@@ -554,8 +554,10 @@ func SignInWithIdentity(tx db.Transaction, provider string, claims *IdentityClai
 		if _, err := tx.CreateIdentity(&models.UserIdentity{UserID: user.ID, Provider: provider, Subject: claims.Subject, Email: claims.Email}); err != nil {
 			return nil, false, err
 		}
-		if _, err := EnsureMailbox(tx, user); err != nil {
-			return nil, false, err
+		if shouldProvisionMailbox {
+			if _, err := EnsureMailbox(tx, user); err != nil {
+				return nil, false, err
+			}
 		}
 		created = true
 	}

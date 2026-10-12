@@ -40,6 +40,10 @@ type Settings struct {
 	Database db.Database
 	Storage  storage.Storage
 
+	// IsMailboxEnabled checks operator choices even on an existing connection.
+	// Nil preserves the behavior of standalone listeners.
+	IsMailboxEnabled func() bool
+
 	// TLSConfig is offered through STARTTLS on a plain listener, and is what
 	// an implicit-TLS listener was wrapped with. Signing in is refused until
 	// the connection is encrypted either way.
@@ -271,6 +275,9 @@ func (self *session) Close() error {
 }
 
 func (self *session) Login(username, password string) error {
+	if err := self.requireMailbox(); err != nil {
+		return err
+	}
 	if self.settings.AuthLimiter != nil && self.remote != "" && !self.settings.AuthLimiter.Allow(self.remote) {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeLimit, Text: "Too many sign-in attempts; try again later"}
 	}
@@ -331,6 +338,9 @@ const recheckInterval = 5 * time.Minute
 
 // stillAllowed is the check, made inside a transaction every so often.
 func (self *session) stillAllowed(tx db.Transaction) error {
+	if err := self.requireMailbox(); err != nil {
+		return err
+	}
 	if self.mailbox == nil || time.Since(self.checkedAt) < recheckInterval {
 		return nil
 	}
@@ -354,6 +364,9 @@ func (self *session) stillAllowed(tx db.Transaction) error {
 // transaction runs a function in a database transaction and turns its
 // failure into an IMAP NO, logged once.
 func (self *session) transaction(function func(tx db.Transaction) error) error {
+	if err := self.requireMailbox(); err != nil {
+		return err
+	}
 	err := self.settings.Database.Transaction(func(tx db.Transaction) error {
 		if err := self.stillAllowed(tx); err != nil {
 			return err
@@ -749,10 +762,20 @@ func (self *session) Append(name string, reader goimap.LiteralReader, options *g
 // --- updates ------------------------------------------------------------------
 
 func (self *session) Poll(writer *imapserver.UpdateWriter, allowExpunge bool) error {
+	if err := self.requireMailbox(); err != nil {
+		return err
+	}
 	if self.view == nil {
 		return nil
 	}
 	return self.poll(writer, allowExpunge)
+}
+
+func (self *session) requireMailbox() error {
+	if self.settings.IsMailboxEnabled != nil && !self.settings.IsMailboxEnabled() {
+		return &goimap.Error{Type: goimap.StatusResponseTypeBye, Code: goimap.ResponseCodeUnavailable, Text: "Hosted mailboxes are disabled"}
+	}
+	return nil
 }
 
 func (self *session) Idle(writer *imapserver.UpdateWriter, stop <-chan struct{}) error {
