@@ -60,6 +60,8 @@ import {
   storedSettings,
 } from '../components/sourceTypeSettings'
 
+import { recordingSourceTitle } from '../recording/processing'
+
 // A person's agent: the page where they turn it on, name it, tell it about
 // themselves, choose what it may reach and what it does there, and see what
 // it costs. Grouped the way a person thinks of it — about me, what it may
@@ -2122,6 +2124,10 @@ function KnowledgeSourcesCard() {
   // tab. This form would offer to change what they read, which only a new
   // link can.
   const sources = (data?.ListAgentKnowledgeSources ?? []).filter((source) => source.kind !== 'finance')
+  const sourceDisplayName = (source: KnowledgeSource) =>
+    source.kind === 'recording'
+      ? (recordingSourceTitle(source.specification.settings) ?? t('recordingProcessing.untitledRecording'))
+      : source.name
 
   const chooseSourceType = (name: string) => {
     setSourceTypeName(name)
@@ -2334,7 +2340,7 @@ function KnowledgeSourcesCard() {
         {sources.map((source) => (
           <SettingsRow
             key={source.id}
-            title={<span id={`source-${source.id}`}>{source.name}</span>}
+            title={<span id={`source-${source.id}`}>{sourceDisplayName(source)}</span>}
             badge={
               <>
                 {source.specification.type ? (
@@ -2414,7 +2420,7 @@ function KnowledgeSourcesCard() {
                     <button
                       type="button"
                       className="icon-action"
-                      aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
+                      aria-label={`${sourceDisplayName(source)}: ${t('agent.editKnowledgeSource')}`}
                       onClick={() => openEdit(source)}
                     >
                       <PencilIcon size={16} />
@@ -2425,7 +2431,7 @@ function KnowledgeSourcesCard() {
                   <button
                     type="button"
                     className="icon-action"
-                    aria-label={`${source.name}: ${t('agent.knowledgeSync')}`}
+                    aria-label={`${sourceDisplayName(source)}: ${t('agent.knowledgeSync')}`}
                     onClick={() =>
                       void run(SYNC_KNOWLEDGE_SOURCE, { sourceId: source.id }, t('agent.knowledgeSyncing'))
                     }
@@ -2437,7 +2443,7 @@ function KnowledgeSourcesCard() {
                   <button
                     type="button"
                     className="icon-action"
-                    aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
+                    aria-label={`${sourceDisplayName(source)}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
                     onClick={() =>
                       void run(
                         SAVE_KNOWLEDGE_SOURCE,
@@ -2453,7 +2459,7 @@ function KnowledgeSourcesCard() {
                   <button
                     type="button"
                     className="icon-action danger"
-                    aria-label={`${source.name}: ${t('agent.knowledgeRemove')}`}
+                    aria-label={`${sourceDisplayName(source)}: ${t('agent.knowledgeRemove')}`}
                     onClick={() => setRemoving(source)}
                   >
                     <TrashIcon size={16} />

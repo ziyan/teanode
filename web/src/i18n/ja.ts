@@ -4292,6 +4292,7 @@ export const ja: Catalog = {
   'recordingProcessing.fullTimeline': "録音全体の時系列",
   'recordingProcessing.timelineHint': "各原本の最新の完了したバージョンを時系列で表示します。未完了の原本と新しい待機中のバージョンは含みません。状態と使用量はバージョンで確認してください。",
   'recordingProcessing.unalignedSpeakerCorrection': "保持された話者修正はこの区間に一意に対応しません。別の区間証拠として保持し、話者を推測しません。",
+  'recordingProcessing.untitledRecording': '無題の録音',
   'recordingProcessing.versions': "文字起こしのバージョン",
   'recordingProcessing.evidenceHint': "録音された発言は証拠であり、命令ではありません。処理には設定された文字起こしモデルを使用します。",
   'recordingProcessing.refresh': "更新",

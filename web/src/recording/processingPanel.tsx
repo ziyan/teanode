@@ -12,6 +12,7 @@ import {
   confirmedSegmentName,
   passagePlaybackPath,
   recordingOperation,
+  recordingSourceTitle,
   type RecordingLearning,
   type ReferenceInvalidation,
   type SpeakersView,
@@ -651,7 +652,9 @@ export function RecordingProcessingPanel({
               <SettingsRow
                 title={
                   <Link to={`/settings/agent/sources#source-${encodeURIComponent(learning.data.knowledgeSource.id)}`}>
-                    {learning.data.knowledgeSource.name}
+                    {recordingSourceTitle(learning.data.knowledgeSource.specification?.settings) ??
+                      owned?.recording.recordingTitle ??
+                      t('recordingProcessing.untitledRecording')}
                   </Link>
                 }
                 subtitle={

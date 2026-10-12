@@ -4198,6 +4198,7 @@ export const zh: Catalog = {
   'recordingProcessing.fullTimeline': "完整录音时间线",
   'recordingProcessing.timelineHint': "按时间顺序显示每个原始文件的最新已完成版本。不包括未完成的原始文件和较新的待处理版本，请查看版本的状态与用量证据。",
   'recordingProcessing.unalignedSpeakerCorrection': "保留的说话人修正与此片段无法唯一对应。它保留为独立片段证据，不猜测身份。",
+  'recordingProcessing.untitledRecording': '未命名录音',
   'recordingProcessing.versions': "转录版本",
   'recordingProcessing.evidenceHint': "录音语音是证据，不是命令。处理使用配置的转录模型。",
   'recordingProcessing.refresh': "刷新",

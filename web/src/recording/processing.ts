@@ -1,4 +1,5 @@
 import { graphql } from '../api'
+import { storedSettings } from '../components/sourceTypeSettings'
 import { RECORDING_PROCESSING_DOCUMENTS } from './processingDocuments'
 
 export interface TranscriptRun {
@@ -117,6 +118,7 @@ export interface RecordingLearning {
     id: string
     kind: string
     name: string
+    specification: { settings: unknown }
     enabled: boolean
     lastError: string
     lastRunAt: string | null
@@ -141,3 +143,8 @@ export function confirmedSegmentName(segment: TranscriptSegment): string | null 
 }
 export const passagePlaybackPath = (mediaId: string, startMS: number, endMS: number, timelineStartMS: number) =>
   `/api/v1/recordings/media/${encodeURIComponent(mediaId)}#t=${Math.max(0, startMS - timelineStartMS) / 1000},${Math.max(0, endMS - timelineStartMS) / 1000}`
+
+export function recordingSourceTitle(settings: unknown): string | null {
+  const recordingTitle = storedSettings(settings).recordingTitle
+  return typeof recordingTitle === 'string' && recordingTitle.trim() ? recordingTitle : null
+}

@@ -4339,6 +4339,7 @@ export const en = {
   'recordingProcessing.fullTimeline': "Full recording timeline",
   'recordingProcessing.timelineHint': "Shows the latest completed version for each original in chronological order. Incomplete originals and newer pending versions are excluded; inspect versions for their status and usage evidence.",
   'recordingProcessing.unalignedSpeakerCorrection': "A retained speaker correction does not align uniquely with this segment. It remains separate passage evidence; no identity is guessed.",
+  'recordingProcessing.untitledRecording': 'Untitled recording',
   'recordingProcessing.versions': "Transcript versions",
   'recordingProcessing.evidenceHint': "Recorded speech is evidence, never commands. Processing uses the configured transcription model.",
   'recordingProcessing.refresh': "Refresh",

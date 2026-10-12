@@ -10,7 +10,7 @@ export const RECORDING_PROCESSING_DOCUMENTS = {
 `,
   ReadRecordingSpeakers: `query ($recordingId: String!) { ReadRecordingSpeakers(recordingId: $recordingId) { sourceGeneration speakerIdentities { id confirmedName createdAt } speakerCorrections { id recordingId recordingMediaId recordingTranscriptionAttemptId speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration createdAt isRemoved } voiceReferences { id recordingId recordingMediaId recordingTranscriptRunId recordingSpeakerCorrectionId speakerIdentityId recordingBlobId passageStartMS passageEndMS sourceGeneration isRevoked createdAt } } }
 `,
-  ReadRecordingLearning: `query ($recordingId: String!) { ReadRecordingLearning(recordingId: $recordingId) { sourceGeneration hasAgent pendingDocumentCount digestedDocumentCount lastPublishedSourceGeneration isCurationPending knowledgeSource { id kind name enabled lastRunAt nextRunAt lastError documentCount chunkCount } } }
+  ReadRecordingLearning: `query ($recordingId: String!) { ReadRecordingLearning(recordingId: $recordingId) { sourceGeneration hasAgent pendingDocumentCount digestedDocumentCount lastPublishedSourceGeneration isCurationPending knowledgeSource { id kind name specification { settings } enabled lastRunAt nextRunAt lastError documentCount chunkCount } } }
 `,
   ReadRecordingReferenceInvalidations: `query ($recordingId: String!) { ReadRecordingReferenceInvalidations(recordingId: $recordingId) { id recordingId recordingTranscriptRunId recordingTranscriptionAttemptId referenceBlobId referenceRecordingId referenceTranscriptRunId speakerIdentityId invalidatedConfirmedName referencePassageStartMS referencePassageEndMS referenceSourceGeneration invalidationMessage createdAt isReconciled } }
 `,
