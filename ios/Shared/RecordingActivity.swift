@@ -15,15 +15,19 @@ struct ToggleRecordingPauseIntent: LiveActivityIntent {
     static var title: LocalizedStringResource { "Pause or resume recording" }
     static var isDiscoverable: Bool { false }
     @Parameter(title: "Recording") var localRecordingId: String
-    init() {}
-    init(localRecordingId: String) { self.localRecordingId = localRecordingId }
+    @Parameter(title: "Resume recording") var shouldResume: Bool
+    init() { shouldResume = false }
+    init(localRecordingId: String, shouldResume: Bool) {
+        self.localRecordingId = localRecordingId
+        self.shouldResume = shouldResume
+    }
 
     @MainActor
     func perform() async throws -> some IntentResult {
         #if TEANODE_APP
             let recorder = MeetingRecorder.shared
-            if recorder.localRecording?.id.uuidString == localRecordingId {
-                if recorder.isCapturing { await recorder.pause() } else { await recorder.resume(localRecordingId: localRecordingId) }
+            if await recorder.restoreForActivity(localRecordingId: localRecordingId) {
+                if shouldResume { await recorder.resume(localRecordingId: localRecordingId) } else { await recorder.pause() }
             }
         #endif
         return .result()
@@ -40,7 +44,8 @@ struct StopRecordingIntent: LiveActivityIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         #if TEANODE_APP
-            await MeetingRecorder.shared.stop(localRecordingId: localRecordingId)
+            let recorder = MeetingRecorder.shared
+            if await recorder.restoreForActivity(localRecordingId: localRecordingId) { await recorder.stop(localRecordingId: localRecordingId) }
         #endif
         return .result()
     }

@@ -126,15 +126,19 @@ final class MeetingRecorder: NSObject {
         } catch { await fail(error) }
     }
 
-    func recover(accountKey: String) async {
+    func recover(accountKey: String, localRecordingId: UUID? = nil, shouldEndOldActivities: Bool = true) async {
         guard !hasSession else { return }
         do {
             journal = try Self.makeJournal()
-            guard
-                var recording = try await journal?.recordings(accountKey: accountKey).first(where: {
+            let recovered: LocalRecording?
+            if let localRecordingId {
+                recovered = try await journal?.read(localRecordingId, accountKey: accountKey)
+            } else {
+                recovered = try await journal?.recordings(accountKey: accountKey).first(where: {
                     $0.recordingOrigin == "capture" && $0.recordingCaptureState != "stopped"
                 })
-            else { return }
+            }
+            guard var recording = recovered else { return }
             localRecording = recording
             elapsedMS = max(recording.timelineDurationMS, Int64(max(0, Date().timeIntervalSince(recording.startedAt)) * 1000))
             if let media = recording.localMedia.last, media.originalSha256 == nil {
@@ -151,8 +155,34 @@ final class MeetingRecorder: NSObject {
             observeInterruptions()
             startClock()
             problemText = String(localized: "Recovered local audio. Resume when you are ready; the interruption is marked as a gap.")
-            for activity in Activity<RecordingActivityAttributes>.activities { await activity.end(nil, dismissalPolicy: .immediate) }
+            for activity in Activity<RecordingActivityAttributes>.activities {
+                if !shouldEndOldActivities && activity.attributes.localRecordingId == recording.id.uuidString {
+                    activityId = activity.id
+                } else {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
         } catch { problemText = error.localizedDescription }
+    }
+
+    func restoreForActivity(localRecordingId: String) async -> Bool {
+        let store = KeychainAccountStore()
+        guard let retainedAccounts = try? store.accounts().accounts else { return false }
+        if hasSession {
+            return localRecording?.id.uuidString == localRecordingId && retainedAccounts.contains { $0.accountKey == localRecording?.accountKey }
+        }
+        do {
+            let journal = try Self.makeJournal()
+            guard
+                let recovered = try await journal.recoverableRecording(
+                    localRecordingId: localRecordingId, retainedAccountKeys: retainedAccounts.map(\.accountKey))
+            else { return false }
+            await recover(accountKey: recovered.accountKey, localRecordingId: recovered.id, shouldEndOldActivities: false)
+            return hasSession && localRecording?.id == recovered.id
+        } catch {
+            problemText = error.localizedDescription
+            return false
+        }
     }
 
     private func finishChangingCapture() {

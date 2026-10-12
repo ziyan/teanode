@@ -143,3 +143,33 @@ extension RecordingTests {
         XCTAssertNotEqual(RecordingRequestIdentity.acquire(accountKey: "account-a", mediaId: "media-a", in: defaults), first)
     }
 }
+
+extension RecordingTests {
+    func testActivityRecoveryRequiresTheExactSessionAndRetainedAccount() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try RecordingJournal(directory: directory)
+        var original = LocalRecording(accountKey: "profile-a", recordingTitle: "", recordingOrigin: "capture")
+        try original.pause(at: 1000)
+        let unrelated = LocalRecording(accountKey: "profile-b", recordingTitle: "", recordingOrigin: "capture")
+        try await journal.save(original)
+        try await journal.save(unrelated)
+        let recovered = try await journal.recoverableRecording(
+            localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-b", "profile-a"])
+        XCTAssertEqual(recovered?.id, original.id)
+        XCTAssertEqual(recovered?.recordingCaptureState, "paused")
+        let removedAccount = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-b"])
+        XCTAssertNil(removedAccount)
+        let staleSession = try await journal.recoverableRecording(localRecordingId: UUID().uuidString, retainedAccountKeys: ["profile-a"])
+        XCTAssertNil(staleSession)
+        original.isDeletedRemotely = true
+        try await journal.save(original)
+        let deleted = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-a"])
+        XCTAssertNil(deleted)
+        original.isDeletedRemotely = false
+        try original.stop(at: 2000)
+        try await journal.save(original)
+        let stopped = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-a"])
+        XCTAssertNil(stopped)
+    }
+}

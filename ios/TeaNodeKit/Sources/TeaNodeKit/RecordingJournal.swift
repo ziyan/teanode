@@ -150,6 +150,17 @@ public actor RecordingJournal {
         return recording
     }
 
+    public func recoverableRecording(localRecordingId: String, retainedAccountKeys: [String]) throws -> LocalRecording? {
+        guard let recordingId = UUID(uuidString: localRecordingId) else { return nil }
+        for accountKey in retainedAccountKeys {
+            guard let recording = try? read(recordingId, accountKey: accountKey), recording.recordingOrigin == "capture",
+                ["active", "paused", "interrupted"].contains(recording.recordingCaptureState), !recording.isDeletedRemotely
+            else { continue }
+            return recording
+        }
+        return nil
+    }
+
     public func originalURL(recordingId: UUID, mediaId: UUID, accountKey: String) throws -> URL {
         let recording = try read(recordingId, accountKey: accountKey)
         guard recording.localMedia.contains(where: { $0.id == mediaId }) else { throw TeaNodeError.unreadableAnswer }

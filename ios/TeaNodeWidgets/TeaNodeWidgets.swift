@@ -484,7 +484,7 @@ struct RecordingActivityWidget: Widget {
                 Label("Recording", systemImage: "waveform").font(.headline)
                 recordingClock(context.state)
                 HStack {
-                    Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId)) {
+                    Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId, shouldResume: context.state.recordingCaptureState != "active")) {
                         Label(context.state.recordingCaptureState == "active" ? String(localized: "Pause recording") : String(localized: "Resume recording"), systemImage: context.state.recordingCaptureState == "active" ? "pause" : "mic")
                     }.buttonStyle(.glass)
                     Button(intent: StopRecordingIntent(localRecordingId: context.attributes.localRecordingId)) { Label("Stop recording", systemImage: "stop") }.buttonStyle(.glass)
@@ -496,7 +496,7 @@ struct RecordingActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) { recordingClock(context.state) }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId)) {
+                        Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId, shouldResume: context.state.recordingCaptureState != "active")) {
                             Label(context.state.recordingCaptureState == "active" ? String(localized: "Pause recording") : String(localized: "Resume recording"), systemImage: context.state.recordingCaptureState == "active" ? "pause" : "mic")
                         }
                         Button(intent: StopRecordingIntent(localRecordingId: context.attributes.localRecordingId)) { Label("Stop recording", systemImage: "stop") }
