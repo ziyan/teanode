@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -209,6 +210,72 @@ func TestRecordingKnowledgeTitleKeepsStableSourceIdentity(test *testing.T) {
 		}
 		if settings["recordingId"] != source.ID || settings["recordingTitle"] != "Fixture \"quoted\" title" {
 			test.Fatal("source display metadata was not safely published", settings)
+		}
+	})
+}
+
+func TestRecordingRenamedSourceCannotReviveOrRetainEvidence(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	var staleDocument *models.AgentDocument
+	var renamedSourceId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "A fixture proposal."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		knowledge, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		segments, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		staleDocument, err = transaction.GetAgentDocumentByExternal(knowledge.ID, fixture.transcriptRun.ID+":"+segments[0].ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		knowledge.Name = "renamed-fixture-source"
+		renamed, err := transaction.PutAgentSource(knowledge)
+		if err != nil {
+			test.Fatal(err)
+		}
+		renamedSourceId = renamed.ID
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: attempt.ID, LocalSpeakerID: "speaker-one", ConfirmedName: "Fixture Participant", ClientCorrectionID: "renamed-source-confirmation", PassageStartMS: -1, PassageEndMS: -1, ExpectedSourceGeneration: source.SourceGeneration}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.CheckRecordingKnowledgeEvidence(fixture.userId, []*models.AgentDocument{staleDocument})
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("renamed-source evidence could recreate outdated attribution", err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.DeleteRecording(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		renamed, err := transaction.GetAgentSource(fixture.agentId, renamedSourceId)
+		if err != nil || renamed != nil {
+			test.Fatal("raw deletion left renamed recording source", err)
+		}
+		document, err := transaction.GetAgentDocument(fixture.agentId, staleDocument.ID)
+		if err != nil || document != nil {
+			test.Fatal("raw deletion retained cached transcript bytes", err)
 		}
 	})
 }

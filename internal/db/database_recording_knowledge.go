@@ -290,7 +290,7 @@ func (self *transaction) ReconcileDeletedRecordingKnowledge(recordingId string) 
 		return err
 	}
 	var sources []*agentSourceModel
-	if err := self.tx.Where("kind = ? AND name = ?", models.SourceRecording, recordingKnowledgeName(recordingId)).Find(&sources).Error; err != nil {
+	if err := self.tx.Where("kind = ? AND (name = ? OR specification->'settings'->>'recordingId' = ?)", models.SourceRecording, recordingKnowledgeName(recordingId), recordingId).Find(&sources).Error; err != nil {
 		return err
 	}
 	for _, source := range sources {
@@ -343,7 +343,8 @@ func (self *transaction) CheckRecordingKnowledgeEvidence(userId string, document
 		if err != nil {
 			return err
 		}
-		if source == nil || !source.Enabled || source.Kind != models.SourceRecording {
+		recordingId, _ := document.Metadata["recordingId"].(string)
+		if source == nil || !source.Enabled || source.Kind != models.SourceRecording || source.Name != recordingKnowledgeName(recordingId) {
 			return ErrAlreadyExists
 		}
 		current, err := self.GetAgentDocument(document.AgentID, document.ID)

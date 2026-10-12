@@ -119,3 +119,14 @@ settings now carry recordingId and recordingTitle for display across clients. Fr
 edits update this metadata without re-enabling paused reading or changing source IDs.
 Semantic settings comparison avoids extra source revisions from JSONB whitespace.
 PostgreSQL tests verify quoted titles, paused state and unchanged-sync stability.
+
+## Internal source identity review
+
+The generic linked-source editor previously allowed recording source names to change,
+although recording publication uses a stable internal name. The shared API now refuses
+that rename and points users to recording title metadata. Evidence validation rejects
+renamed source snapshots. Raw deletion also locates automatic sources by their existing
+recording specification, so renamed or duplicate source caches cannot retain transcript
+bytes. Direct database regression tests reproduce the old rename path and verify both
+stale-memory rejection and cleanup. Pause and schedule operations retain existing source
+semantics; display titles stay in specification settings.
