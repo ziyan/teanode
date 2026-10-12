@@ -37,3 +37,11 @@ CREATE TABLE "recording_voice_reference" (
  UNIQUE ("recording_speaker_correction_id", "passage_start_ms", "passage_end_ms")
 );
 CREATE INDEX "recording_correction_source" ON "recording_speaker_correction" ("recording_id", "source_generation");
+
+-- Index removal preserves evidence identifiers for later raw-source reconciliation.
+CREATE TABLE "recording_knowledge_document" (
+ "recording_id" varchar(32) NOT NULL REFERENCES "recording"("id") ON DELETE CASCADE,
+ "agent_id" varchar(32) NOT NULL REFERENCES "agent"("id") ON DELETE CASCADE,
+ "agent_document_id" varchar(32) NOT NULL,
+ PRIMARY KEY ("recording_id", "agent_document_id")
+);

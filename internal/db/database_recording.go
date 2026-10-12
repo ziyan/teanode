@@ -434,6 +434,9 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err != nil {
 		return err
 	}
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_id = ?", recordingId).Update("is_revoked", true).Error; err != nil {
+		return err
+	}
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
@@ -489,6 +492,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	}
 	if incompleteCount != 0 {
 		return ErrInvalidArguments
+	}
+	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingKnowledgeDocumentModel{}).Error; err != nil {
+		return err
 	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingMediaModel{}).Error; err != nil {
 		return err

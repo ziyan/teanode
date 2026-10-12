@@ -1,3 +1,4 @@
+DROP TABLE "recording_knowledge_document";
 DROP TABLE "recording_voice_reference";
 DROP TABLE "recording_speaker_correction";
 DROP TABLE "recording_speaker_identity";

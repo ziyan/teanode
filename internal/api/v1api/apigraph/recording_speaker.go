@@ -9,6 +9,7 @@ import (
 
 // RecordingSpeakerQuery reads confirmed labels and reference provenance.
 type RecordingSpeakerQuery interface {
+	ReadRecordingLearning(context.Context, RecordingArguments) (*models.RecordingLearningView, error)
 	ReadRecordingSpeakers(context.Context, RecordingArguments) (*RecordingSpeakersView, error)
 }
 

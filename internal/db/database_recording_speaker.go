@@ -13,6 +13,9 @@ import (
 
 // RecordingSpeakerOperation keeps confirmed labels separate from generated evidence.
 type RecordingSpeakerOperation interface {
+	CheckRecordingVoiceReferenceNames(userId string, referenceBlobIds, confirmedNames []string) error
+	GetRecordingSpeakerEvidence(userId, recordingId, attemptId string) (*models.RecordingTranscriptRun, *models.RecordingTranscriptionAttempt, error)
+	HasRecordingSpeakerOverlap(userId, runId, attemptId, localSpeakerId string, passageStartMS, passageEndMS int64) (bool, error)
 	ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]*models.Recording, error)
 	MarkRecordingSpeakerCuration(userId, recordingId string, sourceGeneration int64) error
 	CreateRecordingVoiceReference(userId string, reference *models.RecordingVoiceReference, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingVoiceReference, error)
@@ -120,9 +123,13 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	if transcriptRun.RecordingID != source.ID || attempt.RecordingAttemptState != models.RecordingAttemptComplete {
 		return nil, ErrNotFound
 	}
-	segments, err := self.ListRecordingTranscriptSegments(userId, transcriptRun.ID)
-	if err != nil {
+	var segmentRows []*recordingSegmentModel
+	if err := self.tx.Where("recording_transcript_run_id = ? AND recording_transcription_attempt_id = ? AND local_speaker_id = ?", transcriptRun.ID, attempt.ID, correction.LocalSpeakerID).Order("segment_start_ms,id").Limit(20001).Find(&segmentRows).Error; err != nil {
 		return nil, err
+	}
+	segments := make([]*models.RecordingTranscriptSegment, 0, len(segmentRows))
+	for _, segmentRow := range segmentRows {
+		segments = append(segments, (*models.RecordingTranscriptSegment)(segmentRow))
 	}
 	isGroup := correction.PassageStartMS == -1 && correction.PassageEndMS == -1
 	if !isGroup && (correction.PassageStartMS < 0 || correction.PassageEndMS <= correction.PassageStartMS) {
@@ -450,6 +457,85 @@ func (self *transaction) MarkRecordingSpeakerCuration(userId, recordingId string
 	}
 	if updated.RowsAffected == 0 {
 		return ErrAlreadyExists
+	}
+	return nil
+}
+
+// GetRecordingSpeakerEvidence reads only attribution provenance, excluding potentially large provider receipts.
+func (self *transaction) GetRecordingSpeakerEvidence(userId, recordingId, attemptId string) (*models.RecordingTranscriptRun, *models.RecordingTranscriptionAttempt, error) {
+	if _, err := self.GetRecording(userId, recordingId); err != nil {
+		return nil, nil, err
+	}
+	var attempt recordingAttemptModel
+	if err := self.tx.Select("id,recording_transcript_run_id,recording_audio_chunk_id,recording_attempt_state").Where("id = ?", attemptId).Take(&attempt).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, err
+	}
+	transcriptRun, err := self.GetRecordingTranscriptRun(userId, attempt.RecordingTranscriptRunID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if transcriptRun.RecordingID != recordingId {
+		return nil, nil, ErrNotFound
+	}
+	return transcriptRun, recordingAttemptFromModel(&attempt), nil
+}
+func (self *transaction) HasRecordingSpeakerOverlap(userId, runId, attemptId, localSpeakerId string, passageStartMS, passageEndMS int64) (bool, error) {
+	transcriptRun, err := self.GetRecordingTranscriptRun(userId, runId)
+	if err != nil {
+		return false, err
+	}
+	var overlapCount int64
+	err = self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id = ? AND recording_transcription_attempt_id = ? AND local_speaker_id <> ? AND segment_start_ms < ? AND segment_end_ms > ?", transcriptRun.ID, attemptId, localSpeakerId, passageEndMS, passageStartMS).Count(&overlapCount).Error
+	return overlapCount > 0, err
+}
+
+// CheckRecordingVoiceReferenceNames holds confirmed reference rows through paid-call admission.
+func (self *transaction) CheckRecordingVoiceReferenceNames(userId string, referenceBlobIds, confirmedNames []string) error {
+	if len(referenceBlobIds) != len(confirmedNames) || len(referenceBlobIds) > 4 {
+		return ErrInvalidArguments
+	}
+	if len(referenceBlobIds) == 0 {
+		return nil
+	}
+	expectedNames := map[string]string{}
+	for referenceIndex, blobId := range referenceBlobIds {
+		if blobId == "" || confirmedNames[referenceIndex] == "" {
+			return ErrInvalidArguments
+		}
+		if _, hasDuplicate := expectedNames[blobId]; hasDuplicate {
+			return ErrInvalidArguments
+		}
+		expectedNames[blobId] = confirmedNames[referenceIndex]
+	}
+	var rows []struct {
+		RecordingBlobID string
+		ConfirmedName   string
+	}
+	// References and identities serialize correction/revocation without locking another
+	// recording after the worker has already locked its own source.
+	if err := self.tx.Raw(`SELECT v.recording_blob_id,i.confirmed_name
+  FROM recording_voice_reference v
+  JOIN recording r ON r.id=v.recording_id
+  JOIN recording_speaker_identity i ON i.id=v.speaker_identity_id
+  JOIN recording_speaker_correction c ON c.id=v.recording_speaker_correction_id
+  JOIN recording_blob b ON b.id=v.recording_blob_id
+  WHERE r.user_id = ? AND i.user_id = ? AND r.deleted_at IS NULL
+   AND NOT v.is_revoked AND NOT c.is_removed AND b.is_stored_verified
+   AND b.recording_blob_purpose = ? AND b.recording_id = v.recording_id
+   AND b.recording_media_id = v.recording_media_id AND v.recording_blob_id IN ?
+  FOR SHARE OF v,i,c,b`, userId, userId, models.RecordingBlobSpeakerReference, referenceBlobIds).Scan(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) != len(referenceBlobIds) {
+		return ErrAlreadyExists
+	}
+	for _, row := range rows {
+		if expectedNames[row.RecordingBlobID] != row.ConfirmedName {
+			return ErrAlreadyExists
+		}
 	}
 	return nil
 }

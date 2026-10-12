@@ -27,7 +27,6 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 	}
 	var source *models.Recording
 	var corrections []*models.RecordingSpeakerCorrection
-	var runs []*models.RecordingTranscriptRun
 	var references []*models.RecordingVoiceReference
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
 		source, err = transaction.GetRecording(userId, recordingId)
@@ -35,10 +34,6 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			return err
 		}
 		corrections, err = transaction.ListRecordingSpeakerCorrections(userId, recordingId)
-		if err != nil {
-			return err
-		}
-		runs, err = transaction.ListRecordingTranscriptRuns(userId, recordingId)
 		if err != nil {
 			return err
 		}
@@ -96,37 +91,21 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		}
 		var selectedRun *models.RecordingTranscriptRun
 		var selectedAttempt *models.RecordingTranscriptionAttempt
-		for _, transcriptRun := range runs {
-			if transcriptRun.RecordingMediaID != correction.RecordingMediaID {
-				continue
-			}
-			var attempts []*models.RecordingTranscriptionAttempt
-			if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-				attempts, err = transaction.ListRecordingTranscriptionAttempts(userId, transcriptRun.ID)
-				return err
-			}); err != nil {
-				return err
-			}
-			for _, attempt := range attempts {
-				if attempt.ID == correction.RecordingTranscriptionAttemptID {
-					selectedRun = transcriptRun
-					selectedAttempt = attempt
-					break
-				}
-			}
-			if selectedRun != nil {
-				break
-			}
+		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+			selectedRun, selectedAttempt, err = transaction.GetRecordingSpeakerEvidence(userId, recordingId, correction.RecordingTranscriptionAttemptID)
+			return err
+		}); err != nil {
+			return err
 		}
 		if selectedRun == nil {
 			continue
 		}
 		clipStartMS := correction.PassageStartMS + 200
 		clipEndMS := min(correction.PassageEndMS-200, clipStartMS+6000)
-		var segments []*models.RecordingTranscriptSegment
 		var chunks []*models.RecordingAudioChunk
+		hasOverlap := false
 		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-			segments, err = transaction.ListRecordingTranscriptSegments(userId, selectedRun.ID)
+			hasOverlap, err = transaction.HasRecordingSpeakerOverlap(userId, selectedRun.ID, selectedAttempt.ID, correction.LocalSpeakerID, clipStartMS-200, clipEndMS+200)
 			if err != nil {
 				return err
 			}
@@ -134,13 +113,6 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			return err
 		}); err != nil {
 			return err
-		}
-		hasOverlap := false
-		for _, segment := range segments {
-			if segment.RecordingTranscriptionAttemptID == selectedAttempt.ID && segment.LocalSpeakerID != correction.LocalSpeakerID && segment.SegmentStartMS < clipEndMS+200 && segment.SegmentEndMS > clipStartMS-200 {
-				hasOverlap = true
-				break
-			}
 		}
 		if hasOverlap {
 			continue

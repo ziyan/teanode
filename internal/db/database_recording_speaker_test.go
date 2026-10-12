@@ -232,6 +232,12 @@ func TestRecordingReferencesRejectParentMismatchAndKeepRevocation(test *testing.
 		if err != nil || len(usable) != 1 {
 			test.Fatal("verified confirmed sample unavailable", err)
 		}
+		if err := transaction.CheckRecordingVoiceReferenceNames(fixture.userId, []string{reference.RecordingBlobID}, []string{"Participant One"}); err != nil {
+			test.Fatal("confirmed reference names were refused", err)
+		}
+		if err := transaction.CheckRecordingVoiceReferenceNames(fixture.userId, []string{reference.RecordingBlobID}, []string{"Unconfirmed Name"}); !errors.Is(err, db.ErrAlreadyExists) {
+			test.Fatal("changed identity name admitted a paid reference", err)
+		}
 		source, err := transaction.GetRecording(fixture.userId, reference.RecordingID)
 		if err != nil {
 			test.Fatal(err)
@@ -242,6 +248,9 @@ func TestRecordingReferencesRejectParentMismatchAndKeepRevocation(test *testing.
 		usable, err = transaction.ListUsableRecordingVoiceReferences(fixture.userId, 4)
 		if err != nil || len(usable) != 0 {
 			test.Fatal("revoked clip still conditions provider", err)
+		}
+		if err := transaction.CheckRecordingVoiceReferenceNames(fixture.userId, []string{reference.RecordingBlobID}, []string{"Participant One"}); !errors.Is(err, db.ErrAlreadyExists) {
+			test.Fatal("revoked reference admitted a paid request", err)
 		}
 		if err := transaction.DeleteRevokedRecordingVoiceReference(fixture.userId, source.ID, reference.ID); err != nil {
 			test.Fatal(err)
@@ -358,12 +367,23 @@ func TestRecordingLearningPreservesEqualTimeOverlappingStatements(test *testing.
 		if err != nil || documentCount != 2 || chunkCount != 2 {
 			test.Fatal("equal-time speakers overwrote a statement", documentCount, chunkCount, err)
 		}
+		learning, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
+		if err != nil || !learning.HasAgent || learning.KnowledgeSource == nil || learning.PendingDocumentCount != 2 || learning.DigestedDocumentCount != 0 || learning.LastPublishedSourceGeneration != learning.SourceGeneration {
+			test.Fatal("existing source learning counts do not match retained passages", learning, err)
+		}
 		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
 		if err != nil || len(documents) != 2 || documents[0].ExternalID == documents[1].ExternalID {
 			test.Fatal("statement provenance is not unique", err)
 		}
 		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
 			test.Fatal(err)
+		}
+		if err := transaction.MarkAgentDocumentsDigested([]string{documents[0].ID}, time.Now()); err != nil {
+			test.Fatal(err)
+		}
+		learning, err = transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
+		if err != nil || learning.PendingDocumentCount != 1 || learning.DigestedDocumentCount != 1 {
+			test.Fatal("digest bookkeeping was replaced by invented learning state", learning, err)
 		}
 		documentCount, chunkCount, err = transaction.CountAgentSourceDocuments(source.ID)
 		if err != nil || documentCount != 2 || chunkCount != 2 {
@@ -517,6 +537,69 @@ func TestRecordingRenameReconcilesEverySharedIdentitySourceAtomically(test *test
 			if !strings.Contains(document.Title, "Renamed Shared Participant") {
 				test.Fatal("shared identity rename left old attribution", document.Title)
 			}
+		}
+	})
+}
+
+func TestRecordingDeletionReconcilesEvidenceAfterStoppingKnowledgeSource(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	var fact *models.AgentFact
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "The fixture participant proposed changing a mechanism."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(documents) != 1 {
+			test.Fatal(err)
+		}
+		page, err := transaction.PutAgentNode(&models.AgentNode{AgentID: fixture.agentId, Path: "projects/deletion-fixture", Kind: models.NodeProject, Name: "Deletion Fixture"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		fact, err = transaction.AddAgentFact(&models.AgentFact{AgentID: fixture.agentId, NodeID: page.ID, Text: "A fixture change was proposed.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: documents[0].ID, Quote: "proposed changing a mechanism"}}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+fixture.media.RecordingID)
+		if err != nil || source == nil {
+			test.Fatal(err)
+		}
+		if err := transaction.DeleteAgentSource(fixture.agentId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		retainedFacts, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
+		if err != nil || len(retainedFacts) != 1 || retainedFacts[0].Dormant {
+			test.Fatal("stop reading changed established memory-retention semantics", err)
+		}
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.DeleteRecording(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		reconciledFacts, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
+		if err != nil || len(reconciledFacts) != 1 || !reconciledFacts[0].Dormant {
+			test.Fatal("raw deletion lost evidence after index source removal", err)
+		}
+		revisions, err := transaction.ListAgentRevisions(fixture.agentId, fact.NodeID, 20)
+		if err != nil {
+			test.Fatal(err)
+		}
+		hasRetirement := false
+		for _, revision := range revisions {
+			if revision.Kind == models.RevisionFactStruck {
+				hasRetirement = true
+			}
+		}
+		if !hasRetirement {
+			test.Fatal("source reconciliation dropped established revision history")
 		}
 	})
 }

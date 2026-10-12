@@ -26,8 +26,13 @@ Partial speaker corrections keep their exact ranges without inventing word timin
 
 Changed evidence retires dependent facts through the existing strike/revision
 mechanism and invalidates page overview inputs for the normal rewrite. It preserves
-page prose/history according to existing overview handling. Source deletion removes
-its knowledge source and documents after reconciliation. A dream checks retained
+page prose/history according to existing overview handling. Raw recording deletion removes
+its knowledge source and documents after reconciliation. Existing source Stop reading
+keeps learned pages; retained evidence identifiers allow later raw deletion or correction
+to reconcile those facts even after indexed documents are removed. Learning status exposes existing source timestamps/errors and pending/digested passage
+counts, without claiming useful memories or human review. Publication pages immutable
+segments in bounded batches; speaker evidence reads exclude large provider receipts.
+A dream checks retained
 recording/document evidence under source locks before page preparation and atomic
 fact filing, preventing an old model response from recreating corrected attribution.
 
