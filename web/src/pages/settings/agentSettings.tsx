@@ -113,6 +113,8 @@ export type Agent = {
   features: Record<string, boolean>
   limits: {
     maxBodyCharacters: number
+    maxRecordingMediaBytes: string
+    maxRecordingAccountBytes: string
     dailyTokensPerAgent: number
     dailyCostPerAgent: number
     monthlyCostPerServer: number
@@ -177,7 +179,7 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
+  limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -1133,6 +1135,8 @@ function asPrice(typed: string): string {
 
 function limitFields(settings: Agent) {
   return {
+    maxRecordingMediaBytes: settings.limits.maxRecordingMediaBytes,
+    maxRecordingAccountBytes: settings.limits.maxRecordingAccountBytes,
     maxBodyCharacters: String(settings.limits.maxBodyCharacters),
     dailyTokensPerAgent: String(settings.limits.dailyTokensPerAgent),
     monthlyTokensPerServer: String(settings.limits.monthlyTokensPerServer),
@@ -1177,7 +1181,7 @@ function LimitsForm({ settings, onSaved }: Props) {
       <span>{t(`agentSettings.limit.${field}`)}</span>
       <input
         value={limits[field]}
-        inputMode={field === 'requestTimeout' ? undefined : 'numeric'}
+        inputMode={['requestTimeout', 'maxRecordingMediaBytes', 'maxRecordingAccountBytes'].includes(field) ? undefined : 'numeric'}
         onChange={(event) => setLimits({ ...limits, [field]: event.target.value })}
       />
     </label>
@@ -1191,6 +1195,8 @@ function LimitsForm({ settings, onSaved }: Props) {
         void save({
           agent: {
             limits: {
+              maxRecordingMediaBytes: limits.maxRecordingMediaBytes,
+              maxRecordingAccountBytes: limits.maxRecordingAccountBytes,
               maxBodyCharacters: number(limits.maxBodyCharacters),
               dailyTokensPerAgent: number(limits.dailyTokensPerAgent),
               monthlyTokensPerServer: number(limits.monthlyTokensPerServer),
@@ -1222,6 +1228,10 @@ function LimitsForm({ settings, onSaved }: Props) {
     >
       <h3>{t('agentSettings.limits')}</h3>
       <p className="muted">{t('agentSettings.limitsDescription')}</p>
+      <div className="row">
+        {(['maxRecordingMediaBytes', 'maxRecordingAccountBytes'] as const).map(numeric)}
+      </div>
+      <p className="muted">{t('agentSettings.recordingLimitsHint')}</p>
       <div className="row">
         {(['dailyTokensPerAgent', 'monthlyTokensPerServer', 'maxBodyCharacters'] as const).map(numeric)}
       </div>

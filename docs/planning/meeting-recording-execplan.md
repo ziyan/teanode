@@ -204,7 +204,8 @@ transcription may require a full paid pass. Metadata labels never require one.
 
 ## Current implementation checkpoint
 
-PR #427 contains the durable media increment and is awaiting CI/review. Work covers
+PR #427 contains the durable media increment. Its previous completed CI run passed;
+the final code review fixes are being submitted for a fresh CI run. Work covers
 account-owned recording/media manifests, bounded resumable part uploads, verified
 whole-file receipts, streaming playback and durable explicit-deletion cleanup.
 The service work is merged. The original working copy is preserved.
@@ -227,8 +228,18 @@ lint and naming checks pass. The first full CI run found that the new limits mad
 the agent settings description exceed the tool's 24,000-character result limit.
 Descriptions now keep readable JSON and offer nested subsection paths; the CLI
 also describes nested inputs. Focused tests check both interfaces and secret
-exclusion instead of enlarging the result limit. A final review also bounded object-store reads even when a response body exceeds\nits declared range length; a fake transport reproduces that case. Full CI,\ndashboard/iOS flows, paid-provider evaluation
-and actual-device checks are not evidence supplied by this increment.
+exclusion instead of enlarging the result limit. A final review also bounded
+object-store reads even when a response body exceeds its declared range length;
+a fake transport reproduces that case. The last completed CI run passed all
+checks. Final review added API/web/CLI
+read/update access to recording quotas, while the existing settings tool reads and
+writes the same configuration fields. CLI readback preserves compatibility with
+older servers. Chrome audits at 1440 by 1000 and 390 by 844 verified save/reload,
+invalid-size feedback and no mobile horizontal overflow. The desktop audit caught
+an overlapping hint, which is fixed. API/client regression tests, dashboard
+typecheck/lint/tests/build, binary builds and full local lint pass. Recording
+library UI, iOS flows, paid-provider evaluation and actual-device checks remain
+outstanding, and are not supplied by this increment.
 
 ## Outcomes & Retrospective
 
