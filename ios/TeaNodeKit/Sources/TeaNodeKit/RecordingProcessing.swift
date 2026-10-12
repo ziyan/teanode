@@ -156,13 +156,17 @@ extension Connection {
         -> RecordingTranscriptView
     {
         struct Answer: Decodable, Sendable { let ReadRecordingTranscript: RecordingTranscriptView }
-        return try await execute(
+        let view = try await execute(
             Documents.readRecordingTranscript,
             variables: [
                 "recordingTranscriptRunId": .string(recordingTranscriptRunId), "segmentOffset": .number(Double(segmentOffset)),
                 "pageSize": .number(Double(pageSize)),
             ], as: Answer.self
         ).ReadRecordingTranscript
+        guard view.transcriptRun.id == recordingTranscriptRunId,
+            view.segments.allSatisfy({ $0.recordingTranscriptRunId == recordingTranscriptRunId })
+        else { throw TeaNodeError.unreadableAnswer }
+        return view
     }
     public func requestRecordingTranscription(recordingMediaId: String, clientRunId: String, isReprocessingRequested: Bool) async throws
         -> RecordingTranscriptRun

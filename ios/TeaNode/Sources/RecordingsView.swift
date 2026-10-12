@@ -116,6 +116,7 @@ struct RecordingsScreen: View {
     @State private var isDiscarding = false
     @State private var discardedRecording: LocalRecording?
     @State private var localPlayback: LocalRecording?
+    @State private var openedCitation: RecordingLink?
 
     init(connection: Connection) { _model = State(initialValue: RecordingsModel(connection: connection)) }
 
@@ -246,6 +247,14 @@ struct RecordingsScreen: View {
                 if let problem = model.problemText { Section { Text(problem).foregroundStyle(.secondary) } }
             }
             .navigationTitle("Recordings")
+            .navigationDestination(item: $openedCitation) { citation in
+                RecordingCitationScreen(connection: model.connection, citation: citation)
+            }
+            .onChange(of: AppModel.shared.openedRecordingLink, initial: true) { _, citation in
+                guard let citation, AppModel.shared.openedRecordingAccountKey == model.connection.accountKey else { return }
+                AppModel.shared.openedRecordingLink = nil
+                openedCitation = citation
+            }
             .toolbar {
                 MenuButton()
                 ToolbarItem(placement: .primaryAction) {

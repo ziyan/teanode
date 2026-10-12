@@ -64,6 +64,8 @@ final class AppModel {
 
     /// A page of the agent's knowledge a link asks to open.
     var openedKnowledgePath: String?
+    var openedRecordingLink: RecordingLink?
+    private(set) var openedRecordingAccountKey: String?
 
     /// A mail a link asks to open.
     var openedMailItemId: String?
@@ -106,6 +108,12 @@ final class AppModel {
     /// Goes to the dashboard path the agent's open_page names, checked as
     /// the dashboard checks it: the person's own pages, in plain segments.
     func show(path written: String) {
+        if let address = URL(string: written), let account, let citation = RecordingLink(address, server: account.server) {
+            openedRecordingAccountKey = account.accountKey
+            openedRecordingLink = citation
+            openedSection = .recordings
+            return
+        }
         let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
         guard path.hasPrefix("/"), path.count <= 600 else { return }
         let segments = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -158,6 +166,12 @@ final class AppModel {
     /// item or a memory page opens its page on the dashboard; anything else
     /// is not followed, as the dashboard does not follow it.
     func route(_ address: URL) -> OpenURLAction.Result {
+        if let account, let citation = RecordingLink(address, server: account.server) {
+            openedRecordingAccountKey = account.accountKey
+            openedRecordingLink = citation
+            openedSection = .recordings
+            return .handled
+        }
         let written = address.absoluteString
         switch address.scheme?.lowercased() {
         case "http", "https":
@@ -275,7 +289,11 @@ final class AppModel {
             Task { await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey) }
         }
         let isChanged = account.accountKey != self.account?.accountKey
-        if isChanged { services = nil }
+        if isChanged {
+            services = nil
+            openedRecordingLink = nil
+            openedRecordingAccountKey = nil
+        }
         self.account = account
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
@@ -301,6 +319,12 @@ final class AppModel {
     /// while the phone is signed out: one opened while signed in is left
     /// unspent, and the person is told why.
     func open(_ url: URL) {
+        if let account, let citation = RecordingLink(url, server: account.server) {
+            openedRecordingAccountKey = account.accountKey
+            openedRecordingLink = citation
+            openedSection = .recordings
+            return
+        }
         guard let link = ConnectLink(url) else { return }
         // Signed in already, the code adds an account beside the others; the
         // person is shown whose it is before it is kept.

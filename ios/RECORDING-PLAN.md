@@ -22,6 +22,10 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
   missing, incorrect or failed receipts. Uploads begin after capture stops.
 - Native paged library, retained local and verified remote original playback, metadata
   editing, per-original transcript versions and a full chronological recording timeline.
+- Same-server recording citations open the original transcript version and absolute
+  passage interval in the native library, including the older run query alias. Foreign
+  hosts, conflicting versions and wrong-version read responses cannot substitute the
+  latest transcript. A bounded server offset lookup resolves historical pages.
 - Processing, cancellation, safe same-version retry and explicit paid reprocessing.
   Paid run keys remain stable through an unknown response.
 - Confirmed group or selected interval labels, automatic reference state and original
@@ -59,7 +63,7 @@ fix and the owner/import/availability checkpoint passed a subsequent native SDK 
 its nine-route captures are collecting. Source schedule controls need another native
 build and ten-route visual checks.
 The unsigned simulator reported an unavailable shared container, so signed capture
-and share-container behavior is not verified. The package suite passed 314 tests,
+and share-container behavior is not verified. The package suite passed 316 tests,
 including recreated-username ownership refusal and concurrent credential replacement.
 Full project lint passed again after integration, including the local naming check,
 catalog agreement and tracked secret scanning.

@@ -36,6 +36,9 @@
             if query.contains("ReadRecordingTranscriptTextCorrections") {
                 return "{\"data\":{\"ReadRecordingTranscriptTextCorrections\":[\(recordingTextCorrectionFixture)]}}"
             }
+            if query.contains("ReadRecordingTranscriptPassageOffset") {
+                return #"{"data":{"ReadRecordingTranscriptPassageOffset":0}}"#
+            }
             if query.contains("ReadRecordingTranscript") {
                 return
                     "{\"data\":{\"ReadRecordingTranscript\":{\"transcriptRun\":\(recordingRunFixture),\"segments\":[\(recordingSegmentFixture)],\"attempts\":[{\"id\":\"attempt-a\",\"recordingAttemptState\":\"complete\",\"providerModelName\":\"demo:transcription\",\"hasProviderUsage\":false,\"estimatedCostAmount\":null,\"actualCostAmount\":null,\"currencyCode\":\"USD\",\"attemptErrorMessage\":\"\"}],\"segmentCount\":1,\"hasMoreSegments\":false}}}"
@@ -70,6 +73,11 @@
             NavigationStack {
                 switch screen {
                 case "recording-model-settings", "recording-quota-settings": RecordingOperatorDemoScreen(connection: connection, screen: screen)
+                case "recording-citation":
+                    RecordingCitationScreen(
+                        connection: connection,
+                        citation: RecordingLink(
+                            URL(string: "/recordings/recording-a?version=run-a&startMS=30000&endMS=44000")!, server: DemoServer.account.server)!)
                 case "recording-source-settings":
                     KnowledgeSourceEditor(
                         connection: connection,

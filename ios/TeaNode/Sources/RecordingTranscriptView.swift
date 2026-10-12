@@ -5,10 +5,12 @@ struct RecordingTranscriptScreen: View {
     let connection: Connection
     let recording: Recording
     let transcriptRun: RecordingTranscriptRun?
+    let citation: RecordingLink?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var timelineView: RecordingTranscriptTimeline?
     @State private var transcriptView: RecordingTranscriptView?
     @State private var segments: [RecordingTranscriptSegment] = []
+    @State private var nextSegmentOffset = 0
     @State private var speakers: RecordingSpeakersView?
     @State private var invalidations: [RecordingReferenceInvalidation] = []
     @State private var problemText: String?
@@ -24,10 +26,11 @@ struct RecordingTranscriptScreen: View {
     @State private var playbackMedia: RecordingMedia?
     @State private var passageStartMS: Int64 = 0
 
-    init(connection: Connection, recording: Recording, transcriptRun: RecordingTranscriptRun? = nil) {
+    init(connection: Connection, recording: Recording, transcriptRun: RecordingTranscriptRun? = nil, citation: RecordingLink? = nil) {
         self.connection = connection
         self.recording = recording
         self.transcriptRun = transcriptRun
+        self.citation = citation
     }
 
     private func mediaId(for segment: RecordingTranscriptSegment) -> String? {
@@ -36,6 +39,20 @@ struct RecordingTranscriptScreen: View {
 
     var body: some View {
         List {
+            if let citation, let startMS = citation.passageStartMS, let endMS = citation.passageEndMS {
+                Section("Cited passage") {
+                    if let transcriptRun { Text("Version \(transcriptRun.versionNumber)") }
+                    LabeledContent("Passage start") { Text(Duration.milliseconds(startMS).formatted(.time(pattern: .hourMinuteSecond))) }
+                    LabeledContent("Passage end") { Text(Duration.milliseconds(endMS).formatted(.time(pattern: .hourMinuteSecond))) }
+                    if let transcriptRun {
+                        NavigationLink {
+                            RecordingTranscriptScreen(connection: connection, recording: recording, transcriptRun: transcriptRun)
+                        } label: {
+                            Label("Open transcript version", systemImage: "text.bubble")
+                        }
+                    }
+                }
+            }
             if let transcriptRun {
                 Section {
                     LabeledContent(
@@ -89,7 +106,7 @@ struct RecordingTranscriptScreen: View {
                 }
             }
             Section {
-                ForEach(segments) { segment in
+                ForEach(segments.filter { citation?.includes($0) ?? true }) { segment in
                     VStack(alignment: .leading, spacing: 8) {
                         let headerLayout =
                             dynamicTypeSize.isAccessibilitySize
@@ -148,7 +165,7 @@ struct RecordingTranscriptScreen: View {
                         }
                     }.padding(.vertical, 4)
                 }
-                if transcriptView?.hasMoreSegments == true || timelineView?.hasMoreSegments == true {
+                if citation == nil, transcriptView?.hasMoreSegments == true || timelineView?.hasMoreSegments == true {
                     Button {
                         Task { await loadPage(isAdditional: true) }
                     } label: {
@@ -156,6 +173,9 @@ struct RecordingTranscriptScreen: View {
                     }
                 }
                 if segments.isEmpty { Text("No completed transcript passages yet").foregroundStyle(.secondary) }
+                if let citation, !segments.isEmpty, !segments.contains(where: { citation.includes($0) }) {
+                    Text("The cited passage is unavailable in this transcript version.").foregroundStyle(.secondary)
+                }
             } header: {
                 Text("Transcript")
             } footer: {
@@ -230,10 +250,27 @@ struct RecordingTranscriptScreen: View {
     private func loadPage(isAdditional: Bool) async {
         do {
             if let transcriptRun {
-                let page = try await connection.recordingTranscript(
-                    recordingTranscriptRunId: transcriptRun.id, segmentOffset: isAdditional ? segments.count : 0)
+                var segmentOffset = isAdditional ? nextSegmentOffset : 0
+                if !isAdditional, let citation, let startMS = citation.passageStartMS, let endMS = citation.passageEndMS {
+                    segmentOffset = try await connection.recordingTranscriptPassageOffset(
+                        recordingTranscriptRunId: transcriptRun.id, passageStartMS: startMS, passageEndMS: endMS)
+                }
+                var page = try await connection.recordingTranscript(
+                    recordingTranscriptRunId: transcriptRun.id, segmentOffset: segmentOffset)
                 transcriptView = page
+                nextSegmentOffset = segmentOffset + page.segments.count
                 if isAdditional { segments.append(contentsOf: page.segments) } else { segments = page.segments }
+                if !isAdditional, let citationEndMS = citation?.passageEndMS {
+                    while page.hasMoreSegments, !page.segments.isEmpty,
+                        (segments.last?.segmentStartMS ?? 0) < citationEndMS
+                    {
+                        try Task.checkCancellation()
+                        page = try await connection.recordingTranscript(recordingTranscriptRunId: transcriptRun.id, segmentOffset: nextSegmentOffset)
+                        nextSegmentOffset += page.segments.count
+                        transcriptView = page
+                        segments.append(contentsOf: page.segments)
+                    }
+                }
             } else {
                 let page = try await connection.recordingTranscriptTimeline(
                     recordingId: recording.id, segmentOffset: isAdditional ? segments.count : 0)

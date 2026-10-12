@@ -563,3 +563,41 @@ extension RecordingTests {
         XCTAssertEqual((lastRequest["variables"] as? [String: Any])?["cron"] as? String, "")
     }
 }
+
+extension RecordingTests {
+    func testRecordingCitationKeepsExactVersionAndRejectsForeignOrAmbiguousLinks() throws {
+        let server = try ServerAddress(parsing: "example.com")
+        let citation = try XCTUnwrap(RecordingLink(URL(string: "/recordings/recording-a?version=run-a&startMS=602000&endMS=605000")!, server: server))
+        XCTAssertEqual(citation.recordingId, "recording-a")
+        XCTAssertEqual(citation.recordingTranscriptRunId, "run-a")
+        XCTAssertEqual(citation.passageStartMS, 602000)
+        XCTAssertEqual(citation.passageEndMS, 605000)
+        XCTAssertNotNil(RecordingLink(URL(string: "https://example.com/recordings/recording-a?run=run-a")!, server: server))
+        for written in [
+            "https://other.example/recordings/recording-a?version=run-a", "//other.example/recordings/recording-a",
+            "/recordings/recording-a?version", "/recordings/recording-a?run",
+            "/recordings/recording-a?version=run-a&version=run-b", "/recordings/recording-a?version=run-a&run=run-b",
+            "/recordings/recording-a?startMS=1&endMS=2", "/recordings/recording-a?version=run-a&startMS=2&endMS=1",
+            "/recordings/recording-a?version=run-a&startMS=-1&endMS=2", "/recordings/recording-a?version=run-a&startMS=1",
+            "/recordings/../recording-a", "https://test:secret@example.com/recordings/recording-a",
+        ] {
+            XCTAssertNil(RecordingLink(URL(string: written)!, server: server), written)
+        }
+    }
+
+    func testTranscriptResponseCannotSubstituteAnotherVersionForACitation() async throws {
+        let fake = FakeServer { _ in
+            (
+                200,
+                #"{"data":{"ReadRecordingTranscript":{"transcriptRun":{"id":"wrong-run","recordingId":"recording-a","recordingMediaId":"media-a","versionNumber":2,"recordingProcessingState":"complete","providerModelName":"demo:transcription","createdAt":"2030-01-02T03:04:05Z"},"segments":[],"attempts":[],"segmentCount":0,"hasMoreSegments":false}}}"#
+            )
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "test-token", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(40 * 86400), username: "test")
+        do {
+            _ = try await Connection(account: account, transport: fake).recordingTranscript(recordingTranscriptRunId: "run-a")
+            XCTFail("A response substituted another transcript version")
+        } catch { XCTAssertEqual(error as? TeaNodeError, .unreadableAnswer) }
+    }
+}

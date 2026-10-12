@@ -45471,6 +45471,118 @@
           }
         }
       }
+    },
+    "The cited transcript version is unavailable. Open the recording library to browse other versions.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引用された文字起こしの版を開けません。録音ライブラリで別の版を確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引用的转写版本不可用。请打开录音库查看其他版本。"
+          }
+        }
+      }
+    },
+    "Cannot open recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開けません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开录音"
+          }
+        }
+      }
+    },
+    "The cited passage is unavailable in this transcript version.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この文字起こしの版には引用された箇所がありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此转写版本中没有引用的段落。"
+          }
+        }
+      }
+    },
+    "Cited passage": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引用箇所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引用段落"
+          }
+        }
+      }
+    },
+    "Passage start": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "箇所の開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "段落开始"
+          }
+        }
+      }
+    },
+    "Passage end": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "箇所の終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "段落结束"
+          }
+        }
+      }
+    },
+    "Open transcript version": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この版を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开此转写版本"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
