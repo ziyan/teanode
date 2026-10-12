@@ -83,12 +83,35 @@ struct IdeasScreen: View {
         }
     }
 
+    /// What became of an idea; a tap opens the conversation that carried it
+    /// out while it is still there, as the dashboard's history does. The
+    /// server forgets the conversation when it is deleted.
+    @ViewBuilder
     private func historyRow(_ idea: IdeaEntry) -> some View {
-        HStack(spacing: 12) {
+        let label = HStack(spacing: 12) {
             Text(idea.emoji ?? "💡")
             VStack(alignment: .leading, spacing: 2) {
-                Text(idea.headline).lineLimit(2)
-                Text(IdeaWords.status(idea.ideaStatus)).font(.caption).foregroundStyle(.secondary)
+                Text(idea.headline).foregroundStyle(Color(.label)).lineLimit(2)
+                Text(IdeaWords.status(idea.ideaStatus)).font(.caption).foregroundStyle(Color(.secondaryLabel))
+            }
+        }
+        Group {
+            if let conversationId = idea.startedConversationId, !conversationId.isEmpty {
+                Button {
+                    app.openedConversationId = conversationId
+                } label: {
+                    HStack {
+                        label
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityHint("Opens its conversation")
+            } else {
+                label
             }
         }
         .swipeActions {
