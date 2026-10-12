@@ -197,7 +197,7 @@ final class ConversationModel {
     /// Sends what was said on a call as a turn, and returns the turn, whose
     /// answers the call reads out.
     func sendSpoken(_ text: String, interruptedAnswer: (heardText: String, unheardText: String)?) async -> String? {
-        transcript.addSent(text)
+        let sentLineId = transcript.addSent(text)
         do {
             let asked = try await connection.ask(
                 text, in: conversationId, surface: Surface.voice, drawerId: app.drawerId, interruptedAnswer: interruptedAnswer)
@@ -209,7 +209,7 @@ final class ConversationModel {
             }
             return asked.runId
         } catch {
-            transcript.withdrawSent()
+            transcript.withdrawSent(lineId: sentLineId)
             sendProblemText = app.describe(error)
             return nil
         }
@@ -339,6 +339,7 @@ final class ConversationModel {
         let referring = references
         draft = ""
         references = []
+        var sentLineId: String?
         do {
             var attachments: [AgentAttachment] = []
             for file in sending {
@@ -349,7 +350,7 @@ final class ConversationModel {
             // Files added while these were sent stay for the next message.
             pendingFiles.removeAll { sendingIds.contains($0.id) }
             let message = text.isEmpty ? "(files)" : text
-            transcript.addSent(message, attachments: attachments, replyingTo: reply)
+            sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply)
             let asked = try await connection.ask(
                 message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
                 drawerId: app.drawerId)
@@ -362,7 +363,7 @@ final class ConversationModel {
             }
             ideas = []
         } catch {
-            transcript.withdrawSent()
+            if let sentLineId { transcript.withdrawSent(lineId: sentLineId) }
             if draft.isEmpty { draft = text }
             pendingFiles = sending + pendingFiles.filter { !sendingIds.contains($0.id) }
             references = referring
@@ -372,13 +373,15 @@ final class ConversationModel {
 
     /// Sends a suggested reply as it is, leaving the draft alone.
     func sendSuggestion(_ suggestion: String) async {
-        transcript.addSent(suggestion)
+        let sentLineId = transcript.addSent(suggestion)
         do {
             let asked = try await connection.ask(suggestion, in: conversationId, drawerId: app.drawerId)
-            runningRunIds.append(asked.runId)
+            if !runningRunIds.contains(asked.runId) {
+                runningRunIds.append(asked.runId)
+            }
             sentCount += 1
         } catch {
-            transcript.withdrawSent()
+            transcript.withdrawSent(lineId: sentLineId)
             sendProblemText = app.describe(error)
         }
     }

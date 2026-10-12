@@ -363,19 +363,21 @@ public struct Transcript: Sendable {
 
     /// Shows what the person just sent from this app, before the turn it
     /// begins is under way.
-    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil) {
+    @discardableResult
+    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil) -> String {
         var line = TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments)
         if let reply {
             line.quotedText = reply.quotedText ?? ""
             line.quotedRole = reply.quotedRole ?? ""
         }
         lines.append(line)
+        return line.id
     }
 
-    /// Takes back the last thing sent from this app, when the server
-    /// refused it.
-    public mutating func withdrawSent() {
-        if let index = lines.lastIndex(where: { $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty }) {
+    /// Takes back only the message belonging to a refused request, unless
+    /// the feed already confirmed that the server accepted it.
+    public mutating func withdrawSent(lineId: String) {
+        if let index = lines.firstIndex(where: { $0.id == lineId && $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty }) {
             lines.remove(at: index)
         }
     }
@@ -422,6 +424,15 @@ public struct Transcript: Sendable {
             // sent from this app or read back before the feed replayed the
             // turn, is not drawn again.
             guard let text = event.text, !text.isEmpty else { return }
+            // Requests can finish in a different order from the taps that
+            // started them. Confirm the matching pending line without
+            // removing another message or events already on screen.
+            if let index = lines.firstIndex(where: {
+                $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty && $0.text == text
+            }) {
+                lines[index].runId = event.runId
+                return
+            }
             // The person's latest words, when they are these, are this turn
             // read back with the transcript: what came after them is the
             // turn as far as it was stored, which the replay draws again in
@@ -445,14 +456,14 @@ public struct Transcript: Sendable {
                 lines.append(TranscriptLine(id: "\(event.runId)-asked", kind: .person, text: text, runId: event.runId, at: event.at))
             }
         case "text":
-            if let last = lines.indices.last, lines[last].kind == .answer, lines[last].isStreaming {
+            if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
                 lines[last].text += event.text ?? ""
             } else {
                 lines.append(TranscriptLine(id: "\(event.runId)-\(event.sequence)", kind: .answer, text: event.text ?? "", isStreaming: true, runId: event.runId, at: event.at))
             }
         case "message":
             let split = Suggestions.split(event.text ?? "")
-            if let last = lines.indices.last, lines[last].kind == .answer, lines[last].isStreaming {
+            if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
                 lines[last].text = event.text == nil ? lines[last].text : split.text
                 lines[last].suggestions = split.suggestions
                 lines[last].isStreaming = false
