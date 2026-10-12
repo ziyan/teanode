@@ -40,6 +40,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 /// OpenMenu opens the side menu, for the button in every screen's bar.
 struct OpenMenu {
     let action: () -> Void
+    @MainActor
     func callAsFunction() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         action()
