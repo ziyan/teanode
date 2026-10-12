@@ -39,8 +39,8 @@ const (
 	// and an emoji in its prose was not the choice.
 	acknowledgeAnswerCharacters = 16
 
-	// acknowledgeTimeout bounds the call. A reaction that lands after the
-	// turn's answer is not a reaction to the message any more.
+	// acknowledgeTimeout bounds the call: a reaction that comes much later
+	// than the answer is no longer a reaction to the message.
 	acknowledgeTimeout = 20 * time.Second
 )
 
@@ -127,9 +127,11 @@ func (self *AskRun) acknowledge(settings *AskSettings, messageId, previousAnswer
 	go func() {
 		defer deferutil.Recover()
 		defer self.agent.waitGroup.Done()
-		// The turn's own context: when the turn has answered and ended,
-		// a reaction to the message that began it adds nothing.
-		ctx, cancel := context.WithTimeout(self.ctx, acknowledgeTimeout)
+		// The agent's context, not the turn's: a quick model answers a
+		// greeting in two seconds, sooner than the reaction is picked,
+		// and a friend's tapback that lands just after their reply is
+		// still welcome. Stopping the server still stops it.
+		ctx, cancel := context.WithTimeout(self.agent.ctx, acknowledgeTimeout)
 		defer cancel()
 		if err := self.agent.acknowledge(ctx, settings, messageId, message, previousAnswer); err != nil {
 			if ctx.Err() == nil {
