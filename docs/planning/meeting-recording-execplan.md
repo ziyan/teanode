@@ -206,12 +206,14 @@ transcription may require a full paid pass. Metadata labels never require one.
 ## Current implementation checkpoint
 
 PR #427 at 3aee8a0 contains the durable media increment. Its previous completed CI
-run passed; final quota/settings and Chrome layout review fixes await fresh CI.
+run passed; the quota/settings and Chrome layout review fixes now pass all CI.
 Work covers
 account-owned recording/media manifests, bounded resumable part uploads, verified
 whole-file receipts, streaming playback and durable explicit-deletion cleanup.
 The service work is merged. The original working copy is preserved. No deployment has been performed.
-The next branch is feat/recording-transcripts, starting with processing/usage.
+Draft PR #433 at d53579d contains the transcript persistence and decoder
+foundation, with local validation complete and CI in progress. The next branch,
+feat/recording-library, starts the provider worker and matching library interfaces.
 Subsequent increments add sources/reconciliation, corrections/references, dashboard,
 CLI/tool parity and native capture. The feature is not complete while any of those
 surfaces or the desktop/phone Chrome audits are missing. Provider billing and actual iPhone
@@ -233,6 +235,10 @@ remain unimplemented; this is a processing foundation, not a complete feature.
 
 The first CI run found the new job kind missing from run labels. Web catalogs,
 web/iOS filters and the native label now include recording transcription.
+
+The shared client documents and transport now pass schema, receipt-integrity and
+read-only connection tests. CLI/tool commands and dashboard flows still need to
+be wired to these operations. Both implementation PRs remain draft for author review.
 
 ## Processing implementation design
 
