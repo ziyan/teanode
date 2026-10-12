@@ -136,6 +136,12 @@ func TestRecordingHTTPUploadReceiptsPlaybackAndCookieProtection(test *testing.T)
 	if response.Code != http.StatusOK {
 		test.Fatal("media completion failed", response.Code, response.Body.String())
 	}
+	completionJSON := response.Body.String()
+	retryResponse := httptest.NewRecorder()
+	resolver.recordingCompleteView(retryResponse, complete)
+	if retryResponse.Code != http.StatusOK || retryResponse.Body.String() != completionJSON {
+		test.Fatal("completion retry changed the durable receipt", retryResponse.Body.String())
+	}
 	playback := requestAs("recording-owner", http.MethodGet, nil)
 	playback.Header.Set("Range", "bytes=3-8")
 	response = httptest.NewRecorder()

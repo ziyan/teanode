@@ -66,7 +66,23 @@ type recordingPartModel models.RecordingMediaPart
 func (recordingPartModel) TableName() string { return "recording_media_part" }
 
 func recordingFromModel(row *recordingModel) *models.Recording {
-	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+}
+
+func recordingMediaFromModel(row *recordingMediaModel) *models.RecordingMedia {
+	media := models.RecordingMedia(*row)
+	media.CreatedAt = media.CreatedAt.UTC()
+	if media.VerifiedAt != nil {
+		verifiedAt := media.VerifiedAt.UTC()
+		media.VerifiedAt = &verifiedAt
+	}
+	return &media
+}
+
+func recordingPartFromModel(row *recordingPartModel) *models.RecordingMediaPart {
+	part := models.RecordingMediaPart(*row)
+	part.StoredAt = part.StoredAt.UTC()
+	return &part
 }
 
 func (self *transaction) CreateRecording(recording *models.Recording) (*models.Recording, error) {
@@ -107,7 +123,7 @@ func (self *transaction) CreateRecording(recording *models.Recording) (*models.R
 	if recording.RecordingOrigin == models.RecordingOriginCapture {
 		captureState = models.RecordingCaptureActive
 	}
-	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now(), UpdatedAt: time.Now(), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
+	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}
@@ -205,7 +221,10 @@ func (self *transaction) UpdateRecordingCapture(userId, recordingId string, expe
 		gapIDs[gap.GapID] = true
 		previousEndMS = gap.GapEndMS
 	}
-	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: recording.SourceGeneration + 1, UpdatedAt: time.Now()}
+	if gaps == nil {
+		gaps = []models.RecordingGap{}
+	}
+	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: recording.SourceGeneration + 1, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 	if err := self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Select("recording_capture_state", "timeline_duration_ms", "capture_gaps", "source_generation", "updated_at").Updates(&row).Error; err != nil {
 		return nil, err
 	}
@@ -242,8 +261,7 @@ func (self *transaction) CreateRecordingMedia(userId string, media *models.Recor
 		if previous.OriginalSHA256 != media.OriginalSHA256 || previous.OriginalSizeBytes != media.OriginalSizeBytes || previous.TimelineStartMS != media.TimelineStartMS || previous.MediaDurationMS != media.MediaDurationMS || previous.OriginalContentType != media.OriginalContentType {
 			return nil, ErrAlreadyExists
 		}
-		kept := models.RecordingMedia(previous)
-		return &kept, nil
+		return recordingMediaFromModel(&previous), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -264,7 +282,7 @@ func (self *transaction) CreateRecordingMedia(userId string, media *models.Recor
 	}
 	created := *media
 	created.ID = newID()
-	created.CreatedAt = time.Now()
+	created.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
 	created.RecordingUploadState = models.RecordingUploadPending
 	created.VerifiedAt = nil
 	created.CleanupNextPartIndex = 0
@@ -287,8 +305,7 @@ func (self *transaction) GetRecordingMedia(userId, mediaId string) (*models.Reco
 	if _, err := self.GetRecording(userId, row.RecordingID); err != nil {
 		return nil, err
 	}
-	media := models.RecordingMedia(row)
-	return &media, nil
+	return recordingMediaFromModel(&row), nil
 }
 func (self *transaction) ListRecordingMedia(userId, recordingId string) ([]*models.RecordingMedia, error) {
 	if _, err := self.GetRecording(userId, recordingId); err != nil {
@@ -303,8 +320,7 @@ func (self *transaction) ListRecordingMediaForCleanup(recordingId string) ([]*mo
 	}
 	media := make([]*models.RecordingMedia, 0, len(rows))
 	for _, row := range rows {
-		converted := models.RecordingMedia(row)
-		media = append(media, &converted)
+		media = append(media, recordingMediaFromModel(&row))
 	}
 	return media, nil
 }
@@ -318,8 +334,7 @@ func (self *transaction) ListRecordingMediaParts(userId, mediaId string) ([]*mod
 	}
 	parts := make([]*models.RecordingMediaPart, 0, len(rows))
 	for _, row := range rows {
-		part := models.RecordingMediaPart(row)
-		parts = append(parts, &part)
+		parts = append(parts, recordingPartFromModel(&row))
 	}
 	return parts, nil
 }
@@ -347,8 +362,7 @@ func (self *transaction) PutRecordingMediaPart(userId string, part *models.Recor
 		if previous.PartSHA256 != part.PartSHA256 || previous.PartSizeBytes != part.PartSizeBytes {
 			return nil, ErrAlreadyExists
 		}
-		kept := models.RecordingMediaPart(previous)
-		return &kept, nil
+		return recordingPartFromModel(&previous), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -394,7 +408,7 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSHA256 
 			return nil, false, ErrInvalidArguments
 		}
 	}
-	verifiedAt := time.Now()
+	verifiedAt := time.Now().UTC().Truncate(time.Microsecond)
 	if err := self.tx.Model(&recordingMediaModel{}).Where("id = ?", mediaId).Updates(map[string]any{"recording_upload_state": models.RecordingUploadComplete, "verified_at": verifiedAt}).Error; err != nil {
 		return nil, false, err
 	}
@@ -410,7 +424,7 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err != nil {
 		return err
 	}
-	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now(), "source_generation": recording.SourceGeneration + 1}).Error
+	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
 func (self *transaction) ListRecordingsForCleanup(limit int) ([]*models.Recording, error) {
 	if limit < 1 || limit > 100 {
@@ -459,7 +473,7 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	if row.UserID == nil {
 		return self.tx.Where("id = ?", recordingId).Delete(&row).Error
 	}
-	return self.tx.Model(&row).Updates(map[string]any{"recording_title": "", "capture_gaps": "[]", "cleanup_completed_at": time.Now()}).Error
+	return self.tx.Model(&row).Updates(map[string]any{"recording_title": "", "capture_gaps": "[]", "cleanup_completed_at": time.Now().UTC().Truncate(time.Microsecond)}).Error
 }
 
 // RecordingPartFileID keeps even uncommitted part writes discoverable for cleanup.
