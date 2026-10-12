@@ -645,7 +645,9 @@ struct MessageActionsView: View {
                 .accessibilityLabel("Close")
                 .accessibilityAddTraits(.isButton)
             VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
-                if line.messageId != nil {
+                // Each side reacts to what the other said: the person to the
+                // agent's answers, not to their own messages.
+                if line.messageId != nil, line.kind == .answer {
                     reactionBar
                 }
                 ScrollView {
@@ -921,9 +923,10 @@ struct ReactionBadges: View {
 }
 
 /// ReactionBadge is one emoji. A reaction made a moment ago, by the person
-/// here or by the agent through the feed, springs in with a tap felt; one
-/// read back with the conversation is simply there, so scrolling does not
-/// set every badge bouncing.
+/// here or by the agent through the feed, springs in; one read back with
+/// the conversation is simply there, so scrolling does not set every badge
+/// bouncing. The haptics are the model's, felt once per reaction rather
+/// than once per badge drawn.
 struct ReactionBadge: View {
     let reaction: AgentMessageReaction
     @State private var scale: CGFloat = 1
@@ -938,7 +941,6 @@ struct ReactionBadge: View {
                 guard isFresh, !isReducingMotion else { return }
                 scale = 0.1
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { scale = 1 }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
     }
 
