@@ -532,3 +532,34 @@ extension RecordingTests {
         XCTAssertEqual(RecordingClock.durationMS(seconds: -1), 0)
     }
 }
+
+extension RecordingTests {
+    func testRecordingSourceScheduleKeepsInternalNameAndOmitsForbiddenFields() async throws {
+        let source = try JSONDecoder().decode(
+            KnowledgeSource.self,
+            from: Data(
+                #"{"id":"source-a","kind":"recording","name":"recording:recording-a","enabled":true,"documentCount":1,"chunkCount":1,"more":false,"lastError":"","specification":{"settings":{"recordingId":"recording-a","recordingTitle":"Discussion"}}}"#
+                    .utf8))
+        let fake = FakeServer { _ in (200, #"{"data":{"SaveAgentKnowledgeSource":{"id":"source-a"}}}"#) }
+        let account = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "test-token", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(40 * 86400), username: "test")
+        let connection = Connection(account: account, transport: fake)
+        try await connection.saveRecordingSourceSchedule(source, cron: "17 3 * * *")
+        try await connection.saveRecordingSourceSchedule(source, cron: "")
+        for request in fake.sent {
+            let body = try XCTUnwrap(request.httpBody)
+            let requestObject = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let variables = try XCTUnwrap(requestObject["variables"] as? [String: Any])
+            XCTAssertEqual(variables["sourceId"] as? String, source.id)
+            XCTAssertEqual(variables["name"] as? String, source.name)
+            XCTAssertTrue(Set(variables.keys).isSubset(of: ["sourceId", "name", "cron"]))
+        }
+        let firstBody = try XCTUnwrap(fake.sent.first?.httpBody)
+        let firstRequest = try XCTUnwrap(JSONSerialization.jsonObject(with: firstBody) as? [String: Any])
+        XCTAssertEqual((firstRequest["variables"] as? [String: Any])?["cron"] as? String, "17 3 * * *")
+        let lastBody = try XCTUnwrap(fake.sent.last?.httpBody)
+        let lastRequest = try XCTUnwrap(JSONSerialization.jsonObject(with: lastBody) as? [String: Any])
+        XCTAssertEqual((lastRequest["variables"] as? [String: Any])?["cron"] as? String, "")
+    }
+}

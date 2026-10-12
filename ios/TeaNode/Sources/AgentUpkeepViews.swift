@@ -293,6 +293,7 @@ struct KnowledgeSourcesView: View {
                 pauseButton(source).tint(.orange)
             }
             .contextMenu {
+                Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
                 syncButton(source)
                 pauseButton(source)
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
@@ -592,19 +593,21 @@ struct KnowledgeSourceEditor: View {
                         TextField("What to call it", text: $name)
                     }
                 }
-                if let chosenType {
-                    typedSections(chosenType)
-                } else {
-                    plainSections
-                }
-                Section {
-                    TextField("Where what it finds is filed", text: $rootPath, prompt: Text(verbatim: "projects"))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Where what it finds is filed")
-                } footer: {
-                    Text("A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.")
+                if source?.kind != "recording" {
+                    if let chosenType {
+                        typedSections(chosenType)
+                    } else {
+                        plainSections
+                    }
+                    Section {
+                        TextField("Where what it finds is filed", text: $rootPath, prompt: Text(verbatim: "projects"))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Where what it finds is filed")
+                    } footer: {
+                        Text("A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.")
+                    }
                 }
                 Section {
                     TextField("How often to read it, as a cron line", text: $cron, prompt: Text(verbatim: "17 3 * * *"))
@@ -615,8 +618,12 @@ struct KnowledgeSourceEditor: View {
                     Text("How often to read it, as a cron line")
                 } footer: {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Five fields, in your own zone. Leave it empty and it is read once a day.")
-                        if isEditing {
+                        if source?.kind != "recording" {
+                            Text("Five fields, in your own zone. Leave it empty and it is read once a day.")
+                        }
+                        if source?.kind == "recording" {
+                            Text("Five fields (minute hour day month weekday). Leave empty for manual reading.")
+                        } else if isEditing {
                             Text("A box you empty keeps what it already says; these can be changed here but not cleared.")
                         }
                     }
@@ -817,6 +824,7 @@ struct KnowledgeSourceEditor: View {
     /// Whether Save can be pressed. A source of a type is saved only through
     /// its type's form, so one opened before the types arrived waits.
     private var canSave: Bool {
+        if source?.kind == "recording" { return true }
         guard !name.trimmed.isEmpty else { return false }
         if isEditing, !(source?.specification.type ?? "").isEmpty, chosenType == nil { return false }
         if chosenType != nil { return true }
@@ -854,6 +862,14 @@ struct KnowledgeSourceEditor: View {
     private func save() async {
         isSaving = true
         defer { isSaving = false }
+        if let source, source.kind == "recording" {
+            do {
+                try await connection.saveRecordingSourceSchedule(source, cron: cron.trimmed)
+                onSaved(String(localized: "Saved"))
+                dismiss()
+            } catch { problemText = error.localizedDescription }
+            return
+        }
         if let chosenType {
             await saveTyped(chosenType)
             return

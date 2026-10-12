@@ -279,6 +279,7 @@ public struct KnowledgeSource: Codable, Hashable, Sendable, Identifiable {
     public var rootPath: String = ""
     public var enabled: Bool = true
     public var cron: String = ""
+    public var nextRunAt: String?
     public var lastRunAt: String?
     public var lastError: String = ""
     public var documentCount: Int = 0
@@ -308,6 +309,7 @@ public struct KnowledgeSource: Codable, Hashable, Sendable, Identifiable {
         rootPath = try container.decodeIfPresent(String.self, forKey: .rootPath) ?? ""
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         cron = try container.decodeIfPresent(String.self, forKey: .cron) ?? ""
+        nextRunAt = try container.decodeIfPresent(String.self, forKey: .nextRunAt)
         lastRunAt = try container.decodeIfPresent(String.self, forKey: .lastRunAt)
         lastError = try container.decodeIfPresent(String.self, forKey: .lastError) ?? ""
         documentCount = try container.decodeIfPresent(Int.self, forKey: .documentCount) ?? 0

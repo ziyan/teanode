@@ -45423,6 +45423,54 @@
           }
         }
       }
+    },
+    "Five fields (minute hour day month weekday). Leave empty for manual reading.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5つの項目（分、時、日、月、曜日）。手動で読み込むには空欄にします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "五个字段（分钟、小时、日期、月份、星期）。留空以手动读取。"
+          }
+        }
+      }
+    },
+    "Next source pass": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のソース処理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下次来源处理"
+          }
+        }
+      }
+    },
+    "Reads only when you ask.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "依頼したときだけ読み込みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在您请求时读取。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

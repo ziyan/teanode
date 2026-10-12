@@ -318,6 +318,7 @@ struct RecordingDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var recordingView: RecordingView?
     @State private var learning: RecordingLearningView?
+    @State private var editingLearningSource: KnowledgeSource?
     @State private var limits: RecordingLimits?
     @State private var problemText: String?
     @State private var isDeleting = false
@@ -429,12 +430,18 @@ struct RecordingDetailScreen: View {
                         LabeledContent("Passages waiting", value: learning.pendingDocumentCount.formatted())
                         LabeledContent("Processed passages", value: learning.digestedDocumentCount.formatted())
                         if let lastRunAt = ServerTime.date(source.lastRunAt) { LabeledContent("Last source pass") { Text(lastRunAt, style: .date) } }
+                        if let nextRunAt = ServerTime.date(source.nextRunAt) {
+                            LabeledContent("Next source pass") { Text(nextRunAt, style: .relative) }
+                        } else if source.cron.isEmpty {
+                            Text("Reads only when you ask.").foregroundStyle(.secondary)
+                        }
                         if !source.lastError.isEmpty { Text(source.lastError).foregroundStyle(.secondary) }
                         NavigationLink {
                             KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
                         } label: {
                             Label("Knowledge source", systemImage: "brain")
                         }
+                        Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }
                     } else {
                         Text("Waiting for a completed transcript").foregroundStyle(.secondary)
                     }
@@ -508,6 +515,11 @@ struct RecordingDetailScreen: View {
             }
         }
         .sheet(item: $selectedMedia) { media in RecordingPlaybackScreen(connection: connection, media: media) }
+        .sheet(item: $editingLearningSource) { source in
+            KnowledgeSourceEditor(connection: connection, source: source, sourceTypes: [], mailboxes: []) { _ in
+                Task { await load() }
+            }
+        }
         .confirmationDialog("Start another transcription pass?", isPresented: $isReprocessing, titleVisibility: .visible) {
             Button("Transcribe or reprocess") {
                 guard let media = reprocessedMedia, !isSubmitting, limits?.isTranscriptionAvailable == true else { return }

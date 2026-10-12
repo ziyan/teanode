@@ -8,3 +8,11 @@ extension KnowledgeSource {
         return title
     }
 }
+
+extension Connection {
+    public func saveRecordingSourceSchedule(_ source: KnowledgeSource, cron: String) async throws {
+        guard source.kind == "recording" else { throw TeaNodeError.unreadableAnswer }
+        _ = try await saveKnowledgeSource(
+            KnowledgeSourceChange(sourceId: source.id, name: source.name, cron: cron))
+    }
+}

@@ -28,7 +28,11 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
   reference-passage playback/revocation. Submitted correction drafts survive relaunch.
 - Free recognized-text edits and immutable original/version history, effective text
   projection and reset. Unknown response drafts retain their exact key and payload.
-- Learning/source progress, existing source pause/sync/Stop reading controls, reference
+- Learning/source progress, existing source pause/sync/schedule/Stop reading controls,
+  immutable automatic source names and read-only human titles. Scheduling omits
+  forbidden path/type/computer/root fields; an explicit empty cron requests manual reading. This needs the shared schedule-clear
+  fix before runtime verification.
+  Reference
   invalidation warnings and explicit raw deletion remain separate native operations.
 - Deferred capture transitions retain recorder identity across journal saves. Pending
   stop or interruption wins over rollover; stale callbacks cannot start another segment.
@@ -50,10 +54,12 @@ No test contacts a real server or provider.
 The initial increment and the subsequent text/timeline/recovery checkpoint passed
 macOS CI builds of the app, widget and share targets. Actual simulator artifacts were
 inspected for the library and six deep recording screens in light, dark and largest
-text. The speaker/time header needed vertical layout at accessibility sizes; that
-fix and the latest owner/import/availability changes need fresh SDK and visual checks.
+text. The speaker/time header needed vertical layout at accessibility sizes. That
+fix and the owner/import/availability checkpoint passed a subsequent native SDK build;
+its nine-route captures are collecting. Source schedule controls need another native
+build and ten-route visual checks.
 The unsigned simulator reported an unavailable shared container, so signed capture
-and share-container behavior is not verified. The package suite passed 313 tests,
+and share-container behavior is not verified. The package suite passed 314 tests,
 including recreated-username ownership refusal and concurrent credential replacement.
 Full project lint passed again after integration, including the local naming check,
 catalog agreement and tracked secret scanning.
