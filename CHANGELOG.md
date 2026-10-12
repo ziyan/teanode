@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.141.0] - 2026-10-12
+
+### Added
+
+- Transcript version storage and local media decoding for passive recording processing. (#433)
+
 ## [0.140.0] - 2026-10-12
 
 ### Added
