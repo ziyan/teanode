@@ -174,7 +174,12 @@ export function SwipeableLine({
       // and not ending a selection, opens or closes its reactions.
       onClick={(event) => {
         if (!wasTouch.current || !onReact) return
-        if ((event.target as Element).closest('a, button, input, textarea, select, summary, [role="menu"]')) return
+        if (
+          (event.target as Element).closest(
+            'a, button, input, textarea, select, summary, [role="menu"], [role="dialog"]',
+          )
+        )
+          return
         if (window.getSelection()?.toString()) return
         onReact()
       }}
