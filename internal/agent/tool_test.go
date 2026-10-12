@@ -297,7 +297,8 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// which is offered only while a computer that watches herdr is attached;
 	// 65 since location, which asks the person's browser where it is and has
 	// no other tool's verbs to join.
-	if count := len(catalog.All()); count > 65 {
+	// Recording is one new noun with all retained-media verbs grouped together.
+	if count := len(catalog.All()); count > 66 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 
