@@ -8,6 +8,7 @@ struct RecordingTranscriptScreen: View {
     @State private var transcriptView: RecordingTranscriptView?
     @State private var segments: [RecordingTranscriptSegment] = []
     @State private var speakers: RecordingSpeakersView?
+    @State private var invalidations: [RecordingReferenceInvalidation] = []
     @State private var problemText: String?
     @State private var selectedSegment: RecordingTranscriptSegment?
     @State private var confirmedName = ""
@@ -28,6 +29,24 @@ struct RecordingTranscriptScreen: View {
                 LabeledContent("Provider model", value: transcriptRun.providerModelName)
                 if let processingError = transcriptView?.transcriptRun.processingErrorMessage, !processingError.isEmpty {
                     Text(processingError).foregroundStyle(.secondary)
+                }
+            }
+            if !invalidations.isEmpty {
+                Section {
+                    Label("Speaker reference invalidated", systemImage: "exclamationmark.triangle")
+                    Text(
+                        "Generated speaker attribution from affected requests is uncertain. Your confirmed passage labels remain in place. Reprocessing is optional and can require another paid pass."
+                    ).foregroundStyle(.secondary)
+                    ForEach(invalidations) { invalidation in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(invalidation.invalidatedConfirmedName)
+                            Text(invalidation.invalidationMessage).font(.callout).foregroundStyle(.secondary)
+                            Text(
+                                invalidation.isReconciled
+                                    ? String(localized: "Learning reconciled") : String(localized: "Learning reconciliation pending")
+                            ).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
             if let transcriptView {
@@ -144,6 +163,9 @@ struct RecordingTranscriptScreen: View {
             transcriptView = page
             if isAdditional { segments.append(contentsOf: page.segments) } else { segments = page.segments }
             speakers = try await connection.recordingSpeakers(recordingId: recording.id)
+            invalidations = try await connection.recordingReferenceInvalidations(recordingId: recording.id).filter {
+                $0.recordingTranscriptRunId == transcriptRun.id
+            }
             problemText = nil
         } catch { problemText = error.localizedDescription }
     }

@@ -104,6 +104,8 @@ extension Documents {
         "query ($recordingTranscriptRunId: String!, $segmentOffset: Int!, $pageSize: Int!) { ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize) { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }"
     public static let requestRecordingTranscription =
         "mutation ($recordingMediaId: String!, $clientRunId: String!, $isReprocessingRequested: Boolean!) { RequestRecordingTranscription(recordingMediaId: $recordingMediaId, clientRunId: $clientRunId, isReprocessingRequested: $isReprocessingRequested) { \(recordingTranscriptRunFields) } }"
+    public static let retryRecordingTranscription =
+        "mutation ($recordingTranscriptRunId: String!) { RetryRecordingTranscription(recordingTranscriptRunId: $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }"
     public static let cancelRecordingTranscription =
         "mutation ($recordingTranscriptRunId: String!) { CancelRecordingTranscription(recordingTranscriptRunId: $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }"
     public static let readRecordingSpeakers =
@@ -143,6 +145,13 @@ extension Connection {
             ], as: Answer.self
         ).RequestRecordingTranscription
     }
+    public func retryRecordingTranscription(recordingTranscriptRunId: String) async throws -> RecordingTranscriptRun {
+        struct Answer: Decodable, Sendable { let RetryRecordingTranscription: RecordingTranscriptRun }
+        return try await execute(
+            Documents.retryRecordingTranscription, variables: ["recordingTranscriptRunId": .string(recordingTranscriptRunId)], as: Answer.self
+        ).RetryRecordingTranscription
+    }
+
     public func cancelRecordingTranscription(recordingTranscriptRunId: String) async throws -> RecordingTranscriptRun {
         struct Answer: Decodable, Sendable { let CancelRecordingTranscription: RecordingTranscriptRun }
         return try await execute(

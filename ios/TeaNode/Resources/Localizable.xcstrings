@@ -44359,6 +44359,86 @@
           }
         }
       }
+    },
+    "Retry transcription": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试转录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしを再試行"
+          }
+        }
+      }
+    },
+    "Speaker reference invalidated": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话人参考已失效"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者の参照が無効になりました"
+          }
+        }
+      }
+    },
+    "Generated speaker attribution from affected requests is uncertain. Your confirmed passage labels remain in place. Reprocessing is optional and can require another paid pass.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受影响请求生成的说话人标记存在不确定性。您确认的片段标签会保留。重新处理是可选操作，可能需要另一轮付费转录。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "影響を受けたリクエストの話者識別は不確かです。確認済みの発言ラベルは保持されます。再処理は任意で、別の有料処理になる場合があります。"
+          }
+        }
+      }
+    },
+    "Learning reconciled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学习资料已更新"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習内容の見直し完了"
+          }
+        }
+      }
+    },
+    "Learning reconciliation pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待更新学习资料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習内容の見直し待ち"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

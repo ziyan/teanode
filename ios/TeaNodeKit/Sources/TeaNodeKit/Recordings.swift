@@ -140,13 +140,17 @@ extension Connection {
 
     public func createRecording(clientRecordingId: String, recordingTitle: String, recordingOrigin: String) async throws -> Recording {
         struct Answer: Decodable, Sendable { let CreateRecording: Recording }
-        return try await execute(
+        let recording = try await execute(
             Documents.createRecording,
             variables: [
                 "clientRecordingId": .string(clientRecordingId), "recordingTitle": .string(recordingTitle),
                 "recordingOrigin": .string(recordingOrigin),
             ], as: Answer.self
         ).CreateRecording
+        guard recording.clientRecordingId == clientRecordingId, recording.recordingOrigin == recordingOrigin,
+            Self.isRecordingIdentifier(recording.id)
+        else { throw TeaNodeError.unreadableAnswer }
+        return recording
     }
 
     public func createRecordingMedia(
@@ -154,7 +158,7 @@ extension Connection {
         originalSha256: String, timelineStartMS: Int64, mediaDurationMS: Int64
     ) async throws -> RecordingMedia {
         struct Answer: Decodable, Sendable { let CreateRecordingMedia: RecordingMedia }
-        return try await execute(
+        let media = try await execute(
             Documents.createRecordingMedia,
             variables: [
                 "recordingId": .string(recordingId), "clientMediaId": .string(clientMediaId), "originalFilename": .string(originalFilename),
@@ -163,6 +167,14 @@ extension Connection {
                 "mediaDurationMS": .number(Double(mediaDurationMS)),
             ], as: Answer.self
         ).CreateRecordingMedia
+        guard originalSizeBytes > 0, originalSizeBytes <= Int64.max - 8 * 1024 * 1024,
+            media.recordingId == recordingId, media.clientMediaId == clientMediaId, Self.isRecordingIdentifier(media.id),
+            media.originalSizeBytes == originalSizeBytes, media.originalSha256 == originalSha256,
+            media.originalFilename == originalFilename, media.originalContentType == originalContentType,
+            media.timelineStartMS == timelineStartMS, media.mediaDurationMS == mediaDurationMS,
+            media.partCount == Int((originalSizeBytes + 8 * 1024 * 1024 - 1) / (8 * 1024 * 1024))
+        else { throw TeaNodeError.unreadableAnswer }
+        return media
     }
 
     public func updateRecordingCapture(

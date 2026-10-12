@@ -272,3 +272,28 @@ extension RecordingTests {
         try await reopened.releaseUploadedOriginal(recordingId: recording.id, mediaId: original.id, accountKey: recording.accountKey)
     }
 }
+
+extension RecordingTests {
+    func testMalformedManifestIsRefusedBeforeAnyOriginalBytesAreSent() async throws {
+        let digest = String(repeating: "a", count: 64)
+        let fake = FakeServer { _ in
+            (
+                200,
+                "{\"data\":{\"CreateRecordingMedia\":{\"id\":\"media-a\",\"recordingId\":\"recording-a\",\"clientMediaId\":\"client-a\",\"originalFilename\":\"audio.wav\",\"originalContentType\":\"audio/wav\",\"originalSizeBytes\":9,\"originalSha256\":\"\(digest)\",\"timelineStartMS\":0,\"mediaDurationMS\":1000,\"partCount\":1,\"recordingUploadState\":\"pending\",\"verifiedAt\":null}}}"
+            )
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "test-token", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(40 * 86400), username: "test")
+        let connection = Connection(account: account, transport: fake)
+        do {
+            _ = try await connection.createRecordingMedia(
+                recordingId: "recording-a", clientMediaId: "client-a", originalFilename: "audio.wav", originalContentType: "audio/wav",
+                originalSizeBytes: 3, originalSha256: digest, timelineStartMS: 0, mediaDurationMS: 1000)
+            XCTFail("A server manifest with the wrong size was accepted")
+        } catch { XCTAssertEqual(error as? TeaNodeError, .unreadableAnswer) }
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertEqual(fake.sent[0].httpMethod, "POST")
+        XCTAssertEqual(fake.sent[0].url?.path, "/api/v1/graphql")
+    }
+}

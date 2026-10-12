@@ -93,7 +93,10 @@ struct RecordingsScreen: View {
                                 .monospacedDigit().contentTransition(.numericText())
                             Text(
                                 recorder.isCapturing
-                                    ? String(localized: "Recording locally") : (current.recordingCaptureState == "interrupted" ? String(localized: "Interrupted. Resume when you are ready.") : String(localized: "Paused. Resume when you are ready."))
+                                    ? String(localized: "Recording locally")
+                                    : (current.recordingCaptureState == "interrupted"
+                                        ? String(localized: "Interrupted. Resume when you are ready.")
+                                        : String(localized: "Paused. Resume when you are ready."))
                             ).foregroundStyle(.secondary)
                         }
                         Button {
@@ -291,6 +294,18 @@ struct RecordingDetailScreen: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Version \(run.versionNumber)")
                                     Text(RecordingWords.processing(run.recordingProcessingState)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            if ["failed", "canceled"].contains(run.recordingProcessingState) {
+                                Button {
+                                    Task {
+                                        do {
+                                            _ = try await connection.retryRecordingTranscription(recordingTranscriptRunId: run.id)
+                                            await load()
+                                        } catch { problemText = error.localizedDescription }
+                                    }
+                                } label: {
+                                    Label("Retry transcription", systemImage: "arrow.clockwise")
                                 }
                             }
                             if run.isRunning {

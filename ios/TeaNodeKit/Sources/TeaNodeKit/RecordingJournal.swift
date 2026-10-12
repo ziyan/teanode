@@ -17,8 +17,8 @@ public struct LocalRecording: Codable, Hashable, Sendable, Identifiable {
     public var isDeletedRemotely: Bool
     public var hasPublishedCapture: Bool? = nil
 
-    public init(accountKey: String, recordingTitle: String, recordingOrigin: String, startedAt: Date = Date()) {
-        id = UUID()
+    public init(accountKey: String, recordingTitle: String, recordingOrigin: String, startedAt: Date = Date(), localRecordingId: UUID = UUID()) {
+        id = localRecordingId
         self.accountKey = accountKey
         clientRecordingId = id.uuidString
         self.recordingTitle = recordingTitle
@@ -77,8 +77,10 @@ public struct LocalRecordingMedia: Codable, Hashable, Sendable, Identifiable {
     public var acceptedParts: [RecordingMediaPart]
     public var completionReceipt: RecordingMedia?
 
-    public init(originalFilename: String, originalContentType: String, timelineStartMS: Int64, mediaDurationMS: Int64 = 0) {
-        id = UUID()
+    public init(
+        originalFilename: String, originalContentType: String, timelineStartMS: Int64, mediaDurationMS: Int64 = 0, localMediaId: UUID = UUID()
+    ) {
+        id = localMediaId
         self.originalFilename = originalFilename
         self.originalContentType = originalContentType
         self.timelineStartMS = timelineStartMS

@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct SharedRecordingFile: Identifiable {
     let id = UUID()
+    let localMediaId = UUID()
     let originalURL: URL
     let originalFilename: String
     let originalContentType: String
@@ -46,12 +47,12 @@ enum ShareRecordingImport {
         let journal = try RecordingJournal(directory: RecordingJournal.sharedDirectory())
         var recording = LocalRecording(
             accountKey: accountKey, recordingTitle: title.isEmpty ? (file.originalFilename as NSString).deletingPathExtension : title,
-            recordingOrigin: file.isVideo ? "videoImport" : "audioImport")
+            recordingOrigin: file.isVideo ? "videoImport" : "audioImport", localRecordingId: file.id)
         let duration = try? await AVURLAsset(url: file.originalURL).load(.duration)
         let seconds = duration.map { CMTimeGetSeconds($0) } ?? 0
         var media = LocalRecordingMedia(
             originalFilename: file.originalFilename, originalContentType: file.originalContentType, timelineStartMS: 0,
-            mediaDurationMS: seconds.isFinite && seconds > 0 ? Int64(seconds * 1000) : 0)
+            mediaDurationMS: seconds.isFinite && seconds > 0 ? Int64(seconds * 1000) : 0, localMediaId: file.localMediaId)
         media.originalSizeBytes = Int64(try file.originalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
         let handle = try FileHandle(forReadingFrom: file.originalURL)
         defer { try? handle.close() }
@@ -60,7 +61,17 @@ enum ShareRecordingImport {
         media.originalSha256 = hash.finalize().map { String(format: "%02x", $0) }.joined()
         recording.timelineDurationMS = media.mediaDurationMS
         recording.localMedia.append(media)
-        try await journal.create(recording)
-        try await journal.importOriginal(from: file.originalURL, recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
+        if let existing = try? await journal.read(recording.id, accountKey: accountKey) {
+            guard let existingMedia = existing.localMedia.first(where: { $0.id == media.id }), existingMedia.originalSha256 == media.originalSha256,
+                existingMedia.originalSizeBytes == media.originalSizeBytes
+            else { throw TeaNodeError.unreadableAnswer }
+            if existingMedia.isDurablyUploaded { return }
+        } else {
+            try await journal.create(recording)
+        }
+        let originalURL = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
+        if !FileManager.default.fileExists(atPath: originalURL.path) {
+            try await journal.importOriginal(from: file.originalURL, recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
+        }
     }
 }

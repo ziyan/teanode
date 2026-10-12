@@ -275,6 +275,7 @@ final class AppModel {
         self.account = account
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
+        if let connection { RecordingUploads.shared.resume(connection: connection) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
     }
