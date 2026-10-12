@@ -90,6 +90,7 @@ func main() {
 			cmd.NewReminderCommand(),
 			cmd.NewNoteCommand(),
 			cmd.NewFinanceCommand(),
+			cmd.NewRecordingCommand(),
 			cmd.NewAgentCommand(),
 			cmd.NewHookCommand(),
 			cmd.NewComputerCommand(),
