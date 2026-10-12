@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 
-import { graphql } from '../api'
+import { graphql, logout } from '../api'
 import { AuthCard } from '../components/authCard'
 import { ErrorMessage } from '../components/common'
 import { useTranslation } from '../i18n/i18n'
@@ -131,6 +131,19 @@ export function AuthorizePage() {
     [clientId, redirectUri, codeChallenge, state, resource, t],
   )
 
+  // Signing out and reloading the same address brings the shell's login form
+  // here, so the reader can sign in as somebody else and come back to this
+  // same question. Without it, a browser already signed in, such as the
+  // sheet the phone app opens, could only ever approve that one account.
+  const switchAccount = useCallback(async () => {
+    setPhase('working')
+    try {
+      await logout()
+    } finally {
+      window.location.reload()
+    }
+  }, [])
+
   // Refusing is not reported back to the program. Telling it that it was
   // refused, at an address it chose, is telling whoever sent the reader here
   // that somebody was home and said no.
@@ -203,7 +216,17 @@ export function AuthorizePage() {
         </dd>
 
         <dt>{t('authorize.actsAs')}</dt>
-        <dd>{request.username}</dd>
+        <dd>
+          <span className="authorize-name">{request.username}</span>
+          <button
+            className="link authorize-switch"
+            type="button"
+            onClick={switchAccount}
+            disabled={phase === 'working'}
+          >
+            {t('authorize.switchAccount')}
+          </button>
+        </dd>
       </dl>
 
       <p className="authorize-grant muted">
