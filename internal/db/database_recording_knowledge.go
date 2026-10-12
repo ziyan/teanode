@@ -9,11 +9,14 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/models"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 // RecordingKnowledgeOperation uses the existing source, document, evidence and revision stores.
 type RecordingKnowledgeOperation interface {
+	ListRecordingsAwaitingKnowledgeInitialization(afterRecordingId string, pageSize int) ([]*models.Recording, error)
+	InitializeRecordingKnowledge(userId, recordingId string) (bool, error)
 	ReadRecordingLearning(userId, recordingId string) (*models.RecordingLearningView, error)
 	SyncRecordingKnowledge(userId, recordingId string) error
 	CheckRecordingKnowledgeEvidence(userId string, documents []*models.AgentDocument) error
@@ -26,6 +29,56 @@ type recordingKnowledgeSettings struct {
 }
 
 func recordingKnowledgeName(recordingId string) string { return "recording:" + recordingId }
+
+// recordingKnowledgeInitializationCandidates excludes retained mappings from Stop reading.
+// This is SQL-only recovery; enabled model configuration is checked by the existing workers.
+func (self *transaction) recordingKnowledgeInitializationCandidates() *gorm.DB {
+	return self.tx.Model(&recordingModel{}).
+		Joins(`JOIN "user" AS owner ON owner.id = recording.user_id`).
+		Joins(`JOIN agent ON agent.user_id = recording.user_id`).
+		Where("recording.deleted_at IS NULL AND owner.disabled_at IS NULL").
+		Where(`EXISTS (SELECT 1 FROM recording_transcript_run AS transcript_run
+			JOIN recording_transcript_segment AS segment ON segment.recording_transcript_run_id = transcript_run.id
+			WHERE transcript_run.recording_id = recording.id AND transcript_run.recording_processing_state = ?)`, models.RecordingProcessingComplete).
+		Where(`EXISTS (SELECT 1 FROM user_group JOIN group_role ON group_role.group_id = user_group.group_id
+			JOIN role_permission ON role_permission.role_id = group_role.role_id
+			WHERE user_group.user_id = recording.user_id AND role_permission.permission_key = ?)`, models.PermissionAgentUse).
+		Where(`NOT EXISTS (SELECT 1 FROM agent_source WHERE agent_source.agent_id = agent.id
+			AND (agent_source.name = 'recording:' || recording.id
+			OR (agent_source.kind = ? AND agent_source.specification->'settings'->>'recordingId' = recording.id)))`, models.SourceRecording).
+		Where("NOT EXISTS (SELECT 1 FROM recording_knowledge_document WHERE recording_knowledge_document.recording_id = recording.id)")
+}
+
+// ListRecordingsAwaitingKnowledgeInitialization discovers completed versions from before source support.
+func (self *transaction) ListRecordingsAwaitingKnowledgeInitialization(afterRecordingId string, pageSize int) ([]*models.Recording, error) {
+	if pageSize < 1 || pageSize > 100 {
+		return nil, ErrInvalidArguments
+	}
+	var sourceRows []*recordingModel
+	if err := self.recordingKnowledgeInitializationCandidates().Select("recording.*").Where("recording.id > ?", afterRecordingId).Order("recording.id").Limit(pageSize).Find(&sourceRows).Error; err != nil {
+		return nil, err
+	}
+	sources := make([]*models.Recording, 0, len(sourceRows))
+	for _, sourceRow := range sourceRows {
+		sources = append(sources, recordingFromModel(sourceRow))
+	}
+	return sources, nil
+}
+
+// InitializeRecordingKnowledge does not undo an explicit pause or Stop reading.
+func (self *transaction) InitializeRecordingKnowledge(userId, recordingId string) (bool, error) {
+	if _, err := self.LockRecording(userId, recordingId); err != nil {
+		return false, err
+	}
+	var candidateCount int64
+	if err := self.recordingKnowledgeInitializationCandidates().Where("recording.id = ? AND recording.user_id = ?", recordingId, userId).Count(&candidateCount).Error; err != nil || candidateCount == 0 {
+		return false, err
+	}
+	if err := self.SyncRecordingKnowledge(userId, recordingId); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) error {
 	recordingSource, err := self.LockRecording(userId, recordingId)

@@ -1,0 +1,203 @@
+package db_test
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+func completeLegacyRecording(test *testing.T, fixture *transcriptFixture) {
+	test.Helper()
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "fixture-speaker", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "A synthetic proposal remains undecided."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		role, err := transaction.CreateRole(&models.Role{Name: "Recording member", Permissions: []models.Permission{models.PermissionAgentUse}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CreateGroup(&models.Group{Name: "Recording members", UserIDs: []string{fixture.userId}, RoleIDs: []string{role.ID}}); err != nil {
+			test.Fatal(err)
+		}
+	})
+}
+
+func TestRecordingKnowledgeInitializationRecoversOnceWithModelsDisabled(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	completeLegacyRecording(test, fixture)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.UpdateAgent(fixture.agentId, func(ownerAgent *models.Agent) error { ownerAgent.Enabled = false; return nil }); err != nil {
+			test.Fatal(err)
+		}
+		candidates, err := transaction.ListRecordingsAwaitingKnowledgeInitialization("", 1)
+		if err != nil || len(candidates) != 1 || candidates[0].UserID != fixture.userId {
+			test.Fatal("legacy recording was not discovered", err, len(candidates))
+		}
+		afterPage, err := transaction.ListRecordingsAwaitingKnowledgeInitialization(candidates[0].ID, 1)
+		if err != nil || len(afterPage) != 0 {
+			test.Fatal("discovery ignored cursor", err)
+		}
+		didInitialize, err := transaction.InitializeRecordingKnowledge(fixture.userId, fixture.media.RecordingID)
+		if err != nil || !didInitialize {
+			test.Fatal("disabled personal model blocked free initialization", err)
+		}
+		source, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+fixture.media.RecordingID)
+		if err != nil || source == nil || !source.Enabled {
+			test.Fatal(err)
+		}
+		documents, chunks, err := transaction.CountAgentSourceDocuments(source.ID)
+		if err != nil || documents != 1 || chunks != 1 {
+			test.Fatal("initialization did not publish evidence", err, documents, chunks)
+		}
+		repeated, err := transaction.InitializeRecordingKnowledge(fixture.userId, fixture.media.RecordingID)
+		if err != nil || repeated {
+			test.Fatal("repeated sweep initialized twice", err)
+		}
+		remaining, err := transaction.ListRecordingsAwaitingKnowledgeInitialization("", 100)
+		if err != nil || len(remaining) != 0 {
+			test.Fatal("initialized recording remained pending", err)
+		}
+		documents, chunks, err = transaction.CountAgentSourceDocuments(source.ID)
+		if err != nil || documents != 1 || chunks != 1 {
+			test.Fatal("sweep duplicated evidence", err)
+		}
+	})
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "other-recording-owner")
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.InitializeRecordingKnowledge(otherOwnerId, fixture.media.RecordingID)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("another owner initialized recording", err)
+	}
+}
+
+func TestRecordingKnowledgeInitializationPreservesStoppedAndPausedSources(test *testing.T) {
+	for _, sourceCondition := range []string{"paused", "deleted", "renamed", "disabled-owner", "no-permission"} {
+		test.Run(sourceCondition, func(test *testing.T) {
+			fixture := newTranscriptFixture(test)
+			completeLegacyRecording(test, fixture)
+			dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+				switch sourceCondition {
+				case "paused", "deleted", "renamed":
+					if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+						test.Fatal(err)
+					}
+					source, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+fixture.media.RecordingID)
+					if err != nil || source == nil {
+						test.Fatal(err)
+					}
+					if sourceCondition == "deleted" {
+						if err := transaction.DeleteAgentSource(fixture.agentId, source.ID); err != nil {
+							test.Fatal(err)
+						}
+					} else {
+						if sourceCondition == "paused" {
+							source.Enabled = false
+						} else {
+							source.Name = "changed-internal-source"
+						}
+						if _, err := transaction.PutAgentSource(source); err != nil {
+							test.Fatal(err)
+						}
+					}
+				case "disabled-owner":
+					if _, err := transaction.UpdateUser(fixture.userId, func(owner *models.User) error { now := time.Now(); owner.DisabledAt = &now; return nil }); err != nil {
+						test.Fatal(err)
+					}
+				case "no-permission":
+					owner, err := transaction.GetUser(fixture.userId)
+					if err != nil {
+						test.Fatal(err)
+					}
+					if _, err := transaction.UpdateUser(owner.ID, func(owner *models.User) error { owner.GroupIDs = nil; return nil }); err != nil {
+						test.Fatal(err)
+					}
+				}
+				candidates, err := transaction.ListRecordingsAwaitingKnowledgeInitialization("", 100)
+				if err != nil || len(candidates) != 0 {
+					test.Fatal("explicit reading choice or permissions ignored", err, len(candidates))
+				}
+				didInitialize, err := transaction.InitializeRecordingKnowledge(fixture.userId, fixture.media.RecordingID)
+				if err != nil || didInitialize {
+					test.Fatal("reading restarted without authority", err)
+				}
+			})
+		})
+	}
+}
+
+func TestRecordingKnowledgeInitializationSeparatesOwners(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	completeLegacyRecording(test, fixture)
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "second-legacy-owner")
+	var otherSource *models.Recording
+	var otherMedia *models.RecordingMedia
+	var otherRun *models.RecordingTranscriptRun
+	var otherAgentId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		ownerAgent, err := transaction.CreateAgent(&models.Agent{UserID: otherOwnerId, Name: "Second fixture assistant", Enabled: false})
+		if err != nil {
+			test.Fatal(err)
+		}
+		otherAgentId = ownerAgent.ID
+		role, err := transaction.CreateRole(&models.Role{Name: "Second recording role", Permissions: []models.Permission{models.PermissionAgentUse}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CreateGroup(&models.Group{Name: "Second recording members", UserIDs: []string{otherOwnerId}, RoleIDs: []string{role.ID}}); err != nil {
+			test.Fatal(err)
+		}
+		otherSource, err = transaction.CreateRecording(&models.Recording{UserID: otherOwnerId, ClientRecordingID: "second-legacy-source", RecordingOrigin: models.RecordingOriginAudioImport})
+		if err != nil {
+			test.Fatal(err)
+		}
+		otherMedia, err = transaction.CreateRecordingMedia(otherOwnerId, &models.RecordingMedia{RecordingID: otherSource.ID, ClientMediaID: "second-legacy-media", OriginalFilename: "fixture.wav", OriginalContentType: "audio/wav", OriginalSizeBytes: fixture.media.OriginalSizeBytes, OriginalSHA256: fixture.media.OriginalSHA256}, 1<<20, 1<<20)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.PutRecordingMediaPart(otherOwnerId, &models.RecordingMediaPart{RecordingMediaID: otherMedia.ID, PartIndex: 0, PartSizeBytes: otherMedia.OriginalSizeBytes, PartSHA256: otherMedia.OriginalSHA256}); err != nil {
+			test.Fatal(err)
+		}
+		if _, _, err := transaction.CompleteRecordingMedia(otherOwnerId, otherMedia.ID, otherMedia.OriginalSHA256); err != nil {
+			test.Fatal(err)
+		}
+		otherRun, err = transaction.CreateRecordingTranscriptRun(otherOwnerId, otherMedia.ID, ownerAgent.ID, "legacy-fixture", "fixture:diarize", false)
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	// Historical completion is seeded without a provider or a paid worker.
+	dbtest.Exec(test, fixture.database, `INSERT INTO recording_blob SELECT 'legacy-second-blob','`+otherSource.ID+`','`+otherMedia.ID+`',created_at,recording_blob_purpose,blob_size_bytes,blob_sha256,is_stored_verified FROM recording_blob LIMIT 1`)
+	dbtest.Exec(test, fixture.database, `INSERT INTO recording_audio_chunk (id,recording_transcript_run_id,recording_blob_id,chunk_index,timeline_start_ms,audio_duration_ms) VALUES ('legacy-second-chunk','`+otherRun.ID+`','legacy-second-blob',0,2000,1000)`)
+	dbtest.Exec(test, fixture.database, `INSERT INTO recording_transcription_attempt (id,recording_transcript_run_id,recording_audio_chunk_id,attempt_index,created_at,recording_attempt_state,provider_model_name,currency_code) VALUES ('legacy-second-attempt','`+otherRun.ID+`','legacy-second-chunk',1,now(),'complete','fixture:diarize','USD')`)
+	dbtest.Exec(test, fixture.database, `INSERT INTO recording_transcript_segment (id,recording_transcript_run_id,recording_transcription_attempt_id,local_speaker_id,segment_start_ms,segment_end_ms,transcript_text) VALUES ('legacy-second-segment','`+otherRun.ID+`','legacy-second-attempt','second-speaker',2000,3000,'A second synthetic proposal.')`)
+	dbtest.Exec(test, fixture.database, `UPDATE recording_transcript_run SET recording_processing_state='complete',completed_at=now() WHERE id='`+otherRun.ID+`'`)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		candidates, err := transaction.ListRecordingsAwaitingKnowledgeInitialization("", 100)
+		if err != nil || len(candidates) != 2 {
+			test.Fatal("completed owners were not both discovered", err, len(candidates))
+		}
+		for _, candidate := range candidates {
+			didInitialize, err := transaction.InitializeRecordingKnowledge(candidate.UserID, candidate.ID)
+			if err != nil || !didInitialize {
+				test.Fatal(err)
+			}
+		}
+		for _, ownedSource := range []struct{ ownerId, agentId, recordingId string }{{fixture.userId, fixture.agentId, fixture.media.RecordingID}, {otherOwnerId, otherAgentId, otherSource.ID}} {
+			reading, err := transaction.ReadRecordingLearning(ownedSource.ownerId, ownedSource.recordingId)
+			if err != nil || reading.KnowledgeSource == nil || reading.KnowledgeSource.AgentID != ownedSource.agentId || reading.PendingDocumentCount != 1 {
+				test.Fatal("backfill mixed account evidence", err)
+			}
+		}
+	})
+}

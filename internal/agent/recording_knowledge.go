@@ -53,8 +53,11 @@ func (self *Agent) runRecordingIngest(ctx context.Context, run *Run, source *mod
 		if err != nil {
 			return err
 		}
-		nextRun := time.Now().Add(24 * time.Hour)
-		if err := transaction.MarkAgentSourceRun(source.ID, current.Cursor, db.SourceCounts{Documents: documents, Chunks: chunks}, false, "", &nextRun); err != nil {
+		var nextRun *time.Time
+		if scheduledRun := self.nextRunOf(current, run.Owner); !scheduledRun.IsZero() {
+			nextRun = &scheduledRun
+		}
+		if err := transaction.MarkAgentSourceRun(source.ID, current.Cursor, db.SourceCounts{Documents: documents, Chunks: chunks}, false, "", nextRun); err != nil {
 			return err
 		}
 		return transaction.ClearAgentSourceRunRequest(source.ID, passStartedAt)
