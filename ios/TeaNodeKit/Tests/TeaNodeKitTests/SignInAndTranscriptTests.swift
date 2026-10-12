@@ -236,6 +236,40 @@ final class TranscriptTests: XCTestCase {
         XCTAssertNil(transcript.openQuestion)
     }
 
+    func testACodingSessionsQuestionFoldsWhenTheFeedSaysItWent() {
+        let asked = #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1","herdrSession":{"paneName":"site","codingAgentKind":"codex","question":{"questionFingerprint":"f1","questionText":"Run the tests?","isMultipleChoice":false,"options":[{"optionNumber":1,"optionLabel":"Yes","herdrOptionKind":"choice"},{"optionNumber":2,"optionLabel":"No","herdrOptionKind":"choice"}]}}}"#
+        var transcript = Transcript(messages: [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:01Z", role: "note", content: asked, name: "herdr_asked")
+        ])
+        XCTAssertEqual(transcript.lines[0].codingQuestion?.computer, "a laptop")
+        XCTAssertFalse(transcript.lines[0].isDone)
+
+        // Another question's note leaves this card alone.
+        transcript.apply(
+            AgentEvent(
+                kind: "note", runId: "", sequence: 0, noteKind: "herdr_answered",
+                noteDetail: #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f2","answerText":"No"}"#))
+        XCTAssertFalse(transcript.lines[0].isDone)
+
+        // Answered at the keyboard: the card folds with the answer, live.
+        transcript.apply(
+            AgentEvent(
+                kind: "note", runId: "", sequence: 0, noteKind: "herdr_answered",
+                noteDetail: #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1","answerText":"1. Yes"}"#))
+        XCTAssertTrue(transcript.lines[0].isDone)
+        XCTAssertEqual(transcript.lines[0].resolution, "1. Yes")
+        XCTAssertNil(transcript.openQuestion)
+        XCTAssertEqual(transcript.lines.count, 1, "the note was drawn as a line of its own")
+
+        // A note that knows no answer keeps the one this app gave.
+        transcript.settle(cardId: transcript.lines[0].id, resolution: "2. No")
+        transcript.apply(
+            AgentEvent(
+                kind: "note", runId: "", sequence: 0, noteKind: "herdr_answered",
+                noteDetail: #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1"}"#))
+        XCTAssertEqual(transcript.lines[0].resolution, "2. No")
+    }
+
     func testAReplayedTurnIsNotDrawnTwice() {
         // Read back after the feed dropped: the person's message and a tool
         // call are stored; the feed then replays the turn from its start.
