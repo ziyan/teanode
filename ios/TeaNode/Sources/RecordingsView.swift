@@ -317,7 +317,7 @@ struct RecordingDetailScreen: View {
                 }
             }
             if let learning {
-                Section("Learning") {
+                Section {
                     if !learning.hasAgent {
                         Text("Enable your personal agent to learn from transcripts.").foregroundStyle(.secondary)
                     } else if let source = learning.knowledgeSource {
@@ -334,7 +334,7 @@ struct RecordingDetailScreen: View {
                         Text("Waiting for a completed transcript").foregroundStyle(.secondary)
                     }
                     if learning.isCurationPending { Text("Voice reference curation pending").foregroundStyle(.secondary) }
-                } footer: {
+                } header: { Text("Learning") } footer: {
                     Text(
                         "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories."
                     )
@@ -378,8 +378,9 @@ struct RecordingDetailScreen: View {
                                     isEditingMetadata = false
                                     await load()
                                 } catch {
-                                    problemText = error.localizedDescription
+                                    let failure = error.localizedDescription
                                     await load()
+                                    problemText = failure
                                 }
                             }
                         }

@@ -31,7 +31,7 @@ struct RecordingTranscriptScreen: View {
                 }
             }
             if let transcriptView {
-                Section("Transcription usage") {
+                Section {
                     ForEach(transcriptView.attempts) { attempt in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(attempt.providerModelName)
@@ -49,7 +49,7 @@ struct RecordingTranscriptScreen: View {
                     Text("Estimates use configured pricing. Actual cost is shown only when billing evidence exists.")
                 }
             }
-            Section("Transcript") {
+            Section {
                 ForEach(segments) { segment in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
@@ -92,7 +92,7 @@ struct RecordingTranscriptScreen: View {
                         Label("Load more passages", systemImage: "chevron.down")
                     }
                 }
-            } footer: {
+            } header: { Text("Transcript") } footer: {
                 Text("Speaker groups are local to each provider request. Only your confirmed names connect people across chunks and versions.")
             }
             if let speakers {
@@ -203,7 +203,7 @@ struct RecordingSpeakersScreen: View {
                     .swipeActions { Button("Remove correction", role: .destructive) { Task { await removeCorrection(correction) } } }
                 }
             }
-            Section("Voice references") {
+            Section {
                 ForEach(speakers.voiceReferences.filter { !$0.isRevoked }) { reference in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(
@@ -214,7 +214,7 @@ struct RecordingSpeakersScreen: View {
                     }.swipeActions { Button("Remove voice reference", role: .destructive) { Task { await removeReference(reference) } } }
                 }
                 if speakers.voiceReferences.allSatisfy(\.isRevoked) { Text("No clean reference samples available").foregroundStyle(.secondary) }
-            } footer: {
+            } header: { Text("Voice references") } footer: {
                 Text(
                     "References are curated only from names you confirm. Removing or correcting a label invalidates affected samples. Reprocessing is a separate paid pass."
                 )
