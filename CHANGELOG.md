@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.143.0] - 2026-10-12
+
+### Added
+
+- Private recording library, recoverable audio/video imports and verified command-line original downloads. (#436)
+
 ## [0.142.0] - 2026-10-12
 
 ### Added
