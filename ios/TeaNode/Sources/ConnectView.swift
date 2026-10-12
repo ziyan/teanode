@@ -14,7 +14,7 @@ struct ConnectView: View {
     @State private var isConnecting = false
     @State private var pending: PendingConnection?
     @State private var problemText: String?
-    @State private var isAskingForServer = DemoServer.screen == "server-address"
+    @State private var isAskingForServer = false
     @State private var serverText = ""
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
@@ -120,6 +120,12 @@ struct ConnectView: View {
                 }
             }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
+            #if DEBUG
+                .task {
+                    // The screenshots photograph the server sheet open.
+                    if DemoServer.screen == "server-address" { isAskingForServer = true }
+                }
+            #endif
             .task(id: app.openedLink?.url) {
                 guard let link = app.openedLink else { return }
                 app.openedLink = nil
