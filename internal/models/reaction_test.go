@@ -22,11 +22,18 @@ func TestValidateReactionEmoji(t *testing.T) {
 	}
 }
 
-// Only what somebody said carries a reaction.
-func TestOnlySaidMessagesCanBeReactedTo(t *testing.T) {
-	for role, expected := range map[string]bool{"user": true, "assistant": true, "tool": false, "note": false, "system": false, "compaction": false} {
-		if (&models.AgentMessage{Role: role}).CanBeReactedTo() != expected {
-			t.Errorf("a %s message: want %v", role, expected)
+// Each side reacts to what the other said: the person to the agent's
+// messages, the agent to the person's, and nobody to a tool's result.
+func TestEachSideReactsToWhatTheOtherSaid(t *testing.T) {
+	for role, expected := range map[string][2]bool{
+		"user": {false, true}, "assistant": {true, false}, "tool": {false, false}, "note": {false, false}, "system": {false, false}, "compaction": {false, false},
+	} {
+		message := &models.AgentMessage{Role: role}
+		if message.CanBeReactedToBy(models.ReactorPerson) != expected[0] {
+			t.Errorf("the person on a %s message: want %v", role, expected[0])
+		}
+		if message.CanBeReactedToBy(models.ReactorAgent) != expected[1] {
+			t.Errorf("the agent on a %s message: want %v", role, expected[1])
 		}
 	}
 }

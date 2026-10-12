@@ -1953,6 +1953,22 @@
         }
       }
     },
+    "%lld of %lld could not be imported.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 件は読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 位联系人无法导入。"
+          }
+        }
+      }
+    },
     "%lld of %lld deliveries": {
       "localizations": {
         "ja": {
@@ -2533,6 +2549,24 @@
     },
     "%lld transactions": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld transaction"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld transactions"
+                }
+              }
+            }
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
@@ -3135,6 +3169,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "有个编程会话完成了"
+          }
+        }
+      }
+    },
+    "A disabled alias is ignored, as if it were not there. It stays so it can be turned back on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無効にしたエイリアスは、存在しないものとして扱われます。あとで有効に戻せるよう、残されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停用的别名会被忽略，就像它不存在一样。它会保留，以便日后重新启用。"
+          }
+        }
+      }
+    },
+    "A disabled credential is refused. It stays so it can be turned back on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無効にした認証情報は拒否されます。あとで有効に戻せるよう、残されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停用的凭据会被拒绝。它会保留，以便日后重新启用。"
           }
         }
       }
@@ -4915,6 +4981,22 @@
         }
       }
     },
+    "Allow TeaNode to read your contacts in Settings to bring them into your address book.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先をアドレス帳に読み込むには、設定で TeaNode に連絡先の読み取りを許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“设置”中允许 TeaNode 读取你的通讯录，以便导入到你的地址簿。"
+          }
+        }
+      }
+    },
     "Allow TeaNode to use the camera in Settings, or paste the code's link instead.": {
       "localizations": {
         "ja": {
@@ -5007,6 +5089,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已经连接"
+          }
+        }
+      }
+    },
+    "Already in TeaNode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode に登録済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在 TeaNode 中"
           }
         }
       }
@@ -5395,6 +5493,22 @@
         }
       }
     },
+    "Answered: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已回答：%@"
+          }
+        }
+      }
+    },
     "Answering for me": {
       "localizations": {
         "ja": {
@@ -5487,6 +5601,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "任意"
+          }
+        }
+      }
+    },
+    "Any address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意のアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意地址"
           }
         }
       }
@@ -9059,6 +9189,22 @@
         }
       }
     },
+    "Contacts access is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先へのアクセスがオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未允许访问通讯录"
+          }
+        }
+      }
+    },
     "Contacts and calendar": {
       "localizations": {
         "ja": {
@@ -11523,6 +11669,22 @@
         }
       }
     },
+    "Edit alias": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エイリアスを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑别名"
+          }
+        }
+      }
+    },
     "Edit category": {
       "localizations": {
         "ja": {
@@ -11551,6 +11713,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑联系人"
+          }
+        }
+      }
+    },
+    "Edit credential": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証情報を編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑凭据"
           }
         }
       }
@@ -12479,6 +12657,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "运维人员能改的设置都存在数据库里，大部分就在这几个页面上。监听地址、TLS 和数据库连接是例外：它们在服务器启动时读取，“关于”页面会说明哪些更改正在等待重启。"
+          }
+        }
+      }
+    },
+    "Everything else": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他すべて"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其余"
           }
         }
       }
@@ -15203,6 +15397,38 @@
         }
       }
     },
+    "Import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入"
+          }
+        }
+      }
+    },
+    "Import from iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone から読み込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 iPhone 导入"
+          }
+        }
+      }
+    },
     "Important": {
       "localizations": {
         "ja": {
@@ -15215,6 +15441,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "重要"
+          }
+        }
+      }
+    },
+    "Imported %lld contacts.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を %lld 件読み込みました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 位联系人。"
+          }
+        }
+      }
+    },
+    "Imported 1 contact.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を 1 件読み込みました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 1 位联系人。"
+          }
+        }
+      }
+    },
+    "Importing %lld of %lld…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 件を読み込み中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在导入 %lld / %lld…"
           }
         }
       }
@@ -19331,6 +19605,22 @@
         }
       }
     },
+    "Net": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収支"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结余"
+          }
+        }
+      }
+    },
     "Net worth": {
       "localizations": {
         "ja": {
@@ -20047,6 +20337,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "现在没有联系人是你"
+          }
+        }
+      }
+    },
+    "No contacts on this iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone に連絡先がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 上没有联系人"
           }
         }
       }
@@ -20975,6 +21281,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无：改由语言模型来决定"
+          }
+        }
+      }
+    },
+    "None: what you type starts on the conversations model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし：入力したメッセージは会話用モデルが答えます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无：您输入的消息由对话模型回答"
           }
         }
       }
@@ -24115,6 +24437,22 @@
         }
       }
     },
+    "Picking a reaction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアクション選び"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选表情"
+          }
+        }
+      }
+    },
     "Pictures fetched": {
       "localizations": {
         "ja": {
@@ -24899,6 +25237,22 @@
         }
       }
     },
+    "Quick": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快捷"
+          }
+        }
+      }
+    },
     "Quiet from": {
       "localizations": {
         "ja": {
@@ -25363,6 +25717,22 @@
         }
       }
     },
+    "Reading your contacts…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を読み込んでいます…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取你的联系人…"
+          }
+        }
+      }
+    },
     "Receipt": {
       "localizations": {
         "ja": {
@@ -25759,6 +26129,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "关系"
+          }
+        }
+      }
+    },
+    "Relay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中継先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发服务器"
+          }
+        }
+      }
+    },
+    "Relay to a mail server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールサーバーに中継"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发到邮件服务器"
           }
         }
       }
@@ -28675,6 +29077,22 @@
         }
       }
     },
+    "Selected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选"
+          }
+        }
+      }
+    },
     "Selector": {
       "localizations": {
         "ja": {
@@ -28799,6 +29217,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "立即发送一份"
+          }
+        }
+      }
+    },
+    "Send only as": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアドレスとしてのみ送信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅可作为此地址发信"
           }
         }
       }
@@ -29887,6 +30321,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示在 TeaNode 中。可选：未填写时使用用户名。"
+          }
+        }
+      }
+    },
+    "Shows its transactions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示其交易"
           }
         }
       }
@@ -33494,6 +33944,38 @@
         }
       }
     },
+    "The part before the @ of the only address on %@ it may send as. Leave blank to allow any.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信に使える %@ 上の唯一のアドレスの @ より前の部分です。空欄なら任意のアドレスを許可します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它唯一可用来发信的 %@ 地址中 @ 前面的部分。留空则允许任意地址。"
+          }
+        }
+      }
+    },
+    "The password was shown once, when the credential was made, and cannot be shown again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードは認証情報を作成したときに一度だけ表示され、もう一度表示することはできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码仅在创建凭据时显示过一次，无法再次显示。"
+          }
+        }
+      }
+    },
     "The pending change was stopped": {
       "localizations": {
         "ja": {
@@ -34354,6 +34836,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "该地址没有反向名称，许多接收方会拒收来自无反向名称地址的邮件。请在管理该地址的位置设置它：在云服务商处这是地址本身的设置项（在控制台或 API 中），而不是 DNS 记录；然后为该名称发布指向 %@ 的 A 记录。"
+          }
+        }
+      }
+    },
+    "This address needs a pattern. To catch everything else, add an alias with an empty pattern.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアドレスにはパターンが必要です。それ以外をすべて受け取るには、パターンが空のエイリアスを追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址需要一个匹配模式。要接收其余所有邮件，请添加一个模式为空的别名。"
           }
         }
       }
@@ -38710,6 +39208,22 @@
         }
       }
     },
+    "Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どの作業にどのモデルを使うか。既定は指定のないすべて。高速は上書きがなければ仕分け・要約・圧縮に使われます。クイックは入力されたメッセージにまず答え、推論が必要なものは会話用モデルに渡します。埋め込みは意味検索を有効にします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各项工作使用的模型。默认用于未指定的一切；快速模型在未覆盖时用于分拣、摘要和压缩；快捷模型先回答您输入的消息，需要推理的交给对话模型；嵌入模型启用语义搜索。"
+          }
+        }
+      }
+    },
     "Which runs read it": {
       "localizations": {
         "ja": {
@@ -39714,6 +40228,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你连接的电脑（用于只接受本机回环地址的服务）"
+          }
+        }
+      }
+    },
+    "Your contacts could not be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を読み取れませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取你的联系人"
           }
         }
       }

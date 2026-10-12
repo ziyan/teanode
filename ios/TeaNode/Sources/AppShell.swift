@@ -129,6 +129,7 @@ struct MainView: View {
             }
             #if DEBUG
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
+                if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
             #endif
         }

@@ -100,6 +100,8 @@ jobs:
           }
           shoot connect-light light large
           shoot connect-dark dark large
+          shoot server-address-dark dark large -TeaNodeScreen server-address
+          shoot server-address-light light large -TeaNodeScreen server-address
           shoot conversation-light light large -TeaNodeDemo
           shoot conversation-dark dark large -TeaNodeDemo
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
@@ -118,6 +120,15 @@ jobs:
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
           shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
+          # The finance charts: the donut and its rows, a touched month, slice
+          # and day, and the net worth line.
+          shoot finance-dark dark large -TeaNodeDemo -TeaNodeTab finance
+          shoot cash-flow-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen cash-flow-chosen
+          shoot spending-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
+          shoot spending-chosen-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-chosen
+          shoot spending-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
+          shoot net-worth-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth-chosen
+          shoot net-worth-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
@@ -127,6 +138,10 @@ jobs:
           shoot agent-settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-settings
           shoot manage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen manage
           shoot people-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen people
+          shoot domain-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
+          shoot domain-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
+          shoot dns-records-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
+          shoot dns-records-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
           shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
           shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions
           shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones

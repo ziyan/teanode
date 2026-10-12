@@ -338,8 +338,12 @@ final class AppModel {
         let verifier = Self.randomText()
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
         let state = Self.randomText()
+        // A private sheet, sharing no cookies with Safari: "Sign in with a
+        // password" always asks which account, rather than approving whoever
+        // the browser happens to be signed in as.
         let returned = try await session.authenticate(
-            using: signIn.authorizationAddress(clientId: clientId, codeChallenge: challenge, state: state), callbackURLScheme: "com.teanode.app")
+            using: signIn.authorizationAddress(clientId: clientId, codeChallenge: challenge, state: state), callbackURLScheme: "com.teanode.app",
+            preferredBrowserSession: .ephemeral)
         guard let code = SignIn.authorizationCode(in: returned, state: state) else {
             throw TeaNodeError.refused(String(localized: "The server did not sign this phone in."))
         }
@@ -557,6 +561,7 @@ final class AppModel {
         let gone = account?.server.host ?? ""
         if let account {
             try? PayloadKey.keyring.forget(for: account.accountKey)
+            ConversationDraft.forget(accountKey: account.accountKey)
         }
         try? store.delete()
         phone = nil
@@ -594,6 +599,7 @@ final class AppModel {
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
+        ConversationDraft.forget(accountKey: other.accountKey)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }

@@ -209,6 +209,21 @@ struct SpendingLine: Identifiable {
     let count: Int
 }
 
+/// SpendingSlice is one slice of the "Where it went" donut: a group of its
+/// own, or the groups beyond the palette together, and the color its rows
+/// share.
+struct SpendingSlice: Identifiable {
+    /// The slice the groups beyond the palette share.
+    static let restId = "\u{0}rest"
+
+    let id: String
+    let label: String
+    let amount: Decimal
+    let color: Color
+
+    var amountValue: Double { NSDecimalNumber(decimal: amount).doubleValue }
+}
+
 /// SpendingView is a month as the dashboard's Spending tab shows it: the
 /// year's cash flow, the month's saving, its budgets and where it went.
 struct SpendingView: View {
@@ -219,32 +234,46 @@ struct SpendingView: View {
     @State private var budgets: BudgetStatus?
     @State private var summary: SpendingSummary?
     @State private var groupBy = "spendingCategory"
+    /// The month touched on the cash flow chart, as "2026-03".
+    @State private var selectedCashFlowMonth: String?
+    /// Where a touch on the donut is, as Swift Charts reports it: a running
+    /// total from the start of the first slice.
+    @State private var selectedRunningTotal: Double?
+    /// The slice chosen on the donut or by its row; it stays chosen when the
+    /// finger lifts.
+    @State private var selectedSliceId: String?
+    /// The transactions a row opens.
+    @State private var openedLink: TransactionLink?
 
     var body: some View {
+        ScrollViewReader { scrollProxy in
+            spendingList
+                #if DEBUG
+                    .task(id: summary == nil) { await showDemoScreen(scrollProxy: scrollProxy) }
+                #endif
+        }
+        .navigationTitle("Spending")
+        .navigationDestination(item: $openedLink) { link in
+            TransactionsView(filter: link.filter)
+        }
+        .task(id: "\(finance.month(month))-\(groupBy)") {
+            selectedSliceId = nil
+            await load()
+        }
+        .refreshable { await load() }
+        .onChange(of: selectedSliceId) { _, sliceId in
+            announce(sliceId: sliceId)
+        }
+    }
+
+    private var spendingList: some View {
         List {
             Section {
                 MonthStepper(month: $month, dates: finance.dates)
             }
             if let months = cashFlow?.cashFlowMonths?.compactMap({ $0 }), !months.isEmpty {
                 Section("Cash flow") {
-                    Chart {
-                        ForEach(months, id: \.cashFlowMonth) { flow in
-                            BarMark(x: .value("Month", flow.cashFlowMonth), y: .value("Income", amount(flow.incomeAmount)))
-                                .foregroundStyle(by: .value("Kind", String(localized: "Income")))
-                                .position(by: .value("Kind", String(localized: "Income")))
-                            BarMark(x: .value("Month", flow.cashFlowMonth), y: .value("Spending", amount(flow.spendingAmount)))
-                                .foregroundStyle(by: .value("Kind", String(localized: "Spending")))
-                                .position(by: .value("Kind", String(localized: "Spending")))
-                        }
-                    }
-                    .chartXAxis {
-                        AxisMarks { value in
-                            AxisValueLabel {
-                                if let text = value.as(String.self) { Text(text.suffix(2)) }
-                            }
-                        }
-                    }
-                    .frame(height: 180)
+                    cashFlowChart(months)
                 }
             }
             if let saving {
@@ -275,44 +304,246 @@ struct SpendingView: View {
                     Text("Account").tag("financeAccount")
                 }
                 .pickerStyle(.segmented)
+                .id(Self.whereItWentId)
                 let lines = spendingLines
                 if lines.isEmpty {
                     Text("No spending this month.").foregroundStyle(.secondary)
                 } else {
-                    Chart(lines.prefix(8)) { line in
-                        SectorMark(angle: .value("Amount", NSDecimalNumber(decimal: line.amount).doubleValue), innerRadius: .ratio(0.6))
-                            .foregroundStyle(by: .value("Group", line.label))
-                    }
-                    .chartLegend(.hidden)
-                    .frame(height: 180)
+                    let slices = spendingSlices(lines)
                     let total = lines.reduce(Decimal(0)) { $0 + $1.amount }
-                    ForEach(lines) { line in
-                        NavigationLink(value: TransactionLink(filter: filter(groupKey: line.id))) {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(line.label)
-                                    Text("\(line.count) transactions").font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                VStack(alignment: .trailing) {
-                                    Text(FinanceMoney.shown(NSDecimalNumber(decimal: line.amount).stringValue, currencyCode: currency))
-                                        .monospacedDigit()
-                                    Text(FinanceMoney.percent(total > 0 ? NSDecimalNumber(decimal: line.amount / total).doubleValue : 0))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                    if !slices.isEmpty {
+                        spendingDonut(slices, total: total)
+                    }
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { rank, line in
+                        let lineSlice = drawnSlice(ofRank: rank, line: line, in: slices)
+                        Button {
+                            selectedSliceId = lineSlice?.id
+                            openedLink = TransactionLink(filter: filter(groupKey: line.id))
+                        } label: {
+                            SpendingLineRow(line: line, color: lineSlice?.color, currency: currency, shareText: shareText(line.amount, of: total))
                         }
+                        .tint(Color.primary)
+                        .accessibilityAddTraits(lineSlice != nil && lineSlice?.id == selectedSliceId ? .isSelected : [])
+                        .accessibilityHint(Text("Shows its transactions"))
                     }
                 }
             } header: {
                 Text("Where it went")
             }
         }
-        .navigationTitle("Spending")
-        .task(id: "\(finance.month(month))-\(groupBy)") { await load() }
-        .refreshable { await load() }
     }
+
+    /// The year's income and spending by month, side by side in the two
+    /// colors its legend names. Touching a month shows its numbers.
+    private func cashFlowChart(_ months: [CashFlow.Month]) -> some View {
+        let incomeWord = String(localized: "Income")
+        let spendingWord = String(localized: "Spending")
+        let incomeColor = ChartPalette.seriesColor(at: 0)
+        let spendingColor = ChartPalette.seriesColor(at: 1)
+        let currencyCode = cashFlow?.reportingCurrencyCode.flatMap { $0.isEmpty ? nil : $0 } ?? finance.reportingCurrency
+        let selectedFlow = months.first { $0.cashFlowMonth == selectedCashFlowMonth }
+        return VStack(alignment: .leading, spacing: 8) {
+            // The legend's line is tall enough for the callout of a touched
+            // month to take its place rather than cover the row above.
+            ChartKey(entries: [ChartKeyEntry(label: incomeWord, color: incomeColor), ChartKeyEntry(label: spendingWord, color: spendingColor)])
+                .frame(minHeight: 44, alignment: .bottomLeading)
+                .opacity(selectedFlow == nil ? 1 : 0)
+            Chart {
+                ForEach(months, id: \.cashFlowMonth) { flow in
+                    let opacity = ChartPalette.markOpacity(isChosen: flow.cashFlowMonth == selectedFlow?.cashFlowMonth, isAnyChosen: selectedFlow != nil)
+                    BarMark(x: .value("Month", flow.cashFlowMonth), y: .value("Amount", amount(flow.incomeAmount)))
+                        .foregroundStyle(by: .value("Kind", incomeWord))
+                        .position(by: .value("Kind", incomeWord))
+                        .opacity(opacity)
+                        .accessibilityLabel(Text(verbatim: "\(monthTitle(flow.cashFlowMonth)), \(incomeWord)"))
+                        .accessibilityValue(Text(verbatim: FinanceMoney.shown(flow.incomeAmount, currencyCode: currencyCode)))
+                    BarMark(x: .value("Month", flow.cashFlowMonth), y: .value("Amount", amount(flow.spendingAmount)))
+                        .foregroundStyle(by: .value("Kind", spendingWord))
+                        .position(by: .value("Kind", spendingWord))
+                        .opacity(opacity)
+                        .accessibilityLabel(Text(verbatim: "\(monthTitle(flow.cashFlowMonth)), \(spendingWord)"))
+                        .accessibilityValue(Text(verbatim: FinanceMoney.shown(flow.spendingAmount, currencyCode: currencyCode)))
+                }
+                if let selectedFlow {
+                    ChartSelectionRule(value: selectedFlow.cashFlowMonth) {
+                        ChartCallout(
+                            title: monthTitle(selectedFlow.cashFlowMonth),
+                            figures: [
+                                ChartFigure(label: incomeWord, valueText: FinanceMoney.shown(selectedFlow.incomeAmount, currencyCode: currencyCode), color: incomeColor),
+                                ChartFigure(label: spendingWord, valueText: FinanceMoney.shown(selectedFlow.spendingAmount, currencyCode: currencyCode), color: spendingColor),
+                                ChartFigure(label: String(localized: "Net"), valueText: FinanceMoney.shown(netAmountText(selectedFlow), currencyCode: currencyCode)),
+                            ])
+                    }
+                }
+            }
+            .chartForegroundStyleScale(domain: [incomeWord, spendingWord], range: [incomeColor, spendingColor])
+            .chartLegend(.hidden)
+            .chartXSelection(value: $selectedCashFlowMonth)
+            .chartXAxis {
+                AxisMarks { value in
+                    AxisValueLabel {
+                        if let text = value.as(String.self) { Text(verbatim: monthLetter(text)) }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let number = value.as(Double.self) { Text(verbatim: FinanceMoney.axisText(number, currencyCode: currencyCode)) }
+                    }
+                }
+            }
+            .frame(height: 180)
+        }
+    }
+
+    /// The month's groups as a donut, each in its color, the rest in gray.
+    /// Touching a slice chooses it: it stays full, the others step back,
+    /// and the middle says what it is. With none chosen the middle says the
+    /// total.
+    private func spendingDonut(_ slices: [SpendingSlice], total: Decimal) -> some View {
+        let selectedSlice = slices.first { $0.id == selectedSliceId }
+        return Chart(slices) { slice in
+            let isChosen = slice.id == selectedSlice?.id
+            SectorMark(
+                angle: .value("Amount", slice.amountValue),
+                innerRadius: .ratio(0.62),
+                outerRadius: .ratio(isChosen || selectedSlice == nil ? 1 : 0.94),
+                angularInset: 1
+            )
+            .foregroundStyle(slice.color)
+            .opacity(ChartPalette.markOpacity(isChosen: isChosen, isAnyChosen: selectedSlice != nil))
+            .accessibilityLabel(Text(verbatim: slice.label))
+            .accessibilityValue(Text(verbatim: "\(moneyText(slice.amount)), \(shareText(slice.amount, of: total))"))
+        }
+        .chartLegend(.hidden)
+        .chartAngleSelection(value: $selectedRunningTotal)
+        .onChange(of: selectedRunningTotal) { previousTotal, runningTotal in
+            guard let runningTotal, let index = ChartShares.sliceIndex(atRunningTotal: runningTotal, amounts: slices.map(\.amountValue)) else { return }
+            let touchedId = slices[index].id
+            // A new touch on the chosen slice lets it go; a drag across
+            // the donut chooses whatever is under the finger.
+            selectedSliceId = previousTotal == nil && touchedId == selectedSliceId ? nil : touchedId
+        }
+        .chartBackground { chartProxy in
+            GeometryReader { geometry in
+                if let plotFrame = chartProxy.plotFrame {
+                    let frame = geometry[plotFrame]
+                    let holeWidth = min(frame.width, frame.height) * 0.62
+                    VStack(spacing: 2) {
+                        Text(verbatim: selectedSlice?.label ?? String(localized: "Total"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text(verbatim: moneyText(selectedSlice?.amount ?? total))
+                            .font(.headline)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .contentTransition(.numericText())
+                        if let selectedSlice {
+                            Text(verbatim: shareText(selectedSlice.amount, of: total))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.4)
+                    .frame(width: holeWidth * 0.82)
+                    .position(x: frame.midX, y: frame.midY)
+                    .accessibilityHidden(true)
+                }
+            }
+        }
+        .frame(height: 220)
+        .padding(.vertical, 4)
+    }
+
+    /// The donut's slices: the largest groups each in a color of the
+    /// palette, then the rest together in gray. Only money out is drawn; a
+    /// group that took in more than it spent has a row but no slice.
+    private func spendingSlices(_ lines: [SpendingLine]) -> [SpendingSlice] {
+        let drawn = lines.filter { $0.amount > 0 }
+        let sliceAmounts = ChartShares.sliceAmounts(drawn.map(\.amount))
+        return sliceAmounts.enumerated().map { index, sliceAmount in
+            if index < ChartShares.ownSliceLimit {
+                let line = drawn[index]
+                return SpendingSlice(id: line.id, label: line.label, amount: sliceAmount, color: ChartPalette.seriesColor(at: index))
+            }
+            return SpendingSlice(id: SpendingSlice.restId, label: String(localized: "Everything else"), amount: sliceAmount, color: ChartPalette.restColor)
+        }
+    }
+
+    /// The slice a row's group is drawn in, by the row's rank; none for a
+    /// group that took in more than it spent.
+    private func drawnSlice(ofRank rank: Int, line: SpendingLine, in slices: [SpendingSlice]) -> SpendingSlice? {
+        guard line.amount > 0 else { return nil }
+        let index = ChartShares.sliceIndex(ofRank: rank)
+        return slices.indices.contains(index) ? slices[index] : nil
+    }
+
+    private func moneyText(_ amount: Decimal) -> String {
+        FinanceMoney.shown(NSDecimalNumber(decimal: amount).stringValue, currencyCode: currency)
+    }
+
+    private func shareText(_ amount: Decimal, of total: Decimal) -> String {
+        FinanceMoney.percent(total > 0 ? NSDecimalNumber(decimal: amount / total).doubleValue : 0)
+    }
+
+    /// Tells VoiceOver which slice was chosen, since the change is drawn.
+    private func announce(sliceId: String?) {
+        let lines = spendingLines
+        let total = lines.reduce(Decimal(0)) { $0 + $1.amount }
+        guard let sliceId, let slice = spendingSlices(lines).first(where: { $0.id == sliceId }) else { return }
+        let spokenText = "\(slice.label), \(moneyText(slice.amount)), \(shareText(slice.amount, of: total))"
+        AccessibilityNotification.Announcement(spokenText).post()
+    }
+
+    /// A cash flow month, "2026-03", in the middle of that month on the
+    /// phone's calendar, so no time zone moves it into another.
+    private func cashFlowDate(_ cashFlowMonth: String) -> Date? {
+        let parts = cashFlowMonth.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 2 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: 15))
+    }
+
+    /// A month on the axis: its first letter, as Health labels a year.
+    private func monthLetter(_ cashFlowMonth: String) -> String {
+        cashFlowDate(cashFlowMonth)?.formatted(.dateTime.month(.narrow)) ?? String(cashFlowMonth.suffix(2))
+    }
+
+    private func monthTitle(_ cashFlowMonth: String) -> String {
+        cashFlowDate(cashFlowMonth)?.formatted(.dateTime.month(.wide).year()) ?? cashFlowMonth
+    }
+
+    private func netAmountText(_ flow: CashFlow.Month) -> String? {
+        if let netAmount = flow.netAmount, !netAmount.isEmpty { return netAmount }
+        guard let income = FinanceMoney.decimal(flow.incomeAmount), let spending = FinanceMoney.decimal(flow.spendingAmount) else { return nil }
+        return NSDecimalNumber(decimal: income - spending).stringValue
+    }
+
+    private static let whereItWentId = "whereItWent"
+
+    #if DEBUG
+        /// The state a screenshot names (`-TeaNodeScreen`): the donut
+        /// scrolled into view, a slice chosen, or a month touched.
+        private func showDemoScreen(scrollProxy: ScrollViewProxy) async {
+            guard summary != nil, let screen = DemoServer.screen else { return }
+            // The rows are laid out a moment after the answer arrives.
+            try? await Task.sleep(for: .milliseconds(500))
+            switch screen {
+            case "spending-groups", "spending-chosen":
+                scrollProxy.scrollTo(Self.whereItWentId, anchor: .top)
+                if screen == "spending-chosen" { selectedSliceId = spendingSlices(spendingLines).first?.id }
+            case "cash-flow-chosen":
+                let months = (cashFlow?.cashFlowMonths ?? []).compactMap { $0 }
+                if months.count > 3 { selectedCashFlowMonth = months[months.count - 4].cashFlowMonth }
+            default:
+                break
+            }
+        }
+    #endif
 
     private var currency: String {
         summary?.reportingCurrencyCode.flatMap { $0.isEmpty ? nil : $0 } ?? finance.reportingCurrency
@@ -405,6 +636,50 @@ struct SpendingView: View {
     }
 }
 
+/// SpendingLineRow is one group of "Where it went": its color on the
+/// donut, its name and count, and its amount and share, opening its
+/// transactions.
+struct SpendingLineRow: View {
+    let line: SpendingLine
+    /// The color of the slice it is drawn in; none for a group that took
+    /// in more than it spent, which the donut leaves out.
+    let color: Color?
+    let currency: String
+    let shareText: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ChartSwatch(color: color ?? .clear)
+            // Side by side, or one under the other at the accessibility
+            // sizes, where side by side breaks the words apart.
+            let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+            layout {
+                VStack(alignment: .leading) {
+                    Text(line.label).foregroundStyle(.primary)
+                    Text("\(line.count) transactions").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing) {
+                    Text(FinanceMoney.shown(NSDecimalNumber(decimal: line.amount).stringValue, currencyCode: currency))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                    Text(shareText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            // A row opens a screen, so it carries the chevron a navigation
+            // row would; it is a button so that the tap chooses its slice too.
+            Image(systemName: "chevron.forward")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .contentShape(.rect)
+    }
+}
+
 /// MoneyRow is an amount so far, and what was expected, side by side.
 struct MoneyRow: View {
     let title: String
@@ -465,6 +740,7 @@ struct BudgetRow: View {
             }
             HStack {
                 Text("\(FinanceMoney.shown(spent, currencyCode: currency)) of \(FinanceMoney.shown(budget, currencyCode: currency))")
+                    .monospacedDigit()
                 Spacer()
                 if let projected, !projected.isEmpty {
                     Text("heading for \(FinanceMoney.shown(projected, currencyCode: currency))")
@@ -580,7 +856,9 @@ struct TransactionRow: View {
     let transaction: FinanceTransaction
 
     var body: some View {
-        HStack(alignment: .top) {
+        // The amount is centered on the row, level with the disclosure
+        // chevron, rather than on the first line.
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(transaction.shownName).lineLimit(1)

@@ -6,6 +6,78 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.137.0] - 2026-10-12
+
+### Added
+
+- `agent.models.quick`: typed turns start on a fast model that answers quick things at once and hands anything that needs thought to the larger model. (#410)
+
+## [0.136.2] - 2026-10-12
+
+### Changed
+
+- Updated five dashboard build and server-side web dependencies to their latest patch releases. (#417)
+
+## [0.136.1] - 2026-10-12
+
+### Changed
+
+- Your agent reacts to your messages as it reads them, at once, with 👀 when it gets to work, ❤️ to thanks or 😂 to a joke. You react only to its messages, and it only to yours. (#395)
+
+## [0.136.0] - 2026-10-12
+
+### Added
+
+- The iPhone app imports contacts from the phone into your TeaNode address book, skipping the ones already there. (#402)
+
+## [0.135.1] - 2026-10-12
+
+### Changed
+
+- In the iPhone app, the phone taps when the agent reacts to your message, and your own messages no longer offer reactions. (#396)
+
+## [0.135.0] - 2026-10-12
+
+### Added
+
+- The iPhone app edits a domain's aliases and credentials: tap one to change where it goes, its note, or switch it off. (#408)
+- The dashboard edits a domain's aliases and credentials: where an alias goes, its note, which address a credential may send as, and switching either off. (#409)
+
+### Changed
+
+- Your agent is friendlier in chat: warmer, a little playful, with a few emoji where they help. It stays plain when it speaks or writes mail for you. (#406)
+
+### Fixed
+
+- In the iPhone app, a chat opens at its newest message rather than somewhere in the middle. (#405)
+- In the iPhone app, counts and statuses line up with each row's arrow, and the DNS records' status icons form one column. (#407)
+
+## [0.134.7] - 2026-10-12
+
+### Fixed
+
+- A Claude Code or Codex question answered at the keyboard or on another device folds at once in the iPhone app and the dashboard, showing what it was answered with; the app's card also names the computer. (#399)
+
+## [0.134.6] - 2026-10-12
+
+### Fixed
+
+- In the iPhone app, signing in with a password asks for the server in a sheet that fits the screen, and always asks for the account and password. (#398)
+
+## [0.134.5] - 2026-10-12
+
+### Fixed
+
+- The iPhone app keeps drafts separate between accounts and preserves live updates when loading older messages. (#403)
+- Failed sends keep other pending messages, and failed typed question answers return to an empty composer. (#403)
+- The iPhone app no longer shows a red "cancelled" message when you leave a screen or refresh while something loads. (#404)
+
+## [0.134.4] - 2026-10-12
+
+### Fixed
+
+- The iPhone app's charts are readable: spending rows carry their slice's color, and touching a slice, bar or line shows what it is and its amount. (#394)
+
 ## [0.134.3] - 2026-10-12
 
 ### Fixed

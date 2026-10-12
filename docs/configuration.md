@@ -1235,6 +1235,18 @@ agent is enabled.
 **`fast`** — The model for the cheap kinds of work — sorting, summaries,
 compaction — unless one of them is overridden. Empty means `default`.
 
+**`quick`**: The model a person's typed turn starts on, in the dashboard,
+the browser extension, the iPhone app and the chat apps. It answers quick
+things itself (a greeting, a fact, a lookup, a simple action) and, for
+anything that needs reasoning, calls `think_harder`, which hands the rest of
+the turn to the `ask` model with the same conversation and tools. A large
+reasoning model takes seconds to answer even "hi", so this keeps it for the
+questions that need it. Empty: typed turns start on the `ask` model, as
+before. It is not used by the command line, the API, mail, schedules, goals,
+subagents or background work, by a turn whose person chose their own model, or
+by a turn that is to dig (high effort), and it is skipped when it names the
+model the turn would use anyway.
+
 **`embedding`** — The model that turns text into vectors, which enables
 search by meaning. Empty means no search by meaning. Changing it marks
 existing vectors stale, and the two kinds catch up differently: a person's
@@ -1688,7 +1700,8 @@ while it works on the first, as a typed follow-up would.
 through the same provider. Empty is `gpt-4o-mini-tts`.
 
 **`askModel`** — The model a spoken turn is answered with, as
-`provider:model`; empty is the one a typed turn uses. A call wants the first
+`provider:model`; empty is the one a typed turn uses (see `agent.models.quick`
+for a small model that typed turns start on). A call wants the first
 words soon, and on a long conversation a smaller model starts speaking a second
 or more before a larger one, even though it reads the conversation uncached
 the first time. When this model differs from the typed one, it is given

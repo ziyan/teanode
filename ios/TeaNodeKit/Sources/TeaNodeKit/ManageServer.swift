@@ -1269,6 +1269,7 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
 public struct AgentModelAssignments: Codable, Hashable, Sendable {
     public var `default`: String
     public var fast: String
+    public var quick: String
     public var embedding: String
     public var triage: String
     public var research: String
@@ -1284,8 +1285,9 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
     public var embeddingDimensions: Int
     public var choices: [String]
 
-    /// The three every deployment needs, by field name.
-    public static let baseFieldNames = ["default", "fast", "embedding"]
+    /// The four set first, by field name. Quick is the model
+    /// a typed turn starts on; empty starts it on the conversations model.
+    public static let baseFieldNames = ["default", "fast", "quick", "embedding"]
     /// One per kind of work, for whoever spends differently on each.
     public static let workFieldNames = ["triage", "research", "summarize", "reply", "ask", "schedule", "compact", "scan", "synthesize"]
     /// Every assignment by field name, the deciding ones last.
@@ -1297,6 +1299,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
             switch fieldName {
             case "default": self.default
             case "fast": fast
+            case "quick": quick
             case "embedding": embedding
             case "triage": triage
             case "research": research
@@ -1316,6 +1319,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
             switch fieldName {
             case "default": self.default = newValue
             case "fast": fast = newValue
+            case "quick": quick = newValue
             case "embedding": embedding = newValue
             case "triage": triage = newValue
             case "research": research = newValue
@@ -1349,9 +1353,9 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
 
     var parameters: JSONValue {
         .object([
-            "default": .string(self.default), "fast": .string(fast), "embedding": .string(embedding), "triage": .string(triage),
-            "research": .string(research), "summarize": .string(summarize), "reply": .string(reply), "ask": .string(ask),
-            "schedule": .string(schedule), "compact": .string(compact), "scan": .string(scan), "synthesize": .string(synthesize),
+            "default": .string(self.default), "fast": .string(fast), "quick": .string(quick), "embedding": .string(embedding),
+            "triage": .string(triage), "research": .string(research), "summarize": .string(summarize), "reply": .string(reply),
+            "ask": .string(ask), "schedule": .string(schedule), "compact": .string(compact), "scan": .string(scan), "synthesize": .string(synthesize),
             "decide": .string(decide), "categorize": .string(categorize), "embeddingDimensions": .number(Double(embeddingDimensions)),
             "choices": SettingsList.value(choices),
         ])
@@ -2522,7 +2526,7 @@ extension Documents {
         agent {
           enabled instructions allowPrivateAddresses skipCertificateCheck
           providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
-          models { default fast embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
+          models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
           limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
           retention { runs corrections }

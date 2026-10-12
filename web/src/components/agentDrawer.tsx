@@ -3298,6 +3298,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             })
             return withoutQueued
           }
+          // A coding session's question that went comes outside any run:
+          // drawn by nobody, read by the question's line, which folds with
+          // what it was answered with. The same line the transcript reads
+          // back, since its kind is not one NOTE_WORDS has words for.
+          if (event.noteKind === HERDR_ANSWERED_NOTE) {
+            withoutQueued.push({
+              kind: 'note',
+              key: `herdr-answered-${event.at}`,
+              text: '',
+              noteKind: HERDR_ANSWERED_NOTE,
+              detail: event.noteDetail,
+            })
+            return withoutQueued
+          }
           withoutQueued.push({
             kind: 'note',
             key: `${event.runId}-${event.sequence}`,
@@ -4045,8 +4059,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onReply={() => replyTo(line)}
               onCopy={() => copyLine(line)}
               onCopyFailed={sayCopyFailed}
-              reactLabel={t('agentDrawer.react')}
-              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}

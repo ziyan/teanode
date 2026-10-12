@@ -105,7 +105,8 @@ final class ConversationModel {
         self.connection = connection
         // Named once: the main conversation learns its id when it loads,
         // and a key made from that would never be read at the next launch.
-        self.draftKey = "draft.\(conversation.flatMap { $0.isMain ? nil : $0.id } ?? "main")"
+        self.draftKey = ConversationDraft.storageKey(
+            accountKey: connection.accountKey, conversationId: conversation.flatMap { $0.isMain ? nil : $0.id })
         self.draft = UserDefaults.standard.string(forKey: draftKey) ?? ""
     }
 
@@ -196,7 +197,7 @@ final class ConversationModel {
     /// Sends what was said on a call as a turn, and returns the turn, whose
     /// answers the call reads out.
     func sendSpoken(_ text: String, interruptedAnswer: (heardText: String, unheardText: String)?) async -> String? {
-        transcript.addSent(text)
+        let sentLineId = transcript.addSent(text)
         do {
             let asked = try await connection.ask(
                 text, in: conversationId, surface: Surface.voice, drawerId: app.drawerId, interruptedAnswer: interruptedAnswer)
@@ -208,7 +209,7 @@ final class ConversationModel {
             }
             return asked.runId
         } catch {
-            transcript.withdrawSent()
+            transcript.withdrawSent(lineId: sentLineId)
             sendProblemText = app.describe(error)
             return nil
         }
@@ -222,9 +223,10 @@ final class ConversationModel {
         do {
             let page = try await connection.conversation(conversationId, first: 100, offset: messages.count)
             let known = Set(messages.map(\.id))
-            messages = page.messages.filter { !known.contains($0.id) } + messages
+            let earlierMessages = page.messages.filter { !known.contains($0.id) }
+            messages = earlierMessages + messages
             total = page.total
-            transcript = Transcript(messages: messages, interactions: interactions)
+            transcript.prepend(messages: messages, earlierCount: earlierMessages.count)
         } catch {
             sendProblemText = app.describe(error)
         }
@@ -240,6 +242,11 @@ final class ConversationModel {
     private func apply(_ event: AgentEvent) {
         transcript.apply(event)
         call?.follow(event)
+        // The agent's reaction arriving is felt, as a friend's tapback is:
+        // a double tap, apart from the light one the person's own makes.
+        if event.kind == "reacted", event.reactorKind == "agent", !(event.emoji ?? "").isEmpty {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
         switch event.kind {
         case "asked":
             if !runningRunIds.contains(event.runId) {
@@ -298,6 +305,7 @@ final class ConversationModel {
         guard let messageId = line.messageId else { return }
         let previous = line.reaction(of: "person") ?? ""
         let chosen = previous == emoji ? "" : emoji
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         transcript.react(messageId: messageId, emoji: chosen, reactorKind: "person")
         do {
             try await connection.react(to: messageId, emoji: chosen)
@@ -311,12 +319,16 @@ final class ConversationModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
         if let question = freshQuestion, pendingFiles.isEmpty, references.isEmpty {
+            isSending = true
+            defer { isSending = false }
             draft = ""
+            let isAnswered: Bool
             if question.kind == .codingQuestion {
-                await answerCodingQuestion(question, options: [], freeText: text)
+                isAnswered = await answerCodingQuestion(question, options: [], freeText: text)
             } else {
-                await answer(question, with: text)
+                isAnswered = await answer(question, with: text)
             }
+            if !isAnswered, draft.isEmpty { draft = text }
             return
         }
         if pendingFiles.reduce(0, { $0 + $1.data.count }) > PendingFile.bytesMost {
@@ -337,6 +349,7 @@ final class ConversationModel {
         let referring = references
         draft = ""
         references = []
+        var sentLineId: String?
         do {
             var attachments: [AgentAttachment] = []
             for file in sending {
@@ -347,7 +360,7 @@ final class ConversationModel {
             // Files added while these were sent stay for the next message.
             pendingFiles.removeAll { sendingIds.contains($0.id) }
             let message = text.isEmpty ? "(files)" : text
-            transcript.addSent(message, attachments: attachments, replyingTo: reply)
+            sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply)
             let asked = try await connection.ask(
                 message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
                 drawerId: app.drawerId)
@@ -360,7 +373,7 @@ final class ConversationModel {
             }
             ideas = []
         } catch {
-            transcript.withdrawSent()
+            if let sentLineId { transcript.withdrawSent(lineId: sentLineId) }
             if draft.isEmpty { draft = text }
             pendingFiles = sending + pendingFiles.filter { !sendingIds.contains($0.id) }
             references = referring
@@ -370,13 +383,15 @@ final class ConversationModel {
 
     /// Sends a suggested reply as it is, leaving the draft alone.
     func sendSuggestion(_ suggestion: String) async {
-        transcript.addSent(suggestion)
+        let sentLineId = transcript.addSent(suggestion)
         do {
             let asked = try await connection.ask(suggestion, in: conversationId, drawerId: app.drawerId)
-            runningRunIds.append(asked.runId)
+            if !runningRunIds.contains(asked.runId) {
+                runningRunIds.append(asked.runId)
+            }
             sentCount += 1
         } catch {
-            transcript.withdrawSent()
+            transcript.withdrawSent(lineId: sentLineId)
             sendProblemText = app.describe(error)
         }
     }
@@ -418,11 +433,13 @@ final class ConversationModel {
         }
     }
 
-    func answer(_ line: TranscriptLine, with answer: String) async {
+    @discardableResult
+    func answer(_ line: TranscriptLine, with answer: String) async -> Bool {
         do {
             if try await connection.answerQuestion(runId: line.runId, callId: line.callId, answer: answer) {
                 transcript.settle(cardId: line.id, resolution: answer == Self.chatAboutIt ? String(localized: "Chatting about it instead") : answer)
                 sentCount += 1
+                return true
             } else {
                 transcript.remove(cardId: line.id)
                 sendProblemText = String(localized: "That card was already answered, or is no longer waiting.")
@@ -430,6 +447,7 @@ final class ConversationModel {
         } catch {
             sendProblemText = app.describe(error)
         }
+        return false
     }
 
     /// What a question card answers when the person would rather talk than
@@ -438,20 +456,24 @@ final class ConversationModel {
 
     /// Answers a coding session's question with the options chosen, or with
     /// what to type into it.
-    func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async {
-        guard let question = line.codingQuestion else { return }
+    @discardableResult
+    func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async -> Bool {
+        guard let question = line.codingQuestion else { return false }
         do {
             let answeredWith = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
             transcript.settle(cardId: line.id, resolution: answeredWith)
             sentCount += 1
+            return true
         } catch TeaNodeError.refused(let reason) where reason.contains("already answered") {
             // Answered at the computer, or by another device: the card folds
             // away so typing goes to the conversation again, as the
-            // dashboard's card does.
-            transcript.settle(cardId: line.id, resolution: String(localized: "Answered elsewhere"))
+            // dashboard's card does, and the note the server publishes for
+            // it fills in what it was answered with.
+            transcript.settle(cardId: line.id, resolution: "")
         } catch {
             sendProblemText = app.describe(error)
         }
+        return false
     }
 
     func stop() async {

@@ -34,8 +34,14 @@
                 answer = Self.knowledge
             } else if query.contains("FinanceProviders") {
                 answer = #"{"data":{"FinanceProviders":[{"providerKind":"simplefin","isBrowserRequired":false}],"FinanceSources":[{"id":"bank"}]}}"#
+            } else if query.contains("FinanceSpendingSummary") {
+                answer = Self.spendingSummary
+            } else if query.contains("CashFlow") {
+                answer = Self.cashFlow()
+            } else if query.contains("NetWorth") {
+                answer = Self.netWorth(answering: request.httpBody)
             } else if query.contains("SpendingCategories") {
-                answer = #"{"data":{"SpendingCategories":[]}}"#
+                answer = Self.spendingCategories
             } else if query.contains("FinanceAccounts") {
                 answer = #"{"data":{"FinanceAccounts":[]}}"#
             } else if query.contains("ReportingCurrency") {
@@ -65,6 +71,10 @@
                 answer = Self.roles
             } else if query.contains("ListDomains") {
                 answer = #"{"data":{"ListDomains":[{"id":"d","domain":"example.com"},{"id":"d2","domain":"example.net"}]}}"#
+            } else if query.contains("GetDomain") {
+                answer = Self.domain
+            } else if query.contains("CountMailsBy") {
+                answer = Self.domainOverview
             } else if query.contains("GetSettings") {
                 answer = Self.serverSettings
             } else if query.contains("ListCalendars") {
@@ -77,6 +87,8 @@
                 answer = #"{"data":{"ListAddressBooks":[{"id":"book","name":"Contacts","contacts":4}]}}"#
             } else if query.contains("ListContacts") {
                 answer = Self.contacts
+            } else if query.contains("SaveContact") {
+                answer = #"{"data":{"SaveContact":{"id":"imported","name":"Imported"}}}"#
             } else if query.contains("AgentGraphPage") {
                 answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
             } else if query.contains("ListAgentIdeas") {
@@ -107,6 +119,91 @@
             {"id":"i4","ideaKind":"catalog","ideaCategory":"mail","emoji":"📬","headline":"Unsubscribe from what I never read","ideaStatus":"done","startedConversationId":"demo-unsubscribe","createdAt":"2026-09-20T08:00:00Z","closedAt":"2026-09-21T08:00:00Z"}
             ],"ideaCategories":[{"ideaCategory":"home","emojis":["🪴"]},{"ideaCategory":"money","emojis":["💳"]},{"ideaCategory":"mail","emojis":["📬"]}]}}}
             """#
+
+        /// The built-in categories, as a new server has them.
+        static let spendingCategories = #"""
+            {"data":{"SpendingCategories":[
+            {"id":"income","spendingCategoryName":"income","parentSpendingCategoryId":null,"isIncome":true,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"housing","spendingCategoryName":"housing","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"groceries","spendingCategoryName":"groceries","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"dining","spendingCategoryName":"dining","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"shopping","spendingCategoryName":"shopping","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"transport","spendingCategoryName":"transport","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"utilities","spendingCategoryName":"utilities","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"health","spendingCategoryName":"health","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"entertainment","spendingCategoryName":"entertainment","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"subscriptions","spendingCategoryName":"subscriptions","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"gifts","spendingCategoryName":"gifts and donations","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":false},
+            {"id":"transfer","spendingCategoryName":"transfer","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":true,"isOther":false},
+            {"id":"other","spendingCategoryName":"other","parentSpendingCategoryId":null,"isIncome":false,"isHidden":false,"isTransfer":false,"isOther":true}
+            ]}}
+            """#
+
+        /// An invented month of spending: ten categories, so the donut has
+        /// eight slices of their own and the last two together.
+        static let spendingSummary = #"""
+            {"data":{"FinanceSpendingSummary":{"groupBy":"spendingCategory","reportingCurrencyCode":null,"convertedMoneyOut":null,"convertedMoneyIn":null,"unconvertedCurrencyCodes":[],"convertedSpendingSummaryRows":null,
+            "spendingSummaryRows":[
+            {"groupKey":"housing","groupLabel":"housing","currencyCode":"USD","moneyOut":"1850.00","moneyIn":"0","financeTransactionCount":1},
+            {"groupKey":"groceries","groupLabel":"groceries","currencyCode":"USD","moneyOut":"431.60","moneyIn":"19.00","financeTransactionCount":14},
+            {"groupKey":"dining","groupLabel":"dining","currencyCode":"USD","moneyOut":"236.40","moneyIn":"0","financeTransactionCount":9},
+            {"groupKey":"shopping","groupLabel":"shopping","currencyCode":"USD","moneyOut":"189.99","moneyIn":"0","financeTransactionCount":5},
+            {"groupKey":"transport","groupLabel":"transport","currencyCode":"USD","moneyOut":"142.30","moneyIn":"0","financeTransactionCount":11},
+            {"groupKey":"utilities","groupLabel":"utilities","currencyCode":"USD","moneyOut":"128.75","moneyIn":"0","financeTransactionCount":3},
+            {"groupKey":"health","groupLabel":"health","currencyCode":"USD","moneyOut":"96.00","moneyIn":"0","financeTransactionCount":2},
+            {"groupKey":"entertainment","groupLabel":"entertainment","currencyCode":"USD","moneyOut":"64.50","moneyIn":"0","financeTransactionCount":4},
+            {"groupKey":"subscriptions","groupLabel":"subscriptions","currencyCode":"USD","moneyOut":"38.97","moneyIn":"0","financeTransactionCount":3},
+            {"groupKey":"gifts","groupLabel":"gifts and donations","currencyCode":"USD","moneyOut":"25.00","moneyIn":"0","financeTransactionCount":1},
+            {"groupKey":"income","groupLabel":"income","currencyCode":"USD","moneyOut":"0","moneyIn":"6400.00","financeTransactionCount":2}
+            ]}}}
+            """#
+
+        /// An invented year of income and spending, ending this month,
+        /// which is only partly through.
+        static func cashFlow() -> String {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            let incomeAmounts = [6400, 6400, 6400, 6400, 6400, 8900, 6400, 6400, 6650, 6400, 6400, 3200]
+            let spendingAmounts = [4820, 5110, 4390, 6240, 4675, 5030, 4510, 5880, 4720, 4955, 5310, 3204]
+            let months = (0..<12).map { index -> String in
+                let date = calendar.date(byAdding: .month, value: index - 11, to: Date()) ?? Date()
+                let parts = calendar.dateComponents([.year, .month], from: date)
+                let cashFlowMonth = String(format: "%04d-%02d", parts.year ?? 2026, parts.month ?? 1)
+                let incomeAmount = incomeAmounts[index]
+                let spendingAmount = spendingAmounts[index]
+                return #"{"cashFlowMonth":"\#(cashFlowMonth)","incomeAmount":"\#(incomeAmount).00","spendingAmount":"\#(spendingAmount).00","netAmount":"\#(incomeAmount - spendingAmount).00"}"#
+            }
+            return #"{"data":{"CashFlow":{"reportingCurrencyCode":"USD","unconvertedCurrencyCodes":[],"cashFlowMonths":["# + months.joined(separator: ",") + "]}}}"
+        }
+
+        /// An invented net worth for each day asked for: a slow climb with
+        /// the ups and downs of a market.
+        static func netWorth(answering body: Data?) -> String {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            let today = calendar.startOfDay(for: Date())
+            var from = calendar.date(byAdding: .day, value: -90, to: today) ?? today
+            if let body, let request = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                let variables = request["variables"] as? [String: Any], let text = variables["from"] as? String
+            {
+                let parts = text.split(separator: "-").compactMap { Int($0) }
+                if parts.count == 3, let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) { from = date }
+            }
+            // At most a year of days, as the server keeps them.
+            from = max(from, calendar.date(byAdding: .day, value: -365, to: today) ?? from)
+            var points: [String] = []
+            var day = from
+            while day <= today {
+                let dayNumber = Double(calendar.dateComponents([.day], from: from, to: day).day ?? 0)
+                let daysBeforeToday = Double(calendar.dateComponents([.day], from: day, to: today).day ?? 0)
+                let amount = 184_000 - daysBeforeToday * 62 + sin(dayNumber / 9) * 2_400 + sin(dayNumber / 2.3) * 650
+                let parts = calendar.dateComponents([.year, .month, .day], from: day)
+                let netWorthOn = String(format: "%04d-%02d-%02d", parts.year ?? 2026, parts.month ?? 1, parts.day ?? 1)
+                points.append(#"{"netWorthOn":"\#(netWorthOn)","netWorthAmount":"\#(String(format: "%.2f", amount))"}"#)
+                day = calendar.date(byAdding: .day, value: 1, to: day) ?? today.addingTimeInterval(86_400)
+            }
+            return #"{"data":{"NetWorth":{"reportingCurrencyCode":"USD","unconvertedCurrencyCodes":[],"convertedNetWorthPoints":["# + points.joined(separator: ",") + "]}}}"
+        }
 
         /// The tab a screenshot opens on: `-TeaNodeTab calendar`.
         static var tab: String? {
@@ -383,6 +480,34 @@
               {"id":"member","name":"Member","description":"Reads and sends the mail of the mailboxes they are given.","permissions":["mail:read"]},
               {"id":"operator","name":"Operator","description":"Everything on the server.","permissions":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"]}
             ]}}
+            """#
+
+        /// One domain with records in each state (published, optional and
+        /// needing a change), so a column of statuses has words of different
+        /// widths to line up.
+        static let domain = #"""
+            {"data":{"GetDomain":{
+              "id":"d","domain":"example.com","subdomain":null,"comment":"The main domain",
+              "spamFilterScoreThreshold":6,"mailServers":[],"mailHosts":["mx.example.com"],
+              "linkHost":null,"linkHostname":"links.example.com","dkimSelector":"mail","hasDkimKey":true,"logo":null,
+              "aliases":[{"id":"a1","pattern":"robin","comment":null,"kind":"mailbox","email":null,"webhook":null,"mailboxId":"m1","disabled":false,"mailServer":null},
+                {"id":"a2","pattern":"","comment":"Catch-all","kind":"email","email":"robin@example.net","webhook":null,"mailboxId":null,"disabled":false,"mailServer":null},
+                {"id":"a3","pattern":"billing","comment":null,"kind":"mailbox","email":null,"webhook":null,"mailboxId":"m1","disabled":false,"mailServer":null}],
+              "credentials":[{"id":"c1","comment":"Phone","alias":"robin","disabled":false},{"id":"c2","comment":"Printer","alias":"robin","disabled":false}],
+              "records":{"checkedAt":"2026-10-11T06:00:00Z","error":null,"records":[
+                {"type":"MX","name":"example.com","expected":"mx.example.com","priority":10,"optional":false,"found":["10 mx.example.com"],"verified":true,"purpose":"Where mail for the domain arrives.","blocked":null},
+                {"type":"A","name":"mx.example.com","expected":"203.0.113.10","priority":0,"optional":false,"found":["203.0.113.10"],"verified":true,"purpose":null,"blocked":null},
+                {"type":"TXT","name":"example.com","expected":"v=spf1 mx -all","priority":0,"optional":false,"found":["v=spf1 mx -all"],"verified":true,"purpose":null,"blocked":null},
+                {"type":"TXT","name":"mail._domainkey.example.com","expected":"v=DKIM1; k=rsa; p=MIIBIjANBgkq","priority":0,"optional":false,"found":[],"verified":false,"purpose":"Lets receivers check that mail really came from this domain.","blocked":null},
+                {"type":"TXT","name":"_dmarc.example.com","expected":"v=DMARC1; p=none","priority":0,"optional":true,"found":[],"verified":false,"purpose":null,"blocked":null},
+                {"type":"SRV","name":"_imaps._tcp.example.com","expected":"0 1 993 mx.example.com","priority":0,"optional":true,"found":[],"verified":false,"purpose":null,"blocked":null}]}}}}
+            """#
+
+        static let domainOverview = #"""
+            {"data":{
+              "CountMailsBy":[{"value":"accepted","count":1284},{"value":"rejected","count":97}],
+              "ListMails":[{"id":"m1","receivedAt":"2026-10-11T07:30:00Z"}],
+              "ListPendingDeliveries":[{"id":"q1","status":"pending","retryAt":null},{"id":"q2","status":"pending","retryAt":"2026-10-11T09:00:00Z"}]}}
             """#
 
         static let serverSettings = #"""

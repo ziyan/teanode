@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,8 +58,18 @@ func fakeModel(t *testing.T, script []string) (*httptest.Server, *[]map[string]a
 	var requests []map[string]any
 	var mutex sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		raw, _ := io.ReadAll(request.Body)
 		var body map[string]any
-		_ = json.NewDecoder(request.Body).Decode(&body)
+		_ = json.Unmarshal(raw, &body)
+		// The quick reaction the server puts on the person's message is a
+		// call of its own beside the turn. It is answered here and kept out
+		// of the script and the requests, which are the turn's rounds in
+		// order; TestTheServerReactsToThePersonsMessage is about it.
+		if strings.Contains(string(raw), "Choose the one emoji") {
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"\U0001F440\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+			return
+		}
 		if stream, _ := body["stream"].(bool); !stream {
 			// Every call is a round of the loop and streams; a call that
 			// does not is a mistake the test should see.

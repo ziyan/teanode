@@ -436,6 +436,13 @@ public enum FinanceMoney {
         return amount.formatted(.currency(code: (currencyCode ?? "").isEmpty ? "USD" : currencyCode ?? "USD"))
     }
 
+    /// An amount on a chart's axis: short, in its currency, as "$12K" or
+    /// "¥1.2万", since an axis has room for a few characters only.
+    public static func axisText(_ amount: Double, currencyCode: String?) -> String {
+        let code = (currencyCode ?? "").isEmpty ? "USD" : currencyCode ?? "USD"
+        return amount.formatted(.currency(code: code).notation(.compactName))
+    }
+
     /// A share as a whole percentage; "<1%" for one that rounds to nothing.
     public static func percent(_ share: Double) -> String {
         if share > 0, share < 0.005 { return "<1%" }

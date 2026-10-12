@@ -184,7 +184,13 @@ public struct CodingQuestion: Hashable, Sendable {
     }
 
     /// The card's id, from the pane and the question.
-    var cardId: String { "coding-\(paneId)-\(questionFingerprint)" }
+    /// The card's line: by computer as well as pane, since two computers
+    /// can each have a pane of the same id, as the dashboard tells them.
+    var cardId: String { Self.cardId(computer: computer, paneId: paneId, questionFingerprint: questionFingerprint) }
+
+    static func cardId(computer: String, paneId: String, questionFingerprint: String) -> String {
+        "coding-\(computer)-\(paneId)-\(questionFingerprint)"
+    }
 }
 
 /// CheckInOrigin is where a turn the agent took on its own came from, read
@@ -303,17 +309,7 @@ public struct Transcript: Sendable {
                     continue
                 }
                 if message.name == "herdr_answered" {
-                    struct Answered: Decodable {
-                        let paneId: String
-                        let questionFingerprint: String
-                        let answerText: String?
-                    }
-                    if let answered = try? JSONDecoder().decode(Answered.self, from: Data(message.content.utf8)),
-                        let index = lines.lastIndex(where: { $0.id == "coding-\(answered.paneId)-\(answered.questionFingerprint)" })
-                    {
-                        lines[index].isDone = true
-                        lines[index].resolution = answered.answerText ?? ""
-                    }
+                    answerCodingQuestion(note: message.content)
                     continue
                 }
                 lines.append(TranscriptLine(id: message.id, kind: .note, text: message.content, detail: message.name ?? "", at: message.createdAt))
@@ -347,25 +343,42 @@ public struct Transcript: Sendable {
     /// says which turn it began.
     static let sentPrefix = "sent-"
 
+    /// Adds older history without rebuilding lines changed by the live feed
+    /// or by an optimistic action while the history request was in flight.
+    /// Supply the complete stored history, with how many of its messages
+    /// are the older page, so tool results and card answers can be matched
+    /// across page boundaries. Only the older page's lines are added: a
+    /// line of the newer page that is not on screen was taken away on
+    /// purpose (a turn the feed replays, a card answered elsewhere), and
+    /// open cards come from the conversation's own reading, not from here.
+    public mutating func prepend(messages: [AgentMessage], earlierCount: Int) {
+        let whole = Transcript(messages: messages)
+        let newer = Transcript(messages: Array(messages.dropFirst(earlierCount)))
+        let skippedLineIds = Set(lines.map(\.id)).union(newer.lines.map(\.id))
+        lines.insert(contentsOf: whole.lines.filter { line in !skippedLineIds.contains(line.id) }, at: 0)
+    }
+
     /// How far back a turn's opening is looked for, so one the feed replays
     /// is matched with the line already there rather than drawn again.
     static let replayLookBack = 8
 
     /// Shows what the person just sent from this app, before the turn it
     /// begins is under way.
-    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil) {
+    @discardableResult
+    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil) -> String {
         var line = TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments)
         if let reply {
             line.quotedText = reply.quotedText ?? ""
             line.quotedRole = reply.quotedRole ?? ""
         }
         lines.append(line)
+        return line.id
     }
 
-    /// Takes back the last thing sent from this app, when the server
-    /// refused it.
-    public mutating func withdrawSent() {
-        if let index = lines.lastIndex(where: { $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty }) {
+    /// Takes back only the message belonging to a refused request, unless
+    /// the feed already confirmed that the server accepted it.
+    public mutating func withdrawSent(lineId: String) {
+        if let index = lines.firstIndex(where: { $0.id == lineId && $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty }) {
             lines.remove(at: index)
         }
     }
@@ -412,6 +425,15 @@ public struct Transcript: Sendable {
             // sent from this app or read back before the feed replayed the
             // turn, is not drawn again.
             guard let text = event.text, !text.isEmpty else { return }
+            // Requests can finish in a different order from the taps that
+            // started them. Confirm the matching pending line without
+            // removing another message or events already on screen.
+            if let index = lines.firstIndex(where: {
+                $0.id.hasPrefix(Self.sentPrefix) && $0.runId.isEmpty && $0.text == text
+            }) {
+                lines[index].runId = event.runId
+                return
+            }
             // The person's latest words, when they are these, are this turn
             // read back with the transcript: what came after them is the
             // turn as far as it was stored, which the replay draws again in
@@ -435,14 +457,14 @@ public struct Transcript: Sendable {
                 lines.append(TranscriptLine(id: "\(event.runId)-asked", kind: .person, text: text, runId: event.runId, at: event.at))
             }
         case "text":
-            if let last = lines.indices.last, lines[last].kind == .answer, lines[last].isStreaming {
+            if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
                 lines[last].text += event.text ?? ""
             } else {
                 lines.append(TranscriptLine(id: "\(event.runId)-\(event.sequence)", kind: .answer, text: event.text ?? "", isStreaming: true, runId: event.runId, at: event.at))
             }
         case "message":
             let split = Suggestions.split(event.text ?? "")
-            if let last = lines.indices.last, lines[last].kind == .answer, lines[last].isStreaming {
+            if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
                 lines[last].text = event.text == nil ? lines[last].text : split.text
                 lines[last].suggestions = split.suggestions
                 lines[last].isStreaming = false
@@ -494,8 +516,12 @@ public struct Transcript: Sendable {
                 var line = TranscriptLine(id: "\(event.runId)-compacting", kind: .note, text: "", detail: "compacting", runId: event.runId, at: event.at)
                 line.isPending = true
                 lines.append(line)
-            case "herdr_asked", "herdr_answered":
+            case "herdr_asked":
                 return
+            case "herdr_answered":
+                // A coding session's question went, here or at the computer:
+                // its card folds with what it was answered with.
+                answerCodingQuestion(note: event.noteDetail ?? "")
             default:
                 let id = "\(event.runId)-note-\(event.sequence)"
                 guard !lines.contains(where: { $0.id == id }) else { return }
@@ -513,6 +539,27 @@ public struct Transcript: Sendable {
             lines.removeAll { $0.runId == event.runId && $0.isPending }
         default:
             return
+        }
+    }
+
+    /// Folds a coding session's question card from a "herdr_answered" note,
+    /// with what it was answered with when that is known. An answer this
+    /// app gave is kept when the note knows none.
+    mutating func answerCodingQuestion(note: String) {
+        struct Answered: Decodable {
+            let computer: String
+            let paneId: String
+            let questionFingerprint: String
+            let answerText: String?
+        }
+        guard let answered = try? JSONDecoder().decode(Answered.self, from: Data(note.utf8)),
+            let index = lines.lastIndex(where: {
+                $0.id == CodingQuestion.cardId(computer: answered.computer, paneId: answered.paneId, questionFingerprint: answered.questionFingerprint)
+            })
+        else { return }
+        lines[index].isDone = true
+        if let answerText = answered.answerText, !answerText.isEmpty {
+            lines[index].resolution = answerText
         }
     }
 

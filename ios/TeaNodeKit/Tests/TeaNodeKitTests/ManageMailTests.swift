@@ -397,12 +397,47 @@ final class ManageMailTests: XCTestCase {
         try await connection.deleteDomainAlias(aliasId: "alias-3")
         XCTAssertEqual(
             try sentVariables(fake.sent[0]),
-            ["domainId": .string("domain-1"), "pattern": .string("^sales$"), "kind": .string("email"), "email": .string("team@example.net"),
-             "webhook": .null, "mailboxId": .null])
+            ["domainId": .string("domain-1"), "pattern": .string("^sales$"), "comment": .string(""), "kind": .string("email"),
+             "email": .string("team@example.net"), "webhook": .null, "mailboxId": .null])
         XCTAssertEqual(try sentVariables(fake.sent[1])["mailboxId"], .string("mailbox-1"))
         XCTAssertEqual(try sentVariables(fake.sent[1])["email"], .null)
         XCTAssertEqual(try sentVariables(fake.sent[2])["webhook"], .null)
         XCTAssertEqual(try sentVariables(fake.sent[3]), ["aliasId": .string("alias-3")])
+    }
+
+    func testChangesAnAliasSendingOnlyTheDestinationItsKindNeeds() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"UpdateAlias":{"id":"alias-3"}}}"#)
+        try await connection.updateDomainAlias(
+            aliasId: "alias-3", pattern: "^sales$", comment: "the sales desk", aliasKind: "webhook", destination: "https://example.net/hook",
+            mailboxId: "mailbox-1", isDisabled: true)
+        try await connection.updateDomainAlias(
+            aliasId: "alias-4", pattern: "", comment: "", aliasKind: "mailServer", destination: "left over", mailboxId: "", isDisabled: false)
+        XCTAssertTrue(try sentQuery(fake.sent[0]).contains("UpdateAlias"))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["aliasId": .string("alias-3"), "pattern": .string("^sales$"), "comment": .string("the sales desk"), "kind": .string("webhook"),
+             "email": .null, "webhook": .string("https://example.net/hook"), "mailboxId": .null, "disabled": .bool(true)])
+        XCTAssertEqual(try sentVariables(fake.sent[1])["kind"], .string("mailServer"))
+        XCTAssertEqual(try sentVariables(fake.sent[1])["email"], .null)
+        XCTAssertEqual(try sentVariables(fake.sent[1])["webhook"], .null)
+        XCTAssertEqual(try sentVariables(fake.sent[1])["disabled"], .bool(false))
+    }
+
+    func testKnowsWhichKindsAndDestinationsAnAliasEditorOffers() throws {
+        let relay = try JSONDecoder().decode(
+            DomainAlias.self, from: Data(#"{"id":"alias-5","pattern":"^relay$","kind":"mailServer","mailServer":{"host":"mx.example.net","port":25}}"#.utf8))
+        let forward = try JSONDecoder().decode(
+            DomainAlias.self, from: Data(#"{"id":"alias-6","pattern":"^sales$","kind":"email","email":"team@example.net"}"#.utf8))
+        XCTAssertEqual(relay.selectableKinds, ["mailbox", "email", "webhook", "null", "mailServer"])
+        XCTAssertEqual(forward.selectableKinds, ["mailbox", "email", "webhook", "null"])
+        XCTAssertEqual(forward.editableDestination, "team@example.net")
+        XCTAssertEqual(relay.editableDestination, "")
+        XCTAssertFalse(DomainAlias.isDestinationFilled(aliasKind: "email", destination: "  ", mailboxId: ""))
+        XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "webhook", destination: "https://example.net/hook", mailboxId: ""))
+        XCTAssertFalse(DomainAlias.isDestinationFilled(aliasKind: "mailbox", destination: "left over", mailboxId: ""))
+        XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "mailbox", destination: "", mailboxId: "mailbox-1"))
+        XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "null", destination: "", mailboxId: ""))
+        XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "mailServer", destination: "", mailboxId: ""))
     }
 
     func testReadsTheServersMailboxesForAnAlias() async throws {
@@ -423,6 +458,16 @@ final class ManageMailTests: XCTestCase {
         XCTAssertEqual(created.password, "made-up-password")
         XCTAssertEqual(created.port, "587")
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["domainId": .string("domain-1"), "comment": .string("printer")])
+    }
+
+    func testChangesACredentialWithoutTouchingItsPassword() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"UpdateCredential":{"id":"credential-1"}}}"#)
+        try await connection.updateDomainCredential(credentialId: "credential-1", comment: "printer", restrictedLocalPart: "scans", isDisabled: true)
+        XCTAssertTrue(try sentQuery(fake.sent[0]).contains("UpdateCredential"))
+        XCTAssertFalse(try sentQuery(fake.sent[0]).contains("password"))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["credentialId": .string("credential-1"), "comment": .string("printer"), "alias": .string("scans"), "disabled": .bool(true)])
     }
 
     func testChecksTheDNSAgainAfterChangingWhatToPublish() async throws {

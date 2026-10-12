@@ -30,6 +30,12 @@ struct ConversationView: View {
     /// however far up it is, where scrolling to the last line needs that
     /// line built, which a long lazy list has not done.
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    /// Whether the person has scrolled the transcript themselves. Until
+    /// they have, the earlier-messages row is not read on sight: a lazy
+    /// list lays itself out from the top for a moment when it comes back,
+    /// and reading the page before then left the conversation at that
+    /// page's edge, in the middle, rather than at its end.
+    @State private var hasPersonScrolled = false
     @State private var status = StatusModel()
     @State private var isShowingStatus = false
 
@@ -96,6 +102,9 @@ struct ConversationView: View {
             } action: { _, isNearEnd in
                 isAtEnd = isNearEnd
             }
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { hasPersonScrolled = true }
+            }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
@@ -116,6 +125,14 @@ struct ConversationView: View {
             .onChange(of: model.sentCount) {
                 withAnimation { scrollPosition.scrollTo(edge: .bottom) }
             }
+            // Read, or read again on coming back: opened at its end, where
+            // the newest message is, whatever the lazy list measured first.
+            .onChange(of: model.isLoaded) { _, isLoaded in
+                if isLoaded { scrollPosition.scrollTo(edge: .bottom) }
+            }
+            .onAppear {
+                if model.isLoaded { scrollPosition.scrollTo(edge: .bottom) }
+            }
         }
     }
 
@@ -135,7 +152,9 @@ struct ConversationView: View {
                 }
                 .buttonStyle(.glass)
                 .frame(maxWidth: .infinity)
-                .onAppear { loadEarlier(scroller) }
+                .onAppear {
+                    if hasPersonScrolled { loadEarlier(scroller) }
+                }
             }
             ForEach(ConversationItem.items(of: shownLines)) { item in
                 ConversationItemView(
@@ -630,7 +649,9 @@ struct MessageActionsView: View {
                 .accessibilityLabel("Close")
                 .accessibilityAddTraits(.isButton)
             VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
-                if line.messageId != nil {
+                // Each side reacts to what the other said: the person to the
+                // agent's answers, not to their own messages.
+                if line.messageId != nil, line.kind == .answer {
                     if isChoosingEmoji {
                         emojiChooser
                     } else {
@@ -1029,9 +1050,10 @@ struct ReactionBadges: View {
 }
 
 /// ReactionBadge is one emoji. A reaction made a moment ago, by the person
-/// here or by the agent through the feed, springs in with a tap felt; one
-/// read back with the conversation is simply there, so scrolling does not
-/// set every badge bouncing.
+/// here or by the agent through the feed, springs in; one read back with
+/// the conversation is simply there, so scrolling does not set every badge
+/// bouncing. The haptics are the model's, felt once per reaction rather
+/// than once per badge drawn.
 struct ReactionBadge: View {
     let reaction: AgentMessageReaction
     @State private var scale: CGFloat = 1
@@ -1046,7 +1068,6 @@ struct ReactionBadge: View {
                 guard isFresh, !isReducingMotion else { return }
                 scale = 0.1
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { scale = 1 }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
     }
 
@@ -1676,14 +1697,25 @@ struct CodingQuestionCard: View {
     var body: some View {
         if let question = line.codingQuestion {
             VStack(alignment: .leading, spacing: 12) {
+                // Which agent, which session and on which computer, as the
+                // dashboard's card names them: one person may have sessions
+                // of the same name on several machines.
                 CardHeader(
                     systemImage: "terminal",
-                    title: question.sessionName.isEmpty ? question.codingAgentName : "\(question.codingAgentName) · \(question.sessionName)")
+                    title: [question.codingAgentName, question.sessionName, question.computer].filter { !$0.isEmpty }.joined(separator: " · "))
                 MarkdownView(text: question.questionText)
                 if line.isDone {
-                    Label(line.resolution.isEmpty ? String(localized: "Answered") : line.resolution, systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Label {
+                        if line.resolution.isEmpty {
+                            Text("Answered")
+                        } else {
+                            Text("Answered: \(line.resolution)")
+                        }
+                    } icon: {
+                        Image(systemName: "checkmark.circle")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in

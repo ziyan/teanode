@@ -94,6 +94,7 @@ export type Agent = {
   models: {
     default: string
     fast: string
+    quick: string
     embedding: string
     triage: string
     research: string
@@ -174,7 +175,7 @@ export type Agent = {
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
-  models { default fast embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
+  models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
   retention { runs corrections }
@@ -216,7 +217,7 @@ const FEATURES = [
 const FINANCE_PROVIDERS = ['plaid', 'simplefin'] as const
 const PLAID_PRODUCTS = ['transactions', 'investments', 'liabilities'] as const
 
-const BASE_MODELS = ['default', 'fast', 'embedding'] as const
+const BASE_MODELS = ['default', 'fast', 'quick', 'embedding'] as const
 const WORK_MODELS = [
   'triage',
   'research',
@@ -675,6 +676,7 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
                       [
                         'default',
                         'fast',
+                        'quick',
                         'embedding',
                         'triage',
                         'research',
@@ -1002,7 +1004,7 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
             value={models[field]}
             known={knownForWork}
             label={t(`agentSettings.model.${field}`)}
-            placeholder={t('agentSettings.modelNone')}
+            placeholder={field === 'quick' ? t('agentSettings.modelQuickOff') : t('agentSettings.modelNone')}
             onChange={(value) => setModels({ ...models, [field]: value })}
           />
         ))}

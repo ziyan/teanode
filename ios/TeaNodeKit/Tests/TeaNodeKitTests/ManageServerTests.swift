@@ -284,7 +284,7 @@ final class ManageServerTests: XCTestCase {
             "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"modelPricing":[],
             "planUsage":{"planName":"plus","observedAt":"2030-01-02T03:04:05Z","windows":[{"usedPercent":140,"windowMinutes":300,"resetsAt":"2030-01-02T05:00:00Z"}]}}
          ],
-         "models":{"default":"main:model-large","fast":"main:model-small","embedding":"","triage":"main:model-small","research":"","summarize":"",
+         "models":{"default":"main:model-large","fast":"main:model-small","quick":"main:model-small","embedding":"","triage":"main:model-small","research":"","summarize":"",
            "reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"decider:judge","categorize":"","embeddingDimensions":0,
            "choices":["main:model-large"]},
          "features":{"triage":true,"summaries":true,"draftReplies":true,"search":true,"research":true,"autoReply":false,"ask":true,"schedules":true,
@@ -370,6 +370,9 @@ final class ManageServerTests: XCTestCase {
         models[fieldName: "research"] = "main:model-large"
         XCTAssertEqual(models.research, "main:model-large")
         XCTAssertEqual(models[fieldName: "not-a-field"], "")
+        XCTAssertEqual(models.quick, "main:model-small")
+        models[fieldName: "quick"] = ""
+        XCTAssertEqual(models.agentParameters["models"]?["quick"], .string(""))
         XCTAssertEqual(models.agentParameters["models"]?["research"], .string("main:model-large"))
         XCTAssertEqual(models.agentParameters["models"]?["embeddingDimensions"], .number(0))
         XCTAssertTrue(AgentFeatureSwitches.isOn("newFeature", in: settings.features), "a feature the server did not say is on")

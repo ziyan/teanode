@@ -378,6 +378,15 @@ struct RuleEditor: View {
 
 // MARK: Net worth
 
+/// NetWorthPlot is one day of the net worth line, as drawn.
+private struct NetWorthPlot: Identifiable {
+    let netWorthOn: String
+    let date: Date
+    let amountValue: Double
+    let amountText: String?
+    var id: String { netWorthOn }
+}
+
 /// NetWorthView is the net worth over a range, and what is owned and owed
 /// by kind, each asset with its values.
 struct NetWorthView: View {
@@ -387,6 +396,8 @@ struct NetWorthView: View {
     @State private var assets: [FinanceAsset] = []
     @State private var isShowingClosed = false
     @State private var editingAsset: AssetDraft?
+    /// Where a finger is on the net worth line.
+    @State private var selectedDate: Date?
 
     var body: some View {
         List {
@@ -400,20 +411,25 @@ struct NetWorthView: View {
                 .pickerStyle(.segmented)
                 let points = (netWorth?.convertedNetWorthPoints ?? []).compactMap { $0 }
                 if let last = points.last {
-                    Text(FinanceMoney.shown(last.netWorthAmount, currencyCode: netWorth?.reportingCurrencyCode))
-                        .font(.title.weight(.semibold))
-                        .monospacedDigit()
-                    if let first = points.first, let start = FinanceMoney.decimal(first.netWorthAmount), let end = FinanceMoney.decimal(last.netWorthAmount) {
-                        let change = end - start
-                        Text("\(change >= 0 ? "▲" : "▼") \(FinanceMoney.shown(NSDecimalNumber(decimal: abs(change)).stringValue, currencyCode: netWorth?.reportingCurrencyCode)) since \(first.netWorthOn)")
-                            .font(.footnote)
-                            .foregroundStyle(change >= 0 ? .green : .red)
+                    // The total, its change and the line are one row, so the
+                    // callout of a touched day takes the total's place, as in
+                    // Stocks.
+                    VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(FinanceMoney.shown(last.netWorthAmount, currencyCode: netWorth?.reportingCurrencyCode))
+                                .font(.title.weight(.semibold))
+                                .monospacedDigit()
+                            if let first = points.first, let start = FinanceMoney.decimal(first.netWorthAmount), let end = FinanceMoney.decimal(last.netWorthAmount) {
+                                let change = end - start
+                                Text("\(change >= 0 ? "▲" : "▼") \(FinanceMoney.shown(NSDecimalNumber(decimal: abs(change)).stringValue, currencyCode: netWorth?.reportingCurrencyCode)) since \(first.netWorthOn)")
+                                    .font(.footnote)
+                                    .foregroundStyle(change >= 0 ? .green : .red)
+                            }
+                        }
+                        .opacity(selectedDate == nil ? 1 : 0)
+                        netWorthChart(points)
+                            .padding(.top, 8)
                     }
-                    Chart(points, id: \.netWorthOn) { point in
-                        LineMark(x: .value("Day", point.netWorthOn), y: .value("Net worth", FinanceMoney.decimal(point.netWorthAmount).map { NSDecimalNumber(decimal: $0).doubleValue } ?? 0))
-                    }
-                    .chartXAxis(.hidden)
-                    .frame(height: 160)
                 } else {
                     Text("No net worth yet.").foregroundStyle(.secondary)
                 }
@@ -456,11 +472,71 @@ struct NetWorthView: View {
                 }
             }
         }
-        .task(id: days) { await load() }
+        .task(id: days) {
+            await load()
+            #if DEBUG
+                // A screenshot of a touched day (`-TeaNodeScreen net-worth-chosen`).
+                if DemoServer.screen == "net-worth-chosen", let points = netWorth?.convertedNetWorthPoints?.compactMap({ $0 }), points.count > 3 {
+                    selectedDate = finance.date(ofDay: points[points.count * 3 / 5].netWorthOn)
+                }
+            #endif
+        }
         .refreshable { await load() }
         .sheet(item: $editingAsset) { draft in
             AssetEditor(draft: draft) { Task { await load() } }
         }
+    }
+
+    /// The line over the range, its axis in the reporting currency.
+    /// Touching it shows the nearest day's net worth.
+    private func netWorthChart(_ points: [NetWorth.Point]) -> some View {
+        let currencyCode = netWorth?.reportingCurrencyCode
+        let plots = points.compactMap { point -> NetWorthPlot? in
+            guard let date = finance.date(ofDay: point.netWorthOn) else { return nil }
+            let amountValue = FinanceMoney.decimal(point.netWorthAmount).map { NSDecimalNumber(decimal: $0).doubleValue } ?? 0
+            return NetWorthPlot(netWorthOn: point.netWorthOn, date: date, amountValue: amountValue, amountText: point.netWorthAmount)
+        }
+        let selectedPlot = selectedDate.flatMap { date in
+            ChartShares.nearestIndex(to: date, in: plots.map(\.date)).map { plots[$0] }
+        }
+        let dayStyle = Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: finance.dates.timeZone)
+        return Chart {
+            ForEach(plots) { plot in
+                LineMark(x: .value("Day", plot.date), y: .value("Net worth", plot.amountValue))
+                    .foregroundStyle(ChartPalette.seriesColor(at: 0))
+                    .accessibilityLabel(Text(verbatim: plot.date.formatted(dayStyle)))
+                    .accessibilityValue(Text(verbatim: FinanceMoney.shown(plot.amountText, currencyCode: currencyCode)))
+            }
+            if let selectedPlot {
+                PointMark(x: .value("Day", selectedPlot.date), y: .value("Net worth", selectedPlot.amountValue))
+                    .foregroundStyle(ChartPalette.seriesColor(at: 0))
+                    .symbolSize(60)
+                ChartSelectionRule(value: selectedPlot.date) {
+                    ChartCallout(
+                        title: selectedPlot.date.formatted(dayStyle),
+                        figures: [ChartFigure(valueText: FinanceMoney.shown(selectedPlot.amountText, currencyCode: currencyCode))])
+                }
+            }
+        }
+        .chartXSelection(value: $selectedDate)
+        // Not from zero: a net worth moves by a little of itself, and from
+        // zero every line would look flat.
+        .chartYScale(domain: .automatic(includesZero: false))
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                AxisGridLine()
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+            }
+        }
+        .chartYAxis {
+            AxisMarks { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let number = value.as(Double.self) { Text(verbatim: FinanceMoney.axisText(number, currencyCode: currencyCode)) }
+                }
+            }
+        }
+        .frame(height: 180)
     }
 
     private func load() async {
@@ -854,29 +930,31 @@ struct ReceiptRow: View {
     let receipt: FinanceReceipt
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
+        // LabeledContent centers the total on the whole row, level with the
+        // disclosure chevron, rather than on the merchant's line.
+        LabeledContent {
+            Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode))
+                .monospacedDigit()
+                .foregroundStyle(Color(.label))
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
                     .foregroundStyle(Color(.label))
-                Spacer()
-                Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode))
-                    .monospacedDigit()
-                    .foregroundStyle(Color(.label))
-            }
-            HStack(spacing: 6) {
-                Text(receipt.purchasedOn.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No day"))
-                let lineCount = (receipt.receiptLines ?? []).compactMap { $0 }.count
-                if lineCount > 0 {
-                    Text("\(lineCount) lines")
+                HStack(spacing: 6) {
+                    Text(receipt.purchasedOn.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No day"))
+                    let lineCount = (receipt.receiptLines ?? []).compactMap { $0 }.count
+                    if lineCount > 0 {
+                        Text("\(lineCount) lines")
+                    }
+                    let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
+                    Text(matches.isEmpty ? String(localized: "Not matched") : String(localized: "Matched to \(matches.count) charges"))
+                    if receipt.agentAttachmentId?.isEmpty == false {
+                        Image(systemName: "photo").accessibilityLabel("Has its photo")
+                    }
                 }
-                let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
-                Text(matches.isEmpty ? String(localized: "Not matched") : String(localized: "Matched to \(matches.count) charges"))
-                if receipt.agentAttachmentId?.isEmpty == false {
-                    Image(systemName: "photo").accessibilityLabel("Has its photo")
-                }
+                .font(.caption)
+                .foregroundStyle(Color(.secondaryLabel))
             }
-            .font(.caption)
-            .foregroundStyle(Color(.secondaryLabel))
         }
     }
 }
