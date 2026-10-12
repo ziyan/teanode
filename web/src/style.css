@@ -11489,6 +11489,16 @@ main.content:has(> .knowledge-frame) {
   overflow-wrap: anywhere;
 }
 
+/* Under the account the approval would act as, so the way to change it sits
+   beside the fact it changes. A quiet button rather than a link: it signs
+   out, which is an action. Tall enough for a finger on a phone. */
+.authorize-switch {
+  display: block;
+  margin-top: var(--space-1);
+  min-height: 32px;
+  font-size: var(--text-label);
+}
+
 .authorize-claimed {
   display: block;
   margin-top: 2px;
