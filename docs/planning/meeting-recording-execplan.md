@@ -467,3 +467,7 @@ and five timestamped segments. The attempt reported 199 audio input and 549
 output tokens; original playback remained byte-identical, and anonymous
 transcript reads were refused. This is an isolated real-worker result, not
 production provider activation, representative-meeting quality or invoice evidence.
+
+The configured provider credential returned HTTP 403 from the organization
+costs endpoint. Matching measured token usage to actual billing requires billing
+administration access or invoice evidence; this does not block implementation.
