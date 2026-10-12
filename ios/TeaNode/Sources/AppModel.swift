@@ -557,6 +557,7 @@ final class AppModel {
         let gone = account?.server.host ?? ""
         if let account {
             try? PayloadKey.keyring.forget(for: account.accountKey)
+            ConversationDraft.forget(accountKey: account.accountKey)
         }
         try? store.delete()
         phone = nil
@@ -594,6 +595,7 @@ final class AppModel {
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
+        ConversationDraft.forget(accountKey: other.accountKey)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }
