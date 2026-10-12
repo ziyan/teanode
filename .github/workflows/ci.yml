@@ -196,3 +196,8 @@ jobs:
         run: |
           docker run --rm teanode:ci version
           docker run --rm --entrypoint teanode teanode:ci version
+
+      - name: Check packaged recording readers without networking
+        run: |
+          docker build -f deploy/Dockerfile --target recording-tests -t teanode:recording-tests .
+          docker run --rm --network none teanode:recording-tests

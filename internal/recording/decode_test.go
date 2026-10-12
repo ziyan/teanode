@@ -84,12 +84,12 @@ func TestAudioDecodePreservesPCMAndAbsoluteTimeline(test *testing.T) {
 func TestAudioDecodeRefusesTooLongMediaExternalPlaylistsAndCancellation(test *testing.T) {
 	decoder := requireDecoder(test)
 	file := privateFixture(test, syntheticWave(2000))
-	didAcceptChunk := false
-	if _, err := decoder.Decode(test.Context(), file, 0, 1000, 1000, func(*DecodedAudioChunk) error { didAcceptChunk = true; return nil }); err == nil || didAcceptChunk {
+	hasAcceptedChunk := false
+	if _, err := decoder.Decode(test.Context(), file, 0, 1000, 1000, func(*DecodedAudioChunk) error { hasAcceptedChunk = true; return nil }); err == nil || hasAcceptedChunk {
 		test.Fatal("over-limit media was published")
 	}
 	playlist := privateFixture(test, []byte("#EXTM3U\nhttps://example.com/not-a-real-stream\n"))
-	if _, err := decoder.Decode(test.Context(), playlist, 0, 1000, 1000, func(*DecodedAudioChunk) error { didAcceptChunk = true; return nil }); err == nil || didAcceptChunk {
+	if _, err := decoder.Decode(test.Context(), playlist, 0, 1000, 1000, func(*DecodedAudioChunk) error { hasAcceptedChunk = true; return nil }); err == nil || hasAcceptedChunk {
 		test.Fatal("an external playlist was read")
 	}
 	ctx, cancel := context.WithCancel(test.Context())

@@ -204,15 +204,56 @@ transcription may require a full paid pass. Metadata labels never require one.
 
 ## Current implementation checkpoint
 
-PR #427 contains the durable media increment. Its previous completed CI run passed;
-the final code review fixes are being submitted for a fresh CI run. Work covers
+PR #427 at 3aee8a0 contains the durable media increment. Its previous completed CI
+run passed; final quota/settings and Chrome layout review fixes await fresh CI.
+Work covers
 account-owned recording/media manifests, bounded resumable part uploads, verified
 whole-file receipts, streaming playback and durable explicit-deletion cleanup.
-The service work is merged. The original working copy is preserved.
-Subsequent increments will add processing/usage, sources/reconciliation, corrections
-and references, dashboard and native capture. Provider billing and actual iPhone
+The service work is merged. The original working copy is preserved. No deployment has been performed.
+The next branch is feat/recording-transcripts, starting with processing/usage.
+Subsequent increments add sources/reconciliation, corrections/references, dashboard,
+CLI/tool parity and native capture. The feature is not complete while any of those
+surfaces or the desktop/phone Chrome audits are missing. Provider billing and actual iPhone
 behavior remain open evidence requirements. The issue must remain open until those
 acceptance criteria are observed.
+
+## Processing implementation checkpoint
+
+The transcript branch now commits immutable per-media versions, request-local
+segments, provider attempt receipts and derived-blob deletion references.
+PostgreSQL race tests cover ownership, stale worker claims, retry idempotence,
+unknown remote outcomes, nullable actual costs and forward/reverse migrations.
+Local FFmpeg tests and the packaged-reader container tests pass, including
+delayed video audio, cancellation, duration bounds and refusal of external
+playlists. The container reader tests run without networking and cannot skip.
+The production image retains its nonroot, shellless runtime. Provider execution,
+usage integration, corrected identities, library interfaces and native capture
+remain unimplemented; this is a processing foundation, not a complete feature.
+
+## Processing implementation design
+
+Use the existing agent queue for preparation and transcription. A completed media
+manifest admits one initial version; explicit reprocessing creates another version.
+Automatic retries reuse committed chunks and completed attempts. Before a provider
+call, persist its attempt. An interrupted request whose remote outcome is unknown
+remains visibly uncertain rather than silently repeating a potentially paid call.
+
+Decode audio on the server from a private seekable descriptor. Permit only supported
+media demuxers and descriptor/pipe protocols, excluding playlists, network fetches and
+external file references. Bound scratch disk, decoded duration, output bytes and each
+audio chunk. Preserve original container time, including leading silence and gaps,
+so imported video playback and transcript ranges share one timeline. Retain derived
+blob references before writes so interruption and explicit deletion cannot orphan them.
+
+Persist immutable version/chunk/segment provenance, raw provider usage and normalized
+counters. Reuse current model admission, cancellation and budgets. Configured prices
+are estimates; unknown metrics or absent prices are unknown, never an actual zero bill.
+Actual invoices and representative media evaluation remain separate evidence.
+
+Keep corrections outside generated versions and scope provider speaker identifiers to
+their request. Later source ingestion reads labeled evidence through knowledge/dreaming
+and reconciles corrected/deleted sources without asking for approval. Recorded speech
+never enters a user turn or becomes authorization for an action.
 
 ## Durable media validation evidence
 
