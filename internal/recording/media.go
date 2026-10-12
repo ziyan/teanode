@@ -27,12 +27,12 @@ func New(database db.Database, files storage.StreamFiles) *Store {
 
 // PutPart publishes a receipt only after the exact bytes are durably stored.
 // The caller bounds its request body to RecordingUploadPartBytes before calling.
-func (self *Store) PutPart(ctx context.Context, userId, mediaId string, partIndex int, partSHA256 string, content []byte) (*models.RecordingMediaPart, error) {
+func (self *Store) PutPart(ctx context.Context, userId, mediaId string, partIndex int, partSha256 string, content []byte) (*models.RecordingMediaPart, error) {
 	if len(content) == 0 || int64(len(content)) > models.RecordingUploadPartBytes {
 		return nil, db.ErrInvalidArguments
 	}
 	digest := sha256.Sum256(content)
-	if hex.EncodeToString(digest[:]) != partSHA256 {
+	if hex.EncodeToString(digest[:]) != partSha256 {
 		return nil, db.ErrInvalidArguments
 	}
 	var receipt *models.RecordingMediaPart
@@ -57,7 +57,7 @@ func (self *Store) PutPart(ctx context.Context, userId, mediaId string, partInde
 		}
 		for _, part := range parts {
 			if part.PartIndex == partIndex {
-				if part.PartSHA256 != partSHA256 || part.PartSizeBytes != int64(len(content)) {
+				if part.PartSHA256 != partSha256 || part.PartSizeBytes != int64(len(content)) {
 					return db.ErrAlreadyExists
 				}
 				// A retry can repair lost or corrupted storage using only bytes
@@ -82,7 +82,7 @@ func (self *Store) PutPart(ctx context.Context, userId, mediaId string, partInde
 		if err := self.files.PutFileStream(ctx, db.RecordingPartFileID(mediaId, partIndex), bytes.NewReader(content), int64(len(content))); err != nil {
 			return err
 		}
-		receipt, err = transaction.PutRecordingMediaPart(userId, &models.RecordingMediaPart{RecordingMediaID: mediaId, PartIndex: partIndex, PartSizeBytes: int64(len(content)), PartSHA256: partSHA256})
+		receipt, err = transaction.PutRecordingMediaPart(userId, &models.RecordingMediaPart{RecordingMediaID: mediaId, PartIndex: partIndex, PartSizeBytes: int64(len(content)), PartSHA256: partSha256})
 		return err
 	})
 	return receipt, err
@@ -153,17 +153,17 @@ func (self *Store) Complete(ctx context.Context, userId, mediaId string) (*model
 			return nil, false, fmt.Errorf("recording: stored part failed integrity verification")
 		}
 	}
-	verifiedSHA256 := hex.EncodeToString(wholeDigest.Sum(nil))
-	if verifiedSHA256 != media.OriginalSHA256 {
+	verifiedSha256 := hex.EncodeToString(wholeDigest.Sum(nil))
+	if verifiedSha256 != media.OriginalSHA256 {
 		return nil, false, fmt.Errorf("%w: original digest does not match", db.ErrInvalidArguments)
 	}
-	var didComplete bool
+	var isFirstCompletion bool
 	err = self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		var err error
-		media, didComplete, err = transaction.CompleteRecordingMedia(userId, mediaId, verifiedSHA256)
+		media, isFirstCompletion, err = transaction.CompleteRecordingMedia(userId, mediaId, verifiedSha256)
 		return err
 	})
-	return media, didComplete, err
+	return media, isFirstCompletion, err
 }
 
 // CopyRange streams a bounded portion of the original across transport parts.
@@ -223,13 +223,13 @@ func (self *Store) Cleanup(ctx context.Context, maximumPartCount int) error {
 		return db.ErrInvalidArguments
 	}
 	for deletedPartCount := 0; deletedPartCount < maximumPartCount; {
-		didFindRecording := false
+		hasFoundRecording := false
 		err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 			recordings, err := transaction.ListRecordingsForCleanup(1)
 			if err != nil || len(recordings) == 0 {
 				return err
 			}
-			didFindRecording = true
+			hasFoundRecording = true
 			recording := recordings[0]
 			mediaFiles, err := transaction.ListRecordingMediaForCleanup(recording.ID)
 			if err != nil {
@@ -254,7 +254,7 @@ func (self *Store) Cleanup(ctx context.Context, maximumPartCount int) error {
 		if err != nil {
 			return err
 		}
-		if !didFindRecording {
+		if !hasFoundRecording {
 			return nil
 		}
 	}

@@ -31,7 +31,7 @@ type RecordingOperation interface {
 	ListRecordingMedia(userId, recordingId string) ([]*models.RecordingMedia, error)
 	ListRecordingMediaParts(userId, mediaId string) ([]*models.RecordingMediaPart, error)
 	PutRecordingMediaPart(userId string, part *models.RecordingMediaPart) (*models.RecordingMediaPart, error)
-	CompleteRecordingMedia(userId, mediaId, verifiedSHA256 string) (*models.RecordingMedia, bool, error)
+	CompleteRecordingMedia(userId, mediaId, verifiedSha256 string) (*models.RecordingMedia, bool, error)
 	DeleteRecording(userId, recordingId string) error
 	ListRecordingsForCleanup(limit int) ([]*models.Recording, error)
 	ListRecordingMediaForCleanup(recordingId string) ([]*models.RecordingMedia, error)
@@ -213,12 +213,12 @@ func (self *transaction) UpdateRecordingCapture(userId, recordingId string, expe
 		}
 	}
 	previousEndMS := int64(0)
-	gapIDs := map[string]bool{}
+	gapIds := map[string]bool{}
 	for _, gap := range gaps {
-		if gap.GapID == "" || len(gap.GapID) > 128 || gapIDs[gap.GapID] || gap.GapStartMS < previousEndMS || gap.GapEndMS < gap.GapStartMS || gap.GapEndMS > durationMS || (gap.RecordingGapReason != models.RecordingGapPaused && gap.RecordingGapReason != models.RecordingGapInterrupted) {
+		if gap.GapID == "" || len(gap.GapID) > 128 || gapIds[gap.GapID] || gap.GapStartMS < previousEndMS || gap.GapEndMS < gap.GapStartMS || gap.GapEndMS > durationMS || (gap.RecordingGapReason != models.RecordingGapPaused && gap.RecordingGapReason != models.RecordingGapInterrupted) {
 			return nil, ErrInvalidArguments
 		}
-		gapIDs[gap.GapID] = true
+		gapIds[gap.GapID] = true
 		previousEndMS = gap.GapEndMS
 	}
 	if gaps == nil {
@@ -378,7 +378,7 @@ func (self *transaction) PutRecordingMediaPart(userId string, part *models.Recor
 	}
 	return &created, nil
 }
-func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSHA256 string) (*models.RecordingMedia, bool, error) {
+func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 string) (*models.RecordingMedia, bool, error) {
 	media, err := self.GetRecordingMedia(userId, mediaId)
 	if err != nil {
 		return nil, false, err
@@ -390,7 +390,7 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSHA256 
 	if err != nil {
 		return nil, false, err
 	}
-	if verifiedSHA256 != media.OriginalSHA256 {
+	if verifiedSha256 != media.OriginalSHA256 {
 		return nil, false, ErrInvalidArguments
 	}
 	if media.RecordingUploadState == models.RecordingUploadComplete {

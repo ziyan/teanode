@@ -97,9 +97,9 @@ func TestRecordingDurableRetryIntegrityOwnershipAndPlayback(test *testing.T) {
 	uploadErrors := make(chan error, 4)
 	for attemptIndex := 0; attemptIndex < 4; attemptIndex++ {
 		uploadGroup.Go(func() {
-			_, didComplete, err := fixture.store.Complete(test.Context(), fixture.userId, fixture.media.ID)
+			_, isFirstCompletion, err := fixture.store.Complete(test.Context(), fixture.userId, fixture.media.ID)
 			uploadErrors <- err
-			if didComplete {
+			if isFirstCompletion {
 				completedCount.Add(1)
 			}
 		})
@@ -238,7 +238,7 @@ func TestRecordingCorruptionIsRefusedAndAccountDeletionKeepsCleanupReferences(te
 	if _, err := fixture.store.PutPart(test.Context(), fixture.userId, fixture.media.ID, 0, digestBytes(fixture.content), fixture.content); err != nil {
 		test.Fatal("same-digest retry could not repair corruption", err)
 	}
-	if _, didComplete, err := fixture.store.Complete(test.Context(), fixture.userId, fixture.media.ID); err != nil || !didComplete {
+	if _, isFirstCompletion, err := fixture.store.Complete(test.Context(), fixture.userId, fixture.media.ID); err != nil || !isFirstCompletion {
 		test.Fatal("repaired media could not complete", err)
 	}
 	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
