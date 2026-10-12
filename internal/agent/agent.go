@@ -103,14 +103,15 @@ type Agent struct {
 
 	// operations makes the API as a person, for runs nobody started from
 	// a request; lastScavenge is when old rows were last swept.
-	operations   OperationsFactory
-	lastScavenge time.Time
-	lastDescribe time.Time
-	lastRemember time.Time
-	lastIngest   time.Time
-	lastDream    time.Time
-	lastSpeak    time.Time
-	lastWatch    time.Time
+	operations           OperationsFactory
+	lastScavenge         time.Time
+	lastRecordingMediaId string
+	lastDescribe         time.Time
+	lastRemember         time.Time
+	lastIngest           time.Time
+	lastDream            time.Time
+	lastSpeak            time.Time
+	lastWatch            time.Time
 
 	// watchesQueuedAt is when a look was last queued for each person's
 	// watch, by agent and skill/watch; see queueWatching.
@@ -275,6 +276,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobExtract, self.runExtract)
 	self.Register(models.AgentJobRemember, self.runRemember)
 	self.Register(models.AgentJobIngest, self.runIngest)
+	self.Register(models.AgentJobRecording, self.runRecording)
 	self.Register(models.AgentJobDream, self.runDream)
 	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)
@@ -462,6 +464,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.describeInBackground(ctx, now)
 	self.queueRemembering(ctx, now)
 	self.queueIngestion(ctx, now)
+	self.queueRecordings(ctx)
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
 	self.queueWatching(ctx, now)
@@ -488,6 +491,9 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 			log.Warningf("cannot put back an ingest that died: %s", err)
 		} else if released > 0 {
 			log.Noticef("put back %d ingest(s) that died", released)
+		}
+		if _, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobRecording, now.Add(-jobClaimLifetime(models.AgentJobRecording))); err != nil {
+			return err
 		}
 		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobBackground, now.Add(-jobClaimLifetime(models.AgentJobBackground))); err != nil {
 			log.Warningf("cannot put back background work that died: %s", err)

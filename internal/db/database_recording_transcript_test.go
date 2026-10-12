@@ -349,3 +349,43 @@ func TestRecordingAccountDeletionRetriesOriginalAndDerivedCleanup(test *testing.
 		test.Fatal("account deletion retained derived versions")
 	}
 }
+
+func TestRecordingCancellationRetainsUsageButRejectsFurtherSegments(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		canceledRun, err := transaction.CancelRecordingTranscriptRun(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil || canceledRun.RecordingProcessingState != models.RecordingProcessingCanceled {
+			test.Fatal("cancellation not durable", err)
+		}
+		finished := &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete, PromptTokens: 9, HasProviderUsage: true}
+		segments := []*models.RecordingTranscriptSegment{{LocalSpeakerID: "local", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "Evidence after cancellation."}}
+		isFirstPublication, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, finished, segments)
+		if err != nil || !isFirstPublication {
+			test.Fatal("in-flight usage was lost", err)
+		}
+		storedSegments, segmentCount, err := transaction.ReadRecordingTranscriptPage(fixture.userId, fixture.transcriptRun.ID, 0, 20)
+		if err != nil || len(storedSegments) != 0 || segmentCount != 0 {
+			test.Fatal("canceled transcript published new segments", err)
+		}
+		attempts, err := transaction.ListRecordingTranscriptionAttempts(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil || len(attempts) != 1 || attempts[0].PromptTokens != 9 || !attempts[0].HasProviderUsage {
+			test.Fatal("reported usage missing", err)
+		}
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.SubmitRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim)
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("canceled request resubmitted", err)
+	}
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "cancellation-other")
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CancelRecordingTranscriptRun(otherOwnerId, fixture.transcriptRun.ID)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("foreign cancellation admitted", err)
+	}
+}

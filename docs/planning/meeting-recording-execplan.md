@@ -343,3 +343,31 @@ admission already bounded its callers, but encoding now validates the byte count
 and sample alignment at the allocation itself. A regression rejects oversized
 and incomplete PCM without relying on caller limits; ordinary WAV headers remain
 unchanged. Fresh security analysis and CI must pass before merging this increment.
+## Worker and shared API checkpoint
+
+The local worker uses existing registry admission, durable agent jobs, recording
+blob ledgers and usage/budget accounting. Explicit transcription selection is off
+by default. Completed media is admitted asynchronously; explicit reruns retain
+stable request keys and immutable versions. Each submitted attempt retains usage,
+unknown outcomes are visible and are not automatically resubmitted. Speech remains
+transcript evidence and creates no conversation messages.
+
+Shared owner-only APIs provide paged transcript reads, status/version metadata,
+paid processing requests and cancellation. Cancellation retains in-flight billing
+evidence while preventing new segments. Explicitly delivered audio/video attachments
+can be imported or resumed against an existing matching original, with a durable
+manifest committed before part writes and verified completion before acknowledgment.
+Settings expose the optional model and provider-advertised file capabilities through
+the existing settings path. No price or actual bill is inferred from model names.
+
+Focused PostgreSQL/race checks pass for worker retries, unknown usage, budget
+exhaustion before provider submission, cancellation, account-owned attachment imports,
+unchanged playback and settings round trips. Full make lint including naming reports
+zero issues. These checks do not establish end-to-end completion; raw-media decoding
+through the worker, native builds, integrated surfaces, corrections/references and
+real-device/provider evaluation remain integration acceptance work.
+
+Merged durable storage is deployed from reviewed main. Service version and migration
+were verified; authenticated disposable-media upload, verified receipt, playback,
+idempotent retry and deletion smoke checks passed. Unfinished worker code is not
+included in that deployment.

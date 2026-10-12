@@ -37,9 +37,10 @@ type RecordingArguments struct {
 
 // RecordingView includes media and durable receipts for upload recovery.
 type RecordingView struct {
-	Recording   *models.Recording            `json:"recording"`
-	MediaFiles  []*models.RecordingMedia     `json:"mediaFiles"`
-	UploadParts []*models.RecordingMediaPart `json:"uploadParts"`
+	Recording      *models.Recording                `json:"recording"`
+	MediaFiles     []*models.RecordingMedia         `json:"mediaFiles"`
+	UploadParts    []*models.RecordingMediaPart     `json:"uploadParts"`
+	TranscriptRuns []*models.RecordingTranscriptRun `json:"transcriptRuns"`
 }
 
 // RecordingLimitsView gives clients transport and original-media limits.
@@ -134,7 +135,11 @@ func (self *graph) ReadRecording(ctx context.Context, arguments RecordingArgumen
 		}
 		uploadParts = append(uploadParts, parts...)
 	}
-	return &RecordingView{Recording: source, MediaFiles: mediaFiles, UploadParts: uploadParts}, nil
+	transcriptRuns, err := transaction.ListRecordingTranscriptRuns(principal.User.ID, source.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return &RecordingView{Recording: source, MediaFiles: mediaFiles, UploadParts: uploadParts, TranscriptRuns: transcriptRuns}, nil
 }
 
 func (self *graph) ReadRecordingLimits(ctx context.Context) (*RecordingLimitsView, error) {

@@ -20,6 +20,8 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 		return dreamLongest
 	case models.AgentJobIngest:
 		return ingestLongest
+	case models.AgentJobRecording:
+		return recordingLongest
 	case models.AgentJobEvaluate:
 		return evaluationLongest
 	case models.AgentJobBackground:
