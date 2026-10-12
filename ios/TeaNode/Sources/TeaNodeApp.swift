@@ -226,13 +226,24 @@ struct ConversationsSheet: View {
             }
         }
         .menuRow(isSelected: conversation.id == currentId)
-        .swipeActions(edge: .trailing) {
-            if !conversation.isMain {
-                Button(role: .destructive) {
-                    deleting = conversation
+        // No swipe actions: in the side menu a swipe left closes it and a
+        // swipe right is the one that opened it, so a row that also slid
+        // caught the menu's own gesture. Everything is in the long press.
+        .contextMenu {
+            Button {
+                newTitle = conversation.title ?? ""
+                renaming = conversation
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            if !conversation.isMain, !conversation.isArchived {
+                Button {
+                    Task { await act { try await connection.setMainConversation(conversation.id) } }
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label("Make main", systemImage: "star")
                 }
+            }
+            if !conversation.isMain {
                 Button {
                     Task {
                         await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) }
@@ -245,25 +256,12 @@ struct ConversationsSheet: View {
                         Label("Archive", systemImage: "archivebox")
                     }
                 }
-                .tint(.indigo)
-            }
-        }
-        .swipeActions(edge: .leading) {
-            if !conversation.isMain, !conversation.isArchived {
-                Button {
-                    Task { await act { try await connection.setMainConversation(conversation.id) } }
+                Divider()
+                Button(role: .destructive) {
+                    deleting = conversation
                 } label: {
-                    Label("Make main", systemImage: "star")
+                    Label("Delete", systemImage: "trash")
                 }
-                .tint(.accentColor)
-            }
-        }
-        .contextMenu {
-            Button {
-                newTitle = conversation.title ?? ""
-                renaming = conversation
-            } label: {
-                Label("Rename", systemImage: "pencil")
             }
         }
     }
