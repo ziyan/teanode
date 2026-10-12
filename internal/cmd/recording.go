@@ -134,13 +134,20 @@ func runRecordingDownload(ctx context.Context, command *cli.Command) error {
 	if media == nil {
 		return fmt.Errorf("recording has no such original")
 	}
+	if err := downloadRecordingToFile(ctx, connection, media, destinationPath); err != nil {
+		return describeError(command, err)
+	}
+	fmt.Println("saved and verified " + destinationPath)
+	return nil
+}
+func downloadRecordingToFile(ctx context.Context, connection *client.Client, media *models.RecordingMedia, destinationPath string) error {
 	destination, err := os.CreateTemp(filepath.Dir(destinationPath), ".recording-download-*")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = destination.Close(); _ = os.Remove(destination.Name()) }()
 	if err := connection.DownloadRecordingMedia(ctx, media, destination); err != nil {
-		return describeError(command, err)
+		return err
 	}
 	if err := destination.Sync(); err != nil {
 		return err
@@ -152,9 +159,9 @@ func runRecordingDownload(ctx context.Context, command *cli.Command) error {
 	if err := os.Link(destination.Name(), destinationPath); err != nil {
 		return err
 	}
-	fmt.Println("saved and verified " + destinationPath)
 	return nil
 }
+
 func runRecordingDelete(ctx context.Context, command *cli.Command) error {
 	recordingId := command.Args().First()
 	if recordingId == "" {

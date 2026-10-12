@@ -4323,4 +4323,5 @@ export const ja: Catalog = {
   'recordings.resumeMismatch': "このファイルは未完了の原本と一致しません。同じ原本を選択して再開してください。",
   'recordings.playbackError': "このブラウザーでは原本を再生できません。ダウンロードして対応するプレーヤーで開いてください。",
   'recordings.videoUnavailable': "このブラウザーでは映像を表示できません。音声のみ再生される場合があります。原本をダウンロードしてご覧ください。",
+  'recordings.manifestError': "サーバーの原本情報が要求したファイルと一致しません。原本の部分はアップロードされませんでした。",
 }

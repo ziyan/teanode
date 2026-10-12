@@ -4229,4 +4229,5 @@ export const zh: Catalog = {
   'recordings.resumeMismatch': "此文件与未完成的原始文件不匹配。请选择完全相同的原始文件以继续。",
   'recordings.playbackError': "此浏览器无法播放原始文件。请下载并使用兼容的播放器。",
   'recordings.videoUnavailable': "此浏览器无法显示视频轨道。音频可能仍可播放；请下载原始文件观看。",
+  'recordings.manifestError': "服务器原始文件清单与请求的文件不匹配。未上传原始文件分块。",
 }

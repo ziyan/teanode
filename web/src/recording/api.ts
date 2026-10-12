@@ -3,6 +3,7 @@ import { translateNow } from '../i18n/i18n'
 import { RecordingSha256, recordingDigest } from './sha256'
 
 export interface Recording {
+  clientRecordingId: string
   id: string
   userId: string
   recordingTitle: string
@@ -44,7 +45,7 @@ export interface RecordingLimits {
   uploadPartBytes: number
 }
 const recordingFields =
-  'id userId recordingTitle recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
+  'id userId clientRecordingId recordingTitle recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
 const mediaFields =
   'id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt'
 export const RECORDING_DOCUMENTS = {
@@ -126,8 +127,9 @@ export async function importRecording(
   const recoveryKey = `recording-import:${window.location.origin}:${userId}:${originalSha256}`
   if (resumeMedia && (resumeMedia.originalSha256 !== originalSha256 || resumeMedia.originalSizeBytes !== file.size))
     throw new Error(translateNow('recordings.resumeMismatch'))
-  const recording = resumeMedia
-    ? (await readRecording(resumeMedia.recordingId, signal)).recording
+  const resumedView = resumeMedia ? await readRecording(resumeMedia.recordingId, signal) : null
+  const recording = resumedView
+    ? resumedView.recording
     : (
         await graphql<{ CreateRecording: Recording }>(
           RECORDING_DOCUMENTS.CreateRecording,
@@ -140,24 +142,45 @@ export async function importRecording(
         )
       ).CreateRecording
   if (recording.userId !== userId) throw new Error(translateNow('recordings.accountChanged'))
-  const media =
-    resumeMedia ??
-    (
-      await graphql<{ CreateRecordingMedia: RecordingMedia }>(
-        RECORDING_DOCUMENTS.CreateRecordingMedia,
-        {
-          recordingId: recording.id,
-          clientMediaId: `original-${originalSha256}`,
-          originalFilename: file.name,
-          originalContentType: contentType,
-          originalSizeBytes: file.size,
-          originalSha256,
-          timelineStartMS: 0,
-          mediaDurationMS: 0,
-        },
-        signal,
-      )
-    ).CreateRecordingMedia
+  if (
+    typeof recording.id !== 'string' ||
+    !recording.id ||
+    (!resumeMedia &&
+      (recording.clientRecordingId !== clientRecordingId ||
+        recording.recordingOrigin !== (contentType.startsWith('video/') ? 'videoImport' : 'audioImport'))) ||
+    (resumeMedia && recording.id !== resumeMedia.recordingId)
+  )
+    throw new Error(translateNow('recordings.manifestError'))
+  const media = resumeMedia
+    ? resumedView?.mediaFiles.find((candidate) => candidate.id === resumeMedia.id)
+    : (
+        await graphql<{ CreateRecordingMedia: RecordingMedia }>(
+          RECORDING_DOCUMENTS.CreateRecordingMedia,
+          {
+            recordingId: recording.id,
+            clientMediaId: `original-${originalSha256}`,
+            originalFilename: file.name,
+            originalContentType: contentType,
+            originalSizeBytes: file.size,
+            originalSha256,
+            timelineStartMS: 0,
+            mediaDurationMS: 0,
+          },
+          signal,
+        )
+      ).CreateRecordingMedia
+  if (
+    !media ||
+    !isMatchingOriginalManifest(media, {
+      recordingId: recording.id,
+      clientMediaId: resumeMedia?.clientMediaId ?? `original-${originalSha256}`,
+      originalFilename: resumeMedia?.originalFilename ?? file.name,
+      originalContentType: resumeMedia?.originalContentType ?? contentType,
+      originalSizeBytes: file.size,
+      originalSha256,
+    })
+  )
+    throw new Error(translateNow('recordings.manifestError'))
   try {
     localStorage.setItem(
       recoveryKey,
@@ -223,4 +246,31 @@ export function recordingContentType(file: Pick<File, 'name' | 'type'>): string 
     mkv: 'video/x-matroska',
   }
   return extension ? (types[extension] ?? '') : ''
+}
+
+export function isMatchingOriginalManifest(
+  media: RecordingMedia,
+  expected: Pick<
+    RecordingMedia,
+    | 'recordingId'
+    | 'clientMediaId'
+    | 'originalFilename'
+    | 'originalContentType'
+    | 'originalSizeBytes'
+    | 'originalSha256'
+  >,
+): boolean {
+  return (
+    Number.isSafeInteger(expected.originalSizeBytes) &&
+    expected.originalSizeBytes > 0 &&
+    typeof media.id === 'string' &&
+    media.id.length > 0 &&
+    typeof media.clientMediaId === 'string' &&
+    media.clientMediaId.length > 0 &&
+    Object.entries(expected).every(
+      ([fieldName, expectedValue]) => media[fieldName as keyof RecordingMedia] === expectedValue,
+    ) &&
+    Number.isSafeInteger(media.partCount) &&
+    media.partCount === Math.ceil(expected.originalSizeBytes / RECORDING_PART_BYTES)
+  )
 }

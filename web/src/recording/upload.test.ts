@@ -11,6 +11,7 @@ const original = new Uint8Array([31, 42, 53, 64])
 const digest = recordingDigest(original)
 const media = {
   id: 'fixture-native-media',
+  clientMediaId: 'fixture-native-client-media',
   recordingId: 'fixture-native-recording',
   originalFilename: 'fixture.wav',
   originalContentType: 'audio/wav',
@@ -55,12 +56,10 @@ beforeEach(() => {
   })
   vi.stubGlobal(
     'fetch',
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({ ...media, recordingUploadState: 'complete', verifiedAt: '2030-01-02T03:04:05Z' }),
-      }),
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...media, recordingUploadState: 'complete', verifiedAt: '2030-01-02T03:04:05Z' }),
+    }),
   )
 })
 describe('browser resume of native originals', () => {
@@ -83,4 +82,40 @@ describe('browser resume of native originals', () => {
     ).rejects.toThrow()
     expect(fetch).not.toHaveBeenCalled()
   })
+})
+
+describe('mismatched server import manifests', () => {
+  for (const mismatch of ['source', 'recording', 'client-media', 'size', 'sha', 'parts', 'filename', 'content-type']) {
+    it(`refuses ${mismatch} before any original upload or completion`, async () => {
+      vi.mocked(graphql).mockImplementation(async (query) => {
+        if (query.includes('ReadRecordingLimits'))
+          return { ReadRecordingLimits: { maximumMediaBytes: 1000, uploadPartBytes: 8 * 1024 * 1024 } }
+        if (query.includes('CreateRecordingMedia')) {
+          const originalManifest = { ...media, clientMediaId: `original-${digest}` }
+          const overrides: Record<string, Partial<RecordingMedia>> = {
+            recording: { recordingId: 'other-recording' },
+            'client-media': { clientMediaId: 'other-client-media' },
+            size: { originalSizeBytes: 8 * 1024 * 1024 + 1 },
+            sha: { originalSha256: 'other-digest' },
+            parts: { partCount: 0 },
+            filename: { originalFilename: 'other.wav' },
+            'content-type': { originalContentType: 'video/mp4' },
+          }
+          return { CreateRecordingMedia: { ...originalManifest, ...overrides[mismatch] } }
+        }
+        if (query.includes('CreateRecording'))
+          return {
+            CreateRecording: {
+              id: media.recordingId,
+              userId: ownerId,
+              clientRecordingId: mismatch === 'source' ? 'other-source' : `file-${digest}`,
+              recordingOrigin: 'audioImport',
+            },
+          }
+        throw new Error('mismatched manifest reached a recording read')
+      })
+      await expect(importRecording(file, 'fixture', ownerId, new AbortController().signal, () => {})).rejects.toThrow()
+      expect(fetch).not.toHaveBeenCalled()
+    })
+  }
 })

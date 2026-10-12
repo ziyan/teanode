@@ -96,9 +96,19 @@ func (self *Client) importRecordingFile(ctx context.Context, source io.ReadSeeke
 		if err := RunRecording(ctx, self, "CreateRecording", map[string]any{"clientRecordingId": clientRecordingId, "recordingTitle": recordingTitle, "recordingOrigin": recordingOrigin}, &recording); err != nil {
 			return nil, err
 		}
+		if recording.ID == "" || recording.ClientRecordingID != clientRecordingId || recording.RecordingOrigin != recordingOrigin {
+			return nil, fmt.Errorf("client: recording response does not match the requested source")
+		}
 		if err := RunRecording(ctx, self, "CreateRecordingMedia", map[string]any{"recordingId": recording.ID, "clientMediaId": "original-" + originalSha256, "originalFilename": filepath.Base(filename), "originalContentType": contentType, "originalSizeBytes": originalSizeBytes, "originalSha256": originalSha256, "timelineStartMS": int64(0), "mediaDurationMS": int64(0)}, &media); err != nil {
 			return nil, err
 		}
+	}
+	expectedClientMediaId := "original-" + originalSha256
+	if expected != nil {
+		expectedClientMediaId = expected.ClientMediaID
+	}
+	if !recordingManifestMatches(&media, recording.ID, expectedClientMediaId, filepath.Base(filename), contentType, originalSizeBytes, originalSha256) {
+		return nil, fmt.Errorf("client: recording manifest does not match the original request")
 	}
 	var view RecordingView
 	if err := RunRecording(ctx, self, "ReadRecording", map[string]any{"recordingId": recording.ID}, &view); err != nil {
@@ -183,4 +193,21 @@ func (self *recordingContextReader) Read(content []byte) (int, error) {
 		return 0, err
 	}
 	return self.source.Read(content)
+}
+
+func recordingManifestMatches(media *models.RecordingMedia, recordingId, clientMediaId, originalFilename, originalContentType string, originalSizeBytes int64, originalSha256 string) bool {
+	if media == nil || media.ID == "" || originalSizeBytes <= 0 || media.RecordingID != recordingId || media.ClientMediaID != clientMediaId || media.OriginalFilename != originalFilename || media.OriginalContentType != originalContentType || media.OriginalSizeBytes != originalSizeBytes || media.OriginalSHA256 != originalSha256 {
+		return false
+	}
+	expectedPartCount := (originalSizeBytes-1)/models.RecordingUploadPartBytes + 1
+	if int64(media.PartCount) != expectedPartCount {
+		return false
+	}
+	for partIndex := 0; partIndex < media.PartCount; partIndex++ {
+		partSizeBytes := media.PartSizeBytes(partIndex)
+		if partSizeBytes <= 0 || partSizeBytes > models.RecordingUploadPartBytes {
+			return false
+		}
+	}
+	return true
 }

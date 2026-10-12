@@ -46,18 +46,23 @@ Meaningful tests cover lost upload responses after storage succeeds, reuse of
 verified parts, refusal of a different original/account on resume, corrupted or
 oversized downloads, whole-file receipt validation, independent incremental
 SHA-256 vectors around padding and transport boundaries, and untrusted tool
-results with no microphone operation. Go race tests and dashboard unit tests
-pass. Full local lint, including naming checks, has been run successfully;
+results with no microphone operation. Review also added malformed-server
+manifest tests that require zero original-part/completion requests and atomic
+download tests preserving existing destinations even on corrupt responses.
+Go race tests and 14 dashboard tests pass. Full local lint, including naming checks, has been run successfully;
 repeat it after the final changes before committing.
 
 Chrome desktop and phone inspection has exercised empty/import forms, retained
 synthetic media and actual audio playback. The browser extension refuses file
 selection because its file access permission is disabled. Do not claim an
 end-to-end browser chooser/upload test or enable broader permissions silently.
-Final resume/error layouts are being repeated after rebuilding. Audio and video
-originals import through the CLI and verified downloads match the source.
-Browser audio playback advances; a video codec unsupported by the browser now
-shows download guidance rather than silently appearing as audio. Subsequent
+Final resume, deletion-dialog and deleted-source error layouts were inspected
+at desktop and phone widths after rebuilding. Audio and video originals import
+through the CLI and verified downloads match the source. Browser audio and
+compatible video playback advance; an unsupported video track now shows
+download guidance rather than silently appearing as audio. An early phone
+audio screenshot is clipped and is rejected evidence; fresh viewport/scroll
+inspection and a replacement screenshot are required before accepting it. Subsequent
 transcript/correction/settings interactions remain pending.
 
 ## Next increments

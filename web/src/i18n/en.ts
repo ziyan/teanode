@@ -4370,4 +4370,5 @@ export const en = {
   'recordings.resumeMismatch': "This file does not match the incomplete original. Select that exact original to resume.",
   'recordings.playbackError': "This browser cannot play the original. Download it to use a compatible player.",
   'recordings.videoUnavailable': "This browser cannot display the video track. Audio may still play; download the original to view it.",
+  'recordings.manifestError': "The server original manifest does not match the requested file. No original parts were uploaded.",
 }
