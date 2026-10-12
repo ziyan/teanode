@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.5] - 2026-10-12
+
+### Fixed
+
+- The iPhone app keeps drafts separate between accounts and preserves live updates when loading older messages. (#403)
+- Failed sends keep other pending messages, and failed typed question answers return to an empty composer. (#403)
+- The iPhone app no longer shows a red "cancelled" message when you leave a screen or refresh while something loads. (#404)
+
 ## [0.134.4] - 2026-10-12
 
 ### Fixed
