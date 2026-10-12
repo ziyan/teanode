@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.3] - 2026-10-12
+
+### Fixed
+
+- A Claude Code permission request counting down to an automatic denial no longer appears in your main chat again every second. (#422)
+
 ## [0.138.2] - 2026-10-12
 
 ### Fixed
