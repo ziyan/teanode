@@ -11,7 +11,7 @@ struct PhoneContact: Identifiable, Sendable {
     /// nor an organization.
     let name: String
     /// Their first email address or, failing that, number.
-    let detail: String
+    let firstAddressText: String
     let identity: ContactIdentity
     /// The vCard that is sent, without a picture; nil when the phone could
     /// not write one.
@@ -70,7 +70,7 @@ enum PhoneContacts {
             }
             found.append(
                 PhoneContact(
-                    id: contact.identifier, name: name, detail: emails.first ?? phones.first ?? "",
+                    id: contact.identifier, name: name, firstAddressText: emails.first ?? phones.first ?? "",
                     identity: ContactIdentity(name: name, emails: emails, phones: phones), card: card))
         }
         return found
@@ -313,7 +313,7 @@ struct ContactImportView: View {
                     let isAlreadyPresent = model.alreadyPresentIds.contains(contact.id)
                     ChoiceRow(
                         title: contact.name.isEmpty ? String(localized: "No name") : contact.name,
-                        detail: isAlreadyPresent ? String(localized: "Already in TeaNode") : contact.detail,
+                        detail: isAlreadyPresent ? String(localized: "Already in TeaNode") : contact.firstAddressText,
                         isChosen: model.chosenIds.contains(contact.id), isMultiple: true
                     ) {
                         model.toggle(contact.id)
@@ -348,6 +348,9 @@ struct ContactImportView: View {
         Task {
             let outcome = await model.importChosen()
             let totalCount = outcome.importedCount + outcome.failedCount
+            // The list is read again first: reading it clears the problem
+            // text, which would otherwise take the failure away unseen.
+            await contacts.load()
             if outcome.failedCount > 0 {
                 contacts.problemText = String(localized: "\(outcome.failedCount) of \(totalCount) could not be imported.")
             } else if outcome.importedCount == 1 {
@@ -355,7 +358,6 @@ struct ContactImportView: View {
             } else {
                 contacts.doneText = String(localized: "Imported \(outcome.importedCount) contacts.")
             }
-            await contacts.load()
             dismiss()
         }
     }
