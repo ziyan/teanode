@@ -55,14 +55,15 @@ fix and the latest owner/import/availability changes need fresh SDK and visual c
 The unsigned simulator reported an unavailable shared container, so signed capture
 and share-container behavior is not verified. The package suite passed 313 tests,
 including recreated-username ownership refusal and concurrent credential replacement.
-Full project lint and secret scanning are required again before the next push.
+Full project lint passed again after integration, including the local naming check,
+catalog agreement and tracked secret scanning.
 
 The Server schema check found that one-line shared GraphQL field declarations were
 not discovered by the existing app-document extractor. Recording documents now use
 its established multiline convention. The real check remains enabled and exposes
 missing agreed speaker, text, metadata, retry and timeline APIs on the old stacked
-base. Integration with the speaker/learning checkpoint is required before that check
-can pass; no schema errors are ignored.
+base. After rebasing onto the stable speaker/learning schema checkpoint, the actual
+app-document schema test passed. No schema errors are ignored.
 
 Native compilation and simulator screenshots require macOS CI. Screens need light,
 dark and largest Dynamic Type inspection, with VoiceOver ordering checked separately.
