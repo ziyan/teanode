@@ -27,13 +27,17 @@ always-on activation and visual video understanding are deferred.
   parts, SHA-256 verification, durable receipts and resumable deletion.
 - [x] Increment 3a implemented locally: authenticated GraphQL library/capture/media
   metadata, bounded part uploads, completion and private byte-range playback.
-- [ ] CI and independent review of the durable media increment.
+- [ ] CI and code review of the durable media increment.
 - [ ] Increment 2b: transcript runs/versions and reconciliation jobs.
 - [ ] Increment 3b: background transcription with existing budgets and usage accounting.
 - [ ] Increment 4: recording transcript knowledge source, automatic dreaming
   and corrections/deletion that reconcile dependent memories.
 - [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
 - [ ] Increment 6: dashboard import, playback and transcript correction.
+- [ ] Equivalent recording library/import/transcript/correction/reprocessing/delete
+  operations in the LLM tool and TeaNode CLI, with the same ownership and policy.
+- [ ] Chrome visual and interaction audits at desktop and phone widths.
+- [ ] Review every increment, fix findings, and verify its completed CI before merge.
 - [ ] Increment 7: iOS capture, interruption recovery, background upload,
   import/share and recording Live Activity with local pause/resume.
 - [ ] Increment 8: real-device and representative-meeting evaluation.
@@ -178,7 +182,11 @@ selection, stale job cancellation, deletion cleanup and evidence reconciliation.
 Compare original upload/import digests byte-for-byte. Exercise network loss and
 backend receipt loss without deleting the local source or duplicating records.
 
-Run dashboard typecheck/lint/behavior tests and inspect at phone width. Run Swift
+Run dashboard typecheck/lint/behavior tests. Use Chrome to visually and interactively
+audit desktop and phone widths, including empty, uploading, retry, processing,
+playback, error and correction states. Exercise equivalent operations through the
+LLM tool and CLI against the same backend; interfaces must share ownership,
+metadata changes, explicit paid reprocessing and deletion behavior. Run Swift
 package tests and macOS simulator builds. Keep real-device acceptance unchecked
 until screen lock, interruptions, pause/resume, restart recovery, background uploads
 and battery measurements have actually been observed.
@@ -196,7 +204,7 @@ transcription may require a full paid pass. Metadata labels never require one.
 
 ## Current implementation checkpoint
 
-The active increment is feat/recording-storage, based on current main. Work covers
+PR #427 contains the durable media increment and is awaiting CI/review. Work covers
 account-owned recording/media manifests, bounded resumable part uploads, verified
 whole-file receipts, streaming playback and durable explicit-deletion cleanup.
 The service work is merged. The original working copy is preserved.
@@ -215,7 +223,11 @@ account deletion. Forward/reverse SQL both execute successfully. HTTP handler
 tests confirm authorization before reading a body, cookie protection at completion,
 declared body limits and private ranges. Filesystem/fake S3 tests verify original
 bytes and range reads; mirror cleanup failures remain retryable. Local format,
-lint and naming checks pass. Full CI, dashboard/iOS flows, paid-provider evaluation
+lint and naming checks pass. The first full CI run found that the new limits made
+the agent settings description exceed the tool's 24,000-character result limit.
+Descriptions now keep readable JSON and offer nested subsection paths; the CLI
+also describes nested inputs. Focused tests check both interfaces and secret
+exclusion instead of enlarging the result limit. Full CI, dashboard/iOS flows, paid-provider evaluation
 and actual-device checks are not evidence supplied by this increment.
 
 ## Outcomes & Retrospective

@@ -53,7 +53,7 @@ func NewSettingsCommand() *cli.Command {
 			},
 			{
 				Name:      "describe",
-				Usage:     "list the keys a section accepts, with their types",
+				Usage:     "list keys and types in a section or nested subsection",
 				ArgsUsage: "<section>",
 				Action:    runSettingsDescribe,
 			},
@@ -278,7 +278,7 @@ func runSettingsDescribe(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	inputType, err := sectionInput(schema, section)
+	inputType, err := settingsDescriptionInput(schema, section)
 	if err != nil {
 		return err
 	}
@@ -301,4 +301,26 @@ func runSettingsDescribe(ctx context.Context, command *cli.Command) error {
 		headers = append(headers, "MEANING")
 	}
 	return printTable(headers, rows)
+}
+
+func settingsDescriptionInput(schema *client.Schema, sectionPath string) (*client.Type, error) {
+	pathParts := strings.Split(sectionPath, ".")
+	inputType, err := sectionInput(schema, pathParts[0])
+	if err != nil {
+		return nil, err
+	}
+	for _, fieldName := range pathParts[1:] {
+		var nestedType *client.Type
+		for _, field := range inputType.InputFields {
+			if field.Name == fieldName {
+				nestedType = schema.Types[field.Type.Named()]
+				break
+			}
+		}
+		if nestedType == nil || nestedType.Kind != "INPUT_OBJECT" {
+			return nil, fmt.Errorf("there is no settings subsection %q", sectionPath)
+		}
+		inputType = nestedType
+	}
+	return inputType, nil
 }

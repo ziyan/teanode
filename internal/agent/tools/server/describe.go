@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -37,7 +38,7 @@ func settingsDescribeTool() *tools.Tool {
 		Permissions: []models.Permission{models.PermissionServerManage},
 		Description: "What the fields of a settings section are, what type each takes, and what it means -- the documentation the configuration carries. Read it before settings update: the names have to be exact, and a field that is not one is refused.",
 		Parameters: tools.Object(map[string]any{
-			"section": tools.StringProperty("one section, as settings get names them; all of them when absent"),
+			"section": tools.StringProperty("one section or subsection path, such as agent.limits; section names when absent"),
 		}),
 		Preview: tools.PreviewOf(func(struct{}) string {
 			return "Read what the server's settings mean"
@@ -55,6 +56,17 @@ func runSettingsDescribe(ctx context.Context, call *tools.Call) (*tools.Result, 
 	}
 	whole := reflect.TypeOf(config.Configuration{})
 	wanted := strings.TrimSpace(strings.ToLower(arguments.Section))
+	if wanted != "" {
+		sectionType, sectionPath, err := settingsSectionType(wanted)
+		if err != nil {
+			return nil, err
+		}
+		described, err := describeSection(sectionType, sectionPath)
+		if err != nil {
+			return nil, err
+		}
+		return tools.JSONResult(described)
+	}
 	sections := map[string]any{}
 	for index := 0; index < whole.NumField(); index++ {
 		field := whole.Field(index)
@@ -72,17 +84,77 @@ func runSettingsDescribe(ctx context.Context, call *tools.Call) (*tools.Result, 
 			sections[name] = collapse(commentparse.GetStructFieldComment(whole.PkgPath(), whole.Name(), field.Name))
 			continue
 		}
-		if name == wanted {
-			return tools.JSONResult(map[string]any{name: describeType(field.Type, describeDepth)})
-		}
-	}
-	if wanted != "" {
-		return nil, fmt.Errorf("there is no settings section %q", arguments.Section)
 	}
 	return tools.JSONResult(map[string]any{
 		"sections": sections,
 		"note":     "give one section to see its fields, their types and what each means",
 	})
+}
+
+func settingsSectionType(sectionPath string) (reflect.Type, string, error) {
+	sectionType := reflect.TypeOf(config.Configuration{})
+	canonicalNames := []string{}
+	for _, requestedName := range strings.Split(sectionPath, ".") {
+		for sectionType.Kind() == reflect.Pointer || sectionType.Kind() == reflect.Slice {
+			sectionType = sectionType.Elem()
+		}
+		if sectionType.Kind() != reflect.Struct {
+			return nil, "", fmt.Errorf("there is no settings subsection %q", sectionPath)
+		}
+		hasFoundField := false
+		for fieldIndex := 0; fieldIndex < sectionType.NumField(); fieldIndex++ {
+			field := sectionType.Field(fieldIndex)
+			fieldName := yamlName(field)
+			if fieldName == "" || (len(canonicalNames) == 0 && fieldName == "database") || !strings.EqualFold(fieldName, requestedName) {
+				continue
+			}
+			sectionType = field.Type
+			canonicalNames = append(canonicalNames, fieldName)
+			hasFoundField = true
+			break
+		}
+		if !hasFoundField {
+			return nil, "", fmt.Errorf("there is no settings section %q", sectionPath)
+		}
+	}
+	for sectionType.Kind() == reflect.Pointer || sectionType.Kind() == reflect.Slice {
+		sectionType = sectionType.Elem()
+	}
+	if sectionType.Kind() != reflect.Struct {
+		return nil, "", fmt.Errorf("settings subsection %q does not contain fields", sectionPath)
+	}
+	return sectionType, strings.Join(canonicalNames, "."), nil
+}
+
+// Large sections stay readable JSON and offer narrower paths instead of being
+// cut off in the middle of a field by the tool result limit.
+func describeSection(sectionType reflect.Type, sectionPath string) (map[string]any, error) {
+	for depth := describeDepth; depth > 0; depth-- {
+		described := map[string]any{sectionPath: describeType(sectionType, depth)}
+		if depth < describeDepth {
+			subsectionPaths := []string{}
+			for fieldIndex := 0; fieldIndex < sectionType.NumField(); fieldIndex++ {
+				field := sectionType.Field(fieldIndex)
+				fieldType := field.Type
+				for fieldType.Kind() == reflect.Pointer || fieldType.Kind() == reflect.Slice {
+					fieldType = fieldType.Elem()
+				}
+				if fieldName := yamlName(field); fieldName != "" && fieldType.Kind() == reflect.Struct && !isPlainValue(fieldType) {
+					subsectionPaths = append(subsectionPaths, sectionPath+"."+fieldName)
+				}
+			}
+			described["subsectionPaths"] = subsectionPaths
+			described["descriptionNote"] = "Give a subsection path to read all its fields and documentation."
+		}
+		encoded, err := json.Marshal(described)
+		if err != nil {
+			return nil, err
+		}
+		if len(encoded) <= tools.ResultCharacters {
+			return described, nil
+		}
+	}
+	return nil, fmt.Errorf("settings section %q is too large; give a subsection path", sectionPath)
 }
 
 // describeType is a struct as a map of field name to what it is, or the name
