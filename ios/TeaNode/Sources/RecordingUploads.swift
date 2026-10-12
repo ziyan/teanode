@@ -15,6 +15,7 @@ final class RecordingUploads: NSObject {
             return configuration
         }(), delegate: self, delegateQueue: nil)
     private let responses = RecordingUploadResponses()
+    private let completions = RecordingUploadCompletions()
     private var workerTask: Task<Void, Never>?
     private var backgroundCompletion: (() -> Void)?
 
@@ -202,10 +203,15 @@ extension RecordingUploads: URLSessionDataDelegate {
         else { return }
         let responseCode = (task.response as? HTTPURLResponse)?.statusCode
         let errorMessage = error?.localizedDescription
-        Task { @MainActor in await finished(partTask, responseCode: responseCode, responseData: responseData, errorMessage: errorMessage) }
+        let completed = Task { @MainActor in
+            await finished(partTask, responseCode: responseCode, responseData: responseData, errorMessage: errorMessage)
+        }
+        completions.append(completed)
     }
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        let completedTasks = completions.take()
         Task { @MainActor in
+            for completed in completedTasks { await completed.value }
             backgroundCompletion?()
             backgroundCompletion = nil
         }
@@ -230,5 +236,22 @@ private final class RecordingUploadResponses: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return responseDataByTaskId.removeValue(forKey: taskId) ?? Data()
+    }
+}
+
+private final class RecordingUploadCompletions: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completedTasks: [Task<Void, Never>] = []
+    func append(_ completed: Task<Void, Never>) {
+        lock.lock()
+        defer { lock.unlock() }
+        completedTasks.append(completed)
+    }
+    func take() -> [Task<Void, Never>] {
+        lock.lock()
+        defer { lock.unlock() }
+        let completed = completedTasks
+        completedTasks.removeAll()
+        return completed
     }
 }
