@@ -343,12 +343,7 @@ struct ConversationBanners: View {
                 }
             }
             if let conversation = model.conversation, conversation.kind == "goal", let goal = conversation.goal, !goal.isEmpty {
-                Banner(systemImage: "target", text: GoalWords.summary(of: conversation)) {
-                    app.openedSection = .goals
-                }
-                if conversation.goalState == "waiting", let note = conversation.goalNote, !note.isEmpty {
-                    Banner(systemImage: "hand.raised", text: note)
-                }
+                GoalHeader(conversation: conversation, goal: goal)
             }
         }
         .padding(.horizontal)
@@ -373,13 +368,88 @@ struct Banner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(in: .rect(cornerRadius: 14, style: .continuous))
+        // A thick blur, not see-through glass: the messages scroll under
+        // it, and through glass their words ran into the banner's.
+        .background(.regularMaterial, in: .rect(cornerRadius: 14, style: .continuous))
     }
 
     private var label: some View {
         Label(text, systemImage: systemImage)
             .font(.footnote)
             .foregroundStyle(.secondary)
+    }
+}
+
+/// GoalHeader is a goal's conversation's one line at the top: where the
+/// goal stands and the start of what it is. The whole of it, and what it
+/// waits on, open in a sheet: pinned whole over the messages, a long goal
+/// covered half the screen.
+struct GoalHeader: View {
+    let conversation: AgentConversation
+    let goal: String
+    @State private var isShowingGoal = false
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button {
+            isShowingGoal = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "target")
+                    .foregroundStyle(Color(.secondaryLabel))
+                Text(GoalWords.state(conversation.goalState))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(conversation.goalState == "waiting" ? Color.orange : Color(.secondaryLabel))
+                    .fixedSize()
+                Text(GoalWords.firstSentence(of: goal))
+                    .font(.footnote)
+                    .foregroundStyle(Color(.label))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(.tertiaryLabel))
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(.regularMaterial, in: .capsule)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(GoalWords.summary(of: conversation)))
+        .accessibilityHint(Text("Shows the whole goal"))
+        .sheet(isPresented: $isShowingGoal) {
+            NavigationStack {
+                Form {
+                    Section {
+                        Text(goal).textSelection(.enabled)
+                    } header: {
+                        Text("Goal")
+                    } footer: {
+                        Text(GoalWords.state(conversation.goalState))
+                    }
+                    if conversation.goalState == "waiting", let note = conversation.goalNote, !note.isEmpty {
+                        Section("Waiting for you") {
+                            Text(note).textSelection(.enabled)
+                        }
+                    }
+                    Section {
+                        Button("Open Goals", systemImage: "target") {
+                            isShowingGoal = false
+                            app.openedSection = .goals
+                        }
+                    }
+                }
+                .navigationTitle(conversation.title ?? String(localized: "Goal"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { isShowingGoal = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 }
 
@@ -397,6 +467,15 @@ enum GoalWords {
 
     static func summary(of conversation: AgentConversation) -> String {
         "\(state(conversation.goalState)) · \(conversation.goal ?? "")"
+    }
+
+    /// The goal's first sentence, for the one line at the top.
+    static func firstSentence(of goal: String) -> String {
+        let flat = goal.split(whereSeparator: \.isNewline).first.map(String.init) ?? goal
+        if let end = flat.range(of: ". ") {
+            return String(flat[..<end.lowerBound])
+        }
+        return flat
     }
 }
 
