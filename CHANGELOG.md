@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.140.0] - 2026-10-12
+
+### Added
+
+- Durable recording originals, recoverable uploads and recording storage limits. (#427)
+
 ## [0.139.1] - 2026-10-12
 
 ### Fixed
