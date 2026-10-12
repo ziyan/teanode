@@ -237,8 +237,7 @@ extension Connection {
         if response.statusCode == 410 { throw TeaNodeError.recordingDeleted }
         guard receiptData.count <= 32 * 1024 else { throw TeaNodeError.unreadableAnswer }
         guard response.statusCode == 200 else {
-            struct Refusal: Decodable { let error: String? }
-            let refusalReason = (try? JSONDecoder().decode(Refusal.self, from: receiptData))?.error
+            let refusalReason = (try? JSONDecoder().decode(RecordingRefusal.self, from: receiptData))?.error
             throw TeaNodeError.refused(refusalReason ?? "The recording request was refused. Keep the original and retry.")
         }
         return try JSONDecoder().decode(Receipt.self, from: receiptData)
@@ -253,3 +252,5 @@ extension Connection {
             && identifier.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95 }
     }
 }
+
+private struct RecordingRefusal: Decodable { let error: String? }
