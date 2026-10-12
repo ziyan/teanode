@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.139.0] - 2026-10-12
+
+### Added
+
+- Run the assistant without hosted mail, and enable calendars, reminders and contacts independently. (#421)
+- Choose hosted services during setup and create scoped device sync passwords. (#421)
+
+### Security
+
+- Update vulnerable Go and dashboard dependencies, and bound nested brace parsing in dashboard builds. (#421)
+
 ## [0.138.5] - 2026-10-12
 
 ### Fixed
