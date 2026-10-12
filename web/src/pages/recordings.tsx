@@ -10,6 +10,7 @@ import { Pager } from '../components/pager'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { useSession } from '../session'
+import { RecordingProcessingPanel } from '../recording/processingPanel'
 import {
   importRecording,
   readRecording,
@@ -256,6 +257,12 @@ function AccountRecordingsPage() {
                 ))}
               </SettingsSection>
             )}
+            <RecordingProcessingPanel
+              key={view.recording.id}
+              recordingId={view.recording.id}
+              userId={session.userId ?? ''}
+              mediaFiles={view.mediaFiles}
+            />
             <p>
               <Link to="/recordings">{t('recordings.back')}</Link>
             </p>

@@ -2138,6 +2138,7 @@ function KnowledgeSourcesCard() {
   // Opening the form on a source, which is the whole of Edit: every box
   // the add dialog has, holding what the source already says.
   const openEdit = (source: KnowledgeSource) => {
+    if (source.kind === 'recording') return
     setSecretDrafts({})
     setSecretsKept({})
     setMadeSourceId(null)
@@ -2333,7 +2334,7 @@ function KnowledgeSourcesCard() {
         {sources.map((source) => (
           <SettingsRow
             key={source.id}
-            title={source.name}
+            title={<span id={`source-${source.id}`}>{source.name}</span>}
             badge={
               <>
                 {source.specification.type ? (
@@ -2346,7 +2347,13 @@ function KnowledgeSourcesCard() {
                     ) : null}
                   </>
                 ) : (
-                  <Tag value={t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')} />
+                  <Tag
+                    value={
+                      source.kind === 'recording'
+                        ? t('recordingProcessing.sourceKind')
+                        : t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')
+                    }
+                  />
                 )}
                 {source.more ? <Tag value={t('agent.knowledgeReading')} tone="good" /> : null}
                 {!source.enabled ? <Tag value={t('agent.knowledgePausedBadge')} tone="warn" /> : null}
@@ -2402,16 +2409,18 @@ function KnowledgeSourcesCard() {
             }
             actions={
               <div className="row-actions">
-                <Tooltip label={t('agent.editKnowledgeSource')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
-                    onClick={() => openEdit(source)}
-                  >
-                    <PencilIcon size={16} />
-                  </button>
-                </Tooltip>
+                {source.kind !== 'recording' ? (
+                  <Tooltip label={t('agent.editKnowledgeSource')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
+                      onClick={() => openEdit(source)}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                ) : null}
                 <Tooltip label={t('agent.knowledgeSync')}>
                   <button
                     type="button"

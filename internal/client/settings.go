@@ -73,6 +73,9 @@ func GetSettings(ctx context.Context, connection *Client) (Settings, error) {
 	if err := readRecordingSettings(ctx, connection, result.GetSettings); err != nil {
 		return nil, err
 	}
+	if err := readTranscriptionSettings(ctx, connection, result.GetSettings); err != nil {
+		return nil, err
+	}
 	return result.GetSettings, nil
 }
 
@@ -117,6 +120,9 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 	if err := readRecordingSettings(ctx, connection, result.UpdateSettings); err != nil {
 		return nil, err
 	}
+	if err := readTranscriptionSettings(ctx, connection, result.UpdateSettings); err != nil {
+		return nil, err
+	}
 	return result.UpdateSettings, nil
 }
 
@@ -159,6 +165,52 @@ func readRecordingSettings(ctx context.Context, connection *Client, settings Set
 		return err
 	}
 	agentValues["limits"] = limitsJSON
+	agentJSON, err := json.Marshal(agentValues)
+	if err != nil {
+		return err
+	}
+	settings["agent"] = agentJSON
+	return nil
+}
+
+// DocumentGetTranscriptionSettings keeps recording model reads compatible with older servers.
+const DocumentGetTranscriptionSettings = `query { GetSettings { agent { models { transcription } } } }`
+
+func readTranscriptionSettings(ctx context.Context, connection *Client, settings Settings) error {
+	var additional struct {
+		GetSettings Settings `json:"GetSettings"`
+	}
+	if err := connection.Execute(ctx, DocumentGetTranscriptionSettings, nil, &additional); err != nil {
+		if strings.Contains(err.Error(), "Cannot query field") && strings.Contains(err.Error(), "transcription") {
+			return nil
+		}
+		return err
+	}
+	var agentValues, additionalAgent map[string]json.RawMessage
+	if err := json.Unmarshal(settings["agent"], &agentValues); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(additional.GetSettings["agent"], &additionalAgent); err != nil {
+		return err
+	}
+	var modelValues, additionalModels map[string]json.RawMessage
+	if err := json.Unmarshal(agentValues["models"], &modelValues); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(additionalAgent["models"], &additionalModels); err != nil {
+		return err
+	}
+	if agentValues == nil || modelValues == nil || additionalModels == nil {
+		return fmt.Errorf("client: recording model settings response is incomplete")
+	}
+	for fieldName, fieldValue := range additionalModels {
+		modelValues[fieldName] = fieldValue
+	}
+	modelsJSON, err := json.Marshal(modelValues)
+	if err != nil {
+		return err
+	}
+	agentValues["models"] = modelsJSON
 	agentJSON, err := json.Marshal(agentValues)
 	if err != nil {
 		return err

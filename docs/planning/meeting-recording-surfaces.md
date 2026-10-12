@@ -61,8 +61,7 @@ at desktop and phone widths after rebuilding. Audio and video originals import
 through the CLI and verified downloads match the source. Browser audio and
 compatible video playback advance; an unsupported video track now shows
 download guidance rather than silently appearing as audio. An early phone
-audio screenshot is clipped and is rejected evidence; fresh viewport/scroll
-inspection and a replacement screenshot are required before accepting it. Subsequent
+audio screenshot is clipped and is rejected evidence; fresh Chrome inspection confirmed a 390-pixel viewport and document, zero horizontal scroll, and a closed menu. A replacement phone screenshot was independently inspected. Subsequent
 transcript/correction/settings interactions remain pending.
 
 ## Next increments
@@ -78,3 +77,43 @@ web interaction at desktop and phone widths before it is considered ready.
 Real-iPhone capture, background transfer, interruptions, lock-screen controls
 and battery checks belong to the native stream and remain unverified without
 actual device evidence. Actual provider billing is also unverified.
+
+## Processing interface work in progress
+
+A separate follow-up implements explicit transcription model selection (blank is
+Off) and known audio capabilities. CLI settings read the new model without
+breaking reads against older servers; the existing operator settings tool uses
+the redacted configuration and common settings mutation.
+
+Shared action validation now powers CLI and tool operations for versions,
+bounded transcript pages, initial processing, safe same-version retry,
+cancellation, explicit paid reprocessing, delivered attachment import,
+metadata, speaker confirmation/rename/reset, reference revocation, recognized
+text edit/reset/history, learning counts and reference invalidation evidence.
+Free edits require the current source generation. Stable paid/correction keys
+are required and retained after an uncertain response. Metadata date is
+explicit so a title edit cannot silently replace the occurrence date.
+
+The dashboard implements these processing and editing controls with original
+passage playback and immutable generated text alongside effective corrections.
+Manual confirmation requires a full covering media/time interval; a newer
+removed interval does not restore an old label. Partial corrections remain
+separate evidence. Automatically returned speaker labels remain unconfirmed.
+Recording knowledge sources have a human label and retain pause/sync/removal
+controls while excluding the unrelated generic path editor.
+
+These interfaces are not yet accepted as ready: live contract smoke, desktop
+and phone Chrome interaction checks, integrated review, complete naming lint,
+iOS parity checks and the new correction backend integration remain required.
+Focused Go race tests and 19 dashboard tests currently pass; no paid provider
+call or real-phone validation has been performed.
+
+The full recording timeline interface uses the latest completed version per
+original and chronological absolute timestamps. Incomplete originals and newer
+pending versions are explicitly excluded, with per-run inspection retained for
+status and billing evidence. The aggregate API is an integration dependency.
+Chrome inspected transcription Off selection and successful save at desktop
+and phone widths. Phone measurements show matching viewport/document width,
+zero horizontal scroll and the main content at the left edge. Processing,
+correction, timeline and learning interactions still need the integrated APIs
+before their live visual checks can be accepted.
