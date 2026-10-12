@@ -216,3 +216,13 @@ it('wraps an inline formula with a table so its cells can be aligned', () => {
   expect(formula.parentElement?.tagName).toBe('SPAN')
   expect(formula.querySelectorAll('mtd')).toHaveLength(4)
 })
+
+it('does not draw an HTML comment as text', () => {
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown text={'Saved. <!-- kept: 3 -->\n\nAnything else?'} />
+    </MemoryRouter>,
+  )
+  expect(container.textContent).toContain('Saved.')
+  expect(container.textContent).not.toContain('kept')
+})

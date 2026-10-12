@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { suggestedRepliesOf, withoutPartialMarker } from './suggestions'
+import { suggestedRepliesOf, withoutHiddenComments, withoutPartialMarker } from './suggestions'
 
 describe('suggestedRepliesOf', () => {
   it('leaves an answer without the line alone', () => {
@@ -39,5 +39,19 @@ describe('withoutPartialMarker', () => {
   it('leaves other comments alone', () => {
     expect(withoutPartialMarker('A note <!-- kept -->')).toBe('A note <!-- kept -->')
     expect(withoutPartialMarker('A note <!-- kept')).toBe('A note <!-- kept')
+  })
+})
+
+describe('withoutHiddenComments', () => {
+  it('takes off every comment, whole or cut off', () => {
+    expect(withoutHiddenComments('Saved. <!-- kept: 3 --> Anything else?')).toBe('Saved.  Anything else?')
+    expect(withoutHiddenComments('Done.\n<!--\nnote\n-->\nBye.')).toBe('Done.\n\nBye.')
+    expect(withoutHiddenComments('Working on it <!--sugg')).toBe('Working on it ')
+  })
+
+  it('leaves a comment shown as code alone', () => {
+    const fenced = 'Use:\n```html\n<!-- a note -->\n```\nOkay.'
+    expect(withoutHiddenComments(fenced)).toBe(fenced)
+    expect(withoutHiddenComments('Write `<!-- a note -->` to comment.')).toBe('Write `<!-- a note -->` to comment.')
   })
 })

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { framedDrawer } from '../api'
+import { withoutHiddenComments } from '../suggestions'
 
 import { CodeBlock } from './codeBlock'
 import { mailPath, memoryPath } from './dashboardPath'
@@ -404,7 +405,7 @@ export function Markdown({
   return (
     <Leaving.Provider value={onLeaving ?? noLeaving}>
       <PictureSource.Provider value={pictureSource ?? noPictures}>
-        <MarkdownBlocks text={text} />
+        <MarkdownBlocks text={withoutHiddenComments(text)} />
       </PictureSource.Provider>
     </Leaving.Provider>
   )
