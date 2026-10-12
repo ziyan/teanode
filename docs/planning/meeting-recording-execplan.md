@@ -28,9 +28,9 @@ always-on activation and visual video understanding are deferred.
 - [x] Increment 3a implemented locally: authenticated GraphQL library/capture/media
   metadata, bounded part uploads, completion and private byte-range playback.
 - [x] Durable media increment reviewed, full lint and CI passed, squash merged in PR #427.
-- [ ] Deploy merged durable media after confirming preservation of existing deployed work.
-- [ ] Increment 2b: transcript runs/versions and reconciliation jobs.
-- [ ] Increment 3b: background transcription with existing budgets and usage accounting.
+- [x] Deploy merged durable media after confirming preservation of existing deployed work.
+- [x] Increment 2b: transcript runs/versions merged in #433; correction reconciliation follows in #437.
+- [x] Increment 3b: background transcription, existing budgets and usage accounting merged in #434.
 - [ ] Increment 4: recording transcript knowledge source, automatic dreaming
   and corrections/deletion that reconcile dependent memories.
 - [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
@@ -210,7 +210,7 @@ run passed; the quota/settings and Chrome layout review fixes now pass all CI.
 Work covers
 account-owned recording/media manifests, bounded resumable part uploads, verified
 whole-file receipts, streaming playback and durable explicit-deletion cleanup.
-The service work is merged. The original working copy is preserved. No deployment has been performed.
+The service work is merged. The original working copy is preserved. Reviewed recording foundations are now deployed; unfinished integration branches are not deployed.
 Draft PR #433 at d53579d contains the transcript persistence and decoder
 foundation, with local validation complete and CI in progress. The next branch,
 feat/recording-library, starts the provider worker and matching library interfaces.
@@ -426,9 +426,36 @@ retired. A regression verifies reconciliation continues without a registry or
 provider call. Integrated recording, dreaming, memory and API PostgreSQL race
 checks and full lint/naming checks pass at the current local checkpoint.
 
-The transcript foundation is merged after all checks, including CodeQL and the
-rerun Server job, passed. Its merged release is being built and deployed with
-packaged descriptor-capable media readers. Deployment and authenticated checks
-are still pending for that release; the worker and correction increments remain
-drafts. Native package tests, simulator build and actual physical-device evidence
-are tracked separately.
+The transcript foundation (#433) and worker (#434) passed review, full lint,
+Server, security and other CI checks and were squash merged. Their release
+v0.142.0, commit 3cf9d4e, is confirmed running with migrations applied, no restart
+loop and no pending restart. The complete private backup archive was validated
+before replacement and the prior running image retained. Authenticated upload,
+verified receipt, exact resume, byte-identical playback, transcript library reads,
+missing-version read/cancel refusal and deletion/read refusal passed. Production
+transcription is Off; refusal is not evidence of provider execution.
+
+Raw dashboard, CLI and grouped tool surfaces (#436) passed review and all checks
+and were squash merged in v0.143.0. That release is being built for deployment;
+it is not yet the confirmed running version. Native and correction/learning
+increments remain in review. The native Server failure was traced to one-line
+shared Swift GraphQL constants; multiline documents now expose their actual
+schema dependency on the correction increment. Do not skip that check.
+
+Review fixed overlapping speaker/text correction projection, media-local playback
+seeks, account-ID upload ownership and model-Off reference reconciliation. Another
+confirmed finding requires stable recording knowledge-source names: generic name
+edits are refused, while human titles use recording metadata. Evidence guards and
+cleanup also check source identity so stale renamed-source documents cannot survive.
+
+A controlled 19.963-second nonprivate synthetic fixture was sent through the
+existing registry to the configured API provider, once without references and once
+with two five-second synthetic named references. Both returned timestamps and
+reported token usage: 199 input/547 output without references, 325 input/585 output
+with references (299 audio and 26 text input tokens). Neither invoice nor actual
+cost is verified. Both outputs collapsed two synthetic voices into one label;
+reference API acceptance is not proof of attribution quality. Representative
+meeting evaluation remains required, and provider names cannot count as user
+confirmation. Production configuration stayed Off throughout this evaluation.
+Native package tests, simulator builds and actual physical-device evidence are
+tracked separately; no real-iPhone capture or lock-screen acceptance is claimed.
