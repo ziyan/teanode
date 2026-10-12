@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.136.0] - 2026-10-12
+
+### Added
+
+- The iPhone app imports contacts from the phone into your TeaNode address book, skipping the ones already there. (#402)
+
 ## [0.135.1] - 2026-10-12
 
 ### Changed
