@@ -139,3 +139,25 @@ func TestTheCallerGoingAwayPointsAtTheConversation(test *testing.T) {
 		test.Fatalf("the conversation was not named: %q", said)
 	}
 }
+
+// The caller is a program, not the dashboard, so it is not sent the hidden
+// line of suggested replies, in a whole answer or in the pieces that stand
+// in for one.
+func TestTheCallerIsNotSentWhatTheDashboardHides(test *testing.T) {
+	whole := mcpCollect(context.Background(), feed(
+		agent.Event{Kind: agent.EventMessage, Text: "Three of them. <!-- kept: 3 -->\n<!--suggestions:[\"Show me\",\"Not now\"]-->"},
+		agent.Event{Kind: agent.EventDone},
+	), "Robin", "conversation-1")
+	if whole != "Three of them." {
+		test.Errorf("the answer came back as %q", whole)
+	}
+
+	pieces := mcpCollect(context.Background(), feed(
+		agent.Event{Kind: agent.EventText, Text: "Three of them.\n<!--sugg"},
+		agent.Event{Kind: agent.EventText, Text: "estions:[\"Show me\",\"Not now\"]-->"},
+		agent.Event{Kind: agent.EventDone},
+	), "Robin", "conversation-1")
+	if pieces != "Three of them." {
+		test.Errorf("the pieces came back as %q", pieces)
+	}
+}

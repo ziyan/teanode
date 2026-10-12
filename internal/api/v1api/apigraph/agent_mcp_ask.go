@@ -159,7 +159,7 @@ func mcpCollect(ctx context.Context, events <-chan agent.Event, personName, conv
 				// The whole answer, once there is one. A turn can say more
 				// than one thing, so they are kept in order rather than
 				// the last one winning.
-				if text := strings.TrimSpace(models.StripSuggestedReplies(event.Text)); text != "" {
+				if text := strings.TrimSpace(models.StripHiddenMarkers(event.Text)); text != "" {
 					if answer.Len() > 0 {
 						answer.WriteString("\n\n")
 					}
@@ -182,7 +182,10 @@ func mcpCollect(ctx context.Context, events <-chan agent.Event, personName, conv
 		case <-deadline.C:
 			said := strings.TrimSpace(answer.String())
 			if said == "" {
-				said = strings.TrimSpace(pieces.String())
+				// The pieces are the answer as it streamed, hidden line and
+				// all, which the caller is no more able to read than a
+				// chat app is.
+				said = strings.TrimSpace(models.StripHiddenMarkers(pieces.String()))
 			}
 			unfinished := fmt.Sprintf(
 				"The agent is still working on this. Call %s again with conversation %q "+
@@ -200,7 +203,7 @@ func mcpCollect(ctx context.Context, events <-chan agent.Event, personName, conv
 
 	said := strings.TrimSpace(answer.String())
 	if said == "" {
-		said = strings.TrimSpace(pieces.String())
+		said = strings.TrimSpace(models.StripHiddenMarkers(pieces.String()))
 	}
 	switch {
 	case waitingFor != "" && said != "":

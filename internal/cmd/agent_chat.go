@@ -273,7 +273,7 @@ func askOnce(ctx context.Context, command *cli.Command, connection *client.Clien
 				if answered {
 					_, _ = fmt.Fprintln(command.Writer)
 				}
-				_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(models.StripSuggestedReplies(event.Text)))
+				_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(models.StripHiddenMarkers(event.Text)))
 				answered = true
 			case "tool_call":
 				if !quiet {
@@ -495,7 +495,7 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 			}
 		case "assistant":
 			if strings.TrimSpace(message.Content) != "" {
-				_, _ = fmt.Fprintf(command.Writer, "[%s] agent: %s\n", when, models.StripSuggestedReplies(message.Content))
+				_, _ = fmt.Fprintf(command.Writer, "[%s] agent: %s\n", when, models.StripHiddenMarkers(message.Content))
 				if line := reactionLine(message.Reactions); line != "" {
 					_, _ = fmt.Fprintln(command.Writer, line)
 				}
