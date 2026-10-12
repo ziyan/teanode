@@ -25,7 +25,13 @@ struct ServerServicesView: View {
                 } footer: {
                     Text("Turning a service off keeps its data and pauses its pending work. A restart is needed to enable new services.")
                 }
-                RestartNote(connection: connection)
+                Section {
+                    NavigationLink {
+                        ServerAboutView(connection: connection)
+                    } label: {
+                        Label("Restart it on the About page", systemImage: "arrow.clockwise")
+                    }
+                }
             } else { ProgressView() }
             if let problemText { Text(problemText).foregroundStyle(.red) }
         }

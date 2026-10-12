@@ -107,7 +107,7 @@ private struct SecretField: View {
 /// RestartNote is what a form says when saving it changes what is stored
 /// and nothing else until the server restarts, with the way to the page
 /// that restarts it.
-struct RestartNote: View {
+private struct RestartNote: View {
     let connection: Connection
 
     var body: some View {

@@ -36,7 +36,8 @@ and confirmation policy; turning off hosted mail must not disable those tools.
 - [x] Decouple calendar/contact sync credentials from mailboxes.
 - [x] Implement web, native app, CLI and assistant capability awareness.
 - [x] Implement setup choices and an assistant deployment preset; smoke-tested HTTP-only startup and account creation.
-- [ ] Finish the macOS simulator build and final cross-client review in CI.
+- [x] Complete source review and fix protocol, identity-provisioning, REST-route and client-mode findings.
+- [ ] Complete the final macOS simulator build and screenshot checks in CI.
 - [x] Commit and push the implementation on the existing draft branch; CI is checking the native app.
 
 ## Surprises & Discoveries
@@ -548,6 +549,12 @@ mail sessions now recheck service availability before operations. Identity-provi
 account creation now obeys current and running mailbox availability. Setup edits
 retain completion unless explicitly changed. A SwiftUI compiler timeout is addressed
 by separating the presence task and the available screen expression.
+REST templated sends, message reads, remote images and template/logo uploads now
+check hosted mail availability before accessing dependencies. Already published
+image bytes remain available independently, so previously sent messages keep their
+images. Disabled mailboxes no longer authorize ordinary mailbox downloads.
+The debug transport advertises its simulated capabilities so screenshots exercise
+the intended screens rather than an unavailable-service placeholder.
 
 The security follow-up updates Go to 1.26.9 and x/net to 0.60.0, updates fast-uri,
 and applies a tested bounded-nesting guard to braces until a patched upstream release
