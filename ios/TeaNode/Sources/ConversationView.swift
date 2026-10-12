@@ -1693,6 +1693,11 @@ struct CodingQuestionCard: View {
     let line: TranscriptLine
     let model: ConversationModel
     @State private var chosen: Set<Int> = []
+    /// The whole question is kept until the person opens it: a tool's
+    /// approval carries its command, its warnings and its countdown, which
+    /// filled the screen, and the line that says what it asks is enough to
+    /// answer most of them.
+    @State private var isShowingDetails = false
 
     var body: some View {
         if let question = line.codingQuestion {
@@ -1703,7 +1708,20 @@ struct CodingQuestionCard: View {
                 CardHeader(
                     systemImage: "terminal",
                     title: [question.codingAgentName, question.sessionName, question.computer].filter { !$0.isEmpty }.joined(separator: " · "))
-                MarkdownView(text: question.questionText)
+                Text(verbatim: question.headline)
+                    .font(line.isDone ? .subheadline : .body)
+                    .foregroundStyle(line.isDone ? .secondary : .primary)
+                    .lineLimit(line.isDone ? 2 : 3)
+                if isShowingDetails {
+                    MarkdownView(text: question.shownText)
+                        .font(.footnote)
+                }
+                Button(isShowingDetails ? "Hide details" : "Show details") {
+                    withAnimation { isShowingDetails.toggle() }
+                }
+                .font(.footnote)
+                .buttonStyle(.borderless)
+                .frame(minHeight: 44)
                 if line.isDone {
                     Label {
                         if line.resolution.isEmpty {

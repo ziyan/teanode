@@ -153,6 +153,9 @@ readonly ALLOWED_HOSTS=(
   # as the defaults a provider of that kind is given when no base URL is
   # set. Public API endpoints, named in their own documentation.
   api.openai.com
+  # Official transcription capability, pricing and deprecation sources cited
+  # by the recording implementation plan, not operator-specific hostnames.
+  developers.openai.com
   api.anthropic.com
   generativelanguage.googleapis.com
   api.search.brave.com

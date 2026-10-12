@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.5] - 2026-10-12
+
+### Fixed
+
+- In the iPhone app, a coding session's question shows as one line with its options or answer, and its full text only when you tap Show details. (#424)
+
+## [0.138.4] - 2026-10-12
+
+### Fixed
+
+- Dismiss the iPhone keyboard immediately when opening the side menu by button or swipe. (#426)
+
+## [0.138.3] - 2026-10-12
+
+### Fixed
+
+- A Claude Code permission request counting down to an automatic denial no longer appears in your main chat again every second. (#422)
+
 ## [0.138.2] - 2026-10-12
 
 ### Fixed

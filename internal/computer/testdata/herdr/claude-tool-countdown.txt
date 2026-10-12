@@ -1,0 +1,16 @@
+● Bash(make -C build test)
+  ⎿  Waiting…
+
+───────────────────────────────────────────────
+ Bash command
+ Run the build's tests
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ make -C build test
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ ⚠ Claude Code will automatically deny this request in 0:12, to avoid blocking progress on an unattended session
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel · Tab to amend
