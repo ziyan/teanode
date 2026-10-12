@@ -286,7 +286,7 @@ extension Documents {
         "calendarRequest": calendarRequest, "cancelCalendarRequest": cancelCalendarRequest,
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
         "deleteReminder": deleteReminder, "addressBooks": addressBooks, "contacts": contacts, "contact": contact,
-        "saveContact": saveContact, "deleteContact": deleteContact, "myContact": myContact, "setMyContact": setMyContact,
+        "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "myContact": myContact, "setMyContact": setMyContact,
     ]
 }
 

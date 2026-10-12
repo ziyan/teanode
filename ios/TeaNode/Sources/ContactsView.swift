@@ -67,6 +67,7 @@ final class ContactsModel {
 struct ContactsScreen: View {
     @State private var model: ContactsModel
     @State private var isAdding = false
+    @State private var isImportingFromPhone = false
 
     init(connection: Connection) {
         _model = State(initialValue: ContactsModel(connection: connection))
@@ -115,10 +116,27 @@ struct ContactsScreen: View {
                     }
                     .disabled(model.addressBook == nil)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            isImportingFromPhone = true
+                        } label: {
+                            Label("Import from iPhone", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                    .disabled(model.addressBook == nil)
+                }
             }
         }
         .sheet(isPresented: $isAdding) {
             ContactEditor(model: model, contact: nil) { _ in }
+        }
+        .sheet(isPresented: $isImportingFromPhone) {
+            if let addressBook = model.addressBook {
+                ContactImportView(contacts: model, addressBookId: addressBook.id)
+            }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
     }
