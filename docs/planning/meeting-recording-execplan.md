@@ -188,5 +188,7 @@ The first provider increment is implemented. Registry admission and capability
 checks, multipart references, unchanged media, timestamp normalization, token/duration
 usage, malformed results, provider failures and cancellation pass fake-provider tests.
 No recording UI or production media pipeline is shipped.
+The first CI lint run rejected the official provider documentation hostname.
+The scanner now allows that exact public hostname with an explanatory comment.
 Provider capabilities have been verified from official documentation; actual billed
 cost and device behavior remain unverified. All later acceptance criteria remain open.
