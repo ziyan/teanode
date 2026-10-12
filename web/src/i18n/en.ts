@@ -1724,6 +1724,7 @@ export const en = {
   'agent.runKinds.extract': 'Extraction',
   'agent.runKinds.draft': 'Draft',
   'agent.runKinds.describe': 'Titling',
+  'agent.runKinds.react': 'Picking a reaction',
   'agent.runKinds.compact': 'Compaction',
   'agent.runKinds.evaluate': 'Evaluation',
   'agent.runKinds.survey': 'Survey',

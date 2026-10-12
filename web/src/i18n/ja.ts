@@ -1715,6 +1715,7 @@ export const ja: Catalog = {
   'agent.runKinds.extract': '抽出',
   'agent.runKinds.draft': '下書き',
   'agent.runKinds.describe': 'タイトル付け',
+  'agent.runKinds.react': 'リアクション選び',
   'agent.runKinds.compact': '圧縮',
   'agent.runKinds.evaluate': '評価',
   'agent.runKinds.survey': '横断調査',

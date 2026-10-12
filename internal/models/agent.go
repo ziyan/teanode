@@ -563,6 +563,11 @@ const (
 	AgentJobDescribe AgentJobKind = "describe"
 	AgentJobCompact  AgentJobKind = "compact"
 
+	// AgentJobReact picks the emoji the agent puts on the person's
+	// message the moment it arrives. Never queued; it runs beside the
+	// turn that message began.
+	AgentJobReact AgentJobKind = "react"
+
 	// AgentJobEvaluate grades the agent against the person's memory check
 	// questions; its subject is the run it fills. The calls it makes, and
 	// the ones `teanode agent memory answers` makes, are runs of this kind,

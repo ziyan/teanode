@@ -351,3 +351,63 @@ func TestConversationReactsToThePersonsMessages(t *testing.T) {
 		t.Fatal("reacted in a conversation the person never wrote in")
 	}
 }
+
+// A background run has nobody to see a reaction: the agent's own tool
+// refuses there, whichever message it names, and nothing is stored or told.
+func TestConversationRefusesToReactInARun(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &reactingRun{fakeRun: &fakeRun{database: database}}
+	var instruction, person *models.AgentMessage
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "runner", Name: "Example Runner"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if run.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationRun, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		if instruction, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: run.conversation.ID, Role: "user", Content: "look into the invoice"}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+		main, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		if person, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "user", Content: "thanks"}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+	})
+
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+	for name, arguments := range map[string]string{
+		"the instructions it was given":   `{"action":"react","emoji":"👀"}`,
+		"the instructions, named":         `{"action":"react","emoji":"👀","message_id":"` + instruction.ID + `"}`,
+		"the person's message elsewhere":  `{"action":"react","emoji":"👍","message_id":"` + person.ID + `"}`,
+		"taking a reaction away in a run": `{"action":"react","emoji":""}`,
+	} {
+		_, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(arguments)})
+		if err == nil || !strings.Contains(err.Error(), "background run") {
+			t.Errorf("%s: want the refusal, got %v", name, err)
+		}
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, message := range []*models.AgentMessage{instruction, person} {
+			read, err := tx.GetAgentMessage(message.ID)
+			if err != nil {
+				t.Fatalf("GetAgentMessage: %s", err)
+			}
+			if len(read.Reactions) != 0 {
+				t.Errorf("a reaction was stored on %q: %+v", read.Content, read.Reactions)
+			}
+		}
+	})
+	if len(run.told) != 0 {
+		t.Fatalf("nobody should be told: %+v", run.told)
+	}
+}
