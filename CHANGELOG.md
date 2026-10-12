@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.2] - 2026-10-12
+
+### Fixed
+
+- Notifications, Siri, chat apps, mail and conversation titles no longer show the hidden suggestions line or raw Markdown links from the agent's answers. (#420)
+
 ## [0.138.1] - 2026-10-12
 
 ### Changed
