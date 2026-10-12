@@ -184,7 +184,13 @@ public struct CodingQuestion: Hashable, Sendable {
     }
 
     /// The card's id, from the pane and the question.
-    var cardId: String { "coding-\(paneId)-\(questionFingerprint)" }
+    /// The card's line: by computer as well as pane, since two computers
+    /// can each have a pane of the same id, as the dashboard tells them.
+    var cardId: String { Self.cardId(computer: computer, paneId: paneId, questionFingerprint: questionFingerprint) }
+
+    static func cardId(computer: String, paneId: String, questionFingerprint: String) -> String {
+        "coding-\(computer)-\(paneId)-\(questionFingerprint)"
+    }
 }
 
 /// CheckInOrigin is where a turn the agent took on its own came from, read
@@ -515,12 +521,15 @@ public struct Transcript: Sendable {
     /// app gave is kept when the note knows none.
     mutating func answerCodingQuestion(note: String) {
         struct Answered: Decodable {
+            let computer: String
             let paneId: String
             let questionFingerprint: String
             let answerText: String?
         }
         guard let answered = try? JSONDecoder().decode(Answered.self, from: Data(note.utf8)),
-            let index = lines.lastIndex(where: { $0.id == "coding-\(answered.paneId)-\(answered.questionFingerprint)" })
+            let index = lines.lastIndex(where: {
+                $0.id == CodingQuestion.cardId(computer: answered.computer, paneId: answered.paneId, questionFingerprint: answered.questionFingerprint)
+            })
         else { return }
         lines[index].isDone = true
         if let answerText = answered.answerText, !answerText.isEmpty {

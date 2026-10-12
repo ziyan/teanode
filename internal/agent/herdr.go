@@ -491,9 +491,12 @@ func (self *Agent) noteHerdrAnswered(agentId string, attached *attachedComputer,
 		}
 		// It belongs to no run, as a reaction does not, so it is never
 		// replayed: a drawer that opens later reads the note instead.
+		// Note is the words alone: the detail is carried once, in
+		// NoteDetail, so a long answer does not count twice against what
+		// the relay to the other instances takes.
 		self.publish(Event{
 			Kind: EventNote, ConversationID: mainConversationId, At: time.Now(),
-			Note:     models.NoteText(models.NoteHerdrAnswered, detail),
+			Note:     models.NoteText(models.NoteHerdrAnswered, ""),
 			NoteKind: string(models.NoteHerdrAnswered), NoteDetail: detail,
 		}, true)
 	}
