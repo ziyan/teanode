@@ -29,11 +29,11 @@ native support is coordinated with the capture stream. This plan supplements
 | Recoverable original upload | Exact manifest resume | Exact manifest resume | Exact attachment manifest resume, live smoke pending | Capture stream |
 | Delete recording | Confirmation dialog | Confirmation/force | Destructive risk | Capture stream |
 | Transcription model/providers/budgets | Explicit Off and known capability display | Settings and capability read | Existing operator settings and capability read | Native stream, review pending |
-| Timeline/versions/status/cancel/retry/reprocess | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
-| Metadata and occurrence date editing | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
-| Speaker corrections/reference management | Canonical projection, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
-| Recognized-text edit/reset/history | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
-| Learning/invalidated-reference evidence | Implemented, live audit pending | Implemented, live smoke pending | Implemented, live smoke pending | Native stream, review pending |
+| Timeline/versions/status/cancel/retry/reprocess | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
+| Metadata and occurrence date editing | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
+| Speaker corrections/reference management | Canonical projection and free edits audited; populated references pending | Authenticated read verified | Shared actions tested, live agent execution pending | Native stream, review pending |
+| Recognized-text edit/reset/history | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
+| Learning/invalidated-reference evidence | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
 
 No row constitutes end-to-end completion while an applicable surface is pending.
 
@@ -63,8 +63,7 @@ at desktop and phone widths after rebuilding. Audio and video originals import
 through the CLI and verified downloads match the source. Browser audio and
 compatible video playback advance; an unsupported video track now shows
 download guidance rather than silently appearing as audio. An early phone
-audio screenshot is clipped and is rejected evidence; fresh Chrome inspection confirmed a 390-pixel viewport and document, zero horizontal scroll, and a closed menu. A replacement phone screenshot was independently inspected. Subsequent
-transcript/correction/settings interactions remain pending.
+audio screenshot is clipped and is rejected evidence; fresh Chrome inspection confirmed a 390-pixel viewport and document, zero horizontal scroll, and a closed menu. A replacement phone screenshot was independently inspected. The integrated interface checkpoint below records subsequent interactions.
 
 ## Next increments
 
@@ -108,7 +107,7 @@ controls while excluding the unrelated generic path editor.
 These interfaces are not yet accepted as ready: live contract smoke, desktop
 and phone Chrome interaction checks, integrated review, complete naming lint,
 iOS parity checks and the new correction backend integration remain required.
-Focused Go race tests and 18 dashboard tests currently pass; no paid provider
+Focused Go race tests and 20 dashboard tests currently pass; no paid provider
 call or real-phone validation has been performed.
 
 The full recording timeline interface uses the latest completed version per
@@ -117,9 +116,8 @@ pending versions are explicitly excluded, with per-run inspection retained for
 status and billing evidence. The aggregate API is an integration dependency.
 Chrome inspected transcription Off selection and successful save at desktop
 and phone widths. Phone measurements show matching viewport/document width,
-zero horizontal scroll and the main content at the left edge. Processing,
-correction, timeline and learning interactions still need the integrated APIs
-before their live visual checks can be accepted.
+zero horizontal scroll and the main content at the left edge. The integrated checkpoint below records the processing and correction controls
+that have since been exercised; fixture-only and device gaps remain explicit.
 
 Integrated review found and fixed passage playback seeking: absolute segment
 and reference bounds subtract the selected original's timeline offset before
@@ -129,3 +127,36 @@ equal-time overlapping speakers and ambiguous reruns cannot inherit a name
 from another group. The UI test verifies confirmation and unresolved interval
 warnings. Formatting tests caught incorrect interpolation braces and those
 were corrected to the existing catalog convention.
+
+
+## Integrated interface audit checkpoint
+
+The integrated preview now accepts the actual recording documents for versions,
+per-run and aggregate transcripts, speakers, text history, learning, reference
+invalidations and processing availability. The timeline selects the completed
+original version and excludes newer failed, canceled and uncertain versions.
+Nine authenticated CLI read operations also passed against the same backend.
+These checks use synthetic transcript fixtures, not provider transcription.
+
+Actual Chrome desktop and phone interactions verified metadata editing, speaker
+group naming and rename, recognized-text editing with generated originals,
+text reset with retained history, selected speaker-passage reset, version usage
+inspection, queued cancellation, and the safe retry admission error while
+processing is off. Equal-time overlapping speakers retained separate attribution.
+Free API text edits also passed stable-key retry and immutable-original checks.
+The phone viewport and document both measured 390 pixels, with zero horizontal
+scroll and the main content starting at zero. Corrections and actions wrap
+without clipping. Review fixed the outer recording title staying stale after a
+metadata save, and restricted rename to identities linked to this recording.
+All account identities remain available as name suggestions for confirmation.
+Unaligned text and speaker corrections have explicit projection warnings.
+
+The source metadata exposes the human recording title. Global Agent Off keeps
+the raw library reachable but blocks the existing source settings page. Enabling
+only that flag is rejected by existing validation because a default model and
+enabled provider are required; no provider was enabled to bypass this rule.
+The source-control visual check, populated voice references and invalidations,
+paid processing confirmation with a configured model, and nonempty capability
+labels still need isolated fixtures. Browser file selection remains blocked by
+extension file access. No paid call, actual billing, live LLM execution or
+real-iPhone validation is claimed by this stream.

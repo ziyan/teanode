@@ -2340,7 +2340,20 @@ function KnowledgeSourcesCard() {
         {sources.map((source) => (
           <SettingsRow
             key={source.id}
-            title={<span id={`source-${source.id}`}>{sourceDisplayName(source)}</span>}
+            title={
+              <span id={`source-${source.id}`}>
+                {source.kind === 'recording' &&
+                typeof storedSettings(source.specification.settings).recordingId === 'string' ? (
+                  <Link
+                    to={`/recordings/${encodeURIComponent(storedSettings(source.specification.settings).recordingId as string)}`}
+                  >
+                    {sourceDisplayName(source)}
+                  </Link>
+                ) : (
+                  sourceDisplayName(source)
+                )}
+              </span>
+            }
             badge={
               <>
                 {source.specification.type ? (

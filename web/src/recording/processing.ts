@@ -2,6 +2,11 @@ import { graphql } from '../api'
 import { storedSettings } from '../components/sourceTypeSettings'
 import { RECORDING_PROCESSING_DOCUMENTS } from './processingDocuments'
 
+export interface TranscriptionAvailability {
+  isTranscriptionAvailable: boolean
+  transcriptionUnavailableMessage: string
+  transcriptionProviderModelName: string
+}
 export interface TranscriptRun {
   id: string
   recordingId: string
@@ -23,6 +28,7 @@ export interface TranscriptSegment {
   transcriptText: string
   effectiveTranscriptText: string
   appliedTextCorrectionId: string
+  hasUnalignedTextCorrection: boolean
   effectiveSpeakerIdentityId: string
   effectiveSpeakerName: string
   hasUserConfirmedSpeaker: boolean

@@ -46,6 +46,8 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 	}
 	operationName := ""
 	switch arguments.Operation {
+	case "availability":
+		operationName = "ReadRecordingTranscriptionAvailability"
 	case "models":
 		operationName = "ListAgentModels"
 	case "versions":

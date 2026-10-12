@@ -14,6 +14,7 @@ func recordingActionCommands() []*cli.Command {
 		operationName, commandUsage string
 		flagNames                   []string
 	}{
+		{"availability", "show recording processing availability without making a provider call", nil},
 		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
 		{"timeline", "read the latest completed original versions in absolute chronological order", []string{"recording-id", "segment-offset", "page-size"}},
 		{"versions", "inspect immutable transcript versions and processing status", []string{"recording-id"}},
@@ -24,7 +25,7 @@ func recordingActionCommands() []*cli.Command {
 		{"retry", "resume this version when the server can safely continue its work", []string{"transcript-run-id"}},
 		{"speakers", "inspect confirmed identities, correction intervals and voice references", []string{"recording-id"}},
 		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
-		{"speaker-rename", "rename a confirmed identity using the name supplied by the user", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "confirmed-name"}},
+		{"speaker-rename", "rename an identity linked to this recording using the name supplied by the user", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "confirmed-name"}},
 		{"speaker-reset", "remove a manual speaker correction", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
 		{"reference-delete", "revoke a curated voice reference without deleting the original", []string{"recording-id", "expected-source-generation", "voice-reference-id", "force"}},
 		{"text-corrections", "inspect immutable recognized-text correction history", []string{"recording-id"}},

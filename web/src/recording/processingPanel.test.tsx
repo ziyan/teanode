@@ -14,9 +14,14 @@ afterEach(() => {
   cleanup()
   vi.resetAllMocks()
 })
-function showFixture(extraSegments: Partial<TranscriptSegment>[] = []) {
+function showFixture(extraSegments: Partial<TranscriptSegment>[] = [], overrides: Record<string, unknown> = {}) {
   vi.mocked(recordingOperation).mockImplementation(async (operationName) => {
     const responses: Record<string, unknown> = {
+      ReadRecordingTranscriptionAvailability: {
+        isTranscriptionAvailable: true,
+        transcriptionProviderModelName: 'fixture:audio',
+        transcriptionUnavailableMessage: '',
+      },
       ReadRecordingProcessing: {
         recording: {
           id: 'fixture-recording',
@@ -84,7 +89,11 @@ function showFixture(extraSegments: Partial<TranscriptSegment>[] = []) {
     }
     if (operationName === 'CorrectRecordingTranscriptText' || operationName === 'RequestRecordingTranscription')
       throw new Error('Uncertain response; retry with the same key')
-    return responses[operationName] as never
+    return (
+      Object.prototype.hasOwnProperty.call(overrides, operationName)
+        ? overrides[operationName]
+        : responses[operationName]
+    ) as never
   })
   const media = {
     id: 'fixture-media',
@@ -170,10 +179,45 @@ it('uses canonical speaker projection instead of labeling all equal-time speaker
       effectiveSpeakerName: 'Speaker Fixture',
       hasUserConfirmedSpeaker: false,
       hasUnalignedSpeakerCorrection: true,
+      hasUnalignedTextCorrection: true,
     },
   ])
   expect(await screen.findByText(/Unconfirmed speaker local-one/)).toBeTruthy()
   expect(await screen.findByText(/Unconfirmed speaker local-three/)).toBeTruthy()
   expect(await screen.findByText(/A retained speaker correction does not align uniquely/)).toBeTruthy()
+  expect(await screen.findByText(/A retained text correction does not align uniquely/)).toBeTruthy()
   expect(screen.getAllByText(/Speaker Fixture/)).toHaveLength(1)
+})
+
+it('keeps evidence editing available while paid processing is off', async () => {
+  showFixture([], {
+    ReadRecordingTranscriptionAvailability: {
+      isTranscriptionAvailable: false,
+      transcriptionUnavailableMessage: 'Processing is off for this fixture',
+      transcriptionProviderModelName: '',
+    },
+  })
+  expect(await screen.findByText('Processing is off for this fixture')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'New paid version' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'Edit recognized text' }) as HTMLButtonElement).disabled).toBe(false)
+})
+it('limits rename controls to linked identities while retaining all account names for confirmation', async () => {
+  showFixture([], {
+    ReadRecordingSpeakers: {
+      sourceGeneration: 4,
+      speakerIdentities: [
+        { id: 'linked-identity', confirmedName: 'Linked fixture' },
+        { id: 'other-identity', confirmedName: 'Other fixture' },
+      ],
+      speakerCorrections: [{ id: 'removed-correction', speakerIdentityId: 'linked-identity', isRemoved: true }],
+      voiceReferences: [],
+    },
+  })
+  expect(await screen.findByText('Linked fixture')).toBeTruthy()
+  expect(screen.getAllByRole('button', { name: 'Rename speaker' })).toHaveLength(1)
+  expect(screen.queryByText('Other fixture')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Name speaker' }))
+  expect(
+    Array.from(document.querySelectorAll('datalist option')).map((option) => option.getAttribute('value')),
+  ).toEqual(['Linked fixture', 'Other fixture'])
 })

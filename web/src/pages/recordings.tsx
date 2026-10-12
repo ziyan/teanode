@@ -262,6 +262,7 @@ function AccountRecordingsPage() {
               recordingId={view.recording.id}
               userId={session.userId ?? ''}
               mediaFiles={view.mediaFiles}
+              onMetadataChanged={detail.reload}
             />
             <p>
               <Link to="/recordings">{t('recordings.back')}</Link>

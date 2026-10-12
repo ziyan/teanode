@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { FormDialog } from '../components/dialog'
@@ -18,6 +18,7 @@ import {
   type SpeakersView,
   type TextCorrection,
   type TranscriptRun,
+  type TranscriptionAvailability,
   type TranscriptView,
   type TranscriptTimeline,
 } from './processing'
@@ -48,13 +49,20 @@ export function RecordingProcessingPanel({
   recordingId,
   userId,
   mediaFiles,
+  onMetadataChanged,
 }: {
   recordingId: string
   userId: string
   mediaFiles: RecordingMedia[]
+  onMetadataChanged?: () => Promise<unknown>
 }) {
   const { t } = useTranslation()
+  const speakerNamesListId = useId()
   const [parameters, setParameters] = useSearchParams()
+  const availability = useQuery(
+    () => recordingOperation<TranscriptionAvailability>('ReadRecordingTranscriptionAvailability', {}),
+    [userId],
+  )
   const versions = useQuery(
     () => recordingOperation<ProcessingView>('ReadRecordingProcessing', { recordingId }),
     [recordingId, userId],
@@ -112,6 +120,7 @@ export function RecordingProcessingPanel({
   const refresh = async () => {
     await Promise.all([
       versions.reload(),
+      availability.reload(),
       timeline.reload(),
       transcript.reload(),
       speakers.reload(),
@@ -146,6 +155,7 @@ export function RecordingProcessingPanel({
     if (dialog.operationName === 'UpdateRecordingMetadata') variables.recordedAt = variables.recordedAt || null
     try {
       await recordingOperation(dialog.operationName, variables)
+      if (dialog.operationName === 'UpdateRecordingMetadata') await onMetadataChanged?.()
       setDialog(null)
       await refresh()
     } catch (caught) {
@@ -174,6 +184,19 @@ export function RecordingProcessingPanel({
         }
       >
         <ErrorMessage error={versions.error} />
+        <ErrorMessage error={availability.error} />
+        {availability.data ? (
+          <SettingsRow
+            title={t(
+              availability.data.isTranscriptionAvailable
+                ? 'recordingProcessing.processingAvailable'
+                : 'recordingProcessing.processingOff',
+            )}
+            subtitle={
+              availability.data.transcriptionUnavailableMessage || availability.data.transcriptionProviderModelName
+            }
+          />
+        ) : null}
         {versions.loading && !owned ? <Loading /> : null}
         {owned ? (
           <SettingsRow
@@ -213,7 +236,7 @@ export function RecordingProcessingPanel({
               actions={
                 <button
                   type="button"
-                  disabled={!owned}
+                  disabled={!owned || !availability.data?.isTranscriptionAvailable}
                   onClick={() =>
                     show({
                       operationName: 'RequestRecordingTranscription',
@@ -349,7 +372,10 @@ export function RecordingProcessingPanel({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      {timelineTime(segment.segmentStartMS)}–{timelineTime(segment.segmentEndMS)}
+                      {t('recordingProcessing.passageRange', {
+                        startTime: timelineTime(segment.segmentStartMS),
+                        endTime: timelineTime(segment.segmentEndMS),
+                      })}
                     </a>{' '}
                     {confirmedName ??
                       t(
@@ -364,6 +390,9 @@ export function RecordingProcessingPanel({
                   <>
                     {segment.hasUnalignedSpeakerCorrection ? (
                       <p className="muted">{t('recordingProcessing.unalignedSpeakerCorrection')}</p>
+                    ) : null}
+                    {segment.hasUnalignedTextCorrection ? (
+                      <p className="muted">{t('recordingProcessing.unalignedTextCorrection')}</p>
                     ) : null}
                     <p className="recording-transcript-text">
                       {segment.effectiveTranscriptText ?? segment.transcriptText}
@@ -515,29 +544,33 @@ export function RecordingProcessingPanel({
         description={t('recordingProcessing.speakerHint')}
       >
         <ErrorMessage error={speakers.error} />
-        {(speakers.data?.speakerIdentities ?? []).map((identity) => (
-          <SettingsRow
-            key={identity.id}
-            title={identity.confirmedName}
-            actions={
-              <button
-                type="button"
-                onClick={() =>
-                  show({
-                    operationName: 'RenameRecordingSpeaker',
-                    titleKey: 'renameSpeaker',
-                    variables: { recordingId, expectedSourceGeneration: generation, speakerIdentityId: identity.id },
-                    fields: [
-                      { fieldName: 'confirmedName', labelKey: 'confirmedName', fieldValue: identity.confirmedName },
-                    ],
-                  })
-                }
-              >
-                {t('recordingProcessing.renameSpeaker')}
-              </button>
-            }
-          />
-        ))}
+        {(speakers.data?.speakerIdentities ?? [])
+          .filter((identity) =>
+            speakers.data?.speakerCorrections.some((correction) => correction.speakerIdentityId === identity.id),
+          )
+          .map((identity) => (
+            <SettingsRow
+              key={identity.id}
+              title={identity.confirmedName}
+              actions={
+                <button
+                  type="button"
+                  onClick={() =>
+                    show({
+                      operationName: 'RenameRecordingSpeaker',
+                      titleKey: 'renameSpeaker',
+                      variables: { recordingId, expectedSourceGeneration: generation, speakerIdentityId: identity.id },
+                      fields: [
+                        { fieldName: 'confirmedName', labelKey: 'confirmedName', fieldValue: identity.confirmedName },
+                      ],
+                    })
+                  }
+                >
+                  {t('recordingProcessing.renameSpeaker')}
+                </button>
+              }
+            />
+          ))}
         {(speakers.data?.speakerCorrections ?? [])
           .filter((correction) => !correction.isRemoved)
           .map((correction) => (
@@ -558,7 +591,10 @@ export function RecordingProcessingPanel({
                   target="_blank"
                   rel="noreferrer"
                 >
-                  {timelineTime(correction.passageStartMS)}–{timelineTime(correction.passageEndMS)}
+                  {t('recordingProcessing.passageRange', {
+                    startTime: timelineTime(correction.passageStartMS),
+                    endTime: timelineTime(correction.passageEndMS),
+                  })}
                 </a>
               }
               actions={
@@ -673,20 +709,33 @@ export function RecordingProcessingPanel({
             )}
           </>
         ) : null}
+      </SettingsSection>
+      <SettingsSection
+        card
+        title={t('recordingProcessing.textHistory')}
+        description={t('recordingProcessing.textHistoryHint')}
+      >
         <ErrorMessage error={textHistory.error} />
-        {(textHistory.data ?? [])
-          .filter(
-            (correction) =>
-              !correction.isRemoved &&
-              !effectiveView?.segments.some((segment) => segment.appliedTextCorrectionId === correction.id),
-          )
-          .map((correction) => (
-            <details key={correction.id}>
-              <summary>
-                {t('recordingProcessing.retainedTextCorrection')} {timelineTime(correction.passageStartMS)}–
-                {timelineTime(correction.passageEndMS)}
-              </summary>
-              <p>{correction.correctedTranscriptText}</p>
+        {(textHistory.data ?? []).map((correction) => (
+          <details key={correction.id}>
+            <summary>
+              {t(
+                correction.isRemoved
+                  ? 'recordingProcessing.correctionRemoved'
+                  : 'recordingProcessing.retainedTextCorrection',
+              )}{' '}
+              {t('recordingProcessing.passageRange', {
+                startTime: timelineTime(correction.passageStartMS),
+                endTime: timelineTime(correction.passageEndMS),
+              })}
+            </summary>
+            <p className="muted">
+              {t('recordingProcessing.generatedOriginal')}: {correction.originalTranscriptText}
+            </p>
+            <p>
+              {t('recordingProcessing.correctedText')}: {correction.correctedTranscriptText}
+            </p>
+            {!correction.isRemoved ? (
               <button
                 type="button"
                 onClick={() =>
@@ -704,8 +753,9 @@ export function RecordingProcessingPanel({
               >
                 {t('recordingProcessing.resetText')}
               </button>
-            </details>
-          ))}
+            ) : null}
+          </details>
+        ))}
       </SettingsSection>
       {dialog ? (
         <FormDialog
@@ -745,6 +795,7 @@ export function RecordingProcessingPanel({
               ) : (
                 <input
                   type={field.inputType ?? 'text'}
+                  list={field.fieldName === 'confirmedName' ? speakerNamesListId : undefined}
                   value={field.fieldValue}
                   onChange={(event) =>
                     setDialog({
@@ -758,6 +809,11 @@ export function RecordingProcessingPanel({
               )}
             </label>
           ))}
+          <datalist id={speakerNamesListId}>
+            {(speakers.data?.speakerIdentities ?? []).map((identity) => (
+              <option key={identity.id} value={identity.confirmedName} />
+            ))}
+          </datalist>
         </FormDialog>
       ) : null}
     </>
