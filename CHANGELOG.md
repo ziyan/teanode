@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.135.1] - 2026-10-12
+
+### Changed
+
+- In the iPhone app, the phone taps when the agent reacts to your message, and your own messages no longer offer reactions. (#396)
+
 ## [0.135.0] - 2026-10-12
 
 ### Added
