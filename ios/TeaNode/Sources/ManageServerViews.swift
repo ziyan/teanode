@@ -2333,6 +2333,8 @@ private struct AgentUsageView: View {
     @State private var overview: AgentAdminOverview?
     @State private var isLoading = true
     @State private var problemText: String?
+    /// The bar touched on the chart, by the label its axis shows.
+    @State private var selectedKeyLabel: String?
 
     private var queryId: String {
         "\(grouping.rawValue) \(range.firstDay.timeIntervalSince1970) \(range.lastDay.timeIntervalSince1970)"
@@ -2381,26 +2383,55 @@ private struct AgentUsageView: View {
         return usageKey
     }
 
+    /// The tokens each row used, one bar a row, all one series in one
+    /// color, so it needs no legend. Touching a bar shows its row's
+    /// tokens, cost and calls; the callout takes the title's place above it.
     private func chart(_ overview: AgentAdminOverview) -> some View {
-        Chart(overview.usageRows, id: \.usageKey) { usageRow in
-            BarMark(
-                x: .value("Key", keyLabel(usageRow.usageKey, in: overview)),
-                y: .value("Tokens", usageRow.totals.totalTokenCount)
-            )
-            .foregroundStyle(Color(.secondaryLabel))
-        }
-        .chartYAxis {
-            AxisMarks { axisValue in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let tokenCount = axisValue.as(Int.self) {
-                        Text(verbatim: ServerWords.count(tokenCount))
+        let barColor = ChartPalette.seriesColor(at: 0)
+        let selectedRow = overview.usageRows.first { keyLabel($0.usageKey, in: overview) == selectedKeyLabel }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Tokens used")
+                .font(.subheadline)
+                .foregroundStyle(Color(.secondaryLabel))
+                .frame(minHeight: 44, alignment: .bottomLeading)
+                .opacity(selectedRow == nil ? 1 : 0)
+            Chart {
+                ForEach(overview.usageRows, id: \.usageKey) { usageRow in
+                    let label = keyLabel(usageRow.usageKey, in: overview)
+                    BarMark(
+                        x: .value("Key", label),
+                        y: .value("Tokens", usageRow.totals.totalTokenCount)
+                    )
+                    .foregroundStyle(barColor)
+                    .opacity(ChartPalette.markOpacity(isChosen: usageRow.usageKey == selectedRow?.usageKey, isAnyChosen: selectedRow != nil))
+                    .accessibilityLabel(Text(verbatim: label))
+                    .accessibilityValue(Text(verbatim: ServerWords.count(usageRow.totals.totalTokenCount)))
+                }
+                if let selectedRow {
+                    ChartSelectionRule(value: keyLabel(selectedRow.usageKey, in: overview)) {
+                        ChartCallout(
+                            title: keyLabel(selectedRow.usageKey, in: overview),
+                            figures: [
+                                ChartFigure(label: String(localized: "Tokens"), valueText: ServerWords.count(selectedRow.totals.totalTokenCount), color: barColor),
+                                ChartFigure(label: String(localized: "Cost"), valueText: UpkeepWords.money(selectedRow.cost, currency: selectedRow.currency)),
+                                ChartFigure(label: String(localized: "Calls"), valueText: selectedRow.totals.callCount.formatted()),
+                            ])
                     }
                 }
             }
+            .chartXSelection(value: $selectedKeyLabel)
+            .chartYAxis {
+                AxisMarks { axisValue in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let tokenCount = axisValue.as(Int.self) {
+                            Text(verbatim: ServerWords.count(tokenCount))
+                        }
+                    }
+                }
+            }
+            .frame(height: 200)
         }
-        .frame(height: 200)
-        .accessibilityLabel(Text("Tokens used"))
     }
 
     private func table(_ overview: AgentAdminOverview) -> some View {
