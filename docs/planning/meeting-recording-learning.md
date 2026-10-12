@@ -76,3 +76,22 @@ race regressions cover cross-recording dependencies for all four invalidations a
 same-source admission versus deletion. Migration reversal and reapplication pass.
 Text editing, four-surface interactions, deployment and real-device evidence remain
 separate milestones.
+
+## Recognized text editing
+
+Text correction rows reference the original generated segment, run, media, exact
+interval and original wording. Stable client IDs permit safe retries. Source generation
+checks reject stale edits; removal preserves history and blocks older wording fallback.
+The shared projection exposes generated text and effective text separately. Reruns
+inherit an edit only for a unique exact media/time interval. Changed boundaries or
+overlapping equal-time speakers retain an independent correction document with original
+provenance and uncertain alignment. No generated segment is rewritten, and edited text
+remains passive evidence under the existing trusted learning prompt.
+
+PostgreSQL race tests pass for account isolation, retry conflicts, stale generations,
+immutable originals, correction removal, unique rerun alignment, ambiguous overlap,
+independent evidence and fact retirement. Real blob curation tests exercise six clean
+clips for five confirmed identities: provider inputs use at most four distinct names,
+respect smaller model capabilities, exclude other accounts, and reject references
+revoked after preparation. Full local lint and naming have no findings. Dashboard,
+CLI, tool and native editing interactions still require their separate parity checks.

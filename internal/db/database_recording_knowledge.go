@@ -95,6 +95,13 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 			if err := self.tx.Where("recording_transcript_run_id = ? AND (segment_start_ms > ? OR (segment_start_ms = ? AND id > ?))", transcriptRun.ID, segmentCursorStartMS, segmentCursorStartMS, segmentCursorId).Order("segment_start_ms,id").Limit(250).Find(&segmentRows).Error; err != nil {
 				return err
 			}
+			segments := make([]*models.RecordingTranscriptSegment, 0, len(segmentRows))
+			for _, segmentRow := range segmentRows {
+				segments = append(segments, (*models.RecordingTranscriptSegment)(segmentRow))
+			}
+			if err := self.ProjectRecordingTranscriptTextCorrections(userId, segments); err != nil {
+				return err
+			}
 			for _, segmentRow := range segmentRows {
 				segment := (*models.RecordingTranscriptSegment)(segmentRow)
 				confirmedName := "unconfirmed speaker " + segment.LocalSpeakerID + " (request " + segment.RecordingTranscriptionAttemptID + ")"
@@ -132,9 +139,12 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 				if recordingSource.RecordedAt != nil {
 					meetingTime = "Meeting recorded at " + recordingSource.RecordedAt.UTC().Format(time.RFC3339)
 				}
-				transcriptText := title + "\n" + meetingTime + "\n" + segment.TranscriptText
+				transcriptText := title + "\n" + meetingTime + "\n" + segment.EffectiveTranscriptText
 				if hasInvalidatedAttribution {
 					transcriptText += "\nThe generated attribution used a voice reference whose confirmation changed or was revoked. Treat automatic speaker attribution as uncertain. Explicit user passage confirmations remain evidence; no new transcription has been requested."
+				}
+				if segment.AppliedTextCorrectionID != "" {
+					transcriptText += "\nRecognized text corrected by the user; original generated text remains in transcript version history."
 				}
 				// A selected interval does not imply word timestamps or ownership of the whole segment.
 				for _, correction := range corrections {
@@ -162,11 +172,13 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 					}
 				}
 				metadata := map[string]any{"recordingId": recordingId, "recordingMediaId": transcriptRun.RecordingMediaID, "recordingTranscriptRunId": transcriptRun.ID, "transcriptVersionNumber": transcriptRun.VersionNumber, "passageStartMS": segment.SegmentStartMS, "passageEndMS": segment.SegmentEndMS, "sourceGeneration": recordingSource.SourceGeneration, "isUntrustedRecording": true, "speakerAttribution": confirmedName}
+				metadata["appliedTextCorrectionId"] = segment.AppliedTextCorrectionID
 				if previous != nil && previous.Hash == hex.EncodeToString(digest[:]) {
 					for metadataKey, metadataEntry := range previous.Metadata {
 						metadata[metadataKey] = metadataEntry
 					}
 					metadata["sourceGeneration"] = recordingSource.SourceGeneration
+					metadata["appliedTextCorrectionId"] = segment.AppliedTextCorrectionID
 				}
 				passageHappenedAt := recordingSource.RecordedAt
 				if passageHappenedAt != nil {
@@ -195,6 +207,11 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 			segmentCursorId = lastSegment.ID
 		}
 	}
+	unalignedChanged, err := self.syncRecordingUnalignedTextCorrections(userId, recordingSource, ownerAgent.ID, source.ID, latestRuns)
+	if err != nil {
+		return err
+	}
+	hasChangedEvidence = hasChangedEvidence || unalignedChanged
 	// Replaced versions can change segmentation; retire every old document not seen by this pass.
 	var unseen []*agentDocumentModel
 	if err := self.tx.Where("source_id = ? AND seen_at < ?", source.ID, passStartedAt).Find(&unseen).Error; err != nil {
