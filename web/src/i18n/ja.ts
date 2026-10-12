@@ -1727,6 +1727,7 @@ export const ja: Catalog = {
   'agent.runKinds.research': '調査',
   'agent.runKinds.summarize': '要約',
   'agent.runKinds.remember': '記憶の整理',
+  'agent.runKinds.recording': '録音の文字起こし',
   'agent.runKinds.ingest': 'ソースの読み取り',
   'agent.runKinds.dream': '夢の整理',
   'agent.runKinds.schedule': '予約実行',

@@ -10,6 +10,7 @@ export const RUN_KINDS = [
   'summarize',
   'remember',
   'ingest',
+  'recording',
   'dream',
   'schedule',
   'extract',

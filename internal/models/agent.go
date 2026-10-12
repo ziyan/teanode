@@ -512,6 +512,8 @@ const (
 	AgentJobResearch  AgentJobKind = "research"
 	AgentJobSummarize AgentJobKind = "summarize"
 	AgentJobEmbed     AgentJobKind = "embed"
+	// AgentJobRecording prepares and transcribes passive media without a user turn.
+	AgentJobRecording AgentJobKind = "recording"
 	AgentJobReply     AgentJobKind = "reply"
 	AgentJobSend      AgentJobKind = "send"
 	AgentJobSchedule  AgentJobKind = "schedule"

@@ -231,6 +231,21 @@ func (self *Store) Cleanup(ctx context.Context, maximumPartCount int) error {
 			}
 			hasFoundRecording = true
 			recording := recordings[0]
+			blobs, err := transaction.ListRecordingBlobsForCleanup(recording.ID, 1)
+			if err != nil {
+				return err
+			}
+			if len(blobs) > 0 {
+				blob := blobs[0]
+				if err := self.files.DeleteFileEverywhere(ctx, blob.ID); err != nil {
+					return err
+				}
+				if err := transaction.DeleteRecordingBlobReference(recording.ID, blob.ID); err != nil {
+					return err
+				}
+				deletedPartCount++
+				return nil
+			}
 			mediaFiles, err := transaction.ListRecordingMediaForCleanup(recording.ID)
 			if err != nil {
 				return err
