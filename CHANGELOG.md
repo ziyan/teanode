@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.4] - 2026-10-12
+
+### Fixed
+
+- The iPhone app's charts are readable: spending rows carry their slice's color, and touching a slice, bar or line shows what it is and its amount. (#394)
+
 ## [0.134.3] - 2026-10-12
 
 ### Fixed
