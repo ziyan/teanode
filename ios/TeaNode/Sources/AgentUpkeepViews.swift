@@ -166,6 +166,7 @@ enum UpkeepWords {
         case "summarize": String(localized: "Summary")
         case "remember": String(localized: "Remembering")
         case "ingest": String(localized: "Reading a source")
+        case "recording": String(localized: "Recording transcription")
         case "dream": String(localized: "Dream")
         case "schedule": String(localized: "Scheduled run")
         case "extract": String(localized: "Extraction")

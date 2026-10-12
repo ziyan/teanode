@@ -1111,7 +1111,7 @@ public struct AgentRunSummary: Codable, Hashable, Sendable, Identifiable {
     /// The kinds a run can be, for a filter over runs: a page holds one
     /// page of runs, so the kinds on it are not the kinds there are.
     public static let jobKinds = [
-        "triage", "reply", "research", "summarize", "remember", "ingest", "dream", "schedule", "extract", "draft", "describe", "compact",
+        "triage", "reply", "research", "summarize", "remember", "ingest", "recording", "dream", "schedule", "extract", "draft", "describe", "compact",
         "evaluate", "survey", "subagent", "mcp", "goal", "background", "speak_first", "alert", "categorize", "statement_import",
         "read_receipt", "watch",
     ]

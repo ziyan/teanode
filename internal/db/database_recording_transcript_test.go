@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/recording"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 type transcriptFixture struct {
@@ -211,4 +214,138 @@ func TestRecordingPendingDerivedBytesKeepDeletionReferences(test *testing.T) {
 			test.Fatal("pending derived write lost its cleanup reference", err)
 		}
 	})
+}
+
+func TestRecordingParentsAreResolvedFromOwnedRun(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "other-recording-owner")
+	var otherAgent *models.Agent
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		otherAgent, err = transaction.CreateAgent(&models.Agent{UserID: otherOwnerId, Name: "Other assistant", Enabled: true})
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingTranscriptRun(fixture.userId, fixture.media.ID, otherAgent.ID, "wrong-agent", "fixture:diarize", true)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("foreign agent admitted to owned media", err)
+	}
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingTranscriptRun(otherOwnerId, fixture.media.ID, otherAgent.ID, "foreign-media", "fixture:diarize", false)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("foreign media admitted", err)
+	}
+	digest := sha256.Sum256([]byte("derived"))
+	var chunk *models.RecordingAudioChunk
+	var blob *models.RecordingBlob
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		chunk, err = transaction.CreateRecordingAudioChunk(fixture.userId, fixture.transcriptRun.ID, fixture.claim,
+			&models.RecordingAudioChunk{RecordingTranscriptRunID: "foreign-run", RecordingBlobID: "foreign-blob", ChunkIndex: 0, TimelineStartMS: 2000, AudioDurationMS: 1000},
+			&models.RecordingBlob{ID: db.RecordingAudioFileID(fixture.transcriptRun.ID, 0), RecordingID: "foreign-source", RecordingMediaID: "foreign-media", BlobSizeBytes: 64, BlobSHA256: hex.EncodeToString(digest[:])}, 4096)
+		if err != nil {
+			test.Fatal(err)
+		}
+		blob, err = transaction.GetRecordingBlob(fixture.userId, chunk.RecordingBlobID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if blob.RecordingID != fixture.media.RecordingID || blob.RecordingMediaID != fixture.media.ID || chunk.RecordingTranscriptRunID != fixture.transcriptRun.ID {
+			test.Fatal("caller supplied parent identifiers were trusted")
+		}
+	})
+	fixture.beginAttempt(test, chunk, blob)
+	var otherRun *models.RecordingTranscriptRun
+	var otherClaim db.RecordingWorkerClaim
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		otherRun, err = transaction.CreateRecordingTranscriptRun(fixture.userId, fixture.media.ID, fixture.agentId, "second-version", "fixture:diarize", true)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: fixture.agentId, Kind: models.AgentJobRecording, SubjectID: otherRun.ID}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		jobs, err := transaction.ClaimAgentJobs("second-worker", 1, time.Now())
+		if err != nil || len(jobs) != 1 {
+			test.Fatal("second claim failed", err)
+		}
+		otherClaim = db.RecordingWorkerClaim{JobID: jobs[0].ID, ClaimID: jobs[0].ClaimID}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, otherRun.ID, otherClaim, models.RecordingProcessingTranscribing, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+	})
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, otherRun.ID, chunk.ID, otherClaim, "USD", nil)
+		return err
+	})
+	if err == nil {
+		test.Fatal("another version's chunk admitted to attempt")
+	}
+}
+
+type recordingCleanupFailure struct {
+	storage.StreamFiles
+	shouldFailDelete bool
+}
+
+func (self *recordingCleanupFailure) DeleteFileEverywhere(ctx context.Context, fileId string) error {
+	if err := self.StreamFiles.DeleteFileEverywhere(ctx, fileId); err != nil {
+		return err
+	}
+	if self.shouldFailDelete {
+		return errors.New("fixture mirror unavailable")
+	}
+	return nil
+}
+func TestRecordingAccountDeletionRetriesOriginalAndDerivedCleanup(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	fixture.beginAttempt(test, chunk, blob)
+	files, err := storage.Open(&storage.Settings{Directory: test.TempDir()})
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer func() { _ = files.Close() }()
+	originalId := db.RecordingPartFileID(fixture.media.ID, 0)
+	for _, fileId := range []string{originalId, blob.ID} {
+		if err := files.PutFile(test.Context(), fileId, []byte("fixture bytes")); err != nil {
+			test.Fatal(err)
+		}
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.DeleteUser(fixture.userId); err != nil {
+			test.Fatal(err)
+		}
+	})
+	failingFiles := &recordingCleanupFailure{StreamFiles: files.(storage.StreamFiles), shouldFailDelete: true}
+	if err := recording.New(fixture.database, failingFiles).Cleanup(test.Context(), 10); err == nil {
+		test.Fatal("mirror deletion failure was forgotten")
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		blobs, err := transaction.ListRecordingBlobsForCleanup(fixture.media.RecordingID, 10)
+		if err != nil || len(blobs) != 1 {
+			test.Fatal("failed cleanup lost derived ledger", err)
+		}
+	})
+	// A fresh coordinator needs no active agent or account to resume cleanup.
+	if err := recording.New(fixture.database, files.(storage.StreamFiles)).Cleanup(test.Context(), 10); err != nil {
+		test.Fatal(err)
+	}
+	for _, fileId := range []string{originalId, blob.ID} {
+		if _, err := files.GetFile(test.Context(), fileId); !errors.Is(err, storage.ErrNotFound) {
+			test.Fatal("account deletion retained speech", err)
+		}
+	}
+	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM recording_transcript_run") != "0" {
+		test.Fatal("account deletion retained derived versions")
+	}
 }

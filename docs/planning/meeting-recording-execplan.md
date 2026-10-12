@@ -27,15 +27,16 @@ always-on activation and visual video understanding are deferred.
   parts, SHA-256 verification, durable receipts and resumable deletion.
 - [x] Increment 3a implemented locally: authenticated GraphQL library/capture/media
   metadata, bounded part uploads, completion and private byte-range playback.
-- [ ] CI and code review of the durable media increment.
+- [x] Durable media increment reviewed, full lint and CI passed, squash merged in PR #427.
+- [ ] Deploy merged durable media after confirming preservation of existing deployed work.
 - [ ] Increment 2b: transcript runs/versions and reconciliation jobs.
 - [ ] Increment 3b: background transcription with existing budgets and usage accounting.
 - [ ] Increment 4: recording transcript knowledge source, automatic dreaming
   and corrections/deletion that reconcile dependent memories.
 - [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
 - [ ] Increment 6: dashboard import, playback and transcript correction.
-- [ ] Equivalent recording library/import/transcript/correction/reprocessing/delete
-  operations in the LLM tool and TeaNode CLI, with the same ownership and policy.
+- [ ] Four-surface parity: web, CLI, LLM tools and iOS for every recording capability
+  and operator setting, with equivalent account ownership and error semantics.
 - [ ] Chrome visual and interaction audits at desktop and phone widths.
 - [ ] Review every increment, fix findings, and verify its completed CI before merge.
 - [ ] Increment 7: iOS capture, interruption recovery, background upload,
@@ -230,6 +231,9 @@ The production image retains its nonroot, shellless runtime. Provider execution,
 usage integration, corrected identities, library interfaces and native capture
 remain unimplemented; this is a processing foundation, not a complete feature.
 
+The first CI run found the new job kind missing from run labels. Web catalogs,
+web/iOS filters and the native label now include recording transcription.
+
 ## Processing implementation design
 
 Use the existing agent queue for preparation and transcription. A completed media
@@ -292,3 +296,38 @@ The first CI lint run rejected the official provider documentation hostname.
 The scanner now allows that exact public hostname with an explanatory comment.
 Provider capabilities have been verified from official documentation; actual billed
 cost and device behavior remain unverified. All later acceptance criteria remain open.
+
+## Parallel implementation and integration acceptance
+
+Three isolated workstreams implement native capture/import/background controls,
+web/CLI/tool surfaces, and speaker correction/reference curation with knowledge
+reconciliation. The coordinator owns the worker, shared API contracts and review.
+Capture originals are bounded rolling files with absolute timeline offsets and
+explicit pause/interruption gaps. Versions retain each original media's provenance;
+request-local speaker IDs never establish identity across files.
+
+| Capability | Web | CLI | LLM tools | iOS |
+| --- | --- | --- | --- | --- |
+| Quotas, provider/transcription selection, budgets | Partial | Partial | Partial | In progress |
+| Import, recoverable upload, browse/play/delete | In progress | In progress | In progress | In progress |
+| Transcript versions, status/cancel/retry/reprocess | Pending integration | Pending integration | Pending integration | Pending integration |
+| Confirmed labels, passage edits, references | Pending integration | Pending integration | Pending integration | Pending integration |
+| Capture, interruptions, locked-screen controls | Not applicable | Not applicable | Not applicable | In progress |
+
+No row is complete until shared authorization/error checks and applicable client
+checks pass. Chrome desktop/mobile interaction inspection is required for web
+changes. Swift package tests cannot establish native compilation or real-iPhone
+screen-lock, background-transfer, interruption and battery behavior. Merge and
+deployment are tracked separately from implementation and CI.
+
+Schema review follows existing transactional parent validation and ownership
+patterns. Recordings use the singular recording namespace because their originals
+belong to the account independently of an enabled agent. Account removal retains
+blob references until the storage coordinator, which runs independently of agent
+activation, deletes originals and derived media. Negative tests exercise foreign
+owners/agents, caller-supplied parent IDs, and chunks from another version.
+Account-deletion tests cover both original and derived media, failed mirror deletion
+and restart of the coordinator. No new composite constraint policy is introduced.
+Estimated cost uses float64 consistently with existing agent usage accounting;
+unknown actual cost remains null, and provider results cannot invent actual billing.
+Reverse migrations drop dependent tables before their parents.

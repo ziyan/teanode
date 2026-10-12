@@ -25925,6 +25925,22 @@
         }
       }
     },
+    "Recording transcription": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音の文字起こし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音转写"
+          }
+        }
+      }
+    },
     "Records a script writes": {
       "localizations": {
         "ja": {

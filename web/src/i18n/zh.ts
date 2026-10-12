@@ -1683,6 +1683,7 @@ export const zh: Catalog = {
   'agent.runKinds.research': '调研',
   'agent.runKinds.summarize': '摘要',
   'agent.runKinds.remember': '记忆整理',
+  'agent.runKinds.recording': '录音转写',
   'agent.runKinds.ingest': '读取来源',
   'agent.runKinds.dream': '梦境整理',
   'agent.runKinds.schedule': '计划运行',
