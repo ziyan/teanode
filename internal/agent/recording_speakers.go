@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -48,10 +49,14 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			continue
 		}
 		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			if _, err := transaction.LockRecording(userId, recordingId); err != nil {
+			lockedReference, err := transaction.LockRevokedRecordingVoiceReferenceForCleanup(userId, recordingId, reference.ID)
+			if errors.Is(err, db.ErrNotFound) {
+				return nil
+			}
+			if err != nil {
 				return err
 			}
-			if err := files.DeleteFileEverywhere(ctx, reference.RecordingBlobID); err != nil {
+			if err := files.DeleteFileEverywhere(ctx, lockedReference.RecordingBlobID); err != nil {
 				return err
 			}
 			return transaction.DeleteRevokedRecordingVoiceReference(userId, recordingId, reference.ID)

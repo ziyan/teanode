@@ -21,6 +21,8 @@ type RecordingSpeakerOperation interface {
 	MarkRecordingSpeakerCuration(userId, recordingId string, sourceGeneration int64) error
 	CreateRecordingVoiceReference(userId string, reference *models.RecordingVoiceReference, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingVoiceReference, error)
 	ListUsableRecordingVoiceReferences(userId string, referenceLimit int) ([]*models.RecordingVoiceReference, error)
+	ListRevokedRecordingVoiceReferencesForCleanup(afterReferenceId string, pageSize int) ([]*RecordingVoiceReferenceCleanupCandidate, error)
+	LockRevokedRecordingVoiceReferenceForCleanup(userId, recordingId, referenceId string) (*models.RecordingVoiceReference, error)
 	DeleteRevokedRecordingVoiceReference(userId, recordingId, referenceId string) error
 	ListRecordingSpeakerIdentities(userId string) ([]*models.RecordingSpeakerIdentity, error)
 	ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error)
@@ -488,8 +490,61 @@ func (self *transaction) ListUsableRecordingVoiceReferences(userId string, refer
 	return references, nil
 }
 
+// RecordingVoiceReferenceCleanupCandidate carries the current owner for storage maintenance.
+type RecordingVoiceReferenceCleanupCandidate struct {
+	UserID    string
+	Reference *models.RecordingVoiceReference
+}
+
+// ListRevokedRecordingVoiceReferencesForCleanup does not require an enabled model worker.
+func (self *transaction) ListRevokedRecordingVoiceReferencesForCleanup(afterReferenceId string, pageSize int) ([]*RecordingVoiceReferenceCleanupCandidate, error) {
+	if pageSize < 1 || pageSize > 100 {
+		return nil, ErrInvalidArguments
+	}
+	var candidateRows []struct {
+		UserID    string
+		Reference recordingVoiceReferenceModel `gorm:"embedded"`
+	}
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).
+		Joins("JOIN recording ON recording.id = recording_voice_reference.recording_id").
+		Select("recording_voice_reference.*,recording.user_id").
+		Where("recording_voice_reference.id > ? AND recording_voice_reference.is_revoked AND recording_voice_reference.recording_blob_id IS NOT NULL AND recording.user_id IS NOT NULL AND recording.deleted_at IS NULL", afterReferenceId).
+		Order("recording_voice_reference.id").Limit(pageSize).Scan(&candidateRows).Error; err != nil {
+		return nil, err
+	}
+	candidates := make([]*RecordingVoiceReferenceCleanupCandidate, 0, len(candidateRows))
+	for candidateIndex := range candidateRows {
+		candidateRow := &candidateRows[candidateIndex]
+		candidates = append(candidates, &RecordingVoiceReferenceCleanupCandidate{UserID: candidateRow.UserID, Reference: (*models.RecordingVoiceReference)(&candidateRow.Reference)})
+	}
+	return candidates, nil
+}
+
+// LockRevokedRecordingVoiceReferenceForCleanup retains owner/source locks across byte deletion.
+func (self *transaction) LockRevokedRecordingVoiceReferenceForCleanup(userId, recordingId, referenceId string) (*models.RecordingVoiceReference, error) {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return nil, err
+	}
+	if _, err := self.LockRecording(userId, recordingId); err != nil {
+		return nil, err
+	}
+	var reference recordingVoiceReferenceModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND recording_id = ? AND is_revoked AND recording_blob_id IS NOT NULL", referenceId, recordingId).Take(&reference).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return (*models.RecordingVoiceReference)(&reference), nil
+}
+
 // DeleteRevokedRecordingVoiceReference forgets derived metadata only after storage deletion succeeds.
 func (self *transaction) DeleteRevokedRecordingVoiceReference(userId, recordingId, referenceId string) error {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
 	if _, err := self.LockRecording(userId, recordingId); err != nil {
 		return err
 	}
