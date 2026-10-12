@@ -471,3 +471,13 @@ production provider activation, representative-meeting quality or invoice eviden
 The configured provider credential returned HTTP 403 from the organization
 costs endpoint. Matching measured token usage to actual billing requires billing
 administration access or invoice evidence; this does not block implementation.
+
+Production transcription was subsequently enabled by explicit operator request
+through the existing settings API, using openai:gpt-4o-transcribe-diarize. Existing
+provider admission and token/cost budgets were preserved. The authenticated
+synthetic upload completed through the deployed worker with five timestamped
+segments and one immutable attempt reporting 199 audio input and 544 output
+tokens. Original playback remained unchanged. The stored configured-price estimate
+is USD 0.00035625; actual cost remains unknown. Correction and learning production
+checks await the reviewed correction increment; the synthetic original is retained
+for that acceptance work. Production remains on reviewed merged v0.143.0.
