@@ -614,6 +614,10 @@ struct MessageActionsView: View {
     /// Closes the view, then does what was chosen, if anything.
     let onClose: (((() -> Void)?) -> Void)
     @State private var isShown = false
+    /// Whether the emoji keyboard is open to choose a reaction that is not in
+    /// the bar. The bar gives way to a line saying so, and the actions below
+    /// leave the keyboard room.
+    @State private var isChoosingEmoji = false
 
     private var isPerson: Bool { line.kind == .person }
 
@@ -627,7 +631,11 @@ struct MessageActionsView: View {
                 .accessibilityAddTraits(.isButton)
             VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
                 if line.messageId != nil {
-                    reactionBar
+                    if isChoosingEmoji {
+                        emojiChooser
+                    } else {
+                        reactionBar
+                    }
                 }
                 ScrollView {
                     bubble
@@ -636,7 +644,9 @@ struct MessageActionsView: View {
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: 420)
                 .fixedSize(horizontal: false, vertical: true)
-                actions
+                if !isChoosingEmoji {
+                    actions
+                }
             }
             .padding(.horizontal)
             .scaleEffect(isShown ? 1 : 0.94, anchor: isPerson ? .trailing : .leading)
@@ -648,27 +658,80 @@ struct MessageActionsView: View {
         .accessibilityAction(.escape) { onClose(nil) }
     }
 
-    /// The quick reactions, the person's current one marked; choosing it
-    /// again takes it away.
+    /// The quick reactions, then a button for any other emoji. The person's
+    /// current one is marked, and shown at the end when it is not one of the
+    /// quick ones; choosing it again takes it away. The emoji are allowed to
+    /// narrow a little so all of them and the button fit a narrow phone.
     private var reactionBar: some View {
         let current = line.reaction(of: "person")
+        var choices = ConversationModel.quickReactions
+        if let current, !choices.contains(current) { choices.append(current) }
         return HStack(spacing: 2) {
-            ForEach(ConversationModel.quickReactions, id: \.self) { emoji in
+            ForEach(choices, id: \.self) { emoji in
                 Button {
                     onClose { Task { await model.react(to: line, with: emoji) } }
                 } label: {
                     Text(verbatim: emoji)
                         .font(.title2)
-                        .frame(width: 40, height: 44)
+                        .frame(minWidth: 28, idealWidth: 40, maxWidth: 40)
+                        .frame(height: 44)
                         .background(current == emoji ? Color.accentColor.opacity(0.3) : .clear, in: .circle)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(current == emoji ? Text("Take away \(emoji)") : Text("React \(emoji)"))
             }
+            Button {
+                isChoosingEmoji = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(Color(.tertiarySystemFill), in: .circle)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("More emoji")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: .capsule)
+    }
+
+    /// What the bar becomes while the emoji keyboard is open: a line saying
+    /// to choose, and a way back. The field that takes the keyboard's emoji
+    /// is behind it, one point across and drawn with nothing.
+    private var emojiChooser: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "face.smiling")
+                .foregroundStyle(.secondary)
+            Text("Choose any emoji")
+                .font(.callout)
+            Button {
+                isChoosingEmoji = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 2)
+        .glassEffect(.regular, in: .capsule)
+        .background {
+            EmojiKeyboardField { emoji in
+                onClose { Task { await model.react(to: line, with: emoji) } }
+            }
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
@@ -781,6 +844,70 @@ struct SelectableText: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         if view.text != text { view.text = text }
+    }
+}
+
+/// EmojiTextField is a text field that opens on the emoji keyboard, which the
+/// system has no call to open, by answering which input mode it takes. A
+/// person with no emoji keyboard gets the ordinary one, and anything typed on
+/// it that is not an emoji is ignored. It takes the keyboard as soon as it is
+/// on screen.
+final class EmojiTextField: UITextField {
+    override var textInputMode: UITextInputMode? {
+        UITextInputMode.activeInputModes.first { $0.primaryLanguage == "emoji" } ?? super.textInputMode
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { becomeFirstResponder() }
+    }
+}
+
+/// EmojiKeyboardField is the emoji keyboard for choosing one emoji: an
+/// invisible field takes it, and the first emoji typed is handed to
+/// `onEmoji`, once. SwiftUI has no way to open that keyboard, so a UIKit
+/// text field does it.
+struct EmojiKeyboardField: UIViewRepresentable {
+    let onEmoji: (String) -> Void
+
+    func makeUIView(context: Context) -> EmojiTextField {
+        let field = EmojiTextField()
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
+        field.autocorrectionType = .no
+        field.spellCheckingType = .no
+        field.autocapitalizationType = .none
+        field.textColor = .clear
+        field.tintColor = .clear
+        field.backgroundColor = .clear
+        field.inputAssistantItem.leadingBarButtonGroups = []
+        field.inputAssistantItem.trailingBarButtonGroups = []
+        return field
+    }
+
+    func updateUIView(_ field: EmojiTextField, context: Context) {
+        context.coordinator.onEmoji = onEmoji
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEmoji: onEmoji)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var onEmoji: (String) -> Void
+        private var hasChosen = false
+
+        init(onEmoji: @escaping (String) -> Void) {
+            self.onEmoji = onEmoji
+        }
+
+        @objc func textChanged(_ field: UITextField) {
+            guard !hasChosen, let emoji = EmojiReaction.firstEmoji(in: field.text ?? "") else { return }
+            hasChosen = true
+            field.text = ""
+            onEmoji(emoji)
+        }
     }
 }
 

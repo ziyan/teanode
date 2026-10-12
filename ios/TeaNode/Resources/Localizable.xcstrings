@@ -8403,6 +8403,22 @@
         }
       }
     },
+    "Choose any emoji": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好きな絵文字を選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择任意表情"
+          }
+        }
+      }
+    },
     "Choose where you hear the call": {
       "localizations": {
         "ja": {
@@ -18751,6 +18767,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "更多"
+          }
+        }
+      }
+    },
+    "More emoji": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの絵文字"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多表情"
           }
         }
       }

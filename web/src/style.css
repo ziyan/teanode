@@ -7306,15 +7306,110 @@ button.agent-reaction:focus-visible {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+/* The row and the panel of more emoji are siblings in one group, so the
+   panel is not a part of the menu and the row's pill does not clip it. The
+   group draws nothing of its own. */
+.agent-reaction-picker-group {
+  display: contents;
+}
+
+.agent-reaction-more-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.agent-reaction-more-button[aria-expanded='true'] {
+  background: var(--field);
+}
+
+/* Every other emoji, over the message under the row: a box to type or paste
+   one, then the common ones by category in a grid that scrolls. It opens
+   the way the row does, leftward from the person's bubbles and rightward
+   from the agent's, and is never wider than the screen less its gutters. */
+.agent-reaction-more {
+  position: absolute;
+  top: 4px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(300px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-floating);
+  white-space: normal;
+  text-align: left;
+}
+
+.agent-line.user .agent-reaction-more {
+  right: 0;
+}
+
+.agent-line.assistant .agent-reaction-more {
+  left: 0;
+}
+
+.agent-reaction-entry {
+  display: flex;
+  gap: 6px;
+}
+
+.agent-reaction-entry input {
+  flex: 1;
+  min-width: 0;
+  /* 16px keeps a phone from zooming in on the box. */
+  font-size: 16px;
+}
+
+.agent-reaction-entry button {
+  flex: none;
+}
+
+.agent-reaction-entry-hint {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--text-label);
+}
+
+.agent-reaction-categories {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.agent-reaction-categories h4 {
+  margin: 6px 0 2px;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.agent-reaction-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+}
+
+.agent-reaction-grid .agent-reaction-choice {
+  width: 100%;
+  height: 34px;
+}
+
 /* Bigger for a thumb, and still one row across a phone. */
 @media (max-width: 600px) {
   .agent-reaction-picker {
     top: -48px;
   }
 
+  /* Nine across, ten with a reaction of the person's own that is not a
+     quick one, still inside 390px beside the bubble's gutter. */
   .agent-reaction-choice {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
   }
 }
 
