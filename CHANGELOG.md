@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.4] - 2026-10-12
+
+### Fixed
+
+- Dismiss the iPhone keyboard immediately when opening the side menu by button or swipe. (#426)
+
 ## [0.138.3] - 2026-10-12
 
 ### Fixed
