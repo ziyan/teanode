@@ -3298,12 +3298,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             })
             return withoutQueued
           }
+          // A coding session's question that went comes outside any run,
+          // and carries what it was answered with for its card to show.
+          const isHerdrAnswered = event.noteKind === HERDR_ANSWERED_NOTE
           withoutQueued.push({
             kind: 'note',
-            key: `${event.runId}-${event.sequence}`,
+            key: isHerdrAnswered ? `herdr-answered-${event.at}` : `${event.runId}-${event.sequence}`,
             text: noteWords(t, event.noteKind ?? '', event.noteDetail ?? '', event.note ?? ''),
             noteKind: resolvedNoteKind(event.noteKind ?? '', event.note ?? ''),
-            detail: event.noteKind === 'compacted' ? event.noteDetail : undefined,
+            detail: event.noteKind === 'compacted' || isHerdrAnswered ? event.noteDetail : undefined,
           })
           return withoutQueued
         }

@@ -453,8 +453,9 @@ final class ConversationModel {
         } catch TeaNodeError.refused(let reason) where reason.contains("already answered") {
             // Answered at the computer, or by another device: the card folds
             // away so typing goes to the conversation again, as the
-            // dashboard's card does.
-            transcript.settle(cardId: line.id, resolution: String(localized: "Answered elsewhere"))
+            // dashboard's card does, and the note the server publishes for
+            // it fills in what it was answered with.
+            transcript.settle(cardId: line.id, resolution: "")
         } catch {
             sendProblemText = app.describe(error)
         }

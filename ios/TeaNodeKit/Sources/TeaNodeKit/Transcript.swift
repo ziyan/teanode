@@ -303,17 +303,7 @@ public struct Transcript: Sendable {
                     continue
                 }
                 if message.name == "herdr_answered" {
-                    struct Answered: Decodable {
-                        let paneId: String
-                        let questionFingerprint: String
-                        let answerText: String?
-                    }
-                    if let answered = try? JSONDecoder().decode(Answered.self, from: Data(message.content.utf8)),
-                        let index = lines.lastIndex(where: { $0.id == "coding-\(answered.paneId)-\(answered.questionFingerprint)" })
-                    {
-                        lines[index].isDone = true
-                        lines[index].resolution = answered.answerText ?? ""
-                    }
+                    answerCodingQuestion(note: message.content)
                     continue
                 }
                 lines.append(TranscriptLine(id: message.id, kind: .note, text: message.content, detail: message.name ?? "", at: message.createdAt))
@@ -494,8 +484,12 @@ public struct Transcript: Sendable {
                 var line = TranscriptLine(id: "\(event.runId)-compacting", kind: .note, text: "", detail: "compacting", runId: event.runId, at: event.at)
                 line.isPending = true
                 lines.append(line)
-            case "herdr_asked", "herdr_answered":
+            case "herdr_asked":
                 return
+            case "herdr_answered":
+                // A coding session's question went, here or at the computer:
+                // its card folds with what it was answered with.
+                answerCodingQuestion(note: event.noteDetail ?? "")
             default:
                 let id = "\(event.runId)-note-\(event.sequence)"
                 guard !lines.contains(where: { $0.id == id }) else { return }
@@ -513,6 +507,24 @@ public struct Transcript: Sendable {
             lines.removeAll { $0.runId == event.runId && $0.isPending }
         default:
             return
+        }
+    }
+
+    /// Folds a coding session's question card from a "herdr_answered" note,
+    /// with what it was answered with when that is known. An answer this
+    /// app gave is kept when the note knows none.
+    mutating func answerCodingQuestion(note: String) {
+        struct Answered: Decodable {
+            let paneId: String
+            let questionFingerprint: String
+            let answerText: String?
+        }
+        guard let answered = try? JSONDecoder().decode(Answered.self, from: Data(note.utf8)),
+            let index = lines.lastIndex(where: { $0.id == "coding-\(answered.paneId)-\(answered.questionFingerprint)" })
+        else { return }
+        lines[index].isDone = true
+        if let answerText = answered.answerText, !answerText.isEmpty {
+            lines[index].resolution = answerText
         }
     }
 
