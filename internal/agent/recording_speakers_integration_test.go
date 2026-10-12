@@ -303,3 +303,73 @@ func TestRecordingCuratedReferenceSelectionCapsOwnershipAndRevocation(test *test
 		test.Fatal("revocation during sample reads admitted stale conditioning", err)
 	}
 }
+
+func TestRecordingIdentityRenameKeepsCleanSamplesAndExplicitRefusals(test *testing.T) {
+	fixture := newRecordingCurationFixture(test, 1)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		source, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: fixture.attempt.ID, LocalSpeakerID: "speaker-one", ConfirmedName: "Fixture Participant", ClientCorrectionID: "rename-confirmation", PassageStartMS: -1, PassageEndMS: -1, ExpectedSourceGeneration: source.SourceGeneration}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
+	var originalReference *models.RecordingVoiceReference
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		references, err := transaction.ListRecordingVoiceReferences(fixture.userId, fixture.source.ID)
+		if err != nil || len(references) != 1 {
+			test.Fatal(err, len(references))
+		}
+		originalReference = references[0]
+		source, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.RenameRecordingSpeaker(fixture.userId, source.ID, originalReference.SpeakerIdentityID, "Renamed Fixture Participant", source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal("rename recovery rejected retained clip generation", err)
+	}
+	capabilities := llm.TranscriptionCapabilities{HasSpeakerReferences: true, MaximumSpeakerReferenceCount: 4}
+	selected, blobIds, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	if err != nil || len(selected) != 1 || selected[0].SpeakerName != "Renamed Fixture Participant" || blobIds[0] != originalReference.RecordingBlobID {
+		test.Fatal("renamed identity lost its clean sample", err, len(selected))
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.CheckRecordingVoiceReferenceNames(fixture.userId, blobIds, []string{"Renamed Fixture Participant"}); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.RevokeRecordingVoiceReference(fixture.userId, source.ID, originalReference.ID, source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		source, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.RenameRecordingSpeaker(fixture.userId, source.ID, originalReference.SpeakerIdentityID, "Another Fixture Name", source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
+	selected, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	if err != nil || len(selected) != 0 {
+		test.Fatal("renaming revived an explicitly rejected sample", err)
+	}
+}

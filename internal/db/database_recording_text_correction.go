@@ -169,11 +169,11 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 				if correction.RecordingMediaID != transcriptRun.RecordingMediaID || correction.RecordingTranscriptRunID == transcriptRun.ID || correction.PassageStartMS != segment.SegmentStartMS || correction.PassageEndMS != segment.SegmentEndMS {
 					continue
 				}
-				var intervalSegmentCount int64
-				if err := self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id = ? AND segment_start_ms = ? AND segment_end_ms = ?", transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS).Count(&intervalSegmentCount).Error; err != nil {
+				canProject, err := self.canProjectRecordingTextCorrection(correction, transcriptRun, corrections)
+				if err != nil {
 					return err
 				}
-				if intervalSegmentCount == 1 {
+				if canProject {
 					selected = correction
 				}
 				break
@@ -198,4 +198,27 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 		}
 	}
 	return nil
+}
+
+func (self *transaction) canProjectRecordingTextCorrection(correction *models.RecordingTranscriptTextCorrection, transcriptRun *models.RecordingTranscriptRun, corrections []*models.RecordingTranscriptTextCorrection) (bool, error) {
+	for _, transcriptRunId := range []string{correction.RecordingTranscriptRunID, transcriptRun.ID} {
+		var intervalSegmentCount int64
+		if err := self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id = ? AND segment_start_ms = ? AND segment_end_ms = ?", transcriptRunId, correction.PassageStartMS, correction.PassageEndMS).Count(&intervalSegmentCount).Error; err != nil {
+			return false, err
+		}
+		if intervalSegmentCount != 1 {
+			return false, nil
+		}
+	}
+	seenOriginalSegments := map[string]bool{}
+	for _, candidate := range corrections {
+		if seenOriginalSegments[candidate.RecordingTranscriptSegmentID] {
+			continue
+		}
+		seenOriginalSegments[candidate.RecordingTranscriptSegmentID] = true
+		if !candidate.IsRemoved && candidate.RecordingMediaID == correction.RecordingMediaID && candidate.PassageStartMS == correction.PassageStartMS && candidate.PassageEndMS == correction.PassageEndMS && candidate.RecordingTranscriptSegmentID != correction.RecordingTranscriptSegmentID {
+			return false, nil
+		}
+	}
+	return true, nil
 }

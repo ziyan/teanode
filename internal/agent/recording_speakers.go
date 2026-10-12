@@ -102,6 +102,28 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		}
 		clipStartMS := correction.PassageStartMS + 200
 		clipEndMS := min(correction.PassageEndMS-200, clipStartMS+6000)
+		canReuseVerifiedReference := false
+		for _, existingReference := range references {
+			if existingReference.IsRevoked || existingReference.RecordingBlobID == "" || existingReference.RecordingSpeakerCorrectionID != correction.ID || existingReference.PassageStartMS != clipStartMS || existingReference.PassageEndMS != clipEndMS {
+				continue
+			}
+			if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+				blob, err := transaction.GetRecordingBlob(userId, existingReference.RecordingBlobID)
+				if err != nil {
+					return err
+				}
+				canReuseVerifiedReference = blob.IsStoredVerified
+				return nil
+			}); err != nil {
+				return err
+			}
+			if canReuseVerifiedReference {
+				break
+			}
+		}
+		if canReuseVerifiedReference {
+			continue
+		}
 		var chunks []*models.RecordingAudioChunk
 		hasOverlap := false
 		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
@@ -178,7 +200,9 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 			// Revalidate the reservation with the same owner-before-source order as
 			// paid admission and user reference mutations before locking blob rows.
-			currentReference, err := transaction.CreateRecordingVoiceReference(userId, reference, &models.RecordingBlob{BlobSHA256: hex.EncodeToString(digest[:]), BlobSizeBytes: int64(len(waveBytes))}, int64(maximumAccountBytes))
+			verificationReference := *reference
+			verificationReference.SourceGeneration = source.SourceGeneration
+			currentReference, err := transaction.CreateRecordingVoiceReference(userId, &verificationReference, &models.RecordingBlob{BlobSHA256: hex.EncodeToString(digest[:]), BlobSizeBytes: int64(len(waveBytes))}, int64(maximumAccountBytes))
 			if err != nil {
 				return err
 			}

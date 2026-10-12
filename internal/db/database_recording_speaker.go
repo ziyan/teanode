@@ -13,6 +13,7 @@ import (
 
 // RecordingSpeakerOperation keeps confirmed labels separate from generated evidence.
 type RecordingSpeakerOperation interface {
+	ProjectRecordingSpeakerCorrections(userId string, segments []*models.RecordingTranscriptSegment) error
 	CheckRecordingVoiceReferenceNames(userId string, referenceBlobIds, confirmedNames []string) error
 	GetRecordingSpeakerEvidence(userId, recordingId, attemptId string) (*models.RecordingTranscriptRun, *models.RecordingTranscriptionAttempt, error)
 	HasRecordingSpeakerOverlap(userId, runId, attemptId, localSpeakerId string, passageStartMS, passageEndMS int64) (bool, error)
@@ -258,6 +259,9 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 	}
 	if !hasRequestedSource {
 		return ErrNotFound
+	}
+	if identity.ConfirmedName == confirmedName {
+		return nil
 	}
 	var existingName recordingSpeakerIdentityModel
 	err := self.tx.Where("user_id = ? AND confirmed_name = ?", userId, confirmedName).Take(&existingName).Error

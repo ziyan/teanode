@@ -95,3 +95,27 @@ clips for five confirmed identities: provider inputs use at most four distinct n
 respect smaller model capabilities, exclude other accounts, and reject references
 revoked after preparation. Full local lint and naming have no findings. Dashboard,
 CLI, tool and native editing interactions still require their separate parity checks.
+
+## Integrated overlap review
+
+Review reproduced two bugs: original equal-time overlapping speakers could receive
+one time-only user label, and a merged rerun could inherit one original speaker's text
+edit. Shared speaker projection now binds the original attempt and local speaker.
+Rerun projection requires unique exact intervals in both original and destination
+versions; competing active corrections remain independent evidence. Partial or
+unaligned speaker confirmations retain original request/version/time citations and
+cannot become full-passage labels on another speaker. Generated speech is unchanged.
+Negative PostgreSQL race tests reproduce original overlap, a merged destination,
+competing text correction origins, and independent original confirmation evidence.
+
+A name change retains usable verified voice bytes under the updated confirmed identity;
+it does not revive explicitly revoked clips. Review also fixed retry verification that
+used a clip's historical generation after a source metadata edit. Real blob-store tests
+prove renamed samples remain selectable, curation recovery succeeds, and explicit sample
+refusals survive another rename. Renaming to the same name is now a metadata no-op.
+
+Recording knowledge sources retain their stable internal names. Existing specification
+settings now carry recordingId and recordingTitle for display across clients. Free title
+edits update this metadata without re-enabling paused reading or changing source IDs.
+Semantic settings comparison avoids extra source revisions from JSONB whitespace.
+PostgreSQL tests verify quoted titles, paused state and unchanged-sync stability.

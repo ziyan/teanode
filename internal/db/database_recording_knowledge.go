@@ -20,6 +20,11 @@ type RecordingKnowledgeOperation interface {
 	ReconcileDeletedRecordingKnowledge(recordingId string) error
 }
 
+type recordingKnowledgeSettings struct {
+	RecordingID    string `json:"recordingId"`
+	RecordingTitle string `json:"recordingTitle"`
+}
+
 func recordingKnowledgeName(recordingId string) string { return "recording:" + recordingId }
 
 func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) error {
@@ -35,12 +40,16 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 	if err != nil {
 		return err
 	}
+	sourceSettings, err := json.Marshal(recordingKnowledgeSettings{RecordingID: recordingId, RecordingTitle: recordingSource.RecordingTitle})
+	if err != nil {
+		return err
+	}
 	hasChangedEvidence := source == nil
 	if source == nil {
 		if err := self.reconcileRetainedRecordingKnowledge(recordingId); err != nil {
 			return err
 		}
-		source, err = self.PutAgentSource(&models.AgentKnowledgeSource{AgentID: ownerAgent.ID, Kind: models.SourceRecording, Name: recordingKnowledgeName(recordingId), Enabled: true, Specification: models.AgentKnowledgeSpecification{Settings: json.RawMessage(fmt.Sprintf("{\"recordingId\":\"%s\"}", recordingId))}})
+		source, err = self.PutAgentSource(&models.AgentKnowledgeSource{AgentID: ownerAgent.ID, Kind: models.SourceRecording, Name: recordingKnowledgeName(recordingId), Enabled: true, Specification: models.AgentKnowledgeSpecification{Settings: json.RawMessage(sourceSettings)}})
 		if err != nil {
 			return err
 		}
@@ -51,6 +60,15 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 		}
 		if source.Kind != models.SourceRecording {
 			return ErrAlreadyExists
+		}
+		var previousSettings recordingKnowledgeSettings
+		if err := json.Unmarshal(source.Specification.Settings, &previousSettings); err != nil || previousSettings.RecordingID != recordingId || previousSettings.RecordingTitle != recordingSource.RecordingTitle {
+			source.Specification.Settings = sourceSettings
+			source, err = self.PutAgentSource(source)
+			if err != nil {
+				return err
+			}
+			hasChangedEvidence = true
 		}
 		if !source.Enabled {
 			return self.reconcileRetainedRecordingKnowledge(recordingId)
@@ -102,6 +120,9 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 			if err := self.ProjectRecordingTranscriptTextCorrections(userId, segments); err != nil {
 				return err
 			}
+			if err := self.ProjectRecordingSpeakerCorrections(userId, segments); err != nil {
+				return err
+			}
 			for _, segmentRow := range segmentRows {
 				segment := (*models.RecordingTranscriptSegment)(segmentRow)
 				confirmedName := "unconfirmed speaker " + segment.LocalSpeakerID + " (request " + segment.RecordingTranscriptionAttemptID + ")"
@@ -113,26 +134,10 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 						break
 					}
 				}
-				latestGeneration := int64(-1)
-				for _, correction := range corrections {
-					if correction.RecordingMediaID != transcriptRun.RecordingMediaID || correction.PassageStartMS > segment.SegmentStartMS || correction.PassageEndMS < segment.SegmentEndMS || correction.SourceGeneration < latestGeneration {
-						continue
-					}
-					latestGeneration = correction.SourceGeneration
-					if correction.IsRemoved {
-						confirmedName = "unconfirmed speaker " + segment.LocalSpeakerID + " (request " + segment.RecordingTranscriptionAttemptID + ")"
-						if hasInvalidatedAttribution {
-							confirmedName = "automatic attribution uncertain because a conditioning voice reference changed"
-						}
-					} else {
-						confirmedName = names[correction.SpeakerIdentityID] + " (user confirmed)"
-					}
-				}
-				for _, correction := range corrections {
-					if correction.RecordingMediaID == transcriptRun.RecordingMediaID && correction.PassageStartMS < segment.SegmentEndMS && correction.PassageEndMS > segment.SegmentStartMS && (correction.PassageStartMS > segment.SegmentStartMS || correction.PassageEndMS < segment.SegmentEndMS) {
-						confirmedName = "partially corrected attribution; selected ranges below record user confirmations"
-						break
-					}
+				if segment.HasUserConfirmedSpeaker {
+					confirmedName = segment.EffectiveSpeakerName + " (user confirmed)"
+				} else if segment.HasUnalignedSpeakerCorrection {
+					confirmedName = "speaker correction is partial or cannot be unambiguously aligned; attribution uncertain"
 				}
 				title := fmt.Sprintf("%s, transcript version %d, %d-%d MS, %s", recordingSource.RecordingTitle, transcriptRun.VersionNumber, segment.SegmentStartMS, segment.SegmentEndMS, confirmedName)
 				meetingTime := "Meeting occurrence time is unknown."
@@ -148,6 +153,13 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 				}
 				// A selected interval does not imply word timestamps or ownership of the whole segment.
 				for _, correction := range corrections {
+					isMatched, _, err := self.recordingSpeakerCorrectionMatchesSegment(correction, transcriptRun, segment)
+					if err != nil {
+						return err
+					}
+					if !isMatched || (segment.RecordingTranscriptionAttemptID != correction.RecordingTranscriptionAttemptID && hasCompetingRecordingSpeakerCorrections(correction, corrections)) {
+						continue
+					}
 					if correction.RecordingMediaID != transcriptRun.RecordingMediaID || correction.PassageStartMS >= segment.SegmentEndMS || correction.PassageEndMS <= segment.SegmentStartMS {
 						continue
 					}
@@ -173,12 +185,18 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 				}
 				metadata := map[string]any{"recordingId": recordingId, "recordingMediaId": transcriptRun.RecordingMediaID, "recordingTranscriptRunId": transcriptRun.ID, "transcriptVersionNumber": transcriptRun.VersionNumber, "passageStartMS": segment.SegmentStartMS, "passageEndMS": segment.SegmentEndMS, "sourceGeneration": recordingSource.SourceGeneration, "isUntrustedRecording": true, "speakerAttribution": confirmedName}
 				metadata["appliedTextCorrectionId"] = segment.AppliedTextCorrectionID
+				metadata["effectiveSpeakerIdentityId"] = segment.EffectiveSpeakerIdentityID
+				metadata["hasUserConfirmedSpeaker"] = segment.HasUserConfirmedSpeaker
+				metadata["hasUnalignedSpeakerCorrection"] = segment.HasUnalignedSpeakerCorrection
 				if previous != nil && previous.Hash == hex.EncodeToString(digest[:]) {
 					for metadataKey, metadataEntry := range previous.Metadata {
 						metadata[metadataKey] = metadataEntry
 					}
 					metadata["sourceGeneration"] = recordingSource.SourceGeneration
 					metadata["appliedTextCorrectionId"] = segment.AppliedTextCorrectionID
+					metadata["effectiveSpeakerIdentityId"] = segment.EffectiveSpeakerIdentityID
+					metadata["hasUserConfirmedSpeaker"] = segment.HasUserConfirmedSpeaker
+					metadata["hasUnalignedSpeakerCorrection"] = segment.HasUnalignedSpeakerCorrection
 				}
 				passageHappenedAt := recordingSource.RecordedAt
 				if passageHappenedAt != nil {
@@ -212,6 +230,11 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 		return err
 	}
 	hasChangedEvidence = hasChangedEvidence || unalignedChanged
+	unalignedSpeakersChanged, err := self.syncRecordingUnalignedSpeakerCorrections(userId, recordingSource, ownerAgent.ID, source.ID, latestRuns, corrections, names)
+	if err != nil {
+		return err
+	}
+	hasChangedEvidence = hasChangedEvidence || unalignedSpeakersChanged
 	// Replaced versions can change segmentation; retire every old document not seen by this pass.
 	var unseen []*agentDocumentModel
 	if err := self.tx.Where("source_id = ? AND seen_at < ?", source.ID, passStartedAt).Find(&unseen).Error; err != nil {

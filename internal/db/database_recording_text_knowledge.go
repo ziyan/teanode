@@ -32,11 +32,11 @@ func (self *transaction) syncRecordingUnalignedTextCorrections(userId string, re
 			if latestRun.ID == correction.RecordingTranscriptRunID {
 				continue
 			}
-			var intervalSegmentCount int64
-			if err := self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id = ? AND segment_start_ms = ? AND segment_end_ms = ?", latestRun.ID, correction.PassageStartMS, correction.PassageEndMS).Count(&intervalSegmentCount).Error; err != nil {
+			canProject, err := self.canProjectRecordingTextCorrection(correction, latestRun, corrections)
+			if err != nil {
 				return false, err
 			}
-			if intervalSegmentCount == 1 {
+			if canProject {
 				continue
 			}
 		}

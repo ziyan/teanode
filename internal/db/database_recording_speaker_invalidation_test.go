@@ -167,6 +167,19 @@ func TestRecordingReferenceInvalidationReconcilesDependentMemory(test *testing.T
 				case "revoke":
 					err = transaction.RevokeRecordingVoiceReference(fixture.userId, recording.ID, reference.ID, recording.SourceGeneration)
 				case "rename":
+					if err := transaction.RenameRecordingSpeaker(fixture.userId, recording.ID, reference.SpeakerIdentityID, "Participant One", recording.SourceGeneration); err != nil {
+						test.Fatal(err)
+					}
+					var unchanged *models.Recording
+					unchanged, err = transaction.GetRecording(fixture.userId, recording.ID)
+					if err != nil || unchanged.SourceGeneration != recording.SourceGeneration {
+						test.Fatal("unchanged identity created a source edit", err)
+					}
+					var invalidations []*models.RecordingReferenceInvalidation
+					invalidations, err = transaction.ListRecordingReferenceInvalidations(fixture.userId, dependent.media.RecordingID)
+					if err != nil || len(invalidations) != 0 {
+						test.Fatal("unchanged name invalidated conditioning evidence", err)
+					}
 					err = transaction.RenameRecordingSpeaker(fixture.userId, recording.ID, reference.SpeakerIdentityID, "Participant Renamed", recording.SourceGeneration)
 				case "delete":
 					err = transaction.DeleteRecording(fixture.userId, recording.ID)
