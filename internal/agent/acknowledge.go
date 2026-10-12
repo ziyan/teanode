@@ -109,10 +109,10 @@ func shouldAcknowledge(settings *AskSettings) bool {
 
 // acknowledge reacts to the person's message in the background, once it
 // is stored; settings are the message's own, which are not the run's when
-// the message was handed to a turn already running. It never delays or fails the turn: the call runs on its own
-// goroutine, ends with the turn, and an error is logged and dropped.
-// previousAnswer is what the agent last said in the conversation, or
-// empty.
+// the message was handed to a turn already running. It never delays or
+// fails the turn: the call runs on its own goroutine, ends with the turn,
+// and an error is logged and dropped. previousAnswer is what the agent
+// last said in the conversation, or empty.
 func (self *AskRun) acknowledge(settings *AskSettings, messageId, previousAnswer string) {
 	if messageId == "" || !shouldAcknowledge(settings) || !self.agent.canThink(self.agent.settings.Configuration()) || self.agent.settings.Registry == nil {
 		return
@@ -155,7 +155,11 @@ func (self *Agent) acknowledge(ctx context.Context, settings *AskSettings, messa
 		prompt += "<previous_answer>\n" + previousAnswer + "\n</previous_answer>\n\n"
 	}
 	prompt += "<message>\n" + message + "\n</message>"
-	thinking, err := self.oneShot(ctx, self.runFor(settings.Agent, settings.Owner, nil, settings.Conversation.ID), "Picked a reaction", prompt, models.AgentJobReact, compactWork(configuration, config.AgentWorkAsk))
+	// Cheap work, as compaction is: the compact model when one is set,
+	// else the fast one, else the default (AgentModels). The turn's own
+	// model would answer seconds later, after the reaction stopped
+	// meaning "I read it".
+	thinking, err := self.oneShot(ctx, self.runFor(settings.Agent, settings.Owner, nil, settings.Conversation.ID), "Picked a reaction", prompt, models.AgentJobReact, config.AgentWorkCompact)
 	if err != nil {
 		return err
 	}
