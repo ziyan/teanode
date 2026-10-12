@@ -72,7 +72,7 @@ func (self *transaction) syncRecordingUnalignedTextCorrections(userId string, re
 			passageTime := happenedAt.Add(time.Duration(correction.PassageStartMS) * time.Millisecond)
 			happenedAt = &passageTime
 		}
-		document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: agentId, SourceID: sourceId, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?run=%s&startMS=%d&endMS=%d", recordingSource.ID, correction.RecordingTranscriptRunID, correction.PassageStartMS, correction.PassageEndMS), Hash: digestText, Bytes: int64(len(transcriptText)), Private: true, HappenedAt: happenedAt, Metadata: metadata})
+		document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: agentId, SourceID: sourceId, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingSource.ID, correction.RecordingTranscriptRunID, correction.PassageStartMS, correction.PassageEndMS), Hash: digestText, Bytes: int64(len(transcriptText)), Private: true, HappenedAt: happenedAt, Metadata: metadata})
 		if err != nil {
 			return false, err
 		}

@@ -99,9 +99,23 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 	}
 	hasChangedEvidence := source == nil
 	if source == nil {
-		if err := self.reconcileRetainedRecordingKnowledge(recordingId); err != nil {
+		var retainedDocumentCount int64
+		if err := self.tx.Model(&recordingKnowledgeDocumentModel{}).Where("recording_id = ?", recordingId).Count(&retainedDocumentCount).Error; err != nil {
 			return err
 		}
+		if retainedDocumentCount > 0 {
+			return self.reconcileRetainedRecordingKnowledge(recordingId)
+		}
+		var hasLearnablePassage bool
+		if err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM recording_transcript_run transcript_run
+			JOIN recording_transcript_segment segment ON segment.recording_transcript_run_id = transcript_run.id
+			WHERE transcript_run.recording_id = ? AND transcript_run.recording_processing_state = ?)`, recordingId, models.RecordingProcessingComplete).Scan(&hasLearnablePassage).Error; err != nil {
+			return err
+		}
+		if !hasLearnablePassage {
+			return nil
+		}
+
 		source, err = self.PutAgentSource(&models.AgentKnowledgeSource{AgentID: ownerAgent.ID, Kind: models.SourceRecording, Name: recordingKnowledgeName(recordingId), Enabled: true, Specification: models.AgentKnowledgeSpecification{Settings: json.RawMessage(sourceSettings)}})
 		if err != nil {
 			return err
@@ -256,7 +270,7 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 					passageTime := passageHappenedAt.Add(time.Duration(segment.SegmentStartMS) * time.Millisecond)
 					passageHappenedAt = &passageTime
 				}
-				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?run=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(transcriptText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
+				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(transcriptText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
 				if err != nil {
 					return err
 				}

@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 	"time"
 
@@ -58,6 +59,15 @@ func TestRecordingKnowledgeInitializationRecoversOnceWithModelsDisabled(test *te
 		if err != nil || documents != 1 || chunks != 1 {
 			test.Fatal("initialization did not publish evidence", err, documents, chunks)
 		}
+		publishedDocuments, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(publishedDocuments) != 1 {
+			test.Fatal(err)
+		}
+		citationURL, err := url.Parse(publishedDocuments[0].URL)
+		if err != nil || citationURL.Query().Get("version") != fixture.transcriptRun.ID || citationURL.Query().Get("startMS") != "2000" || citationURL.Query().Get("endMS") != "3000" {
+			test.Fatal("citation does not select the original version and interval", err)
+		}
+
 		repeated, err := transaction.InitializeRecordingKnowledge(fixture.userId, fixture.media.RecordingID)
 		if err != nil || repeated {
 			test.Fatal("repeated sweep initialized twice", err)
@@ -198,6 +208,94 @@ func TestRecordingKnowledgeInitializationSeparatesOwners(test *testing.T) {
 			if err != nil || reading.KnowledgeSource == nil || reading.KnowledgeSource.AgentID != ownedSource.agentId || reading.PendingDocumentCount != 1 {
 				test.Fatal("backfill mixed account evidence", err)
 			}
+		}
+	})
+}
+
+func TestRecordingKnowledgeCorrectionsDoNotRestartStoppedReading(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	completeLegacyRecording(test, fixture)
+	var fact *models.AgentFact
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(documents) != 1 {
+			test.Fatal(err)
+		}
+		page, err := transaction.PutAgentNode(&models.AgentNode{AgentID: fixture.agentId, Path: "projects/stopped-fixture", Kind: models.NodeProject, Name: "Stopped fixture"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		fact, err = transaction.AddAgentFact(&models.AgentFact{AgentID: fixture.agentId, NodeID: page.ID, Text: "A synthetic proposal was undecided.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: documents[0].ID, Quote: "synthetic proposal"}}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		reading, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.DeleteAgentSource(fixture.agentId, reading.KnowledgeSource.ID); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		segments, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingTranscriptText(fixture.userId, db.RecordingTranscriptTextCorrectionInput{RecordingID: source.ID, RecordingTranscriptSegmentID: segments[0].ID, ClientCorrectionID: "stopped-reading-edit", ExpectedSourceGeneration: source.SourceGeneration, CorrectedTranscriptText: "An edited synthetic proposal is still undecided."}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		reading, err = transaction.ReadRecordingLearning(fixture.userId, source.ID)
+		if err != nil || reading.KnowledgeSource != nil {
+			test.Fatal("correction restarted stopped reading", err)
+		}
+		retired, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
+		if err != nil || len(retired) != 1 || !retired[0].Dormant {
+			test.Fatal("stopped-source correction retained obsolete facts", err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		if didInitialize, err := transaction.InitializeRecordingKnowledge(fixture.userId, source.ID); err != nil || didInitialize {
+			test.Fatal("recovery restarted stopped reading", err)
+		}
+	})
+}
+
+func TestRecordingKnowledgeDoesNotCreateSourceWithoutSpeech(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		reading, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
+		if err != nil || reading.KnowledgeSource != nil {
+			test.Fatal("incomplete recording created an empty source", err)
+		}
+	})
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, nil); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		reading, err := transaction.ReadRecordingLearning(fixture.userId, fixture.media.RecordingID)
+		if err != nil || reading.KnowledgeSource != nil {
+			test.Fatal("no-speech version created an empty source", err)
 		}
 	})
 }

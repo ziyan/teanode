@@ -170,6 +170,7 @@ func TestRecordingTextProjectionRejectsCompetingOriginalSegments(test *testing.T
 
 func TestRecordingKnowledgeTitleKeepsStableSourceIdentity(test *testing.T) {
 	fixture := newTranscriptFixture(test)
+	completeLegacyRecording(test, fixture)
 	var originalSource *models.AgentKnowledgeSource
 	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
 		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
