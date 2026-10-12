@@ -115,4 +115,7 @@ type RecordingTranscriptSegment struct {
 	SegmentStartMS                  int64  `json:"segmentStartMS"`
 	SegmentEndMS                    int64  `json:"segmentEndMS"`
 	TranscriptText                  string `json:"transcriptText"`
+	EffectiveTranscriptText         string `json:"effectiveTranscriptText" gorm:"-"`
+	AppliedTextCorrectionID         string `json:"appliedTextCorrectionId" gorm:"-"`
+	HasUnalignedTextCorrection      bool   `json:"hasUnalignedTextCorrection" gorm:"-"`
 }
