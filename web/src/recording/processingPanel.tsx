@@ -639,8 +639,11 @@ export function RecordingProcessingPanel({
                   target="_blank"
                   rel="noreferrer"
                 >
-                  {t('recordingProcessing.playOriginalPassage')} {timelineTime(reference.passageStartMS)}–
-                  {timelineTime(reference.passageEndMS)}
+                  {t('recordingProcessing.playOriginalPassage')}{' '}
+                  {t('recordingProcessing.passageRange', {
+                    startTime: timelineTime(reference.passageStartMS),
+                    endTime: timelineTime(reference.passageEndMS),
+                  })}
                 </a>
               }
               actions={

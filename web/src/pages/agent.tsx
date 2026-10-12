@@ -2677,7 +2677,10 @@ function KnowledgeSourcesCard() {
       {removing ? (
         <ConfirmDialog
           title={t('agent.knowledgeRemove')}
-          body={t('agent.knowledgeRemoveBody', { name: removing.name, documents: removing.documentCount })}
+          body={t('agent.knowledgeRemoveBody', {
+            name: sourceDisplayName(removing),
+            documents: removing.documentCount,
+          })}
           confirmLabel={t('agent.knowledgeRemove')}
           busy={busy}
           onClose={() => setRemoving(null)}

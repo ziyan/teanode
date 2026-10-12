@@ -160,3 +160,17 @@ paid processing confirmation with a configured model, and nonempty capability
 labels still need isolated fixtures. Browser file selection remains blocked by
 extension file access. No paid call, actual billing, live LLM execution or
 real-iPhone validation is claimed by this stream.
+
+
+A subsequent local-only model stub allowed the remaining configuration and
+source controls to be inspected at desktop and phone widths. Its model list
+used existing provider capability metadata; its execution endpoint refused
+requests. The audit opened and canceled the explicit paid-version dialog,
+inspected capability labels and the Off option, exercised source pause/resume,
+and canceled stop-reading confirmation. Source confirmation now uses the human
+recording title and links lead to recording metadata instead of generic source
+name/path editing. Global and personal agents were restored Off afterward,
+providers removed, default/transcription assignments cleared, and the isolated
+preview restarted and verified. These are interface checks, not provider or
+billing validation. Populated reference/invalidation and unaligned-projection
+visual fixtures remain pending.
