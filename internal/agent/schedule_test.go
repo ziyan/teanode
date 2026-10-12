@@ -67,3 +67,17 @@ func firstLine(text string) string {
 	}
 	return text
 }
+
+// A schedule's answer is mailed as plain text: the lines only the dashboard
+// reads are not in it, a link to one of its pages is its words, and the
+// subject is the first line without its Markdown marks.
+func TestAScheduleMailCarriesNothingHidden(t *testing.T) {
+	answer := mailedAnswer("**Your morning**\nThe plumber's [invoice](mail:01abc) is in. <!-- kept: 1 -->\n<!--suggestions:[\"Pay it\",\"Not now\"]-->")
+	subject, body := scheduleMail("Morning brief", answer)
+	if subject != "Your morning" || body != "The plumber's invoice is in." {
+		t.Errorf("the mail was %q, %q", subject, body)
+	}
+	if subject, _ := scheduleMail("Morning brief", "One long line, no subject"); subject != "Morning brief" {
+		t.Errorf("an answer of one line had the subject %q", subject)
+	}
+}
