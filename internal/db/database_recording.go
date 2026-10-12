@@ -44,6 +44,7 @@ type recordingModel struct {
 	UserID                *string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	RecordedAt            *time.Time
 	ClientRecordingID     string
 	RecordingTitle        string
 	RecordingOrigin       models.RecordingOrigin
@@ -66,7 +67,12 @@ type recordingPartModel models.RecordingMediaPart
 func (recordingPartModel) TableName() string { return "recording_media_part" }
 
 func recordingFromModel(row *recordingModel) *models.Recording {
-	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+	recordedAt := row.RecordedAt
+	if recordedAt != nil {
+		recordedAtUTC := recordedAt.UTC()
+		recordedAt = &recordedAtUTC
+	}
+	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
 }
 
 func recordingMediaFromModel(row *recordingMediaModel) *models.RecordingMedia {
@@ -123,7 +129,7 @@ func (self *transaction) CreateRecording(recording *models.Recording) (*models.R
 	if recording.RecordingOrigin == models.RecordingOriginCapture {
 		captureState = models.RecordingCaptureActive
 	}
-	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
+	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}
@@ -428,6 +434,9 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err != nil {
 		return err
 	}
+	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
+		return err
+	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
 func (self *transaction) ListRecordingsForCleanup(limit int) ([]*models.Recording, error) {
@@ -462,6 +471,9 @@ func (self *transaction) AdvanceRecordingMediaCleanup(recordingId, mediaId strin
 func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	var row recordingModel
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND (deleted_at IS NOT NULL OR user_id IS NULL)", recordingId).Take(&row).Error; err != nil {
+		return err
+	}
+	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
 	var incompleteCount int64

@@ -1,0 +1,334 @@
+package db_test
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+func TestRecordingSpeakerCorrectionsOwnershipVersionsAndLearning(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "We could replace the fixture mechanism. This is a proposal."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "speaker-other")
+	correctionInput := db.RecordingSpeakerCorrectionInput{RecordingID: fixture.media.RecordingID, RecordingTranscriptionAttemptID: attempt.ID, LocalSpeakerID: "speaker-one", ConfirmedName: "Participant One", ClientCorrectionID: "confirmation-one", PassageStartMS: -1, PassageEndMS: -1}
+	var sourceGeneration int64
+	var correction *models.RecordingSpeakerCorrection
+	var document *models.AgentDocument
+	var fact *models.AgentFact
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		sourceGeneration = source.SourceGeneration
+		correctionInput.ExpectedSourceGeneration = sourceGeneration
+		knowledgeSource, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+source.ID)
+		if err != nil || knowledgeSource == nil {
+			test.Fatal(err)
+		}
+		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(documents) != 1 {
+			test.Fatal("passive recording was not filed", err, len(documents))
+		}
+		document = documents[0]
+		if document.HappenedAt != nil {
+			test.Fatal("upload time became meeting occurrence time")
+		}
+		page, err := transaction.PutAgentNode(&models.AgentNode{AgentID: fixture.agentId, Path: "projects/fixture", Kind: models.NodeProject, Name: "Fixture"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		fact, err = transaction.AddAgentFact(&models.AgentFact{AgentID: fixture.agentId, NodeID: page.ID, Text: "An unidentified participant proposed a replacement.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: document.ID, Quote: "This is a proposal."}}})
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CorrectRecordingSpeaker(otherOwnerId, correctionInput)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("other account corrected evidence", err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		corrections, err := transaction.CorrectRecordingSpeaker(fixture.userId, correctionInput)
+		if err != nil || len(corrections) != 1 {
+			test.Fatal(err)
+		}
+		correction = corrections[0]
+		repeated, err := transaction.CorrectRecordingSpeaker(fixture.userId, correctionInput)
+		if err != nil || len(repeated) != 1 || repeated[0].ID != correction.ID {
+			test.Fatal("lost reply duplicated corrections", err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		changedFacts, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
+		if err != nil || len(changedFacts) != 1 || !changedFacts[0].Dormant {
+			test.Fatal("old attribution stayed active", err)
+		}
+		revisions, err := transaction.ListAgentRevisions(fixture.agentId, fact.NodeID, 20)
+		if err != nil {
+			test.Fatal(err)
+		}
+		hasRetirement := false
+		for _, revision := range revisions {
+			if revision.Kind == models.RevisionFactStruck {
+				hasRetirement = true
+			}
+		}
+		if !hasRetirement {
+			test.Fatal("correction lost memory revision history")
+		}
+		rerun, err := transaction.CreateRecordingTranscriptRun(fixture.userId, fixture.media.ID, fixture.agentId, "rerun-with-references", "fixture:diarize", true)
+		if err != nil || rerun.VersionNumber != 2 {
+			test.Fatal(err)
+		}
+		unchangedCorrections, err := transaction.ListRecordingSpeakerCorrections(fixture.userId, fixture.media.RecordingID)
+		if err != nil || len(unchangedCorrections) != 1 || unchangedCorrections[0].ID != correction.ID {
+			test.Fatal("reprocessing lost manual confirmation", err)
+		}
+	})
+	staleInput := correctionInput
+	staleInput.ClientCorrectionID = "stale-confirmation"
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CorrectRecordingSpeaker(fixture.userId, staleInput)
+		return err
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("stale generation replaced correction", err)
+	}
+	mismatchedInput := correctionInput
+	mismatchedInput.RecordingID = "missing-source"
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CorrectRecordingSpeaker(fixture.userId, mismatchedInput)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("mismatched source accepted", err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.RenameRecordingSpeaker(fixture.userId, source.ID, correction.SpeakerIdentityID, "Participant Renamed", source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+		source, err = transaction.GetRecording(fixture.userId, source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.RemoveRecordingSpeakerCorrection(fixture.userId, source.ID, correction.ID, source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.DeleteRecording(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		deletedKnowledge, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+source.ID)
+		if err != nil || deletedKnowledge != nil {
+			test.Fatal("deleted recording retained accessible transcript knowledge", err)
+		}
+	})
+}
+
+func TestRecordingReferencesRejectParentMismatchAndKeepRevocation(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	var chunk *models.RecordingAudioChunk
+	blob := &models.RecordingBlob{ID: db.RecordingAudioFileID(fixture.transcriptRun.ID, 0), BlobSizeBytes: 128, BlobSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		chunk, err = transaction.CreateRecordingAudioChunk(fixture.userId, fixture.transcriptRun.ID, fixture.claim, &models.RecordingAudioChunk{ChunkIndex: 0, TimelineStartMS: 2000, AudioDurationMS: 4000}, blob, 1<<20)
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	var correction *models.RecordingSpeakerCorrection
+	var reference *models.RecordingVoiceReference
+	var reprocessed *models.RecordingTranscriptRun
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 6000, TranscriptText: "A fixture proposal was discussed."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 4000); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		corrections, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: attempt.ID, ClientCorrectionID: "reference-confirmation", LocalSpeakerID: "speaker-one", ConfirmedName: "Participant One", ExpectedSourceGeneration: source.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1})
+		if err != nil {
+			test.Fatal(err)
+		}
+		correction = corrections[0]
+		source, err = transaction.GetRecording(fixture.userId, source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		reference = &models.RecordingVoiceReference{RecordingID: source.ID, RecordingMediaID: fixture.media.ID, RecordingTranscriptRunID: fixture.transcriptRun.ID, RecordingSpeakerCorrectionID: correction.ID, SpeakerIdentityID: correction.SpeakerIdentityID, PassageStartMS: 2200, PassageEndMS: 5200, SourceGeneration: source.SourceGeneration}
+		reprocessed, err = transaction.CreateRecordingTranscriptRun(fixture.userId, fixture.media.ID, fixture.agentId, "reference-rerun", "fixture:diarize", true)
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	clipBlob := &models.RecordingBlob{BlobSizeBytes: 96044, BlobSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+	badReference := *reference
+	badReference.RecordingTranscriptRunID = reprocessed.ID
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingVoiceReference(fixture.userId, &badReference, clipBlob, 1<<20)
+		return err
+	})
+	if !errors.Is(err, db.ErrInvalidArguments) {
+		test.Fatal("unrelated generated version accepted as clip provenance", err)
+	}
+	badReference = *reference
+	badReference.RecordingMediaID = "unrelated-media"
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingVoiceReference(fixture.userId, &badReference, clipBlob, 1<<20)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("unrelated media accepted as clip provenance", err)
+	}
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingVoiceReference(fixture.userId, reference, clipBlob, 100)
+		return err
+	})
+	if !errors.Is(err, db.ErrTooMuchAsked) {
+		test.Fatal("reference bypassed existing account quota", err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		reference, err = transaction.CreateRecordingVoiceReference(fixture.userId, reference, clipBlob, 1<<20)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.VerifyRecordingBlob(fixture.userId, reference.RecordingBlobID, clipBlob.BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+		usable, err := transaction.ListUsableRecordingVoiceReferences(fixture.userId, 4)
+		if err != nil || len(usable) != 1 {
+			test.Fatal("verified confirmed sample unavailable", err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, reference.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.RevokeRecordingVoiceReference(fixture.userId, source.ID, reference.ID, source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+		usable, err = transaction.ListUsableRecordingVoiceReferences(fixture.userId, 4)
+		if err != nil || len(usable) != 0 {
+			test.Fatal("revoked clip still conditions provider", err)
+		}
+		if err := transaction.DeleteRevokedRecordingVoiceReference(fixture.userId, source.ID, reference.ID); err != nil {
+			test.Fatal(err)
+		}
+		references, err := transaction.ListRecordingVoiceReferences(fixture.userId, source.ID)
+		if err != nil || len(references) != 1 || !references[0].IsRevoked || references[0].RecordingBlobID != "" {
+			test.Fatal("revocation disappeared after byte cleanup", err)
+		}
+		source, err = transaction.GetRecording(fixture.userId, source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		candidate := *reference
+		candidate.SourceGeneration = source.SourceGeneration
+		repeated, err := transaction.CreateRecordingVoiceReference(fixture.userId, &candidate, clipBlob, 1<<20)
+		if err != nil || !repeated.IsRevoked || repeated.RecordingBlobID != "" {
+			test.Fatal("automatic curation recreated deleted sample", err)
+		}
+		if err := transaction.MarkRecordingSpeakerCuration(fixture.userId, source.ID, source.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+		pending, err := transaction.ListRecordingsAwaitingSpeakerCuration(10)
+		if err != nil || len(pending) != 0 {
+			test.Fatal("unsuitable or revoked generation stays in busy loop", err)
+		}
+	})
+}
+
+func TestRecordingLearningRejectsStaleEvidenceAfterCorrection(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	var originalDocuments []*models.AgentDocument
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "The fixture is a proposal, not an accepted commitment."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		var err error
+		originalDocuments, _, err = transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(originalDocuments) != 1 {
+			test.Fatal(err)
+		}
+		if err := transaction.CheckRecordingKnowledgeEvidence(fixture.userId, originalDocuments); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: attempt.ID, LocalSpeakerID: "speaker-one", ConfirmedName: "Confirmed Fixture", ClientCorrectionID: "late-confirmation", PassageStartMS: 2200, PassageEndMS: 2700, ExpectedSourceGeneration: source.SourceGeneration}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.CheckRecordingKnowledgeEvidence(fixture.userId, originalDocuments)
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("old model evidence survived a passage correction", err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		latest, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(latest) != 1 {
+			test.Fatal(err)
+		}
+		if latest[0].Hash == originalDocuments[0].Hash {
+			test.Fatal("partial correction did not change digest evidence")
+		}
+		if err := transaction.CheckRecordingKnowledgeEvidence(fixture.userId, latest); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.DeleteRecording(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.CheckRecordingKnowledgeEvidence(fixture.userId, originalDocuments)
+	})
+	if !errors.Is(err, db.ErrRecordingDeleted) {
+		test.Fatal("deleted source accepted stale model output", err)
+	}
+}

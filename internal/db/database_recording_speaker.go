@@ -1,0 +1,445 @@
+package db
+
+import (
+	"errors"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/ziyan/teanode/internal/models"
+	"gorm.io/gorm"
+)
+
+// RecordingSpeakerOperation keeps confirmed labels separate from generated evidence.
+type RecordingSpeakerOperation interface {
+	ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]*models.Recording, error)
+	MarkRecordingSpeakerCuration(userId, recordingId string, sourceGeneration int64) error
+	CreateRecordingVoiceReference(userId string, reference *models.RecordingVoiceReference, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingVoiceReference, error)
+	ListUsableRecordingVoiceReferences(userId string, referenceLimit int) ([]*models.RecordingVoiceReference, error)
+	DeleteRevokedRecordingVoiceReference(userId, recordingId, referenceId string) error
+	ListRecordingSpeakerIdentities(userId string) ([]*models.RecordingSpeakerIdentity, error)
+	ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error)
+	ListRecordingVoiceReferences(userId, recordingId string) ([]*models.RecordingVoiceReference, error)
+	CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error)
+	RenameRecordingSpeaker(userId, recordingId, speakerIdentityId, confirmedName string, expectedSourceGeneration int64) error
+	RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error
+	RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error
+}
+
+// RecordingSpeakerCorrectionInput names a request-local group or one selected interval.
+type RecordingSpeakerCorrectionInput struct {
+	RecordingID                     string
+	RecordingTranscriptionAttemptID string
+	ClientCorrectionID              string
+	LocalSpeakerID                  string
+	ConfirmedName                   string
+	ExpectedSourceGeneration        int64
+	PassageStartMS                  int64
+	PassageEndMS                    int64
+}
+
+type recordingSpeakerIdentityModel models.RecordingSpeakerIdentity
+
+func (recordingSpeakerIdentityModel) TableName() string { return "recording_speaker_identity" }
+
+type recordingSpeakerCorrectionModel models.RecordingSpeakerCorrection
+
+func (recordingSpeakerCorrectionModel) TableName() string { return "recording_speaker_correction" }
+
+type recordingVoiceReferenceModel models.RecordingVoiceReference
+
+func (recordingVoiceReferenceModel) TableName() string { return "recording_voice_reference" }
+
+func (self *transaction) ListRecordingSpeakerIdentities(userId string) ([]*models.RecordingSpeakerIdentity, error) {
+	var rows []*recordingSpeakerIdentityModel
+	if err := self.tx.Where("user_id = ?", userId).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	identities := make([]*models.RecordingSpeakerIdentity, 0, len(rows))
+	for _, row := range rows {
+		identities = append(identities, (*models.RecordingSpeakerIdentity)(row))
+	}
+	return identities, nil
+}
+func (self *transaction) ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error) {
+	if _, err := self.GetRecording(userId, recordingId); err != nil {
+		return nil, err
+	}
+	var rows []*recordingSpeakerCorrectionModel
+	if err := self.tx.Where("recording_id = ?", recordingId).Order("source_generation, passage_start_ms, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	corrections := make([]*models.RecordingSpeakerCorrection, 0, len(rows))
+	for _, row := range rows {
+		corrections = append(corrections, (*models.RecordingSpeakerCorrection)(row))
+	}
+	return corrections, nil
+}
+func (self *transaction) ListRecordingVoiceReferences(userId, recordingId string) ([]*models.RecordingVoiceReference, error) {
+	if _, err := self.GetRecording(userId, recordingId); err != nil {
+		return nil, err
+	}
+	var rows []*recordingVoiceReferenceModel
+	if err := self.tx.Where("recording_id = ?", recordingId).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	references := make([]*models.RecordingVoiceReference, 0, len(rows))
+	for _, row := range rows {
+		references = append(references, (*models.RecordingVoiceReference)(row))
+	}
+	return references, nil
+}
+func validConfirmedSpeakerName(confirmedName string) bool {
+	return strings.TrimSpace(confirmedName) != "" && len(confirmedName) <= 255 && !strings.ContainsFunc(confirmedName, unicode.IsControl)
+}
+func (self *transaction) CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error) {
+	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {
+		return nil, ErrInvalidArguments
+	}
+	// Account locking matches original-media reservations before taking the source lock.
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return nil, err
+	}
+	source, err := self.LockRecording(userId, correction.RecordingID)
+	if err != nil {
+		return nil, err
+	}
+	var attempt recordingAttemptModel
+	if err := self.tx.Where("id = ?", correction.RecordingTranscriptionAttemptID).Take(&attempt).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	transcriptRun, err := self.GetRecordingTranscriptRun(userId, attempt.RecordingTranscriptRunID)
+	if err != nil {
+		return nil, err
+	}
+	if transcriptRun.RecordingID != source.ID || attempt.RecordingAttemptState != models.RecordingAttemptComplete {
+		return nil, ErrNotFound
+	}
+	segments, err := self.ListRecordingTranscriptSegments(userId, transcriptRun.ID)
+	if err != nil {
+		return nil, err
+	}
+	isGroup := correction.PassageStartMS == -1 && correction.PassageEndMS == -1
+	if !isGroup && (correction.PassageStartMS < 0 || correction.PassageEndMS <= correction.PassageStartMS) {
+		return nil, ErrInvalidArguments
+	}
+	intervals := [][2]int64{}
+	for _, segment := range segments {
+		if segment.RecordingTranscriptionAttemptID != attempt.ID || segment.LocalSpeakerID != correction.LocalSpeakerID {
+			continue
+		}
+		if isGroup {
+			if segment.SegmentEndMS > segment.SegmentStartMS {
+				intervals = append(intervals, [2]int64{segment.SegmentStartMS, segment.SegmentEndMS})
+			}
+			continue
+		}
+		if correction.PassageStartMS >= segment.SegmentStartMS && correction.PassageEndMS <= segment.SegmentEndMS {
+			intervals = append(intervals, [2]int64{correction.PassageStartMS, correction.PassageEndMS})
+			break
+		}
+	}
+	if len(intervals) == 0 || len(intervals) > 20000 {
+		return nil, ErrInvalidArguments
+	}
+	var previous []*recordingSpeakerCorrectionModel
+	if err := self.tx.Where("recording_id = ? AND client_correction_id = ?", source.ID, correction.ClientCorrectionID).Order("passage_start_ms, id").Find(&previous).Error; err != nil {
+		return nil, err
+	}
+	if len(previous) > 0 {
+		var identity recordingSpeakerIdentityModel
+		if err := self.tx.Where("id = ? AND user_id = ?", previous[0].SpeakerIdentityID, userId).Take(&identity).Error; err != nil {
+			return nil, err
+		}
+		if identity.ConfirmedName != correction.ConfirmedName || len(previous) != len(intervals) {
+			return nil, ErrAlreadyExists
+		}
+		corrected := make([]*models.RecordingSpeakerCorrection, 0, len(previous))
+		for index, row := range previous {
+			if row.RecordingTranscriptionAttemptID != attempt.ID || row.LocalSpeakerID != correction.LocalSpeakerID || row.PassageStartMS != intervals[index][0] || row.PassageEndMS != intervals[index][1] {
+				return nil, ErrAlreadyExists
+			}
+			corrected = append(corrected, (*models.RecordingSpeakerCorrection)(row))
+		}
+		return corrected, nil
+	}
+	if source.SourceGeneration != correction.ExpectedSourceGeneration {
+		return nil, ErrAlreadyExists
+	}
+	var identity recordingSpeakerIdentityModel
+	err = self.tx.Where("user_id = ? AND confirmed_name = ?", userId, correction.ConfirmedName).Take(&identity).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		identity = recordingSpeakerIdentityModel{ID: newID(), UserID: userId, ConfirmedName: correction.ConfirmedName, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+		if err := self.tx.Create(&identity).Error; err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+	corrected := make([]*models.RecordingSpeakerCorrection, 0, len(intervals))
+	for _, interval := range intervals {
+		row := recordingSpeakerCorrectionModel{ID: newID(), RecordingID: source.ID, RecordingMediaID: transcriptRun.RecordingMediaID, RecordingTranscriptionAttemptID: attempt.ID, SpeakerIdentityID: identity.ID, ClientCorrectionID: correction.ClientCorrectionID, LocalSpeakerID: correction.LocalSpeakerID, PassageStartMS: interval[0], PassageEndMS: interval[1], SourceGeneration: source.SourceGeneration + 1, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+		if err := self.tx.Create(&row).Error; err != nil {
+			return nil, err
+		}
+		if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_media_id = ? AND passage_start_ms < ? AND passage_end_ms > ?", row.RecordingMediaID, row.PassageEndMS, row.PassageStartMS).Update("is_revoked", true).Error; err != nil {
+			return nil, err
+		}
+		corrected = append(corrected, (*models.RecordingSpeakerCorrection)(&row))
+	}
+	if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
+		return nil, err
+	}
+	return corrected, nil
+}
+func (self *transaction) advanceRecordingSpeakerGeneration(recordingId string) error {
+	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"source_generation": gorm.Expr("source_generation + 1"), "updated_at": time.Now().UTC().Truncate(time.Microsecond)}).Error
+}
+func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIdentityId, confirmedName string, expectedSourceGeneration int64) error {
+	if !validConfirmedSpeakerName(confirmedName) {
+		return ErrInvalidArguments
+	}
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return ErrAlreadyExists
+	}
+	var correctionCount int64
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND speaker_identity_id = ?", recordingId, speakerIdentityId).Count(&correctionCount).Error; err != nil {
+		return err
+	}
+	if correctionCount == 0 {
+		return ErrNotFound
+	}
+	updated := self.tx.Model(&recordingSpeakerIdentityModel{}).Where("id = ? AND user_id = ?", speakerIdentityId, userId).Update("confirmed_name", confirmedName)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	var affectedRecordingIds []string
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Distinct("recording_id").Where("speaker_identity_id = ?", speakerIdentityId).Order("recording_id").Pluck("recording_id", &affectedRecordingIds).Error; err != nil {
+		return err
+	}
+	for _, affectedRecordingId := range affectedRecordingIds {
+		if _, err := self.LockRecording(userId, affectedRecordingId); err != nil {
+			if errors.Is(err, ErrRecordingDeleted) {
+				continue
+			}
+			return err
+		}
+		if err := self.advanceRecordingSpeakerGeneration(affectedRecordingId); err != nil {
+			return err
+		}
+		if err := self.SyncRecordingKnowledge(userId, affectedRecordingId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error {
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return ErrAlreadyExists
+	}
+	updated := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("id = ? AND recording_id = ?", correctionId, recordingId).Update("is_removed", true)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_speaker_correction_id = ?", correctionId).Update("is_revoked", true).Error; err != nil {
+		return err
+	}
+	return self.advanceRecordingSpeakerGeneration(recordingId)
+}
+func (self *transaction) RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error {
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return ErrAlreadyExists
+	}
+	updated := self.tx.Model(&recordingVoiceReferenceModel{}).Where("id = ? AND recording_id = ?", referenceId, recordingId).Update("is_revoked", true)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return self.advanceRecordingSpeakerGeneration(recordingId)
+}
+
+// CreateRecordingVoiceReference reserves cleanup metadata before writing curated bytes.
+func (self *transaction) CreateRecordingVoiceReference(userId string, reference *models.RecordingVoiceReference, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingVoiceReference, error) {
+	if reference == nil || blob == nil || reference.PassageStartMS < 0 || reference.PassageEndMS-reference.PassageStartMS < 2000 || reference.PassageEndMS-reference.PassageStartMS > 10000 || blob.BlobSizeBytes <= 0 || blob.BlobSizeBytes > 320044 || !validRecordingSHA256(blob.BlobSHA256) {
+		return nil, ErrInvalidArguments
+	}
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return nil, err
+	}
+	source, err := self.LockRecording(userId, reference.RecordingID)
+	if err != nil {
+		return nil, err
+	}
+	if source.SourceGeneration != reference.SourceGeneration {
+		return nil, ErrAlreadyExists
+	}
+	transcriptRun, err := self.GetRecordingTranscriptRun(userId, reference.RecordingTranscriptRunID)
+	if err != nil {
+		return nil, err
+	}
+	if transcriptRun.RecordingID != source.ID || transcriptRun.RecordingMediaID != reference.RecordingMediaID {
+		return nil, ErrNotFound
+	}
+	var correction recordingSpeakerCorrectionModel
+	if err := self.tx.Where("id = ? AND recording_id = ?", reference.RecordingSpeakerCorrectionID, source.ID).Take(&correction).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if correction.IsRemoved || correction.SpeakerIdentityID != reference.SpeakerIdentityID || correction.RecordingMediaID != reference.RecordingMediaID || reference.PassageStartMS < correction.PassageStartMS || reference.PassageEndMS > correction.PassageEndMS {
+		return nil, ErrInvalidArguments
+	}
+	var correctionAttempt recordingAttemptModel
+	if err := self.tx.Where("id = ?", correction.RecordingTranscriptionAttemptID).Take(&correctionAttempt).Error; err != nil {
+		return nil, err
+	}
+	if correctionAttempt.RecordingTranscriptRunID != transcriptRun.ID || correctionAttempt.RecordingAttemptState != models.RecordingAttemptComplete {
+		return nil, ErrInvalidArguments
+	}
+	var overridingCount int64
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_media_id = ? AND source_generation > ? AND passage_start_ms < ? AND passage_end_ms > ?", correction.RecordingMediaID, correction.SourceGeneration, reference.PassageEndMS, reference.PassageStartMS).Count(&overridingCount).Error; err != nil {
+		return nil, err
+	}
+	if overridingCount > 0 {
+		return nil, ErrAlreadyExists
+	}
+	var existing recordingVoiceReferenceModel
+	err = self.tx.Where("recording_speaker_correction_id = ? AND passage_start_ms = ? AND passage_end_ms = ?", correction.ID, reference.PassageStartMS, reference.PassageEndMS).Take(&existing).Error
+	if err == nil {
+		if existing.RecordingID != reference.RecordingID || existing.RecordingMediaID != reference.RecordingMediaID || existing.RecordingTranscriptRunID != reference.RecordingTranscriptRunID || existing.SpeakerIdentityID != reference.SpeakerIdentityID {
+			return nil, ErrAlreadyExists
+		}
+		if existing.RecordingBlobID != "" {
+			previousBlob, err := self.GetRecordingBlob(userId, existing.RecordingBlobID)
+			if err != nil {
+				return nil, err
+			}
+			if previousBlob.BlobSHA256 != blob.BlobSHA256 || previousBlob.BlobSizeBytes != blob.BlobSizeBytes {
+				return nil, ErrAlreadyExists
+			}
+		}
+		return (*models.RecordingVoiceReference)(&existing), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	var activeCount int64
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("speaker_identity_id = ? AND NOT is_revoked", reference.SpeakerIdentityID).Count(&activeCount).Error; err != nil {
+		return nil, err
+	}
+	if activeCount >= 6 {
+		return nil, ErrTooMuchAsked
+	}
+	var reservedBytes int64
+	if err := self.tx.Raw(`SELECT COALESCE((SELECT SUM(original_size_bytes) FROM recording_media m JOIN recording r ON r.id=m.recording_id WHERE r.user_id = ?),0) + COALESCE((SELECT SUM(blob_size_bytes) FROM recording_blob b JOIN recording r ON r.id=b.recording_id WHERE r.user_id = ?),0)`, userId, userId).Scan(&reservedBytes).Error; err != nil {
+		return nil, err
+	}
+	if maximumAccountBytes <= 0 || blob.BlobSizeBytes > maximumAccountBytes-reservedBytes {
+		return nil, ErrTooMuchAsked
+	}
+	created := *reference
+	created.ID = newID()
+	created.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+	created.RecordingBlobID = "recording-reference-" + created.ID
+	derived := *blob
+	derived.ID = created.RecordingBlobID
+	derived.RecordingID = source.ID
+	derived.RecordingMediaID = created.RecordingMediaID
+	derived.RecordingBlobPurpose = models.RecordingBlobSpeakerReference
+	derived.CreatedAt = created.CreatedAt
+	derived.IsStoredVerified = false
+	if err := self.tx.Create((*recordingBlobModel)(&derived)).Error; err != nil {
+		return nil, err
+	}
+	if err := self.tx.Create((*recordingVoiceReferenceModel)(&created)).Error; err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+// ListUsableRecordingVoiceReferences only returns verified, owned, confirmed and unrevoked samples.
+func (self *transaction) ListUsableRecordingVoiceReferences(userId string, referenceLimit int) ([]*models.RecordingVoiceReference, error) {
+	if referenceLimit < 1 || referenceLimit > 24 {
+		return nil, ErrInvalidArguments
+	}
+	var rows []*recordingVoiceReferenceModel
+	if err := self.tx.Table("recording_voice_reference v").Select("v.*").Joins("JOIN recording r ON r.id=v.recording_id").Joins("JOIN recording_speaker_identity i ON i.id=v.speaker_identity_id").Joins("JOIN recording_speaker_correction c ON c.id=v.recording_speaker_correction_id").Joins("JOIN recording_blob b ON b.id=v.recording_blob_id").Where("r.user_id = ? AND i.user_id = ? AND r.deleted_at IS NULL AND NOT v.is_revoked AND NOT c.is_removed AND b.is_stored_verified", userId, userId).Order("v.created_at DESC, v.id").Limit(referenceLimit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	references := make([]*models.RecordingVoiceReference, 0, len(rows))
+	for _, row := range rows {
+		references = append(references, (*models.RecordingVoiceReference)(row))
+	}
+	return references, nil
+}
+
+// DeleteRevokedRecordingVoiceReference forgets derived metadata only after storage deletion succeeds.
+func (self *transaction) DeleteRevokedRecordingVoiceReference(userId, recordingId, referenceId string) error {
+	if _, err := self.LockRecording(userId, recordingId); err != nil {
+		return err
+	}
+	var reference recordingVoiceReferenceModel
+	if err := self.tx.Where("id = ? AND recording_id = ? AND is_revoked", referenceId, recordingId).Take(&reference).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return self.tx.Where("id = ? AND recording_id = ?", reference.RecordingBlobID, recordingId).Delete(&recordingBlobModel{}).Error
+}
+
+// ListRecordingsAwaitingSpeakerCuration avoids repeating a completed unsuitable sample search.
+func (self *transaction) ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]*models.Recording, error) {
+	if pageSize < 1 || pageSize > 100 {
+		return nil, ErrInvalidArguments
+	}
+	var rows []*recordingModel
+	if err := self.tx.Where("user_id IS NOT NULL AND deleted_at IS NULL AND speaker_curated_generation < source_generation AND EXISTS (SELECT 1 FROM recording_speaker_correction c WHERE c.recording_id=recording.id)").Order("updated_at,id").Limit(pageSize).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	sources := make([]*models.Recording, 0, len(rows))
+	for _, row := range rows {
+		sources = append(sources, recordingFromModel(row))
+	}
+	return sources, nil
+}
+func (self *transaction) MarkRecordingSpeakerCuration(userId, recordingId string, sourceGeneration int64) error {
+	updated := self.tx.Model(&recordingModel{}).Where("id = ? AND user_id = ? AND deleted_at IS NULL AND source_generation = ?", recordingId, userId, sourceGeneration).Update("speaker_curated_generation", sourceGeneration)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrAlreadyExists
+	}
+	return nil
+}

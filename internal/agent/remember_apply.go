@@ -160,6 +160,9 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	tally = self.prepareRememberedEvidence(ctx, agentId, prepared, evidenceKind, shown)
 
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := checkRecordingEvidence(ctx, tx, run); err != nil {
+			return err
+		}
 		if err := self.applyRememberedFacts(tx, run, answer, prepared, opened, selfPage, shown, theirWords); err != nil {
 			return err
 		}
@@ -243,6 +246,9 @@ func pageOfLinkEnd(tx db.Transaction, agentId, path string, opened map[string]*m
 func (self *Agent) openRememberedPages(ctx context.Context, run *Run, prepared []*preparedFact) error {
 	agentId := run.Agent.ID
 	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := checkRecordingEvidence(ctx, tx, run); err != nil {
+			return err
+		}
 		tx.AsActor(models.ActorRemember)
 		for _, ready := range prepared {
 			// The page this belongs on, which is the one already there
