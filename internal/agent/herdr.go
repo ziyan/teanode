@@ -470,21 +470,32 @@ func herdrNoteOf(computerName string, session *computer.HerdrSession, isAsked bo
 // noteHerdrAnswered writes into the main conversation, as a note nobody
 // reads but the drawer, that a question went, so a drawer opened later
 // draws it answered at once rather than asking the computer first. Notes
-// are not part of what the model is given.
+// are not part of what the model is given. It is also published, so a
+// drawer or a phone already showing the question folds it at once, with
+// what it was answered with, rather than offering options that are gone.
 func (self *Agent) noteHerdrAnswered(agentId string, attached *attachedComputer, event *computer.HerdrEvent) {
 	if question := event.HerdrSession.Question; question != nil {
 		detail := herdrNoteOf(attached.name, event.HerdrSession, false, event.AnswerText)
+		var mainConversationId string
 		if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
 			main, err := scheduleConversation(tx, agentId, "")
 			if err != nil {
 				return err
 			}
+			mainConversationId = main.ID
 			_, err = tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteHerdrAnswered, detail))
 			return err
 		}); err != nil {
 			log.Warningf("cannot note that the herdr question in %s on %q went: %s", event.HerdrSession.PaneID, attached.name, err)
 			return
 		}
+		// It belongs to no run, as a reaction does not, so it is never
+		// replayed: a drawer that opens later reads the note instead.
+		self.publish(Event{
+			Kind: EventNote, ConversationID: mainConversationId, At: time.Now(),
+			Note:     models.NoteText(models.NoteHerdrAnswered, detail),
+			NoteKind: string(models.NoteHerdrAnswered), NoteDetail: detail,
+		}, true)
 	}
 	self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 }
