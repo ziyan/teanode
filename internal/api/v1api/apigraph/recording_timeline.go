@@ -39,5 +39,8 @@ func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, argument
 	if err := transaction.ProjectRecordingTranscriptTextCorrections(owner.ID, segments); err != nil {
 		return nil, translateError(err)
 	}
+	if err := transaction.ProjectRecordingSpeakerCorrections(owner.ID, segments); err != nil {
+		return nil, translateError(err)
+	}
 	return &RecordingTranscriptTimelineView{SourceGeneration: source.SourceGeneration, Segments: segments, TranscriptRuns: transcriptRuns, SegmentCount: segmentCount, HasMoreSegments: int64(arguments.SegmentOffset)+int64(len(segments)) < segmentCount}, nil
 }

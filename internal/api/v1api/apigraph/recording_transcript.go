@@ -75,6 +75,9 @@ func (self *graph) ReadRecordingTranscript(ctx context.Context, arguments ReadRe
 	if err := transaction.ProjectRecordingTranscriptTextCorrections(owner.ID, segments); err != nil {
 		return nil, translateError(err)
 	}
+	if err := transaction.ProjectRecordingSpeakerCorrections(owner.ID, segments); err != nil {
+		return nil, translateError(err)
+	}
 	attempts, err := transaction.ListRecordingTranscriptionAttempts(owner.ID, transcriptRun.ID)
 	if err != nil {
 		return nil, translateError(err)
