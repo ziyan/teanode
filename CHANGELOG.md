@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.5] - 2026-10-12
+
+### Fixed
+
+- In the iPhone app, a coding session's question shows as one line with its options or answer, and its full text only when you tap Show details. (#424)
+
 ## [0.138.4] - 2026-10-12
 
 ### Fixed
