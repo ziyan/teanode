@@ -163,6 +163,7 @@ type Transaction interface {
 	InsightOperation
 	ReactionOperation
 	AttachmentOperation
+	RecordingReferenceOperation
 	RecordingSpeakerOperation
 	RecordingKnowledgeOperation
 	RecordingTranscriptOperation

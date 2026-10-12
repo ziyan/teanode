@@ -427,11 +427,25 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 
 	return media, true, nil
 }
 func (self *transaction) DeleteRecording(userId, recordingId string) error {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return err
+	}
 	recording, err := self.LockRecording(userId, recordingId)
 	if errors.Is(err, ErrRecordingDeleted) {
 		return nil
 	}
 	if err != nil {
+		return err
+	}
+	references, err := self.ListRecordingVoiceReferences(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, references, "The original voice-reference recording was deleted."); err != nil {
 		return err
 	}
 	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_id = ?", recordingId).Update("is_revoked", true).Error; err != nil {

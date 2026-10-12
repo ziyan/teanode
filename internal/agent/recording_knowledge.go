@@ -14,6 +14,13 @@ import (
 func (self *Agent) SyncRecordingKnowledge(ctx context.Context, userId, recordingId string) error {
 	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error { return transaction.SyncRecordingKnowledge(userId, recordingId) })
 }
+
+// ReconcileRecordingReferenceInvalidations retires memory that used revoked conditioning evidence.
+func (self *Agent) ReconcileRecordingReferenceInvalidations(ctx context.Context, userId, recordingId string) error {
+	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		return transaction.ReconcileRecordingReferenceInvalidations(userId, recordingId)
+	})
+}
 func (self *Agent) runRecordingIngest(ctx context.Context, run *Run, source *models.AgentKnowledgeSource) error {
 	passStartedAt := time.Now()
 	var specification struct {
@@ -21,6 +28,9 @@ func (self *Agent) runRecordingIngest(ctx context.Context, run *Run, source *mod
 	}
 	if err := json.Unmarshal(source.Specification.Settings, &specification); err != nil || specification.RecordingID == "" {
 		return fmt.Errorf("recording source is missing its recording identifier")
+	}
+	if err := self.ReconcileRecordingReferenceInvalidations(ctx, run.Owner.ID, specification.RecordingID); err != nil {
+		return err
 	}
 	if err := self.SyncRecordingKnowledge(ctx, run.Owner.ID, specification.RecordingID); err != nil {
 		return err

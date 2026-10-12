@@ -53,7 +53,7 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 			return ErrAlreadyExists
 		}
 		if !source.Enabled {
-			return nil
+			return self.reconcileRetainedRecordingKnowledge(recordingId)
 		}
 	}
 	runs, err := self.ListRecordingTranscriptRuns(userId, recordingId)
@@ -61,6 +61,10 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 		return err
 	}
 	corrections, err := self.ListRecordingSpeakerCorrections(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	invalidations, err := self.ListRecordingReferenceInvalidations(userId, recordingId)
 	if err != nil {
 		return err
 	}
@@ -94,6 +98,14 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 			for _, segmentRow := range segmentRows {
 				segment := (*models.RecordingTranscriptSegment)(segmentRow)
 				confirmedName := "unconfirmed speaker " + segment.LocalSpeakerID + " (request " + segment.RecordingTranscriptionAttemptID + ")"
+				hasInvalidatedAttribution := false
+				for _, invalidation := range invalidations {
+					if invalidation.RecordingTranscriptionAttemptID == segment.RecordingTranscriptionAttemptID {
+						hasInvalidatedAttribution = true
+						confirmedName = "automatic attribution uncertain because a conditioning voice reference changed"
+						break
+					}
+				}
 				latestGeneration := int64(-1)
 				for _, correction := range corrections {
 					if correction.RecordingMediaID != transcriptRun.RecordingMediaID || correction.PassageStartMS > segment.SegmentStartMS || correction.PassageEndMS < segment.SegmentEndMS || correction.SourceGeneration < latestGeneration {
@@ -102,6 +114,9 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 					latestGeneration = correction.SourceGeneration
 					if correction.IsRemoved {
 						confirmedName = "unconfirmed speaker " + segment.LocalSpeakerID + " (request " + segment.RecordingTranscriptionAttemptID + ")"
+						if hasInvalidatedAttribution {
+							confirmedName = "automatic attribution uncertain because a conditioning voice reference changed"
+						}
 					} else {
 						confirmedName = names[correction.SpeakerIdentityID] + " (user confirmed)"
 					}
@@ -118,6 +133,9 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 					meetingTime = "Meeting recorded at " + recordingSource.RecordedAt.UTC().Format(time.RFC3339)
 				}
 				transcriptText := title + "\n" + meetingTime + "\n" + segment.TranscriptText
+				if hasInvalidatedAttribution {
+					transcriptText += "\nThe generated attribution used a voice reference whose confirmation changed or was revoked. Treat automatic speaker attribution as uncertain. Explicit user passage confirmations remain evidence; no new transcription has been requested."
+				}
 				// A selected interval does not imply word timestamps or ownership of the whole segment.
 				for _, correction := range corrections {
 					if correction.RecordingMediaID != transcriptRun.RecordingMediaID || correction.PassageStartMS >= segment.SegmentEndMS || correction.PassageEndMS <= segment.SegmentStartMS {

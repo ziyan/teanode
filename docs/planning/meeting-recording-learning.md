@@ -58,3 +58,21 @@ require actual Chrome inspection at desktop and phone widths. Native build/simul
 checks and real iPhone recording/background behavior are separate checks. None of
 these interfaces, production deployment, real meeting quality or actual provider
 billing is established by this backend increment alone.
+
+## Conditioning reference corrections
+
+An accepted transcription attempt retains its sample blob IDs. Reference revocation,
+identity rename, speaker correction removal and raw-source deletion now add separate
+invalidation records to dependent attempts before sample provenance disappears.
+Generated speech remains unchanged. Existing knowledge documents mark automatic
+attribution uncertain while retaining independent user confirmations. Reconciliation
+retires dependent facts through the same revision machinery, including paused sources.
+A bounded recovery query exposes pending recordings independently of ingestion being
+turned on. Missing agents complete reconciliation without blocking later candidates.
+
+Review fixed a lock order issue: paid admission, reference mutations and clip byte
+verification acquire the account owner before source and reference rows. PostgreSQL
+race regressions cover cross-recording dependencies for all four invalidations and
+same-source admission versus deletion. Migration reversal and reapplication pass.
+Text editing, four-surface interactions, deployment and real-device evidence remain
+separate milestones.

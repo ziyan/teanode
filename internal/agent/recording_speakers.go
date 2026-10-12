@@ -176,11 +176,13 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		referenceCountByIdentity[correction.SpeakerIdentityID]++
 		// Reservation commits before bytes; a failed storage write retains a cleanup reference.
 		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			current, err := transaction.LockRecording(userId, recordingId)
+			// Revalidate the reservation with the same owner-before-source order as
+			// paid admission and user reference mutations before locking blob rows.
+			currentReference, err := transaction.CreateRecordingVoiceReference(userId, reference, &models.RecordingBlob{BlobSHA256: hex.EncodeToString(digest[:]), BlobSizeBytes: int64(len(waveBytes))}, int64(maximumAccountBytes))
 			if err != nil {
 				return err
 			}
-			if current.SourceGeneration != source.SourceGeneration {
+			if currentReference.IsRevoked || currentReference.RecordingBlobID != reference.RecordingBlobID {
 				return db.ErrAlreadyExists
 			}
 			if err := files.PutFileStream(ctx, reference.RecordingBlobID, bytes.NewReader(waveBytes), int64(len(waveBytes))); err != nil {

@@ -105,6 +105,9 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
 		return nil, err
 	}
+	if err := self.lockRecordingReferenceDependents(userId, correction.RecordingID); err != nil {
+		return nil, err
+	}
 	source, err := self.LockRecording(userId, correction.RecordingID)
 	if err != nil {
 		return nil, err
@@ -194,6 +197,17 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 		if err := self.tx.Create(&row).Error; err != nil {
 			return nil, err
 		}
+		var affectedReferenceRows []*recordingVoiceReferenceModel
+		if err := self.tx.Where("recording_media_id = ? AND passage_start_ms < ? AND passage_end_ms > ? AND NOT is_revoked", row.RecordingMediaID, row.PassageEndMS, row.PassageStartMS).Find(&affectedReferenceRows).Error; err != nil {
+			return nil, err
+		}
+		affectedReferences := make([]*models.RecordingVoiceReference, 0, len(affectedReferenceRows))
+		for _, referenceRow := range affectedReferenceRows {
+			affectedReferences = append(affectedReferences, (*models.RecordingVoiceReference)(referenceRow))
+		}
+		if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The confirmed speaker for this reference was corrected."); err != nil {
+			return nil, err
+		}
 		if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_media_id = ? AND passage_start_ms < ? AND passage_end_ms > ?", row.RecordingMediaID, row.PassageEndMS, row.PassageStartMS).Update("is_revoked", true).Error; err != nil {
 			return nil, err
 		}
@@ -226,6 +240,9 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Distinct("recording_id").Where("speaker_identity_id = ?", speakerIdentityId).Order("recording_id").Pluck("recording_id", &affectedRecordingIds).Error; err != nil {
 		return err
 	}
+	if err := self.lockRecordingReferenceDependentSources(userId, affectedRecordingIds); err != nil {
+		return err
+	}
 	var lockedSources []*recordingModel
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ? AND user_id = ? AND deleted_at IS NULL", affectedRecordingIds, userId).Order("id").Find(&lockedSources).Error; err != nil {
 		return err
@@ -250,6 +267,13 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
+	var affectedReferences []*models.RecordingVoiceReference
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("speaker_identity_id = ? AND NOT is_revoked", speakerIdentityId).Find(&affectedReferences).Error; err != nil {
+		return err
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The confirmed reference identity was renamed."); err != nil {
+		return err
+	}
 	if err := self.tx.Model(&identity).Update("confirmed_name", confirmedName).Error; err != nil {
 		return err
 	}
@@ -266,12 +290,32 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 }
 
 func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return err
+	}
 	source, err := self.LockRecording(userId, recordingId)
 	if err != nil {
 		return err
 	}
 	if source.SourceGeneration != expectedSourceGeneration {
 		return ErrAlreadyExists
+	}
+	references, err := self.ListRecordingVoiceReferences(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	affectedReferences := []*models.RecordingVoiceReference{}
+	for _, reference := range references {
+		if reference.RecordingSpeakerCorrectionID == correctionId && !reference.IsRevoked {
+			affectedReferences = append(affectedReferences, reference)
+		}
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The user removed this speaker confirmation."); err != nil {
+		return err
 	}
 	updated := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("id = ? AND recording_id = ?", correctionId, recordingId).Update("is_removed", true)
 	if updated.Error != nil {
@@ -286,12 +330,32 @@ func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, c
 	return self.advanceRecordingSpeakerGeneration(recordingId)
 }
 func (self *transaction) RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return err
+	}
 	source, err := self.LockRecording(userId, recordingId)
 	if err != nil {
 		return err
 	}
 	if source.SourceGeneration != expectedSourceGeneration {
 		return ErrAlreadyExists
+	}
+	references, err := self.ListRecordingVoiceReferences(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	affectedReferences := []*models.RecordingVoiceReference{}
+	for _, reference := range references {
+		if reference.ID == referenceId && !reference.IsRevoked {
+			affectedReferences = append(affectedReferences, reference)
+		}
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The user revoked this voice reference."); err != nil {
+		return err
 	}
 	updated := self.tx.Model(&recordingVoiceReferenceModel{}).Where("id = ? AND recording_id = ?", referenceId, recordingId).Update("is_revoked", true)
 	if updated.Error != nil {
@@ -499,6 +563,10 @@ func (self *transaction) CheckRecordingVoiceReferenceNames(userId string, refere
 	}
 	if len(referenceBlobIds) == 0 {
 		return nil
+	}
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
 	}
 	expectedNames := map[string]string{}
 	for referenceIndex, blobId := range referenceBlobIds {
