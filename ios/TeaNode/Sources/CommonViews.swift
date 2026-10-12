@@ -204,7 +204,10 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
         let translation = recognizer.translation(in: recognizer.view).x
         switch recognizer.state {
-        case .began, .changed:
+        case .began:
+            recognizer.view?.endEditing(true)
+            onChange(translation)
+        case .changed:
             onChange(translation)
         case .ended:
             onEnd(translation, recognizer.velocity(in: recognizer.view).x)
