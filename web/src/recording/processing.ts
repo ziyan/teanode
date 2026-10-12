@@ -146,5 +146,5 @@ export function confirmedSegmentIdentity(
     ? (speakers.speakerIdentities.find((identity) => identity.id === correction.speakerIdentityId) ?? null)
     : null
 }
-export const passagePlaybackPath = (mediaId: string, startMS: number, endMS: number) =>
-  `/api/v1/recordings/media/${encodeURIComponent(mediaId)}#t=${Math.max(0, startMS) / 1000},${Math.max(0, endMS) / 1000}`
+export const passagePlaybackPath = (mediaId: string, startMS: number, endMS: number, timelineStartMS: number) =>
+  `/api/v1/recordings/media/${encodeURIComponent(mediaId)}#t=${Math.max(0, startMS - timelineStartMS) / 1000},${Math.max(0, endMS - timelineStartMS) / 1000}`

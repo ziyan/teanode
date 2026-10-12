@@ -345,6 +345,7 @@ export function RecordingProcessingPanel({
                         segmentRun.recordingMediaId,
                         segment.segmentStartMS,
                         segment.segmentEndMS,
+                        mediaFiles.find((media) => media.id === segmentRun.recordingMediaId)?.timelineStartMS ?? 0,
                       )}
                       target="_blank"
                       rel="noreferrer"
@@ -550,6 +551,7 @@ export function RecordingProcessingPanel({
                     correction.recordingMediaId,
                     correction.passageStartMS,
                     correction.passageEndMS,
+                    mediaFiles.find((media) => media.id === correction.recordingMediaId)?.timelineStartMS ?? 0,
                   )}
                   target="_blank"
                   rel="noreferrer"
@@ -594,6 +596,7 @@ export function RecordingProcessingPanel({
                     reference.recordingMediaId,
                     reference.passageStartMS,
                     reference.passageEndMS,
+                    mediaFiles.find((media) => media.id === reference.recordingMediaId)?.timelineStartMS ?? 0,
                   )}
                   target="_blank"
                   rel="noreferrer"
