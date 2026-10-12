@@ -825,9 +825,10 @@ struct ReactionBadges: View {
 }
 
 /// ReactionBadge is one emoji. A reaction made a moment ago, by the person
-/// here or by the agent through the feed, springs in with a tap felt; one
-/// read back with the conversation is simply there, so scrolling does not
-/// set every badge bouncing.
+/// here or by the agent through the feed, springs in; one read back with
+/// the conversation is simply there, so scrolling does not set every badge
+/// bouncing. The haptics are the model's, felt once per reaction rather
+/// than once per badge drawn.
 struct ReactionBadge: View {
     let reaction: AgentMessageReaction
     @State private var scale: CGFloat = 1
