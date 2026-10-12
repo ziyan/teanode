@@ -13,6 +13,7 @@ import (
 
 // RecordingSpeakerOperation keeps confirmed labels separate from generated evidence.
 type RecordingSpeakerOperation interface {
+	ReadRecordingTranscriptPassageOffset(userId, runId string, passageStartMS, passageEndMS int64) (int, error)
 	ProjectRecordingSpeakerCorrections(userId string, segments []*models.RecordingTranscriptSegment) error
 	CheckRecordingVoiceReferenceNames(userId string, referenceBlobIds, confirmedNames []string) error
 	GetRecordingSpeakerEvidence(userId, recordingId, attemptId string) (*models.RecordingTranscriptRun, *models.RecordingTranscriptionAttempt, error)
