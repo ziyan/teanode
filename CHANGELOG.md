@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.7] - 2026-10-12
+
+### Fixed
+
+- A Claude Code or Codex question answered at the keyboard or on another device folds at once in the iPhone app and the dashboard, showing what it was answered with; the app's card also names the computer. (#399)
+
 ## [0.134.6] - 2026-10-12
 
 ### Fixed
