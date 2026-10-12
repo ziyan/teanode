@@ -405,3 +405,30 @@ Transcript text editing is being added as independent immutable corrections,
 with unique passage alignment across reruns and existing memory reconciliation.
 The original generated transcript remains available. No capability row is marked
 complete while a required interface, review or device acceptance check is missing.
+
+## Completed timeline and correction integration
+
+The completed recording timeline joins the latest completed version of each
+original in absolute timestamp order, with bounded pages and explicit run/media
+provenance. A pending rerun does not hide its previous completed version. Version
+history and incomplete originals remain available separately. PostgreSQL tests
+verify pagination, version selection, immutable history and foreign-account refusal.
+
+Text edits use independent immutable correction history. Both per-run and full
+recording reads project effective text while retaining generated text. Source and
+destination interval ambiguity is a review blocker until corrections remain
+independent evidence. Confirmed speaker projection is also being centralized so
+equal-time overlapping speakers cannot inherit another request-local group's name.
+
+A bounded reference-reconciliation sweep runs before the global agent-enabled
+check. Turning model work off cannot prevent stale attribution facts from being
+retired. A regression verifies reconciliation continues without a registry or
+provider call. Integrated recording, dreaming, memory and API PostgreSQL race
+checks and full lint/naming checks pass at the current local checkpoint.
+
+The transcript foundation is merged after all checks, including CodeQL and the
+rerun Server job, passed. Its merged release is being built and deployed with
+packaged descriptor-capable media readers. Deployment and authenticated checks
+are still pending for that release; the worker and correction increments remain
+drafts. Native package tests, simulator build and actual physical-device evidence
+are tracked separately.

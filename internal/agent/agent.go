@@ -103,15 +103,16 @@ type Agent struct {
 
 	// operations makes the API as a person, for runs nobody started from
 	// a request; lastScavenge is when old rows were last swept.
-	operations           OperationsFactory
-	lastScavenge         time.Time
-	lastRecordingMediaId string
-	lastDescribe         time.Time
-	lastRemember         time.Time
-	lastIngest           time.Time
-	lastDream            time.Time
-	lastSpeak            time.Time
-	lastWatch            time.Time
+	operations                           OperationsFactory
+	lastScavenge                         time.Time
+	lastRecordingMediaId                 string
+	lastRecordingReferenceReconciliation time.Time
+	lastDescribe                         time.Time
+	lastRemember                         time.Time
+	lastIngest                           time.Time
+	lastDream                            time.Time
+	lastSpeak                            time.Time
+	lastWatch                            time.Time
 
 	// watchesQueuedAt is when a look was last queued for each person's
 	// watch, by agent and skill/watch; see queueWatching.
@@ -439,6 +440,7 @@ func (self *Agent) tick(ctx context.Context) error {
 
 func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	configuration := self.settings.Configuration()
+	self.reconcileRecordingReferences(ctx, now)
 	if !configuration.Agent.Enabled {
 		return nil
 	}

@@ -21,6 +21,7 @@ type RecordingWorkerClaim struct {
 
 // RecordingTranscriptOperation versions generated evidence and tracks derived blobs.
 type RecordingTranscriptOperation interface {
+	ReadRecordingTranscriptTimelinePage(userId, recordingId string, segmentOffset, pageSize int) ([]*models.RecordingTranscriptSegment, []*models.RecordingTranscriptRun, int64, error)
 	GetLatestRecordingChunkAttempt(userId, chunkId string) (*models.RecordingTranscriptionAttempt, error)
 	GetRecordingTranscriptionAttemptEvidence(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error)
 	CancelRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
@@ -41,6 +42,44 @@ type RecordingTranscriptOperation interface {
 	SubmitRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim) error
 	FinishRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim, finished *models.RecordingTranscriptionAttempt, segments []*models.RecordingTranscriptSegment) (bool, error)
 	ListRecordingTranscriptSegments(userId, runId string) ([]*models.RecordingTranscriptSegment, error)
+}
+
+// ReadRecordingTranscriptTimelinePage joins the latest completed version of each original.
+func (self *transaction) ReadRecordingTranscriptTimelinePage(userId, recordingId string, segmentOffset, pageSize int) ([]*models.RecordingTranscriptSegment, []*models.RecordingTranscriptRun, int64, error) {
+	if segmentOffset < 0 || pageSize < 1 || pageSize > 250 {
+		return nil, nil, 0, ErrInvalidArguments
+	}
+	if _, err := self.GetRecording(userId, recordingId); err != nil {
+		return nil, nil, 0, err
+	}
+	latestRunIds := self.tx.Model(&recordingRunModel{}).Select("DISTINCT ON (recording_media_id) id").Where("recording_id = ? AND recording_processing_state = ?", recordingId, models.RecordingProcessingComplete).Order("recording_media_id, version_number DESC")
+	var runRows []recordingRunModel
+	if err := self.tx.Where("id IN (?)", latestRunIds).Order("created_at,id").Find(&runRows).Error; err != nil {
+		return nil, nil, 0, err
+	}
+	transcriptRuns := make([]*models.RecordingTranscriptRun, 0, len(runRows))
+	runIds := make([]string, 0, len(runRows))
+	for _, row := range runRows {
+		transcriptRuns = append(transcriptRuns, recordingRunFromModel(&row))
+		runIds = append(runIds, row.ID)
+	}
+	segments := make([]*models.RecordingTranscriptSegment, 0)
+	if len(runIds) == 0 {
+		return segments, transcriptRuns, 0, nil
+	}
+	query := self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id IN ?", runIds)
+	var segmentCount int64
+	if err := query.Count(&segmentCount).Error; err != nil {
+		return nil, nil, 0, err
+	}
+	var segmentRows []recordingSegmentModel
+	if err := query.Order("segment_start_ms,segment_end_ms,id").Offset(segmentOffset).Limit(pageSize).Find(&segmentRows).Error; err != nil {
+		return nil, nil, 0, err
+	}
+	for _, row := range segmentRows {
+		segments = append(segments, (*models.RecordingTranscriptSegment)(&row))
+	}
+	return segments, transcriptRuns, segmentCount, nil
 }
 
 // GetLatestRecordingChunkAttempt avoids loading current references for already submitted evidence.

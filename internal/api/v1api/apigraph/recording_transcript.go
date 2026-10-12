@@ -9,6 +9,7 @@ import (
 
 // RecordingTranscriptQuery reads generated evidence without requiring an active agent.
 type RecordingTranscriptQuery interface {
+	ReadRecordingTranscriptTimeline(context.Context, ReadRecordingTranscriptTimelineArguments) (*RecordingTranscriptTimelineView, error)
 	ReadRecordingTranscript(context.Context, ReadRecordingTranscriptArguments) (*RecordingTranscriptView, error)
 }
 
@@ -69,6 +70,9 @@ func (self *graph) ReadRecordingTranscript(ctx context.Context, arguments ReadRe
 	}
 	segments, segmentCount, err := transaction.ReadRecordingTranscriptPage(owner.ID, transcriptRun.ID, arguments.SegmentOffset, arguments.PageSize)
 	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := transaction.ProjectRecordingTranscriptTextCorrections(owner.ID, segments); err != nil {
 		return nil, translateError(err)
 	}
 	attempts, err := transaction.ListRecordingTranscriptionAttempts(owner.ID, transcriptRun.ID)

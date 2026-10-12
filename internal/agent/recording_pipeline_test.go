@@ -138,6 +138,10 @@ func TestRecordingUploadDecodeAndWorkerEvidencePipeline(test *testing.T) {
 		if err != nil || len(segments) != 3 || segments[0].SegmentStartMS != 7100 || segments[2].SegmentStartMS != 9100 || segments[2].SegmentEndMS != 9500 {
 			test.Fatal("provider timestamps lost original timeline alignment", err)
 		}
+		timeline, timelineRuns, timelineCount, err := transaction.ReadRecordingTranscriptTimelinePage(userId, source.ID, 0, 2)
+		if err != nil || timelineCount != 3 || len(timeline) != 2 || len(timelineRuns) != 1 || timelineRuns[0].RecordingMediaID != media.ID || timeline[0].SegmentStartMS != 7100 || timeline[1].SegmentStartMS != 8100 {
+			test.Fatal("full recording timeline lost chronology or provenance", err)
+		}
 		usage, err := transaction.SumAgentUsage(assistant.ID, time.Now().Add(-time.Hour))
 		if err != nil || usage.Calls != 3 || usage.PromptTokens != 42 {
 			test.Fatal("worker usage was duplicated or missing", err)
