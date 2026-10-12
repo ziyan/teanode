@@ -252,5 +252,5 @@ func (self *s3Storage) OpenFileRange(ctx context.Context, id string, offsetBytes
 			return nil, fmt.Errorf("storage: object store returned a different range")
 		}
 	}
-	return &FileStream{ReadCloser: output.Body, SizeBytes: *output.ContentLength}, nil
+	return &FileStream{ReadCloser: &boundedFileReader{Reader: &contextReader{ctx: ctx, reader: io.LimitReader(output.Body, *output.ContentLength)}, closer: output.Body}, SizeBytes: *output.ContentLength}, nil
 }

@@ -158,3 +158,20 @@ func TestObjectStoreRefusesAnIgnoredOrDifferentRange(test *testing.T) {
 		}
 	}
 }
+
+func TestObjectStoreCannotStreamPastTheRequestedPlaybackRange(test *testing.T) {
+	transport := streamTransport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 206, Header: http.Header{"Content-Length": []string{"6"}, "Content-Range": []string{"bytes 3-8/24"}}, ContentLength: 6, Body: io.NopCloser(strings.NewReader("abcdefextra-private-bytes"))}, nil
+	})
+	client := s3.New(s3.Options{Region: "test-region", Credentials: credentials.NewStaticCredentialsProvider("test-key", "test-secret", ""), HTTPClient: &http.Client{Transport: transport}})
+	spool := &s3Storage{settings: &S3Settings{Bucket: "fixture-bucket"}, client: client}
+	portion, err := spool.OpenFileRange(test.Context(), "fixture-media", 3, 6)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer func() { _ = portion.Close() }()
+	content, err := io.ReadAll(portion)
+	if err != nil || string(content) != "abcdef" {
+		test.Fatal("playback exceeded its bounded range", string(content), err)
+	}
+}

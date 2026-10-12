@@ -227,7 +227,7 @@ lint and naming checks pass. The first full CI run found that the new limits mad
 the agent settings description exceed the tool's 24,000-character result limit.
 Descriptions now keep readable JSON and offer nested subsection paths; the CLI
 also describes nested inputs. Focused tests check both interfaces and secret
-exclusion instead of enlarging the result limit. Full CI, dashboard/iOS flows, paid-provider evaluation
+exclusion instead of enlarging the result limit. A final review also bounded object-store reads even when a response body exceeds\nits declared range length; a fake transport reproduces that case. Full CI,\ndashboard/iOS flows, paid-provider evaluation
 and actual-device checks are not evidence supplied by this increment.
 
 ## Outcomes & Retrospective
