@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.135.0] - 2026-10-12
+
+### Added
+
+- The iPhone app edits a domain's aliases and credentials: tap one to change where it goes, its note, or switch it off. (#408)
+- The dashboard edits a domain's aliases and credentials: where an alias goes, its note, which address a credential may send as, and switching either off. (#409)
+
+### Changed
+
+- Your agent is friendlier in chat: warmer, a little playful, with a few emoji where they help. It stays plain when it speaks or writes mail for you. (#406)
+
+### Fixed
+
+- In the iPhone app, a chat opens at its newest message rather than somewhere in the middle. (#405)
+- In the iPhone app, counts and statuses line up with each row's arrow, and the DNS records' status icons form one column. (#407)
+
 ## [0.134.7] - 2026-10-12
 
 ### Fixed
