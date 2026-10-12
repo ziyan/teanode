@@ -113,6 +113,9 @@ jobs:
           shoot calendar-chinese-light light large -TeaNodeDemo -TeaNodeTab calendar -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN
           shoot calendar-day-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
           shoot calendar-day-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
+          shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
+          shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
