@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/deferutil"
+	"github.com/ziyan/teanode/internal/util/emoji"
 )
 
 // A friend who reads your message taps a reaction on it before they have
@@ -43,42 +44,45 @@ const (
 	acknowledgeTimeout = 20 * time.Second
 )
 
-// acknowledgeEmoji is every emoji the call may choose, in the order the
-// prompt describes them.
-var acknowledgeEmoji = []string{"👀", "👍", "❤️", "😂", "🎉", "🙏", "😮", "😢"}
-
-// acknowledgePrompt asks for the emoji. The default is 👀 because most of
+// acknowledgePrompt asks for the emoji. Any emoji will do, as a friend
+// picks from the whole keyboard; the common ones are named so the usual
+// cases come out the usual way, and the default is 👀 because most of
 // what a person writes to their agent is a request.
 const acknowledgePrompt = "A person sent their assistant a chat message. Choose the one emoji a friend would tap on it to show they read it. " +
-	"Answer with exactly one of these, or the word none, and nothing else: " +
-	"👀 for a request the assistant is about to work on (the default); " +
-	"👍 for an instruction or a plain acknowledgment; " +
-	"❤️ for thanks or kindness; " +
-	"😂 for a joke; " +
-	"🎉 for good news; " +
-	"🙏 for a favor done for the assistant, or an apology; " +
-	"😮 for surprising news; " +
-	"😢 for sad news; " +
-	"none only when no reaction fits, which is rare."
+	"Answer with exactly one emoji, or the word none, and nothing else. Any emoji may be the right one: pick the one that fits this message best, such as " +
+	"👀 for a request the assistant is about to work on (the default), " +
+	"👍 for an instruction or a plain acknowledgment, " +
+	"❤️ for thanks or kindness, " +
+	"😂 for a joke, " +
+	"🎉 for good news, " +
+	"🙏 for a favor done for the assistant or an apology, " +
+	"😮 for surprising news, " +
+	"😢 for sad news, " +
+	"or one that suits the subject better, such as ☕ for a coffee break, 🐶 for a story about a dog, or 💪 for a hard day's work done. " +
+	"Answer none only when no reaction fits, which is rare."
 
 // parseAcknowledgement is the emoji a model answered with, or empty for
-// none. The first allowed emoji wins, with or without the variation
-// selector a model leaves off a heart half the time, and anything that
-// is not a short answer is none.
+// none. The first word of a short answer that is one emoji, as the
+// reaction store takes it, wins; a heart a model wrote without its
+// variation selector gets it back. Anything that is not a short answer
+// is none: a model that explains itself has not answered the question.
 func parseAcknowledgement(answer string) string {
 	answer = strings.TrimSpace(answer)
 	if utf8.RuneCountInString(answer) > acknowledgeAnswerCharacters {
 		return ""
 	}
-	plain := strings.ReplaceAll(answer, "️", "")
-	chosen, chosenIndex := "", -1
-	for _, candidate := range acknowledgeEmoji {
-		index := strings.Index(plain, strings.ReplaceAll(candidate, "️", ""))
-		if index >= 0 && (chosenIndex < 0 || index < chosenIndex) {
-			chosen, chosenIndex = candidate, index
+	for _, word := range strings.Fields(answer) {
+		word = strings.Trim(word, ".,:;!?\"'()[]")
+		if word == "❤" {
+			word = "❤️"
 		}
+		found, err := emoji.Split(word)
+		if err != nil || len(found) != 1 || models.ValidateReactionEmoji(word) != nil {
+			continue
+		}
+		return word
 	}
-	return chosen
+	return ""
 }
 
 // shouldAcknowledge says whether a turn begins with the person's own

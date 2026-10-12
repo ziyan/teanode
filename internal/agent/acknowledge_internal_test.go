@@ -6,9 +6,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The answer is read strictly: the first allowed emoji of a short answer,
-// with a heart accepted without its variation selector, and anything else
-// is no reaction at all.
+// The answer is read strictly: the first word of a short answer that is
+// one emoji, any emoji, with a heart accepted without its variation
+// selector, and anything else is no reaction at all.
 func TestParseAcknowledgement(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		answer string
@@ -28,7 +28,11 @@ func TestParseAcknowledgement(t *testing.T) {
 		"none":                         {"none", ""},
 		"None, capitalized":            {"None.", ""},
 		"nothing":                      {"", ""},
-		"an emoji outside the set":     {"🦄", ""},
+		"any other emoji":              {"🦄", "🦄"},
+		"a flag":                       {"🇯🇵", "🇯🇵"},
+		"a skin tone":                  {"👍🏽", "👍🏽"},
+		"two emoji in one word":        {"🎉🎉", ""},
+		"a word that is not emoji":     {"thumbs", ""},
 		"an explanation":               {"I think a thumbs up 👍 is the right reaction to this message", ""},
 	} {
 		if got := parseAcknowledgement(testCase.answer); got != testCase.want {
@@ -36,9 +40,9 @@ func TestParseAcknowledgement(t *testing.T) {
 		}
 	}
 	// Whatever it returns is something the reaction store accepts.
-	for _, reactionEmoji := range acknowledgeEmoji {
-		if err := models.ValidateReactionEmoji(reactionEmoji); err != nil {
-			t.Errorf("%q cannot be a reaction: %s", reactionEmoji, err)
+	for _, answer := range []string{"👀", "❤", "🦄", "🇯🇵", "👍🏽"} {
+		if err := models.ValidateReactionEmoji(parseAcknowledgement(answer)); err != nil {
+			t.Errorf("%q cannot be a reaction: %s", parseAcknowledgement(answer), err)
 		}
 	}
 }
