@@ -24,6 +24,10 @@ import (
 const maximumSendBody = 1 << 20
 
 func (self *send) sendView(response http.ResponseWriter, request *http.Request) {
+	if !self.config.Current().Services.IsEnabled(models.ServiceMailRouting) || (self.settings != nil && self.settings.RunningServices != nil && !self.settings.RunningServices.IsEnabled(models.ServiceMailRouting)) {
+		http.Error(response, "Hosted mail routing is disabled", http.StatusServiceUnavailable)
+		return
+	}
 	if err := self.database.Transaction(func(tx db.Transaction) error {
 		// decode authorization
 		authorization := strings.Fields(request.Header.Get("Authorization"))
