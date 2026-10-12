@@ -20,6 +20,7 @@ type RecordingSpeakerOperation interface {
 	HasRecordingSpeakerOverlap(userId, runId, attemptId, localSpeakerId string, passageStartMS, passageEndMS int64) (bool, error)
 	ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]*models.Recording, error)
 	MarkRecordingSpeakerCuration(userId, recordingId string, sourceGeneration int64) error
+	QueueRecordingSpeakerCuration(userId, recordingId string) error
 	CreateRecordingVoiceReference(userId string, reference *models.RecordingVoiceReference, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingVoiceReference, error)
 	ListUsableRecordingVoiceReferences(userId string, referenceLimit int) ([]*models.RecordingVoiceReference, error)
 	ListRevokedRecordingVoiceReferencesForCleanup(afterReferenceId string, pageSize int) ([]*RecordingVoiceReferenceCleanupCandidate, error)
@@ -411,7 +412,14 @@ func (self *transaction) CreateRecordingVoiceReference(userId string, reference 
 	if err := self.tx.Where("id = ?", correction.RecordingTranscriptionAttemptID).Take(&correctionAttempt).Error; err != nil {
 		return nil, err
 	}
-	if correctionAttempt.RecordingTranscriptRunID != transcriptRun.ID || correctionAttempt.RecordingAttemptState != models.RecordingAttemptComplete {
+	if correctionAttempt.RecordingTranscriptRunID != transcriptRun.ID || correctionAttempt.RecordingAttemptState != models.RecordingAttemptComplete || transcriptRun.RecordingProcessingState != models.RecordingProcessingComplete {
+		return nil, ErrInvalidArguments
+	}
+	isAmbiguousPassage, err := self.HasRecordingSpeakerOverlap(userId, transcriptRun.ID, correctionAttempt.ID, correction.LocalSpeakerID, reference.PassageStartMS, reference.PassageEndMS)
+	if err != nil {
+		return nil, err
+	}
+	if isAmbiguousPassage {
 		return nil, ErrInvalidArguments
 	}
 	var overridingCount int64
@@ -574,6 +582,15 @@ func (self *transaction) ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]
 	}
 	return sources, nil
 }
+
+// QueueRecordingSpeakerCuration makes completed evidence eligible for bounded recovery again.
+func (self *transaction) QueueRecordingSpeakerCuration(userId, recordingId string) error {
+	if _, err := self.LockRecording(userId, recordingId); err != nil {
+		return err
+	}
+	return self.tx.Model(&recordingModel{}).Where("id = ? AND user_id = ? AND deleted_at IS NULL", recordingId, userId).Update("speaker_curated_generation", 0).Error
+}
+
 func (self *transaction) MarkRecordingSpeakerCuration(userId, recordingId string, sourceGeneration int64) error {
 	updated := self.tx.Model(&recordingModel{}).Where("id = ? AND user_id = ? AND deleted_at IS NULL AND source_generation = ?", recordingId, userId, sourceGeneration).Update("speaker_curated_generation", sourceGeneration)
 	if updated.Error != nil {
@@ -611,9 +628,10 @@ func (self *transaction) HasRecordingSpeakerOverlap(userId, runId, attemptId, lo
 	if err != nil {
 		return false, err
 	}
-	var overlapCount int64
-	err = self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id = ? AND recording_transcription_attempt_id = ? AND local_speaker_id <> ? AND segment_start_ms < ? AND segment_end_ms > ?", transcriptRun.ID, attemptId, localSpeakerId, passageEndMS, passageStartMS).Count(&overlapCount).Error
-	return overlapCount > 0, err
+	var isAmbiguousPassage bool
+	err = self.tx.Raw(`SELECT COUNT(*) > 1 OR COALESCE(BOOL_OR(recording_transcription_attempt_id <> ? OR local_speaker_id <> ?),false)
+		FROM recording_transcript_segment WHERE recording_transcript_run_id = ? AND segment_start_ms < ? AND segment_end_ms > ?`, attemptId, localSpeakerId, transcriptRun.ID, passageEndMS, passageStartMS).Scan(&isAmbiguousPassage).Error
+	return isAmbiguousPassage, err
 }
 
 // CheckRecordingVoiceReferenceNames holds confirmed reference rows through paid-call admission.

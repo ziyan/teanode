@@ -41,6 +41,10 @@ type recordingCurationFixture struct {
 }
 
 func newRecordingCurationFixture(test *testing.T, passageCount int) *recordingCurationFixture {
+	return newRecordingCurationFixtureWithPassages(test, passageCount, nil)
+}
+
+func newRecordingCurationFixtureWithPassages(test *testing.T, passageCount int, suppliedPassages []*models.RecordingTranscriptSegment) *recordingCurationFixture {
 	test.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	test.Cleanup(closeDatabase)
@@ -131,6 +135,9 @@ func newRecordingCurationFixture(test *testing.T, passageCount int) *recordingCu
 				localSpeakerId = fmt.Sprintf("speaker-%d", passageIndex)
 			}
 			generatedPassages = append(generatedPassages, &models.RecordingTranscriptSegment{LocalSpeakerID: localSpeakerId, SegmentStartMS: int64(passageIndex * 6000), SegmentEndMS: int64((passageIndex + 1) * 6000), TranscriptText: "A synthetic fixture statement."})
+		}
+		if suppliedPassages != nil {
+			generatedPassages = suppliedPassages
 		}
 		if _, err := transaction.FinishRecordingTranscriptionAttempt(userId, attempt.ID, claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, generatedPassages); err != nil {
 			test.Fatal(err)

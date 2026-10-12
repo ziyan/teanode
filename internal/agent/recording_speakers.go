@@ -102,7 +102,7 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		}); err != nil {
 			return err
 		}
-		if selectedRun == nil {
+		if selectedRun == nil || selectedAttempt == nil || selectedRun.RecordingProcessingState != models.RecordingProcessingComplete || selectedAttempt.RecordingAttemptState != models.RecordingAttemptComplete {
 			continue
 		}
 		clipStartMS := correction.PassageStartMS + 200
