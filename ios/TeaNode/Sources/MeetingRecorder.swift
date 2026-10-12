@@ -84,7 +84,7 @@ final class MeetingRecorder: NSObject {
             updateElapsed()
             try await finishSegment()
             guard var recording = localRecording else { return }
-            try recording.pause(at: elapsedMS, gapReason: isInterruption ? "interrupted" : "paused")
+            try recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: isInterruption ? "interrupted" : "paused")
             try await journal?.save(recording)
             localRecording = recording
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -133,7 +133,7 @@ final class MeetingRecorder: NSObject {
             updateElapsed()
             do { try await finishSegment() } catch { problemText = error.localizedDescription }
             guard var recording = localRecording else { return }
-            try recording.stop(at: elapsedMS)
+            try recording.stop(at: max(elapsedMS, recording.timelineDurationMS))
             try await journal?.save(recording)
             localRecording = recording
             captureTask?.cancel()
@@ -152,15 +152,17 @@ final class MeetingRecorder: NSObject {
         guard !hasSession else { return }
         do {
             journal = try Self.makeJournal()
+            guard let ownerId = try KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId else { return }
             let recovered: LocalRecording?
             if let localRecordingId {
                 recovered = try await journal?.read(localRecordingId, accountKey: accountKey)
             } else {
                 recovered = try await journal?.recordings(accountKey: accountKey).first(where: {
                     $0.recordingOrigin == "capture" && $0.recordingCaptureState != "stopped"
+                        && $0.belongsTo(accountKey: accountKey, recordingUserId: ownerId)
                 })
             }
-            guard var recording = recovered, let ownerId = try KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId,
+            guard var recording = recovered,
                 recording.belongsTo(accountKey: accountKey, recordingUserId: ownerId)
             else { return }
             localRecording = recording
@@ -262,6 +264,7 @@ final class MeetingRecorder: NSObject {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .default, options: [.allowBluetoothHFP])
         try session.setActive(true)
+        updateElapsed()
         let media = LocalRecordingMedia(originalFilename: "recording.caf", originalContentType: "audio/x-caf", timelineStartMS: elapsedMS)
         recording.localMedia.append(media)
         try await journal.save(recording)
