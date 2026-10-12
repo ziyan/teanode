@@ -145,6 +145,36 @@ public struct CodingQuestion: Hashable, Sendable {
 
     public var codingAgentName: String { codingAgentKind == "codex" ? "Codex" : "Claude Code" }
 
+    /// The question's lines worth reading, without the countdown a coding
+    /// agent draws under a request it will deny by itself, which is not part
+    /// of what it asks.
+    public var shownText: String {
+        questionText.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { line in !Self.isCountdown(String(line)) }
+            .joined(separator: "\n")
+    }
+
+    /// What the question asks, in one line, for a card that keeps the rest
+    /// until the person opens it. A tool's approval is named by the tool and
+    /// what it is for ("Bash command · Run the tests"), since its question
+    /// line is always "Do you want to proceed?"; any other question by the
+    /// line that asks, as the dashboard heads its card.
+    public var headline: String {
+        let lines = shownText.split(separator: "\n").map { line in line.trimmingCharacters(in: .whitespaces) }.filter { line in !line.isEmpty }
+        guard let first = lines.first else { return "" }
+        let chosen: String
+        if lines.count > 1, !first.contains("?"), first.split(separator: " ").count <= 3, !lines[1].contains("?") {
+            chosen = "\(first) · \(lines[1])"
+        } else {
+            chosen = lines.first { line in line.contains("?") } ?? first
+        }
+        return chosen.count > 160 ? String(chosen.prefix(157)) + "…" : chosen
+    }
+
+    static func isCountdown(_ line: String) -> Bool {
+        line.contains("will automatically") && line.range(of: #"\d{1,2}:\d{2}"#, options: .regularExpression) != nil
+    }
+
     /// The options a person picks, without the ones that ask to type.
     public var choices: [Option] { options.filter { $0.herdrOptionKind == "choice" } }
 
