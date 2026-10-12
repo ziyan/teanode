@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.136.1] - 2026-10-12
+
+### Changed
+
+- Your agent reacts to your messages as it reads them, at once, with 👀 when it gets to work, ❤️ to thanks or 😂 to a joke. You react only to its messages, and it only to yours. (#395)
+
 ## [0.136.0] - 2026-10-12
 
 ### Added
