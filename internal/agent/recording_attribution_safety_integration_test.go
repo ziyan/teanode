@@ -44,6 +44,22 @@ func TestRecordingSplitMergedSpeakerRetiresWholeAttribution(test *testing.T) {
 			test.Fatal(err)
 		}
 	})
+	localSettings := &Settings{Database: fixture.database, Storage: fixture.store, Configuration: func() *config.Configuration {
+		configuration := config.Default()
+		configuration.Agent.Enabled = false
+		return configuration
+	}}
+	if err := CurateRecordingSpeakersLocally(test.Context(), localSettings, fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
+	var originalReference *models.RecordingVoiceReference
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		references, err := transaction.ListRecordingVoiceReferences(fixture.userId, fixture.source.ID)
+		if err != nil || len(references) != 1 {
+			test.Fatal("initial whole-group sample was not prepared", err)
+		}
+		originalReference = references[0]
+	})
 	for passageIndex, confirmedName := range []string{"Split participant one", "Split participant two"} {
 		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
 			source, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
@@ -95,15 +111,33 @@ func TestRecordingSplitMergedSpeakerRetiresWholeAttribution(test *testing.T) {
 	}
 	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
 		references, err := transaction.ListRecordingVoiceReferences(fixture.userId, fixture.source.ID)
-		if err != nil || len(references) != 2 || references[0].SpeakerIdentityID == references[1].SpeakerIdentityID {
-			test.Fatal("selected user-confirmed split intervals were not kept separate", err)
+		if err != nil || len(references) != 3 {
+			test.Fatal("split sample history was not retained", err)
 		}
+		activeIdentities := map[string]bool{}
 		for _, reference := range references {
-			if reference.PassageStartMS < 3000 && reference.PassageEndMS > 3000 {
-				test.Fatal("clip crossed the explicit speaker boundary")
+			if reference.ID == originalReference.ID {
+				if !reference.IsRevoked || reference.RecordingBlobID != "" {
+					test.Fatal("original whole-group bytes survived the split")
+				}
+				continue
 			}
+			if reference.IsRevoked || (reference.PassageStartMS < 3000 && reference.PassageEndMS > 3000) {
+				test.Fatal("new sample crossed or lost the explicit speaker boundary")
+			}
+			activeIdentities[reference.SpeakerIdentityID] = true
+		}
+		if len(activeIdentities) != 2 {
+			test.Fatal("selected split identities were not kept separate")
 		}
 	})
+	originalStream, err := fixture.files.OpenFileRange(test.Context(), originalReference.RecordingBlobID, 0, 44)
+	if err == nil {
+		if err := originalStream.Close(); err != nil {
+			test.Fatal(err)
+		}
+		test.Fatal("superseded whole-group file survived cleanup")
+	}
 }
 
 func TestRecordingCurationRejectsOverlappingAndUncertainSourcePassages(test *testing.T) {

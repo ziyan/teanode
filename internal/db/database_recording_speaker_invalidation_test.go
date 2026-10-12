@@ -131,7 +131,7 @@ func createReferenceDependent(test *testing.T, fixture *transcriptFixture, refer
 }
 
 func TestRecordingReferenceInvalidationReconcilesDependentMemory(test *testing.T) {
-	for _, mutation := range []string{"revoke", "rename", "delete", "remove"} {
+	for _, mutation := range []string{"revoke", "rename", "delete", "remove", "split"} {
 		test.Run(mutation, func(test *testing.T) {
 			fixture := newTranscriptFixture(test)
 			reference := createConfirmedReference(test, fixture)
@@ -165,6 +165,12 @@ func TestRecordingReferenceInvalidationReconcilesDependentMemory(test *testing.T
 					test.Fatal(err)
 				}
 				switch mutation {
+				case "split":
+					corrections, correctionErr := transaction.ListRecordingSpeakerCorrections(fixture.userId, recording.ID)
+					if correctionErr != nil || len(corrections) != 1 {
+						test.Fatal(correctionErr)
+					}
+					_, err = transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: recording.ID, RecordingTranscriptionAttemptID: corrections[0].RecordingTranscriptionAttemptID, LocalSpeakerID: corrections[0].LocalSpeakerID, ConfirmedName: "Split participant", ClientCorrectionID: "dependent-split", PassageStartMS: 2000, PassageEndMS: 4000, ExpectedSourceGeneration: recording.SourceGeneration})
 				case "revoke":
 					err = transaction.RevokeRecordingVoiceReference(fixture.userId, recording.ID, reference.ID, recording.SourceGeneration)
 				case "rename":
