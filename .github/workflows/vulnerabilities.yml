@@ -10,6 +10,12 @@ name: Vulnerabilities
 # repeats.
 
 on:
+  pull_request:
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "vendor/**"
+      - ".github/workflows/vulnerabilities.yml"
   schedule:
     # Monday morning, off the hour: everything scheduled on the hour queues
     # behind everything else scheduled on the hour.

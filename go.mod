@@ -1,6 +1,6 @@
 module github.com/ziyan/teanode
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/PuerkitoBio/goquery v1.13.0
@@ -34,7 +34,7 @@ require (
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/urfave/cli/v3 v3.14.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/term v0.46.0
 	golang.org/x/text v0.42.0
