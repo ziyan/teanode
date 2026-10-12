@@ -3157,6 +3157,38 @@
         }
       }
     },
+    "A disabled alias is ignored, as if it were not there. It stays so it can be turned back on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無効にしたエイリアスは、存在しないものとして扱われます。あとで有効に戻せるよう、残されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停用的别名会被忽略，就像它不存在一样。它会保留，以便日后重新启用。"
+          }
+        }
+      }
+    },
+    "A disabled credential is refused. It stays so it can be turned back on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無効にした認証情報は拒否されます。あとで有効に戻せるよう、残されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停用的凭据会被拒绝。它会保留，以便日后重新启用。"
+          }
+        }
+      }
+    },
     "A disabled person cannot sign in. Their mail and memberships are kept.": {
       "localizations": {
         "ja": {
@@ -5521,6 +5553,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "任意"
+          }
+        }
+      }
+    },
+    "Any address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意のアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意地址"
           }
         }
       }
@@ -11541,6 +11589,22 @@
         }
       }
     },
+    "Edit alias": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エイリアスを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑别名"
+          }
+        }
+      }
+    },
     "Edit category": {
       "localizations": {
         "ja": {
@@ -11569,6 +11633,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑联系人"
+          }
+        }
+      }
+    },
+    "Edit credential": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証情報を編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑凭据"
           }
         }
       }
@@ -25797,6 +25877,38 @@
         }
       }
     },
+    "Relay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中継先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发服务器"
+          }
+        }
+      }
+    },
+    "Relay to a mail server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールサーバーに中継"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发到邮件服务器"
+          }
+        }
+      }
+    },
     "Relayed": {
       "localizations": {
         "ja": {
@@ -28849,6 +28961,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "立即发送一份"
+          }
+        }
+      }
+    },
+    "Send only as": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアドレスとしてのみ送信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅可作为此地址发信"
           }
         }
       }
@@ -33560,6 +33688,38 @@
         }
       }
     },
+    "The part before the @ of the only address on %@ it may send as. Leave blank to allow any.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信に使える %@ 上の唯一のアドレスの @ より前の部分です。空欄なら任意のアドレスを許可します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它唯一可用来发信的 %@ 地址中 @ 前面的部分。留空则允许任意地址。"
+          }
+        }
+      }
+    },
+    "The password was shown once, when the credential was made, and cannot be shown again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードは認証情報を作成したときに一度だけ表示され、もう一度表示することはできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码仅在创建凭据时显示过一次，无法再次显示。"
+          }
+        }
+      }
+    },
     "The pending change was stopped": {
       "localizations": {
         "ja": {
@@ -34420,6 +34580,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "该地址没有反向名称，许多接收方会拒收来自无反向名称地址的邮件。请在管理该地址的位置设置它：在云服务商处这是地址本身的设置项（在控制台或 API 中），而不是 DNS 记录；然后为该名称发布指向 %@ 的 A 记录。"
+          }
+        }
+      }
+    },
+    "This address needs a pattern. To catch everything else, add an alias with an empty pattern.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアドレスにはパターンが必要です。それ以外をすべて受け取るには、パターンが空のエイリアスを追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址需要一个匹配模式。要接收其余所有邮件，请添加一个模式为空的别名。"
           }
         }
       }
