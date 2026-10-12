@@ -38,6 +38,7 @@ import { useQuery } from '../components/useQuery'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useTranslation } from '../i18n/i18n'
+import { useSession } from '../session'
 import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
 import { SpeechVoiceChoice } from '../components/speechVoice'
@@ -229,6 +230,7 @@ const AGENT_TABS_WITH_FINANCE: TabItem[] = AGENT_TABS.flatMap((item) =>
 )
 
 export function AgentPage() {
+  const session = useSession()
   const { t } = useTranslation()
   const { data, error, loading, reload } = useAgent()
   const toast = useToast()
@@ -310,7 +312,9 @@ export function AgentPage() {
   // named in the query and only Connections holds the card that finishes
   // it. The query is carried over either way: it is the code and the state
   // the server sent back, and dropping it lost the connection silently.
-  const tabs = finance.isShown ? AGENT_TABS_WITH_FINANCE : AGENT_TABS
+  const tabs = (finance.isShown ? AGENT_TABS_WITH_FINANCE : AGENT_TABS).filter(
+    (candidate) => candidate.id !== 'mail' || session.services?.isMailboxEnabled !== false,
+  )
   // A link to Finance waits for the answer to whether there is one, rather
   // than being sent to the first tab while the question is in flight.
   if (tab === 'finance' && finance.isShown === null) return <Loading />
@@ -3188,6 +3192,7 @@ function BriefCard() {
 }
 
 function SchedulesCard() {
+  const session = useSession()
   const { t } = useTranslation()
   const toast = useToast()
   const { data, error, loading, reload } = useQuery(
@@ -3366,7 +3371,9 @@ function SchedulesCard() {
                 label={t('agent.scheduleDeliver')}
                 options={[
                   { value: 'drawer', label: t('agent.deliverDrawer') },
-                  { value: 'mail', label: t('agent.deliverMail') },
+                  ...(session.services?.isMailboxEnabled === false
+                    ? []
+                    : [{ value: 'mail', label: t('agent.deliverMail') }]),
                 ]}
                 onChange={setDeliver}
               />

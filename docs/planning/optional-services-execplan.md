@@ -18,8 +18,8 @@ mailboxes remains supported. Calendars, reminders and contacts can be used
 without hosting mail. The existing mail server remains a supported preset;
 upgrading an installation must preserve its current behavior and identifiers.
 
-This document is a researched implementation proposal, not a description of
-functionality already shipped. It does not implement an external email reader
+This document records the implementation in progress; changes remain in the
+draft pull request until reviewed. It does not implement an external email reader
 or sender. A connected service can supply those tools under its own permission
 and confirmation policy; turning off hosted mail must not disable those tools.
 
@@ -31,11 +31,11 @@ and confirmation policy; turning off hosted mail must not disable those tools.
 - [x] Audited web navigation, polling, setup, native app and widget reads.
 - [x] Specified service switches, upgrade behavior and disabling semantics.
 - [x] Specified operator onboarding, implementation milestones and acceptance.
-- [ ] Implement and test the service configuration and capability contract.
-- [ ] Implement optional runtime construction and guarded operations.
-- [ ] Decouple calendar/contact sync credentials from mailboxes.
-- [ ] Make web, native app, CLI and assistant discovery capability-aware.
-- [ ] Build and validate the operator setup flow and deployment presets.
+- [x] Implement and test the service configuration and capability contract.
+- [x] Implement optional runtime construction and guarded operations.
+- [x] Decouple calendar/contact sync credentials from mailboxes.
+- [x] Implement web, native app, CLI and assistant capability awareness.
+- [x] Implement setup choices and an assistant deployment preset; smoke-tested HTTP-only startup and account creation.\n- [ ] Finish the macOS simulator build and final cross-client review in CI.\n- [ ] Commit, push and update the existing draft pull request.
 
 ## Surprises & Discoveries
 
@@ -529,3 +529,23 @@ so merged tools remain accurate. Reads and invocation both use this policy.
 The setup status operation reports selected services, readiness and pending
 restart separately, and exposes credentials only through existing one-time,
 user-confirmed creation paths.
+
+
+## Implementation checkpoint
+
+Implemented nullable legacy service switches, selected/running capability intersection,
+runtime construction and provisioning gates, paused mailbox jobs, scoped account sync
+credentials, selective profiles, client navigation/polling gates and operator setup.
+A real HTTP-only process bound only its web listener; creating its first account left
+all hosted collection tables empty. A fake-provider assistant turn completed without
+reading or provisioning disabled collections. Database-backed DAV scope, revocation,
+disable/re-enable and queue-resume checks pass. Web typecheck/lint/tests/build and
+283 Swift package tests pass. The macOS app build and final review remain outstanding.
+
+The security follow-up updates Go to 1.26.9 and x/net to 0.60.0, updates fast-uri,
+and applies a tested bounded-nesting guard to braces until a patched upstream release
+exists. The Go scan reports no reachable vulnerabilities. The npm advisory still
+reports braces by version despite the local guard; it has not been dismissed.
+
+Meeting recording is being started in a separate checkout and feature branch. It
+must not absorb this service migration or its dependency updates accidentally.

@@ -23,6 +23,9 @@ import { SessionProvider, hasAnywhere } from './session'
 import { firstManagementPath } from './components/sidebar'
 import { AgentDrawer } from './components/agentDrawer'
 import { MailboxesProvider } from './mailboxes'
+import { homePath } from './services'
+import { ServiceGate } from './components/serviceGate'
+import { SyncPage } from './pages/sync'
 import { Tooltip } from './components/tooltip'
 
 // The pages somebody may never open are fetched when they do. What is left in
@@ -180,6 +183,18 @@ export function App() {
     if (!parentOrigin || parentOrigin === 'null') return
     window.parent.postMessage({ teanode: 'signedIn', username: session.username }, parentOrigin)
   }, [framed, session])
+
+  useEffect(() => {
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    const timer = window.setInterval(refreshVisible, 30000)
+    window.addEventListener('focus', refreshVisible)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshVisible)
+    }
+  }, [refresh])
 
   if (session === null) {
     // Nothing, not a word. Asking the server who you are takes a few
@@ -386,111 +401,119 @@ export function App() {
                     time it takes to read a file. Loading says nothing at all
                     until that has taken long enough to be worth a word. */}
                 <Suspense fallback={<Loading />}>
-                  <Routes>
-                    {/* Home is the mailbox, for anyone who has one. The console
+                  <ServiceGate>
+                    <Routes>
+                      {/* Home is the mailbox, for anyone who has one. The console
                   and an account without mail:read land on the first
                   management page instead. */}
-                    <Route path="/" element={<Navigate to={session.userId ? '/mailbox' : '/manage/mail'} replace />} />
-                    <Route path="/mailbox" element={<MailboxPage />} />
-                    <Route path="/mailbox/compose" element={<MailboxComposePage />} />
-                    <Route path="/mailbox/contacts" element={<AddressBookPage />} />
-                    <Route path="/mailbox/calendar" element={<CalendarPage />} />
-                    <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
-                    <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
-                    <Route path="/mailbox/:folderId" element={<MailboxPage />} />
-                    <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
-                    {/* The person's agent, by its name in the rail: their
+                      <Route path="/" element={<Navigate to={homePath(session)} replace />} />
+                      <Route path="/mailbox" element={<MailboxPage />} />
+                      <Route path="/mailbox/compose" element={<MailboxComposePage />} />
+                      <Route path="/contacts" element={<AddressBookPage />} />
+                      <Route path="/calendar" element={<CalendarPage />} />
+                      <Route path="/reminders" element={<CalendarPage />} />
+                      <Route path="/mailbox/contacts" element={<AddressBookPage />} />
+                      <Route path="/mailbox/calendar" element={<CalendarPage />} />
+                      <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
+                      <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
+                      <Route path="/mailbox/:folderId" element={<MailboxPage />} />
+                      <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
+                      {/* The person's agent, by its name in the rail: their
                       conversations with it, as tiles. */}
-                    <Route path="/agent" element={<AgentConversationsPage />} />
+                      <Route path="/agent" element={<AgentConversationsPage />} />
 
-                    {/* The operator's pages, all under /manage: /settings is
+                      {/* The operator's pages, all under /manage: /settings is
                       the signed-in person's own, and /manage configures the
                       server and other people. /manage on its own is the
                       first of them this person may open. */}
-                    <Route
-                      path="/manage"
-                      element={<Navigate to={firstManagementPath(session.permissions) ?? '/'} replace />}
-                    />
-                    {/* The operator's view of every message needs mail:audit;
+                      <Route
+                        path="/manage"
+                        element={
+                          <Navigate to={firstManagementPath(session.permissions, session.services) ?? '/'} replace />
+                        }
+                      />
+                      {/* The operator's view of every message needs mail:audit;
                   without it this is not a page, and the mailbox is. */}
-                    <Route
-                      path="/manage/mail"
-                      element={
-                        hasAnywhere(session.permissions, 'mail:audit') ? (
-                          <MailPage />
-                        ) : (
-                          <Navigate to="/mailbox" replace />
-                        )
-                      }
-                    />
-                    {/* Before the message route: "compose" is not a message
+                      <Route
+                        path="/manage/mail"
+                        element={
+                          hasAnywhere(session.permissions, 'mail:audit') ? (
+                            <MailPage />
+                          ) : (
+                            <Navigate to="/mailbox" replace />
+                          )
+                        }
+                      />
+                      {/* Before the message route: "compose" is not a message
                   identifier, and the router should never treat it as one. */}
-                    <Route path="/manage/mail/compose" element={<ComposePage />} />
-                    <Route path="/manage/mail/:mailId" element={<MailDetailPage />} />
-                    <Route path="/manage/queue" element={<QueuePage />} />
-                    <Route path="/manage/reports" element={<ReportsPage />} />
-                    <Route path="/manage/reports/:reportId" element={<ReportDetailPage />} />
+                      <Route path="/manage/mail/compose" element={<ComposePage />} />
+                      <Route path="/manage/mail/:mailId" element={<MailDetailPage />} />
+                      <Route path="/manage/queue" element={<QueuePage />} />
+                      <Route path="/manage/reports" element={<ReportsPage />} />
+                      <Route path="/manage/reports/:reportId" element={<ReportDetailPage />} />
 
-                    <Route path="/manage/domains" element={<DomainsPage />} />
-                    <Route path="/manage/domains/:domainId" element={<Navigate to="overview" replace />} />
-                    {/* Everything a domain has is a tab of one page, and the two
+                      <Route path="/manage/domains" element={<DomainsPage />} />
+                      <Route path="/manage/domains/:domainId" element={<Navigate to="overview" replace />} />
+                      {/* Everything a domain has is a tab of one page, and the two
                   item pages below are not tabs. They are declared first so
                   that "templates/<id>" reaches the editor rather than being
                   read as the name of a tab. */}
-                    <Route path="/manage/domains/:domainId/templates/:templateId" element={<TemplateEditorPage />} />
-                    <Route path="/manage/domains/:domainId/layouts/:layoutId" element={<LayoutEditorPage />} />
-                    <Route path="/manage/domains/:domainId/:tab" element={<DomainTabsPage />} />
+                      <Route path="/manage/domains/:domainId/templates/:templateId" element={<TemplateEditorPage />} />
+                      <Route path="/manage/domains/:domainId/layouts/:layoutId" element={<LayoutEditorPage />} />
+                      <Route path="/manage/domains/:domainId/:tab" element={<DomainTabsPage />} />
 
-                    {/* /settings on its own is not a page: the rail and the account
+                      {/* /settings on its own is not a page: the rail and the account
                   menu are the menu, and a page of cards pointing at the same
                   seven places was a page whose only content was that menu. */}
-                    {/* Everything about this server, under one row in the rail and
+                      {/* Everything about this server, under one row in the rail and
                   one path: what it is, what it talks to, and which version it
                   is running. Three rows made somebody choose between them
                   before knowing which one held the thing they wanted. */}
-                    <Route path="/manage/access" element={<AccessPage />} />
-                    <Route path="/manage/access/:tab" element={<AccessPage />} />
-                    {/* The row a tab is showing, in the path beside the tab: it
+                      <Route path="/manage/access" element={<AccessPage />} />
+                      <Route path="/manage/access/:tab" element={<AccessPage />} />
+                      {/* The row a tab is showing, in the path beside the tab: it
                       is a place, so it can be linked to and gone back to. */}
-                    <Route path="/manage/access/:tab/:selected" element={<AccessPage />} />
-                    <Route path="/manage/server" element={<ServerPage />} />
-                    <Route path="/manage/server/:tab" element={<ServerPage />} />
-                    {/* Everyone's agents: their own row in the rail, with tabs,
+                      <Route path="/manage/access/:tab/:selected" element={<AccessPage />} />
+                      <Route path="/manage/server" element={<ServerPage />} />
+                      <Route path="/manage/server/:tab" element={<ServerPage />} />
+                      {/* Everyone's agents: their own row in the rail, with tabs,
                       rather than one long tab of the server page. */}
-                    <Route path="/manage/agent" element={<AgentAdminPage />} />
-                    <Route path="/manage/agent/:tab" element={<AgentAdminPage />} />
+                      <Route path="/manage/agent" element={<AgentAdminPage />} />
+                      <Route path="/manage/agent/:tab" element={<AgentAdminPage />} />
 
-                    {/* What configures the person signed in, which is a place you
+                      {/* What configures the person signed in, which is a place you
                   go into from your own name at the foot of the rail. */}
-                    <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
-                    <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
-                    {/* The person's own agent, in tabs of its own: a link that
+                      <Route path="/settings/sync" element={<SyncPage />} />
+                      <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
+                      <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
+                      {/* The person's own agent, in tabs of its own: a link that
                       names no tab is answered by the page with the first. */}
-                    <Route path="/settings/agent" element={<AgentPage />} />
-                    <Route path="/settings/agent/:tab" element={<AgentPage />} />
-                    {/* The mailbox's own settings, in tabs: the person's, so
+                      <Route path="/settings/agent" element={<AgentPage />} />
+                      <Route path="/settings/agent/:tab" element={<AgentPage />} />
+                      {/* The mailbox's own settings, in tabs: the person's, so
                       in the account's rail with the rest of what is theirs. */}
-                    <Route path="/settings/mailbox" element={<MailboxSettingsPage />} />
-                    <Route path="/settings/mailbox/:tab" element={<MailboxSettingsPage />} />
-                    {/* Before the graph's own paths below: "explore" is the
+                      <Route path="/settings/mailbox" element={<MailboxSettingsPage />} />
+                      <Route path="/settings/mailbox/:tab" element={<MailboxSettingsPage />} />
+                      {/* Before the graph's own paths below: "explore" is the
                       drawing of the whole graph, not a folder in it, and the
                       splat route would read it as one. */}
-                    <Route path="/knowledge/explore" element={<KnowledgeExplorePage />} />
-                    <Route path="/knowledge/*" element={<KnowledgePage />} />
-                    {/* What the linked institutions report, a page of its own
+                      <Route path="/knowledge/explore" element={<KnowledgeExplorePage />} />
+                      <Route path="/knowledge/*" element={<KnowledgePage />} />
+                      {/* What the linked institutions report, a page of its own
                       in the account's rail after Knowledge; linking them is
                       the agent page's Finance tab. */}
-                    <Route path="/finance" element={<FinancePage />} />
-                    <Route path="/finance/:section" element={<FinancePage />} />
-                    <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
-                    <Route path="/settings/passkeys" element={<PasskeysPage />} />
-                    <Route path="/settings/tokens" element={<TokensPage />} />
-                    <Route path="/settings/phones" element={<PhonesPage />} />
-                    <Route path="/settings/apps" element={<AppsPage />} />
-                    <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
+                      <Route path="/finance" element={<FinancePage />} />
+                      <Route path="/finance/:section" element={<FinancePage />} />
+                      <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
+                      <Route path="/settings/passkeys" element={<PasskeysPage />} />
+                      <Route path="/settings/tokens" element={<TokensPage />} />
+                      <Route path="/settings/phones" element={<PhonesPage />} />
+                      <Route path="/settings/apps" element={<AppsPage />} />
+                      <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
 
-                    <Route path="*" element={<p className="muted">{t('common.notFound')}</p>} />
-                  </Routes>
+                      <Route path="*" element={<p className="muted">{t('common.notFound')}</p>} />
+                    </Routes>
+                  </ServiceGate>
                 </Suspense>
               </main>
             </div>

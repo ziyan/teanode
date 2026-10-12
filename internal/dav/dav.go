@@ -80,8 +80,9 @@ const (
 )
 
 type component struct {
-	database      db.Database
-	configuration config.Store
+	database        db.Database
+	configuration   config.Store
+	runningServices config.Services
 
 	// limiter is the shared credential limiter -- the same buckets the
 	// submission listener and IMAP count against -- or nil when an
@@ -92,7 +93,7 @@ type component struct {
 // New builds the DAV component. It is a web.Component, registered in
 // internal/cmd/server/run.go beside the API.
 func New(database db.Database, configuration config.Store, limiter *ratelimit.Registry) (web.Component, error) {
-	return &component{database: database, configuration: configuration, limiter: limiter}, nil
+	return &component{database: database, configuration: configuration, runningServices: configuration.Current().Services, limiter: limiter}, nil
 }
 
 // AddRoutes mounts the whole subtree on one route and dispatches inside it.
@@ -125,11 +126,26 @@ func (self *component) AddRoutes(router *mux.Router) error {
 // actually lives. A permanent redirect, which is what the specification asks
 // for and what clients cache.
 func (self *component) wellKnown(response http.ResponseWriter, request *http.Request) {
+	isEnabled := func(service models.Service) bool {
+		return self.configuration.Current().Services.IsEnabled(service) && self.runningServices.IsEnabled(service)
+	}
+	if (strings.HasSuffix(request.URL.Path, "carddav") && !isEnabled(models.ServiceContacts)) || (strings.HasSuffix(request.URL.Path, "caldav") && !isEnabled(models.ServiceCalendar) && !isEnabled(models.ServiceReminders)) {
+		http.NotFound(response, request)
+		return
+	}
 	http.Redirect(response, request, Prefix+"/", http.StatusMovedPermanently)
 }
 
 // serve is every request under the mount.
 func (self *component) serve(response http.ResponseWriter, request *http.Request) {
+	isEnabled := func(service models.Service) bool {
+		return self.configuration.Current().Services.IsEnabled(service) && self.runningServices.IsEnabled(service)
+	}
+	if !isEnabled(models.ServiceContacts) && !isEnabled(models.ServiceCalendar) && !isEnabled(models.ServiceReminders) {
+		http.NotFound(response, request)
+		return
+	}
+
 	// /dave is not /dav. PathPrefix matches letters, not segments, so a
 	// path that merely begins the same way is not ours and must not be
 	// answered with a demand for a password.
@@ -333,11 +349,11 @@ func (self *component) servePrincipal(response http.ResponseWriter, request *htt
 	}
 	var homeSets []webdav.BackendSuppliedHomeSet
 	var capabilities []webdav.Capability
-	if permissions.Has(models.PermissionContactsUse) {
+	if permissions.Has(models.PermissionContactsUse) && self.allows(signedIn, models.ServiceContacts) {
 		homeSets = append(homeSets, carddav.NewAddressBookHomeSet(homeSetPath(signedIn.userID)))
 		capabilities = append(capabilities, carddav.CapabilityAddressBook)
 	}
-	if permissions.Has(models.PermissionCalendarUse) {
+	if permissions.Has(models.PermissionCalendarUse) && (self.allows(signedIn, models.ServiceCalendar) || self.allows(signedIn, models.ServiceReminders)) {
 		homeSets = append(homeSets, caldav.NewCalendarHomeSet(calendarHomeSetPath(signedIn.userID)))
 		capabilities = append(capabilities, caldav.CapabilityCalendar)
 	}

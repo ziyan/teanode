@@ -24,6 +24,8 @@ final class AppModel {
     var isAddingAccount = false
     private(set) var connection: Connection?
 
+    private(set) var services: ServiceCapabilities?
+
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
     /// one connection, so two never spend the same refresh token.
@@ -269,6 +271,7 @@ final class AppModel {
 
     private func use(_ account: Account) {
         let isChanged = account.accountKey != self.account?.accountKey
+        if isChanged { services = nil }
         self.account = account
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
@@ -382,6 +385,8 @@ final class AppModel {
     /// registration the relay no longer takes, heals on its own.
     func setUpNotifications() async {
         guard let connection else { return }
+        await refreshServices()
+        guard services?.isAssistantEnabled == true else { return }
         #if DEBUG
             // The screenshots CI takes would show the permission prompt.
             if DemoServer.isRequested { return }
@@ -671,5 +676,26 @@ struct PressedButton: Sendable {
         actionIdentifier = response.actionIdentifier
         typedText = (response as? UNTextInputNotificationResponse)?.userText
         info = NotificationInfo(userInfo: response.notification.request.content.userInfo)
+    }
+}
+
+
+extension AppModel {
+    func refreshServices() async {
+        guard let connection else { return }
+        if let services = try? await connection.serviceCapabilities(), self.connection === connection {
+            self.services = services
+        }
+    }
+
+    func isSectionAvailable(_ section: AppSection) -> Bool {
+        let services = services ?? .unavailable
+        switch section {
+        case .mail: return services.isMailboxEnabled
+        case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
+        case .contacts: return services.isContactsEnabled
+        case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .settings: return true
+        }
     }
 }

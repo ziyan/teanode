@@ -19,9 +19,10 @@ const realm = `Basic realm="TeaNode", charset="UTF-8"`
 // session is who is on the other end of a request: the mailbox they signed in
 // as, and the account that owns it, whose address book they will see.
 type session struct {
-	userID        string
-	mailbox       *models.Mailbox
-	appPasswordID string
+	userID         string
+	mailbox        *models.Mailbox
+	appPasswordID  string
+	syncCredential *models.SyncCredential
 }
 
 type signedInKey struct{}
@@ -126,6 +127,14 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	var signedIn *session
 	spent := 1
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
+		if strings.HasPrefix(password, "sync-") {
+			credential, err := access.AuthenticateSyncCredential(tx, username, password)
+			if err != nil {
+				return err
+			}
+			signedIn = &session{userID: credential.UserID, syncCredential: credential}
+			return nil
+		}
 		mailbox, appPassword, tried, err := access.AuthenticateAppPasswordCounting(tx, username, password)
 		if tried > 0 {
 			spent = tried
@@ -192,7 +201,7 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 			return err
 		}
 		for _, permission := range wanted {
-			if permissions.Has(permission) {
+			if permissions.Has(permission) && ((permission == models.PermissionContactsUse && self.allows(signedIn, models.ServiceContacts)) || (permission == models.PermissionCalendarUse && (self.allows(signedIn, models.ServiceCalendar) || self.allows(signedIn, models.ServiceReminders)))) {
 				allowed = true
 			}
 		}
@@ -225,7 +234,7 @@ func collectionAt(path string) string {
 
 func (self *component) askForCredentials(response http.ResponseWriter) {
 	response.Header().Set("WWW-Authenticate", realm)
-	http.Error(response, "sign in with a mail address and an app password", http.StatusUnauthorized)
+	http.Error(response, "sign in with your account username and sync password, or a mail address and app password", http.StatusUnauthorized)
 }
 
 // isOverTLS says whether the password in this request's header reached the
@@ -251,4 +260,8 @@ func isLoopback(request *http.Request) bool {
 	}
 	address := net.ParseIP(strings.Trim(host, "[]"))
 	return address != nil && address.IsLoopback()
+}
+
+func (self *component) allows(signedIn *session, service models.Service) bool {
+	return self.configuration.Current().Services.IsEnabled(service) && self.runningServices.IsEnabled(service) && (signedIn.syncCredential == nil || signedIn.syncCredential.Allows(service))
 }

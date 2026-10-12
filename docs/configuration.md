@@ -1,5 +1,36 @@
 # Configuration
 
+### `services`
+
+Deployment-wide hosted services. Omitted switches preserve existing installations;
+new assistant seeds write explicit false values. Disabling preserves data, roles,
+agent grants and credentials, and refuses new operations immediately. Enabling
+requires a restart. The dashboard reports selected and running services.
+
+- **`mailRouting`**: SMTP, forwarding, hosted sending, domains, delivery queues
+  and mail DNS diagnostics.
+- **`mailboxes`**: stored mail, IMAP, mailbox API and mailbox agent jobs.
+  Requires routing. Forwarding can run without mailboxes.
+- **`calendar`**: events and CalDAV event collections. Local events need no mail;
+  mail invitations require an available hosted mailbox and sender.
+- **`reminders`**: reminders and their CalDAV collections, independently of
+  event calendars. Assistant schedules are independent of this choice.
+- **`contacts`**: address books and CardDAV collections.
+- **`isEnabled`**: nullable boolean inside each service. Omitted means enabled
+  for compatibility; false makes the service unavailable.
+- **`hasCompletedSetup`**: whether the operator completed service setup.
+  Legacy configurations without switches do not require this step.
+
+The existing `agent.enabled` setting controls the assistant independently.
+Authenticated clients use `GetServiceCapabilities`. `teanode services get`
+reports availability; `teanode services set --contacts=true` changes a choice.
+
+`TEANODE_SERVICE_PRESET` seeds only an empty database: `assistant` disables all
+hosted services, `mail` enables routing and mailboxes, and `legacy` retains
+historical defaults. Without a preset, seeds with a mail hostname or domain
+retain historical behavior. Change a configured installation in the dashboard
+or through configuration import, rather than changing its seed environment.
+
 Everything an operator sets lives in the database, alongside the mail. The
 server reads it at startup and re-reads it every few seconds, so a change made
 in the dashboard — or by another instance — takes effect without a restart.

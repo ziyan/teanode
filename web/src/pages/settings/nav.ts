@@ -49,6 +49,13 @@ export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: Key }[] = [
 
 export const SETTINGS_SURFACES: SettingsSurface[] = [
   {
+    segment: 'sync',
+    path: '/settings/sync',
+    label: 'services.sync',
+    description: 'services.syncDescription',
+    category: 'account',
+  },
+  {
     segment: 'server',
     path: '/manage/server',
     label: 'server.title',
@@ -164,7 +171,5 @@ export function surfacesByCategory(category: SettingsCategory): SettingsSurface[
 // /manage/server/storage resolves to the server surface and names itself in the
 // breadcrumb from the same list the rail renders.
 export function matchSettingsSurface(pathname: string): SettingsSurface | undefined {
-  return SETTINGS_SURFACES.find(
-    (surface) => pathname === surface.path || pathname.startsWith(`${surface.path}/`),
-  )
+  return SETTINGS_SURFACES.find((surface) => pathname === surface.path || pathname.startsWith(`${surface.path}/`))
 }

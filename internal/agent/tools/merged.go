@@ -187,6 +187,9 @@ func Merge(merged MergedTool) *Tool {
 			// The catalog admitted the tool on the union of what its
 			// actions ask for. This action asks for its own.
 			if run, err := RunFrom(ctx); err == nil && run.Operations() != nil {
+				if err := RequireServices(tool, run.Configuration()); err != nil {
+					return nil, err
+				}
 				if !AllowedByPermissions(tool, run.Operations().Permissions()) {
 					return nil, fmt.Errorf("%s %s is not something they may do", merged.Name, name)
 				}

@@ -54,6 +54,8 @@ type SessionMutation interface {
 
 // SessionState is who the caller is, and what the dashboard should show them.
 type SessionState struct {
+	Services *ServiceCapabilities `json:"services,omitempty" graphapi:"nullable"`
+
 	// Whether this request is authenticated
 	Authenticated bool `json:"authenticated"`
 
@@ -109,6 +111,9 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 			state.ImpersonatorUsername = identity.ImpersonatorUsername
 		}
 	}
+	if state.Authenticated {
+		state.Services = self.serviceCapabilities()
+	}
 	state.Name = self.displayName(state.Username)
 	if principal := api.ContextPrincipal(ctx); principal != nil {
 		state.UserID = principal.UserID()
@@ -126,6 +131,7 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 // exactly that change.
 func (self *graph) signedInAs(ctx context.Context, username string) *SessionState {
 	state := &SessionState{
+		Services:               self.serviceCapabilities(),
 		Authenticated:          true,
 		AuthenticationRequired: true,
 		Username:               username,

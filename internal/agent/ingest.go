@@ -153,6 +153,9 @@ func (self *Agent) queueIngestion(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, source := range due {
+		if source.Specification.MailboxID != "" && !configuration.Services.IsEnabled(models.ServiceMailboxes) {
+			continue
+		}
 		// A source that reads a device is claimed only on the instance
 		// holding that device's socket. Any instance may claim any job,
 		// but only one of them can reach the computer.
@@ -180,6 +183,9 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	}
 	if source == nil || !source.Enabled {
 		return nil
+	}
+	if source.Specification.MailboxID != "" && !configuration.Services.IsEnabled(models.ServiceMailboxes) {
+		return &Deferral{Until: time.Now().Add(time.Minute), Reason: "mailbox knowledge sources are disabled"}
 	}
 	// A finance source is synced, not read: no passes, no sweep, nothing
 	// to embed, and no wait on the knowledge feature (ingest_finance.go).

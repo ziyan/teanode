@@ -6,6 +6,9 @@ import "github.com/ziyan/teanode/internal/models"
 // account, and what it may do, resolved from its groups. Nil for a request
 // nobody is signed in to.
 type Principal struct {
+	// IsServiceEnabled checks live deployment policy; nil preserves standalone callers.
+	IsServiceEnabled func(models.Service) bool
+
 	// User is the account, or nil for the console, the command line run on
 	// the server itself with the local token, which is not an account.
 	User *models.User
@@ -49,4 +52,12 @@ func (self *Principal) Username() string {
 		return "console"
 	}
 	return ""
+}
+
+// RequireService checks service policy independently of permissions.
+func (self *Principal) RequireService(service models.Service) error {
+	if self != nil && self.IsServiceEnabled != nil && !self.IsServiceEnabled(service) {
+		return &models.ServiceUnavailableError{Service: service}
+	}
+	return nil
 }

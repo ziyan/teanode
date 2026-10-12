@@ -132,6 +132,9 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			return err
 		}
 		if schedule.Deliver == models.AgentDeliverMail {
+			if !configuration.Services.IsEnabled(models.ServiceMailboxes) {
+				return &Deferral{Until: time.Now().Add(time.Minute), Reason: "hosted email notifications are disabled"}
+			}
 			conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.Agent.ID, Kind: models.AgentConversationRun, Title: "Schedule: " + schedule.Name, JobID: run.Job.ID, JobKind: string(models.AgentJobSchedule), SubjectID: schedule.ID, Surface: "schedule", LastAt: time.Now()})
 			return err
 		}
@@ -412,7 +415,7 @@ func BriefPrompt(found *models.Agent, owner *models.User) string {
 	return strings.Join([]string{
 		"Tell me what today holds and what is waiting for me, in " + languageName(KnowledgeLanguage(found, owner)) + ", in a few short paragraphs.",
 		"",
-		"What is on in my calendar today, in order, with times. What arrived since yesterday that needs an answer from me, with who it is from and what they want. Anything you are holding a reply for. What I asked you to keep an eye on.",
+		"Use only the sources and services available to you. Describe the calendar today if available. Include mail that needs an answer and anything you are holding a reply for when you have a mailbox. Include what I asked you to keep an eye on, my goals and reminders when available.",
 		"",
 		"Leave out anything that needs nothing from me. If the day is empty and nothing is waiting, say so in one line -- that is a good morning, not a failure to find something.",
 	}, "\n")

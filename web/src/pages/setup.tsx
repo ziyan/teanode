@@ -67,7 +67,7 @@ type Submission = {
 // Setup walks a new operator from nothing to working mail. Everything it needs
 // is already visible elsewhere in the dashboard; the value is in saying what
 // order to do it in and what is still missing.
-export function SetupPage() {
+export function MailSetupPage() {
   const { t } = useTranslation()
   const { data, error, loading, reload } = useQuery(
     () =>

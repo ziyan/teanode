@@ -86,6 +86,11 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 	if !tools.FeatureAllowed(run.Configuration(), "schedules") {
 		return nil, fmt.Errorf("schedules are off on this server")
 	}
+	if arguments.Deliver == models.AgentDeliverMail {
+		if err := run.Configuration().RequireService(models.ServiceMailboxes); err != nil {
+			return nil, err
+		}
+	}
 	database := run.Database()
 	agentId := run.Agent().ID
 	location := tools.Location(run.Owner())

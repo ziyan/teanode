@@ -90,6 +90,9 @@ type Tool struct {
 	// at all: any one of them. Empty means anybody signed in.
 	Permissions []models.Permission
 
+	// Services lists hosted dependencies independent of permissions.
+	Services []models.Service
+
 	// Core tools are always in the request; the rest may be deferred
 	// behind tool_search when the catalog is long.
 	Core bool
@@ -291,9 +294,15 @@ func (self *Catalog) All() []*Tool {
 
 // Offered is the catalog as one person sees it: what their permissions
 // admit, minus what the operator switched off.
-func (self *Catalog) Offered(permissions *models.EffectivePermissions, policy *config.AgentTools) []*Tool {
+func (self *Catalog) Offered(permissions *models.EffectivePermissions, policy *config.AgentTools, serviceSettings ...*config.Services) []*Tool {
 	offered := make([]*Tool, 0, len(self.order))
 	for _, tool := range self.All() {
+		if len(serviceSettings) > 0 && serviceSettings[0] != nil {
+			configuration := &config.Configuration{Services: *serviceSettings[0]}
+			if RequireServices(tool, configuration) != nil {
+				continue
+			}
+		}
 		if !AllowedByPermissions(tool, permissions) {
 			continue
 		}

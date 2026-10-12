@@ -152,7 +152,20 @@ export async function graphql<T>(
   return body.data as T
 }
 
+export interface ServiceCapabilities {
+  isMailRoutingEnabled: boolean
+  isMailboxEnabled: boolean
+  isCalendarEnabled: boolean
+  isRemindersEnabled: boolean
+  isContactsEnabled: boolean
+  isAssistantEnabled: boolean
+  hasPendingServiceRestart: boolean
+  hasCompletedSetup: boolean
+}
+
 export interface Session {
+  services?: ServiceCapabilities
+
   authenticated: boolean
   authenticationRequired: boolean
   username: string
@@ -195,7 +208,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername }'
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

@@ -201,6 +201,11 @@ func (self *graph) DeleteAgentMemory(ctx context.Context, arguments DeleteAgentM
 }
 
 func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentScheduleArguments) (*models.AgentSchedule, error) {
+	if arguments.Deliver == models.AgentDeliverMail {
+		if err := self.requireService(models.ServiceMailboxes); err != nil {
+			return nil, err
+		}
+	}
 	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err

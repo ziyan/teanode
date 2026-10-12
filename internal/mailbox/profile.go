@@ -18,6 +18,10 @@ import (
 // The profile carries that password in the clear, so it is made for one
 // download and never stored.
 type SetupProfile struct {
+	IsSyncOnly        bool
+	IsCalendarEnabled *bool
+	IsContactsEnabled *bool
+
 	// What the device is called, as the app password is named.
 	DeviceName string
 
@@ -49,7 +53,7 @@ type SetupProfile struct {
 // Plist is the profile as Apple's property list, the .mobileconfig a
 // device installs.
 func (self *SetupProfile) Plist() ([]byte, error) {
-	if self.Address == "" || self.Password == "" || self.IMAPHost == "" || self.SubmissionHost == "" {
+	if self.Address == "" || self.Password == "" || (!self.IsSyncOnly && (self.IMAPHost == "" || self.SubmissionHost == "")) {
 		return nil, fmt.Errorf("a setup profile needs an address, a password and the mail hosts")
 	}
 	if self.Identifier == "" {
@@ -117,9 +121,30 @@ func (self *SetupProfile) Plist() ([]byte, error) {
 			},
 		)
 	}
+	filtered := make([]plistDictionary, 0, len(payloads))
+	for _, payload := range payloads {
+		payloadType := payload[0].value.(string)
+		if self.IsSyncOnly && payloadType == "com.apple.mail.managed" {
+			continue
+		}
+		if payloadType == "com.apple.caldav.account" && self.IsCalendarEnabled != nil && !*self.IsCalendarEnabled {
+			continue
+		}
+		if payloadType == "com.apple.carddav.account" && self.IsContactsEnabled != nil && !*self.IsContactsEnabled {
+			continue
+		}
+		filtered = append(filtered, payload)
+	}
+	payloads = filtered
+	if len(payloads) == 0 {
+		return nil, fmt.Errorf("a setup profile needs at least one enabled service")
+	}
 	description := "Adds " + self.Address + " to Mail"
+	if self.IsSyncOnly {
+		description = "Sets up collection sync for " + self.Address
+	}
 	if self.DAVHost != "" {
-		description += ", and its calendars, reminders and contacts to Calendar, Reminders and Contacts"
+		description += ", with the selected calendar and contact sync services"
 	}
 	if self.DeviceName != "" {
 		description += ", on " + self.DeviceName

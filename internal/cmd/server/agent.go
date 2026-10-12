@@ -52,14 +52,20 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 	self.keepSignIns(registry)
 	self.keepPlanUsage(registry)
 	self.agentWorker = agent.New(&agent.Settings{
-		Database:      self.database,
-		Storage:       self.storage,
-		Registry:      registry,
-		Exchange:      self.exchange,
-		Configuration: self.store.Current,
-		Instance:      self.instance,
+		Database: self.database,
+		Storage:  self.storage,
+		Registry: registry,
+		Exchange: self.exchange,
+		Configuration: func() *config.Configuration {
+			current := *self.store.Current()
+			current.Services = current.Services.Within(configuration.Services)
+			return &current
+		},
+		Instance: self.instance,
 	})
-	self.exchange.SetAgentHook(self.agentWorker)
+	if self.exchange != nil {
+		self.exchange.SetAgentHook(self.agentWorker)
+	}
 	self.agentWorker.Start()
 	self.onClose(self.agentWorker.Stop)
 	// The chat apps: one bot per person and app, run on one instance.
@@ -151,10 +157,17 @@ func (self *server) agentService() api.AgentService {
 // opting in. Somebody who was sent a meeting request wants it in their
 // calendar whether or not they have ever thought about an agent.
 func (self *server) openScheduler() {
+	if !self.store.Current().Services.IsEnabled(models.ServiceCalendar) {
+		return
+	}
 	self.scheduler = scheduling.New(self.database, self.storage, scheduling.Settings{
-		Instance: self.instance,
+		Instance:          self.instance,
+		IsCalendarEnabled: func() bool { return self.store.Current().Services.IsEnabled(models.ServiceCalendar) },
+		IsMailEnabled:     func() bool { return self.store.Current().Services.IsEnabled(models.ServiceMailboxes) },
 	})
-	self.exchange.SetCalendarHook(self.scheduler)
+	if self.exchange != nil {
+		self.exchange.SetCalendarHook(self.scheduler)
+	}
 	self.scheduler.Start()
 	self.onClose(self.scheduler.Stop)
 }

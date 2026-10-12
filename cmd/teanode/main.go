@@ -80,6 +80,8 @@ func main() {
 			cmd.NewSessionCommand(),
 			cmd.NewPasskeyCommand(),
 			cmd.NewSettingsCommand(),
+			cmd.NewServicesCommand(),
+			cmd.NewSyncCommand(),
 			cmd.NewServerCommand(),
 			cmd.NewUpgradeCommand(),
 			cmd.NewMailboxCommand(),

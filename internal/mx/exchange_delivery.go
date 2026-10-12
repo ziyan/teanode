@@ -83,6 +83,9 @@ func pendingDeliveries(deliveries []*models.Delivery) []*models.Delivery {
 
 // try to deliver one mail
 func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) error {
+	if err := self.requireService(models.ServiceMailRouting); err != nil {
+		return err
+	}
 	// A mailbox delivery was made when it was created, so there is nothing
 	// to attempt; the row is settled as delivered. Reached by the retry loop,
 	// for the rows that a release before this one left on the ladder.
@@ -580,6 +583,9 @@ func (self *exchange) settleMailboxDelivery(ctx context.Context, delivery *model
 // deliverBatch bounds queued work to one database claim and waits for its
 // deliveries before another batch can be claimed by this instance.
 func (self *exchange) deliverBatch(ctx context.Context) (int, error) {
+	if err := self.requireService(models.ServiceMailRouting); err != nil {
+		return 0, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	var deliveries []*models.Delivery

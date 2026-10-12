@@ -86,6 +86,9 @@ func (self *graph) GrantAgentSource(ctx context.Context, arguments GrantAgentSou
 		if calendar == nil || calendar.UserID != user.ID {
 			return nil, api.ErrNotFound
 		}
+		if err := self.requireService(calendarService(calendar.CalendarKind)); err != nil {
+			return nil, err
+		}
 		calendar.AgentGranted = arguments.Granted
 		if _, err := tx.UpdateCalendar(calendar); err != nil {
 			return nil, translateError(err)
@@ -98,6 +101,9 @@ func (self *graph) GrantAgentSource(ctx context.Context, arguments GrantAgentSou
 		}
 		if book == nil || book.UserID != user.ID {
 			return nil, api.ErrNotFound
+		}
+		if err := self.requireService(models.ServiceContacts); err != nil {
+			return nil, err
 		}
 		book.AgentGranted = arguments.Granted
 		if _, err := tx.UpdateAddressBook(book); err != nil {
@@ -126,6 +132,9 @@ func (self *graph) collectionsOf(tx db.Transaction, userId string) ([]*AgentColl
 		return nil, err
 	}
 	for _, calendar := range calendars {
+		if !self.isServiceEnabled(calendarService(calendar.CalendarKind)) {
+			continue
+		}
 		events, err := tx.CountCalendarObjects(calendar.ID)
 		if err != nil {
 			return nil, err
@@ -140,6 +149,9 @@ func (self *graph) collectionsOf(tx db.Transaction, userId string) ([]*AgentColl
 		return nil, err
 	}
 	for _, book := range books {
+		if !self.isServiceEnabled(models.ServiceContacts) {
+			continue
+		}
 		contacts, err := tx.CountContacts(book.ID)
 		if err != nil {
 			return nil, err

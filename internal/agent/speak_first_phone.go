@@ -89,7 +89,7 @@ func (self *Agent) phoneTourFacts(agent *models.Agent, phone *models.AgentPhone,
 		isPushEnabled:   configuration.Agent.Push.IsEnabled(),
 		isVoiceOn:       configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil,
 		hasCodingAgents: len(self.herdrComputers(agent.ID)) > 0,
-		hasMailbox:      hasMailbox,
+		hasMailbox:      hasMailbox && configuration.Services.IsEnabled(models.ServiceMailboxes),
 	}
 }
 

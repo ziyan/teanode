@@ -312,7 +312,15 @@ type RetryAgentJobArguments struct {
 
 func (self *graph) allowed() *AgentAllowed {
 	configuration := self.config.Current()
-	on := func(feature string) bool { return agent.FeatureAllowed(configuration, feature) }
+	on := func(feature string) bool {
+		switch feature {
+		case "triage", "summaries", "draftReplies", "search", "research", "autoReply":
+			if !self.isServiceEnabled(models.ServiceMailboxes) {
+				return false
+			}
+		}
+		return agent.FeatureAllowed(configuration, feature)
+	}
 	return &AgentAllowed{
 		Enabled:          configuration.Agent.Enabled,
 		Triage:           on("triage"),
@@ -372,6 +380,9 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 }
 
 func (self *graph) sourcesOf(tx db.Transaction, userId string) ([]*AgentSource, error) {
+	if !self.isServiceEnabled(models.ServiceMailboxes) {
+		return []*AgentSource{}, nil
+	}
 	mailboxes, err := tx.ListMailboxes(userId)
 	if err != nil {
 		return nil, err
