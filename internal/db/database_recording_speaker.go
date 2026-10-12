@@ -8,6 +8,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // RecordingSpeakerOperation keeps confirmed labels separate from generated evidence.
@@ -207,47 +208,56 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
 		return err
 	}
-	source, err := self.LockRecording(userId, recordingId)
-	if err != nil {
+	var identity recordingSpeakerIdentityModel
+	if err := self.tx.Where("id = ? AND user_id = ?", speakerIdentityId, userId).Take(&identity).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
 		return err
-	}
-	if source.SourceGeneration != expectedSourceGeneration {
-		return ErrAlreadyExists
-	}
-	var correctionCount int64
-	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND speaker_identity_id = ?", recordingId, speakerIdentityId).Count(&correctionCount).Error; err != nil {
-		return err
-	}
-	if correctionCount == 0 {
-		return ErrNotFound
-	}
-	updated := self.tx.Model(&recordingSpeakerIdentityModel{}).Where("id = ? AND user_id = ?", speakerIdentityId, userId).Update("confirmed_name", confirmedName)
-	if updated.Error != nil {
-		return updated.Error
-	}
-	if updated.RowsAffected == 0 {
-		return ErrNotFound
 	}
 	var affectedRecordingIds []string
 	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Distinct("recording_id").Where("speaker_identity_id = ?", speakerIdentityId).Order("recording_id").Pluck("recording_id", &affectedRecordingIds).Error; err != nil {
 		return err
 	}
-	for _, affectedRecordingId := range affectedRecordingIds {
-		if _, err := self.LockRecording(userId, affectedRecordingId); err != nil {
-			if errors.Is(err, ErrRecordingDeleted) {
-				continue
+	var lockedSources []*recordingModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ? AND user_id = ? AND deleted_at IS NULL", affectedRecordingIds, userId).Order("id").Find(&lockedSources).Error; err != nil {
+		return err
+	}
+	hasRequestedSource := false
+	for _, source := range lockedSources {
+		if source.ID == recordingId {
+			hasRequestedSource = true
+			if source.SourceGeneration != expectedSourceGeneration {
+				return ErrAlreadyExists
 			}
+		}
+	}
+	if !hasRequestedSource {
+		return ErrNotFound
+	}
+	var existingName recordingSpeakerIdentityModel
+	err := self.tx.Where("user_id = ? AND confirmed_name = ?", userId, confirmedName).Take(&existingName).Error
+	if err == nil && existingName.ID != identity.ID {
+		return ErrAlreadyExists
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err := self.tx.Model(&identity).Update("confirmed_name", confirmedName).Error; err != nil {
+		return err
+	}
+	// All recording rows are locked before graph writes, in the same identifier order.
+	for _, source := range lockedSources {
+		if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 			return err
 		}
-		if err := self.advanceRecordingSpeakerGeneration(affectedRecordingId); err != nil {
-			return err
-		}
-		if err := self.SyncRecordingKnowledge(userId, affectedRecordingId); err != nil {
+		if err := self.SyncRecordingKnowledge(userId, source.ID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
 func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error {
 	source, err := self.LockRecording(userId, recordingId)
 	if err != nil {

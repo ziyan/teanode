@@ -71,11 +71,17 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 	if maximumAccountBytes > math.MaxInt64 {
 		return fmt.Errorf("recording account limit exceeds supported bytes")
 	}
+	referenceCountByIdentity := map[string]int{}
+	for _, reference := range references {
+		if !reference.IsRevoked {
+			referenceCountByIdentity[reference.SpeakerIdentityID]++
+		}
+	}
 	for _, correction := range corrections {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if correction.IsRemoved || correction.PassageEndMS-correction.PassageStartMS < 2400 {
+		if correction.IsRemoved || referenceCountByIdentity[correction.SpeakerIdentityID] >= 6 || correction.PassageEndMS-correction.PassageStartMS < 2400 {
 			continue
 		}
 		hasOverride := false
@@ -186,7 +192,8 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			reference, err = transaction.CreateRecordingVoiceReference(userId, reference, &models.RecordingBlob{BlobSHA256: hex.EncodeToString(digest[:]), BlobSizeBytes: int64(len(waveBytes))}, int64(maximumAccountBytes))
 			return err
 		}); err != nil {
-			if err == db.ErrTooMuchAsked || err == db.ErrAlreadyExists {
+			if err == db.ErrTooMuchAsked {
+				referenceCountByIdentity[correction.SpeakerIdentityID] = 6
 				continue
 			}
 			return err
@@ -194,6 +201,7 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		if reference.IsRevoked || reference.RecordingBlobID == "" {
 			continue
 		}
+		referenceCountByIdentity[correction.SpeakerIdentityID]++
 		// Reservation commits before bytes; a failed storage write retains a cleanup reference.
 		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 			current, err := transaction.LockRecording(userId, recordingId)

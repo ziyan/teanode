@@ -124,7 +124,7 @@ func (self *transaction) SyncRecordingKnowledge(userId, recordingId string) erro
 				transcriptText += fmt.Sprintf("\nSelected passage correction generation %d, %d-%d MS: %s. Text has segment-level timing only; do not assign the whole statement to this passage.", correction.SourceGeneration, correction.PassageStartMS, correction.PassageEndMS, attribution)
 			}
 			digest := sha256.Sum256([]byte(transcriptText))
-			externalId := fmt.Sprintf("%s:%d:%d", transcriptRun.RecordingMediaID, segment.SegmentStartMS, segment.SegmentEndMS)
+			externalId := transcriptRun.ID + ":" + segment.ID
 			previous, err := self.GetAgentDocumentByExternal(source.ID, externalId)
 			if err != nil {
 				return err

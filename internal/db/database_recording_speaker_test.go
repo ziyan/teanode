@@ -2,7 +2,9 @@ package db_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -331,4 +333,190 @@ func TestRecordingLearningRejectsStaleEvidenceAfterCorrection(test *testing.T) {
 	if !errors.Is(err, db.ErrRecordingDeleted) {
 		test.Fatal("deleted source accepted stale model output", err)
 	}
+}
+
+func TestRecordingLearningPreservesEqualTimeOverlappingStatements(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		segments := []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "The first participant proposed a fixture change."}, {LocalSpeakerID: "speaker-two", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "The second participant asked a different open question."}}
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, segments); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+fixture.media.RecordingID)
+		if err != nil || source == nil {
+			test.Fatal(err)
+		}
+		documentCount, chunkCount, err := transaction.CountAgentSourceDocuments(source.ID)
+		if err != nil || documentCount != 2 || chunkCount != 2 {
+			test.Fatal("equal-time speakers overwrote a statement", documentCount, chunkCount, err)
+		}
+		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(documents) != 2 || documents[0].ExternalID == documents[1].ExternalID {
+			test.Fatal("statement provenance is not unique", err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		documentCount, chunkCount, err = transaction.CountAgentSourceDocuments(source.ID)
+		if err != nil || documentCount != 2 || chunkCount != 2 {
+			test.Fatal("publication retry changed equal-time statement coverage", err)
+		}
+	})
+}
+
+func TestRecordingRenameReconcilesEverySharedIdentitySourceAtomically(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	var firstCorrection *models.RecordingSpeakerCorrection
+	var secondSource *models.Recording
+	var secondRun *models.RecordingTranscriptRun
+	var secondMedia *models.RecordingMedia
+	var secondClaim db.RecordingWorkerClaim
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "The fixture participant offered a first proposal."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		corrections, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: attempt.ID, ClientCorrectionID: "shared-first", ConfirmedName: "Shared Participant", LocalSpeakerID: "speaker-one", PassageStartMS: -1, PassageEndMS: -1, ExpectedSourceGeneration: source.SourceGeneration})
+		if err != nil {
+			test.Fatal(err)
+		}
+		firstCorrection = corrections[0]
+		secondSource, err = transaction.CreateRecording(&models.Recording{UserID: fixture.userId, ClientRecordingID: "shared-second-source", RecordingOrigin: models.RecordingOriginAudioImport})
+		if err != nil {
+			test.Fatal(err)
+		}
+		secondMedia, err = transaction.CreateRecordingMedia(fixture.userId, &models.RecordingMedia{RecordingID: secondSource.ID, ClientMediaID: "shared-second-media", OriginalFilename: "fixture.wav", OriginalContentType: "audio/wav", OriginalSizeBytes: fixture.media.OriginalSizeBytes, OriginalSHA256: fixture.media.OriginalSHA256, TimelineStartMS: 2000}, 1<<20, 1<<20)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.PutRecordingMediaPart(fixture.userId, &models.RecordingMediaPart{RecordingMediaID: secondMedia.ID, PartIndex: 0, PartSizeBytes: secondMedia.OriginalSizeBytes, PartSHA256: secondMedia.OriginalSHA256}); err != nil {
+			test.Fatal(err)
+		}
+		if _, _, err := transaction.CompleteRecordingMedia(fixture.userId, secondMedia.ID, secondMedia.OriginalSHA256); err != nil {
+			test.Fatal(err)
+		}
+		secondRun, err = transaction.CreateRecordingTranscriptRun(fixture.userId, secondMedia.ID, fixture.agentId, "initial", "fixture:diarize", false)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: fixture.agentId, Kind: models.AgentJobRecording, SubjectID: secondRun.ID}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		jobs, err := transaction.ClaimAgentJobs("second-fixture-worker", 1, time.Now())
+		if err != nil || len(jobs) != 1 {
+			test.Fatal(err)
+		}
+		secondClaim = db.RecordingWorkerClaim{JobID: jobs[0].ID, ClaimID: jobs[0].ClaimID}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, secondRun.ID, secondClaim, models.RecordingProcessingPreparing, "", 0); err != nil {
+			test.Fatal(err)
+		}
+		secondBlob := &models.RecordingBlob{ID: db.RecordingAudioFileID(secondRun.ID, 0), BlobSizeBytes: 128, BlobSHA256: blob.BlobSHA256}
+		secondChunk, err := transaction.CreateRecordingAudioChunk(fixture.userId, secondRun.ID, secondClaim, &models.RecordingAudioChunk{ChunkIndex: 0, TimelineStartMS: 2000, AudioDurationMS: 1000}, secondBlob, 1<<20)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.VerifyRecordingBlob(fixture.userId, secondBlob.ID, secondBlob.BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, secondRun.ID, secondClaim, models.RecordingProcessingTranscribing, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		secondAttempt, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, secondRun.ID, secondChunk.ID, secondClaim, "USD", nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SubmitRecordingTranscriptionAttempt(fixture.userId, secondAttempt.ID, secondClaim); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, secondAttempt.ID, secondClaim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-local-second", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "The fixture participant asked a second question."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, secondRun.ID, secondClaim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, secondSource.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		corrections, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: secondAttempt.ID, ClientCorrectionID: "shared-second", ConfirmedName: "Shared Participant", LocalSpeakerID: "speaker-local-second", PassageStartMS: -1, PassageEndMS: -1, ExpectedSourceGeneration: source.SourceGeneration})
+		if err != nil || len(corrections) != 1 || corrections[0].SpeakerIdentityID != firstCorrection.SpeakerIdentityID {
+			test.Fatal("account identity was not reused", err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, secondSource.ID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	var previousFirstGeneration, previousSecondGeneration int64
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		first, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		second, err := transaction.GetRecording(fixture.userId, secondSource.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		previousFirstGeneration = first.SourceGeneration
+		previousSecondGeneration = second.SourceGeneration
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		if err := transaction.RenameRecordingSpeaker(fixture.userId, fixture.media.RecordingID, firstCorrection.SpeakerIdentityID, "Rolled Back Participant", previousFirstGeneration); err != nil {
+			return err
+		}
+		return errors.New("fixture rollback")
+	})
+	if err == nil {
+		test.Fatal("fixture transaction did not roll back")
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		first, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil || first.SourceGeneration != previousFirstGeneration {
+			test.Fatal("failed rename changed first source", err)
+		}
+		second, err := transaction.GetRecording(fixture.userId, secondSource.ID)
+		if err != nil || second.SourceGeneration != previousSecondGeneration {
+			test.Fatal("failed rename changed second source", err)
+		}
+		if err := transaction.RenameRecordingSpeaker(fixture.userId, first.ID, firstCorrection.SpeakerIdentityID, "Renamed Shared Participant", first.SourceGeneration); err != nil {
+			test.Fatal(err)
+		}
+		first, err = transaction.GetRecording(fixture.userId, first.ID)
+		if err != nil || first.SourceGeneration != previousFirstGeneration+1 {
+			test.Fatal("rename missed first source", err)
+		}
+		second, err = transaction.GetRecording(fixture.userId, second.ID)
+		if err != nil || second.SourceGeneration != previousSecondGeneration+1 {
+			test.Fatal("rename missed second source", err)
+		}
+		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
+		if err != nil || len(documents) != 2 {
+			test.Fatal(err)
+		}
+		for _, document := range documents {
+			if !strings.Contains(document.Title, "Renamed Shared Participant") {
+				test.Fatal("shared identity rename left old attribution", document.Title)
+			}
+		}
+	})
 }
