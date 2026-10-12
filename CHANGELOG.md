@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.6] - 2026-10-12
+
+### Fixed
+
+- In the iPhone app, signing in with a password asks for the server in a sheet that fits the screen, and always asks for the account and password. (#398)
+
 ## [0.134.5] - 2026-10-12
 
 ### Fixed
