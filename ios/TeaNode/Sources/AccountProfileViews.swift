@@ -327,35 +327,37 @@ struct PairedPhoneRow: View {
     var allNotificationKinds: [String] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
+        // The warning is centered on the whole row, level with the
+        // disclosure chevron, rather than on the name's line.
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(Self.displayName(phone))
-                Spacer()
-                switch phone.notificationState {
-                case .notRegistered:
-                    Label("No notifications", systemImage: "bell.slash")
-                        .labelStyle(.tag)
+                let detailText = [phone.phoneModel, notificationsText, phone.lastDeliveryError]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " · ")
+                if !detailText.isEmpty {
+                    Text(detailText)
                         .font(.caption)
-                        .foregroundStyle(.orange)
-                case .lastFailed:
-                    Label("Last notification failed", systemImage: "exclamationmark.triangle")
-                        .labelStyle(.tag)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                case .notified:
-                    EmptyView()
+                        .foregroundStyle(.secondary)
                 }
             }
-            .symbolRenderingMode(.hierarchical)
-            let detailText = [phone.phoneModel, notificationsText, phone.lastDeliveryError]
-                .filter { !$0.isEmpty }
-                .joined(separator: " · ")
-            if !detailText.isEmpty {
-                Text(detailText)
+            Spacer()
+            switch phone.notificationState {
+            case .notRegistered:
+                Label("No notifications", systemImage: "bell.slash")
+                    .labelStyle(.tag)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.orange)
+            case .lastFailed:
+                Label("Last notification failed", systemImage: "exclamationmark.triangle")
+                    .labelStyle(.tag)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            case .notified:
+                EmptyView()
             }
         }
+        .symbolRenderingMode(.hierarchical)
     }
 
     /// The phone's name, or a stand-in for one that has none.

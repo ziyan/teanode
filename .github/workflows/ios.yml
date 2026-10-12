@@ -127,6 +127,10 @@ jobs:
           shoot agent-settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-settings
           shoot manage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen manage
           shoot people-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen people
+          shoot domain-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
+          shoot domain-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
+          shoot dns-records-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
+          shoot dns-records-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
           shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
           shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions
           shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones

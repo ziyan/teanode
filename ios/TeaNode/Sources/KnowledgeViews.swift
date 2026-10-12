@@ -209,7 +209,7 @@ struct KnowledgeRowView: View {
             }
             Spacer()
             if row.children > 0 {
-                Text("\(row.children)").font(.footnote).foregroundStyle(.secondary)
+                Text("\(row.children)").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
     }

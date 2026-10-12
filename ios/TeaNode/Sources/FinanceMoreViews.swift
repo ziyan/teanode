@@ -854,29 +854,31 @@ struct ReceiptRow: View {
     let receipt: FinanceReceipt
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
+        // LabeledContent centers the total on the whole row, level with the
+        // disclosure chevron, rather than on the merchant's line.
+        LabeledContent {
+            Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode))
+                .monospacedDigit()
+                .foregroundStyle(Color(.label))
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
                     .foregroundStyle(Color(.label))
-                Spacer()
-                Text(FinanceMoney.shown(receipt.totalAmount, currencyCode: receipt.currencyCode))
-                    .monospacedDigit()
-                    .foregroundStyle(Color(.label))
-            }
-            HStack(spacing: 6) {
-                Text(receipt.purchasedOn.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No day"))
-                let lineCount = (receipt.receiptLines ?? []).compactMap { $0 }.count
-                if lineCount > 0 {
-                    Text("\(lineCount) lines")
+                HStack(spacing: 6) {
+                    Text(receipt.purchasedOn.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No day"))
+                    let lineCount = (receipt.receiptLines ?? []).compactMap { $0 }.count
+                    if lineCount > 0 {
+                        Text("\(lineCount) lines")
+                    }
+                    let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
+                    Text(matches.isEmpty ? String(localized: "Not matched") : String(localized: "Matched to \(matches.count) charges"))
+                    if receipt.agentAttachmentId?.isEmpty == false {
+                        Image(systemName: "photo").accessibilityLabel("Has its photo")
+                    }
                 }
-                let matches = (receipt.receiptMatches ?? []).compactMap { $0 }
-                Text(matches.isEmpty ? String(localized: "Not matched") : String(localized: "Matched to \(matches.count) charges"))
-                if receipt.agentAttachmentId?.isEmpty == false {
-                    Image(systemName: "photo").accessibilityLabel("Has its photo")
-                }
+                .font(.caption)
+                .foregroundStyle(Color(.secondaryLabel))
             }
-            .font(.caption)
-            .foregroundStyle(Color(.secondaryLabel))
         }
     }
 }
