@@ -23091,6 +23091,22 @@
         }
       }
     },
+    "Opens its conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その会話を開きます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开它的对话"
+          }
+        }
+      }
+    },
     "Optional": {
       "localizations": {
         "ja": {
