@@ -126,3 +126,20 @@ extension RecordingTests {
         XCTAssertNil(confirmed.confirmedName(for: segment, mediaId: "media-b"))
     }
 }
+
+extension RecordingTests {
+    @MainActor
+    func testPaidRequestIdentitySurvivesRetryAndStaysWithinItsAccountAndMedia() {
+        let suite = "recording-test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = RecordingRequestIdentity.acquire(accountKey: "account-a", mediaId: "media-a", in: defaults)
+        XCTAssertEqual(RecordingRequestIdentity.acquire(accountKey: "account-a", mediaId: "media-a", in: defaults), first)
+        XCTAssertNotEqual(RecordingRequestIdentity.acquire(accountKey: "account-b", mediaId: "media-a", in: defaults), first)
+        XCTAssertNotEqual(RecordingRequestIdentity.acquire(accountKey: "account-a", mediaId: "media-b", in: defaults), first)
+        RecordingRequestIdentity.finish(accountKey: "account-a", mediaId: "media-a", requestId: "unrelated", in: defaults)
+        XCTAssertEqual(RecordingRequestIdentity.acquire(accountKey: "account-a", mediaId: "media-a", in: defaults), first)
+        RecordingRequestIdentity.finish(accountKey: "account-a", mediaId: "media-a", requestId: first, in: defaults)
+        XCTAssertNotEqual(RecordingRequestIdentity.acquire(accountKey: "account-a", mediaId: "media-a", in: defaults), first)
+    }
+}

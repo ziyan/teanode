@@ -271,6 +271,7 @@ struct RecordingDetailScreen: View {
                         if media.recordingUploadState == "complete" {
                             Button {
                                 reprocessedMedia = media
+                                transcriptionRequestId = RecordingRequestIdentity.acquire(accountKey: connection.accountKey, mediaId: media.id)
                                 isReprocessing = true
                             } label: {
                                 Label("Transcribe or reprocess", systemImage: "text.bubble")
@@ -373,6 +374,7 @@ struct RecordingDetailScreen: View {
                         _ = try await connection.requestRecordingTranscription(
                             recordingMediaId: media.id, clientRunId: hasPriorRun ? transcriptionRequestId : "initial",
                             isReprocessingRequested: hasPriorRun)
+                        RecordingRequestIdentity.finish(accountKey: connection.accountKey, mediaId: media.id, requestId: transcriptionRequestId)
                         transcriptionRequestId = UUID().uuidString
                         await load()
                     } catch { problemText = error.localizedDescription }
