@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.134.3] - 2026-10-12
+
+### Fixed
+
+- The page that authorizes an app offers "Use another account", so a browser signed in as one person can sign the app in as another. (#397)
+- In the iPhone app, swiping the side menu closed no longer drags a chat's row open; a chat's actions are in its long-press menu. (#400)
+- In the iPhone app, an idea under History opens its conversation, as the dashboard's does. (#401)
+
 ## [0.134.2] - 2026-10-12
 
 ### Fixed
