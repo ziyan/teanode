@@ -1953,6 +1953,22 @@
         }
       }
     },
+    "%lld of %lld could not be imported.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 件は読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 位联系人无法导入。"
+          }
+        }
+      }
+    },
     "%lld of %lld deliveries": {
       "localizations": {
         "ja": {
@@ -4915,6 +4931,22 @@
         }
       }
     },
+    "Allow TeaNode to read your contacts in Settings to bring them into your address book.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先をアドレス帳に読み込むには、設定で TeaNode に連絡先の読み取りを許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“设置”中允许 TeaNode 读取你的通讯录，以便导入到你的地址簿。"
+          }
+        }
+      }
+    },
     "Allow TeaNode to use the camera in Settings, or paste the code's link instead.": {
       "localizations": {
         "ja": {
@@ -5007,6 +5039,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已经连接"
+          }
+        }
+      }
+    },
+    "Already in TeaNode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode に登録済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在 TeaNode 中"
           }
         }
       }
@@ -9039,6 +9087,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "联系人"
+          }
+        }
+      }
+    },
+    "Contacts access is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先へのアクセスがオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未允许访问通讯录"
           }
         }
       }
@@ -15187,6 +15251,38 @@
         }
       }
     },
+    "Import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入"
+          }
+        }
+      }
+    },
+    "Import from iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone から読み込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 iPhone 导入"
+          }
+        }
+      }
+    },
     "Important": {
       "localizations": {
         "ja": {
@@ -15199,6 +15295,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "重要"
+          }
+        }
+      }
+    },
+    "Imported %lld contacts.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を %lld 件読み込みました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 位联系人。"
+          }
+        }
+      }
+    },
+    "Imported 1 contact.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を 1 件読み込みました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 1 位联系人。"
+          }
+        }
+      }
+    },
+    "Importing %lld of %lld…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 件を読み込み中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在导入 %lld / %lld…"
           }
         }
       }
@@ -20015,6 +20159,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "现在没有联系人是你"
+          }
+        }
+      }
+    },
+    "No contacts on this iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone に連絡先がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 上没有联系人"
           }
         }
       }
@@ -25295,6 +25455,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在读取收据…"
+          }
+        }
+      }
+    },
+    "Reading your contacts…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を読み込んでいます…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取你的联系人…"
           }
         }
       }
@@ -39634,6 +39810,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你连接的电脑（用于只接受本机回环地址的服务）"
+          }
+        }
+      }
+    },
+    "Your contacts could not be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を読み取れませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取你的联系人"
           }
         }
       }

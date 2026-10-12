@@ -77,6 +77,8 @@
                 answer = #"{"data":{"ListAddressBooks":[{"id":"book","name":"Contacts","contacts":4}]}}"#
             } else if query.contains("ListContacts") {
                 answer = Self.contacts
+            } else if query.contains("SaveContact") {
+                answer = #"{"data":{"SaveContact":{"id":"imported","name":"Imported"}}}"#
             } else if query.contains("AgentGraphPage") {
                 answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
             } else if query.contains("ListAgentIdeas") {
