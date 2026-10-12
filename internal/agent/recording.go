@@ -22,6 +22,32 @@ import (
 const recordingLongest = 40 * time.Minute
 const recordingMaximumDurationMS int64 = 7 * 24 * 60 * 60 * 1000
 
+// RecordingTranscriptionAvailability checks current admission without creating work or a model call.
+func (self *Agent) RecordingTranscriptionAvailability(transaction db.Transaction, userId string) (bool, string, error) {
+	configuration := self.settings.Configuration()
+	if !configuration.Agent.Enabled || configuration.Agent.Models.Transcription == "" || self.settings.Registry == nil {
+		return false, "Recording transcription is off. An operator can choose a model with speaker attribution.", nil
+	}
+	assistant, err := transaction.GetAgentByUser(userId)
+	if err != nil {
+		return false, "", err
+	}
+	if assistant == nil || !assistant.Active() {
+		return false, "Turn on your personal assistant to process recordings.", nil
+	}
+	if err := self.recordingAuthority(transaction, &Run{Agent: assistant}, configuration.Agent.Models.Transcription, false); err != nil {
+		var deferral *Deferral
+		if errors.As(err, &deferral) {
+			return false, deferral.Reason, nil
+		}
+		return false, "", err
+	}
+	if _, err := self.settings.Registry.TranscribingFor(configuration.Agent.Models.Transcription, true, false); err != nil {
+		return false, "The configured recording model is unavailable or lacks speaker attribution and timestamps.", nil
+	}
+	return true, "", nil
+}
+
 // QueueRecordingTranscription retains the requested version and job atomically.
 // Initial uploads have one stable version; explicit reprocessing names a new key.
 func (self *Agent) QueueRecordingTranscription(transaction db.Transaction, userId, mediaId, clientRunId string, isReprocessingRequested bool) (*models.RecordingTranscriptRun, error) {
