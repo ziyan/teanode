@@ -139,7 +139,14 @@ func TestRecordingVersionsClaimsUsageAndImmutableSegments(test *testing.T) {
 			test.Fatal("request-local speaker provenance was lost", err)
 		}
 		attempts, err := transaction.ListRecordingTranscriptionAttempts(fixture.userId, fixture.transcriptRun.ID)
-		if err != nil || len(attempts) != 1 || !json.Valid(attempts[0].ProviderUsageJSON) || len(attempts[0].ReferenceBlobIDs) != 0 || !attempts[0].HasProviderUsage {
+		if err != nil || len(attempts) != 1 || len(attempts[0].ProviderUsageJSON) != 0 || len(attempts[0].ProviderResponseJSON) != 0 {
+			test.Fatal("bulk read loaded raw provider payloads", err)
+		}
+		evidence, err := transaction.GetRecordingTranscriptionAttemptEvidence(fixture.userId, attempt.ID)
+		if err != nil || !json.Valid(evidence.ProviderUsageJSON) || !json.Valid(evidence.ProviderResponseJSON) {
+			test.Fatal("raw provider evidence was not retained", err)
+		}
+		if err != nil || len(attempts) != 1 || len(attempts[0].ReferenceBlobIDs) != 0 || !attempts[0].HasProviderUsage {
 			test.Fatal("provider usage was not preserved", err)
 		}
 		reprocessed, err := transaction.CreateRecordingTranscriptRun(fixture.userId, fixture.media.ID, fixture.agentId, "explicit-rerun", "fixture:diarize", true)
@@ -186,6 +193,27 @@ func TestRecordingUnknownRemoteOutcomeIsNotAutomaticallyResubmitted(test *testin
 		retry, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, chunk.ID, fixture.claim, "USD", nil)
 		if err != nil || retry.ID != attempt.ID || retry.RecordingAttemptState != models.RecordingAttemptUncertain {
 			test.Fatal("unknown outcome became another paid request", err)
+		}
+	})
+}
+
+func TestRecordingPreparedAttemptCanRefreshEmptyReferences(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingTranscribing, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.VerifyRecordingBlob(fixture.userId, blob.ID, blob.BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+		prepared, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, chunk.ID, fixture.claim, "USD", nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		refreshed, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, chunk.ID, fixture.claim, "USD", nil)
+		if err != nil || refreshed.ID != prepared.ID || refreshed.RecordingAttemptState != models.RecordingAttemptPrepared || len(refreshed.ReferenceBlobIDs) != 0 {
+			test.Fatal("prepared empty reference refresh changed attempt identity", err)
 		}
 	})
 }

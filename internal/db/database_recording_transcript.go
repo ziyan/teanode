@@ -21,6 +21,7 @@ type RecordingWorkerClaim struct {
 
 // RecordingTranscriptOperation versions generated evidence and tracks derived blobs.
 type RecordingTranscriptOperation interface {
+	GetRecordingTranscriptionAttemptEvidence(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error)
 	CancelRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
 	ReadRecordingTranscriptPage(userId, runId string, segmentOffset, pageSize int) ([]*models.RecordingTranscriptSegment, int64, error)
 	ListRecordingMediaAwaitingTranscription(afterMediaId string, limit int) ([]*RecordingMediaCandidate, error)
@@ -443,11 +444,21 @@ func (self *transaction) CreateRecordingTranscriptionAttempt(userId, runId, chun
 			return nil, ErrInvalidArguments
 		}
 	}
+	if referenceBlobIds == nil {
+		referenceBlobIds = []string{}
+	}
 	var previous recordingAttemptModel
 	err = self.tx.Where("recording_audio_chunk_id = ?", chunkId).Order("attempt_index DESC").Take(&previous).Error
 	attemptIndex := 1
 	if err == nil {
 		if previous.RecordingAttemptState != models.RecordingAttemptFailed {
+			if previous.RecordingAttemptState == models.RecordingAttemptPrepared {
+				// No request has been submitted; current confirmations may replace stale references.
+				previous.ReferenceBlobIDs = referenceBlobIds
+				if err := self.tx.Model(&previous).Select("reference_blob_ids").Updates(&previous).Error; err != nil {
+					return nil, err
+				}
+			}
 			return recordingAttemptFromModel(&previous), nil
 		}
 		attemptIndex = previous.AttemptIndex + 1
@@ -456,9 +467,6 @@ func (self *transaction) CreateRecordingTranscriptionAttempt(userId, runId, chun
 		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
-	}
-	if referenceBlobIds == nil {
-		referenceBlobIds = []string{}
 	}
 	attempt := models.RecordingTranscriptionAttempt{ID: newID(), RecordingTranscriptRunID: runId, RecordingAudioChunkID: chunkId, AttemptIndex: attemptIndex, CreatedAt: time.Now().UTC().Truncate(time.Microsecond), RecordingAttemptState: models.RecordingAttemptPrepared, ProviderModelName: transcriptRun.ProviderModelName, CurrencyCode: currencyCode, ReferenceBlobIDs: referenceBlobIds}
 	row := recordingAttemptModel(attempt)
@@ -475,7 +483,7 @@ func (self *transaction) ListRecordingTranscriptionAttempts(userId, runId string
 		return nil, err
 	}
 	var rows []recordingAttemptModel
-	if err := self.tx.Where("recording_transcript_run_id = ?", runId).Order("created_at, id").Find(&rows).Error; err != nil {
+	if err := self.tx.Omit("provider_usage_json", "provider_response_json").Where("recording_transcript_run_id = ?", runId).Order("created_at, id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	attempts := make([]*models.RecordingTranscriptionAttempt, 0, len(rows))
@@ -671,4 +679,19 @@ func (self *transaction) ReadRecordingTranscriptPage(userId, runId string, segme
 		segments = append(segments, &segment)
 	}
 	return segments, segmentCount, nil
+}
+
+// GetRecordingTranscriptionAttemptEvidence reads one owned receipt; bulk views omit raw provider payloads.
+func (self *transaction) GetRecordingTranscriptionAttemptEvidence(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error) {
+	var row recordingAttemptModel
+	if err := self.tx.Where("id = ?", attemptId).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if _, err := self.GetRecordingTranscriptRun(userId, row.RecordingTranscriptRunID); err != nil {
+		return nil, err
+	}
+	return recordingAttemptFromModel(&row), nil
 }
