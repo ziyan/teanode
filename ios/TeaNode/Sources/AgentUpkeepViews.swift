@@ -273,7 +273,7 @@ struct KnowledgeSourcesView: View {
                 Task { await act(saying: String(localized: "Stopped")) { try await connection.deleteKnowledgeSource(source.id) } }
             }
         } message: { source in
-            Text("Stop reading \(source.name) and forget the \(source.documentCount) document(s) it found. What your agent learned from it stays on its pages.")
+            Text("Stop reading \(RecordingWords.sourceName(source)) and forget the \(source.documentCount) document(s) it found. What your agent learned from it stays on its pages.")
         }
         .toast(done: $doneText, problem: $problemText)
     }
@@ -379,7 +379,7 @@ struct KnowledgeSourceRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(source.name).foregroundStyle(Color(.label))
+            Text(RecordingWords.sourceName(source)).foregroundStyle(Color(.label))
             HStack(spacing: 8) {
                 if source.kind == "recording" {
                     UpkeepTag(text: String(localized: "Recording"))
@@ -586,7 +586,11 @@ struct KnowledgeSourceEditor: View {
                     }
                 }
                 Section("What to call it") {
-                    TextField("What to call it", text: $name)
+                    if let source, source.kind == "recording" {
+                        Text(RecordingWords.sourceName(source))
+                    } else {
+                        TextField("What to call it", text: $name)
+                    }
                 }
                 if let chosenType {
                     typedSections(chosenType)

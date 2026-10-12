@@ -3,12 +3,14 @@
     import TeaNodeKit
 
     extension DemoServer {
+        static let recordingAgentSettingsFixture =
+            #"{"enabled":true,"instructions":"","allowPrivateAddresses":[],"skipCertificateCheck":[],"providers":[],"models":{"default":"","fast":"","quick":"","embedding":"","triage":"","research":"","summarize":"","reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"","categorize":"","transcription":"demo:transcription","embeddingDimensions":0,"choices":[]},"features":{},"limits":{"maxBodyCharacters":0,"dailyTokensPerAgent":0,"monthlyTokensPerServer":0,"dailyCostPerAgent":0,"monthlyCostPerServer":0,"maxRoundsPerAsk":0,"maxRoundsPerResearch":0,"maxRoundsPerReply":0,"maxRoundsPerDream":0,"maxToolCallsPerRun":0,"concurrency":0,"scanConcurrency":0,"rewriteConcurrency":0,"dreamShare":0,"ingestChunksPerRun":0,"embeddingTokensPerDay":0,"maxRoundsPerSubagent":0,"goalTurnsPerDay":0,"goalTurnsAlone":0,"goalsInProgress":0,"backgroundWakesAlone":0,"requestTimeout":"2m","maxRecordingMediaBytes":"2GB","maxRecordingAccountBytes":"64GB"},"retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"","hasApiKey":false},"tools":{"disabled":[],"confirm":[],"catalog":[]},"voice":{"enabled":false,"provider":"","transcriptionModel":"","silenceMS":0,"speechModel":"","speechVoice":"","askModel":""},"browser":{"enabled":false,"cdpEndpoint":"","attachTabs":true,"allowPrivateAddresses":[],"idleTimeout":"5m","maxContexts":4},"mcpServers":[],"finance":{"offeredProviders":[],"plaid":{"environment":"","clientId":"","hasSecret":false,"countryCodes":[],"products":[]}},"works":[],"families":[],"kinds":[]}"#
         static let recordingFixture =
             #"{"id":"recording-a","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","recordedAt":"2030-01-02T02:04:05Z","clientRecordingId":"local-a","recordingTitle":"Design discussion","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":3600000,"sourceGeneration":4,"captureGaps":[{"gapId":"gap-a","gapStartMS":1200000,"gapEndMS":1220000,"recordingGapReason":"paused"}]}"#
         static let recordingRunFixture =
             #"{"id":"run-a","recordingId":"recording-a","recordingMediaId":"media-a","versionNumber":2,"recordingProcessingState":"complete","providerModelName":"demo:transcription","processingErrorMessage":"","createdAt":"2030-01-02T03:04:05Z"}"#
         static let recordingSegmentFixture =
-            #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"attempt-a","localSpeakerId":"speaker-a","segmentStartMS":30000,"segmentEndMS":44000,"transcriptText":"We should keep the original media and preserve corrections when another transcript version is generated.","effectiveTranscriptText":"We should keep the original media and preserve manual corrections when another transcript version is generated.","appliedTextCorrectionId":"text-correction-a"}"#
+            #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"attempt-a","localSpeakerId":"speaker-a","segmentStartMS":30000,"segmentEndMS":44000,"transcriptText":"We should keep the original media and preserve corrections when another transcript version is generated.","effectiveTranscriptText":"We should keep the original media and preserve manual corrections when another transcript version is generated.","appliedTextCorrectionId":"text-correction-a","hasUserConfirmedSpeaker":true,"effectiveSpeakerIdentityId":"identity-a","effectiveSpeakerName":"Speaker A","hasUnalignedSpeakerCorrection":false}"#
         static let recordingTextCorrectionFixture =
             #"{"id":"text-correction-a","recordingId":"recording-a","recordingMediaId":"media-a","recordingTranscriptRunId":"run-a","recordingTranscriptSegmentId":"segment-a","clientCorrectionId":"text-request-a","passageStartMS":30000,"passageEndMS":44000,"originalTranscriptText":"We should keep the original media and preserve corrections when another transcript version is generated.","correctedTranscriptText":"We should keep the original media and preserve manual corrections when another transcript version is generated.","sourceGeneration":4,"createdAt":"2030-01-02T03:04:05Z","isRemoved":false}"#
         static let recordingSpeakersFixture =
@@ -17,6 +19,14 @@
             #"{"id":"media-a","recordingId":"recording-a","clientMediaId":"original-a","originalFilename":"meeting.caf","originalContentType":"audio/x-caf","originalSizeBytes":19200000,"originalSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","timelineStartMS":0,"mediaDurationMS":600000,"partCount":3,"recordingUploadState":"complete","verifiedAt":"2030-01-02T03:04:05Z"}"#
 
         static func recordingAnswer(query: String) -> String? {
+            if query.contains("GetSettings"), query.contains("agent {") {
+                return "{\"data\":{\"GetSettings\":{\"agent\":\(recordingAgentSettingsFixture)}}}"
+            }
+            if query.contains("ListAgentModels") {
+                return
+                    #"{"data":{"ListAgentModels":[{"name":"demo:transcription","canTranscribe":true,"hasSpeakerDiarization":true,"hasSegmentTimestamps":true,"hasSpeakerReferences":true,"maximumAudioBytes":24000000,"maximumSpeakerReferenceCount":3}]}}"#
+            }
+
             if query.contains("ReadRecordingTranscriptTimeline") {
                 return
                     "{\"data\":{\"ReadRecordingTranscriptTimeline\":{\"sourceGeneration\":4,\"segments\":[\(recordingSegmentFixture)],\"transcriptRuns\":[\(recordingRunFixture)],\"segmentCount\":1,\"hasMoreSegments\":false}}}"
@@ -57,6 +67,11 @@
         var body: some View {
             NavigationStack {
                 switch screen {
+                case "recording-model-settings", "recording-quota-settings": RecordingOperatorDemoScreen(connection: connection, screen: screen)
+                case "recording-attachment-import":
+                    RecordingAttachmentImportView(
+                        connection: connection,
+                        attachment: AgentAttachment(id: "attachment-a", name: "meeting.wav", contentType: "audio/wav", size: 120000))
                 case "recording-detail": RecordingDetailScreen(connection: connection, recording: recording)
                 case "recording-transcript": RecordingTranscriptScreen(connection: connection, recording: recording)
                 case "recording-version":

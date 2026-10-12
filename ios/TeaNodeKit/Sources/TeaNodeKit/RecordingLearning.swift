@@ -12,8 +12,11 @@ public struct RecordingLearningView: Codable, Hashable, Sendable {
 }
 
 extension Documents {
-    public static let readRecordingLearning =
-        "query ($recordingId: String!) { ReadRecordingLearning(recordingId: $recordingId) { sourceGeneration hasAgent knowledgeSource { id kind name enabled lastRunAt lastError documentCount chunkCount more } pendingDocumentCount digestedDocumentCount lastPublishedSourceGeneration isCurationPending } }"
+    public static let readRecordingLearning = """
+        query ($recordingId: String!) { ReadRecordingLearning(recordingId: $recordingId) { sourceGeneration hasAgent knowledgeSource {
+        id kind name enabled lastRunAt lastError documentCount chunkCount more } pendingDocumentCount digestedDocumentCount
+        lastPublishedSourceGeneration isCurationPending } }
+        """
 }
 
 extension Connection {

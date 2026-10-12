@@ -42,16 +42,22 @@ final class MeetingRecorder: NSObject {
             problemText = String(localized: "Use a recording title of at most 255 UTF-8 bytes.")
             return
         }
+        guard let ownerId = try? KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId else {
+            problemText = String(localized: "Open TeaNode online once to verify this account before recording offline.")
+            return
+        }
         isChangingCapture = true
         defer { finishChangingCapture() }
         guard await AVAudioApplication.requestRecordPermission() else {
             problemText = String(localized: "Allow microphone access in Settings, then start recording again.")
             return
         }
-        guard AppModel.shared.account?.accountKey == accountKey, AppModel.shared.currentCall == nil else { return }
+        guard AppModel.shared.account?.accountKey == accountKey,
+            (try? KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId) == ownerId, AppModel.shared.currentCall == nil
+        else { return }
         do {
             journal = try Self.makeJournal()
-            var recording = LocalRecording(accountKey: accountKey, recordingTitle: title, recordingOrigin: "capture")
+            var recording = LocalRecording(accountKey: accountKey, recordingTitle: title, recordingOrigin: "capture", recordingUserId: ownerId)
             try await journal?.create(recording)
             localRecording = recording
             elapsedMS = 0
@@ -91,6 +97,9 @@ final class MeetingRecorder: NSObject {
             ["paused", "interrupted"].contains(current.recordingCaptureState), !isChangingCapture,
             AppModel.shared.currentCall == nil
         else { return }
+        guard let retained = try? KeychainAccountStore().load(accountKey: current.accountKey),
+            current.belongsTo(accountKey: retained.accountKey, recordingUserId: retained.cachedRecordingUserId)
+        else { return }
         if !ensureRecordingActivity(canCreate: !requiresExistingActivity), requiresExistingActivity {
             problemText = String(localized: "Open TeaNode to resume this recording.")
             return
@@ -99,7 +108,8 @@ final class MeetingRecorder: NSObject {
         defer { finishChangingCapture() }
         do {
             updateElapsed()
-            var recording = current
+            try await finishSegment()
+            guard var recording = localRecording else { return }
             try recording.resume(at: elapsedMS)
             try await journal?.save(recording)
             localRecording = recording
@@ -121,7 +131,7 @@ final class MeetingRecorder: NSObject {
         defer { finishChangingCapture() }
         do {
             updateElapsed()
-            try await finishSegment()
+            do { try await finishSegment() } catch { problemText = error.localizedDescription }
             guard var recording = localRecording else { return }
             try recording.stop(at: elapsedMS)
             try await journal?.save(recording)
@@ -150,10 +160,12 @@ final class MeetingRecorder: NSObject {
                     $0.recordingOrigin == "capture" && $0.recordingCaptureState != "stopped"
                 })
             }
-            guard var recording = recovered else { return }
+            guard var recording = recovered, let ownerId = try KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId,
+                recording.belongsTo(accountKey: accountKey, recordingUserId: ownerId)
+            else { return }
             localRecording = recording
             elapsedMS = max(recording.timelineDurationMS, Int64(max(0, Date().timeIntervalSince(recording.startedAt)) * 1000))
-            if let media = recording.localMedia.last, media.originalSha256 == nil {
+            if recording.localMedia.contains(where: { $0.originalSha256 == nil }) {
                 try await finishSegment()
                 recording = localRecording ?? recording
             }
@@ -187,13 +199,19 @@ final class MeetingRecorder: NSObject {
         let store = KeychainAccountStore()
         guard let retainedAccounts = try? store.accounts().accounts else { return false }
         if hasSession {
-            return localRecording?.id.uuidString == localRecordingId && retainedAccounts.contains { $0.accountKey == localRecording?.accountKey }
+            return localRecording?.id.uuidString == localRecordingId
+                && retainedAccounts.contains {
+                    localRecording?.belongsTo(accountKey: $0.accountKey, recordingUserId: $0.cachedRecordingUserId) == true
+                }
         }
         do {
             let journal = try Self.makeJournal()
             guard
                 let recovered = try await journal.recoverableRecording(
-                    localRecordingId: localRecordingId, retainedAccountKeys: retainedAccounts.map(\.accountKey))
+                    localRecordingId: localRecordingId,
+                    retainedOwners: Dictionary(
+                        uniqueKeysWithValues: retainedAccounts.compactMap { account in account.cachedRecordingUserId.map { (account.accountKey, $0) }
+                        }))
             else { return false }
             await recover(accountKey: recovered.accountKey, localRecordingId: recovered.id)
             return hasSession && localRecording?.id == recovered.id
@@ -238,6 +256,9 @@ final class MeetingRecorder: NSObject {
 
     private func startSegment() async throws {
         guard var recording = localRecording, let journal else { throw TeaNodeError.unreadableAnswer }
+        guard let retained = try KeychainAccountStore().load(accountKey: recording.accountKey),
+            recording.belongsTo(accountKey: retained.accountKey, recordingUserId: retained.cachedRecordingUserId)
+        else { throw TeaNodeError.signedOut }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .default, options: [.allowBluetoothHFP])
         try session.setActive(true)
@@ -254,13 +275,16 @@ final class MeetingRecorder: NSObject {
                 AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
             ])
         recorder.delegate = self
-        guard recorder.prepareToRecord(), recorder.record(forDuration: 600) else {
+        guard recorder.prepareToRecord() else {
             throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
         }
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: original.path)
         audioRecorder = recorder
         recorderId = UUID()
+        guard recorder.record(forDuration: 600) else {
+            throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
+        }
     }
 
     private func finishSegment() async throws {
@@ -268,26 +292,27 @@ final class MeetingRecorder: NSObject {
         audioRecorder?.stop()
         audioRecorder = nil
         recorderId = nil
-        guard var recording = localRecording, let journal, let mediaIndex = recording.localMedia.indices.last,
-            recording.localMedia[mediaIndex].originalSha256 == nil
-        else { return }
-        let media = recording.localMedia[mediaIndex]
-        let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
-        guard FileManager.default.fileExists(atPath: original.path) else {
-            recording.localMedia.remove(at: mediaIndex)
-            try await journal.save(recording)
-            localRecording = recording
-            return
+        guard var recording = localRecording, let journal else { return }
+        let pendingMediaIds = recording.localMedia.filter { $0.originalSha256 == nil }.map(\.id)
+        for mediaId in pendingMediaIds {
+            guard let mediaIndex = recording.localMedia.firstIndex(where: { $0.id == mediaId }) else { continue }
+            let media = recording.localMedia[mediaIndex]
+            let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
+            guard FileManager.default.fileExists(atPath: original.path) else {
+                recording.localMedia.remove(at: mediaIndex)
+                continue
+            }
+            if let audio = try? AVAudioFile(forReading: original), audio.fileFormat.sampleRate > 0 {
+                recording.localMedia[mediaIndex].mediaDurationMS = RecordingClock.durationMS(
+                    seconds: Double(audio.length) / audio.fileFormat.sampleRate)
+            } else {
+                problemText = String(localized: "This audio segment cannot be read locally. Its original is kept for recovery.")
+            }
+            let originalSize = try original.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            recording.localMedia[mediaIndex].originalSizeBytes = Int64(originalSize)
+            recording.localMedia[mediaIndex].originalSha256 = try await Task.detached { try Self.digest(original) }.value
+            recording.timelineDurationMS = max(recording.timelineDurationMS, media.timelineStartMS + recording.localMedia[mediaIndex].mediaDurationMS)
         }
-        if let audio = try? AVAudioFile(forReading: original) {
-            recording.localMedia[mediaIndex].mediaDurationMS = Int64(Double(audio.length) / audio.fileFormat.sampleRate * 1000)
-        } else {
-            problemText = String(localized: "This audio segment cannot be read locally. Its original is kept for recovery.")
-        }
-        let originalSize = try original.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        recording.localMedia[mediaIndex].originalSizeBytes = Int64(originalSize)
-        recording.localMedia[mediaIndex].originalSha256 = try await Task.detached { try Self.digest(original) }.value
-        recording.timelineDurationMS = max(recording.timelineDurationMS, media.timelineStartMS + recording.localMedia[mediaIndex].mediaDurationMS)
         try await journal.save(recording)
         localRecording = recording
     }
@@ -377,6 +402,7 @@ final class MeetingRecorder: NSObject {
         audioRecorder?.stop()
         audioRecorder = nil
         recorderId = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         problemText = error.localizedDescription
         if var recording = localRecording, recording.recordingCaptureState == "active" {
             try? recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: "interrupted")

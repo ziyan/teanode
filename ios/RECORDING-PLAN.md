@@ -6,13 +6,17 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
 ## Current implementation
 
 - Native raw-media API, exact part and whole-file receipt checks.
-- Account-scoped recovery journal, synthetic failure and ownership tests.
+- Recovery journals bind to the verified server user ID as well as the retained
+  profile. Unknown older journals keep their originals but cannot automatically bind
+  to another user with the same username. Files/share imports snapshot that owner.
+- Raw browsing, import and local microphone controls remain reachable with assistant
+  services disabled. Shared server availability disables only model processing.
 - Operator original/account quotas and explicit file-transcription model, alongside
   existing provider configuration and token/cost budget controls.
 - Local ten-minute linear PCM CAF originals, split at pause and interruption.
   Each original has its own stable media ID and absolute meeting timeline offset.
   Gaps occupy meeting time without expanding silent media.
-- Files and share-extension imports preserve bytes; a shared private container keeps
+- Files, delivered audio/video attachments and share-extension imports preserve bytes; a shared private container keeps
   originals available after the extension exits.
 - File-backed background upload tasks, receipt-based resume, and local retention on
   missing, incorrect or failed receipts. Uploads begin after capture stops.
@@ -43,11 +47,22 @@ retaining unverified originals, pause/interruption history, rejected completion
 receipts, and corrected interval attribution across reruns including explicit removal.
 No test contacts a real server or provider.
 
-The initial native increment passed the Xcode simulator build, including the widget
-and share targets. The follow-up text/timeline/recovery code still needs a fresh native
-build. Simulator screenshot collection has not completed, so no layout inspection is
-claimed. The package suite passed 305 tests after the text, timeline and coordination edits.
-Full project lint passed, including naming, and the secret scan reported no secrets.
+The initial increment and the subsequent text/timeline/recovery checkpoint passed
+macOS CI builds of the app, widget and share targets. Actual simulator artifacts were
+inspected for the library and six deep recording screens in light, dark and largest
+text. The speaker/time header needed vertical layout at accessibility sizes; that
+fix and the latest owner/import/availability changes need fresh SDK and visual checks.
+The unsigned simulator reported an unavailable shared container, so signed capture
+and share-container behavior is not verified. The package suite passed 313 tests,
+including recreated-username ownership refusal and concurrent credential replacement.
+Full project lint and secret scanning are required again before the next push.
+
+The Server schema check found that one-line shared GraphQL field declarations were
+not discovered by the existing app-document extractor. Recording documents now use
+its established multiline convention. The real check remains enabled and exposes
+missing agreed speaker, text, metadata, retry and timeline APIs on the old stacked
+base. Integration with the speaker/learning checkpoint is required before that check
+can pass; no schema errors are ignored.
 
 Native compilation and simulator screenshots require macOS CI. Screens need light,
 dark and largest Dynamic Type inspection, with VoiceOver ordering checked separately.
@@ -57,7 +72,8 @@ No physical-device result or actual provider bill has been measured here.
 
 ## Remaining acceptance work
 
-- Review and fix native compilation, simulator layout and interaction findings.
+- Review and fix fresh native compilation, simulator layout and interaction findings,
+  including transcription/quota forms and delivered-attachment import.
 - Integrate shared APIs and compare authorization, generation conflicts, idempotency,
   metadata, cancel/reprocessing and deletion errors against web, CLI and tools.
 - Check long import, interrupted transfer and relaunch against the authenticated server.
@@ -78,6 +94,6 @@ No physical-device result or actual provider bill has been measured here.
 | Cancel, safe retry and explicit paid reprocess | Native actions; stable paid key | Shared error/auth tests and request recovery |
 | Speaker group/interval correction and reference management | Native confirmation, history, original passage player and revoke | End-to-end curation and device playback |
 | Recognized text edit/history/reset | Independent immutable correction APIs and retained request drafts | Fresh native build and shared projection integration |
-| Learning and reference invalidations | Existing source controls and provenance warnings | Integrated reconciliation evidence |
+| Learning and reference invalidations | Existing source controls and provenance warnings; human title from source settings | Integrated reconciliation evidence |
 | Metadata and raw deletion | Native generation-aware title/time, explicit deletion | Account isolation smoke against integrated server |
 | Local capture and lock-screen controls | Rolling originals, durable recovery and recording-specific intents | Physical iPhone lock/interruption/relaunch evidence |

@@ -45115,6 +45115,314 @@
           }
         }
       }
+    },
+    "Speaker correction remains passage evidence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speaker correction remains passage evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话人更正保留为片段证据"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者の修正は区間の証拠として保持しています"
+          }
+        }
+      }
+    },
+    "Unconfirmed speaker (%@)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unconfirmed speaker (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未确认的说话人（%@）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未確認の話者（%@）"
+          }
+        }
+      }
+    },
+    "Import recording": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を読み込む"
+          }
+        }
+      }
+    },
+    "Retry import": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry import"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试导入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込みを再試行"
+          }
+        }
+      }
+    },
+    "Open recording": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開く"
+          }
+        }
+      }
+    },
+    "Save as recording": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存为录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音として保存"
+          }
+        }
+      }
+    },
+    "Copy this audio or video attachment into your account's recording library. The attachment remains in the conversation. Transcription is a separate action.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy this audio or video attachment into your account's recording library. The attachment remains in the conversation. Transcription is a separate action."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将此音频或视频附件复制到您账户的录音库中。附件会保留在对话中。转写需要单独操作。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この音声または動画の添付ファイルを自分の録音ライブラリにコピーします。添付ファイルは会話に残ります。文字起こしは別の操作です。"
+          }
+        }
+      }
+    },
+    "Open TeaNode online once to verify this account before recording offline.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open TeaNode online once to verify this account before recording offline."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先联网打开一次 TeaNode 验证此账户，然后再离线录音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフラインで録音する前に、一度オンラインで TeaNode を開いてこのアカウントを確認してください。"
+          }
+        }
+      }
+    },
+    "The local original belongs to a different or unverified account. It was kept and will not be uploaded.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local original belongs to a different or unverified account. It was kept and will not be uploaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机原始文件属于其他或尚未验证的账户。文件已保留，不会上传。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの原本は別のアカウントか未確認のアカウントに属しています。原本を保持し、アップロードしません。"
+          }
+        }
+      }
+    },
+    "Untitled recording": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untitled recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無題の録音"
+          }
+        }
+      }
+    },
+    "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分本机录音属于其他或尚未验证的账户。这些录音保留在手机上，不会自动上传。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部のローカル録音は別の所有者か未確認の所有者に属しています。端末に保持し、自動でアップロードしません。"
+          }
+        }
+      }
+    },
+    "Recording on this phone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording on this phone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在此手机上录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末の録音"
+          }
+        }
+      }
+    },
+    "Use a confirmed name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use a confirmed name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用已确认的姓名"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認済みの名前を使う"
+          }
+        }
+      }
+    },
+    "Transcription availability has not been verified. Refresh or ask the operator.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription availability has not been verified. Refresh or ask the operator."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未确认转写是否可用。请刷新或询问管理员。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしを利用できるか確認できていません。更新するか管理者に確認してください。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

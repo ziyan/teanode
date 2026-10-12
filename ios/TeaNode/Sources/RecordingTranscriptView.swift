@@ -5,6 +5,7 @@ struct RecordingTranscriptScreen: View {
     let connection: Connection
     let recording: Recording
     let transcriptRun: RecordingTranscriptRun?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var timelineView: RecordingTranscriptTimeline?
     @State private var transcriptView: RecordingTranscriptView?
     @State private var segments: [RecordingTranscriptSegment] = []
@@ -90,14 +91,22 @@ struct RecordingTranscriptScreen: View {
             Section {
                 ForEach(segments) { segment in
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline) {
+                        let headerLayout =
+                            dynamicTypeSize.isAccessibilitySize
+                            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+                        headerLayout {
                             Text(
-                                speakers?.confirmedName(for: segment, mediaId: mediaId(for: segment) ?? "")
-                                    ?? String(localized: "Unconfirmed speaker")
+                                segment.confirmedSpeakerName
+                                    ?? String(localized: "Unconfirmed speaker (\(segment.localSpeakerId))")
                             ).font(.headline)
-                            Spacer()
+                            if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                             Text(Duration.milliseconds(segment.segmentStartMS).formatted(.time(pattern: .hourMinuteSecond))).font(.caption)
                                 .foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        if segment.hasUnalignedSpeakerCorrection == true {
+                            Label("Speaker correction remains passage evidence", systemImage: "exclamationmark.triangle").font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         Text(segment.displayedTranscriptText).textSelection(.enabled)
                         if segment.hasUnalignedTextCorrection == true {
@@ -129,7 +138,7 @@ struct RecordingTranscriptScreen: View {
                             selectedSegment = retained?.segment ?? segment
                             speakerDraft = retained
                             confirmedName =
-                                retained?.confirmedName ?? speakers?.confirmedName(for: segment, mediaId: mediaId(for: segment) ?? "") ?? ""
+                                retained?.confirmedName ?? segment.confirmedSpeakerName ?? ""
                             correctionStartMS = String(retained?.passageStartMS ?? segment.segmentStartMS)
                             correctionEndMS = String(retained?.passageEndMS ?? segment.segmentEndMS)
                             isWholeGroup = retained?.isWholeGroup ?? false
@@ -151,7 +160,9 @@ struct RecordingTranscriptScreen: View {
                 Text("Transcript")
             } footer: {
                 if transcriptRun == nil {
-                    Text("The full timeline uses the latest completed version of each original. Pending versions and incomplete originals remain available in the recording library.")
+                    Text(
+                        "The full timeline uses the latest completed version of each original. Pending versions and incomplete originals remain available in the recording library."
+                    )
                 }
                 Text("Speaker groups are local to each provider request. Only your confirmed names connect people across chunks and versions.")
             }
@@ -181,6 +192,13 @@ struct RecordingTranscriptScreen: View {
                 Form {
                     Section {
                         TextField("Confirmed name", text: $confirmedName)
+                        if let speakers, !speakers.speakerIdentities.isEmpty {
+                            Menu("Use a confirmed name") {
+                                ForEach(speakers.speakerIdentities) { identity in
+                                    Button(identity.confirmedName) { confirmedName = identity.confirmedName }
+                                }
+                            }
+                        }
                         Toggle("Apply to this speaker group", isOn: $isWholeGroup)
                         if !isWholeGroup {
                             TextField("Passage start (milliseconds)", text: $correctionStartMS).keyboardType(.numberPad)
@@ -267,6 +285,7 @@ struct RecordingTranscriptScreen: View {
             RecordingSpeakerDrafts.finish(draft)
             speakerDraft = nil
             isNaming = false
+            await loadPage(isAdditional: false)
             problemText = nil
         } catch {
             problemText = error.localizedDescription
@@ -303,7 +322,9 @@ struct RecordingSpeakersScreen: View {
     var body: some View {
         List {
             Section("Confirmed speakers") {
-                ForEach(speakers.speakerIdentities) { identity in
+                ForEach(
+                    speakers.speakerIdentities.filter { identity in speakers.speakerCorrections.contains { $0.speakerIdentityId == identity.id } }
+                ) { identity in
                     Button {
                         renamedIdentity = identity
                         confirmedName = identity.confirmedName
@@ -413,6 +434,10 @@ struct RecordingSpeakersScreen: View {
 }
 
 enum RecordingWords {
+    static func sourceName(_ source: KnowledgeSource) -> String {
+        source.kind == "recording" ? source.recordingTitle ?? String(localized: "Untitled recording") : source.name
+    }
+
     static func processing(_ processingState: String) -> String {
         switch processingState {
         case "queued": String(localized: "Queued")

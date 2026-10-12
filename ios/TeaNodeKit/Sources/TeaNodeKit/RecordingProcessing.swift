@@ -23,6 +23,17 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     public var effectiveTranscriptText: String? = nil
     public var appliedTextCorrectionId: String? = nil
     public var hasUnalignedTextCorrection: Bool? = nil
+    public var effectiveSpeakerIdentityId: String? = nil
+    public var effectiveSpeakerName: String? = nil
+    public var hasUserConfirmedSpeaker: Bool? = nil
+    public var hasUnalignedSpeakerCorrection: Bool? = nil
+    public var appliedSpeakerCorrectionId: String? = nil
+    public var confirmedSpeakerName: String? {
+        guard hasUserConfirmedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
+            let effectiveSpeakerName, !effectiveSpeakerName.isEmpty
+        else { return nil }
+        return effectiveSpeakerName
+    }
     public var displayedTranscriptText: String { effectiveTranscriptText ?? transcriptText }
 }
 
@@ -80,49 +91,64 @@ public struct RecordingSpeakersView: Codable, Hashable, Sendable {
     public let speakerCorrections: [RecordingSpeakerCorrection]
     public let voiceReferences: [RecordingVoiceReference]
 
-    public func confirmedName(for segment: RecordingTranscriptSegment, mediaId: String) -> String? {
-        let correction = speakerCorrections.filter { correction in
-            correction.recordingMediaId == mediaId
-                && ((correction.passageStartMS >= 0 && correction.passageEndMS > correction.passageStartMS
-                    && correction.passageStartMS < segment.segmentEndMS && correction.passageEndMS > segment.segmentStartMS)
-                    || (correction.passageStartMS == -1 && correction.passageEndMS == -1
-                        && correction.recordingTranscriptionAttemptId == segment.recordingTranscriptionAttemptId
-                        && correction.localSpeakerId == segment.localSpeakerId))
-        }.sorted { left, right in
-            if (left.passageStartMS >= 0) != (right.passageStartMS >= 0) { return left.passageStartMS >= 0 }
-            return left.sourceGeneration > right.sourceGeneration
-        }.first
-        guard let correction, !correction.isRemoved,
-            correction.passageStartMS == -1
-                || (correction.passageStartMS <= segment.segmentStartMS && correction.passageEndMS >= segment.segmentEndMS)
-        else { return nil }
-        return speakerIdentities.first { $0.id == correction.speakerIdentityId }?.confirmedName
-    }
 }
 
 extension Documents {
-    static let recordingTranscriptRunFields =
-        "id recordingId recordingMediaId versionNumber recordingProcessingState providerModelName processingErrorMessage createdAt"
-    static let recordingSpeakersFields =
-        "sourceGeneration speakerIdentities { id confirmedName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences { id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }"
-    public static let readRecordingTranscript =
-        "query ($recordingTranscriptRunId: String!, $segmentOffset: Int!, $pageSize: Int!) { ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize) { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText appliedTextCorrectionId hasUnalignedTextCorrection } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }"
-    public static let requestRecordingTranscription =
-        "mutation ($recordingMediaId: String!, $clientRunId: String!, $isReprocessingRequested: Boolean!) { RequestRecordingTranscription(recordingMediaId: $recordingMediaId, clientRunId: $clientRunId, isReprocessingRequested: $isReprocessingRequested) { \(recordingTranscriptRunFields) } }"
-    public static let retryRecordingTranscription =
-        "mutation ($recordingTranscriptRunId: String!) { RetryRecordingTranscription(recordingTranscriptRunId: $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }"
-    public static let cancelRecordingTranscription =
-        "mutation ($recordingTranscriptRunId: String!) { CancelRecordingTranscription(recordingTranscriptRunId: $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }"
-    public static let readRecordingSpeakers =
-        "query ($recordingId: String!) { ReadRecordingSpeakers(recordingId: $recordingId) { \(recordingSpeakersFields) } }"
-    public static let correctRecordingSpeaker =
-        "mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId: String!, $confirmedName: String!, $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) { CorrectRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, clientCorrectionId: $clientCorrectionId, confirmedName: $confirmedName, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId, localSpeakerId: $localSpeakerId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { \(recordingSpeakersFields) } }"
-    public static let renameRecordingSpeaker =
-        "mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $confirmedName: String!) { RenameRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, speakerIdentityId: $speakerIdentityId, confirmedName: $confirmedName) { \(recordingSpeakersFields) } }"
-    public static let removeRecordingSpeakerCorrection =
-        "mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) { RemoveRecordingSpeakerCorrection(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }"
-    public static let deleteRecordingVoiceReference =
-        "mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingVoiceReferenceId: String!) { DeleteRecordingVoiceReference(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, recordingVoiceReferenceId: $recordingVoiceReferenceId) { \(recordingSpeakersFields) } }"
+    static let recordingTranscriptRunFields = """
+        id recordingId recordingMediaId versionNumber recordingProcessingState providerModelName processingErrorMessage createdAt
+        """
+    static let recordingSpeakersFields = """
+        sourceGeneration speakerIdentities { id confirmedName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
+        speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences {
+        id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }
+        """
+    public static let readRecordingTranscript = """
+        query ($recordingTranscriptRunId: String!, $segmentOffset: Int!, $pageSize: Int!) {
+        ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize)
+        { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId
+        localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText appliedTextCorrectionId
+        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker hasUnalignedSpeakerCorrection
+        appliedSpeakerCorrectionId } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount
+        actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }
+        """
+    public static let requestRecordingTranscription = """
+        mutation ($recordingMediaId: String!, $clientRunId: String!, $isReprocessingRequested: Boolean!) {
+        RequestRecordingTranscription(recordingMediaId: $recordingMediaId, clientRunId: $clientRunId, isReprocessingRequested:
+        $isReprocessingRequested) { \(recordingTranscriptRunFields) } }
+        """
+    public static let retryRecordingTranscription = """
+        mutation ($recordingTranscriptRunId: String!) { RetryRecordingTranscription(recordingTranscriptRunId: $recordingTranscriptRunId)
+        { \(recordingTranscriptRunFields) } }
+        """
+    public static let cancelRecordingTranscription = """
+        mutation ($recordingTranscriptRunId: String!) { CancelRecordingTranscription(recordingTranscriptRunId:
+        $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }
+        """
+    public static let readRecordingSpeakers = """
+        query ($recordingId: String!) { ReadRecordingSpeakers(recordingId: $recordingId) { \(recordingSpeakersFields) } }
+        """
+    public static let correctRecordingSpeaker = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId: String!, $confirmedName: String!,
+        $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) {
+        CorrectRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, clientCorrectionId:
+        $clientCorrectionId, confirmedName: $confirmedName, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
+        localSpeakerId: $localSpeakerId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { \(recordingSpeakersFields) } }
+        """
+    public static let renameRecordingSpeaker = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $confirmedName: String!) {
+        RenameRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, speakerIdentityId:
+        $speakerIdentityId, confirmedName: $confirmedName) { \(recordingSpeakersFields) } }
+        """
+    public static let removeRecordingSpeakerCorrection = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
+        RemoveRecordingSpeakerCorrection(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
+        recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
+        """
+    public static let deleteRecordingVoiceReference = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingVoiceReferenceId: String!) {
+        DeleteRecordingVoiceReference(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
+        recordingVoiceReferenceId: $recordingVoiceReferenceId) { \(recordingSpeakersFields) } }
+        """
 }
 
 extension Connection {

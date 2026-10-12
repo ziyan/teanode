@@ -1,3 +1,4 @@
+import AVFoundation
 import CryptoKit
 import Foundation
 import TeaNodeKit
@@ -47,10 +48,11 @@ final class RecordingUploads: NSObject {
         resume(connection: connection)
     }
 
-    private func requireRetainedAccount(_ accountKey: String) throws {
-        guard !canceledAccountKeys.contains(accountKey), try KeychainAccountStore().load(accountKey: accountKey) != nil else {
+    private func requireRetainedAccount(_ accountKey: String, recordingUserId: String? = nil) throws {
+        guard !canceledAccountKeys.contains(accountKey), let retained = try KeychainAccountStore().load(accountKey: accountKey) else {
             throw TeaNodeError.signedOut
         }
+        if let recordingUserId, retained.cachedRecordingUserId != recordingUserId { throw TeaNodeError.signedOut }
     }
 
     func resume(connection: Connection) {
@@ -75,11 +77,16 @@ final class RecordingUploads: NSObject {
                     let recordings = try await journal.recordings(accountKey: ownerConnection.accountKey)
                     for recording in recordings
                     where ["stopped", "imported"].contains(recording.recordingCaptureState) && !recording.isDeletedRemotely {
-                        if try await self.advance(recording.id, connection: ownerConnection, journal: journal) {
+                        do {
+                            if try await self.advance(recording.id, connection: ownerConnection, journal: journal) {
+                                try self.requireRetainedAccount(accountKey)
+                                if self.pendingConnections[accountKey] == nil { self.pendingAccountKeys.append(accountKey) }
+                                self.pendingConnections[accountKey] = ownerConnection
+                                return
+                            }
+                        } catch {
+                            // The failed recording retains its original and error; continue other recoverable uploads.
                             try self.requireRetainedAccount(accountKey)
-                            if self.pendingConnections[accountKey] == nil { self.pendingAccountKeys.append(accountKey) }
-                            self.pendingConnections[accountKey] = ownerConnection
-                            return
                         }
                     }
                 } catch {}
@@ -102,7 +109,8 @@ final class RecordingUploads: NSObject {
     private func advance(_ recordingId: UUID, connection: Connection, journal: RecordingJournal) async throws -> Bool {
         var recording = try await journal.read(recordingId, accountKey: connection.accountKey)
         do {
-            try requireRetainedAccount(connection.accountKey)
+            let actualOwnerId = try await connection.verifiedRecordingOwner(recording)
+            try requireRetainedAccount(connection.accountKey, recordingUserId: actualOwnerId)
             if recording.recordingId == nil {
                 let remote = try await connection.createRecording(
                     clientRecordingId: recording.clientRecordingId, recordingTitle: recording.recordingTitle,
@@ -112,10 +120,10 @@ final class RecordingUploads: NSObject {
             }
             guard let remoteId = recording.recordingId else { throw TeaNodeError.unreadableAnswer }
             if recording.recordingOrigin == "capture", recording.hasPublishedCapture != true {
-                try requireRetainedAccount(connection.accountKey)
+                try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                 var remote = try await connection.recording(remoteId).recording
                 if remote.recordedAt == nil {
-                    try requireRetainedAccount(connection.accountKey)
+                    try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                     remote = try await connection.updateRecordingMetadata(
                         recordingId: remoteId, expectedSourceGeneration: remote.sourceGeneration,
                         recordingTitle: remote.recordingTitle, recordedAt: recording.startedAt.formatted(.iso8601))
@@ -123,7 +131,7 @@ final class RecordingUploads: NSObject {
                 if remote.recordingCaptureState != "stopped" || remote.timelineDurationMS != recording.timelineDurationMS
                     || remote.captureGaps != recording.captureGaps
                 {
-                    try requireRetainedAccount(connection.accountKey)
+                    try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                     _ = try await connection.updateRecordingCapture(
                         recordingId: remoteId, expectedGeneration: remote.sourceGeneration,
                         recordingCaptureState: "stopped", timelineDurationMS: recording.timelineDurationMS, captureGaps: recording.captureGaps)
@@ -131,10 +139,22 @@ final class RecordingUploads: NSObject {
                 recording.hasPublishedCapture = true
                 try await journal.save(recording)
             }
-            try requireRetainedAccount(connection.accountKey)
+            try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
             let limits = try await connection.recordingLimits()
             guard limits.uploadPartBytes == 8 * 1024 * 1024 else { throw TeaNodeError.unreadableAnswer }
             for mediaIndex in recording.localMedia.indices {
+                if recording.localMedia[mediaIndex].originalSha256 == nil {
+                    let pending = recording.localMedia[mediaIndex]
+                    let source = try await journal.originalURL(recordingId: recording.id, mediaId: pending.id, accountKey: recording.accountKey)
+                    recording.localMedia[mediaIndex].originalSizeBytes = Int64(try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
+                    if recording.recordingOrigin == "capture", let audio = try? AVAudioFile(forReading: source), audio.fileFormat.sampleRate > 0 {
+                        recording.localMedia[mediaIndex].mediaDurationMS = RecordingClock.durationMS(
+                            seconds: Double(audio.length) / audio.fileFormat.sampleRate)
+                    }
+                    recording.localMedia[mediaIndex].originalSha256 = try await Task.detached { try MeetingRecorder.digest(source) }.value
+                    try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
+                    try await journal.save(recording)
+                }
                 let localMedia = recording.localMedia[mediaIndex]
                 if localMedia.isDurablyUploaded {
                     try await journal.releaseUploadedOriginal(recordingId: recording.id, mediaId: localMedia.id, accountKey: recording.accountKey)
@@ -147,7 +167,7 @@ final class RecordingUploads: NSObject {
                     guard verifiedDigest == digest else {
                         throw TeaNodeError.refused(String(localized: "The local original changed. Keep it and try importing again."))
                     }
-                    try requireRetainedAccount(connection.accountKey)
+                    try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                     recording.localMedia[mediaIndex].mediaManifest = try await connection.createRecordingMedia(
                         recordingId: remoteId,
                         clientMediaId: localMedia.id.uuidString, originalFilename: localMedia.originalFilename,
@@ -161,7 +181,7 @@ final class RecordingUploads: NSObject {
                     manifest.originalSizeBytes == localMedia.originalSizeBytes,
                     manifest.partCount == Int((localMedia.originalSizeBytes + limits.uploadPartBytes - 1) / limits.uploadPartBytes)
                 else { throw TeaNodeError.unreadableAnswer }
-                try requireRetainedAccount(connection.accountKey)
+                try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                 let remote = try await connection.recording(remoteId)
                 recording.localMedia[mediaIndex].acceptedParts = remote.uploadParts.filter { $0.recordingMediaId == manifest.id }
                 let handle = try FileHandle(forReadingFrom: original)
@@ -182,7 +202,7 @@ final class RecordingUploads: NSObject {
                     try FileManager.default.setAttributes(
                         [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600],
                         ofItemAtPath: transportFile.path)
-                    try requireRetainedAccount(connection.accountKey)
+                    try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                     var request = try await connection.recordingPlaybackRequest(mediaId: manifest.id)
                     request.url = request.url?.appendingPathComponent("parts").appendingPathComponent(String(partIndex))
                     request.httpMethod = "PUT"
@@ -202,7 +222,7 @@ final class RecordingUploads: NSObject {
                     let task = session.uploadTask(with: request, fromFile: transportFile)
                     task.taskDescription = taskDescription
                     do {
-                        try requireRetainedAccount(connection.accountKey)
+                        try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                         task.resume()
                     } catch {
                         task.cancel()
@@ -211,7 +231,7 @@ final class RecordingUploads: NSObject {
                     }
                     return true
                 }
-                try requireRetainedAccount(connection.accountKey)
+                try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                 recording.localMedia[mediaIndex].completionReceipt = try await connection.completeRecordingUpload(manifest)
                 try await journal.save(recording)
                 try await journal.releaseUploadedOriginal(recordingId: recording.id, mediaId: localMedia.id, accountKey: recording.accountKey)

@@ -44,6 +44,7 @@ final class ShareModel: ObservableObject {
     @Published var agentName = ""
     let context: NSExtensionContext?
     private let connection: Connection?
+    private let recordingUserId: String?
 
     /// The most a message's files may come to, as the app's composer allows.
     static let bytesMost = 25 << 20
@@ -52,8 +53,10 @@ final class ShareModel: ObservableObject {
         self.context = context
         if let account = try? KeychainAccountStore().load() {
             connection = Connection(account: account, transport: URLSessionTransport(), store: KeychainAccountStore())
+            recordingUserId = account.cachedRecordingUserId
         } else {
             connection = nil
+            recordingUserId = nil
         }
     }
 
@@ -107,9 +110,10 @@ final class ShareModel: ObservableObject {
         defer { isSending = false }
         do {
             if isRecordingDestination {
+                guard let recordingUserId else { throw TeaNodeError.refused(String(localized: "Open TeaNode online once to verify this account before recording offline.")) }
                 for file in recordingFiles {
                     try await ShareRecordingImport.save(
-                        file, accountKey: connection.accountKey, title: note.trimmingCharacters(in: .whitespacesAndNewlines))
+                        file, accountKey: connection.accountKey, recordingUserId: recordingUserId, title: note.trimmingCharacters(in: .whitespacesAndNewlines))
                 }
                 cleanupStagedRecordings()
                 context?.completeRequest(returningItems: nil)

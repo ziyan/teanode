@@ -11,6 +11,7 @@ final class RecordingsModel {
     var recordings: [Recording] = []
     var localRecordings: [LocalRecording] = []
     var problemText: String?
+    var hasUnverifiedLocalOwner = false
     var isLoaded = false
     var isImporting = false
     var hasMoreRecordings = false
@@ -21,8 +22,14 @@ final class RecordingsModel {
     func load() async {
         do {
             do {
+                if (try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId) == nil {
+                    _ = try? await connection.recordingOwnerId()
+                }
                 let journal = try MeetingRecorder.makeJournal()
-                localRecordings = try await journal.recordings(accountKey: connection.accountKey)
+                let ownerId = try KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId
+                let kept = try await journal.recordings(accountKey: connection.accountKey)
+                localRecordings = kept.filter { $0.belongsTo(accountKey: connection.accountKey, recordingUserId: ownerId) }
+                hasUnverifiedLocalOwner = localRecordings.count != kept.count
             } catch { localRecordings = [] }
             recordings = try await connection.recordings()
             hasMoreRecordings = recordings.count == 50
@@ -55,6 +62,9 @@ final class RecordingsModel {
         let hasAccess = source.startAccessingSecurityScopedResource()
         defer { if hasAccess { source.stopAccessingSecurityScopedResource() } }
         do {
+            guard let ownerId = try KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId else {
+                throw TeaNodeError.refused(String(localized: "Open TeaNode online once to verify this account before recording offline."))
+            }
             let contentType = try source.resourceValues(forKeys: [.contentTypeKey]).contentType
             guard let contentType, contentType.conforms(to: .audio) || contentType.conforms(to: .movie), let mimeType = contentType.preferredMIMEType
             else {
@@ -68,18 +78,24 @@ final class RecordingsModel {
                         localized: "The file exceeds this server's recording limit. Choose a smaller file or ask the operator to adjust the limit."))
             }
             let journal = try MeetingRecorder.makeJournal()
+            guard try KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId == ownerId else {
+                throw TeaNodeError.signedOut
+            }
             var recording = LocalRecording(
                 accountKey: connection.accountKey,
                 recordingTitle: source.deletingPathExtension().lastPathComponent.utf8.count <= 255
                     ? source.deletingPathExtension().lastPathComponent : String(localized: "Recording"),
-                recordingOrigin: contentType.conforms(to: .movie) ? "videoImport" : "audioImport")
+                recordingOrigin: contentType.conforms(to: .movie) ? "videoImport" : "audioImport", recordingUserId: ownerId)
             let duration = try? await AVURLAsset(url: source).load(.duration)
             let durationSeconds = duration.map { CMTimeGetSeconds($0) } ?? 0
             var media = LocalRecordingMedia(
                 originalFilename: source.lastPathComponent, originalContentType: mimeType,
-                timelineStartMS: 0, mediaDurationMS: durationSeconds.isFinite && durationSeconds > 0 ? Int64(durationSeconds * 1000) : 0)
+                timelineStartMS: 0, mediaDurationMS: RecordingClock.durationMS(seconds: durationSeconds))
             media.originalSizeBytes = sizeBytes
             recording.localMedia.append(media)
+            guard try KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId == ownerId else {
+                throw TeaNodeError.signedOut
+            }
             try await journal.create(recording)
             try await journal.importOriginal(from: source, recordingId: recording.id, mediaId: media.id, accountKey: connection.accountKey)
             let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: connection.accountKey)
@@ -106,10 +122,15 @@ struct RecordingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                if let current = recorder.localRecording, current.accountKey == model.connection.accountKey, recorder.hasSession {
+                if let current = recorder.localRecording, recorder.hasSession {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(current.recordingTitle.isEmpty ? String(localized: "Recording") : current.recordingTitle).font(.headline)
+                            Text(
+                                current.belongsTo(
+                                    accountKey: model.connection.accountKey, recordingUserId: AppModel.shared.account?.cachedRecordingUserId)
+                                    ? (current.recordingTitle.isEmpty ? String(localized: "Recording") : current.recordingTitle)
+                                    : String(localized: "Recording on this phone")
+                            ).font(.headline)
                             Text(Duration.milliseconds(recorder.elapsedMS).formatted(.time(pattern: .hourMinuteSecond)))
                                 .monospacedDigit().contentTransition(.numericText())
                             Text(
@@ -127,6 +148,11 @@ struct RecordingsScreen: View {
                                 recorder.isCapturing ? String(localized: "Pause recording") : String(localized: "Resume recording"),
                                 systemImage: recorder.isCapturing ? "pause" : "mic")
                         }
+                        .disabled(
+                            !recorder.isCapturing
+                                && !current.belongsTo(
+                                    accountKey: model.connection.accountKey, recordingUserId: AppModel.shared.account?.cachedRecordingUserId)
+                        )
                         Button(role: .destructive) {
                             Task {
                                 await recorder.stop()
@@ -210,6 +236,13 @@ struct RecordingsScreen: View {
                             "No recordings", systemImage: "waveform", description: Text("Start a recording or import audio or video."))
                     }
                 }
+                if model.hasUnverifiedLocalOwner {
+                    Section {
+                        Text(
+                            "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
+                        ).foregroundStyle(.secondary)
+                    }
+                }
                 if let problem = model.problemText { Section { Text(problem).foregroundStyle(.secondary) } }
             }
             .navigationTitle("Recordings")
@@ -285,6 +318,7 @@ struct RecordingDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var recordingView: RecordingView?
     @State private var learning: RecordingLearningView?
+    @State private var limits: RecordingLimits?
     @State private var problemText: String?
     @State private var isDeleting = false
     @State private var selectedMedia: RecordingMedia?
@@ -294,6 +328,7 @@ struct RecordingDetailScreen: View {
     @State private var transcriptionRequestId = UUID().uuidString
     @State private var isEditingMetadata = false
     @State private var recordingTitle = ""
+    @State private var metadataExpectedGeneration: Int64 = 0
     @State private var hasRecordedAt = false
     @State private var recordedAt = Date()
 
@@ -320,7 +355,7 @@ struct RecordingDetailScreen: View {
                                 isReprocessing = true
                             } label: {
                                 Label("Transcribe or reprocess", systemImage: "text.bubble")
-                            }.disabled(isSubmitting)
+                            }.disabled(isSubmitting || limits?.isTranscriptionAvailable != true)
                         }
                     }
                 } header: {
@@ -352,7 +387,7 @@ struct RecordingDetailScreen: View {
                                     }
                                 } label: {
                                     Label("Retry transcription", systemImage: "arrow.clockwise")
-                                }
+                                }.disabled(limits?.isTranscriptionAvailable != true)
                             }
                             if run.isRunning {
                                 Button("Cancel transcription", role: .destructive) {
@@ -365,6 +400,15 @@ struct RecordingDetailScreen: View {
                                 }
                             }
                         }
+                    }
+                }
+                if limits?.isTranscriptionAvailable != true {
+                    Section {
+                        Text(
+                            limits?.transcriptionUnavailableMessage?.isEmpty == false
+                                ? (limits?.transcriptionUnavailableMessage ?? "")
+                                : String(localized: "Transcription availability has not been verified. Refresh or ask the operator.")
+                        ).foregroundStyle(.secondary)
                     }
                 }
                 if !recordingView.recording.captureGaps.isEmpty {
@@ -407,6 +451,7 @@ struct RecordingDetailScreen: View {
             Section {
                 Button {
                     recordingTitle = recordingView?.recording.recordingTitle ?? recording.recordingTitle
+                    metadataExpectedGeneration = recordingView?.recording.sourceGeneration ?? recording.sourceGeneration
                     hasRecordedAt = recordingView?.recording.recordedAt != nil
                     recordedAt = ServerTime.date(recordingView?.recording.recordedAt) ?? Date()
                     isEditingMetadata = true
@@ -417,7 +462,18 @@ struct RecordingDetailScreen: View {
             }
         }
         .navigationTitle(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
-        .task { await load() }
+        .task {
+            await load()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                if !isEditingMetadata && !isReprocessing && !isSubmitting,
+                    recordingView?.transcriptRuns?.contains(where: \.isRunning) == true || learning?.isCurationPending == true
+                {
+                    await load()
+                }
+            }
+        }
         .refreshable { await load() }
         .sheet(isPresented: $isEditingMetadata) {
             NavigationStack {
@@ -432,11 +488,11 @@ struct RecordingDetailScreen: View {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { isEditingMetadata = false } }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
-                            guard let current = recordingView?.recording else { return }
                             Task {
                                 do {
                                     _ = try await connection.updateRecordingMetadata(
-                                        recordingId: recording.id, expectedSourceGeneration: current.sourceGeneration, recordingTitle: recordingTitle,
+                                        recordingId: recording.id, expectedSourceGeneration: metadataExpectedGeneration,
+                                        recordingTitle: recordingTitle,
                                         recordedAt: hasRecordedAt ? recordedAt.formatted(.iso8601) : nil)
                                     isEditingMetadata = false
                                     await load()
@@ -454,7 +510,7 @@ struct RecordingDetailScreen: View {
         .sheet(item: $selectedMedia) { media in RecordingPlaybackScreen(connection: connection, media: media) }
         .confirmationDialog("Start another transcription pass?", isPresented: $isReprocessing, titleVisibility: .visible) {
             Button("Transcribe or reprocess") {
-                guard let media = reprocessedMedia, !isSubmitting else { return }
+                guard let media = reprocessedMedia, !isSubmitting, limits?.isTranscriptionAvailable == true else { return }
                 isSubmitting = true
                 Task {
                     defer { isSubmitting = false }
@@ -490,6 +546,7 @@ struct RecordingDetailScreen: View {
     private func load() async {
         do {
             recordingView = try await connection.recording(recording.id)
+            limits = try await connection.recordingLimits()
             learning = try await connection.recordingLearning(recordingId: recording.id)
             problemText = nil
         } catch { problemText = error.localizedDescription }
@@ -538,7 +595,7 @@ struct RecordingPlaybackScreen: View {
                     player = AVPlayer(url: destination)
                     if let passageStartMS {
                         await player?.seek(
-                            to: CMTime(seconds: Double(max(0, passageStartMS - media.timelineStartMS)) / 1000, preferredTimescale: 1000))
+                            to: CMTime(seconds: Double(media.playbackOffsetMS(for: passageStartMS)) / 1000, preferredTimescale: 1000))
                     }
                 } catch { if !Task.isCancelled { problemText = error.localizedDescription } }
             }
@@ -591,7 +648,9 @@ private struct RecordingLocalPlaybackScreen: View {
 
     private func play(_ media: LocalRecordingMedia) async {
         do {
-            guard try KeychainAccountStore().load(accountKey: accountKey) != nil else { throw TeaNodeError.signedOut }
+            guard let retained = try KeychainAccountStore().load(accountKey: accountKey),
+                recording.belongsTo(accountKey: accountKey, recordingUserId: retained.cachedRecordingUserId)
+            else { throw TeaNodeError.signedOut }
             let journal = try MeetingRecorder.makeJournal()
             let source = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
             guard FileManager.default.fileExists(atPath: source.path) else { throw TeaNodeError.unreadableAnswer }

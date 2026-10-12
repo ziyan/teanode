@@ -4,6 +4,7 @@ import Foundation
 public struct LocalRecording: Codable, Hashable, Sendable, Identifiable {
     public let id: UUID
     public let accountKey: String
+    public let recordingUserId: String?
     public var clientRecordingId: String
     public var recordingId: String?
     public var recordingTitle: String
@@ -17,9 +18,13 @@ public struct LocalRecording: Codable, Hashable, Sendable, Identifiable {
     public var isDeletedRemotely: Bool
     public var hasPublishedCapture: Bool? = nil
 
-    public init(accountKey: String, recordingTitle: String, recordingOrigin: String, startedAt: Date = Date(), localRecordingId: UUID = UUID()) {
+    public init(
+        accountKey: String, recordingTitle: String, recordingOrigin: String, recordingUserId: String? = nil, startedAt: Date = Date(),
+        localRecordingId: UUID = UUID()
+    ) {
         id = localRecordingId
         self.accountKey = accountKey
+        self.recordingUserId = recordingUserId
         clientRecordingId = id.uuidString
         self.recordingTitle = recordingTitle
         self.recordingOrigin = recordingOrigin
@@ -159,10 +164,11 @@ public actor RecordingJournal {
         return recording
     }
 
-    public func recoverableRecording(localRecordingId: String, retainedAccountKeys: [String]) throws -> LocalRecording? {
+    public func recoverableRecording(localRecordingId: String, retainedOwners: [String: String]) throws -> LocalRecording? {
         guard let recordingId = UUID(uuidString: localRecordingId) else { return nil }
-        for accountKey in retainedAccountKeys {
-            guard let recording = try? read(recordingId, accountKey: accountKey), recording.recordingOrigin == "capture",
+        for (accountKey, userId) in retainedOwners {
+            guard let recording = try? read(recordingId, accountKey: accountKey),
+                recording.belongsTo(accountKey: accountKey, recordingUserId: userId), recording.recordingOrigin == "capture",
                 ["active", "paused", "interrupted"].contains(recording.recordingCaptureState), !recording.isDeletedRemotely
             else { continue }
             return recording

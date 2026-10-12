@@ -27,7 +27,7 @@
             } else if query.contains("ListRecordings") {
                 answer = #"{"data":{"ListRecordings":[{"id":"recording-a","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","clientRecordingId":"local-a","recordingTitle":"Design discussion","recordingOrigin":"audioImport","recordingCaptureState":"imported","timelineDurationMS":3600000,"sourceGeneration":1,"captureGaps":[]},{"id":"recording-b","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","clientRecordingId":"local-b","recordingTitle":"Project planning and follow-up questions","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":2400000,"sourceGeneration":2,"captureGaps":[]}]}}"#
             } else if query.contains("ReadRecordingLimits") {
-                answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608}}}"#
+                answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608,"isTranscriptionAvailable":true,"transcriptionUnavailableMessage":"","transcriptionProviderModelName":"demo:transcription"}}}"#
             } else if query.contains("GetServiceCapabilities") {
                 answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {

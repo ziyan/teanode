@@ -99,7 +99,7 @@ final class RecordingTests: XCTestCase {
 }
 
 extension RecordingTests {
-    func testRemovedNewestLabelDoesNotRestoreOldIdentityOnRerunOrCrossMedia() throws {
+    func testCorrectionMetadataCannotPromoteAnUnconfirmedGeneratedSpeaker() throws {
         let correction: (Int, Bool, String) -> [String: Any] = { generation, isRemoved, identity in
             [
                 "id": "correction-\(generation)", "recordingMediaId": "media-a", "recordingTranscriptionAttemptId": "old-attempt",
@@ -117,13 +117,14 @@ extension RecordingTests {
             "segmentStartMS": 2000, "segmentEndMS": 4000, "transcriptText": "Source evidence",
         ]
         let segment = try JSONDecoder().decode(RecordingTranscriptSegment.self, from: JSONSerialization.data(withJSONObject: segmentObject))
-        XCTAssertNil(speakers.confirmedName(for: segment, mediaId: "media-a"))
-        XCTAssertNil(speakers.confirmedName(for: segment, mediaId: "media-b"))
+        XCTAssertFalse(speakers.speakerCorrections.isEmpty)
+        XCTAssertNil(segment.confirmedSpeakerName)
         var confirmedObject = object
         confirmedObject["speakerCorrections"] = [correction(1, false, "identity-a")]
         let confirmed = try JSONDecoder().decode(RecordingSpeakersView.self, from: JSONSerialization.data(withJSONObject: confirmedObject))
-        XCTAssertEqual(confirmed.confirmedName(for: segment, mediaId: "media-a"), "Speaker A")
-        XCTAssertNil(confirmed.confirmedName(for: segment, mediaId: "media-b"))
+        XCTAssertEqual(confirmed.speakerIdentities.first?.confirmedName, "Speaker A")
+        XCTAssertNil(segment.confirmedSpeakerName)
+        XCTAssertNil(segment.confirmedSpeakerName)
     }
 }
 
@@ -149,27 +150,28 @@ extension RecordingTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let journal = try RecordingJournal(directory: directory)
-        var original = LocalRecording(accountKey: "profile-a", recordingTitle: "", recordingOrigin: "capture")
+        var original = LocalRecording(accountKey: "profile-a", recordingTitle: "", recordingOrigin: "capture", recordingUserId: "owner-a")
         try original.pause(at: 1000)
-        let unrelated = LocalRecording(accountKey: "profile-b", recordingTitle: "", recordingOrigin: "capture")
+        let unrelated = LocalRecording(accountKey: "profile-b", recordingTitle: "", recordingOrigin: "capture", recordingUserId: "owner-b")
         try await journal.create(original)
         try await journal.create(unrelated)
         let recovered = try await journal.recoverableRecording(
-            localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-b", "profile-a"])
+            localRecordingId: original.id.uuidString, retainedOwners: ["profile-b": "owner-b", "profile-a": "owner-a"])
         XCTAssertEqual(recovered?.id, original.id)
         XCTAssertEqual(recovered?.recordingCaptureState, "paused")
-        let removedAccount = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-b"])
+        let removedAccount = try await journal.recoverableRecording(
+            localRecordingId: original.id.uuidString, retainedOwners: ["profile-b": "owner-b"])
         XCTAssertNil(removedAccount)
-        let staleSession = try await journal.recoverableRecording(localRecordingId: UUID().uuidString, retainedAccountKeys: ["profile-a"])
+        let staleSession = try await journal.recoverableRecording(localRecordingId: UUID().uuidString, retainedOwners: ["profile-a": "owner-a"])
         XCTAssertNil(staleSession)
         original.isDeletedRemotely = true
         try await journal.save(original)
-        let deleted = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-a"])
+        let deleted = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedOwners: ["profile-a": "owner-a"])
         XCTAssertNil(deleted)
         original.isDeletedRemotely = false
         try original.stop(at: 2000)
         try await journal.save(original)
-        let stopped = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-a"])
+        let stopped = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedOwners: ["profile-a": "owner-a"])
         XCTAssertNil(stopped)
     }
 }
@@ -239,7 +241,8 @@ extension RecordingTests {
             from: Data(
                 #"{"id":"segment-a","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"rerun-attempt","localSpeakerId":"local-a","segmentStartMS":1000,"segmentEndMS":5000,"transcriptText":"One statement with corrected attribution inside it."}"#
                     .utf8))
-        XCTAssertNil(speakers.confirmedName(for: segment, mediaId: "media-a"))
+        XCTAssertFalse(speakers.speakerCorrections.isEmpty)
+        XCTAssertNil(segment.confirmedSpeakerName)
     }
 }
 
@@ -378,5 +381,154 @@ extension RecordingTests {
         try RecordingSpeakerDrafts.save(newer, in: defaults)
         RecordingSpeakerDrafts.finish(draft, in: defaults)
         XCTAssertEqual(RecordingSpeakerDrafts.read(accountKey: "account-a", segmentId: "segment-a", in: defaults), newer)
+    }
+}
+
+extension RecordingTests {
+    func testOnlyCanonicalConfirmedProjectionNamesTheGeneratedSpeaker() throws {
+        let base: [String: Any] = [
+            "id": "segment-a", "recordingTranscriptRunId": "run-a", "recordingTranscriptionAttemptId": "attempt-a", "localSpeakerId": "local-a",
+            "segmentStartMS": 1000, "segmentEndMS": 5000, "transcriptText": "Evidence", "effectiveSpeakerIdentityId": "identity-a",
+            "effectiveSpeakerName": "Speaker A",
+        ]
+        let withoutConfirmation = try JSONDecoder().decode(RecordingTranscriptSegment.self, from: JSONSerialization.data(withJSONObject: base))
+        XCTAssertNil(withoutConfirmation.confirmedSpeakerName)
+        var confirmed = base
+        confirmed["hasUserConfirmedSpeaker"] = true
+        let projection = try JSONDecoder().decode(RecordingTranscriptSegment.self, from: JSONSerialization.data(withJSONObject: confirmed))
+        XCTAssertEqual(projection.confirmedSpeakerName, "Speaker A")
+        confirmed["effectiveSpeakerIdentityId"] = ""
+        let missingIdentity = try JSONDecoder().decode(RecordingTranscriptSegment.self, from: JSONSerialization.data(withJSONObject: confirmed))
+        XCTAssertNil(missingIdentity.confirmedSpeakerName)
+    }
+}
+
+extension RecordingTests {
+    func testRecreatedUsernameCannotUploadOrRecoverAnotherServerUsersLocalOriginal() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try RecordingJournal(directory: directory)
+        let account = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "test-token", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(40 * 86400), username: "same-name")
+        var recording = LocalRecording(accountKey: account.accountKey, recordingTitle: "", recordingOrigin: "capture", recordingUserId: "old-user")
+        let original = LocalRecordingMedia(originalFilename: "audio.wav", originalContentType: "audio/wav", timelineStartMS: 0)
+        recording.localMedia.append(original)
+        try recording.pause(at: 1000)
+        try await journal.create(recording)
+        let source = directory.appendingPathComponent("test-original")
+        try Data([1, 2, 3]).write(to: source)
+        try await journal.importOriginal(from: source, recordingId: recording.id, mediaId: original.id, accountKey: account.accountKey)
+        let fake = FakeServer { _ in (200, #"{"data":{"GetSession":{"userId":"new-user"}}}"#) }
+        let connection = Connection(account: account, transport: fake, store: MemoryAccountStore([account]))
+        do {
+            _ = try await connection.verifiedRecordingOwner(recording)
+            XCTFail("A recreated username rebound another user's original")
+        } catch {
+            guard let refusal = error as? TeaNodeError, case .refused = refusal else { return XCTFail("Unexpected ownership error: \(error)") }
+        }
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertTrue(String(decoding: fake.sent[0].httpBody ?? Data(), as: UTF8.self).contains("GetSession"))
+        let recovered = try await journal.recoverableRecording(
+            localRecordingId: recording.id.uuidString, retainedOwners: [account.accountKey: "new-user"])
+        XCTAssertNil(recovered)
+        let originalURL = try await journal.originalURL(recordingId: recording.id, mediaId: original.id, accountKey: account.accountKey)
+        XCTAssertEqual(try Data(contentsOf: originalURL), Data([1, 2, 3]))
+        XCTAssertFalse(recording.belongsTo(accountKey: account.accountKey, recordingUserId: "new-user"))
+        XCTAssertFalse(
+            LocalRecording(accountKey: account.accountKey, recordingTitle: "", recordingOrigin: "capture").belongsTo(
+                accountKey: account.accountKey, recordingUserId: "new-user"))
+    }
+
+    func testKnownRecordingOwnerCannotAdoptNewSameUsernameCredentials() async throws {
+        var original = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "old-token", refreshToken: "", expiresAt: Date(),
+            username: "same-name")
+        original.cachedRecordingUserId = "old-user"
+        var replacement = original
+        replacement.accessToken = "new-token"
+        replacement.expiresAt = Date().addingTimeInterval(40 * 86400)
+        replacement.cachedRecordingUserId = "new-user"
+        let fake = FakeServer { _ in (200, "{}") }
+        let connection = Connection(account: original, transport: fake, store: MemoryAccountStore([replacement]))
+        do {
+            _ = try await connection.accessToken()
+            XCTFail("An old connection adopted a different server user")
+        } catch { XCTAssertEqual(error as? TeaNodeError, .signedOut) }
+        XCTAssertTrue(fake.sent.isEmpty)
+    }
+}
+
+extension RecordingTests {
+    func testPassagePlaybackUsesOriginalOffsetInsteadOfAbsoluteMeetingTime() throws {
+        var object =
+            try JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(media(receiptState: "pending", digest: String(repeating: "a", count: 64), verifiedAt: nil)))
+            as! [String: Any]
+        object["timelineStartMS"] = 600000
+        let original = try JSONDecoder().decode(RecordingMedia.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(original.playbackOffsetMS(for: 602000), 2000)
+        XCTAssertEqual(original.playbackOffsetMS(for: 605000), 5000)
+        XCTAssertEqual(original.playbackOffsetMS(for: 3000), 0)
+    }
+}
+
+extension RecordingTests {
+    @MainActor
+    func testAttachmentImportDraftSurvivesUnknownResponseWithoutCrossAccountReuse() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let draft = RecordingAttachmentImportDraft(accountKey: "account-a", agentAttachmentId: "attachment-a", recordingTitle: "Discussion")
+        try RecordingAttachmentImportDrafts.save(draft, in: defaults)
+        XCTAssertEqual(RecordingAttachmentImportDrafts.read(accountKey: "account-a", attachmentId: "attachment-a", in: defaults), draft)
+        XCTAssertNil(RecordingAttachmentImportDrafts.read(accountKey: "account-b", attachmentId: "attachment-a", in: defaults))
+        let newer = RecordingAttachmentImportDraft(accountKey: "account-a", agentAttachmentId: "attachment-a", recordingTitle: "New discussion")
+        try RecordingAttachmentImportDrafts.save(newer, in: defaults)
+        RecordingAttachmentImportDrafts.finish(draft, in: defaults)
+        XCTAssertEqual(RecordingAttachmentImportDrafts.read(accountKey: "account-a", attachmentId: "attachment-a", in: defaults), newer)
+    }
+
+    func testAutomaticRecordingSourceTitleComesFromSettingsInsteadOfStableIdentity() throws {
+        let source = try JSONDecoder().decode(
+            KnowledgeSource.self,
+            from: Data(
+                #"{"id":"source-a","kind":"recording","name":"recording:recording-a","enabled":true,"documentCount":1,"chunkCount":1,"more":false,"lastError":"","specification":{"settings":{"recordingId":"recording-a","recordingTitle":"Discussion"}}}"#
+                    .utf8))
+        XCTAssertEqual(source.recordingTitle, "Discussion")
+        XCTAssertEqual(source.name, "recording:recording-a")
+    }
+}
+
+extension RecordingTests {
+    func testOwnerVerificationCannotOverwriteAConcurrentSameUsernameSignIn() async throws {
+        var original = Account(
+            server: try ServerAddress(parsing: "example.com"), clientId: "client-a", accessToken: "old-token", refreshToken: "old-refresh",
+            expiresAt: Date().addingTimeInterval(40 * 86400), username: "same-name")
+        original.cachedRecordingUserId = "old-user"
+        var replacement = original
+        replacement.accessToken = "new-token"
+        replacement.refreshToken = "new-refresh"
+        replacement.cachedRecordingUserId = "new-user"
+        let store = MemoryAccountStore([original])
+        let newAccount = replacement
+        let fake = FakeServer { _ in
+            try? store.save(newAccount)
+            return (200, #"{"data":{"GetSession":{"userId":"old-user"}}}"#)
+        }
+        let connection = Connection(account: original, transport: fake, store: store)
+        do {
+            _ = try await connection.recordingOwnerId()
+            XCTFail("Owner verification replaced a newer sign-in")
+        } catch { XCTAssertEqual(error as? TeaNodeError, .signedOut) }
+        XCTAssertEqual(try store.load(accountKey: original.accountKey), replacement)
+    }
+}
+
+extension RecordingTests {
+    func testInvalidImportedDurationStaysUnknownWithoutIntegerConversionTrap() {
+        XCTAssertEqual(RecordingClock.durationMS(seconds: 45), 45000)
+        XCTAssertEqual(RecordingClock.durationMS(seconds: .infinity), 0)
+        XCTAssertEqual(RecordingClock.durationMS(seconds: .nan), 0)
+        XCTAssertEqual(RecordingClock.durationMS(seconds: .greatestFiniteMagnitude), 0)
+        XCTAssertEqual(RecordingClock.durationMS(seconds: -1), 0)
     }
 }

@@ -19,8 +19,12 @@ public struct RecordingReferenceInvalidation: Codable, Hashable, Sendable, Ident
 }
 
 extension Documents {
-    public static let readRecordingReferenceInvalidations =
-        "query ($recordingId: String!) { ReadRecordingReferenceInvalidations(recordingId: $recordingId) { id recordingId recordingTranscriptRunId recordingTranscriptionAttemptId referenceBlobId referenceRecordingId referenceTranscriptRunId speakerIdentityId invalidatedConfirmedName referencePassageStartMS referencePassageEndMS referenceSourceGeneration invalidationMessage createdAt isReconciled } }"
+    public static let readRecordingReferenceInvalidations = """
+        query ($recordingId: String!) { ReadRecordingReferenceInvalidations(recordingId: $recordingId) { id recordingId
+        recordingTranscriptRunId recordingTranscriptionAttemptId referenceBlobId referenceRecordingId referenceTranscriptRunId
+        speakerIdentityId invalidatedConfirmedName referencePassageStartMS referencePassageEndMS referenceSourceGeneration
+        invalidationMessage createdAt isReconciled } }
+        """
 }
 
 extension Connection {

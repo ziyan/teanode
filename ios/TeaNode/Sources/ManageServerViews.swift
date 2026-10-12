@@ -3293,6 +3293,7 @@ private struct AgentModelsFormView: View {
                     }
                 }
             } header: { Text("Recording transcription") } footer: { Text("Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.") }
+            .id("recording-transcription")
 
             Section {
                 ForEach(draft.wrappedValue.choices, id: \.self) { choice in
@@ -3450,6 +3451,7 @@ private struct AgentLimitsFormView: View {
                         Text("For work nobody is watching. Zero is the default shown in brackets.")
                     }
                 }
+                .id(limitNames.contains("maxRecordingMediaBytes") ? "recording-quotas" : (limitNames.first ?? ""))
             }
         }
     }
@@ -4523,3 +4525,32 @@ private struct SourceTypeGuideSheet: View {
         }
     }
 }
+
+#if DEBUG
+    struct RecordingOperatorDemoScreen: View {
+        let screen: String
+        @State private var model: AgentAdminModel
+
+        init(connection: Connection, screen: String) {
+            self.screen = screen
+            _model = State(initialValue: AgentAdminModel(connection: connection))
+        }
+
+        var body: some View {
+            ScrollViewReader { proxy in
+                Group {
+                    if screen == "recording-model-settings" {
+                        AgentModelsFormView(model: model)
+                    } else {
+                        AgentLimitsFormView(model: model)
+                    }
+                }
+                .task {
+                    await model.load()
+                    try? await Task.sleep(for: .milliseconds(200))
+                    proxy.scrollTo(screen == "recording-model-settings" ? "recording-transcription" : "recording-quotas", anchor: .top)
+                }
+            }
+        }
+    }
+#endif

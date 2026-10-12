@@ -43,20 +43,21 @@ enum ShareRecordingImport {
         }
     }
 
-    static func save(_ file: SharedRecordingFile, accountKey: String, title: String) async throws {
-        guard try KeychainAccountStore().load(accountKey: accountKey) != nil else { throw TeaNodeError.signedOut }
+    static func save(_ file: SharedRecordingFile, accountKey: String, recordingUserId: String, title: String) async throws {
+        guard try KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId == recordingUserId else { throw TeaNodeError.signedOut }
+        let ownerId = recordingUserId
         guard title.utf8.count <= 255 else { throw TeaNodeError.refused(String(localized: "Use a recording title of at most 255 UTF-8 bytes.")) }
         let journal = try RecordingJournal(directory: RecordingJournal.sharedDirectory())
         let importedTitle = (file.originalFilename as NSString).deletingPathExtension
         var recording = LocalRecording(
             accountKey: accountKey,
             recordingTitle: title.isEmpty ? (importedTitle.utf8.count <= 255 ? importedTitle : String(localized: "Recording")) : title,
-            recordingOrigin: file.isVideo ? "videoImport" : "audioImport", localRecordingId: file.id)
+            recordingOrigin: file.isVideo ? "videoImport" : "audioImport", recordingUserId: ownerId, localRecordingId: file.id)
         let duration = try? await AVURLAsset(url: file.originalURL).load(.duration)
         let seconds = duration.map { CMTimeGetSeconds($0) } ?? 0
         var media = LocalRecordingMedia(
             originalFilename: file.originalFilename, originalContentType: file.originalContentType, timelineStartMS: 0,
-            mediaDurationMS: seconds.isFinite && seconds > 0 ? Int64(seconds * 1000) : 0, localMediaId: file.localMediaId)
+            mediaDurationMS: RecordingClock.durationMS(seconds: seconds), localMediaId: file.localMediaId)
         media.originalSizeBytes = Int64(try file.originalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
         let handle = try FileHandle(forReadingFrom: file.originalURL)
         defer { try? handle.close() }
@@ -66,7 +67,8 @@ enum ShareRecordingImport {
         recording.timelineDurationMS = media.mediaDurationMS
         recording.localMedia.append(media)
         if let existing = try? await journal.read(recording.id, accountKey: accountKey) {
-            guard let existingMedia = existing.localMedia.first(where: { $0.id == media.id }), existingMedia.originalSha256 == media.originalSha256,
+            guard existing.belongsTo(accountKey: accountKey, recordingUserId: ownerId),
+                let existingMedia = existing.localMedia.first(where: { $0.id == media.id }), existingMedia.originalSha256 == media.originalSha256,
                 existingMedia.originalSizeBytes == media.originalSizeBytes
             else { throw TeaNodeError.unreadableAnswer }
             if existingMedia.isDurablyUploaded { return }
@@ -74,7 +76,7 @@ enum ShareRecordingImport {
             try await journal.create(recording)
         }
         let originalURL = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
-        guard try KeychainAccountStore().load(accountKey: accountKey) != nil else { throw TeaNodeError.signedOut }
+        guard try KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId == ownerId else { throw TeaNodeError.signedOut }
         if FileManager.default.fileExists(atPath: originalURL.path) {
             let retained = try FileHandle(forReadingFrom: originalURL)
             defer { try? retained.close() }

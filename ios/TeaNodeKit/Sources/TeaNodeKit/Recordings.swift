@@ -57,6 +57,12 @@ public struct RecordingMedia: Codable, Hashable, Sendable, Identifiable {
     public let recordingUploadState: String
     public let verifiedAt: String?
 
+    public func playbackOffsetMS(for passageStartMS: Int64) -> Int64 {
+        guard passageStartMS >= timelineStartMS else { return 0 }
+        let (offsetMS, hasOverflow) = passageStartMS.subtractingReportingOverflow(timelineStartMS)
+        return hasOverflow ? Int64.max : offsetMS
+    }
+
     public func confirmsOriginal(_ expected: RecordingMedia) -> Bool {
         id == expected.id && recordingId == expected.recordingId && clientMediaId == expected.clientMediaId
             && originalSizeBytes == expected.originalSizeBytes && originalSha256 == expected.originalSha256
@@ -88,20 +94,36 @@ public struct RecordingLimits: Codable, Hashable, Sendable {
     public let maximumMediaBytes: Int64
     public let maximumAccountBytes: Int64
     public let uploadPartBytes: Int64
+    public var isTranscriptionAvailable: Bool? = nil
+    public var transcriptionUnavailableMessage: String? = nil
+    public var transcriptionProviderModelName: String? = nil
 }
 
 extension Documents {
-    static let recordingFields =
-        "id userId createdAt updatedAt clientRecordingId recordingTitle recordingOrigin recordedAt recordingCaptureState timelineDurationMS sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason }"
-    static let recordingMediaFields =
-        "id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt"
-    public static let listRecordings =
-        "query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize) { \(recordingFields) } }"
-    public static let readRecording =
-        "query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { \(recordingFields) } mediaFiles { \(recordingMediaFields) } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } transcriptRuns { \(recordingTranscriptRunFields) } } }"
-    public static let recordingLimits = "query { ReadRecordingLimits { maximumMediaBytes maximumAccountBytes uploadPartBytes } }"
-    public static let createRecording =
-        "mutation ($clientRecordingId: String!, $recordingTitle: String!, $recordingOrigin: String!) { CreateRecording(clientRecordingId: $clientRecordingId, recordingTitle: $recordingTitle, recordingOrigin: $recordingOrigin) { \(recordingFields) } }"
+    static let recordingFields = """
+        id userId createdAt updatedAt clientRecordingId recordingTitle recordingOrigin recordedAt recordingCaptureState
+        timelineDurationMS sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason }
+        """
+    static let recordingMediaFields = """
+        id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS
+        mediaDurationMS partCount recordingUploadState verifiedAt
+        """
+    public static let listRecordings = """
+        query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize:
+        $pageSize) { \(recordingFields) } }
+        """
+    public static let readRecording = """
+        query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { \(recordingFields) } mediaFiles {
+        \(recordingMediaFields) } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } transcriptRuns {
+        \(recordingTranscriptRunFields) } } }
+        """
+    public static let recordingLimits = """
+        query { ReadRecordingLimits { maximumMediaBytes maximumAccountBytes uploadPartBytes isTranscriptionAvailable transcriptionUnavailableMessage transcriptionProviderModelName } }
+        """
+    public static let createRecording = """
+        mutation ($clientRecordingId: String!, $recordingTitle: String!, $recordingOrigin: String!) { CreateRecording(clientRecordingId:
+        $clientRecordingId, recordingTitle: $recordingTitle, recordingOrigin: $recordingOrigin) { \(recordingFields) } }
+        """
     public static let createRecordingMedia = """
         mutation ($recordingId: String!, $clientMediaId: String!, $originalFilename: String!, $originalContentType: String!, $originalSizeBytes: Int64!, $originalSha256: String!, $timelineStartMS: Int64!, $mediaDurationMS: Int64!) {
           CreateRecordingMedia(recordingId: $recordingId, clientMediaId: $clientMediaId, originalFilename: $originalFilename, originalContentType: $originalContentType,
@@ -114,9 +136,14 @@ extension Documents {
             timelineDurationMS: $timelineDurationMS, captureGaps: $captureGaps) { \(recordingFields) }
         }
         """
-    public static let updateRecordingMetadata =
-        "mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingTitle: String!, $recordedAt: DateTime) { UpdateRecordingMetadata(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, recordingTitle: $recordingTitle, recordedAt: $recordedAt) { \(recordingFields) } }"
-    public static let deleteRecording = "mutation ($recordingId: String!) { DeleteRecording(recordingId: $recordingId) }"
+    public static let updateRecordingMetadata = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingTitle: String!, $recordedAt: DateTime) {
+        UpdateRecordingMetadata(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, recordingTitle:
+        $recordingTitle, recordedAt: $recordedAt) { \(recordingFields) } }
+        """
+    public static let deleteRecording = """
+        mutation ($recordingId: String!) { DeleteRecording(recordingId: $recordingId) }
+        """
 }
 
 extension Connection {

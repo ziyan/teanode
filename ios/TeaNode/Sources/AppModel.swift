@@ -270,6 +270,10 @@ final class AppModel {
     }
 
     private func use(_ account: Account) {
+        if let local = MeetingRecorder.shared.localRecording, local.accountKey == account.accountKey,
+            !local.belongsTo(accountKey: account.accountKey, recordingUserId: account.cachedRecordingUserId) {
+            Task { await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey) }
+        }
         let isChanged = account.accountKey != self.account?.accountKey
         if isChanged { services = nil }
         self.account = account
@@ -695,6 +699,10 @@ extension AppModel {
         if let services = try? await connection.serviceCapabilities(), self.connection === connection {
             self.services = services
         }
+        if (try? await connection.recordingOwnerId()) != nil, self.connection === connection {
+            self.account = await connection.account
+            self.accounts = (try? store.accounts().accounts) ?? self.accounts
+        }
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {
@@ -703,7 +711,8 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
-        case .agent, .goals, .ideas, .knowledge, .finance, .recordings: return services.isAssistantEnabled
+        case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
+        case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .settings: return true
         }
     }

@@ -21,6 +21,7 @@ public struct Account: Codable, Equatable, Sendable {
     public var refreshToken: String
     public var expiresAt: Date
     public var username: String
+    public var cachedRecordingUserId: String? = nil
 
     public init(server: ServerAddress, clientId: String, accessToken: String, refreshToken: String, expiresAt: Date, username: String) {
         self.server = server

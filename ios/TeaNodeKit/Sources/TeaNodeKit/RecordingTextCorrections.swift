@@ -66,14 +66,26 @@ public enum RecordingTextCorrectionDrafts {
 }
 
 extension Documents {
-    static let recordingTextCorrectionFields =
-        "id recordingId recordingMediaId recordingTranscriptRunId recordingTranscriptSegmentId clientCorrectionId passageStartMS passageEndMS originalTranscriptText correctedTranscriptText sourceGeneration createdAt isRemoved"
-    public static let readRecordingTranscriptTextCorrections =
-        "query ($recordingId: String!) { ReadRecordingTranscriptTextCorrections(recordingId: $recordingId) { \(recordingTextCorrectionFields) } }"
-    public static let correctRecordingTranscriptText =
-        "mutation ($recordingId: String!, $recordingTranscriptSegmentId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId: String!, $correctedTranscriptText: String!) { CorrectRecordingTranscriptText(recordingId: $recordingId, recordingTranscriptSegmentId: $recordingTranscriptSegmentId, expectedSourceGeneration: $expectedSourceGeneration, clientCorrectionId: $clientCorrectionId, correctedTranscriptText: $correctedTranscriptText) { \(recordingTextCorrectionFields) } }"
-    public static let removeRecordingTranscriptTextCorrection =
-        "mutation ($recordingId: String!, $recordingTranscriptTextCorrectionId: String!, $expectedSourceGeneration: Int64!) { RemoveRecordingTranscriptTextCorrection(recordingId: $recordingId, recordingTranscriptTextCorrectionId: $recordingTranscriptTextCorrectionId, expectedSourceGeneration: $expectedSourceGeneration) }"
+    static let recordingTextCorrectionFields = """
+        id recordingId recordingMediaId recordingTranscriptRunId recordingTranscriptSegmentId clientCorrectionId passageStartMS
+        passageEndMS originalTranscriptText correctedTranscriptText sourceGeneration createdAt isRemoved
+        """
+    public static let readRecordingTranscriptTextCorrections = """
+        query ($recordingId: String!) { ReadRecordingTranscriptTextCorrections(recordingId: $recordingId) {
+        \(recordingTextCorrectionFields) } }
+        """
+    public static let correctRecordingTranscriptText = """
+        mutation ($recordingId: String!, $recordingTranscriptSegmentId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId:
+        String!, $correctedTranscriptText: String!) { CorrectRecordingTranscriptText(recordingId: $recordingId,
+        recordingTranscriptSegmentId: $recordingTranscriptSegmentId, expectedSourceGeneration: $expectedSourceGeneration,
+        clientCorrectionId: $clientCorrectionId, correctedTranscriptText: $correctedTranscriptText) { \(recordingTextCorrectionFields) }
+        }
+        """
+    public static let removeRecordingTranscriptTextCorrection = """
+        mutation ($recordingId: String!, $recordingTranscriptTextCorrectionId: String!, $expectedSourceGeneration: Int64!) {
+        RemoveRecordingTranscriptTextCorrection(recordingId: $recordingId, recordingTranscriptTextCorrectionId:
+        $recordingTranscriptTextCorrectionId, expectedSourceGeneration: $expectedSourceGeneration) }
+        """
 }
 
 extension Connection {
