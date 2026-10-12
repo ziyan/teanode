@@ -318,6 +318,8 @@ request-local speaker IDs never establish identity across files.
 | Import, recoverable upload, browse/play/delete | In progress | In progress | In progress | In progress |
 | Transcript versions, status/cancel/retry/reprocess | Pending integration | Pending integration | Pending integration | Pending integration |
 | Confirmed labels, passage edits, references | Pending integration | Pending integration | Pending integration | Pending integration |
+| Source title/date and transcript text corrections | In progress | In progress | In progress | In progress |
+| Learning progress and reference invalidations | In progress | In progress | In progress | In progress |
 | Capture, interruptions, locked-screen controls | Not applicable | Not applicable | Not applicable | In progress |
 
 No row is complete until shared authorization/error checks and applicable client
@@ -371,3 +373,35 @@ Merged durable storage is deployed from reviewed main. Service version and migra
 were verified; authenticated disposable-media upload, verified receipt, playback,
 idempotent retry and deletion smoke checks passed. Unfinished worker code is not
 included in that deployment.
+The security check flagged WAV-size arithmetic in the local encoder. Decoder
+admission already bounded its callers, but encoding now validates the byte count
+and sample alignment at the allocation itself. A regression rejects oversized
+and incomplete PCM without relying on caller limits; ordinary WAV headers remain
+unchanged. Fresh security analysis and CI must pass before merging this increment.
+
+## Integrated backend review checkpoint
+
+Completed runs publish to the existing knowledge source in the same transaction;
+periodic bounded sweeps resume automatic voice-reference curation. Selection sends
+only verified, account-owned, currently confirmed reference bytes within model
+limits and rechecks identity names immediately before paid submission. Completed
+chunks reuse their immutable attempts without reading newly curated references.
+
+Same-version retry keeps completed chunks and usage. It is idempotent for an
+active job and refuses stopping workers, unknown paid outcomes and results
+discarded after cancellation. Explicit reprocessing remains a separate paid
+version. Source title and actual occurrence date are free, generation-checked
+metadata edits; a missing date stays unknown.
+
+PostgreSQL race checks cover safe retry, stopping/uncertain/discarded requests,
+foreign accounts and agents, immutable receipts and metadata changes. Focused
+DB, worker, API and local decoder checks pass, including packaged-compatible
+FFmpeg descriptor decoding. Full lint and naming checks pass. These local results
+do not establish production worker execution, provider billing or real-device
+recording behavior.
+
+All new capabilities and settings require web, CLI, LLM tool and iOS parity.
+Transcript text editing is being added as independent immutable corrections,
+with unique passage alignment across reruns and existing memory reconciliation.
+The original generated transcript remains available. No capability row is marked
+complete while a required interface, review or device acceptance check is missing.

@@ -465,6 +465,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueRemembering(ctx, now)
 	self.queueIngestion(ctx, now)
 	self.queueRecordings(ctx)
+	self.queueRecordingSpeakerCuration(ctx)
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
 	self.queueWatching(ctx, now)

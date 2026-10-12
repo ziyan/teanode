@@ -109,6 +109,7 @@ type Mutation interface {
 	RecordingMutation
 	RecordingTranscriptMutation
 	RecordingAttachmentMutation
+	RecordingMetadataMutation
 	AgentMutation
 	AgentAdminMutation
 	AgentAskMutation

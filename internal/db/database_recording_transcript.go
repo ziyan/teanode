@@ -21,6 +21,7 @@ type RecordingWorkerClaim struct {
 
 // RecordingTranscriptOperation versions generated evidence and tracks derived blobs.
 type RecordingTranscriptOperation interface {
+	GetLatestRecordingChunkAttempt(userId, chunkId string) (*models.RecordingTranscriptionAttempt, error)
 	GetRecordingTranscriptionAttemptEvidence(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error)
 	CancelRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
 	ReadRecordingTranscriptPage(userId, runId string, segmentOffset, pageSize int) ([]*models.RecordingTranscriptSegment, int64, error)
@@ -40,6 +41,29 @@ type RecordingTranscriptOperation interface {
 	SubmitRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim) error
 	FinishRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim, finished *models.RecordingTranscriptionAttempt, segments []*models.RecordingTranscriptSegment) (bool, error)
 	ListRecordingTranscriptSegments(userId, runId string) ([]*models.RecordingTranscriptSegment, error)
+}
+
+// GetLatestRecordingChunkAttempt avoids loading current references for already submitted evidence.
+func (self *transaction) GetLatestRecordingChunkAttempt(userId, chunkId string) (*models.RecordingTranscriptionAttempt, error) {
+	var chunk recordingChunkModel
+	if err := self.tx.Where("id = ?", chunkId).Take(&chunk).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if _, err := self.GetRecordingTranscriptRun(userId, chunk.RecordingTranscriptRunID); err != nil {
+		return nil, err
+	}
+	var attempt recordingAttemptModel
+	err := self.tx.Omit("provider_usage_json", "provider_response_json").Where("recording_audio_chunk_id = ?", chunkId).Order("attempt_index DESC").Take(&attempt).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return recordingAttemptFromModel(&attempt), nil
 }
 
 type recordingRunModel struct {

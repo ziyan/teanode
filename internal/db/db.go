@@ -168,6 +168,8 @@ type Transaction interface {
 	RecordingKnowledgeOperation
 	RecordingTranscriptOperation
 	RecordingOperation
+	RecordingMetadataOperation
+	RecordingRetryOperation
 	ReplyOperation
 	EmbeddingOperation
 	VectorOperation
