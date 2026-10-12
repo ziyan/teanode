@@ -277,7 +277,11 @@ func (self *transaction) CreateRecordingMedia(userId string, media *models.Recor
 	if err := self.tx.Table("recording_media").Select("COALESCE(SUM(original_size_bytes),0)").Joins("JOIN recording ON recording.id = recording_media.recording_id").Where("recording.user_id = ?", userId).Scan(&reservedSizeBytes).Error; err != nil {
 		return nil, err
 	}
-	if reservedSizeBytes > maximumAccountBytes-media.OriginalSizeBytes {
+	var derivedSizeBytes int64
+	if err := self.tx.Table("recording_blob").Select("COALESCE(SUM(blob_size_bytes),0)").Joins("JOIN recording ON recording.id = recording_blob.recording_id").Where("recording.user_id = ?", userId).Scan(&derivedSizeBytes).Error; err != nil {
+		return nil, err
+	}
+	if reservedSizeBytes > maximumAccountBytes-media.OriginalSizeBytes || derivedSizeBytes > maximumAccountBytes-media.OriginalSizeBytes-reservedSizeBytes {
 		return nil, ErrTooMuchAsked
 	}
 	created := *media
@@ -463,6 +467,13 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	var incompleteCount int64
 	if err := self.tx.Model(&recordingMediaModel{}).Where("recording_id = ? AND cleanup_next_part_index < part_count", recordingId).Count(&incompleteCount).Error; err != nil {
 		return err
+	}
+	var blobCount int64
+	if err := self.tx.Model(&recordingBlobModel{}).Where("recording_id = ?", recordingId).Count(&blobCount).Error; err != nil {
+		return err
+	}
+	if blobCount != 0 {
+		return ErrInvalidArguments
 	}
 	if incompleteCount != 0 {
 		return ErrInvalidArguments

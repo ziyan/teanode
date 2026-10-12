@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -109,16 +112,25 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 func TestRecordingMigrationReversesAndReapplies(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
-	reverseSQL, err := os.ReadFile("migrations/0164_recording_media.reverse.sql")
+	reversePaths, err := filepath.Glob("migrations/*_recording_*.reverse.sql")
 	if err != nil {
 		test.Fatal(err)
 	}
-	dbtest.Exec(test, database, string(reverseSQL))
-	forwardSQL, err := os.ReadFile("migrations/0164_recording_media.sql")
-	if err != nil {
-		test.Fatal(err)
+	sort.Strings(reversePaths)
+	for pathIndex := len(reversePaths) - 1; pathIndex >= 0; pathIndex-- {
+		reverseSQL, err := os.ReadFile(reversePaths[pathIndex])
+		if err != nil {
+			test.Fatal(err)
+		}
+		dbtest.Exec(test, database, string(reverseSQL))
 	}
-	dbtest.Exec(test, database, string(forwardSQL))
+	for _, reversePath := range reversePaths {
+		forwardSQL, err := os.ReadFile(strings.TrimSuffix(reversePath, ".reverse.sql") + ".sql")
+		if err != nil {
+			test.Fatal(err)
+		}
+		dbtest.Exec(test, database, string(forwardSQL))
+	}
 	ownerId := dbtest.CreateUser(test, database, "reapplied-owner")
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		if _, err := transaction.CreateRecording(&models.Recording{UserID: ownerId, ClientRecordingID: "reapplied-capture", RecordingOrigin: models.RecordingOriginCapture}); err != nil {
