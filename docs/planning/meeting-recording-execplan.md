@@ -436,8 +436,8 @@ missing-version read/cancel refusal and deletion/read refusal passed. Production
 transcription is Off; refusal is not evidence of provider execution.
 
 Raw dashboard, CLI and grouped tool surfaces (#436) passed review and all checks
-and were squash merged in v0.143.0. That release is being built for deployment;
-it is not yet the confirmed running version. Native and correction/learning
+and were squash merged in v0.143.0. That release is confirmed running as commit 4e41d42, with authenticated raw
+upload/receipt/resume/playback/delete and existing agent/mailbox health reads passing. Native and correction/learning
 increments remain in review. The native Server failure was traced to one-line
 shared Swift GraphQL constants; multiline documents now expose their actual
 schema dependency on the correction increment. Do not skip that check.
