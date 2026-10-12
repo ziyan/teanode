@@ -11490,11 +11490,12 @@ main.content:has(> .knowledge-frame) {
 }
 
 /* Under the account the approval would act as, so the way to change it sits
-   beside the fact it changes. */
+   beside the fact it changes. A quiet button rather than a link: it signs
+   out, which is an action. Tall enough for a finger on a phone. */
 .authorize-switch {
   display: block;
-  /* Padded rather than bare text, so a finger finds it on a phone. */
-  padding: var(--space-1) 0;
+  margin-top: var(--space-1);
+  min-height: 32px;
   font-size: var(--text-label);
 }
 

@@ -2159,6 +2159,7 @@ export const en = {
   'authorize.sendsTo': 'Returns you to',
   'authorize.actsAs': 'Acts as',
   'authorize.switchAccount': 'Use another account',
+  'authorize.switchFailed': 'Could not sign out. Try again.',
   'authorize.grant': 'It will be able to do what you can do, and nothing more. You can revoke it at any time under Apps in your settings.',
   'connect.title': 'Connect a phone',
   'connect.intro': 'Open the camera on your phone and point it at this code. The TeaNode app opens, or the App Store if it is not installed yet, and connects to this server as you.',

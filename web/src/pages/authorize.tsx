@@ -136,13 +136,19 @@ export function AuthorizePage() {
   // same question. Without it, a browser already signed in, such as the
   // sheet the phone app opens, could only ever approve that one account.
   const switchAccount = useCallback(async () => {
+    setError(null)
     setPhase('working')
     try {
       await logout()
-    } finally {
-      window.location.reload()
+    } catch (caught) {
+      // Still signed in: reloading would ask the same question again with
+      // no word of why, so the reason stays on the card instead.
+      setError(caught instanceof Error ? caught.message : t('authorize.switchFailed'))
+      setPhase('asking')
+      return
     }
-  }, [])
+    window.location.reload()
+  }, [t])
 
   // Refusing is not reported back to the program. Telling it that it was
   // refused, at an address it chose, is telling whoever sent the reader here
@@ -218,8 +224,8 @@ export function AuthorizePage() {
         <dt>{t('authorize.actsAs')}</dt>
         <dd>
           <span className="authorize-name">{request.username}</span>
-          <button /* link-button: goes to the sign-in form, under the account it changes */
-            className="link authorize-switch"
+          <button
+            className="button-quiet authorize-switch"
             type="button"
             onClick={switchAccount}
             disabled={phase === 'working'}

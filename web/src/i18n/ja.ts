@@ -2147,6 +2147,7 @@ export const ja: Catalog = {
   'authorize.sendsTo': '戻り先',
   'authorize.actsAs': '実行者',
   'authorize.switchAccount': '別のアカウントを使う',
+  'authorize.switchFailed': 'サインアウトできませんでした。もう一度お試しください。',
   'authorize.grant': 'あなたができることだけを行えます。設定の「アプリ」からいつでも取り消せます。',
   'connect.title': 'スマートフォンを接続する',
   'connect.intro': 'スマートフォンのカメラを開いて、このコードに向けてください。TeaNode アプリが開き（まだインストールしていなければ App Store が開きます）、あなたとしてこのサーバーに接続します。',
