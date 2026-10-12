@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.137.0] - 2026-10-12
+
+### Added
+
+- `agent.models.quick`: typed turns start on a fast model that answers quick things at once and hands anything that needs thought to the larger model. (#410)
+
 ## [0.136.2] - 2026-10-12
 
 ### Changed
