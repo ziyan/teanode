@@ -100,6 +100,8 @@ jobs:
           }
           shoot connect-light light large
           shoot connect-dark dark large
+          shoot server-address-dark dark large -TeaNodeScreen server-address
+          shoot server-address-light light large -TeaNodeScreen server-address
           shoot conversation-light light large -TeaNodeDemo
           shoot conversation-dark dark large -TeaNodeDemo
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo

@@ -14,7 +14,7 @@ struct ConnectView: View {
     @State private var isConnecting = false
     @State private var pending: PendingConnection?
     @State private var problemText: String?
-    @State private var isAskingForServer = false
+    @State private var isAskingForServer = DemoServer.screen == "server-address"
     @State private var serverText = ""
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
@@ -113,15 +113,11 @@ struct ConnectView: View {
                     }
                 }
             }
-            .alert("Your server", isPresented: $isAskingForServer) {
-                TextField("mail.example.com", text: $serverText)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                Button("Cancel", role: .cancel) {}
-                Button("Continue") { Task { await signInWithPassword() } }
-            } message: {
-                Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
+            .sheet(isPresented: $isAskingForServer) {
+                ServerSheet(serverText: $serverText) {
+                    isAskingForServer = false
+                    Task { await signInWithPassword() }
+                }
             }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
             .task(id: app.openedLink?.url) {
@@ -166,6 +162,52 @@ struct ConnectView: View {
         } catch {
             problemText = app.describe(error)
         }
+    }
+}
+
+/// ServerSheet asks for the server to sign in to with a password. It is a
+/// sheet rather than an alert: an alert's text field draws past the alert's
+/// edge on iOS 26, and an address wants room to be read as it is typed.
+struct ServerSheet: View {
+    @Binding var serverText: String
+    let onContinue: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isFocused: Bool
+
+    private var isEmpty: Bool {
+        serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("mail.example.com", text: $serverText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .submitLabel(.continue)
+                        .focused($isFocused)
+                        .onSubmit { if !isEmpty { onContinue() } }
+                } footer: {
+                    Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
+                }
+            }
+            .navigationTitle("Your server")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", role: .cancel) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue", action: onContinue)
+                        .disabled(isEmpty)
+                }
+            }
+            .onAppear { isFocused = true }
+        }
+        .presentationDetents([.medium])
     }
 }
 
