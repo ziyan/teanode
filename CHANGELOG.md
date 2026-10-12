@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.0] - 2026-10-12
+
+### Added
+
+- React to the agent's messages with any emoji: "More emoji" opens the emoji keyboard in the app and a picker on the dashboard. (#411)
+
 ## [0.137.1] - 2026-10-12
 
 ### Fixed
