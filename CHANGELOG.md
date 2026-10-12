@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.142.0] - 2026-10-12
+
+### Added
+
+- Process completed recordings asynchronously with versioned transcripts, usage evidence and cancellation. (#434)
+
 ## [0.141.0] - 2026-10-12
 
 ### Added
