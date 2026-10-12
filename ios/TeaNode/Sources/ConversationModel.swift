@@ -313,12 +313,16 @@ final class ConversationModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
         if let question = freshQuestion, pendingFiles.isEmpty, references.isEmpty {
+            isSending = true
+            defer { isSending = false }
             draft = ""
+            let isAnswered: Bool
             if question.kind == .codingQuestion {
-                await answerCodingQuestion(question, options: [], freeText: text)
+                isAnswered = await answerCodingQuestion(question, options: [], freeText: text)
             } else {
-                await answer(question, with: text)
+                isAnswered = await answer(question, with: text)
             }
+            if !isAnswered, draft.isEmpty { draft = text }
             return
         }
         if pendingFiles.reduce(0, { $0 + $1.data.count }) > PendingFile.bytesMost {
@@ -423,11 +427,13 @@ final class ConversationModel {
         }
     }
 
-    func answer(_ line: TranscriptLine, with answer: String) async {
+    @discardableResult
+    func answer(_ line: TranscriptLine, with answer: String) async -> Bool {
         do {
             if try await connection.answerQuestion(runId: line.runId, callId: line.callId, answer: answer) {
                 transcript.settle(cardId: line.id, resolution: answer == Self.chatAboutIt ? String(localized: "Chatting about it instead") : answer)
                 sentCount += 1
+                return true
             } else {
                 transcript.remove(cardId: line.id)
                 sendProblemText = String(localized: "That card was already answered, or is no longer waiting.")
@@ -435,6 +441,7 @@ final class ConversationModel {
         } catch {
             sendProblemText = app.describe(error)
         }
+        return false
     }
 
     /// What a question card answers when the person would rather talk than
@@ -443,12 +450,14 @@ final class ConversationModel {
 
     /// Answers a coding session's question with the options chosen, or with
     /// what to type into it.
-    func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async {
-        guard let question = line.codingQuestion else { return }
+    @discardableResult
+    func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async -> Bool {
+        guard let question = line.codingQuestion else { return false }
         do {
             let answeredWith = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
             transcript.settle(cardId: line.id, resolution: answeredWith)
             sentCount += 1
+            return true
         } catch TeaNodeError.refused(let reason) where reason.contains("already answered") {
             // Answered at the computer, or by another device: the card folds
             // away so typing goes to the conversation again, as the
@@ -457,6 +466,7 @@ final class ConversationModel {
         } catch {
             sendProblemText = app.describe(error)
         }
+        return false
     }
 
     func stop() async {
