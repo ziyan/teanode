@@ -968,6 +968,14 @@ func (self *AskRun) turn() error {
 	}); err != nil {
 		return err
 	}
+	// What the agent said last, for the reaction to be chosen against.
+	previousAnswer := ""
+	for index := len(history) - 1; index >= 0 && previousAnswer == ""; index-- {
+		if history[index].Role == llm.RoleAssistant {
+			previousAnswer = history[index].Content
+		}
+	}
+	self.acknowledge(settings, savedTurn.ID, previousAnswer)
 	history = append(history, userTurn(ctx, self.agent.settings.Storage, personText(settings), settings.Attachments, settings.Pictures, settings.References))
 	history[len(history)-1].SourceID = savedTurn.ID
 

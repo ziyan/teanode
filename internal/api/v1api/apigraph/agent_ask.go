@@ -979,8 +979,10 @@ func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAge
 	if err != nil {
 		return false, err
 	}
-	if !message.CanBeReactedTo() {
-		return false, fmt.Errorf("%w: only what the person or the agent said can carry a reaction", api.ErrInvalidArguments)
+	// Taking a reaction away is always allowed; putting one on is only for
+	// what the agent said.
+	if reactionEmoji != "" && !message.CanBeReactedToBy(models.ReactorPerson) {
+		return false, fmt.Errorf("%w: you can react to what the agent said, not to your own messages", api.ErrInvalidArguments)
 	}
 	reacting := found
 	if other != nil {

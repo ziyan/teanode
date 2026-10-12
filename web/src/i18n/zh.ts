@@ -1671,6 +1671,7 @@ export const zh: Catalog = {
   'agent.runKinds.extract': '提取',
   'agent.runKinds.draft': '草稿',
   'agent.runKinds.describe': '起标题',
+  'agent.runKinds.react': '选表情',
   'agent.runKinds.compact': '压缩',
   'agent.runKinds.evaluate': '评估',
   'agent.runKinds.survey': '综合调查',

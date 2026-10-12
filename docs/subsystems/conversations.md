@@ -52,6 +52,15 @@ taken away by reacting with nothing (`agent_message_reaction`, migration
 unless it names another, without a card. Every change is a `reacted` event
 on the conversation's feed (`streaming-and-instances.md`).
 
+The agent does not leave the first reaction to its model, which often
+skipped it. When a turn begins with the person's own message in a main,
+named or goal conversation, on a surface that draws reactions (`hasReactions`
+in `surface.go`: the drawer, the extension and the app, not a call, Siri, the
+terminal or a run), `acknowledge.go` makes one small call with no tools on the
+compact or ask model, beside the turn. It picks one of eight emoji, or none,
+and stores it unless the agent has reacted already. The `react` action
+replaces it, and is refused in a run's transcript, where nobody sees it.
+
 A reaction starts no turn. Messages are read with their reactions, and the
 history the model is sent says each one after its message: "(The person
 reacted 👍)", or "(You reacted 🙏)" for the agent's own. Why is in

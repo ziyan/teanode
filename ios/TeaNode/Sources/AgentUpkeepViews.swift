@@ -171,6 +171,7 @@ enum UpkeepWords {
         case "extract": String(localized: "Extraction")
         case "draft": String(localized: "Draft")
         case "describe": String(localized: "Titling")
+        case "react": String(localized: "Picking a reaction")
         case "compact": String(localized: "Compaction")
         case "evaluate": String(localized: "Evaluation")
         case "survey": String(localized: "Survey")

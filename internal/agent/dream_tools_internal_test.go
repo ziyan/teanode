@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -77,7 +78,11 @@ func scriptedProvider(rounds []string) *httptest.Server {
 		var body struct {
 			Stream bool `json:"stream"`
 		}
-		_ = json.NewDecoder(request.Body).Decode(&body)
+		raw, _ := io.ReadAll(request.Body)
+		_ = json.Unmarshal(raw, &body)
+		if answerReactionChoice(writer, raw) {
+			return
+		}
 		if !body.Stream {
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{}"},"finish_reason":"stop"}],"usage":{}}`))
@@ -93,6 +98,19 @@ func scriptedProvider(rounds []string) *httptest.Server {
 		}
 		_, _ = writer.Write([]byte("data: [DONE]\n\n"))
 	}))
+}
+
+// answerReactionChoice answers the call that picks the emoji the server
+// puts on the person's message, and says whether it was one. That call
+// runs beside a turn on a dashboard or phone surface and is not one of the
+// turn's rounds, so a script of rounds must not spend a round on it.
+func answerReactionChoice(writer http.ResponseWriter, raw []byte) bool {
+	if !strings.Contains(string(raw), "Choose the one emoji") {
+		return false
+	}
+	writer.Header().Set("Content-Type", "text/event-stream")
+	_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"\U0001F440\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+	return true
 }
 
 // toolsNamed is one round's tools as a set.

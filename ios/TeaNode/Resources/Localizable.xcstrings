@@ -24389,6 +24389,22 @@
         }
       }
     },
+    "Picking a reaction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアクション選び"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选表情"
+          }
+        }
+      }
+    },
     "Pictures fetched": {
       "localizations": {
         "ja": {

@@ -39,6 +39,9 @@ func TestASpokenTurnHandsAHardQuestionToTheLargerModel(t *testing.T) {
 			} `json:"tools"`
 		}
 		_ = json.Unmarshal(raw, &body)
+		if answerReactionChoice(writer, raw) {
+			return
+		}
 		if !body.Stream {
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{}"},"finish_reason":"stop"}],"usage":{}}`))

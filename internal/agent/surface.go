@@ -33,6 +33,12 @@ type surface struct {
 	// ask whether that site may know where they are, and once allowed,
 	// the site could ask it too.
 	canLocate bool
+
+	// hasReactions says the surface draws the emoji the agent puts on the
+	// person's message, live: the dashboard's drawer and the iPhone app.
+	// Not a call or Siri, which show no message to draw one on, and not a
+	// terminal, a mail or a chat app, which have no live event for one.
+	hasReactions bool
 }
 
 // dashboardOverlay is how to write for the dashboard, which renders
@@ -47,8 +53,8 @@ const picturesLine = "A picture shows in the answer when written as ![what it sh
 var surfaces = map[string]surface{
 	// The drawer says "phone" on a narrow screen and "extension" in the
 	// browser extension.
-	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true, canLocate: true},
-	"extension": {situationLine: talkingThrough("extension"), overlay: dashboardOverlay, hasSuggestedReplies: true},
+	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true, canLocate: true, hasReactions: true},
+	"extension": {situationLine: talkingThrough("extension"), overlay: dashboardOverlay, hasSuggestedReplies: true, hasReactions: true},
 	"page":      {situationLine: talkingThrough("page"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	// A turn the person spoke in the drawer, transcribed. The answer is
 	// written for the ear: it is shown in the drawer as it is written, and
@@ -68,6 +74,7 @@ var surfaces = map[string]surface{
 		hasSuggestedReplies: true,
 		canShowPages:        true,
 		canLocate:           true,
+		hasReactions:        true,
 	},
 	"ios_voice": {
 		situationLine:       "You are on a call with them in the TeaNode app on their iPhone: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
@@ -86,6 +93,7 @@ var surfaces = map[string]surface{
 		hasSuggestedReplies: true,
 		canShowPages:        true,
 		canLocate:           true,
+		hasReactions:        true,
 	},
 	"cli": {
 		situationLine: talkingThrough("cli"),

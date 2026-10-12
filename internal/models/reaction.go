@@ -24,11 +24,18 @@ type AgentMessageReaction struct {
 	ReactedAt   time.Time        `json:"reactedAt"`
 }
 
-// CanBeReactedTo says whether a message is one a reader sees as said, the
-// person's or the agent's, and so can carry a reaction. A tool's answer, a
-// note or the prompt cannot.
-func (self *AgentMessage) CanBeReactedTo() bool {
-	return self.Role == "user" || self.Role == "assistant"
+// CanBeReactedToBy says whether a reactor may put a reaction on the
+// message: each side reacts to what the other said, as in a chat app, so
+// the person to the agent's messages and the agent to the person's. Nobody
+// reacts to their own words, nor to a tool's result or a note.
+func (self *AgentMessage) CanBeReactedToBy(reactorKind AgentReactorKind) bool {
+	switch reactorKind {
+	case ReactorPerson:
+		return self.Role == "assistant"
+	case ReactorAgent:
+		return self.Role == "user"
+	}
+	return false
 }
 
 // The bounds of a reaction's emoji. Two allows a pair a person means

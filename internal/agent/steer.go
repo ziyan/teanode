@@ -88,6 +88,7 @@ func (self *AskRun) takeSteering(ctx context.Context) ([]llm.ChatMessage, error)
 			return messages, err
 		}
 		settings := message.settings
+		self.acknowledge(settings, saved.ID, "")
 		turn := userTurn(ctx, self.agent.settings.Storage, personText(settings), settings.Attachments, settings.Pictures, settings.References)
 		turn.SourceID = saved.ID
 		messages = append(messages, turn)
