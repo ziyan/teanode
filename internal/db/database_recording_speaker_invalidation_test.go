@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/recording"
 )
 
 func createConfirmedReference(test *testing.T, fixture *transcriptFixture) *models.RecordingVoiceReference {
@@ -198,10 +199,17 @@ func TestRecordingReferenceInvalidationReconcilesDependentMemory(test *testing.T
 			if !errors.Is(err, db.ErrNotFound) {
 				test.Fatal("cross-account invalidation read", err)
 			}
+			// The storage coordinator exists even when model workers are disabled.
+			if err := recording.New(fixture.database, nil).ReconcileReferences(test.Context(), 25); err != nil {
+				test.Fatal("storage-only reconciliation failed", err)
+			}
 			dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
 				invalidations, err := transaction.ListRecordingReferenceInvalidations(fixture.userId, dependent.media.RecordingID)
 				if err != nil || len(invalidations) != 1 || invalidations[0].ReferenceBlobID != reference.RecordingBlobID || invalidations[0].InvalidatedConfirmedName != "Participant One" {
 					test.Fatal("lost reference provenance", err, len(invalidations))
+				}
+				if !invalidations[0].IsReconciled {
+					test.Fatal("reconciliation depended on a model worker")
 				}
 				if err := transaction.ReconcileRecordingReferenceInvalidations(fixture.userId, dependent.media.RecordingID); err != nil {
 					test.Fatal(err)

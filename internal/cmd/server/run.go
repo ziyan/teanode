@@ -734,6 +734,9 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 		store := recording.New(self.database, files)
 		var cleanupGroup sync.WaitGroup
 		cleanup := periodic.New(context.Background(), &cleanupGroup, func(ctx context.Context) error {
+			if err := store.ReconcileReferences(ctx, 25); err != nil {
+				log.Warningf("cannot reconcile changed recording references: %s", err)
+			}
 			return store.Cleanup(ctx, 100)
 		}, &periodic.Settings{Interval: time.Minute, Name: "recording:cleanup"})
 		cleanup.Start()
