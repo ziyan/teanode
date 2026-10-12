@@ -560,6 +560,9 @@ final class AppModel {
     /// Signs out of the account in use, forgets the key its notifications
     /// are encrypted with, and puts the next one to use.
     func signOut(signedOutText: String? = nil) async {
+        if let account, MeetingRecorder.shared.localRecording?.accountKey == account.accountKey {
+            await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey)
+        }
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
@@ -600,6 +603,9 @@ final class AppModel {
         guard other.accountKey != account?.accountKey else {
             await signOut()
             return
+        }
+        if MeetingRecorder.shared.localRecording?.accountKey == other.accountKey {
+            await MeetingRecorder.shared.stopForAccountRemoval(accountKey: other.accountKey)
         }
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil

@@ -60,7 +60,7 @@ enum ShareRecordingImport {
         media.originalSha256 = hash.finalize().map { String(format: "%02x", $0) }.joined()
         recording.timelineDurationMS = media.mediaDurationMS
         recording.localMedia.append(media)
-        try await journal.save(recording)
+        try await journal.create(recording)
         try await journal.importOriginal(from: file.originalURL, recordingId: recording.id, mediaId: media.id, accountKey: accountKey)
     }
 }

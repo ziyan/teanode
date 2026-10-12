@@ -42,10 +42,11 @@ final class MeetingRecorder: NSObject {
             problemText = String(localized: "Allow microphone access in Settings, then start recording again.")
             return
         }
+        guard AppModel.shared.account?.accountKey == accountKey, AppModel.shared.currentCall == nil else { return }
         do {
             journal = try Self.makeJournal()
             var recording = LocalRecording(accountKey: accountKey, recordingTitle: title, recordingOrigin: "capture")
-            try await journal?.save(recording)
+            try await journal?.create(recording)
             localRecording = recording
             elapsedMS = 0
             startedUptime = ProcessInfo.processInfo.systemUptime
@@ -163,6 +164,12 @@ final class MeetingRecorder: NSObject {
                 }
             }
         } catch { problemText = error.localizedDescription }
+    }
+
+    func stopForAccountRemoval(accountKey: String) async {
+        while isChangingCapture { await Task.yield() }
+        guard localRecording?.accountKey == accountKey else { return }
+        await stop()
     }
 
     func restoreForActivity(localRecordingId: String) async -> Bool {

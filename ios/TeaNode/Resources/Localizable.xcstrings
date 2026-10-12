@@ -44151,6 +44151,166 @@
           }
         }
       }
+    },
+    "Audio per provider request": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次提供商请求的音频大小"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーリクエストごとの音声容量"
+          }
+        }
+      }
+    },
+    "Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空会关闭文件转录。列表中的模型已确认支持说话人标记和时间戳。聊天和实时通话模型不能替代。手动输入的模型会由服务器验证。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄にするとファイルの文字起こしは無効になります。一覧のモデルは話者識別とタイムスタンプに対応しています。チャットやライブ通話のモデルでは代替できません。手入力したモデルはサーバーが検証します。"
+          }
+        }
+      }
+    },
+    "Learning": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学习"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習"
+          }
+        }
+      }
+    },
+    "Enable your personal agent to learn from transcripts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用个人助手以从转录内容学习。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "個人エージェントを有効にすると文字起こしから学習できます。"
+          }
+        }
+      }
+    },
+    "Passages waiting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待处理片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理待ちの発言"
+          }
+        }
+      }
+    },
+    "Processed passages": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已处理片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理済みの発言"
+          }
+        }
+      }
+    },
+    "Last source pass": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次资料处理"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の資料処理"
+          }
+        }
+      }
+    },
+    "Waiting for a completed transcript": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待已完成的转录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成した文字起こしを待っています"
+          }
+        }
+      }
+    },
+    "Voice reference curation pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待筛选声音参考"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声参照の選択待ち"
+          }
+        }
+      }
+    },
+    "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学习使用现有知识和梦境流程，无需批准步骤。已处理片段表示资料处理进度，并非有效记忆的证明。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習は既存の知識とドリーミングの処理を使い、承認は不要です。処理済みの発言は資料の進捗を示し、有用な記憶ができた証拠ではありません。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

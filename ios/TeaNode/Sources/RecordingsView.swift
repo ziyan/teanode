@@ -60,7 +60,7 @@ final class RecordingsModel {
                 timelineStartMS: 0, mediaDurationMS: durationSeconds.isFinite && durationSeconds > 0 ? Int64(durationSeconds * 1000) : 0)
             media.originalSizeBytes = sizeBytes
             recording.localMedia.append(media)
-            try await journal.save(recording)
+            try await journal.create(recording)
             try await journal.importOriginal(from: source, recordingId: recording.id, mediaId: media.id, accountKey: connection.accountKey)
             let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: connection.accountKey)
             recording.localMedia[0].originalSha256 = try await Task.detached { try MeetingRecorder.digest(original) }.value
@@ -240,6 +240,7 @@ struct RecordingDetailScreen: View {
     let recording: Recording
     @Environment(\.dismiss) private var dismiss
     @State private var recordingView: RecordingView?
+    @State private var learning: RecordingLearningView?
     @State private var problemText: String?
     @State private var isDeleting = false
     @State private var selectedMedia: RecordingMedia?
@@ -313,6 +314,30 @@ struct RecordingDetailScreen: View {
                             }
                         }
                     }
+                }
+            }
+            if let learning {
+                Section("Learning") {
+                    if !learning.hasAgent {
+                        Text("Enable your personal agent to learn from transcripts.").foregroundStyle(.secondary)
+                    } else if let source = learning.knowledgeSource {
+                        LabeledContent("Passages waiting", value: learning.pendingDocumentCount.formatted())
+                        LabeledContent("Processed passages", value: learning.digestedDocumentCount.formatted())
+                        if let lastRunAt = ServerTime.date(source.lastRunAt) { LabeledContent("Last source pass") { Text(lastRunAt, style: .date) } }
+                        if !source.lastError.isEmpty { Text(source.lastError).foregroundStyle(.secondary) }
+                        NavigationLink {
+                            KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
+                        } label: {
+                            Label("Knowledge source", systemImage: "brain")
+                        }
+                    } else {
+                        Text("Waiting for a completed transcript").foregroundStyle(.secondary)
+                    }
+                    if learning.isCurationPending { Text("Voice reference curation pending").foregroundStyle(.secondary) }
+                } footer: {
+                    Text(
+                        "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories."
+                    )
                 }
             }
             if let problemText { Text(problemText).foregroundStyle(.secondary) }
@@ -401,6 +426,7 @@ struct RecordingDetailScreen: View {
     private func load() async {
         do {
             recordingView = try await connection.recording(recording.id)
+            learning = try await connection.recordingLearning(recordingId: recording.id)
             problemText = nil
         } catch { problemText = error.localizedDescription }
     }
@@ -435,6 +461,7 @@ struct RecordingPlaybackScreen: View {
                     let session = URLSession(configuration: configuration)
                     defer { session.invalidateAndCancel() }
                     let (temporary, response) = try await session.download(for: request)
+                    defer { try? FileManager.default.removeItem(at: temporary) }
                     let verifiedDigest = try await Task.detached { try MeetingRecorder.digest(temporary) }.value
                     guard !Task.isCancelled, (response as? HTTPURLResponse)?.statusCode == 200,
                         Int64(try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) == media.originalSizeBytes,

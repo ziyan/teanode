@@ -2675,7 +2675,7 @@ extension Documents {
         }
         """
     public static let manageAgentModels = """
-        { ListAgentModels { name contextLength } }
+        { ListAgentModels { name contextLength canTranscribe hasSpeakerDiarization hasSegmentTimestamps hasSpeakerReferences maximumAudioBytes maximumSpeakerReferenceCount } }
         """
     public static let manageTestAgentProvider = """
         query ($name: String!) { TestAgentProvider(name: $name) { name contextLength } }

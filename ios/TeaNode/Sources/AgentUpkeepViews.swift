@@ -199,6 +199,7 @@ enum UpkeepWords {
 /// cards are on the Finance tab instead.
 struct KnowledgeSourcesView: View {
     let connection: Connection
+    var highlightedSourceId: String? = nil
     @State private var sources: [KnowledgeSource]?
     @State private var attachmentsBySourceId: [String: KnowledgeSourceAttachments] = [:]
     @State private var sourceTypes: [KnowledgeSourceType] = []
@@ -222,7 +223,7 @@ struct KnowledgeSourcesView: View {
                 if let sources, sources.isEmpty {
                     Text("Nothing is indexed yet.").foregroundStyle(.secondary)
                 }
-                ForEach(sources ?? []) { source in
+                ForEach((sources ?? []).filter { highlightedSourceId == nil || $0.id == highlightedSourceId }) { source in
                     row(source)
                 }
             } footer: {

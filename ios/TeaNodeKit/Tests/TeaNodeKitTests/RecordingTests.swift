@@ -30,7 +30,7 @@ final class RecordingTests: XCTestCase {
         var recording = LocalRecording(accountKey: "account-a", recordingTitle: "Import", recordingOrigin: "audioImport")
         let media = LocalRecordingMedia(originalFilename: "../../outside.wav", originalContentType: "audio/wav", timelineStartMS: 0)
         recording.localMedia.append(media)
-        try await journal.save(recording)
+        try await journal.create(recording)
         let source = directory.appendingPathComponent("test-source")
         try Data([1, 2, 3]).write(to: source)
         try await journal.importOriginal(from: source, recordingId: recording.id, mediaId: media.id, accountKey: "account-a")
@@ -152,8 +152,8 @@ extension RecordingTests {
         var original = LocalRecording(accountKey: "profile-a", recordingTitle: "", recordingOrigin: "capture")
         try original.pause(at: 1000)
         let unrelated = LocalRecording(accountKey: "profile-b", recordingTitle: "", recordingOrigin: "capture")
-        try await journal.save(original)
-        try await journal.save(unrelated)
+        try await journal.create(original)
+        try await journal.create(unrelated)
         let recovered = try await journal.recoverableRecording(
             localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-b", "profile-a"])
         XCTAssertEqual(recovered?.id, original.id)
@@ -171,5 +171,58 @@ extension RecordingTests {
         try await journal.save(original)
         let stopped = try await journal.recoverableRecording(localRecordingId: original.id.uuidString, retainedAccountKeys: ["profile-a"])
         XCTAssertNil(stopped)
+    }
+}
+
+extension RecordingTests {
+    func testLateUploadJournalSaveCannotRecreateAnExplicitlyRemovedLocalSource() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try RecordingJournal(directory: directory)
+        var recording = LocalRecording(accountKey: "account-a", recordingTitle: "", recordingOrigin: "audioImport")
+        try await journal.create(recording)
+        try await journal.removeLocalRecording(recording.id, accountKey: recording.accountKey)
+        recording.uploadErrorMessage = "A late transfer callback"
+        do {
+            try await journal.save(recording)
+            XCTFail("A late callback recreated the deleted local source")
+        } catch {}
+        let recordings = try await journal.recordings(accountKey: "account-a")
+        XCTAssertTrue(recordings.isEmpty)
+    }
+}
+
+extension RecordingTests {
+    func testRecordingCapabilityRequiresProviderEvidenceForAllRequiredFeatures() throws {
+        let advertised = try JSONDecoder().decode(
+            [RecordingModelCapability].self,
+            from: Data(
+                #"[{"name":"service:unknown-diarize"},{"name":"service:plain","canTranscribe":true,"hasSpeakerDiarization":false,"hasSegmentTimestamps":true},{"name":"service:confirmed","canTranscribe":true,"hasSpeakerDiarization":true,"hasSegmentTimestamps":true,"hasSpeakerReferences":true,"maximumAudioBytes":25000000,"maximumSpeakerReferenceCount":4}]"#
+                    .utf8))
+        XCTAssertFalse(advertised[0].canAttributeRecordingSpeakers)
+        XCTAssertFalse(advertised[1].canAttributeRecordingSpeakers)
+        XCTAssertTrue(advertised[2].canAttributeRecordingSpeakers)
+        XCTAssertEqual(advertised[2].maximumSpeakerReferenceCount, 4)
+    }
+}
+
+extension RecordingTests {
+    func testLearningProgressUsesExistingSourceMetadataAndAllowsNoAgentOrSource() throws {
+        let pending = try JSONDecoder().decode(
+            RecordingLearningView.self,
+            from: Data(
+                #"{"sourceGeneration":2,"hasAgent":false,"knowledgeSource":null,"pendingDocumentCount":0,"digestedDocumentCount":0,"lastPublishedSourceGeneration":0,"isCurationPending":false}"#
+                    .utf8))
+        XCTAssertFalse(pending.hasAgent)
+        XCTAssertNil(pending.knowledgeSource)
+        let published = try JSONDecoder().decode(
+            RecordingLearningView.self,
+            from: Data(
+                #"{"sourceGeneration":3,"hasAgent":true,"knowledgeSource":{"id":"source-a","name":"Recording evidence","kind":"recording","enabled":true,"documentCount":4,"chunkCount":4},"pendingDocumentCount":1,"digestedDocumentCount":3,"lastPublishedSourceGeneration":2,"isCurationPending":true}"#
+                    .utf8))
+        XCTAssertEqual(published.knowledgeSource?.kind, "recording")
+        XCTAssertEqual(published.pendingDocumentCount, 1)
+        XCTAssertEqual(published.digestedDocumentCount, 3)
+        XCTAssertTrue(published.isCurationPending)
     }
 }

@@ -117,12 +117,19 @@ public actor RecordingJournal {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
 
+    public func create(_ recording: LocalRecording) throws {
+        let manifest = directory.appendingPathComponent(recording.id.uuidString).appendingPathComponent("manifest.json")
+        guard !fileManager.fileExists(atPath: manifest.path) else { throw TeaNodeError.refused("This local recording already exists.") }
+        try write(recording)
+    }
+
     public func save(_ recording: LocalRecording) throws {
+        _ = try read(recording.id, accountKey: recording.accountKey)
+        try write(recording)
+    }
+
+    private func write(_ recording: LocalRecording) throws {
         let recordingDirectory = directory.appendingPathComponent(recording.id.uuidString, isDirectory: true)
-        if fileManager.fileExists(atPath: recordingDirectory.appendingPathComponent("manifest.json").path) {
-            let existing = try read(recording.id, accountKey: recording.accountKey)
-            guard existing.accountKey == recording.accountKey else { throw TeaNodeError.signedOut }
-        }
         try fileManager.createDirectory(at: recordingDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let manifest = recordingDirectory.appendingPathComponent("manifest.json")
         try JSONEncoder().encode(recording).write(to: manifest, options: .atomic)

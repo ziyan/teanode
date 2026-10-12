@@ -1788,6 +1788,7 @@ final class AgentAdminModel {
     private(set) var settings: AgentServerSettings?
     /// The models the enabled providers offer, for the model pickers.
     private(set) var knownModels: [String] = []
+    private(set) var recordingModelCapabilities: [RecordingModelCapability] = []
     private(set) var isLoading = false
     var doneText: String?
     var problemText: String?
@@ -1808,7 +1809,10 @@ final class AgentAdminModel {
             settings = try await connection.agentServerSettings()
             // A provider that cannot be reached contributes nothing; Test on
             // its row says why.
-            if let names = try? await connection.agentModelNames() { knownModels = names }
+            if let capabilities = try? await connection.recordingModelCapabilities() {
+                recordingModelCapabilities = capabilities
+                knownModels = capabilities.map(\.name)
+            }
         } catch {
             problemText = error.localizedDescription
         }
@@ -1821,7 +1825,10 @@ final class AgentAdminModel {
         do {
             settings = try await connection.updateAgentServerSettings(agentParameters)
             doneText = said
-            if agentParameters["providers"] != nil, let names = try? await connection.agentModelNames() { knownModels = names }
+            if agentParameters["providers"] != nil, let capabilities = try? await connection.recordingModelCapabilities() {
+                recordingModelCapabilities = capabilities
+                knownModels = capabilities.map(\.name)
+            }
             return true
         } catch {
             problemText = error.localizedDescription
@@ -3268,12 +3275,22 @@ private struct AgentModelsFormView: View {
                 Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.")
             }
             Section("Per kind of work") {
-                ForEach(AgentModelAssignments.workFieldNames, id: \.self) { fieldName in
+                ForEach(AgentModelAssignments.workFieldNames.filter { $0 != "transcription" }, id: \.self) { fieldName in
                     modelRow(fieldName, known: choices.forWork, draft: draft)
                 }
                 modelRow("decide", known: choices.forDeciding, draft: draft)
                 modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
             }
+            Section("Recording transcription") {
+                modelRow("transcription", known: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
+                if let capability = model.recordingModelCapabilities.first(where: { $0.name == draft.wrappedValue.transcription }), capability.canAttributeRecordingSpeakers {
+                    LabeledContent("Voice references", value: capability.hasSpeakerReferences == true ? String(localized: "Supported") : String(localized: "Unavailable"))
+                    if let maximumAudioBytes = capability.maximumAudioBytes, maximumAudioBytes > 0 {
+                        LabeledContent("Audio per provider request", value: ByteCountFormatter.string(fromByteCount: maximumAudioBytes, countStyle: .file))
+                    }
+                }
+            } footer: { Text("Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.") }
+
             Section {
                 ForEach(draft.wrappedValue.choices, id: \.self) { choice in
                     Text(verbatim: choice).font(.body.monospaced())
