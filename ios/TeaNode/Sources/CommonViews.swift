@@ -55,12 +55,23 @@ struct Toast: ViewModifier {
         return problemText
     }
 
+    /// Whether a problem's text is a request called off. Matched on what
+    /// URLSession actually says: a URLError made here has no message of
+    /// its own and reads "(NSURLErrorDomain error -999.)", so comparing
+    /// with one never matched the "cancelled" a real request says.
     static func isCancellation(_ text: String) -> Bool {
-        let cancelledText = URLError(.cancelled).localizedDescription
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed == cancelledText || trimmed.hasSuffix(": \(cancelledText)")
-            || trimmed == CancellationError().localizedDescription
+        if trimmed.isEmpty || trimmed == CancellationError().localizedDescription { return true }
+        if trimmed.contains("NSURLErrorDomain error -999") { return true }
+        // The last words, after any "what failed: " the caller put first.
+        let lastWords = (trimmed.components(separatedBy: ": ").last ?? trimmed)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".。 ")).lowercased()
+        return cancelledWords.contains(lastWords)
     }
+
+    /// "cancelled" as URLSession words it in the app's languages, and the
+    /// American spelling some frameworks use.
+    private static let cancelledWords: Set<String> = ["cancelled", "canceled", "已取消", "キャンセルしました", "キャンセルされました"]
 
     private func clear() {
         doneText = nil
