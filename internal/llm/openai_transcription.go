@@ -194,21 +194,37 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 	if len(decoded.Usage) > 0 && string(decoded.Usage) != "null" {
 		var reported struct {
 			Type              string
-			InputTokens       int `json:"input_tokens"`
-			OutputTokens      int `json:"output_tokens"`
+			InputTokens       *int `json:"input_tokens"`
+			OutputTokens      *int `json:"output_tokens"`
 			InputTokenDetails struct {
 				AudioTokens int `json:"audio_tokens"`
 				TextTokens  int `json:"text_tokens"`
 			} `json:"input_token_details"`
-			Seconds float64
+			Seconds *float64
 		}
 		if err := json.Unmarshal(decoded.Usage, &reported); err != nil {
 			return nil, fmt.Errorf("llm: decoding transcription usage: %w", err)
 		}
-		if reported.InputTokens < 0 || reported.OutputTokens < 0 || reported.InputTokenDetails.AudioTokens < 0 || reported.InputTokenDetails.TextTokens < 0 || reported.Seconds < 0 || reported.Seconds >= float64(math.MaxInt64)/1000 {
+		if (reported.InputTokens != nil && *reported.InputTokens < 0) || (reported.OutputTokens != nil && *reported.OutputTokens < 0) || reported.InputTokenDetails.AudioTokens < 0 || reported.InputTokenDetails.TextTokens < 0 || (reported.Seconds != nil && (*reported.Seconds < 0 || *reported.Seconds >= float64(math.MaxInt64)/1000)) {
 			return nil, fmt.Errorf("llm: transcription returned invalid usage")
 		}
-		normalized.TranscriptionUsage = TranscriptionUsage{Usage: Usage{PromptTokens: reported.InputTokens, CompletionTokens: reported.OutputTokens}, InputAudioTokens: reported.InputTokenDetails.AudioTokens, InputTextTokens: reported.InputTokenDetails.TextTokens, AudioDurationMS: int64(math.Round(reported.Seconds * 1000)), HasProviderUsage: true, ProviderUsageJSON: append(json.RawMessage(nil), decoded.Usage...)}
+		normalized.TranscriptionUsage.ProviderUsageJSON = append(json.RawMessage(nil), decoded.Usage...)
+		switch reported.Type {
+		case "tokens":
+			if reported.InputTokens == nil || reported.OutputTokens == nil {
+				return nil, fmt.Errorf("llm: transcription returned incomplete token usage")
+			}
+			normalized.TranscriptionUsage.Usage = Usage{PromptTokens: *reported.InputTokens, CompletionTokens: *reported.OutputTokens}
+			normalized.TranscriptionUsage.InputAudioTokens = reported.InputTokenDetails.AudioTokens
+			normalized.TranscriptionUsage.InputTextTokens = reported.InputTokenDetails.TextTokens
+			normalized.TranscriptionUsage.HasProviderUsage = true
+		case "duration":
+			if reported.Seconds == nil {
+				return nil, fmt.Errorf("llm: transcription returned incomplete duration usage")
+			}
+			normalized.TranscriptionUsage.AudioDurationMS = int64(math.Round(*reported.Seconds * 1000))
+			normalized.TranscriptionUsage.HasProviderUsage = true
+		}
 	}
 	return normalized, nil
 }

@@ -144,6 +144,20 @@ func TestTranscriptionRejectsIncompleteSpeakerSegmentsAndRetainsUnknownUsage(tes
 	if answer.TranscriptionUsage.HasProviderUsage {
 		test.Fatal("missing usage was recorded as actual zero cost")
 	}
+	for _, usageJSON := range []string{`{}`, `{"type":"future-unit","units":7}`} {
+		answer, err = decodeTranscription(request, []byte(`{"text":"","segments":[],"usage":`+usageJSON+`}`), capabilities)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if answer.TranscriptionUsage.HasProviderUsage || string(answer.TranscriptionUsage.ProviderUsageJSON) != usageJSON {
+			test.Fatal("unknown billing was treated as known or its evidence was discarded")
+		}
+	}
+	for _, usageJSON := range []string{`{"type":"tokens","input_tokens":0}`, `{"type":"duration"}`} {
+		if _, err := decodeTranscription(request, []byte(`{"text":"","segments":[],"usage":`+usageJSON+`}`), capabilities); err == nil {
+			test.Fatal("accepted incomplete billing metrics")
+		}
+	}
 	answer, err = decodeTranscription(request, []byte(`{"text":"","segments":[],"usage":{"type":"duration","seconds":4.25}}`), capabilities)
 	if err != nil {
 		test.Fatal(err)
