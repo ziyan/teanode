@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"path"
@@ -624,8 +625,14 @@ type AgentLimits struct {
 	// RequestTimeout bounds one call to a provider.
 	RequestTimeout Duration `yaml:"requestTimeout"`
 
-	// MaxAttachmentBytes bounds one upload to a conversation, across the
-	// files it carries.
+	// MaxRecordingMediaBytes bounds one original audio/video file. Zero means 2GB.
+	MaxRecordingMediaBytes ByteSize `yaml:"maxRecordingMediaBytes,omitempty"`
+
+	// MaxRecordingAccountBytes bounds reserved originals, including pending cleanup.
+	// Zero means 64GB. These limits are separate from conversation attachments.
+	MaxRecordingAccountBytes ByteSize `yaml:"maxRecordingAccountBytes,omitempty"`
+
+	// MaxAttachmentBytes bounds one upload to a conversation, across its files.
 	MaxAttachmentBytes ByteSize `yaml:"maxAttachmentBytes"`
 
 	// MaxScannedAttachmentBytes bounds one file a knowledge source
@@ -1416,6 +1423,12 @@ func (self *Configuration) validateAgent(validator *validator) {
 	checkModel("agent.models.synthesize", agent.Models.Synthesize)
 	for index, choice := range agent.Models.Choices {
 		checkModel(fmt.Sprintf("agent.models.choices[%d]", index), choice)
+	}
+	if agent.Limits.MaxRecordingMediaBytes.Bytes() > math.MaxInt64 {
+		validator.add("agent.limits.maxRecordingMediaBytes", "exceeds supported byte sizes")
+	}
+	if agent.Limits.MaxRecordingAccountBytes.Bytes() > math.MaxInt64 {
+		validator.add("agent.limits.maxRecordingAccountBytes", "exceeds supported byte sizes")
 	}
 	if agent.Limits.MaxBodyCharacters <= 0 {
 		validator.add("agent.limits.maxBodyCharacters", "must be positive, for example 12000")

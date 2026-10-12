@@ -21,16 +21,23 @@ always-on activation and visual video understanding are deferred.
 - [x] Preserve ongoing work and isolate this feature on its own branch/checkout.
 - [x] Notify the other active repository session of branch ownership.
 - [x] Verify current official file-transcription, reference and pricing contracts.
-- [x] Increment 1: add optional Transcriber capability, registry resolution,
+- [x] Increment 1 merged in PR #425, with all CI checks passing: optional Transcriber capability, registry resolution,
   normalized segments/usage and the documented OpenAI adapter with fake-provider tests.
-- [ ] Increment 2: durable account-owned recording manifests, original chunks,
-  upload receipts, transcript runs/versions and reconciliation jobs.
-- [ ] Increment 3: authenticated resumable upload/download and library APIs;
-  background transcription with existing budgets and usage accounting.
+- [x] Increment 2a implemented locally: account-owned manifests, immutable original
+  parts, SHA-256 verification, durable receipts and resumable deletion.
+- [x] Increment 3a implemented locally: authenticated GraphQL library/capture/media
+  metadata, bounded part uploads, completion and private byte-range playback.
+- [ ] CI and code review of the durable media increment.
+- [ ] Increment 2b: transcript runs/versions and reconciliation jobs.
+- [ ] Increment 3b: background transcription with existing budgets and usage accounting.
 - [ ] Increment 4: recording transcript knowledge source, automatic dreaming
   and corrections/deletion that reconcile dependent memories.
 - [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
 - [ ] Increment 6: dashboard import, playback and transcript correction.
+- [ ] Equivalent recording library/import/transcript/correction/reprocessing/delete
+  operations in the LLM tool and TeaNode CLI, with the same ownership and policy.
+- [ ] Chrome visual and interaction audits at desktop and phone widths.
+- [ ] Review every increment, fix findings, and verify its completed CI before merge.
 - [ ] Increment 7: iOS capture, interruption recovery, background upload,
   import/share and recording Live Activity with local pause/resume.
 - [ ] Increment 8: real-device and representative-meeting evaluation.
@@ -53,6 +60,15 @@ always-on activation and visual video understanding are deferred.
   document follows the repository's existing ExecPlans.
 - The service migration already in review adds a database migration. Allocate
   recording migration numbers against the current shared base before integration.
+- Current main includes the provider foundation and the two reviewed iOS fixes.
+  The service PR has now merged after all CI checks passed. Its sync credential
+  migration uses 0163; recording storage uses 0164 with matching reverse SQL.
+- Streaming and byte-range access now extend the existing filesystem/S3 blob store.
+  Fake S3 transport and filesystem race tests verify unchanged bytes, bounded range
+  reads, canceled writes and protection of an existing original after failed writes.
+- A raw media file can be represented by immutable ordered upload-part blobs. Its
+  full SHA-256 and durable manifest establish the original file without assembling
+  a second permanent copy. Playback and processing stream those same bytes.
 
 ## Decision Log
 
@@ -166,7 +182,11 @@ selection, stale job cancellation, deletion cleanup and evidence reconciliation.
 Compare original upload/import digests byte-for-byte. Exercise network loss and
 backend receipt loss without deleting the local source or duplicating records.
 
-Run dashboard typecheck/lint/behavior tests and inspect at phone width. Run Swift
+Run dashboard typecheck/lint/behavior tests. Use Chrome to visually and interactively
+audit desktop and phone widths, including empty, uploading, retry, processing,
+playback, error and correction states. Exercise equivalent operations through the
+LLM tool and CLI against the same backend; interfaces must share ownership,
+metadata changes, explicit paid reprocessing and deletion behavior. Run Swift
 package tests and macOS simulator builds. Keep real-device acceptance unchecked
 until screen lock, interruptions, pause/resume, restart recovery, background uploads
 and battery measurements have actually been observed.
@@ -181,6 +201,45 @@ under owner-scoped locks and matching source/transcript generation. A duplicate
 receipt does not re-enqueue paid transcription. Retain unknown-result attempts for
 reconciliation instead of assuming a provider call cost nothing. Rerunning a
 transcription may require a full paid pass. Metadata labels never require one.
+
+## Current implementation checkpoint
+
+PR #427 contains the durable media increment. Its previous completed CI run passed;
+the final code review fixes are being submitted for a fresh CI run. Work covers
+account-owned recording/media manifests, bounded resumable part uploads, verified
+whole-file receipts, streaming playback and durable explicit-deletion cleanup.
+The service work is merged. The original working copy is preserved.
+Subsequent increments will add processing/usage, sources/reconciliation, corrections
+and references, dashboard and native capture. Provider billing and actual iPhone
+behavior remain open evidence requirements. The issue must remain open until those
+acceptance criteria are observed.
+
+## Durable media validation evidence
+
+PostgreSQL-backed race tests pass for account isolation, stable initialization and
+part receipts, conflicting retries, incomplete/corrupted originals, concurrent
+completion, playback across parts, capture gap history and generation checks,
+quota reservations through deletion, lost write receipts, resumable cleanup and
+account deletion. Forward/reverse SQL both execute successfully. HTTP handler
+tests confirm authorization before reading a body, cookie protection at completion,
+declared body limits and private ranges. Filesystem/fake S3 tests verify original
+bytes and range reads; mirror cleanup failures remain retryable. Local format,
+lint and naming checks pass. The first full CI run found that the new limits made
+the agent settings description exceed the tool's 24,000-character result limit.
+Descriptions now keep readable JSON and offer nested subsection paths; the CLI
+also describes nested inputs. Focused tests check both interfaces and secret
+exclusion instead of enlarging the result limit. A final review also bounded
+object-store reads even when a response body exceeds its declared range length;
+a fake transport reproduces that case. The last completed CI run passed all
+checks. Final review added API/web/CLI
+read/update access to recording quotas, while the existing settings tool reads and
+writes the same configuration fields. CLI readback preserves compatibility with
+older servers. Chrome audits at 1440 by 1000 and 390 by 844 verified save/reload,
+invalid-size feedback and no mobile horizontal overflow. The desktop audit caught
+an overlapping hint, which is fixed. API/client regression tests, dashboard
+typecheck/lint/tests/build, binary builds and full local lint pass. Recording
+library UI, iOS flows, paid-provider evaluation and actual-device checks remain
+outstanding, and are not supplied by this increment.
 
 ## Outcomes & Retrospective
 

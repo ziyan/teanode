@@ -100,7 +100,11 @@ func TestWhatComesBackFitsInAResult(t *testing.T) {
 			continue
 		}
 		listing[name] = ""
-		encoded, err := json.Marshal(map[string]any{name: describeType(field.Type, describeDepth)})
+		described, err := describeSection(field.Type, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(described)
 		if err != nil {
 			t.Fatalf("%s: %s", name, err)
 		}
@@ -156,6 +160,41 @@ func TestAnInlinedStructIsNotASettingsName(t *testing.T) {
 					t.Errorf("%s.%s is not a setting", section, name)
 				}
 			}
+		}
+	}
+}
+
+func TestLargeSettingsAndNestedLimitsRemainReadable(test *testing.T) {
+	for _, sectionPath := range []string{"agent", "agent.limits", "agent.providers", "agent.providers.models"} {
+		encodedArguments, err := json.Marshal(map[string]string{"section": sectionPath})
+		if err != nil {
+			test.Fatal(err)
+		}
+		answer, err := runSettingsDescribe(test.Context(), &tools.Call{Arguments: encodedArguments})
+		if err != nil {
+			test.Fatal(sectionPath, err)
+		}
+		var described map[string]any
+		if len(answer.Content) > tools.ResultCharacters || json.Unmarshal([]byte(answer.Content), &described) != nil {
+			test.Fatal("settings description was truncated", sectionPath)
+		}
+		if described[sectionPath] == nil {
+			test.Fatal("nested section was not described", sectionPath)
+		}
+		if sectionPath == "agent.limits" {
+			fields := described[sectionPath].(map[string]any)
+			if fields["maxRecordingMediaBytes"] == nil || fields["maxRecordingAccountBytes"] == nil {
+				test.Fatal("recording limits disappeared from the settings tool")
+			}
+		}
+	}
+	for _, sectionPath := range []string{"database", "database.password", "agent.noSuchField"} {
+		encodedArguments, err := json.Marshal(map[string]string{"section": sectionPath})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := runSettingsDescribe(test.Context(), &tools.Call{Arguments: encodedArguments}); err == nil {
+			test.Fatal("private or unknown subsection was exposed", sectionPath)
 		}
 	}
 }

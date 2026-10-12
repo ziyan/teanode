@@ -1440,6 +1440,13 @@ prices are in euros enters them in euros and says `EUR` here.
 **`maxBodyCharacters`** — How much of a message a model is given; the rest
 is cut with a marker.
 
+**`maxRecordingMediaBytes`** bounds one original recording audio/video file,
+including all resumable transport parts. Zero resolves to 2GB.
+
+**`maxRecordingAccountBytes`** bounds the total reserved original media for one
+account. Incomplete uploads and recordings awaiting blob deletion count against
+this limit. Zero resolves to 64GB. Neither limit changes conversation attachments.
+
 **`maxAttachmentBytes`** — The most one upload to a conversation may carry,
 across its files; `25MB` by default. A picture is shown to the model, a
 text file is read to it, and anything else is named.

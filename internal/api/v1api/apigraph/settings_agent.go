@@ -183,17 +183,19 @@ type AgentFeaturesSettings struct {
 
 // AgentLimitsSettings are the operator's limits.
 type AgentLimitsSettings struct {
-	MaxBodyCharacters      int     `json:"maxBodyCharacters"`
-	DailyTokensPerAgent    int64   `json:"dailyTokensPerAgent"`
-	MonthlyTokensPerServer int64   `json:"monthlyTokensPerServer"`
-	DailyCostPerAgent      float64 `json:"dailyCostPerAgent"`
-	MonthlyCostPerServer   float64 `json:"monthlyCostPerServer"`
-	MaxRoundsPerAsk        int     `json:"maxRoundsPerAsk"`
-	MaxRoundsPerResearch   int     `json:"maxRoundsPerResearch"`
-	MaxRoundsPerReply      int     `json:"maxRoundsPerReply"`
-	MaxRoundsPerDream      int     `json:"maxRoundsPerDream"`
-	MaxToolCallsPerRun     int     `json:"maxToolCallsPerRun"`
-	RequestTimeout         string  `json:"requestTimeout"`
+	MaxRecordingMediaBytes   string  `json:"maxRecordingMediaBytes"`
+	MaxRecordingAccountBytes string  `json:"maxRecordingAccountBytes"`
+	MaxBodyCharacters        int     `json:"maxBodyCharacters"`
+	DailyTokensPerAgent      int64   `json:"dailyTokensPerAgent"`
+	MonthlyTokensPerServer   int64   `json:"monthlyTokensPerServer"`
+	DailyCostPerAgent        float64 `json:"dailyCostPerAgent"`
+	MonthlyCostPerServer     float64 `json:"monthlyCostPerServer"`
+	MaxRoundsPerAsk          int     `json:"maxRoundsPerAsk"`
+	MaxRoundsPerResearch     int     `json:"maxRoundsPerResearch"`
+	MaxRoundsPerReply        int     `json:"maxRoundsPerReply"`
+	MaxRoundsPerDream        int     `json:"maxRoundsPerDream"`
+	MaxToolCallsPerRun       int     `json:"maxToolCallsPerRun"`
+	RequestTimeout           string  `json:"requestTimeout"`
 
 	// The bounds on work nobody is watching, each zero for its default:
 	// rounds a subagent takes, goal turns a day and alone, goals in
@@ -385,28 +387,30 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Dreaming:         agent.FeatureOn("dreaming"),
 		},
 		Limits: &AgentLimitsSettings{
-			MaxBodyCharacters:      agent.Limits.MaxBodyCharacters,
-			DailyTokensPerAgent:    agent.Limits.DailyTokensPerAgent,
-			MonthlyTokensPerServer: agent.Limits.MonthlyTokensPerServer,
-			DailyCostPerAgent:      agent.Limits.DailyCostPerAgent,
-			MonthlyCostPerServer:   agent.Limits.MonthlyCostPerServer,
-			MaxRoundsPerAsk:        agent.Limits.MaxRoundsPerAsk,
-			MaxRoundsPerResearch:   agent.Limits.MaxRoundsPerResearch,
-			MaxRoundsPerReply:      agent.Limits.MaxRoundsPerReply,
-			MaxRoundsPerDream:      agent.Limits.MaxRoundsPerDream,
-			MaxToolCallsPerRun:     agent.Limits.MaxToolCallsPerRun,
-			RequestTimeout:         agent.Limits.RequestTimeout.String(),
-			MaxRoundsPerSubagent:   agent.Limits.MaxRoundsPerSubagent,
-			GoalTurnsPerDay:        agent.Limits.GoalTurnsPerDay,
-			GoalTurnsAlone:         agent.Limits.GoalTurnsAlone,
-			GoalsInProgress:        agent.Limits.GoalsInProgress,
-			BackgroundWakesAlone:   agent.Limits.BackgroundWakesAlone,
-			Concurrency:            agent.Limits.Concurrency,
-			EmbeddingTokensPerDay:  agent.Limits.EmbeddingTokensPerDay,
-			DreamShare:             agent.Limits.DreamShare,
-			IngestChunksPerRun:     agent.Limits.IngestChunksPerRun,
-			ScanConcurrency:        agent.Limits.ScanConcurrency,
-			RewriteConcurrency:     agent.Limits.RewriteConcurrency,
+			MaxRecordingMediaBytes:   agent.Limits.MaxRecordingMediaBytes.String(),
+			MaxRecordingAccountBytes: agent.Limits.MaxRecordingAccountBytes.String(),
+			MaxBodyCharacters:        agent.Limits.MaxBodyCharacters,
+			DailyTokensPerAgent:      agent.Limits.DailyTokensPerAgent,
+			MonthlyTokensPerServer:   agent.Limits.MonthlyTokensPerServer,
+			DailyCostPerAgent:        agent.Limits.DailyCostPerAgent,
+			MonthlyCostPerServer:     agent.Limits.MonthlyCostPerServer,
+			MaxRoundsPerAsk:          agent.Limits.MaxRoundsPerAsk,
+			MaxRoundsPerResearch:     agent.Limits.MaxRoundsPerResearch,
+			MaxRoundsPerReply:        agent.Limits.MaxRoundsPerReply,
+			MaxRoundsPerDream:        agent.Limits.MaxRoundsPerDream,
+			MaxToolCallsPerRun:       agent.Limits.MaxToolCallsPerRun,
+			RequestTimeout:           agent.Limits.RequestTimeout.String(),
+			MaxRoundsPerSubagent:     agent.Limits.MaxRoundsPerSubagent,
+			GoalTurnsPerDay:          agent.Limits.GoalTurnsPerDay,
+			GoalTurnsAlone:           agent.Limits.GoalTurnsAlone,
+			GoalsInProgress:          agent.Limits.GoalsInProgress,
+			BackgroundWakesAlone:     agent.Limits.BackgroundWakesAlone,
+			Concurrency:              agent.Limits.Concurrency,
+			EmbeddingTokensPerDay:    agent.Limits.EmbeddingTokensPerDay,
+			DreamShare:               agent.Limits.DreamShare,
+			IngestChunksPerRun:       agent.Limits.IngestChunksPerRun,
+			ScanConcurrency:          agent.Limits.ScanConcurrency,
+			RewriteConcurrency:       agent.Limits.RewriteConcurrency,
 		},
 		Retention: &AgentRetentionSettings{
 			Runs:        agent.Retention.Runs.String(),
@@ -641,28 +645,30 @@ type AgentFeaturesParameters struct {
 
 // AgentLimitsParameters change the limits.
 type AgentLimitsParameters struct {
-	MaxBodyCharacters      *int     `json:"maxBodyCharacters"`
-	DailyTokensPerAgent    *int64   `json:"dailyTokensPerAgent"`
-	MonthlyTokensPerServer *int64   `json:"monthlyTokensPerServer"`
-	DailyCostPerAgent      *float64 `json:"dailyCostPerAgent"`
-	MonthlyCostPerServer   *float64 `json:"monthlyCostPerServer"`
-	MaxRoundsPerAsk        *int     `json:"maxRoundsPerAsk"`
-	MaxRoundsPerResearch   *int     `json:"maxRoundsPerResearch"`
-	MaxRoundsPerReply      *int     `json:"maxRoundsPerReply"`
-	MaxRoundsPerDream      *int     `json:"maxRoundsPerDream"`
-	MaxToolCallsPerRun     *int     `json:"maxToolCallsPerRun"`
-	RequestTimeout         *string  `json:"requestTimeout"`
-	MaxRoundsPerSubagent   *int     `json:"maxRoundsPerSubagent"`
-	GoalTurnsPerDay        *int     `json:"goalTurnsPerDay"`
-	GoalTurnsAlone         *int     `json:"goalTurnsAlone"`
-	GoalsInProgress        *int     `json:"goalsInProgress"`
-	BackgroundWakesAlone   *int     `json:"backgroundWakesAlone"`
-	Concurrency            *int     `json:"concurrency"`
-	EmbeddingTokensPerDay  *int64   `json:"embeddingTokensPerDay"`
-	DreamShare             *float64 `json:"dreamShare"`
-	IngestChunksPerRun     *int     `json:"ingestChunksPerRun"`
-	ScanConcurrency        *int     `json:"scanConcurrency"`
-	RewriteConcurrency     *int     `json:"rewriteConcurrency"`
+	MaxRecordingMediaBytes   *string  `json:"maxRecordingMediaBytes"`
+	MaxRecordingAccountBytes *string  `json:"maxRecordingAccountBytes"`
+	MaxBodyCharacters        *int     `json:"maxBodyCharacters"`
+	DailyTokensPerAgent      *int64   `json:"dailyTokensPerAgent"`
+	MonthlyTokensPerServer   *int64   `json:"monthlyTokensPerServer"`
+	DailyCostPerAgent        *float64 `json:"dailyCostPerAgent"`
+	MonthlyCostPerServer     *float64 `json:"monthlyCostPerServer"`
+	MaxRoundsPerAsk          *int     `json:"maxRoundsPerAsk"`
+	MaxRoundsPerResearch     *int     `json:"maxRoundsPerResearch"`
+	MaxRoundsPerReply        *int     `json:"maxRoundsPerReply"`
+	MaxRoundsPerDream        *int     `json:"maxRoundsPerDream"`
+	MaxToolCallsPerRun       *int     `json:"maxToolCallsPerRun"`
+	RequestTimeout           *string  `json:"requestTimeout"`
+	MaxRoundsPerSubagent     *int     `json:"maxRoundsPerSubagent"`
+	GoalTurnsPerDay          *int     `json:"goalTurnsPerDay"`
+	GoalTurnsAlone           *int     `json:"goalTurnsAlone"`
+	GoalsInProgress          *int     `json:"goalsInProgress"`
+	BackgroundWakesAlone     *int     `json:"backgroundWakesAlone"`
+	Concurrency              *int     `json:"concurrency"`
+	EmbeddingTokensPerDay    *int64   `json:"embeddingTokensPerDay"`
+	DreamShare               *float64 `json:"dreamShare"`
+	IngestChunksPerRun       *int     `json:"ingestChunksPerRun"`
+	ScanConcurrency          *int     `json:"scanConcurrency"`
+	RewriteConcurrency       *int     `json:"rewriteConcurrency"`
 }
 
 // AgentRetentionParameters change how long records are kept.
@@ -911,6 +917,12 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	}
 	if parameters.Limits != nil {
 		limits := &agent.Limits
+		if err := applyByteSize(&limits.MaxRecordingMediaBytes, parameters.Limits.MaxRecordingMediaBytes, "agent.limits.maxRecordingMediaBytes"); err != nil {
+			return err
+		}
+		if err := applyByteSize(&limits.MaxRecordingAccountBytes, parameters.Limits.MaxRecordingAccountBytes, "agent.limits.maxRecordingAccountBytes"); err != nil {
+			return err
+		}
 		applyInt(&limits.MaxBodyCharacters, parameters.Limits.MaxBodyCharacters)
 		applyInt(&limits.IngestChunksPerRun, parameters.Limits.IngestChunksPerRun)
 		if parameters.Limits.EmbeddingTokensPerDay != nil {

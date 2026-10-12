@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 )
 
 // Settings are the optional integrations, as the server describes them. Kept
@@ -56,6 +58,9 @@ const settingsSelection = `{
 // DocumentGetSettings reads every section of the settings.
 const DocumentGetSettings = `query { GetSettings ` + settingsSelection + ` }`
 
+// DocumentGetRecordingSettings reads limits introduced with resumable media uploads.
+const DocumentGetRecordingSettings = `query { GetSettings { agent { limits { maxRecordingMediaBytes maxRecordingAccountBytes } } } }`
+
 // GetSettings returns the optional integrations. Secrets are never returned;
 // a field that is set reads back as whether it is set.
 func GetSettings(ctx context.Context, connection *Client) (Settings, error) {
@@ -63,6 +68,9 @@ func GetSettings(ctx context.Context, connection *Client) (Settings, error) {
 		GetSettings Settings `json:"GetSettings"`
 	}
 	if err := connection.Execute(ctx, DocumentGetSettings, nil, &result); err != nil {
+		return nil, err
+	}
+	if err := readRecordingSettings(ctx, connection, result.GetSettings); err != nil {
 		return nil, err
 	}
 	return result.GetSettings, nil
@@ -106,5 +114,55 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 	if err := connection.Execute(ctx, query, sections, &result); err != nil {
 		return nil, err
 	}
+	if err := readRecordingSettings(ctx, connection, result.UpdateSettings); err != nil {
+		return nil, err
+	}
 	return result.UpdateSettings, nil
+}
+
+// readRecordingSettings keeps existing settings commands compatible with older
+// servers while exposing the new limits through the same CLI response.
+func readRecordingSettings(ctx context.Context, connection *Client, settings Settings) error {
+	var additional struct {
+		GetSettings Settings `json:"GetSettings"`
+	}
+	if err := connection.Execute(ctx, DocumentGetRecordingSettings, nil, &additional); err != nil {
+		if strings.Contains(err.Error(), "Cannot query field") && (strings.Contains(err.Error(), "maxRecordingMediaBytes") || strings.Contains(err.Error(), "maxRecordingAccountBytes")) {
+			return nil
+		}
+		return err
+	}
+	var agentValues map[string]json.RawMessage
+	var additionalAgent map[string]json.RawMessage
+	if err := json.Unmarshal(settings["agent"], &agentValues); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(additional.GetSettings["agent"], &additionalAgent); err != nil {
+		return err
+	}
+	var limitsValues map[string]any
+	var additionalLimits map[string]any
+	if err := json.Unmarshal(agentValues["limits"], &limitsValues); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(additionalAgent["limits"], &additionalLimits); err != nil {
+		return err
+	}
+	if agentValues == nil || limitsValues == nil || additionalLimits == nil {
+		return fmt.Errorf("client: recording settings response is incomplete")
+	}
+	for fieldName, fieldValue := range additionalLimits {
+		limitsValues[fieldName] = fieldValue
+	}
+	limitsJSON, err := json.Marshal(limitsValues)
+	if err != nil {
+		return err
+	}
+	agentValues["limits"] = limitsJSON
+	agentJSON, err := json.Marshal(agentValues)
+	if err != nil {
+		return err
+	}
+	settings["agent"] = agentJSON
+	return nil
 }

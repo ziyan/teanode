@@ -34,6 +34,11 @@ const (
 
 	// PathAgentAttachments takes files for a conversation with the agent,
 	// as a multipart body; PathAgentAttachment hands one back to its owner.
+	// Recording media has its own bounded uploads and private playback.
+	PathRecordingPart     = Prefix + "/recordings/media/{mediaId}/parts/{partIndex}"
+	PathRecordingComplete = Prefix + "/recordings/media/{mediaId}/complete"
+	PathRecordingMedia    = Prefix + "/recordings/media/{mediaId}"
+
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
