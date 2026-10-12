@@ -45583,6 +45583,54 @@
           }
         }
       }
+    },
+    "Stopped reading transcripts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしの読み込みを停止しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止读取转写"
+          }
+        }
+      }
+    },
+    "Previously learned pages remain. Transcript corrections still reconcile outdated material.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前学習したページは残ります。文字起こしを訂正すると、古い情報との整合が行われます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已学习的页面会保留。转写更正仍会协调过时的资料。"
+          }
+        }
+      }
+    },
+    "Resume reading": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込みを再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复读取"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

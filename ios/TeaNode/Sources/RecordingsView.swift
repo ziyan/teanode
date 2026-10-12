@@ -324,6 +324,7 @@ struct RecordingsScreen: View {
 struct RecordingDetailScreen: View {
     let connection: Connection
     let recording: Recording
+    var shouldFocusLearning = false
     @Environment(\.dismiss) private var dismiss
     @State private var recordingView: RecordingView?
     @State private var learning: RecordingLearningView?
@@ -343,138 +344,160 @@ struct RecordingDetailScreen: View {
     @State private var recordedAt = Date()
 
     var body: some View {
-        List {
-            if let recordingView {
-                Section {
-                    ForEach(recordingView.mediaFiles) { media in
-                        Button {
-                            selectedMedia = media
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label(media.originalFilename, systemImage: media.originalContentType.hasPrefix("video/") ? "video" : "waveform")
-                                Text(
-                                    media.recordingUploadState == "complete"
-                                        ? String(localized: "Ready to play") : String(localized: "Upload pending")
-                                ).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.disabled(media.recordingUploadState != "complete")
-                        if media.recordingUploadState == "complete" {
+        ScrollViewReader { scrollProxy in
+            List {
+                if let recordingView {
+                    Section {
+                        ForEach(recordingView.mediaFiles) { media in
                             Button {
-                                reprocessedMedia = media
-                                transcriptionRequestId = RecordingRequestIdentity.acquire(accountKey: connection.accountKey, mediaId: media.id)
-                                isReprocessing = true
-                            } label: {
-                                Label("Transcribe or reprocess", systemImage: "text.bubble")
-                            }.disabled(isSubmitting || limits?.isTranscriptionAvailable != true)
-                        }
-                    }
-                } header: {
-                    Text("Original media")
-                }
-                NavigationLink {
-                    RecordingTranscriptScreen(connection: connection, recording: recordingView.recording)
-                } label: {
-                    Label("Full recording transcript", systemImage: "text.alignleft")
-                }
-                if let runs = recordingView.transcriptRuns, !runs.isEmpty {
-                    Section("Transcript versions") {
-                        ForEach(runs) { run in
-                            NavigationLink {
-                                RecordingTranscriptScreen(connection: connection, recording: recordingView.recording, transcriptRun: run)
+                                selectedMedia = media
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Version \(run.versionNumber)")
-                                    Text(RecordingWords.processing(run.recordingProcessingState)).font(.caption).foregroundStyle(.secondary)
+                                    Label(media.originalFilename, systemImage: media.originalContentType.hasPrefix("video/") ? "video" : "waveform")
+                                    Text(
+                                        media.recordingUploadState == "complete"
+                                            ? String(localized: "Ready to play") : String(localized: "Upload pending")
+                                    ).font(.caption).foregroundStyle(.secondary)
                                 }
-                            }
-                            if ["queued", "preparing", "transcribing", "failed", "canceled"].contains(run.recordingProcessingState) {
+                            }.disabled(media.recordingUploadState != "complete")
+                            if media.recordingUploadState == "complete" {
                                 Button {
-                                    Task {
-                                        do {
-                                            _ = try await connection.retryRecordingTranscription(recordingTranscriptRunId: run.id)
-                                            await load()
-                                        } catch { problemText = error.localizedDescription }
-                                    }
+                                    reprocessedMedia = media
+                                    transcriptionRequestId = RecordingRequestIdentity.acquire(accountKey: connection.accountKey, mediaId: media.id)
+                                    isReprocessing = true
                                 } label: {
-                                    Label("Retry transcription", systemImage: "arrow.clockwise")
-                                }.disabled(limits?.isTranscriptionAvailable != true)
+                                    Label("Transcribe or reprocess", systemImage: "text.bubble")
+                                }.disabled(isSubmitting || limits?.isTranscriptionAvailable != true)
                             }
-                            if run.isRunning {
-                                Button("Cancel transcription", role: .destructive) {
-                                    Task {
-                                        do {
-                                            _ = try await connection.cancelRecordingTranscription(recordingTranscriptRunId: run.id)
-                                            await load()
-                                        } catch { problemText = error.localizedDescription }
+                        }
+                    } header: {
+                        Text("Original media")
+                    }
+                    NavigationLink {
+                        RecordingTranscriptScreen(connection: connection, recording: recordingView.recording)
+                    } label: {
+                        Label("Full recording transcript", systemImage: "text.alignleft")
+                    }
+                    if let runs = recordingView.transcriptRuns, !runs.isEmpty {
+                        Section("Transcript versions") {
+                            ForEach(runs) { run in
+                                NavigationLink {
+                                    RecordingTranscriptScreen(connection: connection, recording: recordingView.recording, transcriptRun: run)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Version \(run.versionNumber)")
+                                        Text(RecordingWords.processing(run.recordingProcessingState)).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                if ["queued", "preparing", "transcribing", "failed", "canceled"].contains(run.recordingProcessingState) {
+                                    Button {
+                                        Task {
+                                            do {
+                                                _ = try await connection.retryRecordingTranscription(recordingTranscriptRunId: run.id)
+                                                await load()
+                                            } catch { problemText = error.localizedDescription }
+                                        }
+                                    } label: {
+                                        Label("Retry transcription", systemImage: "arrow.clockwise")
+                                    }.disabled(limits?.isTranscriptionAvailable != true)
+                                }
+                                if run.isRunning {
+                                    Button("Cancel transcription", role: .destructive) {
+                                        Task {
+                                            do {
+                                                _ = try await connection.cancelRecordingTranscription(recordingTranscriptRunId: run.id)
+                                                await load()
+                                            } catch { problemText = error.localizedDescription }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                if limits?.isTranscriptionAvailable != true {
-                    Section {
-                        Text(
-                            limits?.transcriptionUnavailableMessage?.isEmpty == false
-                                ? (limits?.transcriptionUnavailableMessage ?? "")
-                                : String(localized: "Transcription availability has not been verified. Refresh or ask the operator.")
-                        ).foregroundStyle(.secondary)
+                    if limits?.isTranscriptionAvailable != true {
+                        Section {
+                            Text(
+                                limits?.transcriptionUnavailableMessage?.isEmpty == false
+                                    ? (limits?.transcriptionUnavailableMessage ?? "")
+                                    : String(localized: "Transcription availability has not been verified. Refresh or ask the operator.")
+                            ).foregroundStyle(.secondary)
+                        }
                     }
-                }
-                if !recordingView.recording.captureGaps.isEmpty {
-                    Section("Capture gaps") {
-                        ForEach(recordingView.recording.captureGaps) { gap in
-                            LabeledContent(gap.recordingGapReason == "paused" ? String(localized: "Paused") : String(localized: "Interrupted")) {
-                                Text(Duration.milliseconds(gap.gapStartMS).formatted(.time(pattern: .hourMinuteSecond))).monospacedDigit()
+                    if !recordingView.recording.captureGaps.isEmpty {
+                        Section("Capture gaps") {
+                            ForEach(recordingView.recording.captureGaps) { gap in
+                                LabeledContent(gap.recordingGapReason == "paused" ? String(localized: "Paused") : String(localized: "Interrupted")) {
+                                    Text(Duration.milliseconds(gap.gapStartMS).formatted(.time(pattern: .hourMinuteSecond))).monospacedDigit()
+                                }
                             }
                         }
                     }
                 }
-            }
-            if let learning {
+                if let learning {
+                    Section {
+                        if learning.hasStoppedReading == true {
+                            Text("Stopped reading transcripts").foregroundStyle(.secondary)
+                            Button("Resume reading", systemImage: "play") {
+                                isSubmitting = true
+                                Task {
+                                    defer { isSubmitting = false }
+                                    do {
+                                        self.learning = try await connection.resumeRecordingLearning(
+                                            recordingId: recording.id, expectedSourceGeneration: learning.sourceGeneration)
+                                        await load()
+                                    } catch { problemText = error.localizedDescription }
+                                }
+                            }.disabled(isSubmitting)
+                            Text("Previously learned pages remain. Transcript corrections still reconcile outdated material.").font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else if !learning.hasAgent {
+                            Text("Enable your personal agent to learn from transcripts.").foregroundStyle(.secondary)
+                        } else if let source = learning.knowledgeSource {
+                            LabeledContent("Passages waiting", value: learning.pendingDocumentCount.formatted())
+                            LabeledContent("Processed passages", value: learning.digestedDocumentCount.formatted())
+                            if let lastRunAt = ServerTime.date(source.lastRunAt) {
+                                LabeledContent("Last source pass") { Text(lastRunAt, style: .date) }
+                            }
+                            if let nextRunAt = ServerTime.date(source.nextRunAt) {
+                                LabeledContent("Next source pass") { Text(nextRunAt, style: .relative) }
+                            } else if source.cron.isEmpty {
+                                Text("Reads only when you ask.").foregroundStyle(.secondary)
+                            }
+                            if !source.lastError.isEmpty { Text(source.lastError).foregroundStyle(.secondary) }
+                            NavigationLink {
+                                KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
+                            } label: {
+                                Label("Knowledge source", systemImage: "brain")
+                            }
+                            Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }
+                        } else {
+                            Text("Waiting for a completed transcript").foregroundStyle(.secondary)
+                        }
+                        if learning.isCurationPending { Text("Voice reference curation pending").foregroundStyle(.secondary) }
+                    } header: {
+                        Text("Learning")
+                    } footer: {
+                        Text(
+                            "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories."
+                        )
+                    }.id("recording-learning")
+                }
+                if let problemText { Text(problemText).foregroundStyle(.secondary) }
                 Section {
-                    if !learning.hasAgent {
-                        Text("Enable your personal agent to learn from transcripts.").foregroundStyle(.secondary)
-                    } else if let source = learning.knowledgeSource {
-                        LabeledContent("Passages waiting", value: learning.pendingDocumentCount.formatted())
-                        LabeledContent("Processed passages", value: learning.digestedDocumentCount.formatted())
-                        if let lastRunAt = ServerTime.date(source.lastRunAt) { LabeledContent("Last source pass") { Text(lastRunAt, style: .date) } }
-                        if let nextRunAt = ServerTime.date(source.nextRunAt) {
-                            LabeledContent("Next source pass") { Text(nextRunAt, style: .relative) }
-                        } else if source.cron.isEmpty {
-                            Text("Reads only when you ask.").foregroundStyle(.secondary)
-                        }
-                        if !source.lastError.isEmpty { Text(source.lastError).foregroundStyle(.secondary) }
-                        NavigationLink {
-                            KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
-                        } label: {
-                            Label("Knowledge source", systemImage: "brain")
-                        }
-                        Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }
-                    } else {
-                        Text("Waiting for a completed transcript").foregroundStyle(.secondary)
+                    Button {
+                        recordingTitle = recordingView?.recording.recordingTitle ?? recording.recordingTitle
+                        metadataExpectedGeneration = recordingView?.recording.sourceGeneration ?? recording.sourceGeneration
+                        hasRecordedAt = recordingView?.recording.recordedAt != nil
+                        recordedAt = ServerTime.date(recordingView?.recording.recordedAt) ?? Date()
+                        isEditingMetadata = true
+                    } label: {
+                        Label("Edit recording details", systemImage: "pencil")
                     }
-                    if learning.isCurationPending { Text("Voice reference curation pending").foregroundStyle(.secondary) }
-                } header: {
-                    Text("Learning")
-                } footer: {
-                    Text(
-                        "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories."
-                    )
+                    Button("Delete recording", role: .destructive) { isDeleting = true }
                 }
             }
-            if let problemText { Text(problemText).foregroundStyle(.secondary) }
-            Section {
-                Button {
-                    recordingTitle = recordingView?.recording.recordingTitle ?? recording.recordingTitle
-                    metadataExpectedGeneration = recordingView?.recording.sourceGeneration ?? recording.sourceGeneration
-                    hasRecordedAt = recordingView?.recording.recordedAt != nil
-                    recordedAt = ServerTime.date(recordingView?.recording.recordedAt) ?? Date()
-                    isEditingMetadata = true
-                } label: {
-                    Label("Edit recording details", systemImage: "pencil")
-                }
-                Button("Delete recording", role: .destructive) { isDeleting = true }
+            .onChange(of: learning) { _, learningView in
+                if shouldFocusLearning, learningView != nil { scrollProxy.scrollTo("recording-learning", anchor: .top) }
             }
         }
         .navigationTitle(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
@@ -578,6 +601,7 @@ struct RecordingPlaybackScreen: View {
     let connection: Connection
     let media: RecordingMedia
     var passageStartMS: Int64? = nil
+    var passageEndMS: Int64? = nil
     @State private var player: AVPlayer?
     @State private var localURL: URL?
     @State private var problemText: String?
@@ -613,11 +637,21 @@ struct RecordingPlaybackScreen: View {
                         (media.originalFilename as NSString).pathExtension)
                     try FileManager.default.moveItem(at: temporary, to: destination)
                     localURL = destination
-                    player = AVPlayer(url: destination)
-                    if let passageStartMS {
-                        await player?.seek(
-                            to: CMTime(seconds: Double(media.playbackOffsetMS(for: passageStartMS)) / 1000, preferredTimescale: 1000))
+                    let preparedPlayer = AVPlayer(url: destination)
+                    if let passageEndMS {
+                        let endOffsetMS = media.playbackOffsetMS(for: passageEndMS)
+                        guard endOffsetMS > media.playbackOffsetMS(for: passageStartMS ?? media.timelineStartMS) else {
+                            throw TeaNodeError.unreadableAnswer
+                        }
+                        preparedPlayer.currentItem?.forwardPlaybackEndTime = CMTime(seconds: Double(endOffsetMS) / 1000, preferredTimescale: 1000)
                     }
+                    if let passageStartMS {
+                        await preparedPlayer.seek(
+                            to: CMTime(seconds: Double(media.playbackOffsetMS(for: passageStartMS)) / 1000, preferredTimescale: 1000),
+                            toleranceBefore: .zero, toleranceAfter: .zero)
+                    }
+                    try Task.checkCancellation()
+                    player = preparedPlayer
                 } catch { if !Task.isCancelled { problemText = error.localizedDescription } }
             }
             .onDisappear {

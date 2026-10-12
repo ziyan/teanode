@@ -34,10 +34,11 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
   projection and reset. Unknown response drafts retain their exact key and payload.
 - Learning/source progress, existing source pause/sync/schedule/Stop reading controls,
   immutable automatic source names and read-only human titles. Scheduling omits
-  forbidden path/type/computer/root fields; an explicit empty cron requests manual reading. This needs the shared schedule-clear
-  fix before runtime verification.
-  Reference
-  invalidation warnings and explicit raw deletion remain separate native operations.
+  forbidden path/type/computer/root fields; an explicit empty cron requests manual
+  reading through the shared schedule-clear API.
+  Explicit Stop reading has its own status and free generation-checked Resume reading
+  action; regular transcript corrections do not silently resume a stopped source.
+  Reference invalidation warnings and explicit raw deletion remain separate native operations.
 - Deferred capture transitions retain recorder identity across journal saves. Pending
   stop or interruption wins over rollover; stale callbacks cannot start another segment.
 - Upload owners are queued across retained profiles. Signout cancels their file tasks

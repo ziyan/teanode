@@ -45,6 +45,10 @@
             }
             if query.contains("ReadRecordingSpeakers") { return "{\"data\":{\"ReadRecordingSpeakers\":\(recordingSpeakersFixture)}}" }
             if query.contains("ReadRecordingReferenceInvalidations") { return "{\"data\":{\"ReadRecordingReferenceInvalidations\":[]}}" }
+            if query.contains("ReadRecordingLearning"), Self.screen == "recording-learning-stopped" {
+                return
+                    #"{"data":{"ReadRecordingLearning":{"sourceGeneration":4,"hasAgent":true,"hasStoppedReading":true,"knowledgeSource":null,"pendingDocumentCount":0,"digestedDocumentCount":0,"lastPublishedSourceGeneration":4,"isCurationPending":false}}}"#
+            }
             if query.contains("ReadRecordingLearning") {
                 return
                     "{\"data\":{\"ReadRecordingLearning\":{\"sourceGeneration\":4,\"hasAgent\":true,\"knowledgeSource\":\(recordingSourceFixture),\"pendingDocumentCount\":2,\"digestedDocumentCount\":5,\"lastPublishedSourceGeneration\":4,\"isCurationPending\":true}}}"
@@ -87,6 +91,7 @@
                     RecordingAttachmentImportView(
                         connection: connection,
                         attachment: AgentAttachment(id: "attachment-a", name: "meeting.wav", contentType: "audio/wav", size: 120000))
+                case "recording-learning-stopped": RecordingDetailScreen(connection: connection, recording: recording, shouldFocusLearning: true)
                 case "recording-detail": RecordingDetailScreen(connection: connection, recording: recording)
                 case "recording-transcript": RecordingTranscriptScreen(connection: connection, recording: recording)
                 case "recording-version":

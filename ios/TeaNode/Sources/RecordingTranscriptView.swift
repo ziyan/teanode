@@ -25,6 +25,7 @@ struct RecordingTranscriptScreen: View {
     @State private var speakerDraft: RecordingSpeakerDraft?
     @State private var playbackMedia: RecordingMedia?
     @State private var passageStartMS: Int64 = 0
+    @State private var passageEndMS: Int64?
 
     init(connection: Connection, recording: Recording, transcriptRun: RecordingTranscriptRun? = nil, citation: RecordingLink? = nil) {
         self.connection = connection
@@ -141,7 +142,8 @@ struct RecordingTranscriptScreen: View {
                         Button {
                             Task {
                                 do {
-                                    passageStartMS = segment.segmentStartMS
+                                    passageStartMS = max(segment.segmentStartMS, citation?.passageStartMS ?? segment.segmentStartMS)
+                                    passageEndMS = min(segment.segmentEndMS, citation?.passageEndMS ?? segment.segmentEndMS)
                                     playbackMedia = try await connection.recording(recording.id).mediaFiles.first {
                                         $0.id == mediaId(for: segment)
                                     }
@@ -203,7 +205,9 @@ struct RecordingTranscriptScreen: View {
         .navigationTitle("Transcript")
         .task { await loadPage(isAdditional: false) }
         .refreshable { await loadPage(isAdditional: false) }
-        .sheet(item: $playbackMedia) { media in RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: passageStartMS) }
+        .sheet(item: $playbackMedia) { media in
+            RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: passageStartMS, passageEndMS: passageEndMS)
+        }
         .sheet(item: $editingSegment) { segment in
             RecordingTextEditor(connection: connection, recordingId: recording.id, segment: segment) { await loadPage(isAdditional: false) }
         }
@@ -345,6 +349,7 @@ struct RecordingSpeakersScreen: View {
     @State private var problemText: String?
     @State private var playbackMedia: RecordingMedia?
     @State private var referenceStartMS: Int64 = 0
+    @State private var referenceEndMS: Int64?
     @State private var renamedIdentity: RecordingSpeakerIdentity?
     @State private var confirmedName = ""
     @State private var isRenaming = false
@@ -395,6 +400,7 @@ struct RecordingSpeakersScreen: View {
                             Task {
                                 do {
                                     referenceStartMS = reference.passageStartMS
+                                    referenceEndMS = reference.passageEndMS
                                     playbackMedia = try await connection.recording(recording.id).mediaFiles.first {
                                         $0.id == reference.recordingMediaId
                                     }
@@ -419,7 +425,9 @@ struct RecordingSpeakersScreen: View {
         .refreshable {
             do { speakers = try await connection.recordingSpeakers(recordingId: recording.id) } catch { problemText = error.localizedDescription }
         }
-        .sheet(item: $playbackMedia) { media in RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: referenceStartMS) }
+        .sheet(item: $playbackMedia) { media in
+            RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: referenceStartMS, passageEndMS: referenceEndMS)
+        }
         .alert("Rename speaker", isPresented: $isRenaming) {
             TextField("Confirmed name", text: $confirmedName)
             Button("Save") { Task { await rename() } }
