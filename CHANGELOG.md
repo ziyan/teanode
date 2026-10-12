@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.138.1] - 2026-10-12
+
+### Changed
+
+- Quick chat replies start at once: the check for whether a message needs a deep look now runs alongside the reply instead of before it. (#419)
+
 ## [0.138.0] - 2026-10-12
 
 ### Added
