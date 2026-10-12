@@ -331,3 +331,9 @@ and restart of the coordinator. No new composite constraint policy is introduced
 Estimated cost uses float64 consistently with existing agent usage accounting;
 unknown actual cost remains null, and provider results cannot invent actual billing.
 Reverse migrations drop dependent tables before their parents.
+
+The security check flagged WAV-size arithmetic in the local encoder. Decoder
+admission already bounded its callers, but encoding now validates the byte count
+and sample alignment at the allocation itself. A regression rejects oversized
+and incomplete PCM without relying on caller limits; ordinary WAV headers remain
+unchanged. Fresh security analysis and CI must pass before merging this increment.

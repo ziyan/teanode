@@ -24,14 +24,18 @@ func requireDecoder(test *testing.T) *AudioDecoder {
 	}
 	return decoder
 }
-func syntheticWave(durationMS int64) []byte {
+func syntheticWave(test *testing.T, durationMS int64) []byte {
 	sampleCount := durationMS * AudioSampleRateHz / 1000
 	pcmBytes := make([]byte, sampleCount*audioSampleBytes)
 	for sampleIndex := int64(0); sampleIndex < sampleCount; sampleIndex++ {
 		sampleValue := int16(math.Sin(float64(sampleIndex)*2*math.Pi*440/float64(AudioSampleRateHz)) * 8000)
 		binary.LittleEndian.PutUint16(pcmBytes[sampleIndex*audioSampleBytes:], uint16(sampleValue))
 	}
-	return waveFromPCM(pcmBytes)
+	waveBytes, err := waveFromPCM(pcmBytes)
+	if err != nil {
+		test.Fatal(err)
+	}
+	return waveBytes
 }
 func privateFixture(test *testing.T, content []byte) *os.File {
 	test.Helper()
@@ -53,7 +57,7 @@ func privateFixture(test *testing.T, content []byte) *os.File {
 }
 func TestAudioDecodePreservesPCMAndAbsoluteTimeline(test *testing.T) {
 	decoder := requireDecoder(test)
-	originalBytes := syntheticWave(2500)
+	originalBytes := syntheticWave(test, 2500)
 	file := privateFixture(test, originalBytes)
 	var chunks []*DecodedAudioChunk
 	durationMS, err := decoder.Decode(test.Context(), file, 7000, 5000, 1000, func(chunk *DecodedAudioChunk) error { chunks = append(chunks, chunk); return nil })
@@ -83,7 +87,7 @@ func TestAudioDecodePreservesPCMAndAbsoluteTimeline(test *testing.T) {
 }
 func TestAudioDecodeRefusesTooLongMediaExternalPlaylistsAndCancellation(test *testing.T) {
 	decoder := requireDecoder(test)
-	file := privateFixture(test, syntheticWave(2000))
+	file := privateFixture(test, syntheticWave(test, 2000))
 	hasAcceptedChunk := false
 	if _, err := decoder.Decode(test.Context(), file, 0, 1000, 1000, func(*DecodedAudioChunk) error { hasAcceptedChunk = true; return nil }); err == nil || hasAcceptedChunk {
 		test.Fatal("over-limit media was published")
@@ -146,9 +150,22 @@ func TestAudioDecodeCancellationStopsAReader(test *testing.T) {
 	decoder := requireDecoder(test)
 	ctx, cancel := context.WithTimeout(test.Context(), time.Nanosecond)
 	defer cancel()
-	file := privateFixture(test, syntheticWave(1000))
+	file := privateFixture(test, syntheticWave(test, 1000))
 	_, err := decoder.Decode(ctx, file, 0, 2000, 1000, func(*DecodedAudioChunk) error { return nil })
 	if !errors.Is(err, context.DeadlineExceeded) {
 		test.Fatal("reader deadline was ignored", err)
+	}
+}
+
+func TestWaveEncodingRejectsOversizedOrIncompletePCM(test *testing.T) {
+	if _, err := waveFromPCM(make([]byte, maximumAudioChunkPcmBytes+2)); err == nil {
+		test.Fatal("oversized PCM reached WAV size arithmetic")
+	}
+	if _, err := waveFromPCM([]byte{1}); err == nil {
+		test.Fatal("incomplete PCM sample reached encoding")
+	}
+	waveBytes, err := waveFromPCM([]byte{1, 2})
+	if err != nil || len(waveBytes) != 46 || binary.LittleEndian.Uint32(waveBytes[4:8]) != 38 || binary.LittleEndian.Uint32(waveBytes[40:44]) != 2 {
+		test.Fatal("valid WAV size/header changed", err)
 	}
 }

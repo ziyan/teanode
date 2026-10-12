@@ -18,6 +18,8 @@ import (
 // AudioSampleRateHz is the normalized mono PCM rate used for transcripts and clips.
 const AudioSampleRateHz int64 = 16000
 const audioSampleBytes int64 = 2
+const maximumAudioChunkDurationMS int64 = 10 * 60 * 1000
+const maximumAudioChunkPcmBytes = maximumAudioChunkDurationMS * AudioSampleRateHz * audioSampleBytes / 1000
 
 // AudioDecoder reads media through a seekable descriptor, never a source URL.
 type AudioDecoder struct {
@@ -151,7 +153,7 @@ func (self *AudioDecoder) probe(ctx context.Context, file *os.File, maximumDurat
 // Decode preserves container time with leading silence and timestamp gaps.
 // It never decodes video frames or passes recorded speech to a conversation.
 func (self *AudioDecoder) Decode(ctx context.Context, file *os.File, timelineStartMS, maximumDurationMS, chunkDurationMS int64, acceptChunk func(*DecodedAudioChunk) error) (int64, error) {
-	if file == nil || acceptChunk == nil || timelineStartMS < 0 || maximumDurationMS <= 0 || timelineStartMS > math.MaxInt64-maximumDurationMS || maximumDurationMS > 7*24*60*60*1000 || chunkDurationMS <= 0 || chunkDurationMS > 10*60*1000 {
+	if file == nil || acceptChunk == nil || timelineStartMS < 0 || maximumDurationMS <= 0 || timelineStartMS > math.MaxInt64-maximumDurationMS || maximumDurationMS > 7*24*60*60*1000 || chunkDurationMS <= 0 || chunkDurationMS > maximumAudioChunkDurationMS {
 		return 0, fmt.Errorf("recording: invalid audio decode limits")
 	}
 	if err := self.probe(ctx, file, maximumDurationMS); err != nil {
@@ -229,8 +231,12 @@ func (self *audioChunkWriter) flush() error {
 	if len(self.pendingPCM)%int(audioSampleBytes) != 0 {
 		return io.ErrUnexpectedEOF
 	}
+	waveBytes, err := waveFromPCM(self.pendingPCM)
+	if err != nil {
+		return err
+	}
 	sampleCount := int64(len(self.pendingPCM)) / audioSampleBytes
-	chunk := &DecodedAudioChunk{ChunkIndex: self.chunkIndex, TimelineStartMS: self.timelineStartMS + self.acceptedSampleCount*1000/AudioSampleRateHz, AudioDurationMS: (sampleCount*1000 + AudioSampleRateHz - 1) / AudioSampleRateHz, WaveBytes: waveFromPCM(self.pendingPCM)}
+	chunk := &DecodedAudioChunk{ChunkIndex: self.chunkIndex, TimelineStartMS: self.timelineStartMS + self.acceptedSampleCount*1000/AudioSampleRateHz, AudioDurationMS: (sampleCount*1000 + AudioSampleRateHz - 1) / AudioSampleRateHz, WaveBytes: waveBytes}
 	if err := self.acceptChunk(chunk); err != nil {
 		return err
 	}
@@ -252,7 +258,11 @@ func (self *audioChunkWriter) finish() error {
 	return nil
 }
 
-func waveFromPCM(pcmBytes []byte) []byte {
+func waveFromPCM(pcmBytes []byte) ([]byte, error) {
+	// Validate at the allocation boundary as well as the decoder admission.
+	if len(pcmBytes) > int(maximumAudioChunkPcmBytes) || len(pcmBytes)%int(audioSampleBytes) != 0 {
+		return nil, fmt.Errorf("recording: PCM chunk exceeds its bound or has an incomplete sample")
+	}
 	waveBytes := make([]byte, 44+len(pcmBytes))
 	copy(waveBytes, "RIFF")
 	binary.LittleEndian.PutUint32(waveBytes[4:8], uint32(36+len(pcmBytes)))
@@ -268,5 +278,5 @@ func waveFromPCM(pcmBytes []byte) []byte {
 	copy(waveBytes[36:40], "data")
 	binary.LittleEndian.PutUint32(waveBytes[40:44], uint32(len(pcmBytes)))
 	copy(waveBytes[44:], pcmBytes)
-	return waveBytes
+	return waveBytes, nil
 }
