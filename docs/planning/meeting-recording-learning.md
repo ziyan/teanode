@@ -130,3 +130,65 @@ recording specification, so renamed or duplicate source caches cannot retain tra
 bytes. Direct database regression tests reproduce the old rename path and verify both
 stale-memory rejection and cleanup. Pause and schedule operations retain existing source
 semantics; display titles stay in specification settings.
+
+## Recovery and schedule review
+
+Completed transcripts from before automatic source support are discovered in bounded,
+account-aware pages. SQL-only initialization rechecks the recording lock, active account,
+agent permission and existing source history. Paused sources and retained document mappings
+from Stop reading prevent automatic recreation. Global and personal model configuration
+are not enabled by this recovery. PostgreSQL race tests verify separate owners, repeat
+sweeps without duplicate documents, cursor progress, paused and deleted sources, account
+disablement, permission removal and ownership rejection.
+
+Recording ingestion now uses the existing source schedule calculation. An empty schedule
+stays unscheduled; configured cron expressions determine the next run. Review also found
+revoked clips were only cleaned by the agent worker, which does not exist while globally
+disabled. Bounded revoked-reference discovery and owner-first locked cleanup now support
+always-running storage maintenance. Failed deletion retains the blob reservation for
+retry; successful deletion retains the revoked interval and provenance. The curation
+caller uses the same lock order. Focused PostgreSQL race tests pass, and full local lint,
+including naming, reports no findings. Shared maintenance wiring and CI remain integration
+checks before this increment is ready to merge.
+
+A disposable browser fixture used a nil provider registry: a short synthetic interval
+produced no reference. Two explicitly named nonoverlapping synthetic intervals passed the
+waveform filters and produced two clips. Normal revocation and cleanup left one usable
+clip, one durable refusal and one conditioned-attribution invalidation. A merged synthetic
+version retained unaligned text and speaker corrections as independent evidence. This is
+UI and lifecycle evidence, not real-voice quality evidence or provider billing evidence.
+Browser inspection is recorded by the surface workstream; no real-iPhone claim is made.
+
+## Stopped reading, citations and attribution safety
+
+Corrections and completed reruns preserve Stop reading using the retained document mapping;
+obsolete dependent facts are retired without silently recreating the source. Empty or
+incomplete transcripts do not create an automatic source. The derived hasStoppedReading
+field distinguishes this choice from evidence that is not ready. ResumeRecordingLearning
+explicitly recreates the source from current corrected evidence, subject to ownership and
+source generation. It requests no paid transcription, preserves existing paused controls,
+and works as SQL-only publication with models disabled. Repeat, stale, foreign-owner,
+paused-source and current-correction regressions pass.
+
+Knowledge citations now use the existing version query parameter and exact media intervals.
+An owned indexed passage-offset lookup selects the original version's page without loading
+transcript bodies. Tests cover more than two pages, equal-time overlap, invalid bounds,
+no matching passage, ownership, missing/deleted originals and the built GraphQL schema.
+Browser fixtures include separate historical and newer synthetic versions beyond one page.
+The surface workstream records actual Chrome inspection of these links.
+
+A split correction can give distinct user names to subpassages of one wrongly merged
+request-local label. Generated text and labels stay immutable; the whole segment remains
+uncertain, both selected intervals survive, and old whole-speaker memory attribution is
+retired through existing fact revisions. Curation rejects overlapping segments, duplicated
+local labels, cross-request overlap and uncertain/incomplete source versions. These gates
+are rechecked when reference metadata is committed. A narrow local helper performs the
+same screening without constructing a model client or starting an agent worker; a durable
+completion marker makes newly completed evidence eligible for recovery.
+
+Real blob-store tests with global models off verify split boundaries, separate synthetic
+samples, overlap refusal, uncertain-source refusal and completion recovery. Accepted
+samples establish retained provenance and waveform screening, not verified model identity.
+The reported provider collapse of two voices, both with and without reference conditioning,
+remains unresolved quality evidence. Real-human multi-speaker and real-iPhone validation
+remain separate acceptance requirements; no claim of completed quality validation is made.
