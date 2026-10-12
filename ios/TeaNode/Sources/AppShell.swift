@@ -219,17 +219,20 @@ struct MainView: View {
         // Elsewhere in the app they are away from it, so what the agent says
         // first still reaches them, as a banner over the app.
         .task(id: "\(scenePhase)-\(section)") {
-            let isVisible = scenePhase == .active && section == .agent
-            await app.refreshServices()
-            if app.services?.isAssistantEnabled == true { try? await connection.reportPresence(isVisible: isVisible) }
-            if isVisible { if app.services?.isMailboxEnabled == true { await mail.load() } }
-            while scenePhase == .active, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                await app.refreshServices()
-                if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
-                if app.services?.isAssistantEnabled == true { try? await connection.reportPresence(isVisible: isVisible) }
-            }
+            await refreshPresence()
         }
+    }
+
+    private func refreshPresence() async {
+        let isVisible = scenePhase == .active && section == .agent
+        repeat {
+            await app.refreshServices()
+            if Task.isCancelled { return }
+            if app.services?.isAssistantEnabled == true { try? await connection.reportPresence(isVisible: isVisible) }
+            if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
+            if scenePhase != .active { return }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        } while !Task.isCancelled
     }
 
     @ViewBuilder
@@ -240,6 +243,12 @@ struct MainView: View {
                     .toolbar { MenuButton() }
             }
         } else {
+            availableScreen
+        }
+    }
+
+    @ViewBuilder
+    private var availableScreen: some View {
         switch section {
         case .agent:
             NavigationStack {
@@ -271,7 +280,6 @@ struct MainView: View {
                     .withoutSwipeBack()
             }
             .environment(mail)
-        }
         }
     }
 }

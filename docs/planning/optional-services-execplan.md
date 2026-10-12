@@ -35,7 +35,9 @@ and confirmation policy; turning off hosted mail must not disable those tools.
 - [x] Implement optional runtime construction and guarded operations.
 - [x] Decouple calendar/contact sync credentials from mailboxes.
 - [x] Implement web, native app, CLI and assistant capability awareness.
-- [x] Implement setup choices and an assistant deployment preset; smoke-tested HTTP-only startup and account creation.\n- [ ] Finish the macOS simulator build and final cross-client review in CI.\n- [x] Commit and push the implementation on the existing draft branch; CI is checking the native app.
+- [x] Implement setup choices and an assistant deployment preset; smoke-tested HTTP-only startup and account creation.
+- [ ] Finish the macOS simulator build and final cross-client review in CI.
+- [x] Commit and push the implementation on the existing draft branch; CI is checking the native app.
 
 ## Surprises & Discoveries
 
@@ -541,6 +543,11 @@ all hosted collection tables empty. A fake-provider assistant turn completed wit
 reading or provisioning disabled collections. Database-backed DAV scope, revocation,
 disable/re-enable and queue-resume checks pass. Web typecheck/lint/tests/build and
 283 Swift package tests pass. The macOS app build and final review remain outstanding.
+Review found missing live IMAP checks and setup edits clearing completion. Existing
+mail sessions now recheck service availability before operations. Identity-provider
+account creation now obeys current and running mailbox availability. Setup edits
+retain completion unless explicitly changed. A SwiftUI compiler timeout is addressed
+by separating the presence task and the available screen expression.
 
 The security follow-up updates Go to 1.26.9 and x/net to 0.60.0, updates fast-uri,
 and applies a tested bounded-nesting guard to braces until a patched upstream release

@@ -46,7 +46,9 @@ export function SetupPage() {
   if (error) return <ErrorMessage error={error} />
   if (loading || !choices || !data) return <Loading />
   const setup = data.GetServiceSetup
-  const hasUnsavedChoices = hostedKeys.some((serviceKey) => choices[serviceKey] !== setup.selectedServices[serviceKey])
+  const hasUnsavedChoices =
+    hostedKeys.some((serviceKey) => choices[serviceKey] !== setup.selectedServices[serviceKey]) ||
+    (choices.isMailRoutingEnabled && mailServerName !== setup.mailServerName)
   const labels = {
     isMailRoutingEnabled: t('services.mail'),
     isMailboxEnabled: t('nav.mail'),
@@ -83,7 +85,7 @@ export function SetupPage() {
       const variables = Object.fromEntries(hostedKeys.map((serviceKey) => [serviceKey, choices[serviceKey]]))
       await graphql(UPDATE, {
         ...variables,
-        hasCompletedSetup,
+        ...(hasCompletedSetup ? { hasCompletedSetup: true } : {}),
         ...(choices.isMailRoutingEnabled ? { mailServerName } : {}),
       })
       setIsSaved(true)
