@@ -275,7 +275,7 @@ final class AppModel {
         self.account = account
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
-        if let connection { RecordingUploads.shared.resume(connection: connection) }
+        if let connection { RecordingUploads.shared.activate(connection: connection) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
     }
@@ -564,6 +564,7 @@ final class AppModel {
         if let account, MeetingRecorder.shared.localRecording?.accountKey == account.accountKey {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey)
         }
+        if let account { await RecordingUploads.shared.cancel(accountKey: account.accountKey) }
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
@@ -608,6 +609,7 @@ final class AppModel {
         if MeetingRecorder.shared.localRecording?.accountKey == other.accountKey {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: other.accountKey)
         }
+        await RecordingUploads.shared.cancel(accountKey: other.accountKey)
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)

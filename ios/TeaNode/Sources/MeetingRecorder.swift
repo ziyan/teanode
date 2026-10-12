@@ -22,9 +22,8 @@ final class MeetingRecorder: NSObject {
     private var startedUptime: TimeInterval = 0
     private var timelineAtStartMS: Int64 = 0
     private var isChangingCapture = false
-    private var hasPendingInterruption = false
-    private var hasPendingPause = false
-    private var hasPendingStop = false
+    private var pendingTransitions = RecordingCaptureTransitions()
+    private var recorderId: UUID?
 
     var isCapturing: Bool { localRecording?.recordingCaptureState == "active" }
     var hasSession: Bool { localRecording != nil && localRecording?.recordingCaptureState != "stopped" }
@@ -37,6 +36,10 @@ final class MeetingRecorder: NSObject {
     func start(accountKey: String, title: String) async {
         guard !hasSession, !isChangingCapture, AppModel.shared.currentCall == nil else {
             problemText = String(localized: "Stop the current recording or call before starting another recording.")
+            return
+        }
+        guard title.utf8.count <= 255 else {
+            problemText = String(localized: "Use a recording title of at most 255 UTF-8 bytes.")
             return
         }
         isChangingCapture = true
@@ -66,7 +69,7 @@ final class MeetingRecorder: NSObject {
     func pause(isInterruption: Bool = false) async {
         guard isCapturing else { return }
         if isChangingCapture {
-            if isInterruption { hasPendingInterruption = true } else { hasPendingPause = true }
+            pendingTransitions.enqueue(.pause(isInterruption: isInterruption))
             return
         }
         isChangingCapture = true
@@ -108,8 +111,12 @@ final class MeetingRecorder: NSObject {
 
     func stop(localRecordingId: String? = nil) async {
         guard let current = localRecording, localRecordingId == nil || current.id.uuidString == localRecordingId,
-            current.recordingCaptureState != "stopped", !isChangingCapture
+            current.recordingCaptureState != "stopped"
         else { return }
+        if isChangingCapture {
+            pendingTransitions.enqueue(.stop)
+            return
+        }
         isChangingCapture = true
         defer { finishChangingCapture() }
         do {
@@ -124,6 +131,10 @@ final class MeetingRecorder: NSObject {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             if let activityId { await RecordingActivities.end(activityId) }
             activityId = nil
+            if let account = try? KeychainAccountStore().load(accountKey: recording.accountKey) {
+                RecordingUploads.shared.resume(
+                    connection: Connection(account: account, transport: URLSessionTransport(), store: KeychainAccountStore()))
+            }
         } catch { await fail(error) }
     }
 
@@ -194,18 +205,35 @@ final class MeetingRecorder: NSObject {
 
     private func finishChangingCapture() {
         isChangingCapture = false
-        if hasPendingStop {
-            hasPendingStop = false
-            hasPendingPause = false
-            hasPendingInterruption = false
-            let sessionId = localRecording?.id.uuidString
-            Task { await stop(localRecordingId: sessionId) }
-        } else if hasPendingPause || hasPendingInterruption {
-            let isInterruption = hasPendingInterruption
-            hasPendingPause = false
-            hasPendingInterruption = false
-            Task { await pause(isInterruption: isInterruption) }
+        guard let command = pendingTransitions.next() else { return }
+        let sessionId = localRecording?.id
+        Task {
+            guard localRecording?.id == sessionId else { return }
+            switch command {
+            case .stop: await stop(localRecordingId: sessionId?.uuidString)
+            case .pause(let isInterruption): await pause(isInterruption: isInterruption)
+            case .rollover(let recorderId, let wasSuccessful): await rollover(recorderId: recorderId, wasSuccessful: wasSuccessful)
+            }
         }
+    }
+
+    private func rollover(recorderId expectedRecorderId: UUID, wasSuccessful: Bool) async {
+        guard recorderId == expectedRecorderId, isCapturing else { return }
+        if isChangingCapture {
+            pendingTransitions.enqueue(.rollover(recorderId: expectedRecorderId, wasSuccessful: wasSuccessful))
+            return
+        }
+        if !wasSuccessful {
+            await pause(isInterruption: true)
+            return
+        }
+        isChangingCapture = true
+        defer { finishChangingCapture() }
+        do {
+            updateElapsed()
+            try await finishSegment()
+            if pendingTransitions.shouldStartNextSegment { try await startSegment() }
+        } catch { await fail(error) }
     }
 
     private func startSegment() async throws {
@@ -218,6 +246,7 @@ final class MeetingRecorder: NSObject {
         try await journal.save(recording)
         localRecording = recording
         let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
+        guard pendingTransitions.shouldStartNextSegment else { return }
         let recorder = try AVAudioRecorder(
             url: original,
             settings: [
@@ -231,12 +260,14 @@ final class MeetingRecorder: NSObject {
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: original.path)
         audioRecorder = recorder
+        recorderId = UUID()
     }
 
     private func finishSegment() async throws {
         audioRecorder?.delegate = nil
         audioRecorder?.stop()
         audioRecorder = nil
+        recorderId = nil
         guard var recording = localRecording, let journal, let mediaIndex = recording.localMedia.indices.last,
             recording.localMedia[mediaIndex].originalSha256 == nil
         else { return }
@@ -345,6 +376,7 @@ final class MeetingRecorder: NSObject {
         audioRecorder?.delegate = nil
         audioRecorder?.stop()
         audioRecorder = nil
+        recorderId = nil
         problemText = error.localizedDescription
         if var recording = localRecording, recording.recordingCaptureState == "active" {
             try? recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: "interrupted")
@@ -358,18 +390,8 @@ final class MeetingRecorder: NSObject {
 extension MeetingRecorder: AVAudioRecorderDelegate {
     nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         Task { @MainActor [weak self] in
-            guard let self, self.isCapturing, !self.isChangingCapture else { return }
-            if !flag {
-                await self.pause(isInterruption: true)
-                return
-            }
-            self.isChangingCapture = true
-            defer { self.finishChangingCapture() }
-            do {
-                self.updateElapsed()
-                try await self.finishSegment()
-                try await self.startSegment()
-            } catch { await self.fail(error) }
+            guard let self, self.audioRecorder === recorder, let recorderId = self.recorderId else { return }
+            await self.rollover(recorderId: recorderId, wasSuccessful: flag)
         }
     }
 }
