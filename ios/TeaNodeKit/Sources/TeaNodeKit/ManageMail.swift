@@ -863,6 +863,34 @@ public struct DomainAlias: Codable, Hashable, Sendable, Identifiable {
 
     /// The kinds a new alias may be, in the order the dashboard offers them.
     public static let creatableKinds = ["mailbox", "email", "webhook", "null"]
+
+    /// The kinds an existing alias may be changed to: the creatable ones,
+    /// and a mail server relay when the alias already is one, since the
+    /// relay's host and port are not edited here and so cannot be made new.
+    public var selectableKinds: [String] {
+        aliasKind == "mailServer" ? DomainAlias.creatableKinds + ["mailServer"] : DomainAlias.creatableKinds
+    }
+
+    /// Whether the destination the kind needs has been filled in: an
+    /// address to forward to, a URL to post to, or a mailbox to deliver
+    /// into. Discarding and relaying need none here.
+    public static func isDestinationFilled(aliasKind: String, destination: String, mailboxId: String) -> Bool {
+        switch aliasKind {
+        case "email", "webhook": return !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "mailbox": return !mailboxId.isEmpty
+        default: return true
+        }
+    }
+
+    /// The text to put in the destination field when editing: the address
+    /// or URL the alias has now, empty for any other kind.
+    public var editableDestination: String {
+        switch aliasKind ?? "" {
+        case "email": return email ?? ""
+        case "webhook": return webhook ?? ""
+        default: return ""
+        }
+    }
 }
 
 /// DomainCredential is a username and password one machine sends through
@@ -1248,8 +1276,15 @@ extension Documents {
         { ListAllMailboxes { id name userId username userName } }
         """
     public static let manageCreateAlias = """
-        mutation ($domainId: String!, $pattern: String!, $kind: String!, $email: String, $webhook: String, $mailboxId: String) {
-          CreateAlias(domainId: $domainId, aliasParameters: { pattern: $pattern, kind: $kind, email: $email, webhook: $webhook, mailboxId: $mailboxId }) {
+        mutation ($domainId: String!, $pattern: String!, $comment: String, $kind: String!, $email: String, $webhook: String, $mailboxId: String) {
+          CreateAlias(domainId: $domainId, aliasParameters: { pattern: $pattern, comment: $comment, kind: $kind, email: $email, webhook: $webhook, mailboxId: $mailboxId }) {
+            id
+          }
+        }
+        """
+    public static let manageUpdateAlias = """
+        mutation ($aliasId: String!, $pattern: String!, $comment: String, $kind: String!, $email: String, $webhook: String, $mailboxId: String, $disabled: Boolean) {
+          UpdateAlias(aliasId: $aliasId, aliasParameters: { pattern: $pattern, comment: $comment, kind: $kind, email: $email, webhook: $webhook, mailboxId: $mailboxId, disabled: $disabled }) {
             id
           }
         }
@@ -1261,6 +1296,13 @@ extension Documents {
         mutation ($domainId: String!, $comment: String) {
           CreateCredential(domainId: $domainId, credentialParameters: { comment: $comment }) {
             username password host port
+          }
+        }
+        """
+    public static let manageUpdateCredential = """
+        mutation ($credentialId: String!, $comment: String, $alias: String, $disabled: Boolean) {
+          UpdateCredential(credentialId: $credentialId, credentialParameters: { comment: $comment, alias: $alias, disabled: $disabled }) {
+            id
           }
         }
         """
@@ -1512,15 +1554,38 @@ extension Connection {
     /// Adds an address to a domain. The destination is the address to
     /// forward to for an email alias and the address to post to for a
     /// webhook; a mailbox alias delivers into the mailbox given.
-    public func createDomainAlias(domainId: String, pattern: String, aliasKind: String, destination: String, mailboxId: String) async throws {
+    public func createDomainAlias(
+        domainId: String, pattern: String, comment: String = "", aliasKind: String, destination: String, mailboxId: String
+    ) async throws {
         struct Answer: Decodable, Sendable { let CreateAlias: JSONValue? }
         _ = try await execute(
             Documents.manageCreateAlias,
             variables: [
-                "domainId": .string(domainId), "pattern": .string(pattern), "kind": .string(aliasKind),
+                "domainId": .string(domainId), "pattern": .string(pattern), "comment": .string(comment), "kind": .string(aliasKind),
                 "email": aliasKind == "email" ? .string(destination) : .null,
                 "webhook": aliasKind == "webhook" ? .string(destination) : .null,
                 "mailboxId": aliasKind == "mailbox" ? .string(mailboxId) : .null,
+            ], as: Answer.self)
+    }
+
+    /// Changes an alias: its pattern, its note, where its mail goes, and
+    /// whether it is ignored. Only the destination its kind needs is sent
+    /// as a value; the others are null, which the server leaves as they
+    /// were. A relay keeps its host, port and password, which are not
+    /// sent. The server leaves the pattern alone when it is empty, so a
+    /// catch-all stays a catch-all and an address cannot become one.
+    public func updateDomainAlias(
+        aliasId: String, pattern: String, comment: String, aliasKind: String, destination: String, mailboxId: String, isDisabled: Bool
+    ) async throws {
+        struct Answer: Decodable, Sendable { let UpdateAlias: JSONValue? }
+        _ = try await execute(
+            Documents.manageUpdateAlias,
+            variables: [
+                "aliasId": .string(aliasId), "pattern": .string(pattern), "comment": .string(comment), "kind": .string(aliasKind),
+                "email": aliasKind == "email" ? .string(destination) : .null,
+                "webhook": aliasKind == "webhook" ? .string(destination) : .null,
+                "mailboxId": aliasKind == "mailbox" ? .string(mailboxId) : .null,
+                "disabled": .bool(isDisabled),
             ], as: Answer.self)
     }
 
@@ -1536,6 +1601,19 @@ extension Connection {
         return try await execute(
             Documents.manageCreateCredential, variables: ["domainId": .string(domainId), "comment": .string(comment)], as: Answer.self
         ).CreateCredential
+    }
+
+    /// Changes a credential: its note, the one local part it may send as
+    /// (empty for any), and whether it is refused. Its password is never
+    /// changed or shown, which the server does not offer.
+    public func updateDomainCredential(credentialId: String, comment: String, restrictedLocalPart: String, isDisabled: Bool) async throws {
+        struct Answer: Decodable, Sendable { let UpdateCredential: JSONValue? }
+        _ = try await execute(
+            Documents.manageUpdateCredential,
+            variables: [
+                "credentialId": .string(credentialId), "comment": .string(comment), "alias": .string(restrictedLocalPart),
+                "disabled": .bool(isDisabled),
+            ], as: Answer.self)
     }
 
     public func deleteDomainCredential(credentialId: String) async throws {

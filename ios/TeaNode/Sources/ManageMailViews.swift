@@ -2449,10 +2449,12 @@ private struct DNSRecordView: View {
 }
 
 /// DomainAliasesView is the domain's aliases tab: who receives mail for
-/// it. An alias is added from the toolbar and removed with a swipe.
+/// it. An alias is added from the toolbar, opened to change from its row
+/// and removed with a swipe or from the form that changes it.
 private struct DomainAliasesView: View {
     let model: ManagedDomainModel
     @State private var isAdding = false
+    @State private var editing: DomainAlias?
     @State private var removing: DomainAlias?
     @State private var mailboxes: [ServerMailbox] = []
 
@@ -2465,10 +2467,14 @@ private struct DomainAliasesView: View {
                         Text("No address on this domain goes anywhere yet.").foregroundStyle(Color(.secondaryLabel))
                     }
                     ForEach(aliases) { alias in
-                        row(alias)
-                            .swipeActions {
-                                Button("Remove", systemImage: "trash", role: .destructive) { removing = alias }
-                            }
+                        Button {
+                            editing = alias
+                        } label: {
+                            row(alias)
+                        }
+                        .swipeActions {
+                            Button("Remove", systemImage: "trash", role: .destructive) { removing = alias }
+                        }
                     }
                 } footer: {
                     Text("An alias with an empty pattern is a catch-all: it receives whatever no other alias matched.")
@@ -2489,7 +2495,10 @@ private struct DomainAliasesView: View {
         .refreshable { await model.load() }
         .task { mailboxes = (try? await model.connection.serverMailboxes()) ?? [] }
         .sheet(isPresented: $isAdding) {
-            NewAliasForm(model: model, mailboxes: mailboxes)
+            AliasForm(model: model, mailboxes: mailboxes, editedAlias: nil)
+        }
+        .sheet(item: $editing) { alias in
+            AliasForm(model: model, mailboxes: mailboxes, editedAlias: alias)
         }
         .confirmationDialog(
             "Remove address", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
@@ -2551,18 +2560,47 @@ private struct DomainAliasesView: View {
     }
 }
 
-/// NewAliasForm adds an address to the domain: its pattern, and where its
-/// mail goes, into a mailbox, forwarded, posted, or discarded.
-private struct NewAliasForm: View {
+/// AliasForm adds an address to the domain, or changes one: its pattern, a
+/// note, and where its mail goes, into a mailbox, forwarded, posted, or
+/// discarded. Changing one also turns it off or on, and can remove it.
+private struct AliasForm: View {
     let model: ManagedDomainModel
     let mailboxes: [ServerMailbox]
+    let editedAlias: DomainAlias?
     @Environment(\.dismiss) private var dismiss
-    @State private var pattern = ""
-    @State private var aliasKind = "email"
-    @State private var destination = ""
-    @State private var mailboxId = ""
+    @State private var pattern: String
+    @State private var comment: String
+    @State private var aliasKind: String
+    @State private var destination: String
+    @State private var mailboxId: String
+    @State private var isDisabled: Bool
+    @State private var isRemoving = false
     @State private var isBusy = false
     @State private var problemText: String?
+
+    init(model: ManagedDomainModel, mailboxes: [ServerMailbox], editedAlias: DomainAlias?) {
+        self.model = model
+        self.mailboxes = mailboxes
+        self.editedAlias = editedAlias
+        _pattern = State(initialValue: editedAlias?.pattern ?? "")
+        _comment = State(initialValue: editedAlias?.comment ?? "")
+        _aliasKind = State(initialValue: editedAlias.map { $0.aliasKind ?? "null" } ?? "email")
+        _destination = State(initialValue: editedAlias?.editableDestination ?? "")
+        _mailboxId = State(initialValue: editedAlias?.mailboxId ?? "")
+        _isDisabled = State(initialValue: editedAlias?.isDisabled ?? false)
+    }
+
+    /// The server keeps the old pattern when sent an empty one, so an
+    /// address that has a pattern cannot be saved with it blanked.
+    private var isPatternMissing: Bool {
+        guard let editedAlias else { return false }
+        return !(editedAlias.pattern ?? "").isEmpty && pattern.trimmed.isEmpty
+    }
+
+    private var canSave: Bool {
+        !isBusy && !isPatternMissing
+            && DomainAlias.isDestinationFilled(aliasKind: aliasKind, destination: destination, mailboxId: mailboxId)
+    }
 
     var body: some View {
         NavigationStack {
@@ -2575,9 +2613,13 @@ private struct NewAliasForm: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     Picker("Kind", selection: $aliasKind) {
-                        ForEach(DomainAlias.creatableKinds, id: \.self) { kind in
+                        ForEach(editedAlias?.selectableKinds ?? DomainAlias.creatableKinds, id: \.self) { kind in
                             Text(kindTitle(kind)).tag(kind)
                         }
+                    }
+                } footer: {
+                    if isPatternMissing {
+                        Text("This address needs a pattern. To catch everything else, add an alias with an empty pattern.")
                     }
                 }
                 if aliasKind == "mailbox" {
@@ -2587,29 +2629,64 @@ private struct NewAliasForm: View {
                             Text(verbatim: mailbox.pickerText).tag(mailbox.id)
                         }
                     }
+                } else if aliasKind == "mailServer" {
+                    if let mailServer = editedAlias?.mailServer {
+                        let relayText = "\(mailServer.host ?? ""):\(mailServer.port ?? 0)"
+                        LabeledContent("Relay") {
+                            Text(verbatim: relayText).font(.body.monospaced())
+                        }
+                    }
                 } else if aliasKind != "null" {
                     TextField(aliasKind == "email" ? LocalizedStringKey("Forward to") : "Post to", text: $destination)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(aliasKind == "email" ? .emailAddress : .URL)
                 }
+                Section {
+                    TextField("Note", text: $comment)
+                    if editedAlias != nil {
+                        Toggle("Disabled", isOn: $isDisabled)
+                    }
+                } footer: {
+                    if editedAlias != nil {
+                        Text("A disabled alias is ignored, as if it were not there. It stays so it can be turned back on.")
+                    }
+                }
+                if editedAlias != nil {
+                    Section {
+                        Button("Remove address", systemImage: "trash", role: .destructive) { isRemoving = true }
+                    }
+                }
             }
-            .navigationTitle("Add alias")
+            .navigationTitle(editedAlias == nil ? LocalizedStringKey("Add alias") : "Edit alias")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        Task { await create() }
+                    Button(editedAlias == nil ? LocalizedStringKey("Create") : "Save") {
+                        Task { await save() }
                     }
-                    .disabled(isBusy)
+                    .disabled(!canSave)
                 }
             }
             .disabled(isBusy)
+            .confirmationDialog("Remove address", isPresented: $isRemoving, titleVisibility: .visible) {
+                Button("Remove", role: .destructive) {
+                    Task { await remove() }
+                }
+            } message: {
+                let shownName = removedName
+                Text("Remove “\(shownName)”? Mail sent to it will be refused.")
+            }
             .toast(done: .constant(nil), problem: $problemText)
         }
+    }
+
+    private var removedName: String {
+        guard let pattern = editedAlias?.pattern, !pattern.isEmpty else { return String(localized: "(catch-all)") }
+        return pattern
     }
 
     private func kindTitle(_ kind: String) -> LocalizedStringKey {
@@ -2617,17 +2694,40 @@ private struct NewAliasForm: View {
         case "mailbox": "Deliver into a mailbox"
         case "email": "Email"
         case "webhook": "Webhook"
+        case "mailServer": "Relay to a mail server"
         default: "Discard"
         }
     }
 
-    private func create() async {
+    private func save() async {
         isBusy = true
         defer { isBusy = false }
         do {
-            try await model.connection.createDomainAlias(
-                domainId: model.domainId, pattern: pattern.trimmed, aliasKind: aliasKind, destination: destination.trimmed, mailboxId: mailboxId)
-            model.doneText = String(localized: "Alias added")
+            if let editedAlias {
+                try await model.connection.updateDomainAlias(
+                    aliasId: editedAlias.id, pattern: pattern.trimmed, comment: comment.trimmed, aliasKind: aliasKind,
+                    destination: destination.trimmed, mailboxId: mailboxId, isDisabled: isDisabled)
+                model.doneText = String(localized: "Saved")
+            } else {
+                try await model.connection.createDomainAlias(
+                    domainId: model.domainId, pattern: pattern.trimmed, comment: comment.trimmed, aliasKind: aliasKind,
+                    destination: destination.trimmed, mailboxId: mailboxId)
+                model.doneText = String(localized: "Alias added")
+            }
+            dismiss()
+            await model.load()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func remove() async {
+        guard let editedAlias else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await model.connection.deleteDomainAlias(aliasId: editedAlias.id)
+            model.doneText = String(localized: "Removed")
             dismiss()
             await model.load()
         } catch {
@@ -2638,10 +2738,12 @@ private struct NewAliasForm: View {
 
 /// DomainCredentialsView is the domain's credentials tab: who may send
 /// through it, one username and password per machine, the password shown
-/// once when it is made.
+/// once when it is made. A credential is opened from its row to change its
+/// note, the one address it may send as, or to turn it off.
 private struct DomainCredentialsView: View {
     let model: ManagedDomainModel
     @State private var isAdding = false
+    @State private var editing: DomainCredential?
     @State private var removing: DomainCredential?
 
     var body: some View {
@@ -2653,17 +2755,26 @@ private struct DomainCredentialsView: View {
                         Text("No machine sends through this domain yet.").foregroundStyle(Color(.secondaryLabel))
                     }
                     ForEach(credentials) { credential in
-                        VStack(alignment: .leading, spacing: 3) {
-                            if let comment = credential.comment, !comment.isEmpty {
-                                Text(verbatim: comment).foregroundStyle(Color(.label))
-                            } else {
-                                Text("(no note)").foregroundStyle(Color(.secondaryLabel))
+                        Button {
+                            editing = credential
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 8) {
+                                    if let comment = credential.comment, !comment.isEmpty {
+                                        Text(verbatim: comment).foregroundStyle(Color(.label))
+                                    } else {
+                                        Text("(no note)").foregroundStyle(Color(.secondaryLabel))
+                                    }
+                                    if credential.isDisabled == true {
+                                        ManageTag(text: String(localized: "disabled"), tone: .plain)
+                                    }
+                                }
+                                Text(verbatim: credential.id)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(Color(.secondaryLabel))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
-                            Text(verbatim: credential.id)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(Color(.secondaryLabel))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = credential }
@@ -2688,6 +2799,9 @@ private struct DomainCredentialsView: View {
         .refreshable { await model.load() }
         .sheet(isPresented: $isAdding) {
             NewCredentialForm(model: model)
+        }
+        .sheet(item: $editing) { credential in
+            EditCredentialForm(model: model, credential: credential)
         }
         .confirmationDialog(
             "Remove credential", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
@@ -2790,6 +2904,112 @@ private struct NewCredentialForm: View {
         defer { isBusy = false }
         do {
             created = try await model.connection.createDomainCredential(domainId: model.domainId, comment: comment.trimmed)
+            await model.load()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
+/// EditCredentialForm changes a credential: the note saying what holds it,
+/// the one address it may send as, and whether it is refused. Its password
+/// is not shown or changed: it was shown once, when the credential was made.
+private struct EditCredentialForm: View {
+    let model: ManagedDomainModel
+    let credential: DomainCredential
+    @Environment(\.dismiss) private var dismiss
+    @State private var comment: String
+    @State private var restrictedLocalPart: String
+    @State private var isDisabled: Bool
+    @State private var isRemoving = false
+    @State private var isBusy = false
+    @State private var problemText: String?
+
+    init(model: ManagedDomainModel, credential: DomainCredential) {
+        self.model = model
+        self.credential = credential
+        _comment = State(initialValue: credential.comment ?? "")
+        _restrictedLocalPart = State(initialValue: credential.alias ?? "")
+        _isDisabled = State(initialValue: credential.isDisabled ?? false)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("What will hold it", text: $comment, prompt: Text("laptop"))
+                }
+                Section {
+                    TextField("Send only as", text: $restrictedLocalPart, prompt: Text("Any address"))
+                        .font(.body.monospaced())
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } footer: {
+                    let domainName = model.domain?.domainName ?? ""
+                    Text("The part before the @ of the only address on \(domainName) it may send as. Leave blank to allow any.")
+                }
+                Section {
+                    Toggle("Disabled", isOn: $isDisabled)
+                } footer: {
+                    Text("A disabled credential is refused. It stays so it can be turned back on.")
+                }
+                Section {
+                    DetailRow(label: "Username", fieldText: credential.id, isMonospaced: true)
+                } footer: {
+                    Text("The password was shown once, when the credential was made, and cannot be shown again.")
+                }
+                Section {
+                    Button("Remove credential", systemImage: "trash", role: .destructive) { isRemoving = true }
+                }
+            }
+            .navigationTitle("Edit credential")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .disabled(isBusy)
+                }
+            }
+            .disabled(isBusy)
+            .confirmationDialog("Remove credential", isPresented: $isRemoving, titleVisibility: .visible) {
+                Button("Remove", role: .destructive) {
+                    Task { await remove() }
+                }
+            } message: {
+                let credentialName = comment.trimmed.isEmpty ? credential.id : comment.trimmed
+                Text("Remove the credential “\(credentialName)”? Whatever sends with it stops being able to.")
+            }
+            .toast(done: .constant(nil), problem: $problemText)
+        }
+    }
+
+    private func save() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await model.connection.updateDomainCredential(
+                credentialId: credential.id, comment: comment.trimmed, restrictedLocalPart: restrictedLocalPart.trimmed,
+                isDisabled: isDisabled)
+            model.doneText = String(localized: "Saved")
+            dismiss()
+            await model.load()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func remove() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await model.connection.deleteDomainCredential(credentialId: credential.id)
+            model.doneText = String(localized: "Removed")
+            dismiss()
             await model.load()
         } catch {
             problemText = error.localizedDescription
