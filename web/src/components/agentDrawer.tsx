@@ -2269,7 +2269,25 @@ interface OpenInteraction {
   createdAt: string
 }
 
-async function readConversationSnapshot(conversationId: string, signal: AbortSignal) {
+// readConversationSnapshot reads a conversation, or the main one when the
+// conversation asked for is not there. The drawer reopens the conversation
+// this browser last showed, and that one may belong to another account:
+// an operator who switched to someone else's account, or signed in as
+// someone else, asked for their own conversation as that person and was
+// told "api: not found" twice. A conversation deleted elsewhere is the
+// same case. The main one is always there.
+export async function readConversationSnapshot(conversationId: string, signal: AbortSignal) {
+  try {
+    return await readConversationOnce(conversationId, signal)
+  } catch (caught) {
+    if (conversationId && isNotFound(caught) && !signal.aborted) {
+      return await readConversationOnce('', signal)
+    }
+    throw caught
+  }
+}
+
+async function readConversationOnce(conversationId: string, signal: AbortSignal) {
   const response = await graphql<{
     ReadAgentConversation: {
       conversation: Conversation
@@ -2621,7 +2639,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // a socket that drops comes back on its own, reading the transcript
   // again first so that the replay lands on a fresh one.
   useEffect(() => {
-    if (!open || !available || !conversationId) return
+    // Only a conversation read already: the one remembered from before may
+    // not be there, and following it would fail before the reading had
+    // fallen back to the main one.
+    if (!open || !available || !conversationId || loaded?.id !== conversationId) return
     const followed = conversationId
     let stopped = false
     const stop = subscribe<{ AgentConversationEvents: RunEvent }>(
@@ -2681,7 +2702,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       stop()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, available, conversationId])
+  }, [open, available, conversationId, loaded?.id])
 
   // The list is read again each time it is opened: a conversation started
   // from a terminal since is there too.
