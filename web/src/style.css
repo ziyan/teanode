@@ -11489,6 +11489,15 @@ main.content:has(> .knowledge-frame) {
   overflow-wrap: anywhere;
 }
 
+/* Under the account the approval would act as, so the way to change it sits
+   beside the fact it changes. */
+.authorize-switch {
+  display: block;
+  /* Padded rather than bare text, so a finger finds it on a phone. */
+  padding: var(--space-1) 0;
+  font-size: var(--text-label);
+}
+
 .authorize-claimed {
   display: block;
   margin-top: 2px;
