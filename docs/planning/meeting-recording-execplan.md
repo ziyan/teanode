@@ -383,7 +383,7 @@ unchanged. Fresh security analysis and CI must pass before merging this incremen
 
 Completed runs publish to the existing knowledge source in the same transaction;
 periodic bounded sweeps resume automatic voice-reference curation. Selection sends
-only verified, account-owned, currently confirmed reference bytes within model
+only receipt-verified, account-owned, currently confirmed reference bytes within model
 limits and rechecks identity names immediately before paid submission. Completed
 chunks reuse their immutable attempts without reading newly curated references.
 
@@ -481,3 +481,39 @@ tokens. Original playback remained unchanged. The stored configured-price estima
 is USD 0.00035625; actual cost remains unknown. Correction and learning production
 checks await the reviewed correction increment; the synthetic original is retained
 for that acceptance work. Production remains on reviewed merged v0.143.0.
+
+
+## Attribution evaluation and final integration checkpoint
+
+A licensed, nonprivate 40-second human meeting excerpt with four annotated
+speakers was evaluated through the configured registry, both without references
+and with two isolated reference passages. The provider produced five speaker
+labels in each run, with 18 and 16 timestamped segments respectively. Reported
+usage was 510 input tokens (497 audio, 13 text) and 1190 output without references;
+608 input (558 audio, 50 text) and 1222 output with references. Actual billed cost
+is unavailable. No corpus audio or transcript is committed or added to memory.
+
+Within 32.27 seconds annotated as a single speaker, a one-to-one best label
+mapping matched 74.40 percent without references and 86.86 percent with references.
+This narrow passage comparison excludes annotated overlap and is not a full
+speaker error metric or identity verification. The original two synthetic voices
+still collapsed into one label in both earlier evaluations. Provider labels
+remain unconfirmed until a user assigns them; accepted references are not proof
+of identity. More representative recordings may expose further attribution errors.
+
+Local PostgreSQL and real-storage tests demonstrate splitting a wrongly merged
+label into separate user-confirmed passages, retiring prior attribution evidence,
+and curating only bounded, non-overlapping confirmed audio. Incomplete, uncertain
+or mixed passages cannot become automatic or durable references. Completion
+queues curation transactionally; bounded local maintenance recovers it even when
+global model work is disabled, without constructing a provider. These runtime
+hooks passed focused race tests and full lint, including naming checks. Production
+correction, curation and dreaming checks still await the reviewed backend merge.
+
+The current native simulator job built successfully, but a visual audit found
+recording routes displaying Conversation after service capabilities published
+before recording ownership. Those images do not verify recording screens. The
+publication order and route checks are being corrected before new captures.
+The web Back button and distinct recording icon, historical citations, source
+schedule and explicit stopped-learning resume are undergoing final desktop and
+mobile Chrome checks. The device-setup redesign remains a separate increment.
