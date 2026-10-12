@@ -154,7 +154,7 @@ struct MailFoldersView: View {
                     if folder.pinnedAt != nil {
                         Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(folder.total, format: .number).font(.footnote).foregroundStyle(.secondary)
+                    Text(folder.total, format: .number).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 .swipeActions {
                     if folder.kind.isEmpty {

@@ -216,12 +216,24 @@ private enum ManageLabels {
 private struct ManageTag: View {
     let text: String
     let tone: ManagedTone
+    /// Puts the symbol after the words, so the symbols of a column of tags
+    /// line up at the trailing edge whatever the words' widths.
+    var isIconTrailing = false
 
+    @ViewBuilder
     var body: some View {
-        Label(text, systemImage: symbolName)
-            .font(.caption)
-            .foregroundStyle(color)
-            .symbolRenderingMode(.hierarchical)
+        if isIconTrailing {
+            Label(text, systemImage: symbolName)
+                .labelStyle(TrailingIconLabelStyle())
+                .font(.caption)
+                .foregroundStyle(color)
+                .symbolRenderingMode(.hierarchical)
+        } else {
+            Label(text, systemImage: symbolName)
+                .font(.caption)
+                .foregroundStyle(color)
+                .symbolRenderingMode(.hierarchical)
+        }
     }
 
     private var symbolName: String {
@@ -238,6 +250,16 @@ private struct ManageTag: View {
         case .good, .plain: Color(.secondaryLabel)
         case .bad: .red
         case .warn: .orange
+        }
+    }
+}
+
+/// TrailingIconLabelStyle draws a label's words first and its symbol last.
+private struct TrailingIconLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.title
+            configuration.icon
         }
     }
 }
@@ -1923,7 +1945,7 @@ struct DomainView: View {
                         DomainAliasesView(model: model)
                     } label: {
                         LabeledContent {
-                            Text(domain.aliases?.count ?? 0, format: .number)
+                            Text(domain.aliases?.count ?? 0, format: .number).monospacedDigit()
                         } label: {
                             Label("Aliases", systemImage: "at")
                         }
@@ -1932,7 +1954,7 @@ struct DomainView: View {
                         DomainCredentialsView(model: model)
                     } label: {
                         LabeledContent {
-                            Text(domain.credentials?.count ?? 0, format: .number)
+                            Text(domain.credentials?.count ?? 0, format: .number).monospacedDigit()
                         } label: {
                             Label("Credentials", systemImage: "key")
                         }
@@ -2044,26 +2066,55 @@ private struct OverviewRow: View {
     var isWarning = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(verbatim: title).foregroundStyle(Color(.label))
-                Spacer()
+        // LabeledContent centers the figure on the whole title and detail
+        // block, so it lines up with the disclosure chevron and with the
+        // counts of the list below. Putting the figure on the title's line
+        // left it at the top while the chevron was centered.
+        LabeledContent {
+            HStack(spacing: 8) {
                 if isWarning {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                         .accessibilityLabel(Text("Needs attention"))
                 }
                 Text(verbatim: figureText)
-                    .font(.headline.monospacedDigit())
-                    .foregroundStyle(Color(.label))
+                    .monospacedDigit()
                     .contentTransition(.numericText())
             }
-            Text(verbatim: detailText)
-                .font(.caption)
-                .foregroundStyle(Color(.secondaryLabel))
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: title).foregroundStyle(Color(.label))
+                Text(verbatim: detailText)
+                    .font(.caption)
+                    .foregroundStyle(Color(.secondaryLabel))
+            }
         }
     }
 }
+
+#if DEBUG
+    /// DemoDomainScreen opens one domain for the screenshots CI takes
+    /// (`-TeaNodeScreen domain` and `-TeaNodeScreen dns-records`), since the
+    /// domain's model is private to this file.
+    struct DemoDomainScreen: View {
+        let isShowingRecords: Bool
+        @State private var model: ManagedDomainModel
+
+        init(connection: Connection, isShowingRecords: Bool) {
+            self.isShowingRecords = isShowingRecords
+            _model = State(initialValue: ManagedDomainModel(connection: connection, domainId: "d"))
+        }
+
+        var body: some View {
+            if isShowingRecords {
+                DomainSettingsView(model: model)
+                    .task { await model.load() }
+            } else {
+                DomainView(connection: model.connection, domainId: model.domainId)
+            }
+        }
+    }
+#endif
 
 /// DomainSettingsView is the domain's settings tab: the DNS records to
 /// publish, its logo, the names its MX records point at, the host pictures
@@ -2147,19 +2198,25 @@ private struct DomainSettingsView: View {
                 NavigationLink {
                     DNSRecordView(record: record)
                 } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
+                    // The status is centered on the whole row, like the
+                    // chevron, and its icon comes last so the icons form one
+                    // column however long the word before them is.
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Text(verbatim: record.recordType ?? "")
                                 .font(.callout.weight(.semibold))
                                 .foregroundStyle(Color(.label))
-                            Spacer()
-                            DNSRecordTag(record: record)
+                            Text(verbatim: record.name ?? "")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(Color(.secondaryLabel))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
-                        Text(verbatim: record.name ?? "")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(Color(.secondaryLabel))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        // The separator starts under the record type, not
+                        // under the status at the far side of the row.
+                        .alignmentGuide(.listRowSeparatorLeading) { dimensions in dimensions[.leading] }
+                        Spacer()
+                        DNSRecordTag(record: record, isIconTrailing: true)
                     }
                 }
             }
@@ -2355,14 +2412,15 @@ private struct DomainSettingsView: View {
 /// DNSRecordTag is whether one record is right: ok, optional or change.
 private struct DNSRecordTag: View {
     let record: DNSRecord
+    var isIconTrailing = false
 
     var body: some View {
         if record.isVerified == true {
-            ManageTag(text: String(localized: "ok"), tone: .good)
+            ManageTag(text: String(localized: "ok"), tone: .good, isIconTrailing: isIconTrailing)
         } else if record.isOptional == true {
-            ManageTag(text: String(localized: "optional"), tone: .plain)
+            ManageTag(text: String(localized: "optional"), tone: .plain, isIconTrailing: isIconTrailing)
         } else {
-            ManageTag(text: String(localized: "change"), tone: .warn)
+            ManageTag(text: String(localized: "change"), tone: .warn, isIconTrailing: isIconTrailing)
         }
     }
 }
@@ -2911,23 +2969,25 @@ private struct DomainTemplatesView: View {
     }
 
     private func templateRow(_ template: DomainTemplate) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
+        // The locales are centered on the whole row, level with the
+        // disclosure chevron, rather than on the name's line.
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: template.name)
                     .font(.callout.monospaced())
                     .foregroundStyle(Color(.label))
-                Spacer()
-                Text(verbatim: template.locales.joined(separator: " "))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Color(.secondaryLabel))
-            }
-            if let comment = template.comment, !comment.isEmpty {
-                Text(verbatim: comment)
+                if let comment = template.comment, !comment.isEmpty {
+                    Text(verbatim: comment)
+                        .font(.caption)
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+                Text(verbatim: templateDetails(template))
                     .font(.caption)
                     .foregroundStyle(Color(.secondaryLabel))
             }
-            Text(verbatim: templateDetails(template))
-                .font(.caption)
+            Spacer()
+            Text(verbatim: template.locales.joined(separator: " "))
+                .font(.caption.monospaced())
                 .foregroundStyle(Color(.secondaryLabel))
         }
     }
@@ -2950,16 +3010,16 @@ private struct DomainTemplatesView: View {
     }
 
     private func layoutRow(_ layout: DomainLayout, templateCount: Int) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: layoutTitle(layout)).foregroundStyle(Color(.label))
-                Spacer()
-                Text(verbatim: layout.locales.joined(separator: " "))
-                    .font(.caption.monospaced())
+                Text(verbatim: layoutDetails(layout, templateCount: templateCount))
+                    .font(.caption)
                     .foregroundStyle(Color(.secondaryLabel))
             }
-            Text(verbatim: layoutDetails(layout, templateCount: templateCount))
-                .font(.caption)
+            Spacer()
+            Text(verbatim: layout.locales.joined(separator: " "))
+                .font(.caption.monospaced())
                 .foregroundStyle(Color(.secondaryLabel))
         }
     }

@@ -185,6 +185,7 @@ struct FolderLink: View {
             LabeledContent {
                 if count > 0 {
                     Text(count, format: .number)
+                        .monospacedDigit()
                         .contentTransition(.numericText())
                 }
             } label: {

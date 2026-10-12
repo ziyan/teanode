@@ -474,6 +474,8 @@ struct SettingsForm: View {
                 switch DemoServer.screen ?? "" {
                 case "agent-settings": AgentSettingsView(connection: connection)
                 case "manage": ManageOverviewView(connection: connection)
+                case "domain": DemoDomainScreen(connection: connection, isShowingRecords: false)
+                case "dns-records": DemoDomainScreen(connection: connection, isShowingRecords: true)
                 case "people": PeopleView(connection: connection)
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)

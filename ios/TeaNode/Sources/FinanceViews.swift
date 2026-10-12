@@ -740,6 +740,7 @@ struct BudgetRow: View {
             }
             HStack {
                 Text("\(FinanceMoney.shown(spent, currencyCode: currency)) of \(FinanceMoney.shown(budget, currencyCode: currency))")
+                    .monospacedDigit()
                 Spacer()
                 if let projected, !projected.isEmpty {
                     Text("heading for \(FinanceMoney.shown(projected, currencyCode: currency))")
@@ -855,7 +856,9 @@ struct TransactionRow: View {
     let transaction: FinanceTransaction
 
     var body: some View {
-        HStack(alignment: .top) {
+        // The amount is centered on the row, level with the disclosure
+        // chevron, rather than on the first line.
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(transaction.shownName).lineLimit(1)

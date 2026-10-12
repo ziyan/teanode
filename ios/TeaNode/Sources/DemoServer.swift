@@ -71,6 +71,10 @@
                 answer = Self.roles
             } else if query.contains("ListDomains") {
                 answer = #"{"data":{"ListDomains":[{"id":"d","domain":"example.com"},{"id":"d2","domain":"example.net"}]}}"#
+            } else if query.contains("GetDomain") {
+                answer = Self.domain
+            } else if query.contains("CountMailsBy") {
+                answer = Self.domainOverview
             } else if query.contains("GetSettings") {
                 answer = Self.serverSettings
             } else if query.contains("ListCalendars") {
@@ -474,6 +478,34 @@
               {"id":"member","name":"Member","description":"Reads and sends the mail of the mailboxes they are given.","permissions":["mail:read"]},
               {"id":"operator","name":"Operator","description":"Everything on the server.","permissions":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"]}
             ]}}
+            """#
+
+        /// One domain with records in each state (published, optional and
+        /// needing a change), so a column of statuses has words of different
+        /// widths to line up.
+        static let domain = #"""
+            {"data":{"GetDomain":{
+              "id":"d","domain":"example.com","subdomain":null,"comment":"The main domain",
+              "spamFilterScoreThreshold":6,"mailServers":[],"mailHosts":["mx.example.com"],
+              "linkHost":null,"linkHostname":"links.example.com","dkimSelector":"mail","hasDkimKey":true,"logo":null,
+              "aliases":[{"id":"a1","pattern":"robin","comment":null,"kind":"mailbox","email":null,"webhook":null,"mailboxId":"m1","disabled":false,"mailServer":null},
+                {"id":"a2","pattern":"","comment":"Catch-all","kind":"email","email":"robin@example.net","webhook":null,"mailboxId":null,"disabled":false,"mailServer":null},
+                {"id":"a3","pattern":"billing","comment":null,"kind":"mailbox","email":null,"webhook":null,"mailboxId":"m1","disabled":false,"mailServer":null}],
+              "credentials":[{"id":"c1","comment":"Phone","alias":"robin","disabled":false},{"id":"c2","comment":"Printer","alias":"robin","disabled":false}],
+              "records":{"checkedAt":"2026-10-11T06:00:00Z","error":null,"records":[
+                {"type":"MX","name":"example.com","expected":"mx.example.com","priority":10,"optional":false,"found":["10 mx.example.com"],"verified":true,"purpose":"Where mail for the domain arrives.","blocked":null},
+                {"type":"A","name":"mx.example.com","expected":"203.0.113.10","priority":0,"optional":false,"found":["203.0.113.10"],"verified":true,"purpose":null,"blocked":null},
+                {"type":"TXT","name":"example.com","expected":"v=spf1 mx -all","priority":0,"optional":false,"found":["v=spf1 mx -all"],"verified":true,"purpose":null,"blocked":null},
+                {"type":"TXT","name":"mail._domainkey.example.com","expected":"v=DKIM1; k=rsa; p=MIIBIjANBgkq","priority":0,"optional":false,"found":[],"verified":false,"purpose":"Lets receivers check that mail really came from this domain.","blocked":null},
+                {"type":"TXT","name":"_dmarc.example.com","expected":"v=DMARC1; p=none","priority":0,"optional":true,"found":[],"verified":false,"purpose":null,"blocked":null},
+                {"type":"SRV","name":"_imaps._tcp.example.com","expected":"0 1 993 mx.example.com","priority":0,"optional":true,"found":[],"verified":false,"purpose":null,"blocked":null}]}}}}
+            """#
+
+        static let domainOverview = #"""
+            {"data":{
+              "CountMailsBy":[{"value":"accepted","count":1284},{"value":"rejected","count":97}],
+              "ListMails":[{"id":"m1","receivedAt":"2026-10-11T07:30:00Z"}],
+              "ListPendingDeliveries":[{"id":"q1","status":"pending","retryAt":null},{"id":"q2","status":"pending","retryAt":"2026-10-11T09:00:00Z"}]}}
             """#
 
         static let serverSettings = #"""

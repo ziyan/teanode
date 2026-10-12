@@ -1829,24 +1829,26 @@ struct AgentDreamRow: View {
     private static let headlineKinds: Set<AgentDream.OutcomeKind> = [.read, .filed]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
+        // The duration is centered on the whole row, level with the
+        // disclosure chevron, rather than on the first line.
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: UpkeepWords.when(dream.startedAt)).foregroundStyle(Color(.label))
-                Spacer()
-                if let minutes = dream.minutesTaken {
-                    Text("\(minutes) min").font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                } else {
-                    UpkeepTag(text: String(localized: "Still working."), tone: .good)
+                if !headlineText.isEmpty {
+                    Text(verbatim: headlineText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                }
+                if let lastError = dream.lastError, !lastError.isEmpty {
+                    Text(verbatim: lastError).font(.footnote).foregroundStyle(.red)
+                }
+                if !moreText.isEmpty {
+                    Text(verbatim: moreText).font(.caption).foregroundStyle(Color(.secondaryLabel))
                 }
             }
-            if !headlineText.isEmpty {
-                Text(verbatim: headlineText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-            }
-            if let lastError = dream.lastError, !lastError.isEmpty {
-                Text(verbatim: lastError).font(.footnote).foregroundStyle(.red)
-            }
-            if !moreText.isEmpty {
-                Text(verbatim: moreText).font(.caption).foregroundStyle(Color(.secondaryLabel))
+            Spacer()
+            if let minutes = dream.minutesTaken {
+                Text("\(minutes) min").font(.footnote.monospacedDigit()).foregroundStyle(Color(.secondaryLabel))
+            } else {
+                UpkeepTag(text: String(localized: "Still working."), tone: .good)
             }
         }
     }
