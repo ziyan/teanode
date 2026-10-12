@@ -38,6 +38,7 @@ import (
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
+	"github.com/ziyan/teanode/internal/recording"
 	"github.com/ziyan/teanode/internal/scheduling"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
@@ -711,6 +712,19 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 			log.Errorf("failed to close storage: %s", err)
 		}
 	})
+	if files, isStreaming := opened.(storage.StreamFiles); isStreaming {
+		// Deletion must finish even while agents and hosted mail are disabled.
+		store := recording.New(self.database, files)
+		var cleanupGroup sync.WaitGroup
+		cleanup := periodic.New(context.Background(), &cleanupGroup, func(ctx context.Context) error {
+			return store.Cleanup(ctx, 100)
+		}, &periodic.Settings{Interval: time.Minute, Name: "recording:cleanup"})
+		cleanup.Start()
+		self.onClose(func() {
+			cleanup.Stop()
+			cleanupGroup.Wait()
+		})
+	}
 	return nil
 }
 

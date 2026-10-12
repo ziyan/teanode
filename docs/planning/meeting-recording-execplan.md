@@ -21,12 +21,15 @@ always-on activation and visual video understanding are deferred.
 - [x] Preserve ongoing work and isolate this feature on its own branch/checkout.
 - [x] Notify the other active repository session of branch ownership.
 - [x] Verify current official file-transcription, reference and pricing contracts.
-- [x] Increment 1: add optional Transcriber capability, registry resolution,
+- [x] Increment 1 merged in PR #425, with all CI checks passing: optional Transcriber capability, registry resolution,
   normalized segments/usage and the documented OpenAI adapter with fake-provider tests.
-- [ ] Increment 2: durable account-owned recording manifests, original chunks,
-  upload receipts, transcript runs/versions and reconciliation jobs.
-- [ ] Increment 3: authenticated resumable upload/download and library APIs;
-  background transcription with existing budgets and usage accounting.
+- [x] Increment 2a implemented locally: account-owned manifests, immutable original
+  parts, SHA-256 verification, durable receipts and resumable deletion.
+- [x] Increment 3a implemented locally: authenticated GraphQL library/capture/media
+  metadata, bounded part uploads, completion and private byte-range playback.
+- [ ] CI and independent review of the durable media increment.
+- [ ] Increment 2b: transcript runs/versions and reconciliation jobs.
+- [ ] Increment 3b: background transcription with existing budgets and usage accounting.
 - [ ] Increment 4: recording transcript knowledge source, automatic dreaming
   and corrections/deletion that reconcile dependent memories.
 - [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
@@ -53,6 +56,15 @@ always-on activation and visual video understanding are deferred.
   document follows the repository's existing ExecPlans.
 - The service migration already in review adds a database migration. Allocate
   recording migration numbers against the current shared base before integration.
+- Current main includes the provider foundation and the two reviewed iOS fixes.
+  The service PR has now merged after all CI checks passed. Its sync credential
+  migration uses 0163; recording storage uses 0164 with matching reverse SQL.
+- Streaming and byte-range access now extend the existing filesystem/S3 blob store.
+  Fake S3 transport and filesystem race tests verify unchanged bytes, bounded range
+  reads, canceled writes and protection of an existing original after failed writes.
+- A raw media file can be represented by immutable ordered upload-part blobs. Its
+  full SHA-256 and durable manifest establish the original file without assembling
+  a second permanent copy. Playback and processing stream those same bytes.
 
 ## Decision Log
 
@@ -181,6 +193,30 @@ under owner-scoped locks and matching source/transcript generation. A duplicate
 receipt does not re-enqueue paid transcription. Retain unknown-result attempts for
 reconciliation instead of assuming a provider call cost nothing. Rerunning a
 transcription may require a full paid pass. Metadata labels never require one.
+
+## Current implementation checkpoint
+
+The active increment is feat/recording-storage, based on current main. Work covers
+account-owned recording/media manifests, bounded resumable part uploads, verified
+whole-file receipts, streaming playback and durable explicit-deletion cleanup.
+The service work is merged. The original working copy is preserved.
+Subsequent increments will add processing/usage, sources/reconciliation, corrections
+and references, dashboard and native capture. Provider billing and actual iPhone
+behavior remain open evidence requirements. The issue must remain open until those
+acceptance criteria are observed.
+
+## Durable media validation evidence
+
+PostgreSQL-backed race tests pass for account isolation, stable initialization and
+part receipts, conflicting retries, incomplete/corrupted originals, concurrent
+completion, playback across parts, capture gap history and generation checks,
+quota reservations through deletion, lost write receipts, resumable cleanup and
+account deletion. Forward/reverse SQL both execute successfully. HTTP handler
+tests confirm authorization before reading a body, cookie protection at completion,
+declared body limits and private ranges. Filesystem/fake S3 tests verify original
+bytes and range reads; mirror cleanup failures remain retryable. Local format,
+lint and naming checks pass. Full CI, dashboard/iOS flows, paid-provider evaluation
+and actual-device checks are not evidence supplied by this increment.
 
 ## Outcomes & Retrospective
 
