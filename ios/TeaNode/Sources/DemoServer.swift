@@ -104,7 +104,7 @@
             {"id":"i1","ideaKind":"personal","ideaCategory":null,"emoji":"🔧","headline":"Confirm the plumber for Thursday","body":"They asked you to confirm the 9:00 visit.","openingRequest":"Reply to the plumber that Thursday at 9 works.","suggestionReason":"From their message yesterday.","ideaStatus":"open","createdAt":"2026-10-10T08:00:00Z"},
             {"id":"i2","ideaKind":"catalog","ideaCategory":"home","emoji":"🪴","headline":"Remind me to water the plants","body":"A weekly reminder on the day you choose.","openingRequest":"Remind me every Sunday to water the plants.","ideaStatus":"open","createdAt":"2026-10-01T08:00:00Z"},
             {"id":"i3","ideaKind":"catalog","ideaCategory":"money","emoji":"💳","headline":"Watch for unusual charges","body":"Tell me when a charge is far above what a merchant usually takes.","openingRequest":"Watch my card for unusual charges.","ideaStatus":"open","createdAt":"2026-10-01T08:00:00Z"},
-            {"id":"i4","ideaKind":"catalog","ideaCategory":"mail","emoji":"📬","headline":"Unsubscribe from what I never read","ideaStatus":"done","createdAt":"2026-09-20T08:00:00Z","closedAt":"2026-09-21T08:00:00Z"}
+            {"id":"i4","ideaKind":"catalog","ideaCategory":"mail","emoji":"📬","headline":"Unsubscribe from what I never read","ideaStatus":"done","startedConversationId":"demo-unsubscribe","createdAt":"2026-09-20T08:00:00Z","closedAt":"2026-09-21T08:00:00Z"}
             ],"ideaCategories":[{"ideaCategory":"home","emojis":["🪴"]},{"ideaCategory":"money","emojis":["💳"]},{"ideaCategory":"mail","emojis":["📬"]}]}}}
             """#
 
