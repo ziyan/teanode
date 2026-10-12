@@ -139,7 +139,14 @@ func TestRecordingVersionsClaimsUsageAndImmutableSegments(test *testing.T) {
 			test.Fatal("request-local speaker provenance was lost", err)
 		}
 		attempts, err := transaction.ListRecordingTranscriptionAttempts(fixture.userId, fixture.transcriptRun.ID)
-		if err != nil || len(attempts) != 1 || !json.Valid(attempts[0].ProviderUsageJSON) || len(attempts[0].ReferenceBlobIDs) != 0 || !attempts[0].HasProviderUsage {
+		if err != nil || len(attempts) != 1 || len(attempts[0].ProviderUsageJSON) != 0 || len(attempts[0].ProviderResponseJSON) != 0 {
+			test.Fatal("bulk read loaded raw provider payloads", err)
+		}
+		evidence, err := transaction.GetRecordingTranscriptionAttemptEvidence(fixture.userId, attempt.ID)
+		if err != nil || !json.Valid(evidence.ProviderUsageJSON) || !json.Valid(evidence.ProviderResponseJSON) {
+			test.Fatal("raw provider evidence was not retained", err)
+		}
+		if err != nil || len(attempts) != 1 || len(attempts[0].ReferenceBlobIDs) != 0 || !attempts[0].HasProviderUsage {
 			test.Fatal("provider usage was not preserved", err)
 		}
 		reprocessed, err := transaction.CreateRecordingTranscriptRun(fixture.userId, fixture.media.ID, fixture.agentId, "explicit-rerun", "fixture:diarize", true)
@@ -186,6 +193,27 @@ func TestRecordingUnknownRemoteOutcomeIsNotAutomaticallyResubmitted(test *testin
 		retry, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, chunk.ID, fixture.claim, "USD", nil)
 		if err != nil || retry.ID != attempt.ID || retry.RecordingAttemptState != models.RecordingAttemptUncertain {
 			test.Fatal("unknown outcome became another paid request", err)
+		}
+	})
+}
+
+func TestRecordingPreparedAttemptCanRefreshEmptyReferences(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingTranscribing, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.VerifyRecordingBlob(fixture.userId, blob.ID, blob.BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+		prepared, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, chunk.ID, fixture.claim, "USD", nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		refreshed, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, chunk.ID, fixture.claim, "USD", nil)
+		if err != nil || refreshed.ID != prepared.ID || refreshed.RecordingAttemptState != models.RecordingAttemptPrepared || len(refreshed.ReferenceBlobIDs) != 0 {
+			test.Fatal("prepared empty reference refresh changed attempt identity", err)
 		}
 	})
 }
@@ -347,5 +375,45 @@ func TestRecordingAccountDeletionRetriesOriginalAndDerivedCleanup(test *testing.
 	}
 	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM recording_transcript_run") != "0" {
 		test.Fatal("account deletion retained derived versions")
+	}
+}
+
+func TestRecordingCancellationRetainsUsageButRejectsFurtherSegments(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		canceledRun, err := transaction.CancelRecordingTranscriptRun(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil || canceledRun.RecordingProcessingState != models.RecordingProcessingCanceled {
+			test.Fatal("cancellation not durable", err)
+		}
+		finished := &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete, PromptTokens: 9, HasProviderUsage: true}
+		segments := []*models.RecordingTranscriptSegment{{LocalSpeakerID: "local", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "Evidence after cancellation."}}
+		isFirstPublication, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, finished, segments)
+		if err != nil || !isFirstPublication {
+			test.Fatal("in-flight usage was lost", err)
+		}
+		storedSegments, segmentCount, err := transaction.ReadRecordingTranscriptPage(fixture.userId, fixture.transcriptRun.ID, 0, 20)
+		if err != nil || len(storedSegments) != 0 || segmentCount != 0 {
+			test.Fatal("canceled transcript published new segments", err)
+		}
+		attempts, err := transaction.ListRecordingTranscriptionAttempts(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil || len(attempts) != 1 || attempts[0].PromptTokens != 9 || !attempts[0].HasProviderUsage {
+			test.Fatal("reported usage missing", err)
+		}
+	})
+	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.SubmitRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim)
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("canceled request resubmitted", err)
+	}
+	otherOwnerId := dbtest.CreateUser(test, fixture.database, "cancellation-other")
+	err = fixture.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CancelRecordingTranscriptRun(otherOwnerId, fixture.transcriptRun.ID)
+		return err
+	})
+	if !errors.Is(err, db.ErrNotFound) {
+		test.Fatal("foreign cancellation admitted", err)
 	}
 }

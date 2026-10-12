@@ -20,3 +20,22 @@ func TestRecordingLimitsUseTheSharedSettingsReadAndUpdatePath(test *testing.T) {
 		test.Fatal("invalid recording size was accepted")
 	}
 }
+
+func TestRecordingTranscriptionModelIsExplicitAndCanBeDisabled(test *testing.T) {
+	configuration := config.Default()
+	if configuration.Agent.Models.Transcription != "" {
+		test.Fatal("file transcription enabled by default")
+	}
+	if err := applyAgentSettings(configuration, &AgentParameters{Models: &AgentModelsParameters{Transcription: new("fixture:diarized")}}); err != nil {
+		test.Fatal(err)
+	}
+	if describeAgentSettings(configuration).Models.Transcription != "fixture:diarized" {
+		test.Fatal("explicit transcription setting lost")
+	}
+	if err := applyAgentSettings(configuration, &AgentParameters{Models: &AgentModelsParameters{Transcription: new("")}}); err != nil {
+		test.Fatal(err)
+	}
+	if describeAgentSettings(configuration).Models.Transcription != "" {
+		test.Fatal("disabling transcription fell back to another model")
+	}
+}

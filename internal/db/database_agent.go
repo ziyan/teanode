@@ -653,7 +653,7 @@ func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Tim
 }
 
 // backgroundKinds are the long reading jobs backgroundLast puts last.
-var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill)}
+var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill), string(models.AgentJobRecording)}
 
 // ClaimAgentJobsKeepingRoom keeps a slot from the reading. Putting what a
 // person waits for first in the queue was not enough: with every slot
@@ -753,7 +753,7 @@ func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) 
 	// a large source read through a script took twenty-four minutes,
 	// was put back at fifteen, and ran a second time beside the first --
 	// and with both holding a slot the night could not claim one.
-	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" NOT IN ?", string(models.AgentJobRunning), before, []string{string(models.AgentJobDream), string(models.AgentJobIngest), string(models.AgentJobBackground)}).Updates(map[string]any{
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" NOT IN ?", string(models.AgentJobRunning), before, []string{string(models.AgentJobDream), string(models.AgentJobIngest), string(models.AgentJobBackground), string(models.AgentJobRecording)}).Updates(map[string]any{
 		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "", "claim_id": "",
 	})
 	return result.RowsAffected, result.Error

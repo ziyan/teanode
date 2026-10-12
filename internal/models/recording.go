@@ -51,6 +51,7 @@ type Recording struct {
 	ID                    string                `json:"id"`
 	UserID                string                `json:"userId"`
 	CreatedAt             time.Time             `json:"createdAt"`
+	RecordedAt            *time.Time            `json:"recordedAt" graphapi:"nullable"`
 	UpdatedAt             time.Time             `json:"updatedAt"`
 	ClientRecordingID     string                `json:"clientRecordingId"`
 	RecordingTitle        string                `json:"recordingTitle"`

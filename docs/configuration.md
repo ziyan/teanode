@@ -1257,6 +1257,11 @@ also catch them. A model no entry matches costs what `pricing` above says.
 
 ### `agent.models`
 
+**`transcription`** selects an explicit `provider:model` for passive file
+transcription with speaker labels and timestamps. Empty disables processing;
+chat and realtime voice models are never a fallback. The model must advertise
+the required file-transcription capabilities through the provider registry.
+
 Every value is written `provider:model`, and the provider must be declared,
 enabled, and admit the model.
 

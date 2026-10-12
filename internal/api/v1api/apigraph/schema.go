@@ -57,6 +57,7 @@ type Query interface {
 	AgentPhoneQuery
 	AgentTabQuery
 	RecordingQuery
+	RecordingTranscriptQuery
 	AgentVoiceQuery
 	AgentComputerQuery
 	AgentBackgroundQuery
@@ -104,6 +105,8 @@ type Mutation interface {
 	PasskeyMutation
 	SettingsMutation
 	RecordingMutation
+	RecordingTranscriptMutation
+	RecordingAttachmentMutation
 	AgentMutation
 	AgentAdminMutation
 	AgentAskMutation

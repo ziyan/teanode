@@ -187,3 +187,67 @@ func TestRecordingByteRangesAreBounded(test *testing.T) {
 		}
 	}
 }
+
+func TestRecordingAttachmentImportIsOwnedDurableAndIdempotent(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	files, err := storage.Open(&storage.Settings{Directory: test.TempDir()})
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer func() { _ = files.Close() }()
+	ownerId := dbtest.CreateUser(test, database, "attachment-owner")
+	otherId := dbtest.CreateUser(test, database, "attachment-other")
+	var attachment *models.AgentAttachment
+	content := []byte("synthetic original audio bytes")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		assistant, err := transaction.CreateAgent(&models.Agent{UserID: ownerId, Name: "Attachment assistant", Enabled: false})
+		if err != nil {
+			test.Fatal(err)
+		}
+		attachment, err = transaction.CreateAgentAttachment(&models.AgentAttachment{AgentID: assistant.ID, Name: "fixture.wav", ContentType: "audio/wav", Size: int64(len(content))})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := files.PutFile(test.Context(), attachment.ID, content); err != nil {
+			test.Fatal(err)
+		}
+	})
+	resolver := &graph{database: database, storage: files, config: config.NewMemoryStore(config.Default())}
+	importAs := func(userId string) (*RecordingView, error) {
+		var recordingView *RecordingView
+		err := database.Transaction(func(transaction db.Transaction) error {
+			owner, err := transaction.GetUser(userId)
+			if err != nil {
+				return err
+			}
+			ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), &api.Principal{User: owner, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}), transaction)
+			recordingView, err = resolver.ImportRecordingAttachment(ctx, ImportRecordingAttachmentArguments{AgentAttachmentID: attachment.ID, ClientRecordingID: "stable-attachment", RecordingTitle: "Imported fixture"})
+			return err
+		})
+		return recordingView, err
+	}
+	if _, err := importAs(otherId); err == nil {
+		test.Fatal("foreign attachment imported")
+	}
+	first, err := importAs(ownerId)
+	if err != nil {
+		test.Fatal(err)
+	}
+	second, err := importAs(ownerId)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if first.Recording.ID != second.Recording.ID || len(first.MediaFiles) != 1 || len(second.MediaFiles) != 1 || first.MediaFiles[0].ID != second.MediaFiles[0].ID {
+		test.Fatal("retry duplicated original")
+	}
+	media := second.MediaFiles[0]
+	digest := sha256.Sum256(content)
+	if media.RecordingUploadState != models.RecordingUploadComplete || media.VerifiedAt == nil || media.OriginalSHA256 != hex.EncodeToString(digest[:]) {
+		test.Fatal("import returned an unverified receipt")
+	}
+	var playback bytes.Buffer
+	if err := recording.New(database, files.(storage.StreamFiles)).CopyRange(test.Context(), ownerId, media.ID, &playback, 0, int64(len(content))); err != nil || !bytes.Equal(playback.Bytes(), content) {
+		test.Fatal("attachment changed during import", err)
+	}
+}

@@ -37,10 +37,16 @@ type TestAgentProviderArguments struct {
 // AgentModel is one model a provider offers, named the way the
 // configuration names it.
 type AgentModel struct {
-	Provider      string `json:"provider"`
-	Model         string `json:"model"`
-	Name          string `json:"name"`
-	ContextLength int    `json:"contextLength"`
+	CanTranscribe                bool   `json:"canTranscribe"`
+	HasSpeakerDiarization        bool   `json:"hasSpeakerDiarization"`
+	HasSegmentTimestamps         bool   `json:"hasSegmentTimestamps"`
+	HasSpeakerReferences         bool   `json:"hasSpeakerReferences"`
+	MaximumAudioBytes            int64  `json:"maximumAudioBytes"`
+	MaximumSpeakerReferenceCount int    `json:"maximumSpeakerReferenceCount"`
+	Provider                     string `json:"provider"`
+	Model                        string `json:"model"`
+	Name                         string `json:"name"`
+	ContextLength                int    `json:"contextLength"`
 }
 
 // AgentSettings is the agent as the settings page shows it: every secret
@@ -132,18 +138,19 @@ func modelPricingSettings(priced []config.AgentModelPricing) []*AgentModelPricin
 
 // AgentModelsSettings assigns work to models.
 type AgentModelsSettings struct {
-	Default   string   `json:"default"`
-	Fast      string   `json:"fast"`
-	Quick     string   `json:"quick"`
-	Embedding string   `json:"embedding"`
-	Triage    string   `json:"triage"`
-	Research  string   `json:"research"`
-	Summarize string   `json:"summarize"`
-	Reply     string   `json:"reply"`
-	Ask       string   `json:"ask"`
-	Schedule  string   `json:"schedule"`
-	Compact   string   `json:"compact"`
-	Choices   []string `json:"choices"`
+	Transcription string   `json:"transcription"`
+	Default       string   `json:"default"`
+	Fast          string   `json:"fast"`
+	Quick         string   `json:"quick"`
+	Embedding     string   `json:"embedding"`
+	Triage        string   `json:"triage"`
+	Research      string   `json:"research"`
+	Summarize     string   `json:"summarize"`
+	Reply         string   `json:"reply"`
+	Ask           string   `json:"ask"`
+	Schedule      string   `json:"schedule"`
+	Compact       string   `json:"compact"`
+	Choices       []string `json:"choices"`
 
 	// Scan is the model for bulk understanding with nobody present, and
 	// EmbeddingDimensions the width to ask the embedding model for.
@@ -348,18 +355,19 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		SkipCertificateCheck:  nonNil(agent.SkipCertificateCheck),
 		Providers:             []*AgentProviderSettings{},
 		Models: &AgentModelsSettings{
-			Default:   agent.Models.Default,
-			Fast:      agent.Models.Fast,
-			Quick:     agent.Models.Quick,
-			Embedding: agent.Models.Embedding,
-			Triage:    agent.Models.Triage,
-			Research:  agent.Models.Research,
-			Summarize: agent.Models.Summarize,
-			Reply:     agent.Models.Reply,
-			Ask:       agent.Models.Ask,
-			Schedule:  agent.Models.Schedule,
-			Compact:   agent.Models.Compact,
-			Choices:   nonNil(agent.Models.Choices),
+			Transcription: agent.Models.Transcription,
+			Default:       agent.Models.Default,
+			Fast:          agent.Models.Fast,
+			Quick:         agent.Models.Quick,
+			Embedding:     agent.Models.Embedding,
+			Triage:        agent.Models.Triage,
+			Research:      agent.Models.Research,
+			Summarize:     agent.Models.Summarize,
+			Reply:         agent.Models.Reply,
+			Ask:           agent.Models.Ask,
+			Schedule:      agent.Models.Schedule,
+			Compact:       agent.Models.Compact,
+			Choices:       nonNil(agent.Models.Choices),
 
 			Scan:                agent.Models.Scan,
 			Synthesize:          agent.Models.Synthesize,
@@ -593,19 +601,20 @@ type AgentProviderParameters struct {
 // AgentModelsParameters assign work to models; each given field replaces
 // the stored one.
 type AgentModelsParameters struct {
-	Default   *string   `json:"default"`
-	Fast      *string   `json:"fast"`
-	Quick     *string   `json:"quick"`
-	Embedding *string   `json:"embedding"`
-	Triage    *string   `json:"triage"`
-	Research  *string   `json:"research"`
-	Summarize *string   `json:"summarize"`
-	Reply     *string   `json:"reply"`
-	Ask       *string   `json:"ask"`
-	Schedule  *string   `json:"schedule"`
-	Compact   *string   `json:"compact"`
-	Choices   *[]string `json:"choices"`
-	Scan      *string   `json:"scan"`
+	Transcription *string   `json:"transcription"`
+	Default       *string   `json:"default"`
+	Fast          *string   `json:"fast"`
+	Quick         *string   `json:"quick"`
+	Embedding     *string   `json:"embedding"`
+	Triage        *string   `json:"triage"`
+	Research      *string   `json:"research"`
+	Summarize     *string   `json:"summarize"`
+	Reply         *string   `json:"reply"`
+	Ask           *string   `json:"ask"`
+	Schedule      *string   `json:"schedule"`
+	Compact       *string   `json:"compact"`
+	Choices       *[]string `json:"choices"`
+	Scan          *string   `json:"scan"`
 	// Synthesize is the model for deciding what matters across many
 	// pages; empty falls back to research.
 	Synthesize *string `json:"synthesize"`
@@ -881,6 +890,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&models.Fast, parameters.Models.Fast)
 		applyString(&models.Quick, parameters.Models.Quick)
 		applyString(&models.Embedding, parameters.Models.Embedding)
+		applyString(&models.Transcription, parameters.Models.Transcription)
 		applyString(&models.Scan, parameters.Models.Scan)
 		applyString(&models.Synthesize, parameters.Models.Synthesize)
 		applyString(&models.Decide, parameters.Models.Decide)
@@ -1192,7 +1202,17 @@ func listProviderModels(ctx context.Context, declared *config.AgentProvider, tim
 	}
 	result := []*AgentModel{}
 	for _, model := range llm.FilterModels(declared.Name, &declared.Models, listed) {
-		result = append(result, &AgentModel{Provider: model.Provider, Model: model.Model, Name: model.Name, ContextLength: model.ContextLength})
+		described := &AgentModel{Provider: model.Provider, Model: model.Model, Name: model.Name, ContextLength: model.ContextLength}
+		if transcriber, isTranscriber := provider.(llm.Transcriber); isTranscriber {
+			capabilities := transcriber.TranscriptionCapabilities(model.Model)
+			described.CanTranscribe = capabilities.CanTranscribe
+			described.HasSpeakerDiarization = capabilities.HasSpeakerDiarization
+			described.HasSegmentTimestamps = capabilities.HasSegmentTimestamps
+			described.HasSpeakerReferences = capabilities.HasSpeakerReferences
+			described.MaximumAudioBytes = capabilities.MaximumAudioBytes
+			described.MaximumSpeakerReferenceCount = capabilities.MaximumSpeakerReferenceCount
+		}
+		result = append(result, described)
 	}
 	return result, nil
 }

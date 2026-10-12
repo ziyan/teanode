@@ -332,6 +332,10 @@ type AgentPricing struct {
 // kinds (triage, summarize, compact, scan), else Default. Synthesize falls
 // back to what Research resolves to instead.
 type AgentModels struct {
+	// Transcription selects passive speaker-attributed file processing. Empty is
+	// off; chat and realtime voice models are never an implicit fallback.
+	Transcription string `yaml:"transcription,omitempty"`
+
 	Default   string `yaml:"default"`
 	Fast      string `yaml:"fast,omitempty"`
 	Embedding string `yaml:"embedding,omitempty"`
@@ -1411,6 +1415,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	checkModel("agent.models.fast", agent.Models.Fast)
 	checkModel("agent.models.quick", agent.Models.Quick)
 	checkModel("agent.models.embedding", agent.Models.Embedding)
+	checkModel("agent.models.transcription", agent.Models.Transcription)
 	checkModel("agent.models.triage", agent.Models.Triage)
 	checkModel("agent.models.research", agent.Models.Research)
 	checkModel("agent.voice.askModel", agent.Voice.AskModel)

@@ -44,6 +44,9 @@ var authorizing = map[string]bool{
 	// requirePermission(agent:use), plus the caller's agent, which the Ask
 	// operations all need and none of which may run without.
 	"requireAgentPerson": true,
+	// Recording evidence needs agent:use and the caller's account even when
+	// that account does not currently have an enabled agent.
+	"recordingAccount": true,
 	// The same agent permission check in a short transaction, with current
 	// account state loaded for HTTP query execution.
 	"requireRecallPerson": true,
