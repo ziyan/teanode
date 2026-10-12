@@ -699,8 +699,10 @@ extension AppModel {
         if let services = try? await connection.serviceCapabilities(), self.connection === connection {
             self.services = services
         }
-        if (try? await connection.recordingOwnerId()) != nil, self.connection === connection {
-            self.account = await connection.account
+        if (try? await connection.recordingOwnerId()) != nil {
+            let verifiedAccount = await connection.account
+            guard self.connection === connection else { return }
+            self.account = verifiedAccount
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
     }
