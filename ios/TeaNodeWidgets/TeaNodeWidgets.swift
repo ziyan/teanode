@@ -176,7 +176,7 @@ struct WaitingWidgetView: View {
             Button(intent: opening) {
                 VStack(alignment: .leading, spacing: 1) {
                     Label("\(count) waiting", systemImage: "questionmark.bubble").font(.headline).widgetAccentable()
-                    Text(entry.glance?.newestWaiting?.interactionText ?? String(localized: "Nothing waits for you"))
+                    Text(entry.glance?.newestWaiting.map { PlainText.of($0.interactionText) } ?? String(localized: "Nothing waits for you"))
                         .font(.caption)
                         .lineLimit(2)
                 }
@@ -196,7 +196,7 @@ struct WaitingWidgetView: View {
                         Text(newest.interactionKind == "approval" ? String(localized: "Approve?") : String(localized: "Asks you"))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.orange)
-                        Text(newest.interactionText).font(.footnote).lineLimit(3)
+                        Text(PlainText.of(newest.interactionText)).font(.footnote).lineLimit(3)
                     } else {
                         Text("Nothing waits for you").font(.footnote).foregroundStyle(.secondary)
                     }

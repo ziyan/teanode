@@ -31,8 +31,10 @@ struct AskAgentIntent: AppIntent {
         let answer = try await connection.answer(to: asked.runId, until: Date().addingTimeInterval(Self.waitSeconds))
         let said: String
         switch answer {
-        case .answered(let text) where !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
-            said = text
+        case .answered(let text) where !SpokenText.of(text).isEmpty:
+            // Siri reads it aloud: the words, without the hidden suggestions
+            // line or any Markdown marks.
+            said = SpokenText.of(text)
         case .answered:
             said = String(localized: "Done.")
         case .waitingForPerson:

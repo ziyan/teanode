@@ -59,6 +59,10 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     public var risk: String = ""
     /// For an answer, the replies it suggests, shown as buttons.
     public var suggestions: [String] = []
+    /// For an answer still arriving, everything that has come, which is more
+    /// than `text` shows while the hidden suggestions line is being written:
+    /// its characters come one by one, and none of them are for the person.
+    public var streamedText: String = ""
     /// For a tool, what it was called with.
     public var arguments: String = ""
     /// For a note, whether it is waiting on something still to happen
@@ -458,9 +462,14 @@ public struct Transcript: Sendable {
             }
         case "text":
             if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
-                lines[last].text += event.text ?? ""
+                lines[last].streamedText += event.text ?? ""
+                lines[last].text = Suggestions.split(lines[last].streamedText).text
             } else {
-                lines.append(TranscriptLine(id: "\(event.runId)-\(event.sequence)", kind: .answer, text: event.text ?? "", isStreaming: true, runId: event.runId, at: event.at))
+                var line = TranscriptLine(
+                    id: "\(event.runId)-\(event.sequence)", kind: .answer, text: Suggestions.split(event.text ?? "").text, isStreaming: true,
+                    runId: event.runId, at: event.at)
+                line.streamedText = event.text ?? ""
+                lines.append(line)
             }
         case "message":
             let split = Suggestions.split(event.text ?? "")
