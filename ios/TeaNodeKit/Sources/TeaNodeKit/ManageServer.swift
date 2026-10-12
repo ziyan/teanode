@@ -1282,6 +1282,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
     public var synthesize: String
     public var decide: String
     public var categorize: String
+    public var transcription: String? = nil
     public var embeddingDimensions: Int
     public var choices: [String]
 
@@ -1289,7 +1290,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
     /// a typed turn starts on; empty starts it on the conversations model.
     public static let baseFieldNames = ["default", "fast", "quick", "embedding"]
     /// One per kind of work, for whoever spends differently on each.
-    public static let workFieldNames = ["triage", "research", "summarize", "reply", "ask", "schedule", "compact", "scan", "synthesize"]
+    public static let workFieldNames = ["triage", "research", "summarize", "reply", "ask", "schedule", "compact", "scan", "synthesize", "transcription"]
     /// Every assignment by field name, the deciding ones last.
     public static let allFieldNames = baseFieldNames + workFieldNames + ["decide", "categorize"]
 
@@ -1312,6 +1313,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
             case "synthesize": synthesize
             case "decide": decide
             case "categorize": categorize
+            case "transcription": transcription ?? ""
             default: ""
             }
         }
@@ -1332,6 +1334,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
             case "synthesize": synthesize = newValue
             case "decide": decide = newValue
             case "categorize": categorize = newValue
+            case "transcription": transcription = newValue
             default: break
             }
         }
@@ -1356,7 +1359,7 @@ public struct AgentModelAssignments: Codable, Hashable, Sendable {
             "default": .string(self.default), "fast": .string(fast), "quick": .string(quick), "embedding": .string(embedding),
             "triage": .string(triage), "research": .string(research), "summarize": .string(summarize), "reply": .string(reply),
             "ask": .string(ask), "schedule": .string(schedule), "compact": .string(compact), "scan": .string(scan), "synthesize": .string(synthesize),
-            "decide": .string(decide), "categorize": .string(categorize), "embeddingDimensions": .number(Double(embeddingDimensions)),
+            "decide": .string(decide), "categorize": .string(categorize), "transcription": .string(transcription ?? ""), "embeddingDimensions": .number(Double(embeddingDimensions)),
             "choices": SettingsList.value(choices),
         ])
     }
@@ -1414,6 +1417,8 @@ public struct AgentLimits: Codable, Hashable, Sendable {
     public let maxRoundsPerReply: Int
     public let maxToolCallsPerRun: Int
     public let requestTimeout: String
+    public var maxRecordingMediaBytes: String? = nil
+    public var maxRecordingAccountBytes: String? = nil
     public let concurrency: Int
     public let maxRoundsPerDream: Int
     public let scanConcurrency: Int
@@ -1759,6 +1764,7 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         ["ingestChunksPerRun", "embeddingTokensPerDay"],
         ["maxRoundsPerSubagent", "goalTurnsPerDay", "goalTurnsAlone", "goalsInProgress", "backgroundWakesAlone"],
         ["requestTimeout", "concurrency"],
+        ["maxRecordingMediaBytes", "maxRecordingAccountBytes"],
     ]
 
     public var limitTexts: [String: String]
@@ -1783,6 +1789,8 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         // Zero is said as 0, as the dashboard's form shows a stored limit.
         var limitTexts = numbers.mapValues { number in number == 0 ? "0" : SettingsList.text(number) }
         limitTexts["requestTimeout"] = limits.requestTimeout
+        limitTexts["maxRecordingMediaBytes"] = limits.maxRecordingMediaBytes ?? "0"
+        limitTexts["maxRecordingAccountBytes"] = limits.maxRecordingAccountBytes ?? "0"
         self.limitTexts = limitTexts
         retention = settings.retention
         currency = settings.currency
@@ -1792,7 +1800,7 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         var limits: [String: JSONValue] = [:]
         for name in Self.limitGroups.joined() {
             let typed = limitTexts[name] ?? ""
-            limits[name] = name == "requestTimeout" ? .string(typed) : .number(SettingsList.number(typed))
+            limits[name] = (name == "requestTimeout" || name == "maxRecordingMediaBytes" || name == "maxRecordingAccountBytes") ? .string(typed) : .number(SettingsList.number(typed))
         }
         return [
             "limits": .object(limits),
@@ -2526,9 +2534,9 @@ extension Documents {
         agent {
           enabled instructions allowPrivateAddresses skipCertificateCheck
           providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
-          models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
+          models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
+          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
           retention { runs corrections }
           currency
           search { kind hasApiKey }

@@ -2008,6 +2008,8 @@ private enum AgentWords {
         case "maxRoundsPerResearch": "Rounds per research run"
         case "maxRoundsPerReply": "Rounds per reply"
         case "maxToolCallsPerRun": "Tool calls per run"
+        case "maxRecordingMediaBytes": "Original recording file limit"
+        case "maxRecordingAccountBytes": "Recording storage per account"
         case "requestTimeout": "Timeout per call"
         case "concurrency": "Runs at once"
         case "maxRoundsPerDream": "Rounds per dream call"
@@ -2037,6 +2039,7 @@ private enum AgentWords {
         case "synthesize": "Judgment across pages: overviews, reflections, a survey’s pages"
         case "decide": "Deciding between known answers"
         case "categorize": "Categorizing finance transactions"
+        case "transcription": "Recording transcription"
         default: LocalizedStringKey(fieldName)
         }
     }
@@ -2047,6 +2050,7 @@ private enum AgentWords {
         case "default", "fast", "embedding": String(localized: "None")
         case "quick": String(localized: "None: what you type starts on the conversations model")
         case "synthesize": String(localized: "Same as research (the default when research is not set)")
+        case "transcription": String(localized: "Off: choose a model with speaker attribution")
         case "decide": String(localized: "None: a language model decides instead")
         case "categorize": String(localized: "Same as deciding, or the scan model when deciding is not set")
         default: String(localized: "Same as the default (fast for sorting, summaries and compaction)")
@@ -3419,6 +3423,9 @@ private struct AgentLimitsFormView: View {
                         }
                     }
                 } footer: {
+                    if limitNames.contains("maxRecordingMediaBytes") {
+                        Text("Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.")
+                    }
                     if limitNames.contains("maxRoundsPerSubagent") {
                         Text("For work nobody is watching. Zero is the default shown in brackets.")
                     }
@@ -3433,7 +3440,7 @@ private struct AgentLimitsFormView: View {
                 AgentWords.limitLabel(limitName),
                 text: Binding(get: { draft.wrappedValue.limitTexts[limitName] ?? "" }, set: { draft.wrappedValue.limitTexts[limitName] = $0 })
             )
-            .keyboardType(limitName == "requestTimeout" ? .default : .decimalPad)
+            .keyboardType((limitName == "requestTimeout" || limitName.hasPrefix("maxRecording")) ? .default : .decimalPad)
             .multilineTextAlignment(.trailing)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()

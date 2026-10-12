@@ -694,7 +694,7 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
-        case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .agent, .goals, .ideas, .knowledge, .finance, .recordings: return services.isAssistantEnabled
         case .settings: return true
         }
     }

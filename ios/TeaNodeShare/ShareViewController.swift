@@ -36,6 +36,8 @@ struct SharedFile: Identifiable {
 final class ShareModel: ObservableObject {
     @Published var note = ""
     @Published var files: [SharedFile] = []
+    @Published var recordingFiles: [SharedRecordingFile] = []
+    @Published var isRecordingDestination = false
     @Published var isReading = true
     @Published var isSending = false
     @Published var problemText: String?
@@ -58,20 +60,20 @@ final class ShareModel: ObservableObject {
     var isConnected: Bool { connection != nil }
 
     var canSend: Bool {
-        isConnected && !isSending && (!note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty)
+        isConnected && !isSending && (!note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty || !recordingFiles.isEmpty)
     }
 
     /// Reads what was shared: links and words into the note, pictures and
     /// files as attachments.
     func read() async {
         defer { isReading = false }
-        if let connection, let name = try? await connection.agentName() {
-            agentName = name
-        }
         let providers = (context?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
         var lines: [String] = []
         for (index, provider) in providers.enumerated() {
-            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+            if provider.hasItemConformingToTypeIdentifier(UTType.audio.identifier) || provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                do { if let file = try await ShareRecordingImport.stage(provider: provider) { recordingFiles.append(file) } }
+                catch { problemText = error.localizedDescription }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
                 if let data = await Self.data(of: provider, type: UTType.image), let image = UIImage(data: data),
                     let file = Self.picture(image, index: index)
                 {
@@ -90,6 +92,7 @@ final class ShareModel: ObservableObject {
             }
         }
         note = lines.joined(separator: "\n")
+        if let connection { Task { if let name = try? await connection.agentName() { agentName = name } } }
         if files.reduce(0, { $0 + $1.data.count }) > Self.bytesMost {
             problemText = String(localized: "The files come to more than 25 MB, more than the server takes in one message.")
         }
@@ -100,7 +103,20 @@ final class ShareModel: ObservableObject {
         isSending = true
         defer { isSending = false }
         do {
+            if isRecordingDestination {
+                for file in recordingFiles { try await ShareRecordingImport.save(file, accountKey: connection.accountKey, title: note.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                cleanupStagedRecordings()
+                context?.completeRequest(returningItems: nil)
+                return
+            }
+            let recordingBytes = try recordingFiles.reduce(0) { total, file in total + (try file.originalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }
+            guard recordingBytes + files.reduce(0, { $0 + $1.data.count }) <= Self.bytesMost else {
+                throw TeaNodeError.refused(String(localized: "These files exceed the chat attachment limit. Save audio or video as recordings instead."))
+            }
             var attachmentIds: [String] = []
+            for file in recordingFiles {
+                attachmentIds.append(try await connection.upload(name: file.originalFilename, contentType: file.originalContentType, data: Data(contentsOf: file.originalURL)))
+            }
             for file in files {
                 attachmentIds.append(try await connection.upload(name: file.name, contentType: file.contentType, data: file.data))
             }
@@ -108,13 +124,19 @@ final class ShareModel: ObservableObject {
             _ = try await connection.ask(
                 text.isEmpty ? String(localized: "(shared files)") : text, in: nil, attachmentIds: attachmentIds,
                 drawerId: "share-\(UUID().uuidString)")
+            cleanupStagedRecordings()
             context?.completeRequest(returningItems: nil)
         } catch {
             problemText = error.localizedDescription
         }
     }
 
+    private func cleanupStagedRecordings() {
+        for file in recordingFiles { try? FileManager.default.removeItem(at: file.originalURL) }
+    }
+
     func cancel() {
+        cleanupStagedRecordings()
         context?.cancelRequest(withError: NSError(domain: "com.teanode.app.share", code: 0))
     }
 
@@ -195,11 +217,17 @@ struct ShareView: View {
                             .scrollIndicators(.hidden)
                         }
                     }
+                    if !model.recordingFiles.isEmpty {
+                        Section {
+                            Toggle("Save audio or video as recordings", isOn: $model.isRecordingDestination)
+                            ForEach(model.recordingFiles) { file in Label(file.originalFilename, systemImage: file.isVideo ? "video" : "waveform") }
+                        } footer: { Text("Recordings are kept locally until verified by the server. Open TeaNode to resume their background uploads. Recording speech is not sent as an instruction to your agent.") }
+                    }
                     Section {
-                        TextField("Add a note for your agent", text: $model.note, axis: .vertical)
+                        TextField(model.isRecordingDestination ? String(localized: "Meeting title (optional)") : String(localized: "Add a note for your agent"), text: $model.note, axis: .vertical)
                             .lineLimit(3...10)
                     } footer: {
-                        Text("It goes to your main conversation.")
+                        Text(model.isRecordingDestination ? String(localized: "Saved recordings will appear in the recording library.") : String(localized: "It goes to your main conversation."))
                     }
                     if let problemText = model.problemText {
                         Section {
@@ -218,7 +246,7 @@ struct ShareView: View {
                     if model.isSending || model.isReading {
                         ProgressView()
                     } else {
-                        Button("Send") { Task { await model.send() } }
+                        Button(model.isRecordingDestination ? String(localized: "Save recording") : String(localized: "Send")) { Task { await model.send() } }
                             .disabled(!model.canSend)
                     }
                 }

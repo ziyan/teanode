@@ -26071,16 +26071,16 @@
     },
     "Recording transcription": {
       "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音转录"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "録音の文字起こし"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "录音转写"
           }
         }
       }
@@ -42644,6 +42644,1510 @@
           "stringUnit": {
             "state": "translated",
             "value": "“%@”已取消"
+          }
+        }
+      }
+    },
+    "Recordings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音"
+          }
+        }
+      }
+    },
+    "Recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音"
+          }
+        }
+      }
+    },
+    "Add recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を追加"
+          }
+        }
+      }
+    },
+    "Start recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開始"
+          }
+        }
+      }
+    },
+    "Stop recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を停止"
+          }
+        }
+      }
+    },
+    "Pause recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を一時停止"
+          }
+        }
+      }
+    },
+    "Resume recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を再開"
+          }
+        }
+      }
+    },
+    "Pause or resume recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停或继续录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を一時停止または再開"
+          }
+        }
+      }
+    },
+    "Recording locally": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在本地录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末に録音中"
+          }
+        }
+      }
+    },
+    "Paused. Resume when you are ready.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停，准备好后继续。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止中です。準備ができたら再開してください。"
+          }
+        }
+      }
+    },
+    "On this phone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此手机上"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末"
+          }
+        }
+      }
+    },
+    "On the server": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在服务器上"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバー"
+          }
+        }
+      }
+    },
+    "Original kept locally": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始文件已保存在本地"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のファイルを端末に保存済み"
+          }
+        }
+      }
+    },
+    "Uploaded and verified": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已上传并验证"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロードと検証が完了"
+          }
+        }
+      }
+    },
+    "Retry upload": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试上传"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロードを再試行"
+          }
+        }
+      }
+    },
+    "Remove from this phone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从此手机移除"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末から削除"
+          }
+        }
+      }
+    },
+    "Remove the local original?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除本地原始文件？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末の元のファイルを削除しますか？"
+          }
+        }
+      }
+    },
+    "Any audio not verified by the server will be lost. This does not delete the server recording.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器尚未验证的音频将会丢失。此操作不会删除服务器上的录音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーで未検証の音声は失われます。サーバーの録音は削除されません。"
+          }
+        }
+      }
+    },
+    "Audio stays on this phone until the server verifies the upload. Recorded speech is source material, never instructions to your agent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器验证上传之前，音频会保留在此手机上。录音内容是资料，不是给助手的指令。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーがアップロードを検証するまで音声はこの端末に残ります。録音された発言は資料であり、エージェントへの指示ではありません。"
+          }
+        }
+      }
+    },
+    "Import audio or video": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入音频或视频"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声または動画を読み込む"
+          }
+        }
+      }
+    },
+    "No recordings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音がありません"
+          }
+        }
+      }
+    },
+    "Start a recording or import audio or video.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始录音或导入音频或视频。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開始するか、音声または動画を読み込んでください。"
+          }
+        }
+      }
+    },
+    "Meeting title (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会议标题（可选）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会議名（任意）"
+          }
+        }
+      }
+    },
+    "Everyone should know you are recording. TeaNode stays silent and saves the audio locally.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请让所有参与者知道您在录音。TeaNode 不会发声，并在本地保存音频。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加者全員に録音することを伝えてください。TeaNode は発声せず、音声を端末に保存します。"
+          }
+        }
+      }
+    },
+    "Original media": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始媒体"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のメディア"
+          }
+        }
+      }
+    },
+    "Ready to play": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以播放"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生可能"
+          }
+        }
+      }
+    },
+    "Upload pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待上传"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード待ち"
+          }
+        }
+      }
+    },
+    "Capture gaps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音间断"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音の空白"
+          }
+        }
+      }
+    },
+    "Interrupted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已中断"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中断"
+          }
+        }
+      }
+    },
+    "Delete recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を削除"
+          }
+        }
+      }
+    },
+    "Delete recording and its originals?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除录音及其原始文件？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音と元のファイルを削除しますか？"
+          }
+        }
+      }
+    },
+    "Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "派生音频、转录和参考样本将被移除。学习所得资料将相应更新。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "派生音声、文字起こし、参照サンプルが削除されます。学習した内容も見直されます。"
+          }
+        }
+      }
+    },
+    "Cannot play recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法播放录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を再生できません"
+          }
+        }
+      }
+    },
+    "Downloading original for private playback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载原始文件以进行私密播放"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非公開で再生するため元のファイルをダウンロード中"
+          }
+        }
+      }
+    },
+    "Transcribe or reprocess": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录或重新处理"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしまたは再処理"
+          }
+        }
+      }
+    },
+    "Transcript versions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录版本"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしのバージョン"
+          }
+        }
+      }
+    },
+    "Cancel transcription": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消转录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしをキャンセル"
+          }
+        }
+      }
+    },
+    "Start another transcription pass?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始新一轮转录？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度文字起こししますか？"
+          }
+        }
+      }
+    },
+    "A new pass can be billed again by the provider. Confirmed labels stay separate from generated versions. Rename a speaker without reprocessing to avoid another pass.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新一轮转录可能由提供商再次计费。已确认的标签独立于生成的版本。只重命名说话人无需重新处理，可避免再次转录。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新たな処理はプロバイダーから再度請求される場合があります。確認済みのラベルは生成されたバージョンと別に保持されます。話者名だけの変更なら再処理は不要です。"
+          }
+        }
+      }
+    },
+    "Edit recording details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑录音详情"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音の詳細を編集"
+          }
+        }
+      }
+    },
+    "Meeting date is known": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已知会议时间"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会議の日時がわかっている"
+          }
+        }
+      }
+    },
+    "Recorded at": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制时间"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音日時"
+          }
+        }
+      }
+    },
+    "Recording details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音详情"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音の詳細"
+          }
+        }
+      }
+    },
+    "Processing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理进度"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理状況"
+          }
+        }
+      }
+    },
+    "Provider model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供商模型"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーモデル"
+          }
+        }
+      }
+    },
+    "Transcription usage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录用量"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしの使用量"
+          }
+        }
+      }
+    },
+    "Cost unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "费用未知"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "費用不明"
+          }
+        }
+      }
+    },
+    "Provider usage unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供商用量未知"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーの使用量不明"
+          }
+        }
+      }
+    },
+    "Estimates use configured pricing. Actual cost is shown only when billing evidence exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估算使用配置的价格。只有取得计费凭据后才显示实际费用。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推定費用は設定された料金を使います。実際の費用は請求の根拠がある場合のみ表示します。"
+          }
+        }
+      }
+    },
+    "Transcript": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし"
+          }
+        }
+      }
+    },
+    "Unconfirmed speaker": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未确认说话人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未確認の話者"
+          }
+        }
+      }
+    },
+    "Name speaker": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标记说话人姓名"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者に名前を付ける"
+          }
+        }
+      }
+    },
+    "Load more passages": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载更多片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに発言を読み込む"
+          }
+        }
+      }
+    },
+    "Speaker groups are local to each provider request. Only your confirmed names connect people across chunks and versions.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话人组仅属于单次提供商请求。只有您确认的姓名才能关联不同片段和版本中的人物。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者グループは各プロバイダーリクエスト内だけの識別です。チャンクやバージョンをまたいで人物を結び付けるのは、あなたが確認した名前だけです。"
+          }
+        }
+      }
+    },
+    "Speakers and voice references": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话人与声音参考"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者と音声参照"
+          }
+        }
+      }
+    },
+    "Confirmed name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已确认姓名"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認済みの名前"
+          }
+        }
+      }
+    },
+    "Apply to this speaker group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用于此说话人组"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この話者グループに適用"
+          }
+        }
+      }
+    },
+    "Off changes this passage only. Naming is free metadata. Suitable voice samples are selected automatically, and learned material is reconciled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭时仅更改此片段。命名仅修改元数据，无需转录费用。合适的声音样本会自动筛选，学习所得资料也会相应更新。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフの場合はこの発言だけを変更します。名前の変更は無料のメタデータ操作です。適した音声サンプルが自動選択され、学習内容も見直されます。"
+          }
+        }
+      }
+    },
+    "Confirmed speakers": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已确认说话人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認済みの話者"
+          }
+        }
+      }
+    },
+    "Confirmed passages": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已确认片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認済みの発言"
+          }
+        }
+      }
+    },
+    "Remove correction": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除更正"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修正を削除"
+          }
+        }
+      }
+    },
+    "Voice references": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "声音参考"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声参照"
+          }
+        }
+      }
+    },
+    "Remove voice reference": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除声音参考"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声参照を削除"
+          }
+        }
+      }
+    },
+    "No clean reference samples available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无清晰的参考样本"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "適した参照サンプルはありません"
+          }
+        }
+      }
+    },
+    "References are curated only from names you confirm. Removing or correcting a label invalidates affected samples. Reprocessing is a separate paid pass.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参考样本仅依据您确认的姓名筛选。移除或更正标签会使相关样本失效。重新处理是另一轮付费转录。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参照はあなたが確認した名前だけに基づいて選ばれます。ラベルの削除や修正で関連サンプルは無効になります。再処理は別の有料処理です。"
+          }
+        }
+      }
+    },
+    "Rename speaker": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名说话人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者名を変更"
+          }
+        }
+      }
+    },
+    "Preparing audio": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备音频"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声を準備中"
+          }
+        }
+      }
+    },
+    "Transcribing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在转录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし中"
+          }
+        }
+      }
+    },
+    "Complete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了"
+          }
+        }
+      }
+    },
+    "Provider outcome unknown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供商结果未知"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーの結果不明"
+          }
+        }
+      }
+    },
+    "Canceled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル済み"
+          }
+        }
+      }
+    },
+    "Allow microphone access in Settings, then start recording again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在设置中允许麦克风权限，然后重新开始录音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定でマイクへのアクセスを許可してから、もう一度録音を開始してください。"
+          }
+        }
+      }
+    },
+    "Stop the current recording or call before starting another recording.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先停止当前录音或通话，再开始另一段录音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の録音を始める前に、現在の録音または通話を終了してください。"
+          }
+        }
+      }
+    },
+    "Recovered local audio. Resume when you are ready; the interruption is marked as a gap.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复本地音频。准备好后可继续录音；中断已标记为间断。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末の音声を復元しました。準備ができたら再開してください。中断は空白として記録されています。"
+          }
+        }
+      }
+    },
+    "Recording could not start. Check microphone access and available storage.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法开始录音。请检查麦克风权限和可用存储空间。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開始できませんでした。マイクの権限と空き容量を確認してください。"
+          }
+        }
+      }
+    },
+    "Choose an audio or video file.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择音频或视频文件。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声または動画ファイルを選んでください。"
+          }
+        }
+      }
+    },
+    "The file exceeds this server's recording limit. Choose a smaller file or ask the operator to adjust the limit.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件超出服务器的录音限制。请选择较小的文件或请管理员调整限制。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルがサーバーの録音上限を超えています。小さいファイルを選ぶか、管理者に上限の変更を依頼してください。"
+          }
+        }
+      }
+    },
+    "The local original changed. Keep it and try importing again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地原始文件已更改。请保留文件并重新尝试导入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末の元のファイルが変更されました。保存したまま、もう一度読み込みを試してください。"
+          }
+        }
+      }
+    },
+    "This recording was deleted on the server. Its local original was kept.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此录音已从服务器删除。本地原始文件已保留。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この録音はサーバーで削除されました。端末の元のファイルは保持されています。"
+          }
+        }
+      }
+    },
+    "The upload was not verified. Keep the original and retry.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传尚未验证。请保留原始文件并重试。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロードが検証されていません。元のファイルを保持して再試行してください。"
+          }
+        }
+      }
+    },
+    "Original recording file limit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始录音文件限制"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の録音ファイルの上限"
+          }
+        }
+      }
+    },
+    "Recording storage per account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个账户的录音存储空间"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントごとの録音容量"
+          }
+        }
+      }
+    },
+    "Off: choose a model with speaker attribution": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭：请选择支持说话人标记的模型"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ：話者識別に対応したモデルを選んでください"
+          }
+        }
+      }
+    },
+    "Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大小可使用 GB 等单位。零表示每个原始文件默认 2 GB，每个账户默认 64 GB。待上传和待删除的文件均计入存储量。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GB などの単位を使えます。ゼロは元のファイルごとに 2 GB、アカウントごとに 64 GB の既定値です。アップロード待ちと削除待ちのファイルも容量に含まれます。"
+          }
+        }
+      }
+    },
+    "Save audio or video as recordings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将音频或视频保存为录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声または動画を録音として保存"
+          }
+        }
+      }
+    },
+    "Recordings are kept locally until verified by the server. Open TeaNode to resume their background uploads. Recording speech is not sent as an instruction to your agent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器验证前，录音会保留在本地。打开 TeaNode 可继续后台上传。录音内容不会作为指令发送给助手。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーで検証されるまで録音は端末に保持されます。TeaNode を開くとバックグラウンドアップロードが再開します。録音された発言はエージェントへの指示として送られません。"
+          }
+        }
+      }
+    },
+    "Saved recordings will appear in the recording library.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存的录音会显示在录音库中。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存した録音は録音ライブラリに表示されます。"
+          }
+        }
+      }
+    },
+    "Save recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存录音"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を保存"
+          }
+        }
+      }
+    },
+    "These files exceed the chat attachment limit. Save audio or video as recordings instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些文件超出聊天附件限制。请将音频或视频保存为录音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらのファイルはチャット添付の上限を超えています。音声または動画は録音として保存してください。"
+          }
+        }
+      }
+    },
+    "Uploaded %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传于 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード %@"
+          }
+        }
+      }
+    },
+    "Version %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本 %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン %lld"
+          }
+        }
+      }
+    },
+    "Actual cost: %@ %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实际费用：%@ %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実際の費用：%@ %@"
+          }
+        }
+      }
+    },
+    "Estimated cost: %@ %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估算费用：%@ %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推定費用：%@ %@"
+          }
+        }
+      }
+    },
+    "Play passage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放片段"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "発言を再生"
           }
         }
       }

@@ -50,6 +50,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        RecordingUploads.shared.handleBackgroundEvents(identifier: identifier, completion: completionHandler)
+    }
+
     private func perform(_ pressed: PressedButton) async {
         await app.perform(pressed)
     }
