@@ -226,7 +226,7 @@ final class ConversationModel {
             let earlierMessages = page.messages.filter { !known.contains($0.id) }
             messages = earlierMessages + messages
             total = page.total
-            transcript.prepend(messages: messages, interactions: interactions)
+            transcript.prepend(messages: messages, earlierCount: earlierMessages.count)
         } catch {
             sendProblemText = app.describe(error)
         }
