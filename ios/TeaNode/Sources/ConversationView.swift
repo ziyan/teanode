@@ -1549,14 +1549,25 @@ struct CodingQuestionCard: View {
     var body: some View {
         if let question = line.codingQuestion {
             VStack(alignment: .leading, spacing: 12) {
+                // Which agent, which session and on which computer, as the
+                // dashboard's card names them: one person may have sessions
+                // of the same name on several machines.
                 CardHeader(
                     systemImage: "terminal",
-                    title: question.sessionName.isEmpty ? question.codingAgentName : "\(question.codingAgentName) · \(question.sessionName)")
+                    title: [question.codingAgentName, question.sessionName, question.computer].filter { !$0.isEmpty }.joined(separator: " · "))
                 MarkdownView(text: question.questionText)
                 if line.isDone {
-                    Label(line.resolution.isEmpty ? String(localized: "Answered") : line.resolution, systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Label {
+                        if line.resolution.isEmpty {
+                            Text("Answered")
+                        } else {
+                            Text("Answered: \(line.resolution)")
+                        }
+                    } icon: {
+                        Image(systemName: "checkmark.circle")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in

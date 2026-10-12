@@ -5413,6 +5413,22 @@
         }
       }
     },
+    "Answered: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已回答：%@"
+          }
+        }
+      }
+    },
     "Answering for me": {
       "localizations": {
         "ja": {
