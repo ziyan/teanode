@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -313,5 +314,50 @@ func TestAPhoneBodyLeavesOutWhatIsHidden(t *testing.T) {
 		if got := phoneBody(testCase.text); got != testCase.want {
 			t.Errorf("%s: phoneBody(%q) = %q, want %q", name, testCase.text, got, testCase.want)
 		}
+	}
+}
+
+// What a phone is told of a question, a card's buttons and the agent's own
+// words is plain: a link keeps its words, and the suggested replies an
+// answer ends with, and any other hidden marker, are not printed on a lock
+// screen.
+func TestAPhoneIsToldNothingHidden(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	said := "See [the invoice](mail:01abc) first.\n<!--suggestions:[\"Pay it\",\"Not now\"]-->"
+	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", said, "a pane asks"); err != nil {
+		t.Fatalf("writeHerdrQuestion: %s", err)
+	}
+	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
+
+	run := &AskRun{agent: fixture.worker, settings: &AskSettings{Agent: fixture.agent, Surface: "ios", Conversation: &models.AgentConversation{ID: "side-1"}}}
+	run.notifyInteraction(&models.AgentInteraction{
+		ConversationID: "side-1", CallID: "call-1", InteractionKind: models.InteractionQuestion,
+		InteractionText: "Pay [the invoice](mail:01abc) <!-- note --> today?", InteractionChoices: []string{"**Pay** it", "Not now"},
+	})
+	run.notifyAnswer("Paid. [Receipt](https://example.org/r)\n<!--suggestions:[\"Thanks\",\"Show me\"]-->")
+	fixture.worker.waitGroup.Wait()
+
+	want := map[string]string{
+		models.NotificationMessage:  "See the invoice first.",
+		models.NotificationQuestion: "Pay the invoice today?",
+		models.NotificationAnswer:   "Paid. Receipt",
+	}
+	for _, delivery := range fixture.relay.to("sealed:a-registration") {
+		content := fixture.read(t, delivery)
+		if content.NotificationKind == models.NotificationQuestion {
+			if content.Buttons[0].Label != "Pay it" {
+				t.Errorf("the first button said %q", content.Buttons[0].Label)
+			}
+		}
+		if strings.Contains(content.Body, "<!--") || strings.Contains(content.Body, "](") {
+			t.Errorf("a %s notification printed %q", content.NotificationKind, content.Body)
+		}
+		if expected, isKnown := want[content.NotificationKind]; isKnown && content.Body != expected {
+			t.Errorf("a %s notification said %q, want %q", content.NotificationKind, content.Body, expected)
+		}
+		delete(want, content.NotificationKind)
+	}
+	if len(want) != 0 {
+		t.Errorf("no notification of these kinds arrived: %v", want)
 	}
 }

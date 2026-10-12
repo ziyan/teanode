@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -306,7 +305,7 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 			if index == 3 {
 				break
 			}
-			content.Buttons = append(content.Buttons, push.Button{Label: choice, ButtonAction: fmt.Sprintf("answer:%d", index+1)})
+			content.Buttons = append(content.Buttons, push.Button{Label: models.PlainText(choice), ButtonAction: fmt.Sprintf("answer:%d", index+1)})
 		}
 		content.Buttons = append(content.Buttons, push.Button{Label: "Reply", ButtonAction: "reply"})
 	}
@@ -378,26 +377,12 @@ func (self *AskRun) isAnswerForPhone() bool {
 	return false
 }
 
-// hiddenCommentPattern is an HTML comment: the markers an answer carries
-// for the dashboard and the app to read, never to show.
-var hiddenCommentPattern = regexp.MustCompile(`(?s)<!--.*?(-->|$)`)
-
-// linkPattern is a Markdown link or picture, [words](target) or
-// ![words](target); a notification keeps the words.
-var linkPattern = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
-
 // phoneBody is text as a notification shows it: plain, and short enough that
-// a lock screen is not the place it is read in full. The suggested replies
-// and any other hidden marker go first, since a notification is plain text
-// and would print them, and a link keeps its words without its target.
+// a lock screen is not the place it is read in full. A notification is
+// plain text, so the suggested replies and any other hidden marker, a
+// link's target and the Markdown marks are taken off first.
 func phoneBody(text string) string {
-	text = models.StripSuggestedReplies(text)
-	text = hiddenCommentPattern.ReplaceAllString(text, "")
-	text = linkPattern.ReplaceAllString(text, "$1")
-	text = strings.Join(strings.Fields(text), " ")
-	for _, mark := range []string{"**", "__", "`"} {
-		text = strings.ReplaceAll(text, mark, "")
-	}
+	text = strings.Join(strings.Fields(models.PlainText(text)), " ")
 	runes := []rune(text)
 	if len(runes) > 600 {
 		return string(runes[:600]) + "…"
