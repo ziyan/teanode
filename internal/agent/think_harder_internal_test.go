@@ -117,6 +117,11 @@ func TestATypedTurnStartsOnTheQuickModelAndHandsAHardQuestionToTheLargerOne(t *t
 	var toolNames [][]string
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		raw, _ := io.ReadAll(request.Body)
+		// The emoji the server puts on a dashboard or app message is
+		// picked beside the turn and is not one of its rounds.
+		if answerReactionChoice(writer, raw) {
+			return
+		}
 		var body struct {
 			Model  string `json:"model"`
 			Stream bool   `json:"stream"`
