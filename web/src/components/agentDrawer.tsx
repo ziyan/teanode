@@ -4048,8 +4048,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onReply={() => replyTo(line)}
               onCopy={() => copyLine(line)}
               onCopyFailed={sayCopyFailed}
-              reactLabel={t('agentDrawer.react')}
-              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}

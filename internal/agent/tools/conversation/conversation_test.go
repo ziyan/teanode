@@ -340,10 +340,11 @@ func TestConversationReactsToThePersonsMessages(t *testing.T) {
 		t.Fatalf("nobody was told of a reaction that was refused: %+v", run.told[told:])
 	}
 
-	// Its own answer can carry one too; and in a conversation the person
-	// has not written in there is nothing to react to by default.
-	if _, err := call(`{"action":"react","emoji":"🎉","message_id":"` + answer.ID + `"}`); err != nil {
-		t.Fatalf("react to its own answer: %s", err)
+	// Its own answer cannot carry one: nobody reacts to their own words.
+	// And in a conversation the person has not written in there is nothing
+	// to react to by default.
+	if _, err := call(`{"action":"react","emoji":"🎉","message_id":"` + answer.ID + `"}`); err == nil {
+		t.Fatal("reacted to its own answer")
 	}
 	run.conversation = elsewhere
 	if _, err := call(`{"action":"react","emoji":"👍"}`); err == nil {
