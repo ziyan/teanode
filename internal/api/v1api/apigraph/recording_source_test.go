@@ -43,9 +43,23 @@ func TestRecordingSourceKeepsItsInternalName(test *testing.T) {
 			test.Fatal("recording internal name could change", err)
 		}
 		isEnabled := false
-		saved, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Name: source.Name, Enabled: &isEnabled, Cron: "0 7 * * *"})
+		saved, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Name: source.Name, Enabled: &isEnabled, Cron: new("0 7 * * *")})
 		if err != nil || saved.Name != source.Name || saved.Enabled || saved.Cron != "0 7 * * *" {
 			test.Fatal("recording source pause or schedule changed semantics", saved, err)
+		}
+		if saved.NextRunAt == nil {
+			test.Fatal("recording schedule could not start after manual ingestion")
+		}
+		unchanged, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID})
+		if err != nil || unchanged.Cron != saved.Cron || unchanged.NextRunAt == nil || !unchanged.NextRunAt.Equal(*saved.NextRunAt) {
+			test.Fatal("omitted schedule changed its next run", unchanged, err)
+		}
+		manual, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Cron: new("")})
+		if err != nil || manual.Cron != "" || manual.NextRunAt != nil {
+			test.Fatal("explicit empty schedule did not restore manual ingestion", manual, err)
+		}
+		if _, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Cron: new("invalid")}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Fatal("invalid recording schedule was saved", err)
 		}
 	})
 }
