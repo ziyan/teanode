@@ -104,6 +104,8 @@ its pull request is opened.
 - A swipe right anywhere on a screen opens the side menu, so rows have no
   swipe-right actions there; what a left swipe does not hold goes in the
   long-press menu.
+- In the side menu itself a swipe left closes it, so its rows have no swipe
+  actions at all: everything a row offers is in its long-press menu.
 
 ## Motion and feel
 
