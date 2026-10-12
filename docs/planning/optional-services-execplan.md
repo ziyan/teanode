@@ -555,6 +555,9 @@ image bytes remain available independently, so previously sent messages keep the
 images. Disabled mailboxes no longer authorize ordinary mailbox downloads.
 The debug transport advertises its simulated capabilities so screenshots exercise
 the intended screens rather than an unavailable-service placeholder.
+Merged tool discovery now filters unavailable actions individually. Account and
+phone-pairing actions remain offered while mail setup is omitted. A cached mail
+action rechecks availability before execution, and re-enabling restores discovery.
 
 The security follow-up updates Go to 1.26.9 and x/net to 0.60.0, updates fast-uri,
 and applies a tested bounded-nesting guard to braces until a patched upstream release

@@ -93,6 +93,9 @@ type Tool struct {
 	// Services lists hosted dependencies independent of permissions.
 	Services []models.Service
 
+	// ForServices keeps available actions of a merged tool in discovery.
+	ForServices func(*config.Services) *Tool
+
 	// Core tools are always in the request; the rest may be deferred
 	// behind tool_search when the catalog is long.
 	Core bool
@@ -298,6 +301,12 @@ func (self *Catalog) Offered(permissions *models.EffectivePermissions, policy *c
 	offered := make([]*Tool, 0, len(self.order))
 	for _, tool := range self.All() {
 		if len(serviceSettings) > 0 && serviceSettings[0] != nil {
+			if tool.ForServices != nil {
+				tool = tool.ForServices(serviceSettings[0])
+				if tool == nil {
+					continue
+				}
+			}
 			configuration := &config.Configuration{Services: *serviceSettings[0]}
 			if RequireServices(tool, configuration) != nil {
 				continue
