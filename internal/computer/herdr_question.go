@@ -80,7 +80,17 @@ var (
 	// A rule drawn across the screen: Claude Code draws one above its
 	// forms, with a session's name in it sometimes.
 	herdrRulePattern = regexp.MustCompile(`^\s*[─━]{8,}`)
+	// A time on a clock that runs while the form waits, such as the
+	// seconds left before Claude Code denies a request on its own.
+	herdrClockPattern = regexp.MustCompile(`\b\d{1,2}:\d{2}(:\d{2})?\b`)
 )
+
+// isCountdownLine says a line under a form only counts down to what the
+// coding agent does by itself if nobody answers: it is not part of the
+// question, and it changes every second.
+func isCountdownLine(trimmed string) bool {
+	return strings.Contains(trimmed, "will automatically") && herdrClockPattern.MatchString(trimmed)
+}
 
 // herdrFormFooters are what a form says below its options, one of which
 // every form has. Matched with the screen's line breaks taken out, since a
@@ -355,7 +365,7 @@ func questionTextAbove(lines []string, first int) string {
 		switch {
 		case trimmed == "", herdrRulePattern.MatchString(line), strings.HasPrefix(trimmed, "╌"),
 			strings.HasPrefix(trimmed, "←"), strings.HasPrefix(trimmed, "☐"), strings.HasPrefix(trimmed, "☒"),
-			strings.HasPrefix(trimmed, "Tip:"), strings.HasPrefix(trimmed, "— choose"):
+			strings.HasPrefix(trimmed, "Tip:"), strings.HasPrefix(trimmed, "— choose"), isCountdownLine(trimmed):
 			continue
 		}
 		said = append(said, trimmed)
@@ -366,8 +376,13 @@ func questionTextAbove(lines []string, first int) string {
 // questionFingerprint names a question by what it asks and offers.
 // Every space is left out, since where a pane breaks a line depends on how
 // wide it is, and a pane resized must not make the same question another.
+// A clock's time is left out too: one that ran on the screen made the same
+// question a new one every second, and each was told answered and asked
+// again.
 func questionFingerprint(question *HerdrQuestion) string {
-	withoutSpaces := func(text string) string { return strings.Join(strings.Fields(text), "") }
+	withoutSpaces := func(text string) string {
+		return strings.Join(strings.Fields(herdrClockPattern.ReplaceAllString(text, "#")), "")
+	}
 	hash := sha256.New()
 	hash.Write([]byte(question.HerdrQuestionKind + "\n" + withoutSpaces(question.QuestionText) + "\n"))
 	for _, option := range question.Options {

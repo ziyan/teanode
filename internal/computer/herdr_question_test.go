@@ -129,3 +129,28 @@ func TestAFormWithoutNumbersIsAnsweredWithTheArrows(t *testing.T) {
 		t.Errorf("%+v %q %v", steps, answeredWith, err)
 	}
 }
+
+// Claude Code counts down under a request it will deny on its own. The
+// countdown is not part of the question, and the same request a second
+// later is the same question: a fingerprint that followed the clock told
+// the server a new question every second.
+func TestACountdownUnderAFormIsNotPartOfTheQuestion(t *testing.T) {
+	screen := readHerdrFixture(t, "claude-tool-countdown")
+	first := recognizeQuestion(CodingAgentKindClaude, screen)
+	if first == nil {
+		t.Fatal("no question recognized")
+	}
+	later := recognizeQuestion(CodingAgentKindClaude, strings.Replace(screen, "in 0:12", "in 0:11", 1))
+	if later == nil || later.QuestionFingerprint != first.QuestionFingerprint {
+		t.Fatal("the same request a second later is another question")
+	}
+	if strings.Contains(first.QuestionText, "automatically deny") {
+		t.Fatalf("the countdown is in the question: %q", first.QuestionText)
+	}
+	if !strings.Contains(first.QuestionText, "make -C build test") {
+		t.Fatalf("the command is missing from the question: %q", first.QuestionText)
+	}
+	if got := strings.Join(optionLabels(first), " | "); got != "Yes | No" {
+		t.Fatalf("options %q", got)
+	}
+}
