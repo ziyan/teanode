@@ -35,7 +35,7 @@ and confirmation policy; turning off hosted mail must not disable those tools.
 - [x] Implement optional runtime construction and guarded operations.
 - [x] Decouple calendar/contact sync credentials from mailboxes.
 - [x] Implement web, native app, CLI and assistant capability awareness.
-- [x] Implement setup choices and an assistant deployment preset; smoke-tested HTTP-only startup and account creation.\n- [ ] Finish the macOS simulator build and final cross-client review in CI.\n- [ ] Commit, push and update the existing draft pull request.
+- [x] Implement setup choices and an assistant deployment preset; smoke-tested HTTP-only startup and account creation.\n- [ ] Finish the macOS simulator build and final cross-client review in CI.\n- [x] Commit and push the implementation on the existing draft branch; CI is checking the native app.
 
 ## Surprises & Discoveries
 
