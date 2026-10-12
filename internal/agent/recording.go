@@ -284,12 +284,19 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 			return nil
 		}
 	}
-	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		if err := transaction.UpdateRecordingTranscriptProgress(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, models.RecordingProcessingComplete, "", transcriptRun.DerivedDurationMS); err != nil {
 			return err
 		}
+		if err := transaction.QueueRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID); err != nil {
+			return err
+		}
 		return transaction.SyncRecordingKnowledge(run.Agent.UserID, transcriptRun.RecordingID)
-	})
+	}); err != nil {
+		return err
+	}
+	self.WakeRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID)
+	return nil
 }
 
 func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk) (bool, error) {

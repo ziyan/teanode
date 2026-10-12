@@ -732,6 +732,7 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 	if files, isStreaming := opened.(storage.StreamFiles); isStreaming {
 		// Deletion must finish even while agents and hosted mail are disabled.
 		store := recording.New(self.database, files)
+		localCurationSettings := &agent.Settings{Database: self.database, Storage: opened, Configuration: self.store.Current}
 		var cleanupGroup sync.WaitGroup
 		cleanup := periodic.New(context.Background(), &cleanupGroup, func(ctx context.Context) error {
 			if err := store.InitializeKnowledge(ctx, 25); err != nil {
@@ -742,6 +743,23 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 			}
 			if err := store.DeleteRevokedReferences(ctx, 25); err != nil {
 				log.Warningf("cannot delete revoked recording references: %s", err)
+			}
+			if !self.store.Current().Agent.Enabled {
+				var sources []*models.Recording
+				if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+					sources, err = transaction.ListRecordingsAwaitingSpeakerCuration(25)
+					return err
+				}); err != nil {
+					log.Warningf("cannot find pending local recording curation: %s", err)
+				}
+				for _, source := range sources {
+					curationContext, cancelCuration := context.WithTimeout(ctx, 2*time.Minute)
+					err := agent.CurateRecordingSpeakersLocally(curationContext, localCurationSettings, source.UserID, source.ID)
+					cancelCuration()
+					if err != nil && ctx.Err() == nil {
+						log.Warningf("cannot curate confirmed recording speakers locally: %s", err)
+					}
+				}
 			}
 			return store.Cleanup(ctx, 100)
 		}, &periodic.Settings{Interval: time.Minute, Name: "recording:cleanup"})
