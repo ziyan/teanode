@@ -157,6 +157,9 @@ type SaveAddressBookArguments struct {
 
 // requireAddressBookPerson is the caller, if they may keep contacts.
 func (self *graph) requireAddressBookPerson(ctx context.Context) (*api.Principal, error) {
+	if err := self.requireService(models.ServiceContacts); err != nil {
+		return nil, err
+	}
 	principal, err := self.requirePermission(ctx, models.PermissionContactsUse)
 	if err != nil {
 		return nil, err

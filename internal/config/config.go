@@ -24,6 +24,9 @@ var log = logging.MustGetLogger("config")
 
 // Configuration is every setting an operator can change.
 type Configuration struct {
+	// Optional hosted services; omitted switches preserve existing installations.
+	Services Services `yaml:"services"`
+
 	// Server identity and where runtime state is kept
 	Server Server `yaml:"server"`
 

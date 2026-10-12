@@ -40,7 +40,7 @@ type AgentOperation interface {
 	// reading (ingest, dream, backfill) held to backgroundLimit jobs
 	// running on this instance at once, so a slot stays for work somebody
 	// is waiting on.
-	ClaimAgentJobsKeepingRoom(instance string, limit, backgroundLimit int, now time.Time) ([]*models.AgentJob, error)
+	ClaimAgentJobsKeepingRoom(instance string, limit, backgroundLimit int, now time.Time, shouldExcludeMailboxJobs ...bool) ([]*models.AgentJob, error)
 
 	// FinishAgentJob changes only the running claim named by claimId.
 	// False means that claim was released or replaced while its worker ran.
@@ -659,7 +659,7 @@ var backgroundKinds = []string{string(models.AgentJobIngest), string(models.Agen
 // person waits for first in the queue was not enough: with every slot
 // held by a dream and two long ingests, a memory check the person had just
 // asked for sat first in the queue for five minutes with nowhere to run.
-func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backgroundLimit int, now time.Time) ([]*models.AgentJob, error) {
+func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backgroundLimit int, now time.Time, shouldExcludeMailboxJobs ...bool) ([]*models.AgentJob, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -671,6 +671,9 @@ func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backg
 	}
 	query := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("\"status\" = ? AND (\"not_before\" IS NULL OR \"not_before\" <= ?)", string(models.AgentJobQueued), now)
+	if len(shouldExcludeMailboxJobs) > 0 && shouldExcludeMailboxJobs[0] {
+		query = query.Where("\"mailbox_id\" = ? AND \"kind\" NOT IN ?", "", []string{"triage", "research", "summarize", "embed", "reply", "send", "backfill"})
+	}
 	backgroundRoom := backgroundLimit - int(runningBackground)
 	if backgroundRoom <= 0 {
 		query = query.Where("\"kind\" NOT IN ?", backgroundKinds)

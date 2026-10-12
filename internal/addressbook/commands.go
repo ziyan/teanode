@@ -36,6 +36,9 @@ type SaveRequest struct {
 
 // Save merges a form onto the latest locked card or keeps a complete vCard.
 func (self *Commands) Save(ctx context.Context, principal *access.Principal, request SaveRequest) (*models.Contact, error) {
+	if err := principal.RequireService(models.ServiceContacts); err != nil {
+		return nil, err
+	}
 	if !canUseContacts(principal) {
 		return nil, db.ErrNotFound
 	}
@@ -106,6 +109,9 @@ func (self *Commands) Save(ctx context.Context, principal *access.Principal, req
 
 // Delete removes only a contact owned by the current principal.
 func (self *Commands) Delete(ctx context.Context, principal *access.Principal, contactId string) error {
+	if err := principal.RequireService(models.ServiceContacts); err != nil {
+		return err
+	}
 	if !canUseContacts(principal) {
 		return db.ErrNotFound
 	}
@@ -155,6 +161,9 @@ type BookOutcome struct {
 
 // UpdateBook authorizes and locks metadata before preserving unedited fields.
 func (self *Commands) UpdateBook(ctx context.Context, principal *access.Principal, request UpdateBookRequest) (*BookOutcome, error) {
+	if err := principal.RequireService(models.ServiceContacts); err != nil {
+		return nil, err
+	}
 	if !canUseContacts(principal) {
 		return nil, db.ErrNotFound
 	}

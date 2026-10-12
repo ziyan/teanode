@@ -92,6 +92,7 @@ const (
 type AuditResourceType string
 
 const (
+	AuditResourceSyncCredential     AuditResourceType = "sync_credential"
 	AuditResourceUser               AuditResourceType = "user"
 	AuditResourceGroup              AuditResourceType = "group" // and its users, roles, domains
 	AuditResourceRole               AuditResourceType = "role"  // and its permissions

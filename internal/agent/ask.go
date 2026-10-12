@@ -987,7 +987,7 @@ func (self *AskRun) turn() error {
 
 	// The catalog as this person sees it, and what the connected servers
 	// offer them.
-	self.offered = self.agent.catalog.Offered(settings.Operations.Permissions(), &configuration.Agent.Tools)
+	self.offered = self.agent.catalog.Offered(settings.Operations.Permissions(), &configuration.Agent.Tools, &configuration.Services)
 	for _, tool := range self.agent.remoteTools(ctx, settings.Agent.ID) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
@@ -1845,7 +1845,14 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		}
 		call.Confirmed = true
 	}
-	result, err := tool.Run(tools.WithRun(ctx, self), call)
+	var result *tools.Result
+	var err error
+	if len(tools.RequiredServices(tool)) > 0 {
+		err = tools.RequireServices(tool, self.Configuration())
+	}
+	if err == nil {
+		result, err = tool.Run(tools.WithRun(ctx, self), call)
+	}
 	if err != nil {
 		// A tool's failure often quotes something from outside -- what a
 		// service answered, what a command printed on its error stream --
@@ -2364,14 +2371,21 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 			AgentGranted bool   `json:"agentGranted"`
 		} `json:"ListAddressBooks"`
 	}
-	if err := self.settings.Operations.Execute(ctx,
-		`query { ListCalendars { name calendarKind events agentGranted } ListAddressBooks { name contacts agentGranted } }`,
-		nil, &answer); err != nil {
+	var collectionError error
+	configuration := self.Configuration()
+	if configuration.Services.IsEnabled(models.ServiceCalendar) || configuration.Services.IsEnabled(models.ServiceReminders) {
+		collectionError = self.settings.Operations.Execute(ctx, `query { ListCalendars { name calendarKind events agentGranted } }`, nil, &answer)
+	}
+	if configuration.Services.IsEnabled(models.ServiceContacts) {
+		if err := self.settings.Operations.Execute(ctx, `query { ListAddressBooks { name contacts agentGranted } }`, nil, &answer); err != nil {
+			collectionError = err
+		}
+	}
+	if err := collectionError; err != nil {
 		// Not an error worth failing a turn over: a person without the
 		// permission for either has neither, and the prompt says nothing
 		// about them.
 		log.Debugf("cannot list the collections of %q for the prompt: %s", self.settings.Owner.Username, err)
-		return nil, nil
 	}
 	calendars, reminderLists, books := 0, 0, 0
 	for _, calendar := range answer.ListCalendars {
@@ -2408,6 +2422,9 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 
 // sources lists the mailboxes, granted and not, as the situation says them.
 func (self *AskRun) sources(ctx context.Context) (granted []string, others []string) {
+	if !self.Configuration().Services.IsEnabled(models.ServiceMailboxes) {
+		return nil, nil
+	}
 	views, err := mailbox.ListMailboxes(ctx, self.settings.Operations)
 	if err != nil {
 		log.Warningf("cannot list the mailboxes of %q for the prompt: %s", self.settings.Owner.Username, err)

@@ -139,17 +139,19 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 		return nil, err
 	}
 	profile := &mailbox.SetupProfile{
-		DeviceName:     deviceName,
-		MailboxName:    found.Name,
-		Address:        created.Username,
-		Password:       created.Password,
-		IMAPHost:       settings.IMAPHost,
-		IMAPPort:       imapPort,
-		SubmissionHost: settings.SubmissionHost,
-		SubmissionPort: settings.SubmissionPort,
-		DAVHost:        settings.DAVHost,
-		PrincipalPath:  dav.Prefix + "/" + found.UserID + "/",
-		Identifier:     "com.teanode.profile." + found.ID,
+		DeviceName:        deviceName,
+		IsCalendarEnabled: new(self.isServiceEnabled(models.ServiceCalendar) || self.isServiceEnabled(models.ServiceReminders)),
+		IsContactsEnabled: new(self.isServiceEnabled(models.ServiceContacts)),
+		MailboxName:       found.Name,
+		Address:           created.Username,
+		Password:          created.Password,
+		IMAPHost:          settings.IMAPHost,
+		IMAPPort:          imapPort,
+		SubmissionHost:    settings.SubmissionHost,
+		SubmissionPort:    settings.SubmissionPort,
+		DAVHost:           settings.DAVHost,
+		PrincipalPath:     dav.Prefix + "/" + found.UserID + "/",
+		Identifier:        "com.teanode.profile." + found.ID,
 	}
 	data, err := profile.Plist()
 	if err != nil {
@@ -179,7 +181,7 @@ func (self *graph) CreateMailboxSetupProfile(ctx context.Context, arguments Crea
 		QRCodeSVG:               drawn,
 		ExpiresAt:               expiresAt,
 		AppPassword:             created.AppPassword,
-		HasCalendarsAndContacts: settings.DAVHost != "",
+		HasCalendarsAndContacts: settings.DAVHost != "" && (self.isServiceEnabled(models.ServiceCalendar) || self.isServiceEnabled(models.ServiceReminders)) && self.isServiceEnabled(models.ServiceContacts),
 	}, nil
 }
 

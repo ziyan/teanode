@@ -145,3 +145,21 @@ func TestWithoutADAVHostTheProfileIsMailOnly(t *testing.T) {
 		t.Fatalf("only mail belongs in it: %v", payloads)
 	}
 }
+
+func TestCollectionProfileContainsOnlySelectedSyncPayloads(test *testing.T) {
+	profile := &mailbox.SetupProfile{IsSyncOnly: true, Address: "device-owner", Password: "test-password", DAVHost: "assistant.example.com", PrincipalPath: "/dav/account/", Identifier: "com.example.sync", IsCalendarEnabled: new(false), IsContactsEnabled: new(true)}
+	written, err := profile.Plist()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(string(written), "com.apple.mail.managed") || strings.Contains(string(written), "com.apple.caldav.account") {
+		test.Fatal("profile included an unselected service")
+	}
+	if !strings.Contains(string(written), "com.apple.carddav.account") {
+		test.Fatal("profile omitted contacts")
+	}
+	profile.IsContactsEnabled = new(false)
+	if _, err := profile.Plist(); err == nil {
+		test.Fatal("empty profile was accepted")
+	}
+}

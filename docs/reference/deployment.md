@@ -324,3 +324,42 @@ to do it.
 
 `--force` is required once the database holds domains or operators; without it
 the import refuses rather than replacing them.
+
+## Assistant without hosted mail
+
+The assistant compose file runs the database, file storage and HTTP server
+on a private Docker network. Only loopback port 8080 is published. It does
+not require SMTP or IMAP ports, host networking or privileged-port capabilities.
+Set a random POSTGRES_PASSWORD in an untracked environment file, then run:
+
+    docker compose -f deploy/docker-compose.assistant.yml up -d
+
+Put port 8080 behind a TLS reverse proxy for remote access. Set trusted proxy
+addresses in the dashboard so secure cookies and profile downloads use the
+correct origin. Open the loopback dashboard and claim the first account before allowing
+remote access. In Server > Setup, choose services, configure and test a model provider,
+select a default model, enable the assistant, and try a conversation. Mail DNS
+checks appear only for hosted mail.
+
+For a binary with your own database, generate an HTTP-only starter file:
+
+    teanode-server config env --preset assistant --output .env --database-url <connection-url>
+
+The default HTTP address is loopback port 8080. The mail preset seeds routing
+and mailboxes; legacy retains historical hosted services. Presets affect only
+an empty database.
+
+Calendars, reminders and contacts can run independently without mail. Enable
+and restart, then use Settings > Device sync to create a scoped password or
+an HTTPS setup profile. Use the account username and sync password on the
+device. These passwords cannot open mail or sign in to the dashboard. Revoke
+a device to end its access. The CLI offers the same flow: use
+    teanode sync create --name device --contacts
+or add --profile for a one-time HTTPS profile link. List and revoke devices
+with the sync list and sync revoke commands. Save a printed password immediately;
+it cannot be read back.
+
+Disabling retains data and pauses pending work. Older clients also receive
+service-unavailable errors. Restart to stop listeners and workers completely.
+Re-enable and restart to resume with the same identifiers and grants. Mail
+invitations need a hosted sender; local events and assistant schedules do not.

@@ -38,6 +38,9 @@ func (self *Agent) hasAcceptedNotice(ctx context.Context, run *Run) (bool, error
 // if a retry generated different text or the person's notification address
 // changed. Each scheduled occurrence or goal continuation has a different job.
 func (self *Agent) mailToPerson(ctx context.Context, run *Run, subject, body string) error {
+	if err := self.settings.Configuration().RequireService(models.ServiceMailboxes); err != nil {
+		return err
+	}
 	submissionId, err := noticeSubmissionId(run)
 	if err != nil {
 		return err

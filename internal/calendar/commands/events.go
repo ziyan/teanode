@@ -27,6 +27,9 @@ type EventNotification func(context.Context, db.Transaction, *models.CalendarObj
 
 // SaveEvent keeps an event, occurrence index and notification acceptance atomic.
 func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal, request EventRequest, prepare EventPreparer, notify EventNotification) (*models.CalendarObject, error) {
+	if err := principal.RequireService(models.ServiceCalendar); err != nil {
+		return nil, err
+	}
 	if !canUseCalendar(principal) {
 		return nil, db.ErrNotFound
 	}
@@ -119,6 +122,9 @@ func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal
 
 // DeleteEvent accepts cancellation mail and removes the event in one command.
 func (self *Commands) DeleteEvent(ctx context.Context, principal *access.Principal, request EventRequest, notify EventNotification) error {
+	if err := principal.RequireService(models.ServiceCalendar); err != nil {
+		return err
+	}
 	if !canUseCalendar(principal) {
 		return db.ErrNotFound
 	}

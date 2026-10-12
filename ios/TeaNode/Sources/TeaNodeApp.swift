@@ -328,6 +328,7 @@ struct SettingsForm: View {
             AccountsSection()
             if let connection = app.connection {
                 Section("Your account") {
+                    NavigationLink { SyncCredentialsView(connection: connection) } label: { Label("Device sync", systemImage: "arrow.triangle.2.circlepath") }
                     NavigationLink {
                         PreferencesView(connection: connection)
                     } label: {
@@ -421,7 +422,7 @@ struct SettingsForm: View {
                 }
             }
             DisplaySection()
-            if let mail, mail.mailbox != nil {
+            if app.services?.isMailboxEnabled != false, let mail, mail.mailbox != nil {
                 Section {
                     NavigationLink {
                         MailboxSettingsView(mail: mail)

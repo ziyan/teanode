@@ -13,6 +13,7 @@ package api
 import (
 	"context"
 	"errors"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -46,6 +47,9 @@ var (
 
 // Settings are the server-wide values the API needs.
 type Settings struct {
+	// RunningServices is the immutable set constructed by this process.
+	RunningServices *config.Services
+
 	// Secret key
 	Secret []byte
 

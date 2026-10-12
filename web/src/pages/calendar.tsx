@@ -329,7 +329,14 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
 
   // The view and the day are in the address, so that a link to a week is a
   // link to that week and the back button goes where it looks like it goes.
-  const view = (parameters.get('view') as View) || 'month'
+  const serviceCapabilities = useSession().services
+  const requestedView = (parameters.get('view') as View) || 'month'
+  const view =
+    serviceCapabilities?.isCalendarEnabled === false
+      ? 'reminders'
+      : requestedView === 'reminders' && serviceCapabilities?.isRemindersEnabled === false
+        ? 'month'
+        : requestedView
   const selectedDay = parameters.get('on')
   const on = useMemo(() => parseDay(selectedDay), [selectedDay])
   const move = (next: { view?: View; on?: Date }) => {
@@ -657,7 +664,11 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           domain pages use: five of them is what a tab strip is for, and it
           scrolls sideways on a narrow screen rather than being cut off. */}
       <Tabs
-        items={VIEWS.map((which) => ({
+        items={VIEWS.filter((candidate) =>
+          candidate === 'reminders'
+            ? serviceCapabilities?.isRemindersEnabled !== false
+            : serviceCapabilities?.isCalendarEnabled !== false,
+        ).map((which) => ({
           id: which,
           label: `calendar.view${which[0].toUpperCase()}${which.slice(1)}` as TabItem['label'],
         }))}

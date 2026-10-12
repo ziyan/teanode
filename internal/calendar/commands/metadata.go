@@ -54,6 +54,13 @@ func (self *Commands) Update(ctx context.Context, principal *access.Principal, r
 		if calendar == nil || calendar.UserID != principal.User.ID {
 			return db.ErrNotFound
 		}
+		service := models.ServiceCalendar
+		if calendar.CalendarKind == models.CalendarReminders {
+			service = models.ServiceReminders
+		}
+		if err := principal.RequireService(service); err != nil {
+			return err
+		}
 		if zone := strings.TrimSpace(request.Timezone); zone != "" {
 			if _, err := time.LoadLocation(zone); err != nil {
 				return fmt.Errorf("%w: this server does not know the time zone %q", db.ErrInvalidArguments, zone)

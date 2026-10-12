@@ -206,7 +206,11 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 		}
 		// And a mailbox for everyone who has none, the first time a server
 		// starts with mailboxes.
-		made, err := access.EnsureMailboxes(tx)
+		made := 0
+		var err error
+		if configuration.Services.IsEnabled(models.ServiceMailboxes) {
+			made, err = access.EnsureMailboxes(tx)
+		}
 		if err != nil {
 			return err
 		}
@@ -280,7 +284,7 @@ type server struct {
 	agentWorker   *agent.Agent
 
 	// scheduler reads the invitations that arrive as mail. Unlike the
-	// agent it is always on: a person who has never turned an agent on
+	// agent it follows the event-calendar service: a person with no agent
 	// still wants their meetings.
 	scheduler *scheduling.Scheduler
 
@@ -312,6 +316,7 @@ type server struct {
 		http         net.Listener
 		https        net.Listener
 	}
+	antivirusClient clamav.Client
 }
 
 // authLimiter is the one limiter every way of presenting a credential
@@ -400,44 +405,50 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		}
 	}
 
-	if self.acme == nil && configuration.TLS.CertificateFile == "" {
+	if configuration.Services.IsEnabled(models.ServiceMailRouting) && self.acme == nil && configuration.TLS.CertificateFile == "" {
 		log.Warningf("no certificate configured: SMTP will not offer STARTTLS and mail to and from this server will cross the network in the clear; enable tls.acme or set tls.certificateFile")
 	}
 
-	self.locator = openLocator(configuration)
-	self.resolver = resolver.New()
+	if configuration.Services.IsEnabled(models.ServiceMailRouting) {
+		self.locator = openLocator(configuration)
+		self.resolver = resolver.New()
 
-	spamFilter, err := openAntispam(configuration, self.resolver, self.database)
-	if err != nil {
-		return nil, err
-	}
-	self.spamFilter = spamFilter
-	if spamFilter != nil {
-		self.onClose(func() {
-			if err := spamFilter.Close(); err != nil {
-				log.Errorf("failed to close spam filter: %s", err)
-			}
-		})
-	}
+		spamFilter, err := openAntispam(configuration, self.resolver, self.database)
+		if err != nil {
+			return nil, err
+		}
+		self.spamFilter = spamFilter
+		if spamFilter != nil {
+			self.onClose(func() {
+				if err := spamFilter.Close(); err != nil {
+					log.Errorf("failed to close spam filter: %s", err)
+				}
+			})
+		}
 
-	antivirusClient, err := openAntivirus(configuration)
-	if err != nil {
-		return nil, err
-	}
-	if antivirusClient != nil {
-		self.onClose(func() {
-			if err := antivirusClient.Close(); err != nil {
-				log.Errorf("failed to close clamav: %s", err)
-			}
-		})
+		antivirusClient, err := openAntivirus(configuration)
+		self.antivirusClient = antivirusClient
+		if err != nil {
+			return nil, err
+		}
+		if antivirusClient != nil {
+			self.onClose(func() {
+				if err := antivirusClient.Close(); err != nil {
+					log.Errorf("failed to close clamav: %s", err)
+				}
+			})
+		}
+
 	}
 
 	if err := self.openStorage(configuration); err != nil {
 		return nil, err
 	}
 
-	if err := self.openExchange(configuration, spamFilter, antivirusClient); err != nil {
-		return nil, err
+	if configuration.Services.IsEnabled(models.ServiceMailRouting) {
+		if err := self.openExchange(configuration, self.spamFilter, self.antivirusClient); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := self.openAgentWorker(configuration); err != nil {
@@ -478,6 +489,12 @@ func (self *server) listen(configuration *config.Configuration) error {
 		{"https", configuration.Listen.HTTPS, &self.listeners.https},
 	}
 	for _, entry := range listeners {
+		if (entry.name == "incoming smtp" || entry.name == "outgoing smtp") && !configuration.Services.IsEnabled(models.ServiceMailRouting) {
+			continue
+		}
+		if (entry.name == "imap" || entry.name == "imaps") && !configuration.Services.IsEnabled(models.ServiceMailboxes) {
+			continue
+		}
 		if entry.address == "" {
 			continue
 		}
@@ -758,51 +775,62 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		log.Warningf("this server has no account yet, so anyone who can reach the web UI can claim it; open it and create one, or bind listen.http and listen.https to 127.0.0.1")
 	}
 
-	mailerComponent, err := mailer.New(self.database, self.store, self.exchange, nil)
-	if err == nil && self.agentWorker != nil {
-		self.agentWorker.SetMailer(mailerComponent)
-	}
-	if err != nil {
-		return fmt.Errorf("cannot create the mailer: %w", err)
-	}
-	self.onClose(func() {
-		if err := mailerComponent.Close(); err != nil {
-			log.Errorf("failed to close mailer: %s", err)
+	var mailerComponent mailer.Mailer
+	var verifier dns.Verifier
+	var err error
+	if configuration.Services.IsEnabled(models.ServiceMailRouting) {
+		mailerComponent, err = mailer.New(self.database, self.store, self.exchange, nil)
+		if err == nil && self.agentWorker != nil {
+			self.agentWorker.SetMailer(mailerComponent)
 		}
-	})
-
-	reconciliationContext, cancelReconciliation := context.WithCancel(context.Background())
-	var reconciliationGroup sync.WaitGroup
-	reconciler := mailer.NewSubmissionReconciler(self.database)
-	reconciliation := periodic.New(reconciliationContext, &reconciliationGroup, reconciler.RunOnce, &periodic.Settings{
-		Name: "submission-reconciliation", Interval: 5 * time.Second,
-	})
-	reconciliation.Start()
-	self.onClose(func() {
-		cancelReconciliation()
-		reconciliation.Stop()
-		reconciliationGroup.Wait()
-	})
-
-	verifier, err := dns.Open(self.store, self.database, &dns.Settings{
-		Nameserver:    configuration.DNS.Nameserver,
-		CheckInterval: configuration.DNS.CheckInterval.Duration(),
-		// A BIMI record naming a logo this server hosts is checked by reading
-		// the file rather than by fetching our own address: that fetch
-		// refuses anything but a public address, and this server's own name
-		// often resolves inside the network it runs in.
-		PublishedLogo: func(ctx context.Context, fileId string) ([]byte, error) {
-			return self.storage.GetFile(ctx, fileId)
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("cannot create the DNS verifier: %w", err)
-	}
-	self.onClose(func() {
-		if err := verifier.Close(); err != nil {
-			log.Errorf("failed to close dns verifier: %s", err)
+		if err != nil {
+			return fmt.Errorf("cannot create the mailer: %w", err)
 		}
-	})
+		self.onClose(func() {
+			if err := mailerComponent.Close(); err != nil {
+				log.Errorf("failed to close mailer: %s", err)
+			}
+		})
+
+		reconciliationContext, cancelReconciliation := context.WithCancel(context.Background())
+		var reconciliationGroup sync.WaitGroup
+		reconciler := mailer.NewSubmissionReconciler(self.database)
+		reconciliation := periodic.New(reconciliationContext, &reconciliationGroup, func(ctx context.Context) error {
+			if !self.store.Current().Services.IsEnabled(models.ServiceMailRouting) {
+				return nil
+			}
+			return reconciler.RunOnce(ctx)
+		}, &periodic.Settings{
+			Name: "submission-reconciliation", Interval: 5 * time.Second,
+		})
+		reconciliation.Start()
+		self.onClose(func() {
+			cancelReconciliation()
+			reconciliation.Stop()
+			reconciliationGroup.Wait()
+		})
+
+		verifier, err = dns.Open(self.store, self.database, &dns.Settings{
+			Nameserver:    configuration.DNS.Nameserver,
+			CheckInterval: configuration.DNS.CheckInterval.Duration(),
+			// A BIMI record naming a logo this server hosts is checked by reading
+			// the file rather than by fetching our own address: that fetch
+			// refuses anything but a public address, and this server's own name
+			// often resolves inside the network it runs in.
+			PublishedLogo: func(ctx context.Context, fileId string) ([]byte, error) {
+				return self.storage.GetFile(ctx, fileId)
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("cannot create the DNS verifier: %w", err)
+		}
+		self.onClose(func() {
+			if err := verifier.Close(); err != nil {
+				log.Errorf("failed to close dns verifier: %s", err)
+			}
+		})
+
+	}
 
 	authenticator, err := web.NewAuthenticator(self.store, self.database)
 	if err != nil {
@@ -832,38 +860,47 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	// stays out of the way. Two minutes apart, because the mail it is
 	// catching up on has been waiting for months and the reads are somebody
 	// else's storage.
-	listBackfill := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
-		_, err := backfillMailLists(ctx, self.database, self.storage)
-		return err
-	}, &periodic.Settings{
-		Interval: 2 * time.Minute,
-		Name:     "mailbox:lists",
-	})
-	listBackfill.Start()
-	self.onClose(listBackfill.Stop)
+	if configuration.Services.IsEnabled(models.ServiceMailboxes) {
+		listBackfill := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+			if !self.store.Current().Services.IsEnabled(models.ServiceMailboxes) {
+				return nil
+			}
+			_, err := backfillMailLists(ctx, self.database, self.storage)
+			return err
+		}, &periodic.Settings{
+			Interval: 2 * time.Minute,
+			Name:     "mailbox:lists",
+		})
+		listBackfill.Start()
+		self.onClose(listBackfill.Stop)
 
-	// The notes a phone kept here before this server read them as notes.
-	// Once, at start, rather than on a timer: everything stored from now on
-	// is recognized as it arrives, so after one pass there is nothing left.
-	scavengeGroup.Add(1)
-	go func() {
-		defer deferutil.Recover()
-		defer scavengeGroup.Done()
-		backfillAllNotes(scavengeContext, self.database, self.storage)
-	}()
+		// The notes a phone kept here before this server read them as notes.
+		// Once, at start, rather than on a timer: everything stored from now on
+		// is recognized as it arrives, so after one pass there is nothing left.
+		scavengeGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer scavengeGroup.Done()
+			backfillAllNotes(scavengeContext, self.database, self.storage, func() bool { return self.store.Current().Services.IsEnabled(models.ServiceMailboxes) })
+		}()
 
-	// The logos sending domains publish for their mail. Fetched here, once
-	// per domain per day, so that showing one does not tell the sender which
-	// address opened which message at what moment.
-	logoFetch := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
-		_, err := fetchSenderLogos(ctx, self.database, configuration.DNS.Nameserver)
-		return err
-	}, &periodic.Settings{
-		Interval: 10 * time.Minute,
-		Name:     "mailbox:logos",
-	})
-	logoFetch.Start()
-	self.onClose(logoFetch.Stop)
+		// The logos sending domains publish for their mail. Fetched here, once
+		// per domain per day, so that showing one does not tell the sender which
+		// address opened which message at what moment.
+		logoFetch := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+			if !self.store.Current().Services.IsEnabled(models.ServiceMailboxes) {
+				return nil
+			}
+			_, err := fetchSenderLogos(ctx, self.database, configuration.DNS.Nameserver)
+			return err
+		}, &periodic.Settings{
+			Interval: 10 * time.Minute,
+			Name:     "mailbox:logos",
+		})
+		logoFetch.Start()
+		self.onClose(logoFetch.Stop)
+
+	}
 
 	// Half-finished WebAuthn challenges. In this process unless a Redis is
 	// configured: one instance is the ordinary case, and a challenge that does
@@ -903,7 +940,8 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	})
 
 	apiComponent, err := v1api.New(self.database, self.store, self.storage, self.locator, verifier, mailerComponent, upgrader, authenticator, ceremonies, &api.Settings{
-		Secret: self.secret,
+		Secret:          self.secret,
+		RunningServices: &configuration.Services,
 		// The instance, not the server name: the name is the same on every
 		// instance sharing this database, and this is the field that says
 		// which process you are talking to.
@@ -1045,7 +1083,8 @@ const authLimiterAddresses = 8192
 // worth an hour of somebody's afternoon.
 func startupOnly(configuration *config.Configuration) map[string]any {
 	return map[string]any{
-		"listen": configuration.Listen,
+		"services": []bool{configuration.Services.IsEnabled(models.ServiceMailRouting), configuration.Services.IsEnabled(models.ServiceMailboxes), configuration.Services.IsEnabled(models.ServiceCalendar), configuration.Services.IsEnabled(models.ServiceReminders), configuration.Services.IsEnabled(models.ServiceContacts)},
+		"listen":   configuration.Listen,
 		// The model registry and the agent worker are built once from
 		// these; a provider, a key or a model changed on the settings page
 		// waits for a restart, and the page says so.
@@ -1200,6 +1239,9 @@ func (self *server) serve(ctx context.Context) error {
 	// an app password. The exchange checks the sender against the mailbox's
 	// addresses when the message arrives, so the domain is left to it.
 	authenticateMailbox := func(username, password string) (string, string, bool) {
+		if !self.store.Current().Services.IsEnabled(models.ServiceMailboxes) {
+			return "", "", false
+		}
 		var mailbox *models.Mailbox
 		if err := self.database.Transaction(func(tx db.Transaction) error {
 			var err error
@@ -1269,11 +1311,12 @@ func (self *server) serve(ctx context.Context) error {
 	// port, TLS from the first byte on the other, which is what most
 	// programs try first.
 	imapSettings := &imap.Settings{
-		Database:    self.database,
-		Storage:     self.storage,
-		TLSConfig:   tlsConfig,
-		MaxSize:     int(configuration.SMTP.MaxMessageSize.Bytes()),
-		AuthLimiter: authLimiter,
+		IsMailboxEnabled: func() bool { return self.store.Current().Services.IsEnabled(models.ServiceMailboxes) },
+		Database:         self.database,
+		Storage:          self.storage,
+		TLSConfig:        tlsConfig,
+		MaxSize:          int(configuration.SMTP.MaxMessageSize.Bytes()),
+		AuthLimiter:      authLimiter,
 		// The same ceiling the mail listeners have had since an earlier
 		// audit, on the listeners it was not applied to. A mail program
 		// holds one connection per mailbox and idles on it, so a person

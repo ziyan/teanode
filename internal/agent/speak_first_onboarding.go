@@ -46,14 +46,14 @@ func (self *Agent) onboardingReason() speakFirstReason {
 		},
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
 			return speakFirstMessage(owner, now, "The person has just switched you on and has never written to you. Introduce yourself.", prepared) + strings.Join([]string{
-				"Greet them in a sentence, say in one or two what you can do for them (read and sort their mail, answer from what you remember, keep schedules, work in their browser and on their computer when they connect them), and then ask the first of these, one question per message, waiting for each answer:",
+				"Greet them in a sentence, say in one or two what you can do for them (answer from what you remember, keep schedules, and work in their browser and on their computer when they connect them; offer hosted mail or collections only when available), and then ask the first of these, one question per message, waiting for each answer:",
 				"",
 				"1. What they would like to call you.",
 				"2. What you should call them.",
 				"3. Which language to talk to them in.",
 				"4. What they would like help with first.",
 				"",
-				"Ask only the first now. As each answer comes, save it at once: agent_profile for your name, your language, and what they want help with (as a line added to your instructions); account_update for their name. Skip any they would rather not answer. When they want to skip the lot, or all four are answered, call agent_profile with onboarding_done. At the end, offer to connect a mailbox ([Mail](/settings/agent/mail)) or another source ([Sources](/settings/agent/sources)) so you have something to work from.",
+				"Ask only the first now. As each answer comes, save it at once: agent_profile for your name, your language, and what they want help with (as a line added to your instructions); account_update for their name. Skip any they would rather not answer. When they want to skip the lot, or all four are answered, call agent_profile with onboarding_done. At the end, offer to connect a computer or another source ([Sources](/settings/agent/sources)); offer a mailbox only when the hosted mailbox service is enabled.",
 				"",
 				"If they say not now, call agent_profile with not_now, say you will be here, and stop.",
 			}, "\n"), nil

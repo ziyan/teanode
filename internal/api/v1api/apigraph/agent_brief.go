@@ -70,6 +70,10 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 		if !arguments.Enabled {
 			return nil, nil // off, and there was nothing to turn off
 		}
+		deliver := models.AgentDeliverDrawer
+		if self.isServiceEnabled(models.ServiceMailboxes) {
+			deliver = models.AgentDeliverMail
+		}
 		schedule := &models.AgentSchedule{
 			AgentID: found.ID, Name: BriefName, Cron: cron,
 			Prompt: agent.BriefPrompt(found, principal.User),
@@ -77,7 +81,7 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 			// switch: a schedule the agent writes for itself arrives as a
 			// note about what to do rather than as an instruction.
 			WrittenBy: models.WrittenByPerson,
-			Deliver:   models.AgentDeliverMail, Enabled: true,
+			Deliver:   deliver, Enabled: true,
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {

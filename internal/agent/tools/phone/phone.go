@@ -19,6 +19,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Where the person does what the agent may not do for them: the page that
@@ -53,6 +54,7 @@ func Tools() []*tools.Tool {
 		},
 		{
 			Name: "phone_setup_profile", Family: tools.FamilyAccount, Risk: tools.RiskRead,
+			Services:    []models.Service{models.ServiceMailboxes},
 			Description: "Take them to their mailbox's mail programs tab, where one tap makes a setup profile that adds their mail, calendars and contacts to an iPhone's or a Mac's own apps. You never see the password in it.",
 			Parameters:  tools.Object(map[string]any{}),
 			Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {

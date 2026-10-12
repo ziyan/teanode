@@ -126,6 +126,9 @@ type MailboxView struct {
 // requireMailbox finds a mailbox the caller owns and holds the permission
 // for: not found otherwise.
 func (self *graph) requireMailbox(ctx context.Context, permission models.Permission, mailboxId string) (*models.Mailbox, error) {
+	if err := self.requireService(models.ServiceMailboxes); err != nil {
+		return nil, err
+	}
 	principal, err := self.requirePermission(ctx, permission)
 	if err != nil {
 		return nil, err

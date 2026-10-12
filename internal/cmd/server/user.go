@@ -155,6 +155,10 @@ func runUserAdd(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	configuration, err := cmd.LoadLocalConfiguration()
+	if err != nil {
+		return err
+	}
 	return withLocalTransaction(func(tx db.Transaction) error {
 		if existing, err := tx.GetUserByUsername(username); err != nil {
 			return err
@@ -173,8 +177,11 @@ func runUserAdd(ctx context.Context, command *cli.Command) error {
 		if err := access.AddUserToGroups(tx, user.ID, models.GroupNameAdministrators, models.GroupNameMembers); err != nil {
 			return err
 		}
-		if _, err := access.EnsureMailbox(tx, user); err != nil {
-			return err
+
+		if configuration.Services.IsEnabled(models.ServiceMailboxes) {
+			if _, err := access.EnsureMailbox(tx, user); err != nil {
+				return err
+			}
 		}
 		fmt.Printf("added %s as an administrator\n", username)
 		return nil

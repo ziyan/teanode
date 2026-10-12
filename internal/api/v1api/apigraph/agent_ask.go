@@ -716,7 +716,7 @@ func (self *graph) ListAgentTools(ctx context.Context) ([]*AgentToolView, error)
 		return []*AgentToolView{}, nil
 	}
 	configuration := self.config.Current()
-	tools := worker.Catalog().Offered(principal.Permissions, &configuration.Agent.Tools)
+	tools := worker.Catalog().Offered(principal.Permissions, &configuration.Agent.Tools, &configuration.Services)
 	// The skills an operator installed bring tools that are not compiled
 	// in, and an operator who cannot see them here cannot tell what a
 	// skill added or write a policy about it.

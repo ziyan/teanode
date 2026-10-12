@@ -154,6 +154,7 @@ type Transaction interface {
 	RoleOperation
 	GroupOperation
 	AuditOperation
+	SyncOperation
 	MailboxOperation
 	SubscriptionQuery
 	BimiQuery

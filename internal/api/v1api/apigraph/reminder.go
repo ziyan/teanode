@@ -114,6 +114,9 @@ func reminderView(object *models.CalendarObject) (*ReminderView, error) {
 }
 
 func (self *graph) ListReminders(ctx context.Context, arguments ListRemindersArguments) ([]*ReminderView, error) {
+	if err := self.requireService(models.ServiceReminders); err != nil {
+		return nil, err
+	}
 	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return nil, err

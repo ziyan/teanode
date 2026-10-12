@@ -367,7 +367,7 @@ func (self *Agent) Enqueue(tx db.Transaction, kind models.AgentJobKind, agentId,
 // transaction — and nothing else happens here, because a model call inside
 // the SMTP transaction would be a model outage bouncing mail.
 func (self *Agent) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail) {
-	if mailbox == nil || mailbox.Agent == nil || !mailbox.Agent.Granted {
+	if !self.settings.Configuration().Services.IsEnabled(models.ServiceMailboxes) || mailbox == nil || mailbox.Agent == nil || !mailbox.Agent.Granted {
 		return
 	}
 	configuration := self.settings.Configuration()
@@ -501,7 +501,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		}
 		// One slot is kept from the long reading, for whatever a person
 		// is waiting on: a turn, a triage, a check they asked for.
-		claimed, err := tx.ClaimAgentJobsKeepingRoom(self.settings.Instance, free, max(cap(self.slots)-1, 1), now)
+		claimed, err := tx.ClaimAgentJobsKeepingRoom(self.settings.Instance, free, max(cap(self.slots)-1, 1), now, !configuration.Services.IsEnabled(models.ServiceMailboxes))
 		jobs = claimed
 		return err
 	}); err != nil {
@@ -538,6 +538,9 @@ func (self *Agent) execute(job *models.AgentJob, now time.Time) {
 	defer cancel()
 
 	run, err := self.resolve(ctx, job)
+	if job.MailboxID != "" && !self.settings.Configuration().Services.IsEnabled(models.ServiceMailboxes) {
+		err = &Deferral{Until: time.Now().Add(time.Minute), Reason: "mailboxes are disabled"}
+	}
 	if run != nil {
 		run.Now = now
 	}

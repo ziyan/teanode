@@ -18,7 +18,7 @@ readonly REFERENCE="docs/configuration.md"
 # deprecated.go is excluded on purpose. The fields there are read so that an
 # older file still loads; documenting them would be an invitation to write new
 # ones.
-readonly SOURCES=(internal/config/config.go internal/config/token.go internal/config/agent.go)
+readonly SOURCES=(internal/config/config.go internal/config/token.go internal/config/agent.go internal/config/services.go)
 
 missing=()
 while IFS= read -r field; do

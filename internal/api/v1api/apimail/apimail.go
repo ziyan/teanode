@@ -29,22 +29,33 @@ import (
 var log = logging.MustGetLogger("apimail")
 
 type mail struct {
-	database db.Database
-	config   config.Store
-	storage  storage.Storage
+	database        db.Database
+	config          config.Store
+	storage         storage.Storage
+	runningServices config.Services
 }
 
 // New builds the raw message component.
 func New(database db.Database, configuration config.Store, messages storage.Storage) (web.Component, error) {
-	return &mail{database: database, config: configuration, storage: messages}, nil
+	return &mail{database: database, config: configuration, storage: messages, runningServices: configuration.Current().Services}, nil
 }
 
 func (self *mail) AddRoutes(router *mux.Router) error {
-	router.Path(api.PathMailRaw).Methods(http.MethodGet).HandlerFunc(self.rawView)
-	router.Path(api.PathMailAttachment).Methods(http.MethodGet).HandlerFunc(self.attachmentView)
-	router.Path(api.PathMailRemote).Methods(http.MethodGet).HandlerFunc(self.remoteView)
-	router.Path(api.PathSenderLogo).Methods(http.MethodGet).HandlerFunc(self.senderLogoView)
+	router.Path(api.PathMailRaw).Methods(http.MethodGet).HandlerFunc(self.withMailRouting(self.rawView))
+	router.Path(api.PathMailAttachment).Methods(http.MethodGet).HandlerFunc(self.withMailRouting(self.attachmentView))
+	router.Path(api.PathMailRemote).Methods(http.MethodGet).HandlerFunc(self.withMailRouting(self.remoteView))
+	router.Path(api.PathSenderLogo).Methods(http.MethodGet).HandlerFunc(self.withMailRouting(self.senderLogoView))
 	return nil
+}
+
+func (self *mail) withMailRouting(handler http.HandlerFunc) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		if !self.config.Current().Services.IsEnabled(models.ServiceMailRouting) || !self.runningServices.IsEnabled(models.ServiceMailRouting) {
+			http.Error(response, "Hosted mail routing is disabled", http.StatusServiceUnavailable)
+			return
+		}
+		handler(response, request)
+	}
 }
 
 // attachmentView serves one part of a stored message: the file behind a
@@ -259,6 +270,9 @@ func (self *mail) canRead(tx db.Transaction, username string, stored *models.Mai
 	permissions, err := tx.EffectivePermissions(user.ID)
 	if err != nil {
 		return false, err
+	}
+	if !self.config.Current().Services.IsEnabled(models.ServiceMailboxes) || !self.runningServices.IsEnabled(models.ServiceMailboxes) {
+		return stored.DomainID != "" && permissions.HasOverDomain(models.PermissionMailAudit, stored.DomainID), nil
 	}
 	return access.CanReadMail(tx, user, permissions, stored)
 }

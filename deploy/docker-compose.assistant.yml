@@ -1,0 +1,73 @@
+# A minimal assistant installation. Hosted email and DAV start disabled.
+# Put the web endpoint behind a TLS proxy before connecting a phone.
+services:
+  database-certs:
+    image: postgres:17
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /certs/server.key ]; then
+          openssl req -new -x509 -days 3650 -nodes -subj '/CN=database' -addext 'subjectAltName=DNS:database' -out /certs/server.crt -keyout /certs/server.key
+        fi
+        chown 999:999 /certs/server.key /certs/server.crt
+        chmod 600 /certs/server.key
+        chmod 644 /certs/server.crt
+    volumes:
+      - assistant-certs:/certs
+  database:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    depends_on:
+      database-certs:
+        condition: service_completed_successfully
+    command: [-c, ssl=on, -c, ssl_cert_file=/certs/server.crt, -c, ssl_key_file=/certs/server.key]
+    environment:
+      POSTGRES_USER: teanode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a database password}
+      POSTGRES_DB: teanode
+    volumes:
+      - assistant-database:/var/lib/postgresql/data
+      - assistant-certs:/certs:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U teanode']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  data-permissions:
+    image: busybox:1.37
+    user: root
+    command: [sh, -c, 'chown 65532:65532 /data']
+    volumes:
+      - assistant-files:/data
+  assistant:
+    image: ghcr.io/ziyan/teanode:latest
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+      data-permissions:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:8080:8080'
+    environment:
+      TEANODE_DATABASE_HOST: database
+      TEANODE_DATABASE_USER: teanode
+      TEANODE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      TEANODE_DATABASE_NAME: teanode
+      TEANODE_DATABASE_SSL_MODE: verify-full
+      TEANODE_DATABASE_URL: "postgres://database:5432/teanode?sslmode=verify-full&sslrootcert=/certs/server.crt"
+      TEANODE_SERVICE_PRESET: assistant
+      TEANODE_SERVER_DATA_DIRECTORY: /var/lib/teanode
+      TEANODE_LISTEN_HTTP: ':8080'
+      TEANODE_LISTEN_HTTPS: ''
+      TEANODE_TLS_ACME_ENABLED: 'false'
+      TEANODE_UPGRADE_DIRECTORY: /var/lib/teanode/upgrade
+    volumes:
+      - assistant-files:/var/lib/teanode
+      - assistant-certs:/certs:ro
+    command: [run]
+volumes:
+  assistant-database:
+  assistant-certs:
+  assistant-files:

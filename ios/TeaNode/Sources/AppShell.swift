@@ -138,14 +138,19 @@ struct MainView: View {
             #endif
         }
         .task {
-            await app.loadAgentName()
+            await app.refreshServices()
+            if app.services?.isAssistantEnabled == true { await app.loadAgentName() }
             await app.setUpNotifications()
         }
         .task {
-            await mail.load()
+            await app.refreshServices()
+            if app.services?.isMailboxEnabled == true { await mail.load() }
             if mailPlace == nil, let inbox = mail.folder(kind: "inbox") {
                 mailPlace = .folder(inbox.id)
             }
+        }
+        .onChange(of: app.services) {
+            if !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
         }
         .onChange(of: mail.currentMailboxId) {
             if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
@@ -218,19 +223,36 @@ struct MainView: View {
         // Elsewhere in the app they are away from it, so what the agent says
         // first still reaches them, as a banner over the app.
         .task(id: "\(scenePhase)-\(section)") {
-            let isVisible = scenePhase == .active && section == .agent
-            try? await connection.reportPresence(isVisible: isVisible)
-            if isVisible { await mail.load() }
-            while isVisible, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                await mail.load()
-                try? await connection.reportPresence(isVisible: true)
-            }
+            await refreshPresence()
         }
+    }
+
+    private func refreshPresence() async {
+        let isVisible = scenePhase == .active && section == .agent
+        repeat {
+            await app.refreshServices()
+            if Task.isCancelled { return }
+            if app.services?.isAssistantEnabled == true { try? await connection.reportPresence(isVisible: isVisible) }
+            if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
+            if scenePhase != .active { return }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        } while !Task.isCancelled
     }
 
     @ViewBuilder
     private var screen: some View {
+        if !app.isSectionAvailable(section) {
+            NavigationStack {
+                ContentUnavailableView("This service is off", systemImage: "switch.2")
+                    .toolbar { MenuButton() }
+            }
+        } else {
+            availableScreen
+        }
+    }
+
+    @ViewBuilder
+    private var availableScreen: some View {
         switch section {
         case .agent:
             NavigationStack {
@@ -356,7 +378,7 @@ struct SideMenu: View {
     }
 
     private var sections: some View {
-        ForEach(AppSection.allCases) { part in
+        ForEach(AppSection.allCases.filter { app.isSectionAvailable($0) }) { part in
             Button {
                 if section == part {
                     onClose()
