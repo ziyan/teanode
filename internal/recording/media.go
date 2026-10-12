@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -18,6 +19,10 @@ import (
 type Store struct {
 	database db.Database
 	files    storage.StreamFiles
+
+	maintenanceMutex         sync.Mutex
+	lastKnowledgeRecordingId string
+	lastRevokedReferenceId   string
 }
 
 // New requires range-capable storage rather than buffering an entire import.
