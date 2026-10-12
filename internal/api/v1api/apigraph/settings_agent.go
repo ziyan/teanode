@@ -134,6 +134,7 @@ func modelPricingSettings(priced []config.AgentModelPricing) []*AgentModelPricin
 type AgentModelsSettings struct {
 	Default   string   `json:"default"`
 	Fast      string   `json:"fast"`
+	Quick     string   `json:"quick"`
 	Embedding string   `json:"embedding"`
 	Triage    string   `json:"triage"`
 	Research  string   `json:"research"`
@@ -347,6 +348,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		Models: &AgentModelsSettings{
 			Default:   agent.Models.Default,
 			Fast:      agent.Models.Fast,
+			Quick:     agent.Models.Quick,
 			Embedding: agent.Models.Embedding,
 			Triage:    agent.Models.Triage,
 			Research:  agent.Models.Research,
@@ -589,6 +591,7 @@ type AgentProviderParameters struct {
 type AgentModelsParameters struct {
 	Default   *string   `json:"default"`
 	Fast      *string   `json:"fast"`
+	Quick     *string   `json:"quick"`
 	Embedding *string   `json:"embedding"`
 	Triage    *string   `json:"triage"`
 	Research  *string   `json:"research"`
@@ -870,6 +873,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		models := &agent.Models
 		applyString(&models.Default, parameters.Models.Default)
 		applyString(&models.Fast, parameters.Models.Fast)
+		applyString(&models.Quick, parameters.Models.Quick)
 		applyString(&models.Embedding, parameters.Models.Embedding)
 		applyString(&models.Scan, parameters.Models.Scan)
 		applyString(&models.Synthesize, parameters.Models.Synthesize)

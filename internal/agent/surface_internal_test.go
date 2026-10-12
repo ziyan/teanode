@@ -152,14 +152,14 @@ func TestPersonTextSaysHowMuchOfAnInterruptedAnswerWasHeard(t *testing.T) {
 // is chosen; a typed turn never is.
 func TestASpokenTurnUsesTheCallModel(t *testing.T) {
 	configuration := &config.Configuration{}
-	if got := voiceModel(configuration, &AskSettings{Surface: "voice"}); got != "" {
+	if got := startingModel(configuration, &AskSettings{Surface: "voice"}); got != "" {
 		t.Fatalf("none chosen: %q", got)
 	}
 	configuration.Agent.Voice.AskModel = " spoken:small "
-	if got := voiceModel(configuration, &AskSettings{Surface: "voice"}); got != "spoken:small" {
+	if got := startingModel(configuration, &AskSettings{Surface: "voice"}); got != "spoken:small" {
 		t.Fatalf("chosen: %q", got)
 	}
-	if got := voiceModel(configuration, &AskSettings{Surface: "drawer"}); got != "" {
+	if got := startingModel(configuration, &AskSettings{Surface: "drawer"}); got != "" {
 		t.Fatalf("a typed turn: %q", got)
 	}
 }

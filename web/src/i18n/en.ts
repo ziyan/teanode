@@ -1642,9 +1642,10 @@ export const en = {
   'agentSettings.addProvider': 'Add a provider',
   'agentSettings.models': 'Models',
   'agentSettings.modelsDescription':
-    'Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; embedding enables search by meaning.',
+    'Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; embedding enables search by meaning; quick answers what you type first and hands anything that needs reasoning to the conversations model.',
   'agentSettings.model.default': 'Default',
   'agentSettings.model.fast': 'Fast',
+  'agentSettings.model.quick': 'Quick',
   'agentSettings.model.embedding': 'Embedding',
   'agentSettings.modelOverrides': 'Per kind of work, and choices',
   'agentSettings.work.triage': 'Sorting',
@@ -1938,6 +1939,7 @@ export const en = {
   'agentSettings.removeProviderConfirm':
     'Remove {name}? Work assigned to its models stops until another provider offers them.',
   'agentSettings.modelNone': 'None',
+  'agentSettings.modelQuickOff': 'None: what you type starts on the conversations model',
   'agentSettings.modelInherit': 'Same as the default (fast for sorting, summaries and compaction)',
   'agentSettings.fewerModels': 'Fewer choices',
   'agentSettings.addChoice': 'Add a model people may pick…',

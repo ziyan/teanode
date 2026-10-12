@@ -32,3 +32,21 @@ func TestTheSynthesizeModelIsSavedAndReadBack(t *testing.T) {
 		t.Errorf("the kinds of work are %v", settings.Works)
 	}
 }
+
+// The quick model is saved and read back like every other slot, and a save
+// that leaves it out keeps it.
+func TestTheQuickModelIsSavedAndReadBack(t *testing.T) {
+	configuration := &config.Configuration{}
+	quickModel := "local:small"
+	if err := applyAgentSettings(configuration, &AgentParameters{Models: &AgentModelsParameters{Quick: &quickModel}}); err != nil {
+		t.Fatal(err)
+	}
+	fastModel := "local:cheap"
+	if err := applyAgentSettings(configuration, &AgentParameters{Models: &AgentModelsParameters{Fast: &fastModel}}); err != nil {
+		t.Fatal(err)
+	}
+	settings := describeAgentSettings(configuration)
+	if settings.Models.Quick != quickModel || settings.Models.Fast != fastModel {
+		t.Errorf("read back quick %q and fast %q", settings.Models.Quick, settings.Models.Fast)
+	}
+}
