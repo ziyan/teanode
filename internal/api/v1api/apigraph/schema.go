@@ -56,6 +56,7 @@ type Query interface {
 	AgentChannelQuery
 	AgentPhoneQuery
 	AgentTabQuery
+	RecordingSpeakerQuery
 	RecordingQuery
 	RecordingTranscriptQuery
 	AgentVoiceQuery
@@ -104,6 +105,7 @@ type Mutation interface {
 	ImpersonationMutation
 	PasskeyMutation
 	SettingsMutation
+	RecordingSpeakerMutation
 	RecordingMutation
 	RecordingTranscriptMutation
 	RecordingAttachmentMutation
