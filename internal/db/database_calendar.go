@@ -344,6 +344,19 @@ func (self *transaction) ListCalendarObjects(calendarId string) ([]*models.Calen
 	return objects, nil
 }
 
+func (self *transaction) ListCalendarObjectsStartingBetween(calendarId string, from, until time.Time, limit int) ([]*models.CalendarObject, error) {
+	var found []calendarObjectModel
+	if err := self.tx.Where(`"calendar_id" = ? AND "starts_at" >= ? AND "starts_at" <= ?`, calendarId, from.UTC(), until.UTC()).
+		Order(`"starts_at" ASC, "id" ASC`).Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	objects := make([]*models.CalendarObject, 0, len(found))
+	for index := range found {
+		objects = append(objects, found[index].toModel())
+	}
+	return objects, nil
+}
+
 func (self *transaction) GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error) {
 	return self.calendarObject(calendarId, objectId, false)
 }

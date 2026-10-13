@@ -102,7 +102,7 @@ func TestContactsAreLinkedByAddressWhenSureAndByNameWhenGuessing(t *testing.T) {
 	})
 
 	counts := worker.dreamRecordLinks(context.Background(), run)
-	if counts.Stated != 1 || counts.Proposed != 1 {
+	if counts.StatedCount != 1 || counts.ProposedCount != 1 {
 		t.Errorf("one address and one name: %+v", counts)
 	}
 
@@ -134,7 +134,7 @@ func TestContactsAreLinkedByAddressWhenSureAndByNameWhenGuessing(t *testing.T) {
 
 	// Once written, left alone; and a proposal made again does not touch a
 	// statement.
-	if again := worker.dreamRecordLinks(context.Background(), run); again.Stated+again.Proposed != 0 {
+	if again := worker.dreamRecordLinks(context.Background(), run); again.StatedCount+again.ProposedCount != 0 {
 		t.Errorf("nothing new the second time: %+v", again)
 	}
 
@@ -145,7 +145,7 @@ func TestContactsAreLinkedByAddressWhenSureAndByNameWhenGuessing(t *testing.T) {
 			t.Fatalf("remove: %d %v", removed, err)
 		}
 	})
-	if again := worker.dreamRecordLinks(context.Background(), run); again.Stated+again.Proposed != 0 {
+	if again := worker.dreamRecordLinks(context.Background(), run); again.StatedCount+again.ProposedCount != 0 {
 		t.Errorf("a link the person removed is not made again: %+v", again)
 	}
 	if links := recordLinksOf(t, database, run, eli); len(links) != 0 {
@@ -188,13 +188,14 @@ func TestSentAndReceivedMailIsLinkedByExactAddressFromGrantedMailboxes(t *testin
 			Subject: "Fixture note", Kind: models.MailKindOutgoing, ReceivedAt: time.Now(), From: "owner@example.com",
 			Recipients: []string{"Iris@Example.com", "stranger@example.net"}})
 		receivedItem = itemIn(granted, models.MailboxFolderKindInbox, &models.Mail{
-			Subject: "Fixture reply", Kind: models.MailKindIncoming, ReceivedAt: time.Now(), From: "jules@example.com"})
+			Subject: "Fixture reply", Kind: models.MailKindIncoming, ReceivedAt: time.Now(), From: "jules@example.com",
+			AuthenticationResults: models.AuthenticationResults{DMARC: &models.DMARCResult{Result: "pass"}}})
 		privateItem = itemIn(nil, models.MailboxFolderKindInbox, &models.Mail{
 			Subject: "Fixture private", Kind: models.MailKindIncoming, ReceivedAt: time.Now(), From: "kai@example.com"})
 	})
 
 	counts := worker.dreamRecordLinks(context.Background(), run)
-	if counts.Stated != 2 || counts.Proposed != 0 {
+	if counts.StatedCount != 2 || counts.ProposedCount != 0 {
 		t.Errorf("two stated links: %+v", counts)
 	}
 	irisLinks := recordLinksOf(t, database, run, iris)
@@ -209,7 +210,7 @@ func TestSentAndReceivedMailIsLinkedByExactAddressFromGrantedMailboxes(t *testin
 	if links := recordLinksOf(t, database, run, kai); len(links) != 0 || privateItem == "" {
 		t.Errorf("a mailbox the agent was not given is not read: %+v", links)
 	}
-	if again := worker.dreamRecordLinks(context.Background(), run); again.Stated != 0 {
+	if again := worker.dreamRecordLinks(context.Background(), run); again.StatedCount != 0 {
 		t.Errorf("idempotent: %+v", again)
 	}
 }
@@ -259,16 +260,16 @@ func TestEventAttendeesAreLinkedByAddressAndTitlesProposeProjects(t *testing.T) 
 	})
 
 	counts := worker.dreamRecordLinks(context.Background(), run)
-	if counts.Stated != 2 || counts.Proposed != 2 {
-		t.Errorf("an organizer and a guest stated, the project proposed for an event and a reminder: %+v", counts)
+	if counts.StatedCount != 0 || counts.ProposedCount != 4 {
+		t.Errorf("an invitation anyone could send only proposes its organizer and guest, and the project: %+v", counts)
 	}
 	lenaLinks := recordLinksOf(t, database, run, lena)
-	if len(lenaLinks) != 1 || lenaLinks[0].RecordID != granted.ID || lenaLinks[0].RecordRelation != models.RecordRelationOrganized || lenaLinks[0].LinkStatus != models.EdgeStated {
-		t.Errorf("the organizer organized it: %+v", lenaLinks)
+	if len(lenaLinks) != 1 || lenaLinks[0].RecordID != granted.ID || lenaLinks[0].RecordRelation != models.RecordRelationOrganized || lenaLinks[0].LinkStatus != models.EdgeProposed {
+		t.Errorf("the organizer of a foreign invitation perhaps organized it: %+v", lenaLinks)
 	}
 	miloLinks := recordLinksOf(t, database, run, milo)
-	if len(miloLinks) != 1 || miloLinks[0].RecordRelation != models.RecordRelationAttended {
-		t.Errorf("a guest attended it: %+v", miloLinks)
+	if len(miloLinks) != 1 || miloLinks[0].RecordRelation != models.RecordRelationAttended || miloLinks[0].LinkStatus != models.EdgeProposed {
+		t.Errorf("a guest of a foreign invitation perhaps attended it: %+v", miloLinks)
 	}
 	if links := recordLinksOf(t, database, run, nora); len(links) != 0 {
 		t.Errorf("a page not on the list has no link: %+v", links)
@@ -352,7 +353,7 @@ func TestMerchantsProposeOrganizationsAndMatchedReceiptsFollowTheirTransaction(t
 	})
 
 	counts := worker.dreamRecordLinks(context.Background(), run)
-	if counts.Stated != 0 || counts.Proposed != 2 {
+	if counts.StatedCount != 0 || counts.ProposedCount != 2 {
 		t.Errorf("the merchant and, with it, the matched receipt are proposed: %+v", counts)
 	}
 	links := recordLinksOf(t, database, run, grocer)
@@ -400,7 +401,7 @@ func TestMerchantsProposeOrganizationsAndMatchedReceiptsFollowTheirTransaction(t
 			t.Fatal(err)
 		}
 	})
-	if counts = worker.dreamRecordLinks(context.Background(), run); counts.Stated+counts.Proposed != 0 {
+	if counts = worker.dreamRecordLinks(context.Background(), run); counts.StatedCount+counts.ProposedCount != 0 {
 		t.Errorf("a finance source that is switched off is not read: %+v", counts)
 	}
 }
@@ -526,7 +527,7 @@ func TestConfirmedSpeakersLinkTheirPagesToTheirTurns(t *testing.T) {
 		map[string]string{"speaker-one": "pia", "speaker-two": "Alice Example", "speaker-three": "Someone Else"}, "speaker-two")
 
 	counts := worker.dreamRecordLinks(context.Background(), run)
-	if counts.Stated != 3 || counts.Proposed != 0 {
+	if counts.StatedCount != 3 || counts.ProposedCount != 0 {
 		t.Errorf("two turns of Pia and one of the owner: %+v", counts)
 	}
 	piaLinks := recordLinksOf(t, database, run, pia)
@@ -554,7 +555,7 @@ func TestConfirmedSpeakersLinkTheirPagesToTheirTurns(t *testing.T) {
 	if strings.Contains(piaLinks[0].Evidence[0].Quote, "One.") {
 		t.Errorf("the words of the recording are not copied into a link: %+v", piaLinks[0].Evidence)
 	}
-	if again := worker.dreamRecordLinks(context.Background(), run); again.Stated != 0 {
+	if again := worker.dreamRecordLinks(context.Background(), run); again.StatedCount != 0 {
 		t.Errorf("idempotent: %+v", again)
 	}
 }
@@ -566,18 +567,206 @@ func TestOnePassMakesAtMostTheBoundOfNewLinks(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var cards []*models.Contact
-		for index := 0; index < recordLinksPerDream+20; index++ {
+		for index := 0; index < recordLinksPerDreamCount+20; index++ {
 			cards = append(cards, &models.Contact{Name: fmt.Sprintf("Person Number%03d", index), Emails: []string{fmt.Sprintf("p%03d@example.com", index)}})
 		}
 		aBookWithCards(t, tx, run, "Shared", true, cards...)
-		for index := 0; index < recordLinksPerDream+20; index++ {
+		for index := 0; index < recordLinksPerDreamCount+20; index++ {
 			recordLinkPage(t, tx, run, fmt.Sprintf("people/p%03d", index), models.NodePerson, fmt.Sprintf("P %03d", index), fmt.Sprintf("p%03d@example.com", index))
 		}
 	})
-	if counts := worker.dreamRecordLinks(context.Background(), run); counts.Stated != recordLinksPerDream {
+	if counts := worker.dreamRecordLinks(context.Background(), run); counts.StatedCount != recordLinksPerDreamCount {
 		t.Errorf("bounded: %+v", counts)
 	}
-	if counts := worker.dreamRecordLinks(context.Background(), run); counts.Stated != 20 {
+	if counts := worker.dreamRecordLinks(context.Background(), run); counts.StatedCount != 20 {
 		t.Errorf("the rest on the next dream: %+v", counts)
 	}
+}
+
+// An event the person arranged names the people they put on it, so those are
+// stated; the same event with somebody else as organizer is an invitation.
+func TestGuestsOfThePersonsOwnEventAreStated(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+	run.Owner.Email = "owner@example.com"
+
+	var lena, milo *models.AgentNode
+	var own *models.CalendarObject
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		lena = recordLinkPage(t, tx, run, "people/lena", models.NodePerson, "Lena Fixture", "lena@example.com")
+		milo = recordLinkPage(t, tx, run, "people/milo", models.NodePerson, "Milo Fixture", "milo@example.com")
+		calendar, err := tx.CreateCalendar(&models.Calendar{UserID: run.Owner.ID, Name: "Work", CalendarKind: models.CalendarEvents})
+		if err != nil {
+			t.Fatal(err)
+		}
+		calendar.AgentGranted = true
+		if calendar, err = tx.UpdateCalendar(calendar); err != nil {
+			t.Fatal(err)
+		}
+		startsAt := time.Now().Add(48 * time.Hour).UTC()
+		format := "20060102T150405Z"
+		data := fmt.Sprintf(recordLinkEvent, "own", startsAt.Format(format), startsAt.Add(time.Hour).Format(format), "Fixture sync",
+			"Owner@Example.com", "lena@example.com", "milo@example.com")
+		if own, err = tx.PutCalendarObject(&models.CalendarObject{
+			CalendarID: calendar.ID, UID: "own", ETag: "e", Data: data, Summary: "Fixture sync",
+			StartsAt: startsAt, EndsAt: startsAt.Add(time.Hour),
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	counts := worker.dreamRecordLinks(context.Background(), run)
+	if counts.StatedCount != 2 || counts.ProposedCount != 0 {
+		t.Errorf("the guests of the person's own event are stated: %+v", counts)
+	}
+	for _, page := range []*models.AgentNode{lena, milo} {
+		links := recordLinksOf(t, database, run, page)
+		if len(links) != 1 || links[0].RecordID != own.ID || links[0].RecordRelation != models.RecordRelationAttended || links[0].LinkStatus != models.EdgeStated {
+			t.Errorf("%s attended the person's event: %+v", page.Name, links)
+		}
+	}
+}
+
+// Only the events near now are read, not the whole calendar.
+func TestEventsFarFromNowAreNotLinked(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+	run.Owner.Email = "owner@example.com"
+
+	var project *models.AgentNode
+	var near, far *models.CalendarObject
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		project = recordLinkPage(t, tx, run, "projects/lantern", models.NodeProject, "Lantern")
+		calendar, err := tx.CreateCalendar(&models.Calendar{UserID: run.Owner.ID, Name: "Work", CalendarKind: models.CalendarEvents})
+		if err != nil {
+			t.Fatal(err)
+		}
+		calendar.AgentGranted = true
+		if calendar, err = tx.UpdateCalendar(calendar); err != nil {
+			t.Fatal(err)
+		}
+		put := func(uid string, startsAt time.Time) *models.CalendarObject {
+			startsAt = startsAt.UTC()
+			format := "20060102T150405Z"
+			data := fmt.Sprintf(recordLinkEvent, uid, startsAt.Format(format), startsAt.Add(time.Hour).Format(format), "Lantern planning",
+				"owner@example.com", "a@example.com", "b@example.com")
+			object, err := tx.PutCalendarObject(&models.CalendarObject{
+				CalendarID: calendar.ID, UID: uid, ETag: "e", Data: data, Summary: "Lantern planning",
+				StartsAt: startsAt, EndsAt: startsAt.Add(time.Hour),
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return object
+		}
+		near = put("near", time.Now().Add(48*time.Hour))
+		far = put("far", time.Now().Add(recordLinksEventWindow+30*24*time.Hour))
+	})
+	worker.dreamRecordLinks(context.Background(), run)
+	links := recordLinksOf(t, database, run, project)
+	if theLinkTo(links, near.ID) == nil || theLinkTo(links, far.ID) != nil {
+		t.Errorf("only the event inside the window is linked: %+v", links)
+	}
+}
+
+// A message that proved its sender is the only kind whose From header is
+// believed. One that proved nothing is a guess, and one the server itself
+// distrusts says nothing.
+func TestMailFromAnUnprovenSenderIsOnlyProposed(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+
+	var provenPage, unprovenPage, spoofedPage, colleaguePage *models.AgentNode
+	var provenItem, unprovenItem, hereItem string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		provenPage = recordLinkPage(t, tx, run, "people/proven", models.NodePerson, "Proven Fixture", "proven@example.com")
+		unprovenPage = recordLinkPage(t, tx, run, "people/unproven", models.NodePerson, "Unproven Fixture", "unproven@example.com")
+		spoofedPage = recordLinkPage(t, tx, run, "people/spoofed", models.NodePerson, "Spoofed Fixture", "spoofed@example.com")
+		colleaguePage = recordLinkPage(t, tx, run, "people/colleague", models.NodePerson, "Colleague Fixture", "colleague@example.com")
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: run.Owner.ID, Name: "Personal", Agent: &models.AgentMailbox{Granted: true}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || inbox == nil {
+			t.Fatalf("no Inbox: %v", err)
+		}
+		deliver := func(from string, kind models.MailKind, results models.AuthenticationResults) string {
+			stored, err := tx.CreateMail(&models.Mail{Subject: "Fixture", Kind: kind, ReceivedAt: time.Now(), From: from, AuthenticationResults: results}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			item, err := tx.AddItem(inbox.ID, stored.ID, "", models.MailboxItemFlags{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return item.ID
+		}
+		provenItem = deliver("proven@example.com", models.MailKindIncoming, models.AuthenticationResults{DMARC: &models.DMARCResult{Result: "pass"}})
+		unprovenItem = deliver("unproven@example.com", models.MailKindIncoming, models.AuthenticationResults{})
+		deliver("spoofed@example.com", models.MailKindIncoming, models.AuthenticationResults{
+			DMARC: &models.DMARCResult{Result: "fail", Policy: "quarantine"}})
+		hereItem = deliver("colleague@example.com", models.MailKindOutgoing, models.AuthenticationResults{})
+	})
+	counts := worker.dreamRecordLinks(context.Background(), run)
+	if counts.StatedCount != 2 || counts.ProposedCount != 1 {
+		t.Errorf("a proven sender and one from this server stated, an unproven one proposed: %+v", counts)
+	}
+	for page, want := range map[*models.AgentNode]struct {
+		item   string
+		status models.AgentEdgeStatus
+	}{
+		provenPage:    {provenItem, models.EdgeStated},
+		unprovenPage:  {unprovenItem, models.EdgeProposed},
+		colleaguePage: {hereItem, models.EdgeStated},
+	} {
+		links := recordLinksOf(t, database, run, page)
+		if len(links) != 1 || links[0].RecordID != want.item || links[0].LinkStatus != want.status || links[0].RecordRelation != models.RecordRelationWrote {
+			t.Errorf("%s: want a %s wrote link to %s, got %+v", page.Name, want.status, want.item, links)
+		}
+	}
+	if links := recordLinksOf(t, database, run, spoofedPage); len(links) != 0 {
+		t.Errorf("a message that failed DMARC under a hold policy links nobody: %+v", links)
+	}
+}
+
+// A turn whose bounds moved since it was linked replaces the link it
+// overlaps instead of leaving both, and a link that does not overlap stays.
+func TestAShiftedTurnReplacesTheLinkItOverlaps(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+
+	var pia *models.AgentNode
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		pia = recordLinkPage(t, tx, run, "people/pia", models.NodePerson, "Pia Fixture", "Pia")
+	})
+	recording, runId := recordingWithSpeakers(t, database, run, map[string]string{"speaker-one": "pia"}, "")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, bounds := range [][2]int64{{2000, 7000}, {3000, 9000}, {60000, 61000}} {
+			if _, err := tx.PutAgentRecordLink(&models.AgentRecordLink{
+				AgentID: run.Agent.ID, NodeID: pia.ID, RecordKind: models.RecordRecordingPassage, RecordID: recording.ID,
+				RecordDetail:   models.AgentRecordDetail{TranscriptRunID: runId},
+				PassageStartMS: bounds[0], PassageEndMS: bounds[1],
+				RecordRelation: models.RecordRelationSpokeIn, LinkStatus: models.EdgeStated,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	worker.dreamRecordLinks(context.Background(), run)
+	ranges := map[string]bool{}
+	for _, link := range recordLinksOf(t, database, run, pia) {
+		ranges[fmt.Sprintf("%d-%d", link.PassageStartMS, link.PassageEndMS)] = true
+	}
+	if len(ranges) != 3 || !ranges["2000-8000"] || !ranges["30000-33000"] || !ranges["60000-61000"] {
+		t.Errorf("the two old overlapping links gave way to the current turn: %v", ranges)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if dismissed, err := tx.ListAgentRecordLinkDismissals(run.Agent.ID); err != nil || len(dismissed) != 0 {
+			t.Errorf("replacing a link is not the person removing it: %v %v", dismissed, err)
+		}
+	})
 }

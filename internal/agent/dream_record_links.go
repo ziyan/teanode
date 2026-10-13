@@ -34,9 +34,11 @@ import (
 //
 //   - Idempotent. A link is written once; one already there is left alone,
 //     and a statement is never turned into a proposal.
-//   - Bounded. At most recordLinksPerDream new links, and each source reads
-//     only the newest of its records, so a large mailbox or a long history
-//     costs the same each time and is covered over many dreams.
+//   - Bounded. At most recordLinksPerDreamCount new links, and each source reads
+//     only the newest of its records (a calendar, only the events starting
+//     within recordLinksEventWindow of now), so a large mailbox or a long
+//     history costs the same each time. A record older than that is not
+//     reached by this pass; it is linked by hand or by the agent.
 //   - Granted. The agent reads only what the person gave it, so a record is
 //     linked only when the same resolver the agent reads links with says it
 //     is readable: a granted address book, a granted calendar or mailbox, a
@@ -44,16 +46,16 @@ import (
 //   - Respectful of removal. A link the person took off a page is recorded
 //     (agent_record_link_dismissal) and not made again.
 const (
-	// recordLinksPerDream is the most links one dream makes.
-	recordLinksPerDream = 300
+	// recordLinksPerDreamCount is the most links one dream makes.
+	recordLinksPerDreamCount = 300
 
-	// recordLinksMailItems is how many of the newest messages of a folder
-	// are looked at, per folder, and recordLinksRecordings how many of the
-	// newest recordings. recordLinksTransactions is the same for finance
+	// recordLinksMailItemCount is how many of the newest messages of a folder
+	// are looked at, per folder, and recordLinksRecordingCount how many of the
+	// newest recordings. recordLinksTransactionCount is the same for finance
 	// transactions and for receipts.
-	recordLinksMailItems    = 100
-	recordLinksRecordings   = 50
-	recordLinksTransactions = 200
+	recordLinksMailItemCount    = 100
+	recordLinksRecordingCount   = 50
+	recordLinksTransactionCount = 200
 
 	// recordLinksEventWindow is how far either side of now an event may
 	// start to be looked at.
@@ -67,12 +69,12 @@ const (
 	// one speaker that still reads as the same turn.
 	recordLinksTurnGapMS = 2000
 
-	// recordLinksPassageSegments reads a recording this many segments at a
+	// recordLinksPassageSegmentCount reads a recording this many segments at a
 	// time, the most the database returns.
-	recordLinksPassageSegments = 250
+	recordLinksPassageSegmentCount = 250
 
-	// recordLinksPagesMost is how many pages of each kind are matched.
-	recordLinksPagesMost = 5000
+	// recordLinksPagesPerKindCount is how many pages of each kind are matched.
+	recordLinksPagesPerKindCount = 5000
 )
 
 // recordLinkPass is one run of the pass over one agent.
@@ -102,23 +104,23 @@ type recordLinkPass struct {
 	reader        recordlink.Reader
 }
 
-// recordLinkCounts is what a pass did.
-type recordLinkCounts struct {
-	Stated   int
-	Proposed int
+// recordLinkCount is what a pass did.
+type recordLinkCount struct {
+	StatedCount   int
+	ProposedCount int
 }
 
 // dreamRecordLinks makes the links, one source at a time. A source that fails
 // is logged and the rest go on: a calendar that cannot be read is no reason
 // for the recordings not to be.
-func (self *Agent) dreamRecordLinks(ctx context.Context, run *Run) recordLinkCounts {
+func (self *Agent) dreamRecordLinks(ctx context.Context, run *Run) recordLinkCount {
 	pass, err := self.newRecordLinkPass(ctx, run)
 	if err != nil {
 		log.Warningf("cannot start linking records for agent %q: %s", run.Agent.ID, err)
-		return recordLinkCounts{}
+		return recordLinkCount{}
 	}
 	if len(pass.people)+len(pass.organizations)+len(pass.projects) == 0 && pass.selfPage == nil {
-		return recordLinkCounts{}
+		return recordLinkCount{}
 	}
 	for _, source := range []struct {
 		name string
@@ -140,17 +142,17 @@ func (self *Agent) dreamRecordLinks(ctx context.Context, run *Run) recordLinkCou
 	if pass.statedCount+pass.proposedCount > 0 {
 		log.Infof("linked records for agent %q: %d stated, %d proposed", run.Agent.ID, pass.statedCount, pass.proposedCount)
 	}
-	return recordLinkCounts{Stated: pass.statedCount, Proposed: pass.proposedCount}
+	return recordLinkCount{StatedCount: pass.statedCount, ProposedCount: pass.proposedCount}
 }
 
 func (self *Agent) newRecordLinkPass(ctx context.Context, run *Run) (*recordLinkPass, error) {
 	pass := &recordLinkPass{
-		agent: run.Agent, owner: run.Owner, remaining: recordLinksPerDream,
+		agent: run.Agent, owner: run.Owner, remaining: recordLinksPerDreamCount,
 		reader: recordlink.Reader{UserID: run.Owner.ID, AgentID: run.Agent.ID, IsAgent: true},
 	}
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		nodes, err := tx.ListAgentNodesOfKinds(run.Agent.ID,
-			[]models.AgentNodeKind{models.NodePerson, models.NodeOrganization, models.NodeProject, models.NodeSelf}, recordLinksPagesMost)
+			[]models.AgentNodeKind{models.NodePerson, models.NodeOrganization, models.NodeProject, models.NodeSelf}, recordLinksPagesPerKindCount)
 		if err != nil {
 			return err
 		}
@@ -381,9 +383,8 @@ func linkContactsOfPeople(ctx context.Context, run *Run, pass *recordLinkPass) e
 					return err
 				}
 				if written {
-					if err := tx.SetAgentNodeContact(pass.agent.ID, page.ID, card.ID); err != nil {
-						return err
-					}
+					// The database names the card on the page when it stores
+					// a stated link to it.
 					page.ContactID = card.ID
 				}
 				continue
@@ -481,7 +482,7 @@ func linkRecordingSpeakers(ctx context.Context, run *Run, pass *recordLinkPass) 
 		if len(pageByIdentity) == 0 {
 			return nil
 		}
-		recordings, err := tx.ListRecordings(pass.owner.ID, "", "", recordLinksRecordings)
+		recordings, err := tx.ListRecordings(pass.owner.ID, "", "", recordLinksRecordingCount)
 		if err != nil {
 			return err
 		}
@@ -508,7 +509,7 @@ func linkRecordingTurns(tx db.Transaction, pass *recordLinkPass, recording *mode
 	var turns []*turnOfSegments
 	var current *turnOfSegments
 	for offset := 0; ; {
-		segments, _, segmentCount, err := tx.ReadRecordingTranscriptTimelinePage(pass.owner.ID, recording.ID, offset, recordLinksPassageSegments)
+		segments, _, segmentCount, err := tx.ReadRecordingTranscriptTimelinePage(pass.owner.ID, recording.ID, offset, recordLinksPassageSegmentCount)
 		if err != nil {
 			return err
 		}
@@ -542,7 +543,15 @@ func linkRecordingTurns(tx db.Transaction, pass *recordLinkPass, recording *mode
 	}
 	for _, turn := range turns {
 		page := pageByIdentity[turn.identityID]
-		if _, err := pass.put(tx, &models.AgentRecordLink{
+		// A turn whose bounds shifted since it was linked (a later naming,
+		// a new transcription) replaces the link it overlaps, so the page
+		// does not collect one link per version of the same passage.
+		overlapping, err := tx.ListAgentRecordBacklinks(pass.agent.ID, models.RecordRecordingPassage, recording.ID,
+			turn.startMS, turn.endMS, recordLinksPerDreamCount)
+		if err != nil {
+			return err
+		}
+		written, err := pass.put(tx, &models.AgentRecordLink{
 			NodeID: page.ID, RecordKind: models.RecordRecordingPassage, RecordID: recording.ID,
 			RecordDetail:   models.AgentRecordDetail{TranscriptRunID: turn.transcriptRunID},
 			PassageStartMS: turn.startMS, PassageEndMS: turn.endMS,
@@ -551,8 +560,25 @@ func linkRecordingTurns(tx db.Transaction, pass *recordLinkPass, recording *mode
 				Kind: models.EvidenceRecordingPassage, ID: recording.ID, TranscriptRunID: turn.transcriptRunID,
 				StartMS: turn.startMS, EndMS: turn.endMS, Quote: "the person confirmed this speaker is " + page.Name,
 			}},
-		}); err != nil {
+		})
+		if err != nil {
 			return err
+		}
+		if written {
+			for _, older := range overlapping {
+				if older.NodeID != page.ID || older.RecordRelation != models.RecordRelationSpokeIn || older.Proposed() ||
+					(older.PassageStartMS == turn.startMS && older.PassageEndMS == turn.endMS) {
+					continue
+				}
+				// Withdrawn, not removed by the person: the dream may link
+				// the passage again.
+				if _, err := tx.WithdrawAgentRecordLink(pass.agent.ID, page.ID, models.RecordRecordingPassage, recording.ID,
+					models.RecordRelationSpokeIn, older.PassageStartMS, older.PassageEndMS); err != nil {
+					return err
+				}
+				delete(pass.existing, models.RecordLinkKey(page.ID, older.RecordKind, older.RecordID, older.RecordRelation,
+					older.PassageStartMS, older.PassageEndMS))
+			}
 		}
 		if pass.remaining <= 0 {
 			return nil
@@ -593,7 +619,7 @@ func linkMailParticipants(ctx context.Context, run *Run, pass *recordLinkPass) e
 				if folder == nil {
 					continue
 				}
-				items, err := tx.ListItems(folder.ID, &db.ItemOptions{Limit: recordLinksMailItems, ByReceived: true})
+				items, err := tx.ListItems(folder.ID, &db.ItemOptions{Limit: recordLinksMailItemCount, ByReceived: true})
 				if err != nil {
 					return err
 				}
@@ -629,10 +655,22 @@ func linkMailItems(tx db.Transaction, pass *recordLinkPass, mailboxId string, ki
 		}
 		var addresses []string
 		relation := models.RecordRelationWrote
+		linkStatus := models.EdgeStated
 		if kind == models.MailboxFolderKindSent {
 			relation = models.RecordRelationReceived
 			addresses = found.Recipients
 		} else {
+			// The From header of a message from outside is whatever its
+			// sender typed. Who wrote it is stated only for a message that
+			// proved its sender or was sent from an account here, proposed
+			// for one that proved nothing, and left alone for one the
+			// server itself distrusts.
+			if found.LooksLikeSpam() {
+				continue
+			}
+			if !found.DMARCPassed() && !found.SubmittedHere() {
+				linkStatus = models.EdgeProposed
+			}
 			addresses = []string{found.From}
 		}
 		seen := map[string]bool{}
@@ -645,13 +683,16 @@ func linkMailItems(tx db.Transaction, pass *recordLinkPass, mailboxId string, ki
 			seen[page.ID] = true
 			happenedAt := found.ReceivedAt
 			quote := address + " is the sender"
+			if linkStatus == models.EdgeProposed {
+				quote = address + " is the sender, but the message did not prove it"
+			}
 			if relation == models.RecordRelationReceived {
 				quote = address + " is a recipient"
 			}
 			if _, err := pass.put(tx, &models.AgentRecordLink{
 				NodeID: page.ID, RecordKind: models.RecordMail, RecordID: item.ID,
 				RecordDetail:   models.AgentRecordDetail{MailboxID: mailboxId},
-				RecordRelation: relation, LinkStatus: models.EdgeStated, HappenedAt: &happenedAt,
+				RecordRelation: relation, LinkStatus: linkStatus, HappenedAt: &happenedAt,
 				Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: item.ID, Quote: quote}},
 			}); err != nil {
 				return err
@@ -696,12 +737,18 @@ func linkCalendarParticipants(ctx context.Context, run *Run, pass *recordLinkPas
 		if err != nil {
 			return err
 		}
+		ownAddresses, err := addressesOfPerson(tx, pass.owner)
+		if err != nil {
+			return err
+		}
 		now := time.Now()
 		for _, owned := range calendars {
 			if !owned.AgentGranted {
 				continue
 			}
-			objects, err := tx.ListCalendarObjects(owned.ID)
+			// Only the window is read, not every event the calendar holds.
+			objects, err := tx.ListCalendarObjectsStartingBetween(owned.ID,
+				now.Add(-recordLinksEventWindow), now.Add(recordLinksEventWindow), db.ObjectsPerCalendar)
 			if err != nil {
 				return err
 			}
@@ -709,13 +756,10 @@ func linkCalendarParticipants(ctx context.Context, run *Run, pass *recordLinkPas
 				if pass.remaining <= 0 {
 					return nil
 				}
-				if object.StartsAt.IsZero() || object.StartsAt.Before(now.Add(-recordLinksEventWindow)) || object.StartsAt.After(now.Add(recordLinksEventWindow)) {
+				if object.StartsAt.IsZero() || strings.EqualFold(object.Status, "CANCELLED") {
 					continue
 				}
-				if strings.EqualFold(object.Status, "CANCELLED") {
-					continue
-				}
-				if err := linkCalendarObject(tx, pass, owned, object); err != nil {
+				if err := linkCalendarObject(tx, pass, owned, object, ownAddresses); err != nil {
 					return err
 				}
 			}
@@ -724,7 +768,28 @@ func linkCalendarParticipants(ctx context.Context, run *Run, pass *recordLinkPas
 	})
 }
 
-func linkCalendarObject(tx db.Transaction, pass *recordLinkPass, owned *models.Calendar, object *models.CalendarObject) error {
+// addressesOfPerson are the addresses that are the person: their account's
+// and those of their mailboxes.
+func addressesOfPerson(tx db.Transaction, owner *models.User) (map[string]bool, error) {
+	addresses := map[string]bool{}
+	if address := normalizedAddress(owner.Email); address != "" {
+		addresses[address] = true
+	}
+	mailboxes, err := tx.ListMailboxes(owner.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, mailbox := range mailboxes {
+		for _, mailboxAddress := range mailbox.Addresses {
+			if address := normalizedAddress(mailboxAddress.Address); address != "" {
+				addresses[address] = true
+			}
+		}
+	}
+	return addresses, nil
+}
+
+func linkCalendarObject(tx db.Transaction, pass *recordLinkPass, owned *models.Calendar, object *models.CalendarObject, ownAddresses map[string]bool) error {
 	recordKind := models.RecordCalendarEvent
 	if owned.CalendarKind == models.CalendarReminders {
 		recordKind = models.RecordReminder
@@ -734,12 +799,19 @@ func linkCalendarObject(tx db.Transaction, pass *recordLinkPass, owned *models.C
 		parsed, err := calendar.Parse([]byte(object.Data))
 		if err == nil {
 			organizer := normalizedAddress(parsed.Organizer)
+			// The people on an event the person arranged are the people
+			// they put there. An invitation is a file anyone can mail, so
+			// the people on one are only proposed.
+			linkStatus := models.EdgeProposed
+			if organizer == "" || ownAddresses[organizer] {
+				linkStatus = models.EdgeStated
+			}
 			seen := map[string]bool{}
 			if page := pass.pageByAddress[organizer]; page != nil && organizer != "" {
 				seen[page.ID] = true
 				if _, err := pass.put(tx, &models.AgentRecordLink{
 					NodeID: page.ID, RecordKind: recordKind, RecordID: object.ID,
-					RecordRelation: models.RecordRelationOrganized, LinkStatus: models.EdgeStated, HappenedAt: &startsAt,
+					RecordRelation: models.RecordRelationOrganized, LinkStatus: linkStatus, HappenedAt: &startsAt,
 					Evidence: []models.Evidence{{Kind: models.EvidenceCalendarEvent, ID: object.ID, Quote: organizer + " is the organizer"}},
 				}); err != nil {
 					return err
@@ -754,7 +826,7 @@ func linkCalendarObject(tx db.Transaction, pass *recordLinkPass, owned *models.C
 				seen[page.ID] = true
 				if _, err := pass.put(tx, &models.AgentRecordLink{
 					NodeID: page.ID, RecordKind: recordKind, RecordID: object.ID,
-					RecordRelation: models.RecordRelationAttended, LinkStatus: models.EdgeStated, HappenedAt: &startsAt,
+					RecordRelation: models.RecordRelationAttended, LinkStatus: linkStatus, HappenedAt: &startsAt,
 					Evidence: []models.Evidence{{Kind: models.EvidenceCalendarEvent, ID: object.ID, Quote: address + " is on the guest list"}},
 				}); err != nil {
 					return err
@@ -805,7 +877,7 @@ func linkFinanceRecords(ctx context.Context, run *Run, pass *recordLinkPass) err
 		}
 		organizationsNamed := pagesByName(pass.organizations)
 		page, err := tx.ListFinanceTransactions(pass.agent.ID, &db.FinanceTransactionFilter{
-			Limit: recordLinksTransactions, IsDuplicateExcluded: true,
+			Limit: recordLinksTransactionCount, IsDuplicateExcluded: true,
 		})
 		if err != nil {
 			return err
@@ -839,7 +911,7 @@ func linkFinanceRecords(ctx context.Context, run *Run, pass *recordLinkPass) err
 // matched to it is for, with the same status. The match is the person's or
 // the receipt matcher's, which is already as sure as that link is.
 func linkMatchedReceipts(tx db.Transaction, pass *recordLinkPass) error {
-	receipts, err := tx.ListFinanceReceipts(pass.agent.ID, &db.FinanceReceiptFilter{Limit: recordLinksTransactions})
+	receipts, err := tx.ListFinanceReceipts(pass.agent.ID, &db.FinanceReceiptFilter{Limit: recordLinksTransactionCount})
 	if err != nil {
 		return err
 	}
