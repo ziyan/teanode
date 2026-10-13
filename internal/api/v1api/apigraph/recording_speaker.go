@@ -39,6 +39,7 @@ type CorrectRecordingSpeakerArguments struct {
 	ExpectedSourceGeneration        int64  `json:"expectedSourceGeneration"`
 	ClientCorrectionID              string `json:"clientCorrectionId"`
 	ConfirmedName                   string `json:"confirmedName"`
+	IsAccountOwner                  bool   `json:"isAccountOwner" graphapi:"nullable"`
 	RecordingTranscriptionAttemptID string `json:"recordingTranscriptionAttemptId"`
 	LocalSpeakerID                  string `json:"localSpeakerId"`
 	PassageStartMS                  int64  `json:"passageStartMS"`
@@ -106,7 +107,7 @@ func (self *graph) CorrectRecordingSpeaker(ctx context.Context, arguments Correc
 	if err != nil {
 		return nil, err
 	}
-	_, err = self.transaction(ctx).CorrectRecordingSpeaker(userId, db.RecordingSpeakerCorrectionInput{RecordingID: arguments.RecordingID, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration, ClientCorrectionID: arguments.ClientCorrectionID, ConfirmedName: arguments.ConfirmedName, RecordingTranscriptionAttemptID: arguments.RecordingTranscriptionAttemptID, LocalSpeakerID: arguments.LocalSpeakerID, PassageStartMS: arguments.PassageStartMS, PassageEndMS: arguments.PassageEndMS})
+	_, err = self.transaction(ctx).CorrectRecordingSpeaker(userId, db.RecordingSpeakerCorrectionInput{RecordingID: arguments.RecordingID, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration, ClientCorrectionID: arguments.ClientCorrectionID, ConfirmedName: arguments.ConfirmedName, IsAccountOwner: arguments.IsAccountOwner, RecordingTranscriptionAttemptID: arguments.RecordingTranscriptionAttemptID, LocalSpeakerID: arguments.LocalSpeakerID, PassageStartMS: arguments.PassageStartMS, PassageEndMS: arguments.PassageEndMS})
 	if err != nil {
 		return nil, translateError(err)
 	}

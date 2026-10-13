@@ -7,6 +7,10 @@ export interface Recording {
   id: string
   userId: string
   recordingTitle: string
+  recordingTitleSource?: string
+  recordingSummary?: string
+  createdAt: string
+  recordedAt: string | null
   recordingOrigin: string
   recordingCaptureState: string
   sourceGeneration: number
@@ -37,6 +41,13 @@ export interface RecordingPart {
 export interface RecordingView {
   recording: Recording
   mediaFiles: RecordingMedia[]
+  transcriptRuns: {
+    id: string
+    versionNumber: number
+    recordingProcessingState: string
+    recordingMediaId: string
+    segmentCount?: number
+  }[]
   uploadParts: RecordingPart[]
 }
 export interface RecordingLimits {
@@ -45,12 +56,12 @@ export interface RecordingLimits {
   uploadPartBytes: number
 }
 const recordingFields =
-  'id userId clientRecordingId recordingTitle recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
+  'id userId createdAt recordedAt clientRecordingId recordingTitle recordingTitleSource recordingSummary recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
 const mediaFields =
   'id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt'
 export const RECORDING_DOCUMENTS = {
-  ListRecordings: `query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize) { ${recordingFields} } }`,
-  ReadRecording: `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { ${recordingFields} } mediaFiles { ${mediaFields} } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
+  ListRecordings: `query ($beforeRecordingId: String!, $pageSize: Int!, $searchText: String) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize, searchText: $searchText) { ${recordingFields} } }`,
+  ReadRecording: `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { ${recordingFields} } mediaFiles { ${mediaFields} } transcriptRuns { id versionNumber recordingProcessingState recordingMediaId segmentCount } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
   ReadRecordingLimits: 'query { ReadRecordingLimits { maximumMediaBytes maximumAccountBytes uploadPartBytes } }',
   CreateRecording: `mutation ($clientRecordingId: String!, $recordingTitle: String!, $recordingOrigin: String!) { CreateRecording(clientRecordingId: $clientRecordingId, recordingTitle: $recordingTitle, recordingOrigin: $recordingOrigin) { ${recordingFields} } }`,
   CreateRecordingMedia: `mutation ($recordingId: String!, $clientMediaId: String!, $originalFilename: String!, $originalContentType: String!, $originalSizeBytes: Int64!, $originalSha256: String!, $timelineStartMS: Int64!, $mediaDurationMS: Int64!) { CreateRecordingMedia(recordingId: $recordingId, clientMediaId: $clientMediaId, originalFilename: $originalFilename, originalContentType: $originalContentType, originalSizeBytes: $originalSizeBytes, originalSha256: $originalSha256, timelineStartMS: $timelineStartMS, mediaDurationMS: $mediaDurationMS) { ${mediaFields} } }`,

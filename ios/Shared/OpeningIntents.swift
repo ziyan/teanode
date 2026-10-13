@@ -20,6 +20,22 @@ struct CallAgentIntent: AppIntent {
     }
 }
 
+/// StartRecordingIntent opens TeaNode and starts a recording at once, with no name to give: the agent names it later.
+struct StartRecordingIntent: AppIntent {
+    static var title: LocalizedStringResource { "Start a recording" }
+    static var description: IntentDescription { IntentDescription("Opens TeaNode and starts recording.") }
+    static var openAppWhenRun: Bool { true }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        #if TEANODE_APP
+            AppModel.shared.openedSection = .recordings
+            AppModel.shared.isRecordingRequested = true
+        #endif
+        return .result()
+    }
+}
+
 /// OpenSectionIntent opens TeaNode on one of its parts.
 struct OpenSectionIntent: AppIntent {
     static var title: LocalizedStringResource { "Open TeaNode" }

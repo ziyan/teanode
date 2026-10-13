@@ -32,6 +32,11 @@ type TranscriptionRequest struct {
 	Language                     string
 	IsSpeakerDiarizationRequired bool
 	SpeakerReferences            []SpeakerReference
+
+	// VocabularyPrompt is a short list of names and terms the speakers are
+	// likely to say, taken from the person's own data, that helps a model
+	// spell them. A model that does not accept a prompt ignores it.
+	VocabularyPrompt string
 }
 
 // SpeakerReference is an excerpt whose identity was confirmed by the person.

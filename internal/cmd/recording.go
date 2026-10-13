@@ -19,10 +19,10 @@ const recordingMediaRequestTimeout = 11 * time.Minute
 // NewRecordingCommand manages account-owned recordings through the shared API.
 func NewRecordingCommand() *cli.Command {
 	return &cli.Command{Name: "recording", Usage: "import, browse and download your retained meeting originals", Commands: append([]*cli.Command{
-		{Name: "list", Usage: "list your recording library", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "before", Usage: "continue before this recording ID"}, &cli.IntFlag{Name: "limit", Value: 25, Usage: "recordings per page (1 to 100)"}}, Action: runRecordingList},
+		{Name: "list", Usage: "list your recording library", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "before", Usage: "continue before this recording ID"}, &cli.IntFlag{Name: "limit", Value: 25, Usage: "recordings per page (1 to 100)"}, &cli.StringFlag{Name: "search", Usage: "only recordings whose title, summary or transcript contains this"}}, Action: runRecordingList},
 		{Name: "read", Usage: "inspect metadata, media and upload receipts", ArgsUsage: "<recording-id>", Flags: []cli.Flag{JSONFlag()}, Action: runRecordingRead},
 		{Name: "limits", Usage: "show recording storage and upload bounds", Flags: []cli.Flag{JSONFlag()}, Action: runRecordingLimits},
-		{Name: "import", Usage: "upload an unchanged audio/video file; rerun to resume, your file is always retained", ArgsUsage: "<file>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "recording-id", Usage: "resume this existing recording (requires --media-id)"}, &cli.StringFlag{Name: "media-id", Usage: "exact existing original to resume"}, &cli.StringFlag{Name: "title"}, &cli.StringFlag{Name: "content-type", Usage: "audio or video MIME type if the extension is unknown"}, &cli.StringFlag{Name: "client-recording-id", Usage: "stable import identity; default is the whole-file digest"}}, Action: runRecordingImport},
+		{Name: "import", Usage: "upload an unchanged audio/video file; rerun to resume, your file is always retained", ArgsUsage: "<file>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "recording-id", Usage: "resume this existing recording (requires --media-id)"}, &cli.StringFlag{Name: "media-id", Usage: "exact existing original to resume"}, &cli.StringFlag{Name: "title", Usage: "optional; without it the server names the recording from its transcript"}, &cli.StringFlag{Name: "content-type", Usage: "audio or video MIME type if the extension is unknown"}, &cli.StringFlag{Name: "client-recording-id", Usage: "stable import identity; default is the whole-file digest"}}, Action: runRecordingImport},
 		{Name: "download", Usage: "save and verify a recording original, or explicitly prepare compatible audio with --preview", ArgsUsage: "<recording-id> <media-id> <destination>", Flags: []cli.Flag{&cli.BoolFlag{Name: "preview", Usage: "download compatible audio; prepare locally if absent (requires write access)"}}, Action: runRecordingDownload},
 		{Name: "delete", Usage: "delete a recording, its originals and dependent derived media", ArgsUsage: "<recording-id>", Flags: []cli.Flag{&cli.BoolFlag{Name: "force", Usage: "delete without asking first"}}, Action: runRecordingDelete},
 	}, recordingActionCommands()...)}
@@ -39,7 +39,7 @@ func recordingCall(ctx context.Context, command *cli.Command, operationName stri
 }
 func runRecordingList(ctx context.Context, command *cli.Command) error {
 	var recordings []*models.Recording
-	if err := recordingCall(ctx, command, "ListRecordings", map[string]any{"beforeRecordingId": command.String("before"), "pageSize": command.Int("limit")}, &recordings); err != nil {
+	if err := recordingCall(ctx, command, "ListRecordings", map[string]any{"beforeRecordingId": command.String("before"), "pageSize": command.Int("limit"), "searchText": command.String("search")}, &recordings); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -87,9 +87,6 @@ func runRecordingImport(ctx context.Context, command *cli.Command) error {
 		contentType = parsedType
 	}
 	recordingTitle := command.String("title")
-	if recordingTitle == "" {
-		recordingTitle = filepath.Base(filename)
-	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err

@@ -14,6 +14,10 @@ public struct Recording: Codable, Hashable, Sendable, Identifiable {
     public let recordingTitle: String
     public let recordingOrigin: String
     public var recordedAt: String? = nil
+    /// Who wrote the title: "none", "generated" or "user". Older servers do not say.
+    public var recordingTitleSource: String? = nil
+    /// The short summary the server wrote from the transcript; empty until it has.
+    public var recordingSummary: String? = nil
     public let recordingCaptureState: String
     public let timelineDurationMS: Int64
     public let sourceGeneration: Int64
@@ -101,16 +105,16 @@ public struct RecordingLimits: Codable, Hashable, Sendable {
 
 extension Documents {
     static let recordingFields = """
-        id userId createdAt updatedAt clientRecordingId recordingTitle recordingOrigin recordedAt recordingCaptureState
-        timelineDurationMS sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason }
+        id userId createdAt updatedAt clientRecordingId recordingTitle recordingTitleSource recordingSummary recordingOrigin recordedAt
+        recordingCaptureState timelineDurationMS sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason }
         """
     static let recordingMediaFields = """
         id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS
         mediaDurationMS partCount recordingUploadState verifiedAt
         """
     public static let listRecordings = """
-        query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize:
-        $pageSize) { \(recordingFields) } }
+        query ($beforeRecordingId: String!, $pageSize: Int!, $searchText: String) { ListRecordings(beforeRecordingId: $beforeRecordingId,
+        pageSize: $pageSize, searchText: $searchText) { \(recordingFields) } }
         """
     public static let readRecording = """
         query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { \(recordingFields) } mediaFiles {
@@ -137,7 +141,7 @@ extension Documents {
         }
         """
     public static let updateRecordingMetadata = """
-        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingTitle: String!, $recordedAt: DateTime) {
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingTitle: String, $recordedAt: DateTime) {
         UpdateRecordingMetadata(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, recordingTitle:
         $recordingTitle, recordedAt: $recordedAt) { \(recordingFields) } }
         """
@@ -147,12 +151,12 @@ extension Documents {
 }
 
 extension Connection {
-    public func recordings(beforeRecordingId: String = "", pageSize: Int = 50) async throws -> [Recording] {
+    /// The account's recordings, newest first; a search keeps those whose title, summary or transcript contains it.
+    public func recordings(beforeRecordingId: String = "", pageSize: Int = 50, searchText: String = "") async throws -> [Recording] {
         struct Answer: Decodable, Sendable { let ListRecordings: [Recording] }
-        return try await execute(
-            Documents.listRecordings, variables: ["beforeRecordingId": .string(beforeRecordingId), "pageSize": .number(Double(pageSize))],
-            as: Answer.self
-        ).ListRecordings
+        var variables: [String: JSONValue] = ["beforeRecordingId": .string(beforeRecordingId), "pageSize": .number(Double(pageSize))]
+        if !searchText.isEmpty { variables["searchText"] = .string(searchText) }
+        return try await execute(Documents.listRecordings, variables: variables, as: Answer.self).ListRecordings
     }
 
     public func recording(_ recordingId: String) async throws -> RecordingView {
@@ -218,7 +222,9 @@ extension Connection {
         ).UpdateRecordingCapture
     }
 
-    public func updateRecordingMetadata(recordingId: String, expectedSourceGeneration: Int64, recordingTitle: String, recordedAt: String?)
+    /// A nil `recordingTitle` keeps the title as it is; an empty one clears it, and the server names the recording again.
+    /// A nil `recordedAt` clears the date, so a caller that only means to change the title sends the date it has.
+    public func updateRecordingMetadata(recordingId: String, expectedSourceGeneration: Int64, recordingTitle: String?, recordedAt: String?)
         async throws -> Recording
     {
         struct Answer: Decodable, Sendable { let UpdateRecordingMetadata: Recording }
@@ -226,7 +232,7 @@ extension Connection {
             Documents.updateRecordingMetadata,
             variables: [
                 "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
-                "recordingTitle": .string(recordingTitle), "recordedAt": recordedAt.map { .string($0) } ?? .null,
+                "recordingTitle": recordingTitle.map { .string($0) } ?? .null, "recordedAt": recordedAt.map { .string($0) } ?? .null,
             ], as: Answer.self
         ).UpdateRecordingMetadata
     }

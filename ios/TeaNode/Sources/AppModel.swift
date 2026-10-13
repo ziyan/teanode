@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var connection: Connection?
 
     private(set) var services: ServiceCapabilities?
+    /// Whether the server could not be asked which services it runs, and
+    /// none are known yet: the app says so rather than calling them off.
+    private(set) var hasServicesFailedToLoad = false
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -81,6 +84,9 @@ final class AppModel {
 
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
+
+    /// Siri, the Action button or Control Center asked for a recording: the recordings screen starts one once it can.
+    var isRecordingRequested = false
 
     /// The call under way, for the buttons on its Live Activity.
     weak var currentCall: VoiceCall?
@@ -724,12 +730,16 @@ extension AppModel {
         let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
         let verifiedAccount = await connection.account
         let availableServices = await refreshedServices
-        guard self.connection === connection else { return }
+        // A refresh cancelled as the screens are drawn again, right after
+        // signing in, failed to load nothing: counted as a failure, it
+        // flashed "Cannot reach your server" before another refresh landed.
+        guard !Task.isCancelled, self.connection === connection else { return }
         if hasVerifiedRecordingOwner {
             self.account = verifiedAccount
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
         if let availableServices { self.services = availableServices }
+        hasServicesFailedToLoad = availableServices == nil && services == nil
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {

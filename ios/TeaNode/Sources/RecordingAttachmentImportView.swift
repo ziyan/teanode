@@ -6,7 +6,6 @@ struct RecordingAttachmentImportView: View {
     let attachment: AgentAttachment
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var recordingTitle = ""
     @State private var draft: RecordingAttachmentImportDraft?
     @State private var importedRecording: Recording?
     @State private var problemText: String?
@@ -24,10 +23,9 @@ struct RecordingAttachmentImportView: View {
                         Image(systemName: "paperclip").accessibilityHidden(true)
                         Text(attachment.name)
                     }.accessibilityElement(children: .combine)
-                    TextField("Meeting title (optional)", text: $recordingTitle).disabled(draft != nil || isImporting)
                 } footer: {
                     Text(
-                        "Copy this audio or video attachment into your account's recording library. The attachment remains in the conversation. Transcription is a separate action."
+                        "Copy this audio or video attachment into your account's recording library. The attachment remains in the conversation. Your agent names the recording once it is transcribed."
                     )
                 }
                 if let importedRecording {
@@ -39,15 +37,13 @@ struct RecordingAttachmentImportView: View {
                 } else {
                     Button(draft == nil ? "Import recording" : "Retry import") { Task { await importAttachment() } }.disabled(isImporting)
                 }
-                if let problemText { Text(problemText).foregroundStyle(.secondary) }
             }
+            .toast(done: .constant(nil), problem: $problemText)
             .navigationTitle("Import recording")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(isImporting) } }
             .onAppear {
                 draft = RecordingAttachmentImportDrafts.read(accountKey: connection.accountKey, attachmentId: attachment.id)
-                let filenameTitle = (attachment.name as NSString).deletingPathExtension
-                recordingTitle = draft?.recordingTitle ?? (filenameTitle.utf8.count <= 255 ? filenameTitle : String(localized: "Recording"))
             }
         }
     }
@@ -57,12 +53,9 @@ struct RecordingAttachmentImportView: View {
         isImporting = true
         defer { isImporting = false }
         do {
-            guard recordingTitle.utf8.count <= 255 else {
-                throw TeaNodeError.refused(String(localized: "Use a recording title of at most 255 UTF-8 bytes."))
-            }
             let submitted =
                 draft
-                ?? RecordingAttachmentImportDraft(accountKey: connection.accountKey, agentAttachmentId: attachment.id, recordingTitle: recordingTitle)
+                ?? RecordingAttachmentImportDraft(accountKey: connection.accountKey, agentAttachmentId: attachment.id, recordingTitle: "")
             try RecordingAttachmentImportDrafts.save(submitted)
             draft = submitted
             let copied = try await connection.importRecordingAttachment(attachment, draft: submitted)

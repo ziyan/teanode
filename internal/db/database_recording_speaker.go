@@ -42,9 +42,12 @@ type RecordingSpeakerCorrectionInput struct {
 	ClientCorrectionID              string
 	LocalSpeakerID                  string
 	ConfirmedName                   string
-	ExpectedSourceGeneration        int64
-	PassageStartMS                  int64
-	PassageEndMS                    int64
+	// IsAccountOwner marks the confirmed speaker as the person; an empty
+	// ConfirmedName then defaults to the person's display name.
+	IsAccountOwner           bool
+	ExpectedSourceGeneration int64
+	PassageStartMS           int64
+	PassageEndMS             int64
 }
 
 type recordingSpeakerIdentityModel models.RecordingSpeakerIdentity
@@ -102,13 +105,19 @@ func validConfirmedSpeakerName(confirmedName string) bool {
 	return strings.TrimSpace(confirmedName) != "" && len(confirmedName) <= 255 && !strings.ContainsFunc(confirmedName, unicode.IsControl)
 }
 func (self *transaction) CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error) {
-	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {
-		return nil, ErrInvalidArguments
-	}
 	// Account locking matches original-media reservations before taking the source lock.
 	var owner userModel
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
 		return nil, err
+	}
+	if correction.IsAccountOwner && strings.TrimSpace(correction.ConfirmedName) == "" {
+		correction.ConfirmedName = strings.TrimSpace(owner.Name)
+		if correction.ConfirmedName == "" {
+			correction.ConfirmedName = owner.Username
+		}
+	}
+	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {
+		return nil, ErrInvalidArguments
 	}
 	if err := self.lockRecordingReferenceDependents(userId, correction.RecordingID); err != nil {
 		return nil, err
@@ -188,13 +197,25 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	}
 	var identity recordingSpeakerIdentityModel
 	err = self.tx.Where("user_id = ? AND confirmed_name = ?", userId, correction.ConfirmedName).Take(&identity).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		identity = recordingSpeakerIdentityModel{ID: newID(), UserID: userId, ConfirmedName: correction.ConfirmedName, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	isNewIdentity := errors.Is(err, gorm.ErrRecordNotFound)
+	if err != nil && !isNewIdentity {
+		return nil, err
+	}
+	// The unique index allows one owner per account, so the previous one is cleared first.
+	if correction.IsAccountOwner && !identity.IsAccountOwner {
+		if err := self.tx.Model(&recordingSpeakerIdentityModel{}).Where("user_id = ? AND is_account_owner", userId).Update("is_account_owner", false).Error; err != nil {
+			return nil, err
+		}
+	}
+	if isNewIdentity {
+		identity = recordingSpeakerIdentityModel{ID: newID(), UserID: userId, ConfirmedName: correction.ConfirmedName, IsAccountOwner: correction.IsAccountOwner, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 		if err := self.tx.Create(&identity).Error; err != nil {
 			return nil, err
 		}
-	} else if err != nil {
-		return nil, err
+	} else if correction.IsAccountOwner && !identity.IsAccountOwner {
+		if err := self.tx.Model(&identity).Update("is_account_owner", true).Error; err != nil {
+			return nil, err
+		}
 	}
 	corrected := make([]*models.RecordingSpeakerCorrection, 0, len(intervals))
 	for _, interval := range intervals {

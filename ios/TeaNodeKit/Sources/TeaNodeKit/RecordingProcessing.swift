@@ -26,10 +26,15 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     public var effectiveSpeakerIdentityId: String? = nil
     public var effectiveSpeakerName: String? = nil
     public var hasUserConfirmedSpeaker: Bool? = nil
+    /// Whether the transcription named this speaker after one of the person's voice samples, without the person confirming it here.
+    public var isRecognizedSpeaker: Bool? = nil
+    /// Whether the confirmed speaker is the person who owns the account, which is the side of the conversation their bubbles sit on.
+    public var isAccountOwner: Bool? = nil
     public var hasUnalignedSpeakerCorrection: Bool? = nil
     public var appliedSpeakerCorrectionId: String? = nil
+    /// The speaker's name when the person confirmed it or a voice sample recognized it; nil while it is only a label.
     public var confirmedSpeakerName: String? {
-        guard hasUserConfirmedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
+        guard hasUserConfirmedSpeaker == true || isRecognizedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
             let effectiveSpeakerName, !effectiveSpeakerName.isEmpty
         else { return nil }
         return effectiveSpeakerName
@@ -59,6 +64,7 @@ public struct RecordingTranscriptView: Codable, Hashable, Sendable {
 public struct RecordingSpeakerIdentity: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let confirmedName: String
+    public var isAccountOwner: Bool? = nil
 }
 
 public struct RecordingSpeakerCorrection: Codable, Hashable, Sendable, Identifiable {
@@ -98,7 +104,7 @@ extension Documents {
         id recordingId recordingMediaId versionNumber recordingProcessingState providerModelName processingErrorMessage createdAt
         """
     static let recordingSpeakersFields = """
-        sourceGeneration speakerIdentities { id confirmedName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
+        sourceGeneration speakerIdentities { id confirmedName isAccountOwner } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
         speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences {
         id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }
         """
@@ -107,7 +113,7 @@ extension Documents {
         ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize)
         { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId
         localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText appliedTextCorrectionId
-        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker hasUnalignedSpeakerCorrection
+        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker isAccountOwner hasUnalignedSpeakerCorrection
         appliedSpeakerCorrectionId } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount
         actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }
         """
@@ -129,9 +135,9 @@ extension Documents {
         """
     public static let correctRecordingSpeaker = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId: String!, $confirmedName: String!,
-        $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) {
+        $isAccountOwner: Boolean, $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) {
         CorrectRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, clientCorrectionId:
-        $clientCorrectionId, confirmedName: $confirmedName, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
+        $clientCorrectionId, confirmedName: $confirmedName, isAccountOwner: $isAccountOwner, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
         localSpeakerId: $localSpeakerId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { \(recordingSpeakersFields) } }
         """
     public static let renameRecordingSpeaker = """
@@ -200,7 +206,7 @@ extension Connection {
     }
     public func correctRecordingSpeaker(
         recordingId: String, expectedSourceGeneration: Int64, clientCorrectionId: String, confirmedName: String, segment: RecordingTranscriptSegment,
-        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil
+        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil, isAccountOwner: Bool? = nil
     ) async throws -> RecordingSpeakersView {
         struct Answer: Decodable, Sendable { let CorrectRecordingSpeaker: RecordingSpeakersView }
         let response = try await execute(
@@ -208,6 +214,7 @@ extension Connection {
             variables: [
                 "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
                 "clientCorrectionId": .string(clientCorrectionId), "confirmedName": .string(confirmedName),
+                "isAccountOwner": isAccountOwner.map { .bool($0) } ?? .null,
                 "recordingTranscriptionAttemptId": .string(segment.recordingTranscriptionAttemptId),
                 "localSpeakerId": .string(segment.localSpeakerId),
                 "passageStartMS": .number(Double(isWholeGroup ? -1 : passageStartMS ?? segment.segmentStartMS)),

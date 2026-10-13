@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { graphql } from '../api'
+import { AGENT_ASK_EVENT, graphql, type AgentAskDetail } from '../api'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { SessionProvider } from '../session'
@@ -69,4 +69,56 @@ it('resumes the existing native original without offering an unapplied rename', 
   fireEvent.click(screen.getByRole('dialog').querySelector('button[type="submit"]')!)
   await waitFor(() => expect(importRecording).toHaveBeenCalled())
   expect(vi.mocked(importRecording).mock.calls[0][5]).toEqual(view.mediaFiles[0])
+})
+
+// The agent is pointed at the recording on its page: the drawer is told its
+// id and the title shown, and a page with no drawer to open goes to the
+// agent's settings.
+it('points the agent at the recording', async () => {
+  const view = {
+    recording: {
+      id: 'fixture-recording',
+      userId: 'fixture-owner',
+      recordingTitle: 'Quarterly planning',
+      captureGaps: [],
+    },
+    mediaFiles: [],
+    uploadParts: [],
+  } as unknown as RecordingView
+  vi.mocked(graphql).mockResolvedValue({ ListRecordings: [] })
+  vi.mocked(readRecording).mockResolvedValue(view)
+  const references: AgentAskDetail['reference'][] = []
+  const listener = (event: Event) => {
+    const detail = (event as CustomEvent<AgentAskDetail>).detail
+    references.push(detail.reference)
+    detail.handled = true
+  }
+  window.addEventListener(AGENT_ASK_EVENT, listener)
+  try {
+    render(
+      <TranslationProvider>
+        <SessionProvider
+          value={{
+            userId: 'fixture-owner',
+            authenticated: true,
+            authenticationRequired: true,
+            username: 'fixture',
+            passkeysEnabled: false,
+          }}
+        >
+          <ToastProvider>
+            <MemoryRouter initialEntries={['/recordings/fixture-recording']}>
+              <Routes>
+                <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
+              </Routes>
+            </MemoryRouter>
+          </ToastProvider>
+        </SessionProvider>
+      </TranslationProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Ask the agent about this recording' }))
+    expect(references).toEqual([{ recordingId: 'fixture-recording', recordingTitle: 'Quarterly planning' }])
+  } finally {
+    window.removeEventListener(AGENT_ASK_EVENT, listener)
+  }
 })

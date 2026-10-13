@@ -15,13 +15,13 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-const recordingSelection = `{ id userId createdAt updatedAt clientRecordingId recordingTitle recordingOrigin recordingCaptureState timelineDurationMS sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason } }`
+const recordingSelection = `{ id userId createdAt updatedAt clientRecordingId recordingTitle recordingTitleSource recordingSummary recordingOrigin recordingCaptureState timelineDurationMS recordedAt sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason } }`
 const recordingMediaSelection = `{ id recordingId createdAt clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt }`
 
 // RecordingDocuments are shared by the CLI and the recording tool. All calls
 // use the signed-in account's API permissions and original-media ownership.
 var RecordingDocuments = map[string]string{
-	"ListRecordings":         `query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize) ` + recordingSelection + ` }`,
+	"ListRecordings":         `query ($beforeRecordingId: String!, $pageSize: Int!, $searchText: String) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize, searchText: $searchText) ` + recordingSelection + ` }`,
 	"ReadRecording":          `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording ` + recordingSelection + ` mediaFiles ` + recordingMediaSelection + ` uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
 	"ReadRecordingLimits":    `query { ReadRecordingLimits { maximumMediaBytes maximumAccountBytes uploadPartBytes } }`,
 	"CreateRecording":        `mutation ($clientRecordingId: String!, $recordingTitle: String!, $recordingOrigin: String!) { CreateRecording(clientRecordingId: $clientRecordingId, recordingTitle: $recordingTitle, recordingOrigin: $recordingOrigin) ` + recordingSelection + ` }`,

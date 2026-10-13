@@ -15,11 +15,12 @@ if let appearanceSuffix = appearanceSuffixes.first(where: { recordingScreenName.
     recordingScreenName = String(recordingScreenName.dropLast(appearanceSuffix.count))
 }
 let expectedMarkersByScreen: [String: [String]] = [
-    "recordings": ["recordings", "ontheserver"],
+    "recordings": ["recordings", "untitledrecording"],
     "recording-compatible-playback": ["compatibleaudiopreview", "originalunchanged"],
     "recording-original-playback": ["useaudiopreview", "sharefulloriginal"],
     "recording-original-preview": ["compatibleaudiopreview", "originalunchanged", "useoriginal", "sharefullaudiopreview"],
-    "recording-detail": ["originalmedia"],
+    "recording-detail": ["layout"],
+    "recording-capture": ["recording", "stop"],
     "recording-transcript": ["transcript"],
     "recording-version": ["processing"],
     "recording-speakers": ["confirmedspeakers"],

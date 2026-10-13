@@ -34,8 +34,8 @@ struct RecordingTextEditor: View {
                 DisclosureGroup("Original transcript") {
                     Text(segment.transcriptText).textSelection(.enabled)
                 }
-                if let problemText { Text(problemText).foregroundStyle(.secondary) }
             }
+            .toast(done: .constant(nil), problem: $problemText)
             .navigationTitle("Edit transcript")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -141,8 +141,8 @@ struct RecordingTextHistoryScreen: View {
                     "Corrections retain their original passage and version. Changed passage boundaries may keep a correction in history instead of applying it to unrelated text."
                 )
             }
-            if let problemText { Text(problemText).foregroundStyle(.secondary) }
         }
+        .toast(done: .constant(nil), problem: $problemText)
         .navigationTitle("Transcript edit history")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

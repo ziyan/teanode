@@ -13,6 +13,7 @@ struct TeaNodeWidgets: WidgetBundle {
         WaitingWidget()
         NextWidget()
         CallControl()
+        RecordingControl()
         TurnActivityWidget()
         CallActivityWidget()
         RecordingActivityWidget()
@@ -83,7 +84,7 @@ struct AgentWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Your agent")
-        .description("Ask your agent or call it.")
+        .description("Ask your agent, call it, or start a recording.")
         .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
     }
 }
@@ -126,6 +127,12 @@ struct AgentWidgetView: View {
                         Image(systemName: "waveform").frame(maxWidth: .infinity)
                     }
                     .accessibilityLabel("Call your agent")
+                    // Opens TeaNode recording, as the Control Center button and
+                    // the app icon's menu do.
+                    Button(intent: StartRecordingIntent()) {
+                        Image(systemName: "mic").frame(maxWidth: .infinity)
+                    }
+                    .accessibilityLabel("Start recording")
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
@@ -502,50 +509,152 @@ struct CallControl: ControlWidget {
     }
 }
 
+/// RecordingControl starts a recording from Control Center, the Lock Screen or the Action button.
+struct RecordingControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "recording") {
+            ControlWidgetButton(action: StartRecordingIntent()) {
+                Label("Start a recording", systemImage: "mic.fill")
+            }
+        }
+        .displayName("Start a recording")
+        .description("Opens TeaNode and starts recording.")
+    }
+}
+
 #Preview("Up next", as: .systemMedium) {
     NextWidget()
 } timeline: {
     GlanceEntry.sample
 }
 
+/// RecordingActivityWidget is a recording on the lock screen and in the
+/// Dynamic Island, laid out as a call is: the logo, what it is with how long
+/// it has run under it, then round pause or resume and stop buttons.
 struct RecordingActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RecordingActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Recording", systemImage: "waveform").font(.headline)
-                recordingClock(context.state)
-                HStack {
-                    Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId, shouldResume: context.state.recordingCaptureState != "active")) {
-                        Label(context.state.recordingCaptureState == "active" ? String(localized: "Pause recording") : String(localized: "Resume recording"), systemImage: context.state.recordingCaptureState == "active" ? "pause" : "mic")
-                    }.buttonStyle(.glass)
-                    Button(intent: StopRecordingIntent(localRecordingId: context.attributes.localRecordingId)) { Label("Stop recording", systemImage: "stop") }.buttonStyle(.glass)
+            HStack(spacing: 14) {
+                Image("Logo").resizable().scaledToFill().frame(width: 52, height: 52).clipShape(.circle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Recording").font(.title3.weight(.semibold)).lineLimit(1)
+                    RecordingDuration(state: context.state, alignment: .leading)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                 }
-            }.padding()
+                Spacer(minLength: 8)
+                RecordingButtons(localRecordingId: context.attributes.localRecordingId, state: context.state)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .activityBackgroundTint(nil)
         } dynamicIsland: { context in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { Label("Recording", systemImage: "waveform") }
-                DynamicIslandExpandedRegion(.trailing) { recordingClock(context.state) }
-                DynamicIslandExpandedRegion(.bottom) {
-                    HStack {
-                        Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId, shouldResume: context.state.recordingCaptureState != "active")) {
-                            Label(context.state.recordingCaptureState == "active" ? String(localized: "Pause recording") : String(localized: "Resume recording"), systemImage: context.state.recordingCaptureState == "active" ? "pause" : "mic")
-                        }
-                        Button(intent: StopRecordingIntent(localRecordingId: context.attributes.localRecordingId)) { Label("Stop recording", systemImage: "stop") }
+                DynamicIslandExpandedRegion(.leading) {
+                    Image("Logo").resizable().frame(width: 28, height: 28)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 2) {
+                        Text("Recording").font(.headline).lineLimit(1)
+                        RecordingDuration(state: context.state, alignment: .center).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
-            } compactLeading: { Image(systemName: context.state.recordingCaptureState == "active" ? "waveform" : "pause") }
-            compactTrailing: { recordingClock(context.state).font(.caption) }
-            minimal: { Image(systemName: context.state.recordingCaptureState == "active" ? "waveform" : "pause") }
+                DynamicIslandExpandedRegion(.bottom) {
+                    RecordingButtons(localRecordingId: context.attributes.localRecordingId, state: context.state, isOnBlack: true)
+                }
+            } compactLeading: {
+                Image(systemName: context.state.isRecording ? "waveform" : "pause.fill").foregroundStyle(.tint)
+            } compactTrailing: {
+                RecordingDuration(state: context.state, alignment: .trailing, isShowingPause: false).frame(minWidth: 44, maxWidth: 64)
+            } minimal: {
+                Image(systemName: context.state.isRecording ? "waveform" : "pause.fill").foregroundStyle(.tint)
+            }
         }
+    }
+}
+
+extension RecordingActivityAttributes.ContentState {
+    var isRecording: Bool { recordingCaptureState == "active" }
+}
+
+/// RecordingDuration counts up while recording and holds still, saying
+/// why, while paused or interrupted.
+struct RecordingDuration: View {
+    let state: RecordingActivityAttributes.ContentState
+    var alignment: TextAlignment = .leading
+    /// Whether a stopped clock says Paused or Interrupted before its time;
+    /// the compact island has room for the time alone.
+    var isShowingPause = true
+
+    var body: some View {
+        Group {
+            if state.isRecording {
+                Text(timerInterval: state.updatedAt.addingTimeInterval(-Double(state.elapsedMS) / 1000)...Date.distantFuture, countsDown: false)
+            } else if isShowingPause {
+                Text(verbatim: "\(pauseText) \(elapsedText)")
+            } else {
+                Text(verbatim: elapsedText)
+            }
+        }
+        .monospacedDigit()
+        .lineLimit(1)
+        .multilineTextAlignment(alignment)
+        .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : alignment == .trailing ? .trailing : .leading)
     }
 
-    @ViewBuilder
-    private func recordingClock(_ captureState: RecordingActivityAttributes.ContentState) -> some View {
-        if captureState.recordingCaptureState == "active" {
-            Text(captureState.updatedAt.addingTimeInterval(-Double(captureState.elapsedMS) / 1000), style: .timer).monospacedDigit()
-        } else {
-            Label(captureState.recordingCaptureState == "interrupted" ? String(localized: "Interrupted") : String(localized: "Paused"), systemImage: "pause").foregroundStyle(.secondary)
-            Text(Duration.milliseconds(captureState.elapsedMS).formatted(.time(pattern: .hourMinuteSecond))).monospacedDigit()
+    private var pauseText: String {
+        state.recordingCaptureState == "interrupted" ? String(localized: "Interrupted") : String(localized: "Paused")
+    }
+
+    private var elapsedText: String {
+        Duration.milliseconds(state.elapsedMS).formatted(.time(pattern: state.elapsedMS >= 3_600_000 ? .hourMinuteSecond : .minuteSecond))
+    }
+}
+
+/// RecordingButtons are a recording's pause or resume and stop, run in the
+/// app, drawn as a call's mute and hang up are.
+struct RecordingButtons: View {
+    let localRecordingId: String
+    let state: RecordingActivityAttributes.ContentState
+    var isOnBlack = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(intent: ToggleRecordingPauseIntent(localRecordingId: localRecordingId, shouldResume: !state.isRecording)) {
+                ActivityRoundGlyph(systemName: state.isRecording ? "pause.fill" : "mic.fill", isOnBlack: isOnBlack)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(state.isRecording ? Text("Pause recording") : Text("Resume recording"))
+            Button(intent: StopRecordingIntent(localRecordingId: localRecordingId)) {
+                ActivityRoundGlyph(systemName: "stop.fill", isOnBlack: isOnBlack, isDestructive: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop recording")
         }
     }
+}
+
+/// ActivityRoundGlyph is the round button a Live Activity offers: semantic
+/// on the lock screen's banner, light on the Dynamic Island, which is black
+/// in light and dark alike. Stop is drawn in red so it reads at a glance.
+struct ActivityRoundGlyph: View {
+    let systemName: String
+    var isOnBlack = false
+    var isDestructive = false
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.title2)
+            .foregroundStyle(isDestructive ? Color.red : isOnBlack ? .white : .primary)
+            .frame(width: 52, height: 52)
+            .background(isOnBlack ? Color.white.opacity(0.2) : Color.primary.opacity(0.14), in: .circle)
+    }
+}
+
+#Preview("Recording", as: .content, using: RecordingActivityAttributes(localRecordingId: "preview")) {
+    RecordingActivityWidget()
+} contentStates: {
+    RecordingActivityAttributes.ContentState(recordingCaptureState: "active", elapsedMS: 754_000, updatedAt: .now)
+    RecordingActivityAttributes.ContentState(recordingCaptureState: "paused", elapsedMS: 754_000, updatedAt: .now)
+    RecordingActivityAttributes.ContentState(recordingCaptureState: "interrupted", elapsedMS: 3_754_000, updatedAt: .now)
 }

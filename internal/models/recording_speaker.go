@@ -4,10 +4,12 @@ import "time"
 
 // RecordingSpeakerIdentity is an account-owned name confirmed by the person.
 type RecordingSpeakerIdentity struct {
-	ID            string    `json:"id"`
-	UserID        string    `json:"-"`
-	ConfirmedName string    `json:"confirmedName"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            string `json:"id"`
+	UserID        string `json:"-"`
+	ConfirmedName string `json:"confirmedName"`
+	// IsAccountOwner marks the identity that is the person themselves, at most one per account.
+	IsAccountOwner bool      `json:"isAccountOwner"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 // RecordingSpeakerCorrection preserves a confirmed time interval independently of generated versions.

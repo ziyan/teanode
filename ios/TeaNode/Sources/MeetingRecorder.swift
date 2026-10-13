@@ -18,6 +18,7 @@ final class MeetingRecorder: NSObject {
     private var captureTask: Task<Void, Never>?
     private var interruptionObserver: (any NSObjectProtocol)?
     private var mediaResetObserver: (any NSObjectProtocol)?
+    private var becameActiveObserver: (any NSObjectProtocol)?
     private var activityId: String?
     private var startedUptime: TimeInterval = 0
     private var timelineAtStartMS: Int64 = 0
@@ -33,13 +34,10 @@ final class MeetingRecorder: NSObject {
         return try RecordingJournal(directory: directory)
     }
 
-    func start(accountKey: String, title: String) async {
+    /// The title is never asked for: the server names the recording from its transcript.
+    func start(accountKey: String) async {
         guard !hasSession, !isChangingCapture, AppModel.shared.currentCall == nil else {
             problemText = String(localized: "Stop the current recording or call before starting another recording.")
-            return
-        }
-        guard title.utf8.count <= 255 else {
-            problemText = String(localized: "Use a recording title of at most 255 UTF-8 bytes.")
             return
         }
         guard let ownerId = try? KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId else {
@@ -57,7 +55,7 @@ final class MeetingRecorder: NSObject {
         else { return }
         do {
             journal = try Self.makeJournal()
-            var recording = LocalRecording(accountKey: accountKey, recordingTitle: title, recordingOrigin: "capture", recordingUserId: ownerId)
+            var recording = LocalRecording(accountKey: accountKey, recordingTitle: "", recordingOrigin: "capture", recordingUserId: ownerId)
             try await journal?.create(recording)
             localRecording = recording
             elapsedMS = 0
@@ -278,6 +276,7 @@ final class MeetingRecorder: NSObject {
                 AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
             ])
         recorder.delegate = self
+        recorder.isMeteringEnabled = true
         guard recorder.prepareToRecord() else {
             throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
         }
@@ -285,7 +284,11 @@ final class MeetingRecorder: NSObject {
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: original.path)
         audioRecorder = recorder
         recorderId = UUID()
-        guard recorder.record(forDuration: 600) else {
+        // One file for as long as the capture runs: starting a new recorder
+        // while the phone is locked can be refused, which lost a minute and
+        // a half of a meeting at a ten-minute boundary. The server cuts long
+        // audio into pieces itself; a new file starts only after a pause.
+        guard recorder.record() else {
             throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
         }
     }
@@ -328,6 +331,13 @@ final class MeetingRecorder: NSObject {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
+    /// How loud the microphone hears the room now, from 0 to 1; 0 while nothing is being recorded.
+    func inputLevel() -> Double {
+        guard isCapturing, let audioRecorder else { return 0 }
+        audioRecorder.updateMeters()
+        return RecordingInputLevel.normalized(decibels: audioRecorder.averagePower(forChannel: 0))
+    }
+
     private func updateElapsed() {
         elapsedMS = max(elapsedMS, timelineAtStartMS + Int64(max(0, ProcessInfo.processInfo.systemUptime - startedUptime) * 1000))
     }
@@ -360,12 +370,34 @@ final class MeetingRecorder: NSObject {
     }
 
     private func observeInterruptions() {
+        if let becameActiveObserver { NotificationCenter.default.removeObserver(becameActiveObserver) }
+        // A recording that has no lock screen controls yet, because it began
+        // before the app was active, gets them as soon as it is.
+        becameActiveObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.hasSession, self.activityId == nil, self.ensureRecordingActivity(canCreate: true) else { return }
+                await self.updateActivity()
+            }
+        }
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         if let mediaResetObserver { NotificationCenter.default.removeObserver(mediaResetObserver) }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) {
             [weak self] notification in
-            let isBeginning = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
-            if isBeginning { Task { @MainActor in await self?.pause(isInterruption: true) } }
+            let interruptionType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            if interruptionType == AVAudioSession.InterruptionType.began.rawValue {
+                Task { @MainActor in await self?.pause(isInterruption: true) }
+            } else if interruptionType == AVAudioSession.InterruptionType.ended.rawValue {
+                // A call or Siri that ends gives the microphone back: when iOS
+                // says the recording may go on, it does, without a tap.
+                let options = AVAudioSession.InterruptionOptions(rawValue: notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+                if options.contains(.shouldResume) {
+                    Task { @MainActor in
+                        guard let self, self.localRecording?.recordingCaptureState == "interrupted" else { return }
+                        await self.resume()
+                    }
+                }
+            }
         }
         mediaResetObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
@@ -382,7 +414,12 @@ final class MeetingRecorder: NSObject {
             activityId = existing.id
             return true
         }
-        guard canCreate, ActivityAuthorizationInfo().areActivitiesEnabled, UIApplication.shared.applicationState == .active else { return false }
+        // A recording started from the app's icon or from Siri starts while
+        // the app is still coming to the front, which is not yet active:
+        // only the background is refused, and becoming active tries again.
+        guard canCreate, ActivityAuthorizationInfo().areActivitiesEnabled, UIApplication.shared.applicationState != .background else {
+            return false
+        }
         do {
             let activity = try Activity.request(
                 attributes: RecordingActivityAttributes(localRecordingId: localRecording.id.uuidString),
