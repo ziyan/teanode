@@ -95,6 +95,7 @@ struct ContactsScreen: View {
                 }
             }
             .listStyle(.plain)
+            .listSectionSpacing(.compact)
             .navigationTitle("Contacts")
             .withoutSwipeBack()
             .navigationDestination(for: String.self) { contactId in

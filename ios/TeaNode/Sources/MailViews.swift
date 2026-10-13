@@ -405,6 +405,7 @@ struct ThreadList: View {
             }
         }
         .listStyle(.plain)
+        .listSectionSpacing(.compact)
         .environment(\.editMode, $editMode)
         .navigationTitle(title)
         .searchable(text: $list.filter.searchText, prompt: "Search")
