@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.152.3] - 2026-10-13
+
+### Changed
+
+- The iPhone's connect page asks for your server's address first, with Scan code and Paste link for a code from the dashboard. (#464)
+
+### Fixed
+
+- On the iPhone, signing in with a password opens the server's sign-in page instead of waiting on Connecting. (#464)
+- On the iPhone, opening a connect link from Safari connects instead of failing with an error. (#464)
+
 ## [0.152.2] - 2026-10-13
 
 ### Changed
