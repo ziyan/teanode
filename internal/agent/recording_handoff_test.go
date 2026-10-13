@@ -27,17 +27,22 @@ func timelineStarts(segments []*models.RecordingTranscriptSegment) []int64 {
 	return starts
 }
 
-// The first piece ends in the middle of a sentence. The next piece is sent
-// with the end of the first one in front of it, so the sentence comes back
-// whole, and the timeline shows it once, at the time it was spoken.
+// The first piece ends in the middle of a sentence. The next piece is
+// transcribed on its own, then the end of the first one and the start of the
+// next are sent together, so the sentence comes back whole, and the timeline
+// shows it once, at the time it was spoken.
 func TestASentenceAcrossACutIsReadOnceAndWhole(test *testing.T) {
 	fixture := newLiveRecordingFixture(test)
 	fixture.provider.answer = func(requestIndex int, request fakeTranscriptionRequest) []fakeTranscriptionSegment {
-		if requestIndex == 0 {
+		switch requestIndex {
+		case 0:
 			return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 500, EndMS: 3000, Text: "First sentence."}, {SpeakerLabel: "A", StartMS: 8000, EndMS: 10000, Text: "I think we should"}}
+		case 1:
+			// The second piece on its own: the end of the sentence, then another speaker.
+			return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 0, EndMS: 3000, Text: "ship it on Friday."}, {SpeakerLabel: "B", StartMS: 4000, EndMS: 7000, Text: "Agreed."}}
 		}
 		// Times are from the start of the audio it was sent, which began 2 seconds before the cut.
-		return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 0, EndMS: 5000, Text: "I think we should ship it on Friday."}, {SpeakerLabel: "B", StartMS: 6000, EndMS: 9000, Text: "Agreed."}}
+		return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 0, EndMS: 5000, Text: "I think we should ship it on Friday."}}
 	}
 	first := fixture.addPiece(10000, 0)
 	second := fixture.addPiece(10000, 0)
@@ -49,13 +54,17 @@ func TestASentenceAcrossACutIsReadOnceAndWhole(test *testing.T) {
 	if secondRun.HandoffStartMS == nil || *secondRun.HandoffStartMS != 8000 {
 		test.Fatal("the second piece did not record where it started reading", secondRun.HandoffStartMS)
 	}
-	if request := fixture.provider.requestAt(1); request.AudioDurationMS != 12000 {
-		test.Fatal("the second piece was not sent with the end of the first", request.AudioDurationMS)
+	if request := fixture.provider.requestAt(1); request.AudioDurationMS != 10000 || !bytes.Equal(request.WaveBytes, fixture.pieceWaves[1]) {
+		test.Fatal("the second piece was not sent on its own first", request.AudioDurationMS)
 	}
-	// The audio it was sent is the last two seconds of the first piece, then the second piece.
-	sentWave := fixture.provider.requestAt(1).WaveBytes
-	if !bytes.Equal(sentWave[44:44+64000], fixture.pieceWaves[0][44+256000:]) || !bytes.Equal(sentWave[44+64000:], fixture.pieceWaves[1][44:]) {
-		test.Fatal("the second piece was not sent as the tail of the first followed by itself")
+	if request := fixture.provider.requestAt(2); request.AudioDurationMS != 5000 {
+		test.Fatal("the end of the first piece and the start of the second were not sent together", request.AudioDurationMS)
+	}
+	// The audio of the second look is the last two seconds of the first
+	// piece, then the first three seconds of the second.
+	sentWave := fixture.provider.requestAt(2).WaveBytes
+	if !bytes.Equal(sentWave[44:44+64000], fixture.pieceWaves[0][44+256000:]) || !bytes.Equal(sentWave[44+64000:], fixture.pieceWaves[1][44:44+96000]) {
+		test.Fatal("the second look was not sent as the tail of the first followed by the head of the second")
 	}
 	segments := fixture.timeline()
 	if texts := timelineTexts(segments); !slices.Equal(texts, []string{"First sentence.", "I think we should ship it on Friday.", "Agreed."}) {
@@ -137,23 +146,30 @@ func TestNoHandoffAcrossAPauseOrFromALongPassage(test *testing.T) {
 }
 
 // Two pieces picked up together must not skip the handoff because the second
-// looked before the first had its transcript.
-func TestAPieceWaitsForTheTranscriptOfThePieceBeforeIt(test *testing.T) {
+// looked before the first had its transcript. The second one's own request does
+// not wait, only its publication does.
+func TestAPieceIsTranscribedBeforeButPublishedAfterThePieceBeforeIt(test *testing.T) {
 	fixture := newLiveRecordingFixture(test)
 	fixture.provider.answer = func(requestIndex int, request fakeTranscriptionRequest) []fakeTranscriptionSegment {
-		if requestIndex == 0 {
+		switch {
+		case request.AudioDurationMS == 4000:
+			return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 0, EndMS: 4000, Text: "I think we should ship it."}}
+		case bytes.Equal(request.WaveBytes, fixture.pieceWaves[0]):
 			return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 8000, EndMS: 10000, Text: "I think we should"}}
 		}
-		return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 0, EndMS: 5000, Text: "I think we should ship it."}}
+		return []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 0, EndMS: 2000, Text: "ship it."}}
 	}
 	firstRun := fixture.queue(fixture.addPiece(10000, 0))
 	secondRun := fixture.queue(fixture.addPiece(10000, 0))
 	var deferral *Deferral
 	if err := fixture.execute(secondRun); !errors.As(err, &deferral) {
-		test.Fatal("the second piece did not wait for the first", err)
+		test.Fatal("the second piece did not wait to be published after the first", err)
 	}
-	if fixture.provider.requestCount() != 0 {
-		test.Fatal("the second piece was sent before the first had a transcript")
+	if fixture.provider.requestCount() != 1 {
+		test.Fatal("the second piece waited for the first before it was transcribed", fixture.provider.requestCount())
+	}
+	if texts := timelineTexts(fixture.timeline()); len(texts) != 0 {
+		test.Fatal("a piece waiting to be published was shown", texts)
 	}
 	if err := fixture.execute(firstRun); err != nil {
 		test.Fatal(err)

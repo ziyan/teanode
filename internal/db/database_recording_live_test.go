@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -100,52 +101,178 @@ func TestSummarySweepSkipsACaptureStillBeingRecorded(test *testing.T) {
 	})
 }
 
-// Only a piece of a capture can start reading earlier than its own audio, and
-// only a little, and only the way it said it would when a job starts over.
-func TestAHandoffIsOnlyForAPieceOfACaptureAndIsNotChangedLater(test *testing.T) {
+// finishFixtureAttempt completes an attempt with the given passages.
+func (self *transcriptFixture) finishFixtureAttempt(test *testing.T, attempt *models.RecordingTranscriptionAttempt, segments ...*models.RecordingTranscriptSegment) {
+	test.Helper()
+	dbtest.RunTransactionOn(test, self.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(self.userId, attempt.ID, self.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, segments); err != nil {
+			test.Fatal(err)
+		}
+	})
+}
+
+// Only a piece of a capture can be stitched to the piece before it, only a
+// little before its own start, and the second look replaces what the piece
+// heard on its own over the same stretch.
+func TestAHandoffIsOnlyForAPieceOfACaptureAndReplacesWhatTheSecondLookCovers(test *testing.T) {
 	imported := newTranscriptFixture(test)
+	importedChunk, importedBlob := imported.createChunk(test)
+	importedAttempt := imported.beginAttempt(test, importedChunk, importedBlob)
+	imported.finishFixtureAttempt(test, importedAttempt, &models.RecordingTranscriptSegment{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 3000, TranscriptText: "Imported."})
 	err := imported.database.Transaction(func(transaction db.Transaction) error {
-		return transaction.SetRecordingTranscriptRunHandoff(imported.userId, imported.transcriptRun.ID, imported.claim, 1000)
+		return transaction.PublishRecordingTranscriptRun(imported.userId, imported.transcriptRun.ID, imported.claim, &db.RecordingHandoffPublication{HandoffStartMS: 1000, HandoffEndMS: 2500, HandoffAttemptID: importedAttempt.ID})
 	})
 	if !errors.Is(err, db.ErrInvalidArguments) {
 		test.Fatal("an import was handed off", err)
 	}
+
 	captured := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
-	for name, handoffStartMS := range map[string]int64{"at the piece's own start": 2000, "after the piece's start": 2500, "before the start of the timeline": -1} {
+	chunk, blob := captured.createChunk(test)
+	ownAttempt := captured.beginAttempt(test, chunk, blob)
+	captured.finishFixtureAttempt(test, ownAttempt,
+		&models.RecordingTranscriptSegment{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 2400, TranscriptText: "ship it on Friday."},
+		&models.RecordingTranscriptSegment{LocalSpeakerID: "speaker-one", SegmentStartMS: 2600, SegmentEndMS: 3000, TranscriptText: "Agreed."})
+	// The second look is made after the piece's own audio, so it cannot be
+	// made in the middle of preparing, and it begins before the piece does.
+	handoffBlob := &models.RecordingBlob{ID: db.RecordingAudioFileID(captured.transcriptRun.ID, 1), BlobSizeBytes: 128, BlobSHA256: blob.BlobSHA256}
+	var handoffChunk *models.RecordingAudioChunk
+	for name, startMS := range map[string]int64{"at the piece's own start": 2000, "after the piece's start": 2500, "before the start of the timeline": -1} {
 		err := captured.database.Transaction(func(transaction db.Transaction) error {
-			return transaction.SetRecordingTranscriptRunHandoff(captured.userId, captured.transcriptRun.ID, captured.claim, handoffStartMS)
+			_, err := transaction.CreateRecordingAudioChunk(captured.userId, captured.transcriptRun.ID, captured.claim, &models.RecordingAudioChunk{ChunkIndex: 1, TimelineStartMS: startMS, AudioDurationMS: 1000}, handoffBlob, 4096)
+			return err
 		})
 		if !errors.Is(err, db.ErrInvalidArguments) {
-			test.Fatal("a handoff "+name+" was accepted", err)
+			test.Fatal("a second look "+name+" was accepted", err)
 		}
 	}
 	dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
-		for repeat := 0; repeat < 2; repeat++ {
-			if err := transaction.SetRecordingTranscriptRunHandoff(captured.userId, captured.transcriptRun.ID, captured.claim, 500); err != nil {
-				test.Fatal("the same handoff was refused on a repeat", err)
-			}
-		}
-		if err := transaction.SetRecordingTranscriptRunHandoff(captured.userId, captured.transcriptRun.ID, captured.claim, 900); !errors.Is(err, db.ErrAlreadyExists) {
-			test.Fatal("a different handoff replaced the first", err)
-		}
-		run, err := transaction.GetRecordingTranscriptRun(captured.userId, captured.transcriptRun.ID)
-		if err != nil || run.HandoffStartMS == nil || *run.HandoffStartMS != 500 {
-			test.Fatal("the handoff was not kept", err)
-		}
-	})
-	// The first chunk of that run then starts where the handoff does.
-	digest := sha256.Sum256([]byte("derived-wave-bytes"))
-	blob := &models.RecordingBlob{ID: db.RecordingAudioFileID(captured.transcriptRun.ID, 0), BlobSizeBytes: 128, BlobSHA256: hex.EncodeToString(digest[:])}
-	err = captured.database.Transaction(func(transaction db.Transaction) error {
-		_, err := transaction.CreateRecordingAudioChunk(captured.userId, captured.transcriptRun.ID, captured.claim, &models.RecordingAudioChunk{ChunkIndex: 0, TimelineStartMS: 2000, AudioDurationMS: 1000}, blob, 4096)
-		return err
-	})
-	if !errors.Is(err, db.ErrInvalidArguments) {
-		test.Fatal("a first chunk ignored the handoff", err)
-	}
-	dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
-		if _, err := transaction.CreateRecordingAudioChunk(captured.userId, captured.transcriptRun.ID, captured.claim, &models.RecordingAudioChunk{ChunkIndex: 0, TimelineStartMS: 500, AudioDurationMS: 1500}, blob, 4096); err != nil {
+		var err error
+		handoffChunk, err = transaction.CreateRecordingAudioChunk(captured.userId, captured.transcriptRun.ID, captured.claim, &models.RecordingAudioChunk{ChunkIndex: 1, TimelineStartMS: 1500, AudioDurationMS: 1000}, handoffBlob, 4096)
+		if err != nil {
 			test.Fatal(err)
+		}
+		if err := transaction.VerifyRecordingBlob(captured.userId, handoffBlob.ID, handoffBlob.BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+	})
+	var handoffAttempt *models.RecordingTranscriptionAttempt
+	dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
+		var err error
+		handoffAttempt, err = transaction.CreateRecordingTranscriptionAttempt(captured.userId, captured.transcriptRun.ID, handoffChunk.ID, captured.claim, "USD", nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SubmitRecordingTranscriptionAttempt(captured.userId, handoffAttempt.ID, captured.claim); err != nil {
+			test.Fatal(err)
+		}
+	})
+	captured.finishFixtureAttempt(test, handoffAttempt, &models.RecordingTranscriptSegment{LocalSpeakerID: "speaker-two", SegmentStartMS: 1500, SegmentEndMS: 2400, TranscriptText: "We should ship it on Friday."})
+	for name, publication := range map[string]*db.RecordingHandoffPublication{
+		"at the piece's own start":      {HandoffStartMS: 2000, HandoffEndMS: 2500, HandoffAttemptID: handoffAttempt.ID},
+		"before the timeline":           {HandoffStartMS: -1, HandoffEndMS: 2500, HandoffAttemptID: handoffAttempt.ID},
+		"ending before the piece":       {HandoffStartMS: 1500, HandoffEndMS: 2000, HandoffAttemptID: handoffAttempt.ID},
+		"naming an attempt that is not": {HandoffStartMS: 1500, HandoffEndMS: 2500, HandoffAttemptID: "missing"},
+	} {
+		err := captured.database.Transaction(func(transaction db.Transaction) error {
+			return transaction.PublishRecordingTranscriptRun(captured.userId, captured.transcriptRun.ID, captured.claim, publication)
+		})
+		if !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatal("a publication "+name+" was accepted", err)
+		}
+	}
+	for repeat := 0; repeat < 2; repeat++ {
+		dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
+			if err := transaction.PublishRecordingTranscriptRun(captured.userId, captured.transcriptRun.ID, captured.claim, &db.RecordingHandoffPublication{HandoffStartMS: 1500, HandoffEndMS: 2500, HandoffAttemptID: handoffAttempt.ID}); err != nil {
+				test.Fatal("the publication was refused on a repeat", repeat, err)
+			}
+		})
+	}
+	dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
+		run, err := transaction.GetRecordingTranscriptRun(captured.userId, captured.transcriptRun.ID)
+		if err != nil || run.HandoffStartMS == nil || *run.HandoffStartMS != 1500 || run.PublishedAt == nil {
+			test.Fatal("the handoff was not kept", err, run)
+		}
+		segments, err := transaction.ListRecordingTranscriptSegments(captured.userId, captured.transcriptRun.ID)
+		if err != nil || len(segments) != 2 || segments[0].TranscriptText != "We should ship it on Friday." || segments[1].TranscriptText != "Agreed." {
+			test.Fatal("the piece's own passages over the second look were not replaced", err, segments)
+		}
+	})
+}
+
+// Pieces are listed in the order they were recorded with the latest version of
+// each, and a piece is pending only while a job is going to work on it.
+func TestRecordingPiecesArePendingOnlyWhileAJobWorksOnThem(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	var recordingId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		pieces, err := transaction.ListRecordingPieces(fixture.userId, fixture.media.RecordingID)
+		if err != nil || len(pieces) != 1 || pieces[0].RecordingTranscriptRunID != fixture.transcriptRun.ID || !pieces[0].HasLiveJob || !pieces[0].IsPending() || pieces[0].PublishedAt != nil {
+			test.Fatal("a piece with a running job was not pending", err, pieces)
+		}
+		recordingId = fixture.media.RecordingID
+	})
+	// The job gives up on it: nothing is going to publish it, so nothing waits.
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishAgentJob(fixture.claim.JobID, fixture.claim.ClaimID, &db.AgentJobOutcome{JobStatus: models.AgentJobDead, FinishedAt: time.Now()}); err != nil {
+			test.Fatal(err)
+		}
+		pieces, err := transaction.ListRecordingPieces(fixture.userId, recordingId)
+		if err != nil || len(pieces) != 1 || pieces[0].IsPending() {
+			test.Fatal("a piece whose job died still held up the pieces after it", err, pieces)
+		}
+	})
+}
+
+// Publishing a piece makes the waiting jobs of the next pieces due, and only
+// those within the window.
+func TestWakingRecordingJobsMakesTheNextPiecesDue(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	later := time.Now().Add(time.Hour)
+	var waitingJobIds []string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		// The first piece's job goes back to waiting; four more pieces follow.
+		if _, err := transaction.FinishAgentJob(fixture.claim.JobID, fixture.claim.ClaimID, &db.AgentJobOutcome{JobStatus: models.AgentJobQueued, NotBefore: &later, FinishedAt: time.Now()}); err != nil {
+			test.Fatal(err)
+		}
+		waitingJobIds = append(waitingJobIds, fixture.claim.JobID)
+		for pieceIndex := 1; pieceIndex <= 4; pieceIndex++ {
+			digest := sha256.Sum256([]byte("fixture-audio"))
+			digestText := hex.EncodeToString(digest[:])
+			media, err := transaction.CreateRecordingMedia(fixture.userId, &models.RecordingMedia{RecordingID: fixture.media.RecordingID, ClientMediaID: "later-" + string(rune('a'+pieceIndex)), OriginalFilename: "fixture.wav", OriginalContentType: "audio/wav", OriginalSizeBytes: 13, OriginalSHA256: digestText, TimelineStartMS: 2000 + int64(pieceIndex)*10000}, 1024, 4096)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if _, err := transaction.PutRecordingMediaPart(fixture.userId, &models.RecordingMediaPart{RecordingMediaID: media.ID, PartIndex: 0, PartSizeBytes: 13, PartSHA256: digestText}); err != nil {
+				test.Fatal(err)
+			}
+			if _, _, err := transaction.CompleteRecordingMedia(fixture.userId, media.ID, digestText); err != nil {
+				test.Fatal(err)
+			}
+			transcriptRun, err := transaction.CreateRecordingTranscriptRun(fixture.userId, media.ID, fixture.agentId, "initial", "fixture:diarize", false)
+			if err != nil {
+				test.Fatal(err)
+			}
+			job, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: fixture.agentId, Kind: models.AgentJobRecording, SubjectID: transcriptRun.ID, NotBefore: &later})
+			if err != nil {
+				test.Fatal(err)
+			}
+			waitingJobIds = append(waitingJobIds, job.ID)
+		}
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		wokenCount, err := transaction.WakeRecordingTranscriptionJobs(fixture.userId, fixture.media.RecordingID, 3)
+		if err != nil || wokenCount != 3 {
+			test.Fatal("the first three pieces' jobs were not made due", err, wokenCount)
+		}
+		for index, jobId := range waitingJobIds {
+			job, err := transaction.GetAgentJob(jobId)
+			if err != nil {
+				test.Fatal(err)
+			}
+			isDue := job.NotBefore != nil && !job.NotBefore.After(time.Now())
+			if isDue != (index < 3) {
+				test.Fatal("the wrong jobs were made due", index, isDue)
+			}
 		}
 	})
 }

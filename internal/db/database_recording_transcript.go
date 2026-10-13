@@ -34,7 +34,9 @@ type RecordingTranscriptOperation interface {
 	CreateRecordingTranscriptRun(userId, mediaId, agentId, clientRunId, providerModelName string, isReprocessingRequested bool) (*models.RecordingTranscriptRun, error)
 	GetRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
 	ListRecordingTranscriptRuns(userId, recordingId string) ([]*models.RecordingTranscriptRun, error)
-	SetRecordingTranscriptRunHandoff(userId, runId string, claim RecordingWorkerClaim, handoffStartMS int64) error
+	PublishRecordingTranscriptRun(userId, runId string, claim RecordingWorkerClaim, handoff *RecordingHandoffPublication) error
+	ListRecordingPieces(userId, recordingId string) ([]*RecordingPiece, error)
+	WakeRecordingTranscriptionJobs(userId, recordingId string, limit int) (int64, error)
 	UpdateRecordingTranscriptProgress(userId, runId string, claim RecordingWorkerClaim, processingState models.RecordingProcessingState, errorMessage string, derivedDurationMS int64) error
 	CreateRecordingAudioChunk(userId, runId string, claim RecordingWorkerClaim, chunk *models.RecordingAudioChunk, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingAudioChunk, error)
 	ListRecordingAudioChunks(userId, runId string) ([]*models.RecordingAudioChunk, error)
@@ -356,43 +358,163 @@ func (self *transaction) lockRecordingWorker(userId, runId string, claim Recordi
 // may begin when it re-reads the end of the piece before it.
 const recordingHandoffLongestMS = 15000
 
-// SetRecordingTranscriptRunHandoff records, before any audio is derived, that
-// the first chunk of a piece of a capture starts earlier than the piece does,
-// with the tail of the previous piece. It can be repeated with the same value
-// when a job starts over.
-func (self *transaction) SetRecordingTranscriptRunHandoff(userId, runId string, claim RecordingWorkerClaim, handoffStartMS int64) error {
+// RecordingHandoffPublication says how a piece was stitched to the piece before
+// it: its audio was sent again from HandoffStartMS, through HandoffEndMS, as the
+// chunk whose attempt is HandoffAttemptID.
+type RecordingHandoffPublication struct {
+	HandoffStartMS   int64
+	HandoffEndMS     int64
+	HandoffAttemptID string
+}
+
+// PublishRecordingTranscriptRun marks a run's passages as final for the piece
+// after it to read, once the run has been stitched to the piece before it. With
+// a handoff, the passages the run heard on its own between HandoffStartMS and
+// HandoffEndMS are replaced by the ones from the second look at that audio,
+// and the piece before is hidden from HandoffStartMS on (see
+// recordingHandoffCutoffs). It can be repeated: a run that is already
+// published is left alone.
+func (self *transaction) PublishRecordingTranscriptRun(userId, runId string, claim RecordingWorkerClaim, handoff *RecordingHandoffPublication) error {
 	transcriptRun, err := self.lockRecordingWorker(userId, runId, claim)
 	if err != nil {
 		return err
 	}
-	if transcriptRun.RecordingProcessingState != models.RecordingProcessingPreparing {
+	if transcriptRun.RecordingProcessingState != models.RecordingProcessingTranscribing {
 		return ErrAlreadyExists
 	}
-	source, err := self.GetRecording(userId, transcriptRun.RecordingID)
-	if err != nil {
-		return err
-	}
-	media, err := self.GetRecordingMedia(userId, transcriptRun.RecordingMediaID)
-	if err != nil {
-		return err
-	}
-	if source.RecordingOrigin != models.RecordingOriginCapture || handoffStartMS < 0 || handoffStartMS >= media.TimelineStartMS || media.TimelineStartMS-handoffStartMS > recordingHandoffLongestMS {
-		return ErrInvalidArguments
-	}
-	if transcriptRun.HandoffStartMS != nil {
-		if *transcriptRun.HandoffStartMS != handoffStartMS {
-			return ErrAlreadyExists
-		}
+	if transcriptRun.PublishedAt != nil {
 		return nil
 	}
-	chunks, err := self.ListRecordingAudioChunks(userId, runId)
+	if handoff != nil {
+		source, err := self.GetRecording(userId, transcriptRun.RecordingID)
+		if err != nil {
+			return err
+		}
+		media, err := self.GetRecordingMedia(userId, transcriptRun.RecordingMediaID)
+		if err != nil {
+			return err
+		}
+		if source.RecordingOrigin != models.RecordingOriginCapture || handoff.HandoffStartMS < 0 || handoff.HandoffStartMS >= media.TimelineStartMS || media.TimelineStartMS-handoff.HandoffStartMS > recordingHandoffLongestMS || handoff.HandoffEndMS <= media.TimelineStartMS {
+			return ErrInvalidArguments
+		}
+		var attempt recordingAttemptModel
+		if err := self.tx.Omit("provider_usage_json", "provider_response_json").Where("id = ? AND recording_transcript_run_id = ? AND recording_attempt_state = ?", handoff.HandoffAttemptID, runId, models.RecordingAttemptComplete).Take(&attempt).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInvalidArguments
+			}
+			return err
+		}
+		if err := self.tx.Where("recording_transcript_run_id = ? AND recording_transcription_attempt_id <> ? AND segment_start_ms < ?", runId, handoff.HandoffAttemptID, handoff.HandoffEndMS).Delete(&recordingSegmentModel{}).Error; err != nil {
+			return err
+		}
+		if err := self.tx.Model(&recordingRunModel{}).Where("id = ?", runId).Update("handoff_start_ms", handoff.HandoffStartMS).Error; err != nil {
+			return err
+		}
+	}
+	return self.tx.Model(&recordingRunModel{}).Where("id = ?", runId).Update("published_at", time.Now().UTC().Truncate(time.Microsecond)).Error
+}
+
+// RecordingPiece is one original of a capture and the latest version of its
+// transcript, in the order the pieces were recorded.
+type RecordingPiece struct {
+	RecordingMediaID         string
+	TimelineStartMS          int64
+	IsUploadComplete         bool
+	VerifiedAt               *time.Time
+	RecordingTranscriptRunID string
+	RecordingProcessingState models.RecordingProcessingState
+	PublishedAt              *time.Time
+	RunUpdatedAt             time.Time
+	DerivedDurationMS        int64
+	// HasLiveJob says a job for the run is queued or running. A run with none
+	// is not going to move by itself, so nothing waits for it.
+	HasLiveJob bool
+}
+
+// IsPending says the piece is still on its way to being published: its latest
+// version is not finished and a job is going to work on it.
+func (self *RecordingPiece) IsPending() bool {
+	if self.RecordingTranscriptRunID == "" {
+		return false
+	}
+	switch self.RecordingProcessingState {
+	case models.RecordingProcessingQueued, models.RecordingProcessingPreparing, models.RecordingProcessingTranscribing:
+		return self.PublishedAt == nil && self.HasLiveJob
+	}
+	return false
+}
+
+// ListRecordingPieces lists a recording's originals by timeline start, each
+// with its latest transcript version, if any.
+func (self *transaction) ListRecordingPieces(userId, recordingId string) ([]*RecordingPiece, error) {
+	if _, err := self.GetRecording(userId, recordingId); err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		RecordingMediaID         string
+		TimelineStartMS          int64
+		IsUploadComplete         bool
+		VerifiedAt               *time.Time
+		RecordingTranscriptRunID *string
+		RecordingProcessingState *string
+		PublishedAt              *time.Time
+		RunUpdatedAt             *time.Time
+		DerivedDurationMS        *int64
+		HasLiveJob               bool
+	}
+	if err := self.tx.Raw(`SELECT media.id AS recording_media_id, media.timeline_start_ms, media.recording_upload_state = @uploadComplete AS is_upload_complete, media.verified_at,
+			run.id AS recording_transcript_run_id, run.recording_processing_state, run.published_at, run.updated_at AS run_updated_at, run.derived_duration_ms,
+			COALESCE(EXISTS (SELECT 1 FROM agent_job WHERE agent_job.kind = @jobKind AND agent_job.subject_id = run.id AND agent_job.status IN @liveStatuses), false) AS has_live_job
+		FROM recording_media AS media
+		LEFT JOIN LATERAL (SELECT * FROM recording_transcript_run WHERE recording_transcript_run.recording_media_id = media.id ORDER BY version_number DESC LIMIT 1) AS run ON true
+		WHERE media.recording_id = @recordingId
+		ORDER BY media.timeline_start_ms, media.created_at, media.id`,
+		sql.Named("uploadComplete", models.RecordingUploadComplete), sql.Named("jobKind", models.AgentJobRecording), sql.Named("liveStatuses", []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning}), sql.Named("recordingId", recordingId)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	pieces := make([]*RecordingPiece, 0, len(rows))
+	for _, row := range rows {
+		piece := &RecordingPiece{RecordingMediaID: row.RecordingMediaID, TimelineStartMS: row.TimelineStartMS, IsUploadComplete: row.IsUploadComplete, VerifiedAt: row.VerifiedAt, PublishedAt: row.PublishedAt, HasLiveJob: row.HasLiveJob}
+		if row.RecordingTranscriptRunID != nil {
+			piece.RecordingTranscriptRunID = *row.RecordingTranscriptRunID
+			piece.RecordingProcessingState = models.RecordingProcessingState(*row.RecordingProcessingState)
+			piece.RunUpdatedAt = *row.RunUpdatedAt
+			piece.DerivedDurationMS = *row.DerivedDurationMS
+		}
+		pieces = append(pieces, piece)
+	}
+	return pieces, nil
+}
+
+// WakeRecordingTranscriptionJobs makes the queued jobs of a recording's first
+// pending pieces due now, so a piece that was waiting for an earlier one does
+// not sit out the rest of its wait. It returns how many queued jobs are due as
+// a result, including ones that already were, so the caller knows whether
+// there is anything to claim.
+func (self *transaction) WakeRecordingTranscriptionJobs(userId, recordingId string, limit int) (int64, error) {
+	pieces, err := self.ListRecordingPieces(userId, recordingId)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if len(chunks) > 0 {
-		return ErrAlreadyExists
+	var runIds []string
+	for _, piece := range pieces {
+		if piece.IsPending() {
+			runIds = append(runIds, piece.RecordingTranscriptRunID)
+		}
+		if len(runIds) == limit {
+			break
+		}
 	}
-	return self.tx.Model(&recordingRunModel{}).Where("id = ?", runId).Update("handoff_start_ms", handoffStartMS).Error
+	if len(runIds) == 0 {
+		return 0, nil
+	}
+	now := time.Now()
+	if err := self.tx.Model(&agentJobModel{}).Where("kind = ? AND status = ? AND subject_id IN ? AND not_before > ?", models.AgentJobRecording, models.AgentJobQueued, runIds, now).Update("not_before", now).Error; err != nil {
+		return 0, err
+	}
+	var dueCount int64
+	err = self.tx.Model(&agentJobModel{}).Where("kind = ? AND status = ? AND subject_id IN ?", models.AgentJobRecording, models.AgentJobQueued, runIds).Count(&dueCount).Error
+	return dueCount, err
 }
 
 func (self *transaction) UpdateRecordingTranscriptProgress(userId, runId string, claim RecordingWorkerClaim, processingState models.RecordingProcessingState, errorMessage string, derivedDurationMS int64) error {
@@ -465,7 +587,11 @@ func (self *transaction) CreateRecordingAudioChunk(userId, runId string, claim R
 	if blob.ID != RecordingAudioFileID(runId, chunk.ChunkIndex) {
 		return nil, ErrInvalidArguments
 	}
-	if transcriptRun.RecordingProcessingState != models.RecordingProcessingPreparing {
+	// The audio of a piece is derived while it is preparing. The one chunk
+	// made later is the second look at the end of the piece before it, which
+	// can only be known once that piece has a transcript.
+	isHandoffChunk := transcriptRun.RecordingProcessingState == models.RecordingProcessingTranscribing && transcriptRun.PublishedAt == nil
+	if transcriptRun.RecordingProcessingState != models.RecordingProcessingPreparing && !isHandoffChunk {
 		return nil, ErrAlreadyExists
 	}
 	var previous recordingChunkModel
@@ -495,16 +621,23 @@ func (self *transaction) CreateRecordingAudioChunk(userId, runId string, claim R
 	if err != nil {
 		return nil, err
 	}
-	expectedStartMS := media.TimelineStartMS
-	if transcriptRun.HandoffStartMS != nil {
-		expectedStartMS = *transcriptRun.HandoffStartMS
-	}
-	if len(chunks) > 0 {
-		previousChunk := chunks[len(chunks)-1]
-		expectedStartMS = previousChunk.TimelineStartMS + previousChunk.AudioDurationMS
-	}
-	if chunk.TimelineStartMS != expectedStartMS {
-		return nil, ErrInvalidArguments
+	if isHandoffChunk {
+		source, err := self.GetRecording(userId, transcriptRun.RecordingID)
+		if err != nil {
+			return nil, err
+		}
+		if source.RecordingOrigin != models.RecordingOriginCapture || len(chunks) == 0 || chunk.TimelineStartMS >= media.TimelineStartMS || media.TimelineStartMS-chunk.TimelineStartMS > recordingHandoffLongestMS || chunks[len(chunks)-1].TimelineStartMS < media.TimelineStartMS {
+			return nil, ErrInvalidArguments
+		}
+	} else {
+		expectedStartMS := media.TimelineStartMS
+		if len(chunks) > 0 {
+			previousChunk := chunks[len(chunks)-1]
+			expectedStartMS = previousChunk.TimelineStartMS + previousChunk.AudioDurationMS
+		}
+		if chunk.TimelineStartMS != expectedStartMS {
+			return nil, ErrInvalidArguments
+		}
 	}
 	var originalBytes, derivedBytes int64
 	if err := self.tx.Table("recording_media").Select("COALESCE(SUM(original_size_bytes),0)").Joins("JOIN recording ON recording.id = recording_media.recording_id").Where("recording.user_id = ?", userId).Scan(&originalBytes).Error; err != nil {

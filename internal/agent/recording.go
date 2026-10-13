@@ -76,7 +76,19 @@ func (self *Agent) QueueRecordingTranscription(transaction db.Transaction, userI
 	if err != nil {
 		return nil, err
 	}
-	if _, err := self.Enqueue(transaction, models.AgentJobRecording, agent.ID, "", transcriptRun.ID); err != nil {
+	job := &models.AgentJob{AgentID: agent.ID, Kind: models.AgentJobRecording, SubjectID: transcriptRun.ID}
+	// A piece that is too far behind the first unpublished one to start yet
+	// is queued as waiting. Left due, a backlog of a hundred pieces would be
+	// claimed again and again, each time to be told to wait, in front of
+	// everything else in the queue.
+	isTooFarAhead, err := self.isRecordingPieceTooFarAhead(transaction, userId, transcriptRun)
+	if err != nil {
+		return nil, err
+	}
+	if isTooFarAhead {
+		job.NotBefore = new(time.Now().Add(recordingWaitingPoll))
+	}
+	if _, err := transaction.EnqueueAgentJob(job); err != nil {
 		return nil, err
 	}
 	return transcriptRun, nil
@@ -148,9 +160,18 @@ func (self *Agent) recordingAuthority(transaction db.Transaction, run *Run, prov
 }
 
 func (self *Agent) recordingProgress(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, processingState models.RecordingProcessingState, errorMessage string, durationMS int64) error {
-	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		return transaction.UpdateRecordingTranscriptProgress(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, processingState, errorMessage, durationMS)
-	})
+	}); err != nil {
+		return err
+	}
+	// A piece that ends without a transcript has nothing to publish, and the
+	// piece after it is waiting for that.
+	switch processingState {
+	case models.RecordingProcessingFailed, models.RecordingProcessingUncertain, models.RecordingProcessingCanceled:
+		self.wakeRecordingPieces(ctx, run.Agent.UserID, transcriptRun.RecordingID)
+	}
+	return nil
 }
 
 func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles) error {
@@ -172,28 +193,8 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	}); err != nil {
 		return err
 	}
-	// Decided before the run leaves the queue's state: when the piece before
-	// this one has no transcript yet this returns a Deferral, and the run
-	// simply starts over later.
-	handoff, err := self.recordingHandoffBefore(ctx, run.Agent.UserID, media, files)
-	if err != nil {
-		return err
-	}
-	if handoff != nil && chunkDurationMS-int64(len(handoff.PCM))/recordingPCMBytesPerMS < 1000 {
-		handoff = nil
-	}
 	if err := self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingPreparing, "", transcriptRun.DerivedDurationMS); err != nil {
 		return err
-	}
-	if handoff != nil {
-		// The first chunk carries the tail of the previous piece, so it is
-		// shortened by that much to stay within the provider's bound.
-		chunkDurationMS -= int64(len(handoff.PCM)) / recordingPCMBytesPerMS
-		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			return transaction.SetRecordingTranscriptRunHandoff(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, handoff.StartMS)
-		}); err != nil {
-			return err
-		}
 	}
 	original, err := recording.PrivateMediaFile()
 	if err != nil {
@@ -214,37 +215,9 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	if maximumAccountBytes > math.MaxInt64 {
 		return fmt.Errorf("recording: account limit exceeds supported byte sizes")
 	}
-	claim := db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}
 	var publicationError error
 	durationMS, err := decoder.Decode(ctx, original, media.TimelineStartMS, recordingMaximumDurationMS, chunkDurationMS, func(decoded *recording.DecodedAudioChunk) error {
-		if handoff != nil && decoded.ChunkIndex == 0 {
-			decoded = withRecordingHandoff(decoded, handoff)
-		}
-		chunkDigest := sha256.Sum256(decoded.WaveBytes)
-		blob := &models.RecordingBlob{ID: db.RecordingAudioFileID(transcriptRun.ID, decoded.ChunkIndex), BlobSizeBytes: int64(len(decoded.WaveBytes)), BlobSHA256: hex.EncodeToString(chunkDigest[:])}
-		chunk := &models.RecordingAudioChunk{ChunkIndex: decoded.ChunkIndex, TimelineStartMS: decoded.TimelineStartMS, AudioDurationMS: decoded.AudioDurationMS}
-		publicationError = self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			if err := self.recordingAuthority(transaction, run, transcriptRun.ProviderModelName, false); err != nil {
-				return err
-			}
-			_, err := transaction.CreateRecordingAudioChunk(run.Agent.UserID, transcriptRun.ID, claim, chunk, blob, int64(maximumAccountBytes))
-			return err
-		})
-		if publicationError != nil {
-			return publicationError
-		}
-		publicationError = self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			if _, err := transaction.LockRecording(run.Agent.UserID, transcriptRun.RecordingID); err != nil {
-				return err
-			}
-			if _, err := transaction.GetRecordingBlob(run.Agent.UserID, blob.ID); err != nil {
-				return err
-			}
-			if err := files.PutFileStream(ctx, blob.ID, bytes.NewReader(decoded.WaveBytes), blob.BlobSizeBytes); err != nil {
-				return err
-			}
-			return transaction.VerifyRecordingBlob(run.Agent.UserID, blob.ID, blob.BlobSHA256)
-		})
+		_, publicationError = self.storeRecordingChunk(ctx, run, transcriptRun, files, decoded, int64(maximumAccountBytes))
 		return publicationError
 	})
 	if err != nil {
@@ -261,15 +234,38 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	return nil
 }
 
-// withRecordingHandoff puts the end of the previous piece in front of a piece's
-// first chunk, so the passage that crossed the cut is heard whole, and moves the
-// chunk's start back to where that audio begins.
-func withRecordingHandoff(decoded *recording.DecodedAudioChunk, handoff *recordingHandoff) *recording.DecodedAudioChunk {
-	prefixDurationMS := int64(len(handoff.PCM)) / recordingPCMBytesPerMS
-	samples := make([]byte, 0, len(handoff.PCM)+len(decoded.WaveBytes)-44)
-	samples = append(samples, handoff.PCM...)
-	samples = append(samples, decoded.WaveBytes[44:]...)
-	return &recording.DecodedAudioChunk{ChunkIndex: decoded.ChunkIndex, TimelineStartMS: handoff.StartMS, AudioDurationMS: prefixDurationMS + decoded.AudioDurationMS, WaveBytes: recordingReferenceWave(samples)}
+// storeRecordingChunk reserves a derived chunk of audio, writes its bytes and
+// verifies them. The reservation commits before the bytes, so a failed write
+// leaves a reference for the cleanup to find.
+func (self *Agent) storeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, files storage.StreamFiles, decoded *recording.DecodedAudioChunk, maximumAccountBytes int64) (*models.RecordingAudioChunk, error) {
+	claim := db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}
+	chunkDigest := sha256.Sum256(decoded.WaveBytes)
+	blob := &models.RecordingBlob{ID: db.RecordingAudioFileID(transcriptRun.ID, decoded.ChunkIndex), BlobSizeBytes: int64(len(decoded.WaveBytes)), BlobSHA256: hex.EncodeToString(chunkDigest[:])}
+	chunk := &models.RecordingAudioChunk{ChunkIndex: decoded.ChunkIndex, TimelineStartMS: decoded.TimelineStartMS, AudioDurationMS: decoded.AudioDurationMS}
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		if err := self.recordingAuthority(transaction, run, transcriptRun.ProviderModelName, false); err != nil {
+			return err
+		}
+		chunk, err = transaction.CreateRecordingAudioChunk(run.Agent.UserID, transcriptRun.ID, claim, chunk, blob, maximumAccountBytes)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		if _, err := transaction.LockRecording(run.Agent.UserID, transcriptRun.RecordingID); err != nil {
+			return err
+		}
+		if _, err := transaction.GetRecordingBlob(run.Agent.UserID, blob.ID); err != nil {
+			return err
+		}
+		if err := files.PutFileStream(ctx, blob.ID, bytes.NewReader(decoded.WaveBytes), blob.BlobSizeBytes); err != nil {
+			return err
+		}
+		return transaction.VerifyRecordingBlob(run.Agent.UserID, blob.ID, blob.BlobSHA256)
+	}); err != nil {
+		return nil, err
+	}
+	return chunk, nil
 }
 
 // runRecording never enters Ask, a conversation, speech synthesis or tool execution.
@@ -303,6 +299,18 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 	if err != nil {
 		return self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingFailed, err.Error(), transcriptRun.DerivedDurationMS)
 	}
+	if transcriptRun.RecordingProcessingState == models.RecordingProcessingQueued {
+		var media *models.RecordingMedia
+		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+			media, err = transaction.GetRecordingMedia(run.Agent.UserID, transcriptRun.RecordingMediaID)
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := self.waitForRecordingWindow(ctx, run.Job, run.Agent.UserID, media); err != nil {
+			return err
+		}
+	}
 	if transcriptRun.RecordingProcessingState != models.RecordingProcessingTranscribing {
 		if err := self.prepareRecordingAudio(ctx, run, transcriptRun, selection, files); err != nil {
 			return err
@@ -328,6 +336,18 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 		if !shouldContinue {
 			return nil
 		}
+	}
+	// The piece after this one reads where this one's last passage ended, so
+	// this is published before the second pass: that pass changes words, not
+	// passages, and the next piece must not wait for it.
+	if err := self.publishRecordingRun(ctx, run, transcriptRun, selection, files, vocabularyPrompt); err != nil {
+		return err
+	}
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		chunks, err = transaction.ListRecordingAudioChunks(run.Agent.UserID, transcriptRun.ID)
+		return err
+	}); err != nil {
+		return err
 	}
 	// Before the run completes: completion queues the glossary pass, which
 	// has to correct the accurate words, and a person's correction wins over
