@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.151.2] - 2026-10-13
+
+### Fixed
+
+- Let CLI recording playback preparation and downloads run beyond the normal one-minute request allowance. (#457)
+
 ## [0.151.1] - 2026-10-13
 
 ### Fixed
