@@ -683,7 +683,8 @@ struct RecordingPlaybackScreen: View {
                     VStack {
                         if isCompatibleAudioPreview {
                             Label("Compatible audio preview", systemImage: "waveform")
-                            Text("Audio preview prepared locally; original unchanged.").font(.caption).foregroundStyle(.secondary)
+                            Text("Audio preview prepared locally; original unchanged.")
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         VideoPlayer(player: player)
                         if let problemText { Text(problemText).font(.caption).foregroundStyle(.secondary) }

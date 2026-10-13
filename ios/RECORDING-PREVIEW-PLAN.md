@@ -65,3 +65,9 @@ reopening playback. Compatible mode now offers Use original only when that origi
 was proven playable. It re-downloads and verifies the original, preserving the
 preview on failure and restoring original sharing on success. A separate rendered
 route verifies both return and full-preview sharing controls at all three appearances.
+
+The exact simulator build and all checks passed, and all 48 recording captures were
+inspected. Largest text in supported-preview mode compressed and truncated the
+explanation that the original stays unchanged. That caption now keeps its natural
+vertical size, matching existing native text handling. Its content assertion requires
+the complete meaning, and the final SDK and captures will verify the correction.
