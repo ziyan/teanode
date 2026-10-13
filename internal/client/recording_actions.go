@@ -24,9 +24,11 @@ type RecordingActionArguments struct {
 	ClientRunID                         string  `json:"client_run_id"`
 	ClientCorrectionID                  string  `json:"client_correction_id"`
 	ConfirmedName                       string  `json:"confirmed_name"`
+	IsAccountOwner                      bool    `json:"is_account_owner"`
 	LocalSpeakerID                      string  `json:"local_speaker_id"`
+	SpeakerLabel                        string  `json:"speaker_label"`
 	CorrectedTranscriptText             string  `json:"corrected_transcript_text"`
-	RecordingTitle                      string  `json:"recording_title"`
+	RecordingTitle                      *string `json:"recording_title"`
 	RecordedAt                          *string `json:"recorded_at"`
 	KnowledgeSourceID                   string  `json:"knowledge_source_id"`
 	SourceCron                          *string `json:"source_cron"`
@@ -35,6 +37,9 @@ type RecordingActionArguments struct {
 	PassageEndMS                        *int64  `json:"passage_end_ms"`
 	SegmentOffset                       int     `json:"segment_offset"`
 	PageSize                            int     `json:"page_size"`
+	// SearchText narrows a list of recordings, or the names offered for a
+	// speaker, to those containing it.
+	SearchText string `json:"search_text"`
 }
 
 // RecordingAction resolves one reviewed operation and refuses incomplete edits.
@@ -85,6 +90,12 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		operationName = "ReadRecordingProcessing"
 	case "speakers":
 		operationName = "ReadRecordingSpeakers"
+	case "speaker-names":
+		operationName = "SuggestRecordingSpeakerNames"
+		variables["searchText"] = arguments.SearchText
+		if arguments.PageSize > 0 {
+			variables["pageSize"] = arguments.PageSize
+		}
 	case "learning":
 		operationName = "ReadRecordingLearning"
 	case "reference-invalidations":
@@ -148,23 +159,24 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		if err := require("attachment_id delivered by the user", arguments.AgentAttachmentID); err != nil {
 			return "", nil, err
 		}
-		if err := require("recording_title", arguments.RecordingTitle); err != nil {
-			return "", nil, err
-		}
 		clientRecordingID := arguments.ClientRecordingID
 		if clientRecordingID == "" {
 			clientRecordingID = "attachment-" + arguments.AgentAttachmentID
 		}
-		variables["agentAttachmentId"], variables["clientRecordingId"], variables["recordingTitle"] = arguments.AgentAttachmentID, clientRecordingID, arguments.RecordingTitle
+		// An empty title is the default: the server names the recording from its transcript.
+		variables["agentAttachmentId"], variables["clientRecordingId"], variables["recordingTitle"] = arguments.AgentAttachmentID, clientRecordingID, ""
+		if arguments.RecordingTitle != nil {
+			variables["recordingTitle"] = *arguments.RecordingTitle
+		}
 		if arguments.RecordingMediaID != "" {
 			variables["recordingMediaId"] = arguments.RecordingMediaID
 		}
 	case "metadata":
 		operationName = "UpdateRecordingMetadata"
-		if err := require("recording_title", arguments.RecordingTitle); err != nil {
-			return "", nil, err
+		// Absent leaves the title and who wrote it alone; an empty title clears it.
+		if arguments.RecordingTitle != nil {
+			variables["recordingTitle"] = *arguments.RecordingTitle
 		}
-		variables["recordingTitle"] = arguments.RecordingTitle
 		variables["recordedAt"] = nil
 		if arguments.RecordedAt == nil {
 			return "", nil, fmt.Errorf("give recorded_at explicitly; empty means unknown occurrence date")
@@ -178,8 +190,11 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		}
 	case "speaker-confirm":
 		operationName = "CorrectRecordingSpeaker"
-		if err := require("confirmed_name supplied by the user", arguments.ConfirmedName); err != nil {
-			return "", nil, err
+		// The person's own name is the default when they say the speaker is them.
+		if !arguments.IsAccountOwner {
+			if err := require("confirmed_name supplied by the user", arguments.ConfirmedName); err != nil {
+				return "", nil, err
+			}
 		}
 		if err := require("attempt_id", arguments.RecordingTranscriptionAttemptID); err != nil {
 			return "", nil, err
@@ -196,8 +211,21 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		if (*arguments.PassageStartMS != -1 || *arguments.PassageEndMS != -1) && (*arguments.PassageStartMS < 0 || *arguments.PassageEndMS <= *arguments.PassageStartMS) {
 			return "", nil, fmt.Errorf("passage bounds must be -1/-1 or a positive interval")
 		}
+		variables["isAccountOwner"] = arguments.IsAccountOwner
 		variables["confirmedName"], variables["recordingTranscriptionAttemptId"], variables["localSpeakerId"] = arguments.ConfirmedName, arguments.RecordingTranscriptionAttemptID, arguments.LocalSpeakerID
 		variables["clientCorrectionId"], variables["passageStartMS"], variables["passageEndMS"] = arguments.ClientCorrectionID, *arguments.PassageStartMS, *arguments.PassageEndMS
+	case "temporary-speaker-name":
+		operationName = "NameRecordingTemporarySpeaker"
+		// The person's own name is the default when they say the speaker is them.
+		if !arguments.IsAccountOwner {
+			if err := require("confirmed_name supplied by the user", arguments.ConfirmedName); err != nil {
+				return "", nil, err
+			}
+		}
+		if err := require("speaker_label (\"Speaker 1\" and so on, from the timeline's temporarySpeakers)", arguments.SpeakerLabel); err != nil {
+			return "", nil, err
+		}
+		variables["speakerLabel"], variables["confirmedName"], variables["isAccountOwner"] = arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner
 	case "speaker-rename":
 		operationName = "RenameRecordingSpeaker"
 		if err := require("speaker_identity_id", arguments.SpeakerIdentityID); err != nil {
@@ -209,6 +237,12 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		variables["speakerIdentityId"], variables["confirmedName"] = arguments.SpeakerIdentityID, arguments.ConfirmedName
 	case "speaker-reset":
 		operationName = "RemoveRecordingSpeakerCorrection"
+		if err := require("speaker_correction_id", arguments.RecordingSpeakerCorrectionID); err != nil {
+			return "", nil, err
+		}
+		variables["recordingSpeakerCorrectionId"] = arguments.RecordingSpeakerCorrectionID
+	case "speaker-undo":
+		operationName = "UndoRecordingSpeakerNaming"
 		if err := require("speaker_correction_id", arguments.RecordingSpeakerCorrectionID); err != nil {
 			return "", nil, err
 		}
@@ -241,14 +275,14 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return "", nil, fmt.Errorf("unknown recording operation %q", arguments.Operation)
 	}
 	switch arguments.Operation {
-	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if err := require("recording_id", arguments.RecordingID); err != nil {
 			return "", nil, err
 		}
 		variables["recordingId"] = arguments.RecordingID
 	}
 	switch arguments.Operation {
-	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if arguments.ExpectedSourceGeneration == nil || *arguments.ExpectedSourceGeneration < 0 {
 			return "", nil, fmt.Errorf("give expected_source_generation from the current recording view")
 		}

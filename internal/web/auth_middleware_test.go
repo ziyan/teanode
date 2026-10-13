@@ -54,6 +54,21 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			path: "/.well-known/acme-challenge/sometoken", wantStatusCode: http.StatusOK, wantHandler: true,
 		},
 		{
+			// A phone opens a recording's live socket with its token in the
+			// first message, which the handler checks.
+			name: "a recording's live socket is reachable without logging in",
+			path: api.Prefix + "/recordings/fixture-recording/live", wantStatusCode: http.StatusOK, wantHandler: true,
+		},
+		{
+			// Only the socket: the recording's other paths keep the session check.
+			name: "a recording's media is refused without a session",
+			path: api.Prefix + "/recordings/media/fixture-media", wantStatusCode: http.StatusUnauthorized, wantHandler: false,
+		},
+		{
+			name: "a path that only ends like the live socket is refused without a session",
+			path: api.Prefix + "/recordings/fixture-recording/extra/live", wantStatusCode: http.StatusUnauthorized, wantHandler: false,
+		},
+		{
 			name: "the api is refused without a session",
 			path: api.Prefix + "/nonsense", wantStatusCode: http.StatusUnauthorized, wantHandler: false,
 		},

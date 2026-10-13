@@ -191,7 +191,7 @@ func TestRecordingKnowledgeTitleKeepsStableSourceIdentity(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
-		if _, err := transaction.UpdateRecordingMetadata(fixture.userId, source.ID, source.SourceGeneration, "Fixture \"quoted\" title", nil); err != nil {
+		if _, err := transaction.UpdateRecordingMetadata(fixture.userId, source.ID, source.SourceGeneration, new("Fixture \"quoted\" title"), nil); err != nil {
 			test.Fatal(err)
 		}
 		knowledge, err := transaction.GetAgentSourceByName(fixture.agentId, originalSource.Name)

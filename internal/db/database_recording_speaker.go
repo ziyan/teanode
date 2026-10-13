@@ -32,6 +32,7 @@ type RecordingSpeakerOperation interface {
 	CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error)
 	RenameRecordingSpeaker(userId, recordingId, speakerIdentityId, confirmedName string, expectedSourceGeneration int64) error
 	RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error
+	UndoRecordingSpeakerNaming(userId, recordingId, correctionId string, expectedSourceGeneration int64) (int, error)
 	RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error
 }
 
@@ -42,9 +43,12 @@ type RecordingSpeakerCorrectionInput struct {
 	ClientCorrectionID              string
 	LocalSpeakerID                  string
 	ConfirmedName                   string
-	ExpectedSourceGeneration        int64
-	PassageStartMS                  int64
-	PassageEndMS                    int64
+	// IsAccountOwner marks the confirmed speaker as the person; an empty
+	// ConfirmedName then defaults to the person's display name.
+	IsAccountOwner           bool
+	ExpectedSourceGeneration int64
+	PassageStartMS           int64
+	PassageEndMS             int64
 }
 
 type recordingSpeakerIdentityModel models.RecordingSpeakerIdentity
@@ -102,13 +106,30 @@ func validConfirmedSpeakerName(confirmedName string) bool {
 	return strings.TrimSpace(confirmedName) != "" && len(confirmedName) <= 255 && !strings.ContainsFunc(confirmedName, unicode.IsControl)
 }
 func (self *transaction) CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error) {
-	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {
-		return nil, ErrInvalidArguments
-	}
 	// Account locking matches original-media reservations before taking the source lock.
 	var owner userModel
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
 		return nil, err
+	}
+	if correction.IsAccountOwner && strings.TrimSpace(correction.ConfirmedName) == "" {
+		// "This is me" without a name is the person's own identity under the
+		// name it already has, so a repeated request reads as the same one.
+		var ownIdentity recordingSpeakerIdentityModel
+		err := self.tx.Where("user_id = ? AND is_account_owner", userId).Take(&ownIdentity).Error
+		switch {
+		case err == nil:
+			correction.ConfirmedName = ownIdentity.ConfirmedName
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			correction.ConfirmedName = strings.TrimSpace(owner.Name)
+			if correction.ConfirmedName == "" {
+				correction.ConfirmedName = owner.Username
+			}
+		default:
+			return nil, err
+		}
+	}
+	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {
+		return nil, ErrInvalidArguments
 	}
 	if err := self.lockRecordingReferenceDependents(userId, correction.RecordingID); err != nil {
 		return nil, err
@@ -188,13 +209,25 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	}
 	var identity recordingSpeakerIdentityModel
 	err = self.tx.Where("user_id = ? AND confirmed_name = ?", userId, correction.ConfirmedName).Take(&identity).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		identity = recordingSpeakerIdentityModel{ID: newID(), UserID: userId, ConfirmedName: correction.ConfirmedName, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	isNewIdentity := errors.Is(err, gorm.ErrRecordNotFound)
+	if err != nil && !isNewIdentity {
+		return nil, err
+	}
+	// The unique index allows one owner per account, so the previous one is cleared first.
+	if correction.IsAccountOwner && !identity.IsAccountOwner {
+		if err := self.tx.Model(&recordingSpeakerIdentityModel{}).Where("user_id = ? AND is_account_owner", userId).Update("is_account_owner", false).Error; err != nil {
+			return nil, err
+		}
+	}
+	if isNewIdentity {
+		identity = recordingSpeakerIdentityModel{ID: newID(), UserID: userId, ConfirmedName: correction.ConfirmedName, IsAccountOwner: correction.IsAccountOwner, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 		if err := self.tx.Create(&identity).Error; err != nil {
 			return nil, err
 		}
-	} else if err != nil {
-		return nil, err
+	} else if correction.IsAccountOwner && !identity.IsAccountOwner {
+		if err := self.tx.Model(&identity).Update("is_account_owner", true).Error; err != nil {
+			return nil, err
+		}
 	}
 	corrected := make([]*models.RecordingSpeakerCorrection, 0, len(intervals))
 	for _, interval := range intervals {
@@ -337,6 +370,79 @@ func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, c
 	}
 	return self.advanceRecordingSpeakerGeneration(recordingId)
 }
+
+// UndoRecordingSpeakerNaming removes a naming whole: every passage the request
+// that wrote correctionId named goes back to its speaker label, with the voice
+// samples taken from them revoked, as if the name had never been given.
+func (self *transaction) UndoRecordingSpeakerNaming(userId, recordingId, correctionId string, expectedSourceGeneration int64) (int, error) {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return 0, err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return 0, err
+	}
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return 0, err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return 0, ErrAlreadyExists
+	}
+	var named recordingSpeakerCorrectionModel
+	if err := self.tx.Where("id = ? AND recording_id = ?", correctionId, recordingId).Take(&named).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	var correctionIds []string
+	correctionQuery := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND NOT is_removed", recordingId)
+	temporarySpeakerId, nameDigest := temporarySpeakerNamingOf(named.ClientCorrectionID)
+	if temporarySpeakerId != "" {
+		// A temporary speaker is named with one correction per piece, each under its own key.
+		correctionQuery = correctionQuery.Where("client_correction_id LIKE ? AND client_correction_id LIKE ?", temporarySpeakerKeyPrefix+temporarySpeakerId+"-%", "%-"+nameDigest)
+	} else {
+		correctionQuery = correctionQuery.Where("client_correction_id = ?", named.ClientCorrectionID)
+	}
+	if err := correctionQuery.Pluck("id", &correctionIds).Error; err != nil {
+		return 0, err
+	}
+	if len(correctionIds) == 0 {
+		return 0, nil
+	}
+	references, err := self.ListRecordingVoiceReferences(userId, recordingId)
+	if err != nil {
+		return 0, err
+	}
+	isUndone := map[string]bool{}
+	for _, undoneId := range correctionIds {
+		isUndone[undoneId] = true
+	}
+	affectedReferences := []*models.RecordingVoiceReference{}
+	for _, reference := range references {
+		if isUndone[reference.RecordingSpeakerCorrectionID] && !reference.IsRevoked {
+			affectedReferences = append(affectedReferences, reference)
+		}
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The user undid this speaker naming."); err != nil {
+		return 0, err
+	}
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("id IN ? AND recording_id = ?", correctionIds, recordingId).Update("is_removed", true).Error; err != nil {
+		return 0, err
+	}
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_speaker_correction_id IN ?", correctionIds).Update("is_revoked", true).Error; err != nil {
+		return 0, err
+	}
+	if temporarySpeakerId != "" {
+		// Without this a later piece sent the speaker's sample would be named again.
+		if err := self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ? AND recording_id = ?", temporarySpeakerId, recordingId).Update("speaker_identity_id", nil).Error; err != nil {
+			return 0, err
+		}
+	}
+	return len(correctionIds), self.advanceRecordingSpeakerGeneration(recordingId)
+}
+
 func (self *transaction) RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error {
 	var owner userModel
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
@@ -573,7 +679,7 @@ func (self *transaction) ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]
 		return nil, ErrInvalidArguments
 	}
 	var rows []*recordingModel
-	if err := self.tx.Where("user_id IS NOT NULL AND deleted_at IS NULL AND speaker_curated_generation < source_generation AND EXISTS (SELECT 1 FROM recording_speaker_correction c WHERE c.recording_id=recording.id)").Order("updated_at,id").Limit(pageSize).Find(&rows).Error; err != nil {
+	if err := self.tx.Where("user_id IS NOT NULL AND deleted_at IS NULL AND speaker_curated_generation < source_generation AND (recording_origin = 'capture' OR EXISTS (SELECT 1 FROM recording_speaker_correction c WHERE c.recording_id=recording.id))").Order("updated_at,id").Limit(pageSize).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	sources := make([]*models.Recording, 0, len(rows))
@@ -674,6 +780,40 @@ func (self *transaction) CheckRecordingVoiceReferenceNames(userId string, refere
    AND b.recording_media_id = v.recording_media_id AND v.recording_blob_id IN ?
   FOR SHARE OF v,i,c,b`, userId, userId, models.RecordingBlobSpeakerReference, referenceBlobIds).Scan(&rows).Error; err != nil {
 		return err
+	}
+	// A sample of a temporary speaker is sent under its label, or under the
+	// confirmed name once the person has named it.
+	foundBlobIds := map[string]bool{}
+	for _, row := range rows {
+		foundBlobIds[row.RecordingBlobID] = true
+	}
+	var remainingBlobIds []string
+	for _, blobId := range referenceBlobIds {
+		if !foundBlobIds[blobId] {
+			remainingBlobIds = append(remainingBlobIds, blobId)
+		}
+	}
+	if len(remainingBlobIds) > 0 {
+		var temporaryRows []struct {
+			RecordingBlobID string
+			ConfirmedName   string
+		}
+		if err := self.tx.Raw(`SELECT t.recording_blob_id,COALESCE(i.confirmed_name,t.speaker_label) AS confirmed_name
+  FROM recording_temporary_speaker t
+  JOIN recording r ON r.id=t.recording_id
+  JOIN recording_blob b ON b.id=t.recording_blob_id
+  LEFT JOIN recording_speaker_identity i ON i.id=t.speaker_identity_id
+  WHERE r.user_id = ? AND r.deleted_at IS NULL AND b.is_stored_verified
+   AND b.recording_blob_purpose = ? AND b.recording_id = t.recording_id AND t.recording_blob_id IN ?
+  FOR SHARE OF t,b`, userId, models.RecordingBlobSpeakerReference, remainingBlobIds).Scan(&temporaryRows).Error; err != nil {
+			return err
+		}
+		for _, temporaryRow := range temporaryRows {
+			rows = append(rows, struct {
+				RecordingBlobID string
+				ConfirmedName   string
+			}{temporaryRow.RecordingBlobID, temporaryRow.ConfirmedName})
+		}
 	}
 	if len(rows) != len(referenceBlobIds) {
 		return ErrAlreadyExists

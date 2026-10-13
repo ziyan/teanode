@@ -229,6 +229,9 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
         func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             guard let pan = recognizer as? UIPanGestureRecognizer, let view = pan.view else { return false }
             let start = CGPoint(x: pan.location(in: view).x - pan.translation(in: view).x, y: pan.location(in: view).y)
+            // A drag on a chart reads its values; it never opens the panel.
+            let startInWindow = CGPoint(x: pan.location(in: nil).x - pan.translation(in: nil).x, y: pan.location(in: nil).y)
+            if SidePanelExclusions.shared.contains(startInWindow) { return false }
             return shouldBegin(start, pan.velocity(in: view))
         }
 
@@ -238,6 +241,35 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
             true
         }
     }
+}
+
+/// SidePanelExclusions is where on the screen a sideways drag belongs to
+/// what is under it, such as a chart read by dragging along it, so the side
+/// panel does not open from there.
+@MainActor
+final class SidePanelExclusions {
+    static let shared = SidePanelExclusions()
+    private var frames: [UUID: CGRect] = [:]
+
+    func set(_ frame: CGRect?, for id: UUID) { frames[id] = frame }
+    func contains(_ point: CGPoint) -> Bool { frames.values.contains { $0.contains(point) } }
+}
+
+/// KeepsSidePanelClosed keeps the view's place on the screen among the side
+/// panel's exclusions while the view is shown.
+struct KeepsSidePanelClosed: ViewModifier {
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { SidePanelExclusions.shared.set($0, for: id) }
+            .onDisappear { SidePanelExclusions.shared.set(nil, for: id) }
+    }
+}
+
+extension View {
+    /// A sideways drag on this view is its own, never the side panel's.
+    func keepsSidePanelClosed() -> some View { modifier(KeepsSidePanelClosed()) }
 }
 
 /// MenuListStyle is the side menu's look: a plain list on one background,

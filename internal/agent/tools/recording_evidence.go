@@ -103,6 +103,10 @@ func RecordingEvidenceOf(transaction db.Transaction, agentId string, evidence []
 		citation := pending[0]
 		pending = pending[1:]
 		evidenceId := strings.Split(strings.Trim(citation.ID, "[]"), "#")[0]
+		// A passage of a recording is recorded words by definition.
+		if citation.Kind == models.EvidenceRecordingPassage {
+			return true, nil
+		}
 		if citation.Kind != models.EvidenceDocument && citation.Kind != models.EvidenceMemory {
 			continue
 		}

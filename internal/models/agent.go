@@ -514,9 +514,17 @@ const (
 	AgentJobEmbed     AgentJobKind = "embed"
 	// AgentJobRecording prepares and transcribes passive media without a user turn.
 	AgentJobRecording AgentJobKind = "recording"
-	AgentJobReply     AgentJobKind = "reply"
-	AgentJobSend      AgentJobKind = "send"
-	AgentJobSchedule  AgentJobKind = "schedule"
+	// AgentJobRecordingSummary names a recording and summarizes it from its
+	// transcript. Its subject is the recording.
+	AgentJobRecordingSummary AgentJobKind = "recording_brief"
+
+	// AgentJobRecordingTerms corrects misheard names and terms in a finished
+	// transcript from the person's own glossary, and then queues the summary
+	// job. Its subject is the recording.
+	AgentJobRecordingTerms AgentJobKind = "recording_terms"
+	AgentJobReply          AgentJobKind = "reply"
+	AgentJobSend           AgentJobKind = "send"
+	AgentJobSchedule       AgentJobKind = "schedule"
 
 	// AgentJobExtract reads a message triage thought carries an appointment
 	// or somebody's details in its words, and offers what it found. It

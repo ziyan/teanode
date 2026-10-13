@@ -470,6 +470,24 @@ export function CopyIcon(props: IconProps) {
   )
 }
 
+export function MoreIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+    </Icon>
+  )
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z" />
+    </Icon>
+  )
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -572,6 +590,16 @@ export function StopIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />
+    </Icon>
+  )
+}
+
+// Two bars: pause, as on every player.
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" />
+      <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" />
     </Icon>
   )
 }

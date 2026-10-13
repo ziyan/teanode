@@ -28,6 +28,8 @@ type RecordingMutation interface {
 type ListRecordingsArguments struct {
 	BeforeRecordingID string `json:"beforeRecordingId"`
 	PageSize          int    `json:"pageSize"`
+	// SearchText keeps recordings whose title, summary or transcript contains it.
+	SearchText string `json:"searchText" graphapi:"nullable"`
 }
 
 // RecordingArguments names one account-owned source.
@@ -109,7 +111,7 @@ func (self *graph) ListRecordings(ctx context.Context, arguments ListRecordingsA
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	recordings, err := self.transaction(ctx).ListRecordings(principal.User.ID, arguments.BeforeRecordingID, pageSize)
+	recordings, err := self.transaction(ctx).ListRecordings(principal.User.ID, arguments.BeforeRecordingID, arguments.SearchText, pageSize)
 	return recordings, translateError(err)
 }
 
@@ -204,8 +206,22 @@ func (self *graph) UpdateRecordingCapture(ctx context.Context, arguments UpdateR
 	if principal.User == nil {
 		return nil, api.ErrNotLoggedIn
 	}
+	previous, err := self.transaction(ctx).GetRecording(principal.User.ID, arguments.RecordingID)
+	if err != nil {
+		return nil, translateError(err)
+	}
 	source, err := self.transaction(ctx).UpdateRecordingCapture(principal.User.ID, arguments.RecordingID, arguments.ExpectedGeneration, arguments.RecordingCaptureState, arguments.TimelineDurationMS, arguments.CaptureGaps)
-	return source, translateError(err)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if source.RecordingCaptureState == models.RecordingCaptureStopped && previous.RecordingCaptureState != models.RecordingCaptureStopped {
+		if worker := self.agentWorker(); worker != nil {
+			if err := worker.FinishRecordingCapture(self.transaction(ctx), principal.User.ID, source.ID); err != nil {
+				return nil, translateError(err)
+			}
+		}
+	}
+	return source, nil
 }
 
 func (self *graph) DeleteRecording(ctx context.Context, arguments RecordingArguments) (bool, error) {

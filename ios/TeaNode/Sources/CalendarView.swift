@@ -1111,6 +1111,7 @@ struct EventEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isSaving = false
     @State private var isConfirmingDelete = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         NavigationStack {
@@ -1148,6 +1149,7 @@ struct EventEditor: View {
                     TextField("Notes", text: $draft.notes, axis: .vertical)
                         .lineLimit(3...)
                 }
+                InMemorySection(model: memory)
                 if draft.eventId != nil {
                     Section {
                         Button("Delete event", role: .destructive) {
@@ -1158,6 +1160,7 @@ struct EventEditor: View {
             }
             .navigationTitle(draft.eventId == nil ? String(localized: "New event") : String(localized: "Edit event"))
             .navigationBarTitleDisplayMode(.inline)
+            .inMemory(memory, recordKind: "calendar_event", recordId: draft.eventId ?? "")
             .onChange(of: draft.startsAt) { previous, startsAt in
                 // The end moves with the start, keeping how long it lasts.
                 draft.endsAt = max(startsAt, draft.endsAt.addingTimeInterval(startsAt.timeIntervalSince(previous)))

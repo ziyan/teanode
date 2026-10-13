@@ -32,6 +32,9 @@ export function SwipeableLine({
   onCopyFailed,
   reactLabel,
   onReact,
+  onTap,
+  replyIcon: ReplyActionIcon = ReplyIcon,
+  extraActions,
   children,
 }: {
   className: string
@@ -42,6 +45,14 @@ export function SwipeableLine({
   // without it there is no React button.
   reactLabel?: string
   onReact?: () => void
+  // onTap is what a finger's tap on the bubble does, for a line acted on
+  // rather than reacted to; without it a tap opens the reactions.
+  onTap?: () => void
+  // replyIcon draws the action of the swipe to the left and of its button,
+  // for a line whose action is not a reply (playing a passage). extraActions
+  // are more buttons in the same corner, beside Copy.
+  replyIcon?: (props: { size?: number }) => ReactNode
+  extraActions?: ReactNode
   // onCopy copies the line and says whether it took; onCopyFailed is told
   // when a tap or a click could not copy it either.
   onCopy: () => Promise<boolean>
@@ -173,7 +184,8 @@ export function SwipeableLine({
       // A finger's tap on the bubble itself, not on a link or a button in it
       // and not ending a selection, opens or closes its reactions.
       onClick={(event) => {
-        if (!wasTouch.current || !onReact) return
+        const tapAction = onTap ?? onReact
+        if (!wasTouch.current || !tapAction) return
         if (
           (event.target as Element).closest(
             'a, button, input, textarea, select, summary, [role="menu"], [role="dialog"]',
@@ -181,7 +193,7 @@ export function SwipeableLine({
         )
           return
         if (window.getSelection()?.toString()) return
-        onReact()
+        tapAction()
       }}
     >
       {children}
@@ -191,7 +203,7 @@ export function SwipeableLine({
           aria-hidden="true"
           style={{ opacity: Math.min(1, -offset / SWIPE_ACTION_PX) }}
         >
-          <ReplyIcon size={16} />
+          <ReplyActionIcon size={16} />
         </span>
       )}
       {offset > 0 &&
@@ -230,8 +242,9 @@ export function SwipeableLine({
           {isCopied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
         </button>
         <button type="button" className="icon-action" title={replyLabel} aria-label={replyLabel} onClick={onReply}>
-          <ReplyIcon size={14} />
+          <ReplyActionIcon size={14} />
         </button>
+        {extraActions}
       </span>
     </div>
   )

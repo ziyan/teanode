@@ -17,6 +17,7 @@ struct MailThreadScreen: View {
     @State private var expanded = Set<String>()
     // Closed at first and remembered, as the dashboard keeps it.
     @State private var isSorting = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         ScrollView {
@@ -46,6 +47,8 @@ struct MailThreadScreen: View {
                             }
                         }
                     }
+                    // The pages of memory the message that was opened is linked to.
+                    InMemoryCard(model: memory)
                 } else if let problemText {
                     ContentUnavailableView("This conversation could not be read", systemImage: "envelope.badge", description: Text(problemText))
                 } else {
@@ -56,6 +59,7 @@ struct MailThreadScreen: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        .inMemory(memory, recordKind: "mail", recordId: opened.itemId)
         .task { await load() }
         .task(id: thread?.summary?.pending) {
             // A summary being written is read again every five seconds, six

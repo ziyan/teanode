@@ -177,6 +177,9 @@ struct MainView: View {
         .onChange(of: app.openedMailItemId) { _, itemId in
             if itemId != nil { section = .mail }
         }
+        .onChange(of: app.openedContactId) { _, contactId in
+            if contactId != nil { section = .contacts }
+        }
         .onChange(of: app.openedSection) { _, opened in
             guard let opened else { return }
             app.openedSection = nil
@@ -243,9 +246,21 @@ struct MainView: View {
 
     @ViewBuilder
     private var screen: some View {
-        if !app.isSectionAvailable(section) {
+        if app.services == nil, section != .settings, !(section == .recordings && app.isSectionAvailable(.recordings)) {
+            // Which services the server runs is not known yet: neither the
+            // part nor "off" is true until it is. Recordings stay open
+            // offline once the account is known, so a meeting can be recorded.
             NavigationStack {
-                ContentUnavailableView("This service is off", systemImage: "switch.2")
+                ServicesLoadingView()
+                    .toolbar {
+                        // Only the logo while it loads; the menu returns
+                        // when the server cannot be reached.
+                        if app.hasServicesFailedToLoad { MenuButton() }
+                    }
+            }
+        } else if !app.isSectionAvailable(section) {
+            NavigationStack {
+                ServiceOffView(section: section, connection: connection)
                     .toolbar { MenuButton() }
             }
         } else {
@@ -320,6 +335,15 @@ struct KnowledgeStack: View {
             path = NavigationPath()
             path.append(KnowledgePlace.page(knowledgePath))
         }
+        #if DEBUG
+            // A screenshot of a page with its records linked
+            // (`-TeaNodeScreen knowledge-records`).
+            .task {
+                if DemoServer.isRequested, DemoServer.screen == "knowledge-records", path.isEmpty {
+                    path.append(KnowledgePlace.page("people/dana-fixture"))
+                }
+            }
+        #endif
     }
 }
 
@@ -410,6 +434,82 @@ struct SideMenu: View {
             }
             .menuRow(isSelected: false)
             .accessibilityAddTraits(section == part ? .isSelected : [])
+        }
+    }
+}
+
+/// ServiceOffView is a part of TeaNode the server has turned off: which one,
+/// and how it is turned on again, with the way there for whoever manages the
+/// server.
+struct ServiceOffView: View {
+    let section: AppSection
+    let connection: Connection
+    @State private var canManageServer = false
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(String(localized: "\(section.title) is off"), systemImage: section.systemImage)
+        } description: {
+            if canManageServer {
+                Text("It is turned off for this server. Turn it on in Services.")
+            } else {
+                Text("It is turned off for this server. Whoever manages your TeaNode server can turn it on.")
+            }
+        } actions: {
+            if canManageServer {
+                NavigationLink {
+                    ServerServicesView(connection: connection)
+                } label: {
+                    Label("Open Services", systemImage: "switch.2")
+                }
+                .buttonStyle(.glassProminent)
+            }
+        }
+        .task(id: section) {
+            canManageServer = (try? await connection.operatorAccess())?.canManageServer ?? false
+        }
+    }
+}
+
+/// ServicesLoadingView is the app asking the server which services it runs,
+/// at launch, and what it says when the server cannot be reached.
+struct ServicesLoadingView: View {
+    @Environment(AppModel.self) private var app
+    @State private var isRetrying = false
+
+    var body: some View {
+        if app.hasServicesFailedToLoad {
+            ContentUnavailableView {
+                Label("Cannot reach your server", systemImage: "wifi.exclamationmark")
+            } description: {
+                Text("TeaNode could not ask your server what it runs. Check the connection and try again.")
+            } actions: {
+                Button {
+                    isRetrying = true
+                    Task {
+                        await app.refreshServices()
+                        isRetrying = false
+                    }
+                } label: {
+                    if isRetrying { ProgressView() } else { Text("Try again") }
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(isRetrying)
+            }
+        } else {
+            // The logo, as the app opens, with a quiet spinner under it; the
+            // words are for VoiceOver, which reads the spinner's label.
+            VStack(spacing: 24) {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 96, height: 96)
+                    .clipShape(.rect(cornerRadius: 22))
+                    .accessibilityHidden(true)
+                ProgressView()
+                    .accessibilityLabel("Connecting to your server")
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

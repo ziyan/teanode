@@ -24,8 +24,6 @@
             let answer: String
             if let recordingAnswer = Self.recordingAnswer(query: query) {
                 answer = recordingAnswer
-            } else if query.contains("ListRecordings") {
-                answer = #"{"data":{"ListRecordings":[{"id":"recording-a","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","clientRecordingId":"local-a","recordingTitle":"Design discussion","recordingOrigin":"audioImport","recordingCaptureState":"imported","timelineDurationMS":3600000,"sourceGeneration":1,"captureGaps":[]},{"id":"recording-b","userId":"account-a","createdAt":"2030-01-02T03:04:05Z","updatedAt":"2030-01-02T03:04:05Z","clientRecordingId":"local-b","recordingTitle":"Project planning and follow-up questions","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":2400000,"sourceGeneration":2,"captureGaps":[]}]}}"#
             } else if query.contains("ReadRecordingLimits") {
                 answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608,"isTranscriptionAvailable":true,"transcriptionUnavailableMessage":"","transcriptionProviderModelName":"demo:transcription"}}}"#
             } else if query.contains("GetDeviceSetupCapabilities") {
@@ -105,6 +103,10 @@
                 answer = Self.contacts
             } else if query.contains("SaveContact") {
                 answer = #"{"data":{"SaveContact":{"id":"imported","name":"Imported"}}}"#
+            } else if query.contains("recordLinks") {
+                answer = Self.knowledgeRecordsPage
+            } else if query.contains("ReadRecordMemoryLinks") {
+                answer = #"{"data":{"ReadRecordMemoryLinks":[]}}"#
             } else if query.contains("AgentGraphPage") {
                 answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
             } else if query.contains("ListAgentIdeas") {
@@ -358,6 +360,26 @@
               {"node":{"id":"projects","path":"projects","kind":"folder","name":"Projects","summary":""},"hint":"What you are building and planning","children":9},
               {"node":{"id":"home","path":"home","kind":"topic","name":"Home","summary":"The house, the garden and what needs doing."},"hint":"","children":3},
               {"node":{"id":"travel","path":"travel","kind":"topic","name":"Travel","summary":"Trips taken and planned."},"hint":"","children":0}]}}}
+            """#
+
+        /// A person's page with their records linked, for the screenshot
+        /// `-TeaNodeScreen knowledge-records`: the card, mail, an event and a
+        /// receipt the agent only guessed at, and a passage of a recording.
+        static let knowledgeRecordsPage = #"""
+            {"data":{"AgentGraphPage":{
+              "node":{"id":"p1","path":"people/dana-fixture","kind":"person","name":"Dana Fixture","summary":"Dana plans the spring offsite with you.","aliases":["dana@example.com"],"pinned":false,"dormant":false,"contactId":"sam","overview":null,"overviewWrittenAt":null,"modifiedAt":"2026-10-10T09:00:00Z"},
+              "facts":[{"id":"f1","number":1,"kind":"fact","text":"Dana is booking the venue for the offsite.","happenedAt":null,"inferred":false,"audiences":[],"evidence":[{"kind":"mail","id":"item-1","quote":""}]}],
+              "folded":[],"children":[],"attachments":[],
+              "contact":{"id":"sam","name":"Dana Fixture","emails":["dana@example.com"],"organization":"Example Company"},
+              "recordLinkCount":5,
+              "recordLinks":[
+                {"id":"l1","nodePath":"people/dana-fixture","nodeName":"Dana Fixture","nodeKind":"person","recordKind":"contact","recordId":"sam","recordRelation":"is_contact","linkStatus":"stated","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","note":"","happenedAt":null,"createdAt":"2026-10-01T10:00:00Z","recordTitle":"Dana Fixture","recordHappenedAt":null,"dashboardPath":"/contacts?contact=sam","isUnavailable":false},
+                {"id":"l2","nodePath":"people/dana-fixture","nodeName":"Dana Fixture","nodeKind":"person","recordKind":"mail","recordId":"item-1","recordRelation":"wrote","linkStatus":"stated","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","note":"","happenedAt":null,"createdAt":"2026-10-01T10:00:00Z","recordTitle":"Venue options for the offsite","recordHappenedAt":"2026-10-09T09:12:00Z","dashboardPath":"/mailbox/starred/item-1","isUnavailable":false},
+                {"id":"l3","nodePath":"people/dana-fixture","nodeName":"Dana Fixture","nodeKind":"person","recordKind":"calendar_event","recordId":"event-1","recordRelation":"attended","linkStatus":"proposed","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","note":"","happenedAt":null,"createdAt":"2026-10-01T10:00:00Z","recordTitle":"Offsite planning","recordHappenedAt":"2026-10-14T10:00:00Z","dashboardPath":"/calendar?event=event-1","isUnavailable":false},
+                {"id":"l4","nodePath":"people/dana-fixture","nodeName":"Dana Fixture","nodeKind":"person","recordKind":"finance_receipt","recordId":"receipt-1","recordRelation":"receipt_for","linkStatus":"proposed","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","note":"","happenedAt":null,"createdAt":"2026-10-01T10:00:00Z","recordTitle":"Corner Grocer 42.17 USD","recordHappenedAt":"2026-09-10T00:00:00Z","dashboardPath":"/finance/receipts?receipt=receipt-1","isUnavailable":false},
+                {"id":"l5","nodePath":"people/dana-fixture","nodeName":"Dana Fixture","nodeKind":"person","recordKind":"recording_passage","recordId":"rec-1","recordRelation":"spoke_in","linkStatus":"stated","passageStartMS":1500,"passageEndMS":9000,"transcriptRunId":"run-1","note":"","happenedAt":null,"createdAt":"2026-10-01T10:00:00Z","recordTitle":"Design review","recordHappenedAt":"2026-10-05T11:00:00Z","dashboardPath":"/recordings/rec-1?version=run-1&startMS=1500&endMS=9000","isUnavailable":false}],
+              "evidenceRecords":[{"factId":"f1","evidenceIndex":0,"recordKind":"mail","recordId":"item-1","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","recordTitle":"Venue options for the offsite","dashboardPath":"/mailbox/starred/item-1","isUnavailable":false}]
+            }}}
             """#
 
         /// Whether a screenshot opens with the side menu out: `-TeaNodeMenu`.

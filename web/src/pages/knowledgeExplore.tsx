@@ -12,6 +12,16 @@ import { useTranslation } from '../i18n/i18n'
 import { FormDialog } from '../components/dialog'
 import { MinusIcon, PlusIcon, SparkIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
+import {
+  LIST_RECORD_LINKS,
+  RecordKindIcon,
+  canOpen,
+  isProposed,
+  recordLinkDate,
+  useRecordKindLabel,
+  useRecordRelationLabel,
+  type RecordLink,
+} from '../memoryLinks'
 
 // The whole graph, walked rather than read.
 //
@@ -104,6 +114,14 @@ type Drawn = {
   // Held under a finger. The simulation reads its position instead of
   // writing it, so a page being dragged does not fight the springs.
   held: boolean
+  // A record of the person's own that a page is linked to, drawn as a square
+  // with its kind's mark rather than as a page. Its path is made up of the
+  // record's kind and identifier, never a page's, and what it opens is
+  // dashboardPath. Empty for a page.
+  recordKind: string
+  recordRelation: string
+  dashboardPath: string
+  recordDate: string
 }
 
 // A line between two pages: either something somebody stated, or where a
@@ -120,6 +138,9 @@ type Joined = {
   // Drawn dashed, and said as a guess wherever it is named: nothing
   // promotes it but the person making the same link themselves.
   proposed: boolean
+  // A page's link to one of the person's own records: the relation is one of
+  // the record relations, named in their words.
+  isRecord: boolean
 }
 
 // edgeClasses is how a line is drawn: where a page is filed, a link
@@ -136,6 +157,22 @@ function edgeClasses(edge: Joined): string {
 // server grows later falls through to the "other" colour rather than
 // vanishing.
 const KINDS = ['self', 'person', 'organization', 'project', 'topic', 'place', 'thing', 'period', 'folder']
+
+// RECORD_NODES_PER_PAGE is how many of a page's records are drawn when it is
+// expanded: the newest, so that a page linked to a thousand messages does not
+// become a thousand squares. The rest are counted on the page's badge and are
+// all on the page's own Linked records.
+const RECORD_NODES_PER_PAGE = 10
+
+// recordNodePath is the key a record has on the drawing. It cannot be a page's
+// path: pages are lowercase words and dashes between slashes.
+function recordNodePath(link: RecordLink): string {
+  return `record|${link.recordKind}|${link.recordId}|${link.passageStartMS}-${link.passageEndMS}`
+}
+
+function isRecordNode(path: string): boolean {
+  return path.startsWith('record|')
+}
 
 // The simulation. Velocity Verlet with three forces: every page pushes every
 // other away, every line pulls its two ends together, and the middle pulls on
@@ -223,6 +260,7 @@ function clamp(value: number, least: number, most: number): number {
 // the count: a page with sixteen links is not sixteen times the page with
 // one, and drawn that way it would be the only thing on the canvas.
 function radiusOf(node: Drawn): number {
+  if (node.recordKind) return 10
   return 9 + Math.min(11, Math.sqrt(node.degree) * 3)
 }
 
@@ -647,11 +685,52 @@ export function KnowledgeGraph({
       linksLeftOut: 0,
       expanded: false,
       held: false,
+      recordKind: '',
+      recordRelation: '',
+      dashboardPath: '',
+      recordDate: '',
     }
     nodes.current.push(made)
     byPath.current.set(made.path, made)
     return made
   }, [])
+
+  // ensureRecord is how a record joins the drawing, beside the page it is
+  // linked to. The same record linked from two pages is one square.
+  const ensureRecord = useCallback(
+    (link: RecordLink, near: { x: number; y: number }, unavailableName: string): Drawn | null => {
+      const path = recordNodePath(link)
+      const already = byPath.current.get(path)
+      if (already) return already
+      if (nodes.current.length >= MAX_NODES) return null
+      const angle = nodes.current.length * GOLDEN_ANGLE
+      const date = recordLinkDate(link)
+      const made: Drawn = {
+        path,
+        kind: 'record',
+        name: link.isUnavailable ? unavailableName : link.recordTitle,
+        summary: '',
+        x: near.x + Math.cos(angle) * 60,
+        y: near.y + Math.sin(angle) * 60,
+        velocityX: 0,
+        velocityY: 0,
+        degree: 0,
+        children: -1,
+        linksLeftOut: 0,
+        // Nothing is behind a record to open: it has no neighbourhood.
+        expanded: true,
+        held: false,
+        recordKind: link.recordKind,
+        recordRelation: link.recordRelation,
+        dashboardPath: canOpen(link) ? link.dashboardPath : '',
+        recordDate: date ? date.toLocaleDateString() : '',
+      }
+      nodes.current.push(made)
+      byPath.current.set(path, made)
+      return made
+    },
+    [],
+  )
 
   const recount = useCallback(() => {
     for (const node of nodes.current) {
@@ -693,6 +772,7 @@ export function KnowledgeGraph({
         weight: 1,
         containment: true,
         proposed: false,
+        isRecord: false,
       })
     },
     [join],
@@ -700,7 +780,7 @@ export function KnowledgeGraph({
 
   const expand = useCallback(
     async (path: string) => {
-      if (!path || expanding.current.has(path)) {
+      if (!path || isRecordNode(path) || expanding.current.has(path)) {
         return
       }
       expanding.current.add(path)
@@ -759,7 +839,36 @@ export function KnowledgeGraph({
             weight: neighbour.weight,
             containment: false,
             proposed: neighbour.status === 'proposed',
+            isRecord: false,
           })
+        }
+        // The person's own records the page is linked to. Asked after the
+        // pages, and a failure to read them leaves the pages drawn.
+        try {
+          const records = await graphql<{
+            ListAgentRecordLinks: { recordLinks: RecordLink[]; recordLinkCount: number }
+          }>(LIST_RECORD_LINKS, { path, first: RECORD_NODES_PER_PAGE })
+          const listed = records.ListAgentRecordLinks
+          let drawn = 0
+          for (const link of listed.recordLinks) {
+            const record = ensureRecord(link, here, t('memoryLinks.unavailable'))
+            if (!record) break
+            drawn += 1
+            join({
+              key: `record|${here.path}|${record.path}|${link.recordRelation}`,
+              from: here.path,
+              to: record.path,
+              relation: link.recordRelation,
+              note: '',
+              weight: 1,
+              containment: false,
+              proposed: isProposed(link),
+              isRecord: true,
+            })
+          }
+          here.linksLeftOut += Math.max(0, listed.recordLinkCount - drawn)
+        } catch {
+          // The pages are enough to draw.
         }
         recount()
         redraw()
@@ -770,7 +879,7 @@ export function KnowledgeGraph({
         expanding.current.delete(path)
       }
     },
-    [contain, ensure, join, kick, recount, t, toast],
+    [contain, ensure, ensureRecord, join, kick, recount, t, toast],
   )
 
   // collapse folds a page back up: the pages hanging off it that hang off
@@ -1123,15 +1232,20 @@ export function KnowledgeGraph({
   // line itself and in its tooltip. A link the night guessed carries the
   // word beside the relation, because a dashed line says a guess only to
   // somebody who already knows the drawing.
+  const recordRelationWords = useRecordRelationLabel()
+  const recordKindWords = useRecordKindLabel()
   const relationLabel = useCallback(
-    (edge: Joined): string =>
-      edge.proposed
-        ? t('knowledge.proposedRelation', { relation: relationWords(edge.relation) })
-        : relationWords(edge.relation),
-    [relationWords, t],
+    (edge: Joined): string => {
+      const words = edge.isRecord ? recordRelationWords(edge.relation) : relationWords(edge.relation)
+      return edge.proposed ? t('knowledge.proposedRelation', { relation: words }) : words
+    },
+    [recordRelationWords, relationWords, t],
   )
 
   const legend = useMemo(() => KINDS.map((kind) => ({ kind, label: kindWord(kind) })), [kindWord])
+  // The person's own records are not a kind of page; they get the one entry
+  // of their own, drawn as the square they are.
+  const recordLegend = t('knowledge.explore.record')
 
   const empty = !loading && nodes.current.length === 0
 
@@ -1215,9 +1329,11 @@ export function KnowledgeGraph({
             // A page with pages under it, or one nobody has opened yet, has
             // more behind it than is drawn. The badge is the only thing on
             // the canvas that says so.
-            const more = node.children > 0 || !node.expanded || node.linksLeftOut > 0
+            const isRecord = node.recordKind !== ''
+            const more = !isRecord && (node.children > 0 || !node.expanded || node.linksLeftOut > 0)
             const classes = ['graph-explore-node', `graph-explore-kind-${node.kind}`]
-            if (node.expanded) classes.push('expanded')
+            if (isRecord) classes.push('graph-explore-record')
+            if (node.expanded && !isRecord) classes.push('expanded')
             if (node.path === selected) classes.push('selected')
             return (
               <g
@@ -1235,11 +1351,24 @@ export function KnowledgeGraph({
                 }}
               >
                 <title>
-                  {node.linksLeftOut > 0
-                    ? `${node.path} · ${t('knowledge.linksLeftOut', { count: node.linksLeftOut })}`
-                    : node.path}
+                  {isRecord
+                    ? [recordKindWords(node.recordKind), node.name, node.recordDate].filter(Boolean).join(' · ')
+                    : node.linksLeftOut > 0
+                      ? `${node.path} · ${t('knowledge.linksLeftOut', { count: node.linksLeftOut })}`
+                      : node.path}
                 </title>
-                <circle r={radius} />
+                {isRecord ? (
+                  <>
+                    {/* A square with the kind of record's own mark, so that
+                        a record is never taken for a page. */}
+                    <rect x={-radius} y={-radius} width={radius * 2} height={radius * 2} rx={4} />
+                    <g className="graph-explore-record-icon" transform={`translate(${-radius * 0.65},${-radius * 0.65})`}>
+                      <RecordKindIcon recordKind={node.recordKind} size={radius * 1.3} />
+                    </g>
+                  </>
+                ) : (
+                  <circle r={radius} />
+                )}
                 {more ? (
                   <g className="graph-explore-more">
                     <circle cx={radius * 0.72} cy={-radius * 0.72} r={5} />
@@ -1329,6 +1458,10 @@ export function KnowledgeGraph({
                 {entry.label}
               </span>
             ))}
+            <span className="graph-explore-swatch graph-explore-kind-record">
+              <i className="square" />
+              {recordLegend}
+            </span>
             <span className="graph-explore-hint muted">{t('knowledge.explore.hint')}</span>
           </div>
         </>
@@ -1340,7 +1473,24 @@ export function KnowledgeGraph({
         </div>
       ) : null}
 
-      {chosen ? (
+      {chosen && chosen.recordKind ? (
+        // A record is opened where it lives; there is nothing to expand.
+        <FormDialog
+          title={chosen.name}
+          submitLabel={t('knowledge.explore.openRecord')}
+          closeLabel={t('common.close')}
+          canSubmit={chosen.dashboardPath !== ''}
+          onSubmit={() => navigate(chosen.dashboardPath)}
+          onClose={() => setSelected('')}
+        >
+          <p className="muted">
+            <Tag value={recordKindWords(chosen.recordKind)} />{' '}
+            {[recordRelationWords(chosen.recordRelation), chosen.recordDate].filter(Boolean).join(' · ')}
+          </p>
+        </FormDialog>
+      ) : null}
+
+      {chosen && !chosen.recordKind ? (
         // A dialog rather than a panel beside the drawing: the drawing
         // stays exactly where it was, under it, and closing it changes
         // nothing.

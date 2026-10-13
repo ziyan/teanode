@@ -4,7 +4,7 @@ import { graphql } from '../api'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { type RecordingMedia } from './api'
-import { RecordingOriginalPlayer } from './originalPlayer'
+import { RecordingTimelinePlayer } from './timelinePlayer'
 import { RecordingPassagePlayback } from './playback'
 
 vi.mock('../api', () => ({ graphql: vi.fn() }))
@@ -40,7 +40,7 @@ function player(playback = new RecordingPassagePlayback(), original = media) {
   return (
     <TranslationProvider>
       <ToastProvider>
-        <RecordingOriginalPlayer media={original} passagePlayback={playback} />
+        <RecordingTimelinePlayer mediaFiles={[original]} timelineDurationMS={5000} passagePlayback={playback} />
       </ToastProvider>
     </TranslationProvider>
   )
@@ -59,6 +59,9 @@ it('does not prepare on mount, metadata loading or unsupported-original detectio
   expect(graphql).not.toHaveBeenCalled()
   unsupportedOriginal(view.container)
   expect(graphql).not.toHaveBeenCalled()
+  // Expected, not an error: a quiet hint and the button, never the red message.
+  expect(screen.queryByText(/Download it to use a compatible player/)).toBeNull()
+  expect(screen.getByText(/An audio preview plays here instead/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Play compatible audio' }))
   await waitFor(() =>
     expect(view.container.querySelector('audio')?.getAttribute('src')).toBe(playbackReceipt.playbackPath),
@@ -67,9 +70,7 @@ it('does not prepare on mount, metadata loading or unsupported-original detectio
   await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce())
   expect(graphql).toHaveBeenCalledOnce()
   expect(screen.queryByRole('button', { name: 'Use original' })).toBeNull()
-  expect(screen.getByRole('link', { name: 'Download original' }).getAttribute('href')).toBe(
-    '/api/v1/recordings/media/fixture-media',
-  )
+  expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
     playbackReceipt.playbackPath,
   )
@@ -127,14 +128,31 @@ it('keeps a supported video original by default and offers only an explicit audi
   fireEvent.loadedMetadata(original)
   expect(view.container.querySelector('audio')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Play compatible audio' })).toBeNull()
-  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
   expect(graphql).not.toHaveBeenCalled()
 })
 
-it('switches supported video to explicit audio preview and returns to the original without another preparation', async () => {
+it('offers the audio preview only when the browser cannot play the original', () => {
+  const canPlayType = vi.spyOn(HTMLMediaElement.prototype, 'canPlayType')
+  canPlayType.mockReturnValue('probably')
+  const playable = render(player())
+  expect(screen.queryByRole('button', { name: 'Use audio preview' })).toBeNull()
+  expect(screen.queryByText(/cannot play the original/)).toBeNull()
+  // The element reporting an error is the other way to find out.
+  fireEvent.error(playable.container.querySelector('audio')!)
+  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
+  playable.unmount()
+
+  canPlayType.mockReturnValue('')
+  render(player())
+  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
+  expect(screen.getByText(/An audio preview plays here instead/)).toBeTruthy()
+})
+
+it('switches video the browser cannot play to explicit audio preview and returns to the original without another preparation', async () => {
   const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
   const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   vi.mocked(graphql).mockResolvedValue({ PrepareRecordingPlayback: playbackReceipt })
+  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
   const view = render(player(new RecordingPassagePlayback(), { ...media, originalContentType: 'video/mp4' }))
   const original = view.container.querySelector('video')!
   Object.defineProperty(original, 'videoWidth', { value: 1920 })
@@ -155,7 +173,37 @@ it('switches supported video to explicit audio preview and returns to the origin
   expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
     playbackReceipt.playbackPath,
   )
-  expect(screen.getByRole('link', { name: 'Download original' })).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
   expect(pause).toHaveBeenCalled()
   expect(graphql).toHaveBeenCalledOnce()
+})
+
+it('shows one player for a recording made in pieces, with no divider, and seeks across them', async () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('probably')
+  const playback = new RecordingPassagePlayback()
+  const seekTo = vi.spyOn(playback, 'seekTo')
+  const pieces = [
+    { ...media, id: 'piece-one', timelineStartMS: 0, mediaDurationMS: 60000 },
+    { ...media, id: 'piece-two', timelineStartMS: 70000, mediaDurationMS: 30000 },
+  ]
+  const view = render(
+    <TranslationProvider>
+      <ToastProvider>
+        <RecordingTimelinePlayer mediaFiles={pieces} timelineDurationMS={100000} passagePlayback={playback} />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  expect(screen.getAllByRole('slider')).toHaveLength(1)
+  expect(view.container.querySelectorAll('.recording-original')).toHaveLength(1)
+  expect(view.container.querySelectorAll('.recording-scrubber-gap')).toHaveLength(1)
+  expect(screen.getByText('1:40')).toBeTruthy()
+  const slider = screen.getByRole('slider') as HTMLInputElement
+  expect(slider.max).toBe('100000')
+  fireEvent.change(slider, { target: { value: '75000' } })
+  expect(seekTo).toHaveBeenCalledWith(75000, false)
+  await waitFor(() => expect(playback.getState()).toMatchObject({ activeMediaId: 'piece-two', positionMS: 75000 }))
+  fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+  await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce())
 })

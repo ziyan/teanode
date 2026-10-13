@@ -343,6 +343,14 @@ func TestFinanceReceiptsPagesThroughTheAPI(test *testing.T) {
 		if _, err := resolver.FinanceReceipts(ctx, FinanceReceiptsArguments{IsUndated: &isUndated, From: "2026-09-01"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Fatalf("isUndated with a range is refused: %v", err)
 		}
+		// A link to one receipt opens it by its identifier alone.
+		only, err := resolver.FinanceReceipts(ctx, FinanceReceiptsArguments{ReceiptID: second.FinanceReceipts[0].ID})
+		if err != nil || only.TotalCount != 1 || only.FinanceReceipts[0].ID != second.FinanceReceipts[0].ID {
+			test.Fatalf("a receipt is found by its identifier: %+v %v", only, err)
+		}
+		if none, err := resolver.FinanceReceipts(ctx, FinanceReceiptsArguments{ReceiptID: "no-such-receipt"}); err != nil || none.TotalCount != 0 {
+			test.Fatalf("an unknown identifier finds none: %+v %v", none, err)
+		}
 	})
 }
 

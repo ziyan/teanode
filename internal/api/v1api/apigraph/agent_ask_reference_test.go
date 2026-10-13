@@ -33,3 +33,30 @@ func TestAskAgentRefusesAnotherAgentsFinanceTransaction(test *testing.T) {
 		}
 	})
 }
+
+// A turn pointing at a recording is refused unless the recording is the
+// asking person's own, the same way.
+func TestAskAgentRefusesAnotherPersonsRecording(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	var recording *models.Recording
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		var err error
+		if recording, err = tx.CreateRecording(&models.Recording{UserID: fixture.owner.ID, ClientRecordingID: "invented", RecordingOrigin: models.RecordingOriginAudioImport}); err != nil {
+			test.Fatalf("CreateRecording: %s", err)
+		}
+	})
+	arguments := AskAgentArguments{
+		Message:    "What was said?",
+		References: []models.AgentReference{{RecordingID: recording.ID}},
+	}
+	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.AskAgent(ctx, arguments); !errors.Is(err, api.ErrNotFound) {
+			test.Errorf("another person's recording answered %v", err)
+		}
+	})
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.AskAgent(ctx, arguments); !errors.Is(err, agentpackage.ErrUnavailable) {
+			test.Errorf("the owner's recording answered %v", err)
+		}
+	})
+}

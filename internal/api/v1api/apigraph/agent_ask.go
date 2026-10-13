@@ -818,6 +818,19 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, api.ErrNotFound
 		}
 	}
+	// A recording pointed at must be the person's own and not deleted,
+	// refused the same way.
+	for _, reference := range arguments.References {
+		if reference.RecordingID == "" {
+			continue
+		}
+		if _, err := tx.GetRecording(asking.UserID, reference.RecordingID); err != nil {
+			if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrRecordingDeleted) {
+				return nil, api.ErrNotFound
+			}
+			return nil, err
+		}
+	}
 	// A message replied to must be one of this conversation's, refused
 	// the same way. The agent reads it again when it keeps the turn.
 	for _, reference := range arguments.References {

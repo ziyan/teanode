@@ -1479,6 +1479,13 @@ public struct AgentServerSettings: Codable, Hashable, Sendable {
         }
     }
 
+    /// RecordingOptions is what the server does while and after a recording is made. Both are on unless the operator turns
+    /// them off.
+    public struct RecordingOptions: Codable, Hashable, Sendable {
+        public let isLiveTranscriptionEnabled: Bool
+        public let isAccurateWordsEnabled: Bool
+    }
+
     /// Browser is the headless browser beside the server.
     public struct Browser: Codable, Hashable, Sendable {
         public let isEnabled: Bool
@@ -1525,6 +1532,8 @@ public struct AgentServerSettings: Codable, Hashable, Sendable {
     public let search: WebSearch
     public let tools: ToolPolicy
     public let voice: Voice
+    /// Not said by a server that predates the setting.
+    public var recording: RecordingOptions? = nil
     public let browser: Browser
     public let mcpServers: [ConnectedServerSettings]
     public let finance: Finance
@@ -1534,7 +1543,7 @@ public struct AgentServerSettings: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case instructions, allowPrivateAddresses, skipCertificateCheck, providers, models, features, limits, retention, currency
-        case search, tools, voice, browser, mcpServers, finance, works, families, kinds
+        case search, tools, voice, recording, browser, mcpServers, finance, works, families, kinds
         case isEnabled = "enabled"
     }
 
@@ -1924,6 +1933,27 @@ public struct AgentServerVoiceDraft: Hashable, Sendable {
                 "silenceMS": .number(SettingsList.number(silenceMSText)),
                 "speechModel": .string(speechModel.trimmingCharacters(in: .whitespaces)), "speechVoice": .string(speechVoice),
                 "askModel": .string(askModel.trimmingCharacters(in: .whitespaces)),
+            ])
+        ]
+    }
+}
+
+/// AgentServerRecordingDraft is what the server does with a recording, as the operator's form holds it: the words streamed live
+/// while it is captured, and each speaker's turn transcribed a second time for accurate words.
+public struct AgentServerRecordingDraft: Hashable, Sendable {
+    public var isLiveTranscriptionEnabled: Bool
+    public var isAccurateWordsEnabled: Bool
+
+    /// A server that does not say has both on, as the server itself does when they are unset.
+    public init(_ recording: AgentServerSettings.RecordingOptions?) {
+        isLiveTranscriptionEnabled = recording?.isLiveTranscriptionEnabled ?? true
+        isAccurateWordsEnabled = recording?.isAccurateWordsEnabled ?? true
+    }
+
+    public var agentParameters: [String: JSONValue] {
+        [
+            "recording": .object([
+                "isLiveTranscriptionEnabled": .bool(isLiveTranscriptionEnabled), "isAccurateWordsEnabled": .bool(isAccurateWordsEnabled),
             ])
         ]
     }
@@ -2542,6 +2572,7 @@ extension Documents {
           search { kind hasApiKey }
           tools { disabled confirm catalog { name family risk description confirms core actions } }
           voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
+          recording { isLiveTranscriptionEnabled isAccurateWordsEnabled }
           browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
           mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
           finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }

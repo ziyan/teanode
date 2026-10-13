@@ -122,22 +122,63 @@ func newAgentGraphCommands() []*cli.Command {
 		},
 		{
 			Name:      "link",
-			Usage:     "join two pages: what the first is to the second",
-			ArgsUsage: "<path> <to>",
+			Usage:     "join two pages: what the first is to the second; or with --record, a page and one of your own records",
+			ArgsUsage: "<path> <to> | <path> --record <kind>:<id>",
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in, about or depends_on", Value: "related_to"},
+				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in, about or depends_on; with --record, what the page is to the record: is_contact, wrote, received, attended, organized, spoke_in, mentioned_in, paid, paid_by, receipt_for or about", Value: "related_to"},
 				&cli.StringFlag{Name: "note", Usage: "a few words on the link, such as 'led the controls work on it in 2024'"},
+				&cli.StringFlag{Name: "record", Usage: "link the page to a record of your own instead of a page: " + recordReferenceUsage},
+				&cli.StringFlag{Name: "transcript-run", Usage: "with a recording passage, the transcript its range is counted in"},
 			},
 			Action: runAgentGraphLink,
 		},
 		{
 			Name:      "unlink",
-			Usage:     "take a join between two pages away",
-			ArgsUsage: "<path> <to>",
+			Usage:     "take a join between two pages away; or with --record, a page's link to one of your records",
+			ArgsUsage: "<path> <to> | <path> --record <kind>:<id>",
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "relation", Usage: "which join, when there are several", Value: "related_to"},
+				&cli.StringFlag{Name: "relation", Usage: "which join, when there are several; with --record, every relation when left out", Value: "related_to"},
+				&cli.StringFlag{Name: "record", Usage: "take the page's link to a record of your own away: " + recordReferenceUsage},
 			},
 			Action: runAgentGraphUnlink,
+		},
+		{
+			Name:      "links",
+			Usage:     "the records of your own a page is linked to: contact card, mail, events, transactions, receipts, recording passages",
+			ArgsUsage: "<path>",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.IntFlag{Name: "first", Usage: "how many, up to 200 at a time"},
+				&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next part"},
+			},
+			Action: runAgentGraphRecordLinks,
+		},
+		{
+			Name:  "backlinks",
+			Usage: "the pages linked to one of your records, such as a mail message or a passage of a recording",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.StringFlag{Name: "record", Required: true, Usage: recordReferenceUsage},
+			},
+			Action: runAgentGraphRecordBacklinks,
+		},
+		{
+			Name:      "confirm",
+			Usage:     "state the links to your records that the agent only guessed: those of one record, or every one on the page with --all",
+			ArgsUsage: "<path>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "record", Usage: "confirm the guesses about one record: " + recordReferenceUsage},
+				&cli.StringFlag{Name: "relation", Usage: "only the guess of this relation, when the record has several"},
+				&cli.BoolFlag{Name: "all", Usage: "every guess on the page"},
+			},
+			Action: runAgentGraphConfirmRecords,
+		},
+		{
+			Name:      "contact",
+			Usage:     "name the contact card a person's page is about, from your own address books; never makes a card",
+			ArgsUsage: "<path> <contact-id>",
+			Flags:     []cli.Flag{&cli.BoolFlag{Name: "clear", Usage: "take the card away from the page"}},
+			Action:    runAgentGraphContact,
 		},
 		{
 			Name:      "history",
@@ -745,6 +786,9 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 		}
 		_, _ = fmt.Fprintf(command.Writer, "\nunder it: %s\n", strings.Join(names, ", "))
 	}
+	if page.RecordLinkCount > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\nlinked to %d of your records: teanode agent memory links %s\n", page.RecordLinkCount, node.Path)
+	}
 	if note := linkPageNote(len(page.Edges), linkOffset, linkLimit, page.LinkCount, page.NextLinkOffset); note != "" {
 		_, _ = fmt.Fprintln(command.ErrWriter, note)
 	}
@@ -949,7 +993,13 @@ func runAgentGraphMerge(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// recordReferenceUsage says how a record is named on the command line.
+const recordReferenceUsage = "kind:id, with kind one of contact, mail, calendar_event, reminder, conversation_message, finance_transaction, finance_receipt or recording_passage; a passage is recording_passage:<recording id>@<start ms>-<end ms>"
+
 func runAgentGraphLink(ctx context.Context, command *cli.Command) error {
+	if reference := command.String("record"); reference != "" {
+		return runAgentGraphLinkRecord(ctx, command, reference)
+	}
 	if command.Args().Len() < 2 {
 		return fmt.Errorf("link what to what? teanode agent memory link people/alice-chen projects/portal --relation works_on")
 	}
@@ -965,7 +1015,146 @@ func runAgentGraphLink(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+func runAgentGraphLinkRecord(ctx context.Context, command *cli.Command, reference string) error {
+	if command.Args().Len() != 1 {
+		return fmt.Errorf("link which page? teanode agent memory link people/alice-chen --record contact:<id> --relation is_contact")
+	}
+	// The default relation is the one for pages, which means nothing here.
+	if !command.IsSet("relation") {
+		return fmt.Errorf("what is the page to the record? give --relation, one of %s", joinRecordRelations())
+	}
+	recordKind, recordId, startMS, endMS, err := models.ParseRecordReference(reference)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	path := command.Args().First()
+	link, err := client.LinkAgentRecord(ctx, connection, path, string(recordKind), recordId, command.String("relation"), startMS, endMS, command.String("transcript-run"), command.String("note"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s %s %s\n", path, link.RecordRelation, describeRecordLink(link))
+	return nil
+}
+
+// runAgentGraphConfirmRecords states the links to records the agent only
+// guessed, which is what the dashboard's Confirm does: a person stating a
+// link again confirms it.
+func runAgentGraphConfirmRecords(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return fmt.Errorf("confirm which page? teanode agent memory confirm people/alice-chen --record mail:<id>")
+	}
+	reference := command.String("record")
+	if reference == "" && !command.Bool("all") {
+		return fmt.Errorf("confirm which guess? give --record <kind>:<id>, or --all for every guess on the page")
+	}
+	var recordKind models.AgentRecordKind
+	var recordId string
+	var startMS, endMS int64
+	if reference != "" {
+		var err error
+		if recordKind, recordId, startMS, endMS, err = models.ParseRecordReference(reference); err != nil {
+			return err
+		}
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	path := command.Args().First()
+	confirmed := 0
+	for offset := 0; ; {
+		part, err := client.ListAgentRecordLinks(ctx, connection, path, 200, offset)
+		if err != nil {
+			return describeError(command, err)
+		}
+		for _, link := range part.RecordLinks {
+			if link.LinkStatus != string(models.EdgeProposed) {
+				continue
+			}
+			if reference != "" && (link.RecordKind != string(recordKind) || link.RecordID != recordId ||
+				(recordKind == models.RecordRecordingPassage && (startMS != 0 || endMS != 0) && (link.PassageStartMS != startMS || link.PassageEndMS != endMS))) {
+				continue
+			}
+			if relation := command.String("relation"); relation != "" && link.RecordRelation != relation {
+				continue
+			}
+			stated, err := client.LinkAgentRecord(ctx, connection, path, link.RecordKind, link.RecordID, link.RecordRelation, link.PassageStartMS, link.PassageEndMS, link.TranscriptRunID, "")
+			if err != nil {
+				return describeError(command, err)
+			}
+			confirmed++
+			_, _ = fmt.Fprintf(command.Writer, "%s %s %s\n", path, stated.RecordRelation, describeRecordLink(stated))
+		}
+		// Past the end, or no further on than this part: done, rather than
+		// asking for the same part for ever.
+		if part.NextOffset <= offset || len(part.RecordLinks) == 0 {
+			break
+		}
+		offset = part.NextOffset
+	}
+	if confirmed == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "%s has no guess to confirm\n", path)
+	}
+	return nil
+}
+
+func joinRecordRelations() string {
+	names := make([]string, 0, len(models.AgentRecordRelations))
+	for _, relation := range models.AgentRecordRelations {
+		names = append(names, string(relation))
+	}
+	return strings.Join(names, ", ")
+}
+
+// describeRecordLink is a link's record as one line: its kind, what it is
+// called, when, and what is wrong with it.
+func describeRecordLink(link *client.AgentRecordLink) string {
+	reference := models.FormatRecordReference(models.AgentRecordKind(link.RecordKind), link.RecordID, link.PassageStartMS, link.PassageEndMS)
+	if link.IsUnavailable {
+		return reference + " (no longer available)"
+	}
+	line := reference
+	if link.RecordTitle != "" {
+		line += "  " + link.RecordTitle
+	}
+	if link.RecordHappenedAt != nil {
+		line += "  (" + link.RecordHappenedAt.Format("2 Jan 2006") + ")"
+	}
+	return line
+}
+
 func runAgentGraphUnlink(ctx context.Context, command *cli.Command) error {
+	if reference := command.String("record"); reference != "" {
+		if command.Args().Len() != 1 {
+			return fmt.Errorf("unlink which page? teanode agent memory unlink people/alice-chen --record contact:<id>")
+		}
+		recordKind, recordId, startMS, endMS, err := models.ParseRecordReference(reference)
+		if err != nil {
+			return err
+		}
+		relation := ""
+		if command.IsSet("relation") {
+			relation = command.String("relation")
+		}
+		connection, err := openClient(command)
+		if err != nil {
+			return err
+		}
+		path := command.Args().First()
+		wasLinked, err := client.UnlinkAgentRecord(ctx, connection, path, string(recordKind), recordId, relation, startMS, endMS)
+		if err != nil {
+			return describeError(command, err)
+		}
+		if !wasLinked {
+			return fmt.Errorf("%s is not linked to %s", path, reference)
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s is no longer linked to %s\n", path, reference)
+		return nil
+	}
 	if command.Args().Len() < 2 {
 		return fmt.Errorf("unlink what from what? teanode agent memory unlink people/alice-chen projects/portal --relation works_on")
 	}
@@ -978,6 +1167,96 @@ func runAgentGraphUnlink(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s and %s are no longer joined by %s\n", from, to, command.String("relation"))
+	return nil
+}
+
+func runAgentGraphRecordLinks(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which page? teanode agent memory links people/alice-chen")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	path := command.Args().First()
+	links, err := client.ListAgentRecordLinks(ctx, connection, path, int(command.Int("first")), int(command.Int("offset")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(links)
+	}
+	if len(links.RecordLinks) == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "%s is not linked to any of your records\n", path)
+		return nil
+	}
+	for _, link := range links.RecordLinks {
+		line := fmt.Sprintf("%s %s", link.RecordRelation, describeRecordLink(link))
+		if link.LinkStatus == string(models.EdgeProposed) {
+			line = "perhaps " + line + " (the agent's guess)"
+		}
+		_, _ = fmt.Fprintln(command.Writer, line)
+	}
+	if links.NextOffset > 0 {
+		_, _ = fmt.Fprintf(command.ErrWriter, "note: %d of %d links; add --offset %d for the next part\n", len(links.RecordLinks), links.RecordLinkCount, links.NextOffset)
+	}
+	return nil
+}
+
+func runAgentGraphRecordBacklinks(ctx context.Context, command *cli.Command) error {
+	recordKind, recordId, startMS, endMS, err := models.ParseRecordReference(command.String("record"))
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	links, err := client.ReadRecordMemoryLinks(ctx, connection, string(recordKind), recordId, startMS, endMS)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(links)
+	}
+	if len(links) == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "no page is linked to %s\n", command.String("record"))
+		return nil
+	}
+	for _, link := range links {
+		line := fmt.Sprintf("%s %s this", link.NodePath, link.RecordRelation)
+		if link.RecordKind == string(models.RecordRecordingPassage) && (link.PassageStartMS != 0 || link.PassageEndMS != 0) {
+			line += fmt.Sprintf(" (%d-%d ms)", link.PassageStartMS, link.PassageEndMS)
+		}
+		if link.LinkStatus == string(models.EdgeProposed) {
+			line = "perhaps " + line + " (the agent's guess)"
+		}
+		_, _ = fmt.Fprintln(command.Writer, line)
+	}
+	return nil
+}
+
+func runAgentGraphContact(ctx context.Context, command *cli.Command) error {
+	wantsClear := command.Bool("clear")
+	if command.Args().Len() < 1 || (!wantsClear && command.Args().Len() < 2) {
+		return fmt.Errorf("which page and which card? teanode agent memory contact people/alice-chen <contact-id>, or --clear")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	path, contactId := command.Args().First(), command.Args().Get(1)
+	if wantsClear {
+		contactId = ""
+	}
+	if err := client.SetAgentNodeContact(ctx, connection, path, contactId); err != nil {
+		return describeError(command, err)
+	}
+	if contactId == "" {
+		_, _ = fmt.Fprintf(command.Writer, "%s no longer names a contact card\n", path)
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s is now about contact %s\n", path, contactId)
 	return nil
 }
 

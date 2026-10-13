@@ -172,7 +172,10 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
         onFocus={(event) => {
           // Only focus that came from the keyboard. A tap focuses the button
           // too, which is the other half of the same problem.
-          if (!silent && (event.target as HTMLElement).matches?.(':focus-visible')) {
+          // Nor focus that a menu opened inside it moved to its first item:
+          // the bubble's time would sit over the menu it belongs to.
+          const focused = event.target as HTMLElement
+          if (!silent && focused.matches?.(':focus-visible') && !focused.closest?.('[role="menu"]')) {
             place()
           }
         }}

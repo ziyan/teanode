@@ -7,6 +7,10 @@ export interface Recording {
   id: string
   userId: string
   recordingTitle: string
+  recordingTitleSource?: string
+  recordingSummary?: string
+  createdAt: string
+  recordedAt: string | null
   recordingOrigin: string
   recordingCaptureState: string
   sourceGeneration: number
@@ -37,6 +41,13 @@ export interface RecordingPart {
 export interface RecordingView {
   recording: Recording
   mediaFiles: RecordingMedia[]
+  transcriptRuns: {
+    id: string
+    versionNumber: number
+    recordingProcessingState: string
+    recordingMediaId: string
+    segmentCount?: number
+  }[]
   uploadParts: RecordingPart[]
 }
 export interface RecordingLimits {
@@ -45,15 +56,18 @@ export interface RecordingLimits {
   uploadPartBytes: number
 }
 const recordingFields =
-  'id userId clientRecordingId recordingTitle recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
+  'id userId createdAt recordedAt clientRecordingId recordingTitle recordingTitleSource recordingSummary recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
 const mediaFields =
   'id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt'
 export const RECORDING_DOCUMENTS = {
-  ListRecordings: `query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize) { ${recordingFields} } }`,
-  ReadRecording: `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { ${recordingFields} } mediaFiles { ${mediaFields} } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
+  ListRecordings: `query ($beforeRecordingId: String!, $pageSize: Int!, $searchText: String) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize, searchText: $searchText) { ${recordingFields} } }`,
+  ReadRecording: `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { ${recordingFields} } mediaFiles { ${mediaFields} } transcriptRuns { id versionNumber recordingProcessingState recordingMediaId segmentCount } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
   ReadRecordingLimits: 'query { ReadRecordingLimits { maximumMediaBytes maximumAccountBytes uploadPartBytes } }',
   CreateRecording: `mutation ($clientRecordingId: String!, $recordingTitle: String!, $recordingOrigin: String!) { CreateRecording(clientRecordingId: $clientRecordingId, recordingTitle: $recordingTitle, recordingOrigin: $recordingOrigin) { ${recordingFields} } }`,
   CreateRecordingMedia: `mutation ($recordingId: String!, $clientMediaId: String!, $originalFilename: String!, $originalContentType: String!, $originalSizeBytes: Int64!, $originalSha256: String!, $timelineStartMS: Int64!, $mediaDurationMS: Int64!) { CreateRecordingMedia(recordingId: $recordingId, clientMediaId: $clientMediaId, originalFilename: $originalFilename, originalContentType: $originalContentType, originalSizeBytes: $originalSizeBytes, originalSha256: $originalSha256, timelineStartMS: $timelineStartMS, mediaDurationMS: $mediaDurationMS) { ${mediaFields} } }`,
+  UpdateRecordingCapture: `mutation ($recordingId: String!, $expectedGeneration: Int64!, $recordingCaptureState: String!, $timelineDurationMS: Int64!, $captureGaps: [RecordingGapInput!]!) { UpdateRecordingCapture(recordingId: $recordingId, expectedGeneration: $expectedGeneration, recordingCaptureState: $recordingCaptureState, timelineDurationMS: $timelineDurationMS, captureGaps: $captureGaps) { ${recordingFields} } }`,
+  ReadRecordingGeneration:
+    'query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { sourceGeneration } } }',
   DeleteRecording: 'mutation ($recordingId: String!) { DeleteRecording(recordingId: $recordingId) }',
 }
 export const RECORDING_PART_BYTES = 8 * 1024 * 1024
@@ -96,6 +110,49 @@ export function isMatchingCompletion(expected: RecordingMedia, receipt: Recordin
     Boolean(receipt.verifiedAt && Number.isFinite(Date.parse(receipt.verifiedAt)))
   )
 }
+// uploadRecordingMedia sends the parts of a media item the server does not
+// hold yet and asks it to verify the whole. It is the end of an import and
+// of every piece the dashboard records.
+export async function uploadRecordingMedia(
+  media: RecordingMedia,
+  file: Blob,
+  signal: AbortSignal,
+  onProgress: (completedBytes: number, totalBytes: number, isHashing: boolean) => void = () => undefined,
+): Promise<void> {
+  const view = await readRecording(media.recordingId, signal)
+  for (let partIndex = 0; partIndex < media.partCount; partIndex++) {
+    signal.throwIfAborted()
+    const byteOffset = partIndex * RECORDING_PART_BYTES,
+      partBlob = file.slice(byteOffset, byteOffset + RECORDING_PART_BYTES)
+    const partSha256 = recordingDigest(new Uint8Array(await partBlob.arrayBuffer()))
+    const receipt = view.uploadParts.find((part) => part.recordingMediaId === media.id && part.partIndex === partIndex)
+    if (!receipt || receipt.partSizeBytes !== partBlob.size || receipt.partSha256 !== partSha256 || !receipt.storedAt) {
+      const uploaded = await recordingTransport<RecordingPart>(
+        `${recordingMediaPath(media.id)}/parts/${partIndex}`,
+        partBlob,
+        { 'Content-Type': 'application/octet-stream', 'X-Recording-Part-SHA256': partSha256 },
+        signal,
+      )
+      if (
+        uploaded.recordingMediaId !== media.id ||
+        uploaded.partIndex !== partIndex ||
+        uploaded.partSizeBytes !== partBlob.size ||
+        uploaded.partSha256 !== partSha256 ||
+        !uploaded.storedAt
+      )
+        throw new Error(translateNow('recordings.partReceiptError'))
+    }
+    onProgress(Math.min(byteOffset + RECORDING_PART_BYTES, file.size), file.size, false)
+  }
+  const receipt = await recordingTransport<RecordingMedia>(
+    `${recordingMediaPath(media.id)}/complete`,
+    '{}',
+    { 'Content-Type': 'application/json' },
+    signal,
+  )
+  if (!isMatchingCompletion(media, receipt)) throw new Error(translateNow('recordings.completionError'))
+}
+
 // Only account-scoped recovery metadata is kept. After restart the person must
 // reselect the original; it is rehashed before existing server receipts are used.
 export async function importRecording(
@@ -189,38 +246,7 @@ export async function importRecording(
   } catch {
     /* Server manifests remain recoverable when browser storage is unavailable. */
   }
-  const view = await readRecording(recording.id, signal)
-  for (let partIndex = 0; partIndex < media.partCount; partIndex++) {
-    signal.throwIfAborted()
-    const byteOffset = partIndex * RECORDING_PART_BYTES,
-      partBlob = file.slice(byteOffset, byteOffset + RECORDING_PART_BYTES)
-    const partSha256 = recordingDigest(new Uint8Array(await partBlob.arrayBuffer()))
-    const receipt = view.uploadParts.find((part) => part.recordingMediaId === media.id && part.partIndex === partIndex)
-    if (!receipt || receipt.partSizeBytes !== partBlob.size || receipt.partSha256 !== partSha256 || !receipt.storedAt) {
-      const uploaded = await recordingTransport<RecordingPart>(
-        `${recordingMediaPath(media.id)}/parts/${partIndex}`,
-        partBlob,
-        { 'Content-Type': 'application/octet-stream', 'X-Recording-Part-SHA256': partSha256 },
-        signal,
-      )
-      if (
-        uploaded.recordingMediaId !== media.id ||
-        uploaded.partIndex !== partIndex ||
-        uploaded.partSizeBytes !== partBlob.size ||
-        uploaded.partSha256 !== partSha256 ||
-        !uploaded.storedAt
-      )
-        throw new Error(translateNow('recordings.partReceiptError'))
-    }
-    onProgress(Math.min(byteOffset + RECORDING_PART_BYTES, file.size), file.size, false)
-  }
-  const receipt = await recordingTransport<RecordingMedia>(
-    `${recordingMediaPath(media.id)}/complete`,
-    '{}',
-    { 'Content-Type': 'application/json' },
-    signal,
-  )
-  if (!isMatchingCompletion(media, receipt)) throw new Error(translateNow('recordings.completionError'))
+  await uploadRecordingMedia(media, file, signal, onProgress)
   try {
     localStorage.removeItem(recoveryKey)
   } catch {

@@ -151,6 +151,7 @@ export type Agent = {
     speechVoice: string
     askModel: string
   }
+  recording: { isLiveTranscriptionEnabled: boolean; isAccurateWordsEnabled: boolean }
   browser: {
     enabled: boolean
     cdpEndpoint: string
@@ -186,6 +187,7 @@ export const AGENT_SELECTION = `agent {
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
   voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
+  recording { isLiveTranscriptionEnabled isAccurateWordsEnabled }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
   finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
@@ -322,6 +324,7 @@ export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPar
           />
           <ModelsForm settings={settings} onSaved={onSaved} known={known} knownModels={knownModels} />
           <VoiceForm settings={settings} onSaved={onSaved} />
+          <RecordingForm settings={settings} onSaved={onSaved} />
           <FeaturesForm settings={settings} onSaved={onSaved} />
           <LimitsForm settings={settings} onSaved={onSaved} />
         </>
@@ -1702,6 +1705,54 @@ function VoiceForm({ settings, onSaved }: Props) {
           </select>
         </label>
       </div>
+      <SaveRow busy={busy} saved={saved} problem={problem} />
+    </form>
+  )
+}
+
+// RecordingForm: what the server does for a recording while it is being
+// captured.
+function RecordingForm({ settings, onSaved }: Props) {
+  const { t } = useTranslation()
+  const { busy, problem, saved, save } = useSaver(onSaved)
+  const [isLiveTranscriptionEnabled, setIsLiveTranscriptionEnabled] = useState(
+    settings.recording.isLiveTranscriptionEnabled,
+  )
+  useEffect(() => {
+    setIsLiveTranscriptionEnabled(settings.recording.isLiveTranscriptionEnabled)
+  }, [settings.recording.isLiveTranscriptionEnabled])
+  const [isAccurateWordsEnabled, setIsAccurateWordsEnabled] = useState(settings.recording.isAccurateWordsEnabled)
+  useEffect(() => {
+    setIsAccurateWordsEnabled(settings.recording.isAccurateWordsEnabled)
+  }, [settings.recording.isAccurateWordsEnabled])
+
+  return (
+    <form
+      className="card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save({ agent: { recording: { isLiveTranscriptionEnabled, isAccurateWordsEnabled } } })
+      }}
+    >
+      <h3>{t('agentSettings.recordingCapture')}</h3>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={isLiveTranscriptionEnabled}
+          onChange={(event) => setIsLiveTranscriptionEnabled(event.target.checked)}
+        />
+        {t('agentSettings.recordingLiveTranscription')}
+      </label>
+      <p className="muted">{t('agentSettings.recordingLiveTranscriptionDescription')}</p>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={isAccurateWordsEnabled}
+          onChange={(event) => setIsAccurateWordsEnabled(event.target.checked)}
+        />
+        {t('agentSettings.recordingAccurateWords')}
+      </label>
+      <p className="muted">{t('agentSettings.recordingAccurateWordsDescription')}</p>
       <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )

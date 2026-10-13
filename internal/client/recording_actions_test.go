@@ -1,6 +1,9 @@
 package client
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 	generation := int64(4)
@@ -28,9 +31,14 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		{RecordingActionArguments{Operation: "reprocess", RecordingMediaID: "fixture-media"}, false, ""},
 		{RecordingActionArguments{Operation: "reprocess", RecordingMediaID: "fixture-media", ClientRunID: "initial"}, false, ""},
 		{RecordingActionArguments{Operation: "reprocess", RecordingMediaID: "fixture-media", ClientRunID: "stable-paid-key"}, true, "RequestRecordingTranscription"},
-		{RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: "Fixture", ExpectedSourceGeneration: &generation}, false, ""},
-		{RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: "Fixture", RecordedAt: &unknownDate, ExpectedSourceGeneration: &generation}, true, "UpdateRecordingMetadata"},
+		{RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: new("Fixture"), ExpectedSourceGeneration: &generation}, false, ""},
+		{RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: new("Fixture"), RecordedAt: &unknownDate, ExpectedSourceGeneration: &generation}, true, "UpdateRecordingMetadata"},
 		{RecordingActionArguments{Operation: "speaker-confirm", RecordingID: "fixture-recording", RecordingTranscriptionAttemptID: "fixture-attempt", LocalSpeakerID: "local-speaker", ConfirmedName: "Speaker Fixture", ClientCorrectionID: "stable-edit-key", ExpectedSourceGeneration: &generation, PassageStartMS: &groupBound, PassageEndMS: &groupBound}, true, "CorrectRecordingSpeaker"},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", ConfirmedName: "Speaker Fixture"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture"}, true, "NameRecordingTemporarySpeaker"},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", IsAccountOwner: true}, true, "NameRecordingTemporarySpeaker"},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation}, false, ""},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation, ClientCorrectionID: "stable-edit-key"}, true, "CorrectRecordingTranscriptText"},
 		{RecordingActionArguments{Operation: "activate-microphone"}, false, ""},
@@ -62,5 +70,57 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		if fixture.arguments.Operation == "metadata" && variables["recordedAt"] != nil {
 			test.Fatal("unknown occurrence became an upload date")
 		}
+	}
+}
+
+// A recording is named by the server, so no operation asks the person for a title: changing only the
+// date leaves the title alone, an empty title clears it, and an import carries none by default.
+func TestRecordingActionsNeverRequireATitle(test *testing.T) {
+	generation := int64(3)
+	recordedAt := "2031-03-04T05:06:00Z"
+	_, variables, err := RecordingAction(RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordedAt: &recordedAt, ExpectedSourceGeneration: &generation})
+	if err != nil {
+		test.Fatal(err)
+	}
+	if _, isPresent := variables["recordingTitle"]; isPresent {
+		test.Fatal("an absent title was sent, which would clear it")
+	}
+	_, variables, err = RecordingAction(RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: new(""), RecordedAt: &recordedAt, ExpectedSourceGeneration: &generation})
+	if err != nil || variables["recordingTitle"] != "" {
+		test.Fatal("an empty title was not sent to clear it", err)
+	}
+	if !strings.Contains(RecordingDocuments["UpdateRecordingMetadata"], "$recordingTitle: String,") {
+		test.Fatal("the title variable is required by the metadata document")
+	}
+	_, variables, err = RecordingAction(RecordingActionArguments{Operation: "import-attachment", AgentAttachmentID: "fixture-attachment"})
+	if err != nil || variables["recordingTitle"] != "" {
+		test.Fatal("an import asked for a title", err)
+	}
+}
+
+// "This is me" needs no name; any other confirmation still does.
+func TestSpeakerConfirmAcceptsTheAccountOwnerWithoutAName(test *testing.T) {
+	generation, groupBound := int64(3), int64(-1)
+	arguments := RecordingActionArguments{Operation: "speaker-confirm", RecordingID: "fixture-recording", RecordingTranscriptionAttemptID: "fixture-attempt", LocalSpeakerID: "local-speaker", ClientCorrectionID: "stable-edit-key", ExpectedSourceGeneration: &generation, PassageStartMS: &groupBound, PassageEndMS: &groupBound}
+	if _, _, err := RecordingAction(arguments); err == nil {
+		test.Fatal("a confirmation with neither a name nor the owner flag was accepted")
+	}
+	arguments.IsAccountOwner = true
+	operationName, variables, err := RecordingAction(arguments)
+	if err != nil || operationName != "CorrectRecordingSpeaker" || variables["isAccountOwner"] != true || variables["confirmedName"] != "" {
+		test.Fatal("the owner flag was not sent with an empty name", err)
+	}
+	if !strings.Contains(RecordingDocuments["CorrectRecordingSpeaker"], "isAccountOwner: $isAccountOwner") {
+		test.Fatal("the mutation document drops the owner flag")
+	}
+}
+
+func TestSpeakerNamesAsksForNamesContainingTheSearch(test *testing.T) {
+	operationName, variables, err := RecordingAction(RecordingActionArguments{Operation: "speaker-names", SearchText: "ali", PageSize: 5})
+	if err != nil || operationName != "SuggestRecordingSpeakerNames" || variables["searchText"] != "ali" || variables["pageSize"] != 5 {
+		test.Fatal("the search was not sent", operationName, variables, err)
+	}
+	if !strings.Contains(RecordingDocuments["SuggestRecordingSpeakerNames"], "speakerNameSource") {
+		test.Fatal("the document does not ask where each name came from")
 	}
 }

@@ -68,18 +68,36 @@ struct ContactsScreen: View {
     @State private var model: ContactsModel
     @State private var isAdding = false
     @State private var isImportingFromPhone = false
+    @State private var path = NavigationPath()
+    @Environment(AppModel.self) private var app
 
     init(connection: Connection) {
         _model = State(initialValue: ContactsModel(connection: connection))
     }
 
     var body: some View {
-        NavigationStack {
-            List(model.contacts) { contact in
-                NavigationLink(value: contact.id) {
-                    ContactRow(contact: contact, isMine: contact.id == model.myContactId)
+        NavigationStack(path: $path) {
+            // Laid out as the mail and recordings lists are, under a letter
+            // instead of a period: no chevrons, no lines, rows close together.
+            List {
+                ForEach(ContactLetterSection.sections(of: model.contacts)) { section in
+                    Section {
+                        ForEach(section.contacts) { contact in
+                            NavigationLink(value: contact.id) {
+                                ContactRow(contact: contact, isMine: contact.id == model.myContactId)
+                            }
+                            .navigationLinkIndicatorVisibility(.hidden)
+                            .listRowInsets(ListRowSpacing.insets)
+                            .listRowSeparator(.hidden)
+                        }
+                    } header: {
+                        ListPeriodHeader(title: section.letter)
+                    }
+                    .listSectionSeparator(.hidden)
                 }
             }
+            .listStyle(.plain)
+            .listSectionSpacing(.compact)
             .navigationTitle("Contacts")
             .withoutSwipeBack()
             .navigationDestination(for: String.self) { contactId in
@@ -130,6 +148,14 @@ struct ContactsScreen: View {
                 }
             }
         }
+        // A card a link from the agent's memory names opens as if its row
+        // had been chosen.
+        .onChange(of: app.openedContactId, initial: true) { _, contactId in
+            guard let contactId else { return }
+            app.openedContactId = nil
+            path = NavigationPath()
+            path.append(contactId)
+        }
         .sheet(isPresented: $isAdding) {
             ContactEditor(model: model, contact: nil) { _ in }
         }
@@ -154,6 +180,8 @@ struct ContactRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(contact.shownName.isEmpty ? String(localized: "No name") : contact.shownName)
+                        .font(.headline)
+                        .lineLimit(1)
                     if isMine {
                         Text("You")
                             .font(.caption)
@@ -168,12 +196,36 @@ struct ContactRow: View {
                     .first(where: { !$0.isEmpty && $0 != contact.shownName })
                 {
                     Text(detail)
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
         }
+    }
+}
+
+/// ContactLetterSection is the contacts under one letter, as an address book
+/// groups them: sorted by name, a section for each first letter, and # for a
+/// name that starts with neither a letter nor a digit.
+struct ContactLetterSection: Identifiable {
+    let letter: String
+    let contacts: [ContactSummary]
+    var id: String { letter }
+
+    static func sections(of contacts: [ContactSummary]) -> [ContactLetterSection] {
+        let sorted = contacts.sorted { $0.shownName.localizedStandardCompare($1.shownName) == .orderedAscending }
+        var sections: [ContactLetterSection] = []
+        for contact in sorted {
+            let monogram = Monogram.letter(of: contact.shownName)
+            let letter = monogram == "?" ? "#" : monogram
+            if let last = sections.last, last.letter == letter {
+                sections[sections.count - 1] = ContactLetterSection(letter: letter, contacts: last.contacts + [contact])
+            } else {
+                sections.append(ContactLetterSection(letter: letter, contacts: [contact]))
+            }
+        }
+        return sections
     }
 }
 
@@ -239,6 +291,7 @@ struct ContactDetailView: View {
     @State private var problemText: String?
     @State private var isEditing = false
     @State private var isConfirmingDelete = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         Group {
@@ -303,6 +356,7 @@ struct ContactDetailView: View {
                             Text(note).textSelection(.enabled)
                         }
                     }
+                    InMemorySection(model: memory)
                     Section {
                         if contact.id == model.myContactId {
                             Button("This is not me") {
@@ -349,6 +403,7 @@ struct ContactDetailView: View {
         } message: {
             Text("It is removed from your address book and from every device that reads it.")
         }
+        .inMemory(memory, recordKind: "contact", recordId: contactId)
         .task { await read() }
     }
 
