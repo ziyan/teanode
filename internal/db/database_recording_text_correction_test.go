@@ -257,3 +257,99 @@ func TestRecordingTextCorrectionsPreserveVersionsAndReconcileMemory(test *testin
 		}
 	})
 }
+
+func TestACorrectedPassageCarriesTheNotesItRetired(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	var knowledge *models.AgentKnowledgeSource
+	var correctedExternalId, untouchedExternalId string
+	var untouchedHash string
+	var input db.RecordingTranscriptTextCorrectionInput
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		_, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 2500, TranscriptText: "I will send the draft on Friday."},
+			{LocalSpeakerID: "speaker-two", SegmentStartMS: 2500, SegmentEndMS: 3000, TranscriptText: "Thanks, that works."},
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		segments, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		knowledge, err = transaction.GetAgentSourceByName(fixture.agentId, "recording:"+source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		correctedExternalId = fixture.transcriptRun.ID + ":" + segments[0].ID
+		untouchedExternalId = fixture.transcriptRun.ID + ":" + segments[1].ID
+		corrected, err := transaction.GetAgentDocumentByExternal(knowledge.ID, correctedExternalId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		untouched, err := transaction.GetAgentDocumentByExternal(knowledge.ID, untouchedExternalId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		untouchedHash = untouched.Hash
+		node, err := transaction.PutAgentNode(&models.AgentNode{AgentID: fixture.agentId, Path: "projects/draft", Kind: models.NodeProject, Name: "Draft fixture"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.AddAgentFact(&models.AgentFact{AgentID: fixture.agentId, NodeID: node.ID, Text: "Speaker one committed to send the draft on Friday.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: corrected.ID, Quote: "Friday"}}}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.AddAgentFact(&models.AgentFact{AgentID: fixture.agentId, NodeID: node.ID, Text: "Speaker two agreed to the plan.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: untouched.ID, Quote: "works"}}}); err != nil {
+			test.Fatal(err)
+		}
+		input = db.RecordingTranscriptTextCorrectionInput{RecordingID: source.ID, RecordingTranscriptSegmentID: segments[0].ID, ClientCorrectionID: "thursday", CorrectedTranscriptText: "I will send the draft on Thursday.", ExpectedSourceGeneration: source.SourceGeneration}
+	})
+	passageText := func(transaction db.Transaction, externalId string) (string, string) {
+		document, err := transaction.GetAgentDocumentByExternal(knowledge.ID, externalId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		chunks, err := transaction.ListAgentChunks(fixture.agentId, document.ID)
+		if err != nil || len(chunks) != 1 {
+			test.Fatal(err, len(chunks))
+		}
+		return chunks[0].Text, document.Hash
+	}
+	var firstHash string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.CorrectRecordingTranscriptText(fixture.userId, input); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		text, hash := passageText(transaction, correctedExternalId)
+		if !strings.Contains(text, "Thursday") || !strings.Contains(text, "now retired") || !strings.Contains(text, "- Speaker one committed to send the draft on Friday.") {
+			test.Fatalf("the corrected passage does not carry the note it retired:\n%s", text)
+		}
+		firstHash = hash
+		untouchedText, hash := passageText(transaction, untouchedExternalId)
+		if hash != untouchedHash || strings.Contains(untouchedText, "retired") {
+			test.Fatalf("an uncorrected passage changed:\n%s", untouchedText)
+		}
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
+		}
+		if _, hash := passageText(transaction, correctedExternalId); hash != firstHash {
+			test.Fatal("syncing again changed the corrected passage, so it would be read again")
+		}
+	})
+}

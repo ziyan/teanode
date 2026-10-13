@@ -263,12 +263,16 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 					}
 					transcriptText += fmt.Sprintf("\nSelected passage correction generation %d, %d-%d MS: %s. Text has segment-level timing only; do not assign the whole statement to this passage.", correction.SourceGeneration, correction.PassageStartMS, correction.PassageEndMS, attribution)
 				}
-				digest := sha256.Sum256([]byte(transcriptText))
 				externalId := transcriptRun.ID + ":" + segment.ID
 				previous, err := self.GetAgentDocumentByExternal(source.ID, externalId)
 				if err != nil {
 					return err
 				}
+				transcriptText, err = self.withRetiredRecordingNotes(ownerAgent.ID, previous, transcriptText)
+				if err != nil {
+					return err
+				}
+				digest := sha256.Sum256([]byte(transcriptText))
 				if previous != nil && previous.Hash != hex.EncodeToString(digest[:]) {
 					if err := self.reconcileRecordingDocument(ownerAgent.ID, previous.ID); err != nil {
 						return err
@@ -344,6 +348,50 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 		return self.RequestAgentSourceRun(source.ID, time.Now())
 	}
 	return nil
+}
+
+// withRetiredRecordingNotes gives a corrected passage the notes its correction
+// retires, so the next dream can file what still holds in corrected form instead
+// of reading a lone sentence that has lost the context the old note carried.
+// An unchanged passage keeps the text it was stored with, so this never
+// re-reads or retires anything by itself.
+func (self *transaction) withRetiredRecordingNotes(agentId string, previous *models.AgentDocument, passageText string) (string, error) {
+	if previous == nil {
+		return passageText, nil
+	}
+	if previous.Hash == recordingPassageHash(passageText) {
+		return passageText, nil
+	}
+	evidence := fmt.Sprintf("[{\"id\":\"%s\",\"kind\":\"document\"}]", previous.ID)
+	var retiredFacts []*agentFactModel
+	if err := self.tx.Where("agent_id = ? AND dormant AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&retiredFacts).Error; err != nil {
+		return "", err
+	}
+	if withRetired := appendRetiredRecordingNotes(passageText, retiredFacts); previous.Hash == recordingPassageHash(withRetired) {
+		return withRetired, nil
+	}
+	// The passage changed now: the notes citing it are about to be retired too.
+	var citingFacts []*agentFactModel
+	if err := self.tx.Where("agent_id = ? AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&citingFacts).Error; err != nil {
+		return "", err
+	}
+	return appendRetiredRecordingNotes(passageText, citingFacts), nil
+}
+
+func appendRetiredRecordingNotes(passageText string, retiredFacts []*agentFactModel) string {
+	if len(retiredFacts) == 0 {
+		return passageText
+	}
+	passageText += "\nBefore the latest correction this passage supported these notes, now retired. File the corrected version of any that still holds with the corrected text or attribution; do not restore what the correction contradicts:"
+	for _, retiredFact := range retiredFacts {
+		passageText += "\n- " + retiredFact.Text
+	}
+	return passageText
+}
+
+func recordingPassageHash(passageText string) string {
+	digest := sha256.Sum256([]byte(passageText))
+	return hex.EncodeToString(digest[:])
 }
 
 func (self *transaction) reconcileRecordingDocument(agentId, documentId string) error {
