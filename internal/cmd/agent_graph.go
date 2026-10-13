@@ -163,6 +163,17 @@ func newAgentGraphCommands() []*cli.Command {
 			Action: runAgentGraphRecordBacklinks,
 		},
 		{
+			Name:      "confirm",
+			Usage:     "state the links to your records that the agent only guessed: those of one record, or every one on the page with --all",
+			ArgsUsage: "<path>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "record", Usage: "confirm the guesses about one record: " + recordReferenceUsage},
+				&cli.StringFlag{Name: "relation", Usage: "only the guess of this relation, when the record has several"},
+				&cli.BoolFlag{Name: "all", Usage: "every guess on the page"},
+			},
+			Action: runAgentGraphConfirmRecords,
+		},
+		{
 			Name:      "contact",
 			Usage:     "name the contact card a person's page is about, from your own address books; never makes a card",
 			ArgsUsage: "<path> <contact-id>",
@@ -1026,6 +1037,68 @@ func runAgentGraphLinkRecord(ctx context.Context, command *cli.Command, referenc
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s %s %s\n", path, link.RecordRelation, describeRecordLink(link))
+	return nil
+}
+
+// runAgentGraphConfirmRecords states the links to records the agent only
+// guessed, which is what the dashboard's Confirm does: a person stating a
+// link again confirms it.
+func runAgentGraphConfirmRecords(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return fmt.Errorf("confirm which page? teanode agent memory confirm people/alice-chen --record mail:<id>")
+	}
+	reference := command.String("record")
+	if reference == "" && !command.Bool("all") {
+		return fmt.Errorf("confirm which guess? give --record <kind>:<id>, or --all for every guess on the page")
+	}
+	var recordKind models.AgentRecordKind
+	var recordId string
+	var startMS, endMS int64
+	if reference != "" {
+		var err error
+		if recordKind, recordId, startMS, endMS, err = models.ParseRecordReference(reference); err != nil {
+			return err
+		}
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	path := command.Args().First()
+	confirmed := 0
+	for offset := 0; ; {
+		part, err := client.ListAgentRecordLinks(ctx, connection, path, 200, offset)
+		if err != nil {
+			return describeError(command, err)
+		}
+		for _, link := range part.RecordLinks {
+			if link.LinkStatus != string(models.EdgeProposed) {
+				continue
+			}
+			if reference != "" && (link.RecordKind != string(recordKind) || link.RecordID != recordId ||
+				(recordKind == models.RecordRecordingPassage && (startMS != 0 || endMS != 0) && (link.PassageStartMS != startMS || link.PassageEndMS != endMS))) {
+				continue
+			}
+			if relation := command.String("relation"); relation != "" && link.RecordRelation != relation {
+				continue
+			}
+			stated, err := client.LinkAgentRecord(ctx, connection, path, link.RecordKind, link.RecordID, link.RecordRelation, link.PassageStartMS, link.PassageEndMS, link.TranscriptRunID, "")
+			if err != nil {
+				return describeError(command, err)
+			}
+			confirmed++
+			_, _ = fmt.Fprintf(command.Writer, "%s %s %s\n", path, stated.RecordRelation, describeRecordLink(stated))
+		}
+		// Past the end, or no further on than this part: done, rather than
+		// asking for the same part for ever.
+		if part.NextOffset <= offset || len(part.RecordLinks) == 0 {
+			break
+		}
+		offset = part.NextOffset
+	}
+	if confirmed == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "%s has no guess to confirm\n", path)
+	}
 	return nil
 }
 

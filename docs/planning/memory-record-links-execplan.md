@@ -15,8 +15,8 @@ To see it working: open a person page on the dashboard and see a Linked records 
 - [x] Milestone 1: the link model and API (record links table, typed record references, contact link, page links and record backlinks, fact evidence that names a record). Done 2026-10-13: migration `0176_agent_record_link`, `models.AgentRecordLink`, the DB methods, package `recordlink` (reads a link's record under the reader's access), GraphQL and client documents, and the CLI (see Interfaces and Dependencies). Tests: `internal/db/database_graph_record_test.go`, `internal/recordlink/recordlink_test.go`, `internal/api/v1api/apigraph/agent_graph_record_test.go`, `internal/cmd/agent_graph_record_test.go`.
 - [x] Milestone 2: the agent reads and makes links (memory tool operations, contact card on a person page within grants, prompt context). Done 2026-10-13: `links`, `backlinks`, `link --record`, `unlink --record` on the memory tool, the linked card in `get`, record titles in recalled pages, the self card in the prompt read only from a granted book. Tests: `internal/agent/tools/memory/records_test.go`, `internal/agent/graph_record_prompt_internal_test.go`.
 - [x] Milestone 3: links made automatically (contacts by address and name, recording speakers and passages, mail participants, calendar attendees, finance merchants and receipts), as stated when sure and proposed when guessed. Done 2026-10-13: `internal/agent/dream_record_links.go`, run by every dream after the pages are divided; migration `0179_agent_record_link_dismissal`. Tests: `internal/agent/dream_record_links_internal_test.go` (one per source and the bound), `internal/db/database_graph_record_test.go`.
-- [ ] Milestone 4: the dashboard (Linked records on a page, clickable evidence, In memory on records, contact picker, record nodes in the graph view).
-- [ ] Milestone 5: the iPhone app and the CLI, with the same reads and edits.
+- [x] Milestone 4: the dashboard (Linked records on a page, clickable evidence, In memory on records, contact picker, record nodes in the graph view). Done 2026-10-13: `web/src/memoryLinks.tsx` (kinds, groups, `InMemory`), `web/src/pages/knowledgeRecords.tsx` (Linked records, Confirm, Remove, Link contact), `web/src/recording/passageMemoryDialog.tsx`, deep links on the contact, calendar, reminder, conversation, transaction and receipt pages, record squares in `knowledgeExplore.tsx`; `FinanceReceipts(receiptId)` on the server. Tests: `memoryLinks.test.tsx`, `knowledgeRecords.test.tsx`, `knowledgeExplore.test.tsx`, `addressBook.test.tsx`, `calendarLink.test.tsx`, `components/reminders.test.tsx`, `finance/financeTransactionLink.test.tsx`, and additions to the receipt, recording, conversation and knowledge tests.
+- [x] Milestone 5: the iPhone app and the CLI, with the same reads and edits. Written 2026-10-13: `ios/TeaNodeKit/Sources/TeaNodeKit/KnowledgeRecords.swift` (models, grouping, `RecordTarget`, operations; tests in `KnowledgeRecordsTests.swift`), `ios/TeaNode/Sources/InMemoryViews.swift`, Linked records, Link contact and record evidence in `KnowledgeViews.swift`, In memory on the mail, event, contact, transaction, receipt and recording screens, the screenshot `knowledge-records` with its assertion `ios/scripts/assert-knowledge-screenshot.swift`; `teanode agent memory confirm`. See Outcomes for what CI showed.
 
 ## Surprises & Discoveries
 
@@ -79,6 +79,24 @@ To see it working: open a person page on the dashboard and see a Linked records 
   Date/Author: 2026-10-13, Claude.
 - Decision: a recording passage link is one speaker's turn: segments of one confirmed speaker with at most two seconds of silence between them.
   Rationale: a link per segment would make hundreds per recording; a turn is what a person means by "where they spoke", and the backlink query is a range overlap so any bubble inside the turn finds it.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the dashboard's Linked records section is shown on a page that has links, and on every person page (which is offered Link contact); a page of another kind with no links shows nothing. The section comes after the summary and overview and before the facts on the dashboard, and right after the header on the phone, where the facts are many and a section below them is not seen.
+  Rationale: an empty heading on every topic page is noise; the phone's list is long.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the dashboard opens a conversation message by opening the conversation in the drawer (`/agent?conversation=`) and forgetting the address; the message itself is not scrolled to. A reminder opens in its dialog, whether or not it is done, and the reminders address (`/reminders`) now shows the reminders list, which it did not when the calendar was on.
+  Rationale: the drawer has no way to scroll to a message; the reminders path had to mean reminders for the link to land.
+  Date/Author: 2026-10-13, Claude.
+- Decision: `FinanceReceipts` takes `receiptId`.
+  Rationale: a link names one receipt that may be on no page of the list the dashboard has read; there was no way to read one by identifier.
+  Date/Author: 2026-10-13, Claude.
+- Decision: on the phone a mail, a contact card, a conversation and a passage of a recording open themselves (through the app's own routing of dashboard paths, `AppModel.openRecord`); an event, a reminder, a transaction and a receipt open the part of the app they are in (Calendar, Finance with Transactions or Receipts), not the item.
+  Rationale: the item screens of Calendar and Finance are built from models their own sections hold, and could not be built and checked here without a Mac; each opens from its list.
+  Date/Author: 2026-10-13, Claude. Deviation from "opens the record".
+- Decision: a record's "In memory" on the phone is asked for when the screen opens and says nothing when no page is linked; the recording's is a menu item on a passage that asks for the range of that passage.
+  Rationale: as on the dashboard.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the CLI gains `teanode agent memory confirm`, which states the guesses of one record or all of a page.
+  Rationale: `link` confirms too, but needs the relation; Confirm on the dashboard and phone is one action.
   Date/Author: 2026-10-13, Claude.
 
 ## Outcomes & Retrospective

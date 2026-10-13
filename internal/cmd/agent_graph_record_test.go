@@ -138,3 +138,28 @@ func TestLinkAndUnlinkTakeARecordOrAPage(test *testing.T) {
 		test.Errorf("clearing sends an empty card: %v %v", err, calls["SetAgentNodeContact"])
 	}
 }
+
+func TestConfirmStatesTheGuessesAboutARecordAndNothingElse(test *testing.T) {
+	test.Parallel()
+	server, calls := recordServer(test)
+	if _, _, err := runRecordCommand(test, server, "confirm", "people/fixture-friend"); err == nil {
+		test.Errorf("confirming nothing in particular was accepted")
+	}
+	output, _, err := runRecordCommand(test, server, "confirm", "people/fixture-friend", "--record", "mail:item-1")
+	if err != nil || !strings.Contains(output, "people/fixture-friend received mail:item-1  Fixture subject") {
+		test.Fatalf("confirm --record: %v\n%s", err, output)
+	}
+	variables := calls["LinkAgentRecord"]
+	if variables["recordKind"] != "mail" || variables["recordId"] != "item-1" || variables["recordRelation"] != "received" {
+		test.Errorf("the guess was stated as it was: %v", variables)
+	}
+	delete(calls, "LinkAgentRecord")
+	output, _, err = runRecordCommand(test, server, "confirm", "people/fixture-friend", "--record", "mail:item-9")
+	if err != nil || !strings.Contains(output, "has no guess to confirm") || calls["LinkAgentRecord"] != nil {
+		test.Errorf("another record's guess is not confirmed: %v\n%s %v", err, output, calls)
+	}
+	output, _, err = runRecordCommand(test, server, "confirm", "people/fixture-friend", "--all", "--relation", "wrote")
+	if err != nil || !strings.Contains(output, "has no guess to confirm") || calls["LinkAgentRecord"] != nil {
+		test.Errorf("only the relation asked for: %v\n%s", err, output)
+	}
+}
