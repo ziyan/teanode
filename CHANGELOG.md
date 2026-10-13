@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.145.0] - 2026-10-13
+
+### Added
+
+- Recording transcript inspection, processing, speaker/text corrections, learning controls and original-passage playback across dashboard, command line and agent tools. (#438)
+
 ## [0.144.4] - 2026-10-13
 
 ### Security
