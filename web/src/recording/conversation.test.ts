@@ -8,6 +8,8 @@ const segmentFixture = (overrides: Partial<TranscriptSegment>): TranscriptSegmen
     localSpeakerId: 'local-one',
     segmentStartMS: 0,
     segmentEndMS: 1000,
+    transcriptText: 'Words of a passage that is long enough to be a bubble of its own.',
+    effectiveTranscriptText: '',
     hasUserConfirmedSpeaker: false,
     effectiveSpeakerIdentityId: '',
     effectiveSpeakerName: '',
@@ -138,4 +140,96 @@ it('prefers the name of a confirmed speaker to the temporary label', () => {
     }),
   ])
   expect(groups[0]).toMatchObject({ speakerName: 'Fixture Person', temporarySpeakerLabel: '' })
+})
+
+it('keeps words two unnamed speakers throw in at the same second in the bubble being built', () => {
+  const groups = groupConversation([
+    segmentFixture({
+      id: 's1',
+      localSpeakerId: 'A',
+      segmentStartMS: 0,
+      segmentEndMS: 6000,
+      transcriptText: 'We should move the review to Thursday afternoon.',
+    }),
+    segmentFixture({
+      id: 's2',
+      localSpeakerId: 'B',
+      segmentStartMS: 6000,
+      segmentEndMS: 6400,
+      transcriptText: 'Well,',
+    }),
+    segmentFixture({ id: 's3', localSpeakerId: 'C', segmentStartMS: 6400, segmentEndMS: 6700, transcriptText: 'So' }),
+    segmentFixture({ id: 's4', localSpeakerId: 'B', segmentStartMS: 6700, segmentEndMS: 7000, transcriptText: 'no,' }),
+    segmentFixture({ id: 's5', localSpeakerId: 'C', segmentStartMS: 7000, segmentEndMS: 7300, transcriptText: 'we' }),
+    segmentFixture({
+      id: 's6',
+      localSpeakerId: 'C',
+      segmentStartMS: 7300,
+      segmentEndMS: 12000,
+      transcriptText: 'can keep it on Wednesday if Priya is back by then.',
+    }),
+  ])
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([
+    ['s1', 's2', 's3', 's4', 's5'],
+    ['s6'],
+  ])
+  // The speakers of the absorbed words are not counted among the lettered ones.
+  expect(groups.map((group) => group.speakerLetter)).toEqual(['A', 'B'])
+})
+
+it('does not absorb the short answer of a named person or a long passage', () => {
+  const groups = groupConversation([
+    segmentFixture({
+      id: 's1',
+      localSpeakerId: 'A',
+      segmentStartMS: 0,
+      segmentEndMS: 6000,
+      transcriptText: 'Shall we begin the review of the second layout today?',
+    }),
+    segmentFixture({
+      id: 's2',
+      localSpeakerId: 'B',
+      segmentStartMS: 6000,
+      segmentEndMS: 6500,
+      transcriptText: 'Yes.',
+      hasUserConfirmedSpeaker: true,
+      effectiveSpeakerIdentityId: 'identity-one',
+      effectiveSpeakerName: 'Fixture Person',
+    }),
+    segmentFixture({
+      id: 's3',
+      localSpeakerId: 'C',
+      segmentStartMS: 6500,
+      segmentEndMS: 12000,
+      transcriptText: 'I think so, and I would start with search and the list.',
+    }),
+    segmentFixture({
+      id: 's4',
+      localSpeakerId: 'D',
+      segmentStartMS: 12000,
+      segmentEndMS: 13000,
+      transcriptText: 'Okay.',
+    }),
+    segmentFixture({
+      id: 's5',
+      localSpeakerId: 'E',
+      segmentStartMS: 13000,
+      segmentEndMS: 13500,
+      transcriptText: 'One two three four.',
+    }),
+  ])
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([
+    ['s1'],
+    ['s2'],
+    ['s3'],
+    ['s4'],
+    ['s5'],
+  ])
+})
+
+it('gives a short passage beginning the conversation a bubble of its own', () => {
+  const groups = groupConversation([
+    segmentFixture({ id: 's1', segmentStartMS: 0, segmentEndMS: 500, transcriptText: 'Okay.' }),
+  ])
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['s1']])
 })

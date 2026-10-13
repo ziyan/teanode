@@ -20,12 +20,30 @@ export interface ConversationGroup {
 const letterAt = (index: number) =>
   String.fromCharCode(65 + (index % 26)) + (index >= 26 ? String(Math.floor(index / 26)) : '')
 
+// How many words and how long a passage of an unnamed speaker can be and still
+// be taken as a word thrown in (diarization splits a few words spoken together
+// into passages under a second), which stays in the bubble it came in the
+// middle of. The same limits as the iPhone's.
+export const SHORT_PASSAGE_WORDS_MAXIMUM = 3
+export const SHORT_PASSAGE_DURATION_MS_MAXIMUM = 800
+
 const isConfirmedSegment = (segment: TranscriptSegment) =>
   Boolean(
     (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) &&
     segment.effectiveSpeakerIdentityId &&
     segment.effectiveSpeakerName,
   )
+
+// Whether this is a passage of a speaker nobody has named that is only a few
+// words and a moment long.
+const isShortUnnamedPassage = (segment: TranscriptSegment) => {
+  if (isConfirmedSegment(segment) || segment.effectiveSpeakerIdentityId) return false
+  const wordCount = (segment.effectiveTranscriptText || segment.transcriptText).split(/\s+/).filter(Boolean).length
+  return (
+    wordCount <= SHORT_PASSAGE_WORDS_MAXIMUM &&
+    segment.segmentEndMS - segment.segmentStartMS <= SHORT_PASSAGE_DURATION_MS_MAXIMUM
+  )
+}
 
 // Which words of a capture in progress are drawn with the page of passages
 // that is shown: the first page starts at the beginning, a later page at its
@@ -50,6 +68,11 @@ export function liveRangeOfPage(segments: TranscriptSegment[], isFirstPage: bool
 // a capture in progress that nobody has named by the temporary label the
 // server gave it; any other unconfirmed one only by the generated label, which
 // is shown as a letter in order of first appearance.
+//
+// A word or two the diarization gave to a speaker nobody has named would
+// otherwise become a bubble of its own, and two such speakers answering in turn
+// at the same second make a bubble for each word: such a passage stays in the
+// bubble that is being built, and plays and copies as part of it.
 //
 // Words heard live are placed among the passages by the time they began, and
 // consecutive ones are one bubble with no speaker. The server leaves out any
@@ -100,9 +123,18 @@ export function groupConversation(
       : temporarySpeakerLabel
         ? `temporary:${temporarySpeakerLabel}`
         : `local:${segment.localSpeakerId}`
+    const previous = groups[groups.length - 1]
+    if (
+      previous &&
+      !previous.isLive &&
+      !previous.groupKey.startsWith(`${speakerKey}@`) &&
+      isShortUnnamedPassage(segment)
+    ) {
+      previous.segments.push(segment)
+      continue
+    }
     if (!isConfirmed && !temporarySpeakerLabel && !letterIndexByLocalSpeaker.has(segment.localSpeakerId))
       letterIndexByLocalSpeaker.set(segment.localSpeakerId, letterIndexByLocalSpeaker.size)
-    const previous = groups[groups.length - 1]
     if (previous && !previous.isLive && previous.groupKey.startsWith(`${speakerKey}@`)) {
       previous.segments.push(segment)
       continue
