@@ -2849,8 +2849,27 @@ body,
 /* --- the name of the page ---------------------------------------------------
    At the top of the content, big and first. It is the only large thing on a
    page, which is what makes it findable without a rule under it. */
-.page-heading {
+.page-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin: 0 0 var(--space-4);
+}
+
+/* A page's one primary action, level with its title. */
+.page-heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+}
+
+.page-heading-actions:empty {
+  display: none;
+}
+
+.page-heading {
+  margin: 0;
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -2859,7 +2878,7 @@ body,
 
 /* When the page's action sits under the title, the two are one header block
    rather than two things with a gap between them. */
-.page-heading:has(+ .page-actions) {
+.page-heading-row:has(+ .page-actions) {
   margin-bottom: var(--space-2);
 }
 
@@ -14164,17 +14183,23 @@ button.herdr-question-head {
 }
 
 .recording-original + .recording-original { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem; }
-.recording-player { display: block; width: 100%; max-height: 65vh; margin-bottom: 1rem; }
+.recording-original { display: flex; flex-direction: column; gap: var(--space-2); }
+.recording-player { display: block; width: 100%; max-height: 65vh; }
 .recording-progress { width: 100%; }
 
 /* --- a recording as a conversation -----------------------------------------
-   Other people's passages sit on the left in a soft surface with their name
-   above; the account owner's sit on the right in the accent color, the same
-   one a primary button wears, so contrast follows the theme. */
+   The bubbles are the agent chat's own (`.agent-line user` for the account
+   owner on the right, `.agent-line assistant` for everyone else on the left),
+   so only what a recording adds is styled here. */
 .recording-detail {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  max-width: 820px;
+}
+/* The title sits above the column, so the More menu beside it ends where the
+   column does rather than at the far edge of the window. */
+.content:has(.recording-detail) .page-heading-row {
   max-width: 820px;
 }
 .recording-header {
@@ -14197,12 +14222,13 @@ button.herdr-question-head {
   }
 }
 .recording-original .muted {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 13px;
 }
+/* The original's buttons are the dashboard's own action row; only its margins
+   go, since the page's column already spaces what is in it. */
 .recording-original .page-actions {
-  display: inline-flex;
-  margin: 0 8px 0 0;
+  margin: 0;
 }
 .recording-meta {
   margin: 0;
@@ -14222,7 +14248,11 @@ button.herdr-question-head {
 .recording-conversation {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  /* A swiped bubble carries its mark beside it; neither widens the page. */
+  overflow-x: clip;
 }
 .recording-turn {
   display: flex;
@@ -14234,34 +14264,12 @@ button.herdr-question-head {
   align-items: flex-end;
 }
 .recording-turn-name {
-  padding: 0 12px;
+  padding: 0 10px;
   font-size: var(--text-label);
   font-weight: 600;
 }
 .recording-turn-name.muted {
   font-weight: 500;
-}
-.recording-bubble {
-  max-width: min(100%, 640px);
-  padding: 8px 12px;
-  border-radius: 16px;
-  /* The field token is the page's own color in dark mode; a share of the text
-     color over the page reads as a bubble in both themes. */
-  background: color-mix(in srgb, var(--text) 10%, var(--background));
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-.recording-turn:not(.own) .recording-bubble {
-  border-top-left-radius: 4px;
-}
-.recording-turn.own .recording-bubble {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-top-right-radius: 4px;
-}
-.recording-bubble-text {
-  margin: 0;
-  line-height: 1.45;
 }
 .recording-passage {
   display: inline;
@@ -14285,42 +14293,28 @@ button.herdr-question-head {
 .recording-passage.cited {
   background: color-mix(in srgb, currentColor 22%, transparent);
 }
-.recording-bubble-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: 2px;
-  font-size: 12px;
-  opacity: 0.75;
-}
-.recording-bubble-more {
-  padding: 0 6px;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  line-height: 1;
-  letter-spacing: 1px;
-  cursor: pointer;
-  opacity: 0;
-}
-/* The button for the menu is there for a keyboard and a pointer that has not
-   found the right-click; it shows when either reaches the bubble. On a touch
-   screen the long press is the way in, so it stays out of the text. */
-.recording-bubble:hover .recording-bubble-more,
-.recording-bubble:focus-within .recording-bubble-more,
-.recording-bubble-more:focus-visible {
-  opacity: 1;
-}
+/* On a touch screen the corner holds only the More button, always shown and
+   small and in the bubble's foot, since the swipes stand in for Copy and Play
+   there. */
 @media (hover: none) {
-  .recording-bubble-more {
-    display: none;
+  .recording-conversation .agent-line-actions {
+    position: static;
+    justify-content: flex-end;
+    margin-top: 2px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    opacity: 0.75;
+    pointer-events: auto;
   }
-  .recording-passage {
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
+  .recording-conversation .agent-line-actions .icon-action {
+    width: 24px;
+    height: 24px;
+    color: inherit;
+  }
+  .recording-conversation .agent-line-actions > .icon-action {
+    display: none;
   }
 }
 .recording-earlier-notice {
@@ -14328,9 +14322,6 @@ button.herdr-question-head {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-}
-.recording-passage-menu {
-  min-width: 190px;
 }
 .recording-drawer-scrim {
   position: fixed;

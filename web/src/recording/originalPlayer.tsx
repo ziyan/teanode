@@ -19,6 +19,14 @@ export function RecordingOriginalPlayer({
   const [isUsingPreview, setIsUsingPreview] = useState(false)
   const [isPreparing, setIsPreparing] = useState(false)
   const [playbackError, setPlaybackError] = useState<string | null>(null)
+  // Whether this browser cannot play the original: it says so up front for a
+  // type it has no decoder for, or by the media element's error event. The
+  // audio preview is offered only then; a browser that plays the original has
+  // no use for it.
+  const [isOriginalUnplayable, setIsOriginalUnplayable] = useState(
+    () =>
+      media.originalContentType !== '' && document.createElement('video').canPlayType(media.originalContentType) === '',
+  )
   const isMounted = useRef(false)
   const hasUnsupportedOriginalReference = useRef(false)
   const previewPlayer = useRef<HTMLMediaElement | null>(null)
@@ -82,11 +90,15 @@ export function RecordingOriginalPlayer({
   )
   const unsupportedOriginal = (errorMessage: string) => {
     hasUnsupportedOriginalReference.current = true
+    setIsOriginalUnplayable(true)
     setPlaybackError(errorMessage)
   }
   const originalError = (player: HTMLMediaElement) => {
     if (player.error?.code === 4) unsupportedOriginal(t('recordings.playbackError'))
-    else setPlaybackError(t('recordings.playbackError'))
+    else {
+      setIsOriginalUnplayable(true)
+      setPlaybackError(t('recordings.playbackError'))
+    }
   }
   const playCompatible = async () => {
     try {
@@ -140,9 +152,33 @@ export function RecordingOriginalPlayer({
           onError={(event) => originalError(event.currentTarget)}
         />
       )}
-      {!isUsingPreview || playbackError ? (
+      {playback ? (
+        <div className="page-actions">
+          {isUsingPreview && !hasUnsupportedOriginalReference.current ? (
+            <button
+              type="button"
+              disabled={isPreparing}
+              onClick={() => {
+                passagePlayback.stop()
+                setIsUsingPreview(false)
+                setPlaybackError(null)
+              }}
+            >
+              {t('recordings.useOriginal')}
+            </button>
+          ) : null}
+          <a
+            className="button"
+            href={playback.playbackPath}
+            download={`${media.originalFilename.replace(/\.[^.]+$/, '')}.preview.wav`}
+          >
+            {t('recordings.downloadPreview')}
+          </a>
+        </div>
+      ) : null}
+      {isOriginalUnplayable && (!isUsingPreview || playbackError) ? (
         <>
-          <p className="muted">{t('recordings.previewHint')}</p>
+          {!playbackError ? <p className="muted">{t('recordings.previewHint')}</p> : null}
           <div className="page-actions">
             <button type="button" disabled={isPreparing} onClick={() => void playCompatible()}>
               {t(
@@ -156,33 +192,6 @@ export function RecordingOriginalPlayer({
           </div>
         </>
       ) : null}
-      <div className="page-actions">
-        {isUsingPreview && playback && !hasUnsupportedOriginalReference.current ? (
-          <button
-            type="button"
-            disabled={isPreparing}
-            onClick={() => {
-              passagePlayback.stop()
-              setIsUsingPreview(false)
-              setPlaybackError(null)
-            }}
-          >
-            {t('recordings.useOriginal')}
-          </button>
-        ) : null}
-        <a className="button" href={recordingMediaPath(media.id)} download={media.originalFilename}>
-          {t('recordings.download')}
-        </a>
-        {playback ? (
-          <a
-            className="button"
-            href={playback.playbackPath}
-            download={`${media.originalFilename.replace(/\.[^.]+$/, '')}.preview.wav`}
-          >
-            {t('recordings.downloadPreview')}
-          </a>
-        ) : null}
-      </div>
       <ErrorMessage error={playbackError} />
     </>
   )

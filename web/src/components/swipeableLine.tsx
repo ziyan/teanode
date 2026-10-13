@@ -32,6 +32,8 @@ export function SwipeableLine({
   onCopyFailed,
   reactLabel,
   onReact,
+  replyIcon: ReplyActionIcon = ReplyIcon,
+  extraActions,
   children,
 }: {
   className: string
@@ -42,6 +44,11 @@ export function SwipeableLine({
   // without it there is no React button.
   reactLabel?: string
   onReact?: () => void
+  // replyIcon draws the action of the swipe to the left and of its button,
+  // for a line whose action is not a reply (playing a passage). extraActions
+  // are more buttons in the same corner, beside Copy.
+  replyIcon?: (props: { size?: number }) => ReactNode
+  extraActions?: ReactNode
   // onCopy copies the line and says whether it took; onCopyFailed is told
   // when a tap or a click could not copy it either.
   onCopy: () => Promise<boolean>
@@ -191,7 +198,7 @@ export function SwipeableLine({
           aria-hidden="true"
           style={{ opacity: Math.min(1, -offset / SWIPE_ACTION_PX) }}
         >
-          <ReplyIcon size={16} />
+          <ReplyActionIcon size={16} />
         </span>
       )}
       {offset > 0 &&
@@ -230,8 +237,9 @@ export function SwipeableLine({
           {isCopied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
         </button>
         <button type="button" className="icon-action" title={replyLabel} aria-label={replyLabel} onClick={onReply}>
-          <ReplyIcon size={14} />
+          <ReplyActionIcon size={14} />
         </button>
+        {extraActions}
       </span>
     </div>
   )

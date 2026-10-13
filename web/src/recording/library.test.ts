@@ -63,6 +63,16 @@ it('derives one status from the uploads and the latest transcription', () => {
   )
 })
 
+it('says no speech was recognized for a complete version with no passages', () => {
+  const complete = { recordingUploadState: 'complete' }
+  const run = (segmentCount?: number) => [{ versionNumber: 1, recordingProcessingState: 'complete', segmentCount }]
+  const recording = recordingFixture({})
+  expect(recordingStatus(recording, { mediaFiles: [complete], transcriptRuns: run(0) })).toBe('noSpeech')
+  expect(recordingStatus(recording, { mediaFiles: [complete], transcriptRuns: run(3) })).toBe('ready')
+  // A server that does not report the count leaves the status as it was.
+  expect(recordingStatus(recording, { mediaFiles: [complete], transcriptRuns: run(undefined) })).toBe('ready')
+})
+
 it('formats lengths and takes the first line of a summary', () => {
   expect(formatRecordingLength(65_000)).toBe('1:05')
   expect(formatRecordingLength(3_725_000)).toBe('1:02:05')

@@ -1,10 +1,13 @@
 import { graphql } from '../api'
 import { type Recording } from './api'
 
-export type RecordingStatus = 'recording' | 'uploading' | 'transcribing' | 'ready' | 'failed' | 'notTranscribed'
+export type RecordingStatus =
+  'recording' | 'uploading' | 'transcribing' | 'ready' | 'noSpeech' | 'failed' | 'notTranscribed'
 export interface RecordingStatusEvidence {
   mediaFiles: { recordingUploadState: string }[]
-  transcriptRuns: { versionNumber: number; recordingProcessingState: string }[]
+  // segmentCount is how many passages the version holds; a server that does not
+  // report it leaves it out, and a complete version is then taken to have speech.
+  transcriptRuns: { versionNumber: number; recordingProcessingState: string; segmentCount?: number }[]
 }
 
 const ACTIVE_RUN_STATES = ['queued', 'preparing', 'transcribing']
@@ -22,7 +25,7 @@ export function recordingStatus(recording: Recording, evidence: RecordingStatusE
   const latestRun = [...evidence.transcriptRuns].sort((first, second) => second.versionNumber - first.versionNumber)[0]
   if (!latestRun) return 'notTranscribed'
   if (ACTIVE_RUN_STATES.includes(latestRun.recordingProcessingState)) return 'transcribing'
-  if (latestRun.recordingProcessingState === 'complete') return 'ready'
+  if (latestRun.recordingProcessingState === 'complete') return latestRun.segmentCount === 0 ? 'noSpeech' : 'ready'
   if (latestRun.recordingProcessingState === 'canceled') return 'notTranscribed'
   return 'failed'
 }
@@ -40,7 +43,7 @@ export async function readRecordingStatusEvidence(
   const selections = recordingIds
     .map(
       (_, index) =>
-        `r${index}: ReadRecording(recordingId: $recordingId${index}) { mediaFiles { recordingUploadState } transcriptRuns { versionNumber recordingProcessingState } }`,
+        `r${index}: ReadRecording(recordingId: $recordingId${index}) { mediaFiles { recordingUploadState } transcriptRuns { versionNumber recordingProcessingState segmentCount } }`,
     )
     .join(' ')
   const response = await graphql<Record<string, RecordingStatusEvidence>>(

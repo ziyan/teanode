@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading } from '../components/common'
+import { MoreIcon, PlayIcon } from '../components/icons'
+import { MenuButton } from '../components/menuButton'
 import { Pager, usePageInAddress } from '../components/pager'
 import { SettingsEmpty } from '../components/settingsList'
+import { SwipeableLine } from '../components/swipeableLine'
 import { useToast } from '../components/toast'
+import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { type RecordingMedia } from './api'
@@ -11,7 +15,6 @@ import { overlapsRecordingCitation, readRecordingCitation } from './citation'
 import { distinctSpeakerCount, groupConversation, type ConversationGroup } from './conversation'
 import { RecordingEditDialog, type ProcessingDialog } from './editDialog'
 import { formatRecordingLength } from './library'
-import { PassageMenu, type PassageMenuItem } from './passageMenu'
 import { type RecordingPassagePlayback } from './playback'
 import {
   recordingOperation,
@@ -21,16 +24,14 @@ import {
   type TranscriptView,
 } from './processing'
 
-const LONG_PRESS_MS = 500
-const LONG_PRESS_MOVE_PIXELS = 10
 const PAGE_SIZE = 50
-
-type OpenMenu = { segment: TranscriptSegment; leftPixels: number; topPixels: number; returnFocus: HTMLElement | null }
 
 // RecordingConversation is the transcript read as a chat: one bubble per run of
 // passages by the same speaker, other people on the left with their name above,
-// the account owner on the right in the accent color. Everything done to a
-// passage is in its menu, so reading is not interrupted by rows of buttons.
+// the account owner on the right in the accent color. The bubbles are the
+// agent chat's (`agent-line`), swiped the same way: to the left plays the
+// recording from the bubble, to the right copies it. The rest of what is done
+// to a passage is behind the More button in the bubble's corner.
 export function RecordingConversation({
   recordingId,
   userId,
@@ -116,7 +117,6 @@ export function RecordingConversation({
     citedElement.current?.scrollIntoView?.({ block: 'center' })
   }, [citedSegmentId, citationKey])
 
-  const [menu, setMenu] = useState<OpenMenu | null>(null)
   const [dialog, setDialog] = useState<ProcessingDialog | null>(null)
   const lastPassageByGroup = useRef(new Map<string, TranscriptSegment>())
 
@@ -133,12 +133,14 @@ export function RecordingConversation({
       .catch((caught) => toast.failure(caught, t('recordings.playerUnavailable')))
   }
   const passageText = (segment: TranscriptSegment) => segment.effectiveTranscriptText || segment.transcriptText
-  const copy = async (segment: TranscriptSegment) => {
+  // copyText says whether the browser took the text, which the swipe needs to
+  // show its tick, or to offer a button to tap when a swipe was not allowed to copy.
+  const copyText = async (text: string): Promise<boolean> => {
     try {
-      await navigator.clipboard.writeText(passageText(segment))
-      toast.done(t('recordings.copied'))
+      await navigator.clipboard.writeText(text)
+      return true
     } catch {
-      toast.failed(t('common.copyFailed'))
+      return false
     }
   }
   const speakerCorrectionVariables = (segment: TranscriptSegment) => ({
@@ -209,61 +211,51 @@ export function RecordingConversation({
     }
   }
 
-  const menuItems = (segment: TranscriptSegment): PassageMenuItem[] => {
-    const canEdit = !isReadOnly && generation !== undefined
+  // The actions that are not a swipe. A version read for its citation is read
+  // only, so it has none.
+  const passageMenu = (segment: TranscriptSegment) => {
+    const canEdit = generation !== undefined
     const canName = canEdit && Boolean(segment.localSpeakerId)
-    const items: PassageMenuItem[] = [
-      { itemKey: 'play', label: t('recordings.playFromHere'), onSelect: () => play(segment) },
-      { itemKey: 'copy', label: t('common.copy'), onSelect: () => void copy(segment) },
-    ]
-    if (!isReadOnly)
-      items.push(
-        {
-          itemKey: 'correct',
-          label: t('recordings.correctText'),
-          isDisabled: !canEdit,
-          onSelect: () => correctText(segment),
-        },
-        {
-          itemKey: 'name',
-          label: t('recordingProcessing.nameSpeaker'),
-          isDisabled: !canName,
-          onSelect: () => nameSpeaker(segment),
-        },
-        {
-          itemKey: 'owner',
-          label: t(segment.isAccountOwner ? 'recordings.notMe' : 'recordings.thisIsMe'),
-          isDisabled: !canName,
-          // There is no call that unsets the owner: releasing a passage means
-          // confirming it as somebody else, so the name form opens.
-          onSelect: () => (segment.isAccountOwner ? nameSpeaker(segment) : void setOwnership(segment)),
-        },
-      )
-    return items
-  }
-  const openMenuAt = (
-    segment: TranscriptSegment,
-    event: { clientX: number; clientY: number },
-    element: HTMLElement,
-  ) => {
-    // A keyboard's menu key reports no pointer position: open beside the passage.
-    const rectangle = element.getBoundingClientRect()
-    const hasPointer = event.clientX !== 0 || event.clientY !== 0
-    setMenu({
-      segment,
-      leftPixels: hasPointer ? event.clientX : rectangle.left,
-      topPixels: hasPointer ? event.clientY : rectangle.bottom,
-      returnFocus: element,
-    })
-  }
-
-  const pressTimer = useRef<number | null>(null)
-  const pressStart = useRef({ clientX: 0, clientY: 0 })
-  const hasLongPressed = useRef(false)
-  useEffect(() => () => window.clearTimeout(pressTimer.current ?? undefined), [])
-  const cancelPress = () => {
-    window.clearTimeout(pressTimer.current ?? undefined)
-    pressTimer.current = null
+    return (close: () => void) => (
+      <>
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!canEdit}
+          onClick={() => {
+            close()
+            correctText(segment)
+          }}
+        >
+          {t('recordings.correctText')}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!canName}
+          onClick={() => {
+            close()
+            nameSpeaker(segment)
+          }}
+        >
+          {t('recordingProcessing.nameSpeaker')}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!canName}
+          onClick={() => {
+            close()
+            // There is no call that unsets the owner: releasing a passage means
+            // confirming it as somebody else, so the name form opens.
+            if (segment.isAccountOwner) nameSpeaker(segment)
+            else void setOwnership(segment)
+          }}
+        >
+          {t(segment.isAccountOwner ? 'recordings.notMe' : 'recordings.thisIsMe')}
+        </button>
+      </>
+    )
   }
 
   const bubble = (group: ConversationGroup) => {
@@ -274,8 +266,26 @@ export function RecordingConversation({
         {!group.isAccountOwner ? (
           <div className={group.speakerName ? 'recording-turn-name' : 'recording-turn-name muted'}>{speakerLabel}</div>
         ) : null}
-        <div className="recording-bubble">
-          <p className="recording-bubble-text">
+        <Tooltip label={formatRecordingLength(group.groupStartMS)}>
+          <SwipeableLine
+            className={group.isAccountOwner ? 'agent-line user' : 'agent-line assistant'}
+            replyLabel={t('recordings.playFromHere')}
+            copyLabel={t('common.copy')}
+            replyIcon={PlayIcon}
+            onReply={() => play(group.segments[0])}
+            onCopy={() => copyText(group.segments.map(passageText).join(' '))}
+            onCopyFailed={() => toast.failed(t('common.copyFailed'))}
+            extraActions={
+              isReadOnly ? null : (
+                <MenuButton
+                  label={t('recordings.passageActions')}
+                  className="icon-action recording-line-more"
+                  icon={<MoreIcon size={14} />}
+                  render={(close) => passageMenu(lastSegment())(close)}
+                />
+              )
+            }
+          >
             {group.segments.map((segment) => (
               <span key={segment.id}>
                 {segment.id === citedSegmentId ? <span ref={citedElement} /> : null}
@@ -283,61 +293,18 @@ export function RecordingConversation({
                   type="button"
                   className={segment.id === citedSegmentId ? 'recording-passage cited' : 'recording-passage'}
                   onClick={() => {
-                    if (hasLongPressed.current) {
-                      hasLongPressed.current = false
-                      return
-                    }
                     lastPassageByGroup.current.set(group.groupKey, segment)
                     play(segment)
                   }}
                   onFocus={() => lastPassageByGroup.current.set(group.groupKey, segment)}
                   onPointerEnter={() => lastPassageByGroup.current.set(group.groupKey, segment)}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    cancelPress()
-                    openMenuAt(segment, event, event.currentTarget)
-                  }}
-                  onPointerDown={(event) => {
-                    if (event.pointerType !== 'touch') return
-                    hasLongPressed.current = false
-                    pressStart.current = { clientX: event.clientX, clientY: event.clientY }
-                    const element = event.currentTarget
-                    pressTimer.current = window.setTimeout(() => {
-                      hasLongPressed.current = true
-                      openMenuAt(segment, pressStart.current, element)
-                    }, LONG_PRESS_MS)
-                  }}
-                  onPointerMove={(event) => {
-                    if (
-                      pressTimer.current !== null &&
-                      Math.hypot(
-                        event.clientX - pressStart.current.clientX,
-                        event.clientY - pressStart.current.clientY,
-                      ) > LONG_PRESS_MOVE_PIXELS
-                    )
-                      cancelPress()
-                  }}
-                  onPointerUp={cancelPress}
-                  onPointerCancel={cancelPress}
                 >
                   {passageText(segment)}
                 </button>{' '}
               </span>
             ))}
-          </p>
-          <div className="recording-bubble-foot">
-            <time className="recording-bubble-time">{formatRecordingLength(group.groupStartMS)}</time>
-            <button
-              type="button"
-              className="recording-bubble-more"
-              aria-haspopup="menu"
-              aria-label={t('recordings.passageActions')}
-              onClick={(event) => openMenuAt(lastSegment(), { clientX: 0, clientY: 0 }, event.currentTarget)}
-            >
-              <span aria-hidden="true">•••</span>
-            </button>
-          </div>
-        </div>
+          </SwipeableLine>
+        </Tooltip>
       </div>
     )
   }
@@ -374,19 +341,6 @@ export function RecordingConversation({
           hasNextPage={timeline.data.hasMoreSegments}
           isLoading={timeline.loading}
           onPageIndex={page.setPageIndex}
-        />
-      ) : null}
-      {menu ? (
-        <PassageMenu
-          label={t('recordings.passageActions')}
-          leftPixels={menu.leftPixels}
-          topPixels={menu.topPixels}
-          items={menuItems(menu.segment)}
-          onClose={() => {
-            const returnFocus = menu.returnFocus
-            setMenu(null)
-            returnFocus?.focus()
-          }}
         />
       ) : null}
       {dialog ? (
