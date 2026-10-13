@@ -45647,6 +45647,22 @@
           }
         }
       }
+    },
+    "Speakers": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话人"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

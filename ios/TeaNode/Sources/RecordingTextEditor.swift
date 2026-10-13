@@ -37,6 +37,7 @@ struct RecordingTextEditor: View {
                 if let problemText { Text(problemText).foregroundStyle(.secondary) }
             }
             .navigationTitle("Edit transcript")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(isSaving) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -143,6 +144,7 @@ struct RecordingTextHistoryScreen: View {
             if let problemText { Text(problemText).foregroundStyle(.secondary) }
         }
         .navigationTitle("Transcript edit history")
+        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
         .confirmationDialog(

@@ -322,6 +322,7 @@ struct RecordingsScreen: View {
 }
 
 struct RecordingDetailScreen: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let connection: Connection
     let recording: Recording
     var shouldFocusLearning = false
@@ -346,6 +347,11 @@ struct RecordingDetailScreen: View {
     var body: some View {
         ScrollViewReader { scrollProxy in
             List {
+                if dynamicTypeSize.isAccessibilitySize {
+                    Section {
+                        Text(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle).font(.headline)
+                    }
+                }
                 if let recordingView {
                     Section {
                         ForEach(recordingView.mediaFiles) { media in
@@ -503,6 +509,7 @@ struct RecordingDetailScreen: View {
             }
         }
         .navigationTitle(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
+        .navigationBarTitleDisplayMode(.inline)
         .task {
             await load()
             while !Task.isCancelled {

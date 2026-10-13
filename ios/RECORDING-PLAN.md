@@ -127,3 +127,9 @@ source/citation/stopped-learning routes require the next exact-head visual run.
 
 Recordings uses the distinct record-circle navigation symbol, matching the dashboard
 recording icon rather than the waveform used for voice playback.
+
+Independent visual review also found long edit/history/speaker titles obscured their
+meaning. Edit and history utility views use the existing inline-title pattern;
+Speakers has a shorter title while reference sections stay explicit. Recording
+details retain the complete human title as wrapping body text at accessibility sizes,
+following existing calendar content patterns. The root library retains its large title.

@@ -421,7 +421,7 @@ struct RecordingSpeakersScreen: View {
             }
             if let problemText { Text(problemText).foregroundStyle(.secondary) }
         }
-        .navigationTitle("Speakers and voice references")
+        .navigationTitle("Speakers")
         .refreshable {
             do { speakers = try await connection.recordingSpeakers(recordingId: recording.id) } catch { problemText = error.localizedDescription }
         }
