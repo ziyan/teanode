@@ -24,6 +24,18 @@ final class MeetingRecorder: NSObject {
     private var isChangingCapture = false
     private var pendingTransitions = RecordingCaptureTransitions()
     private var recorderId: UUID?
+    /// The words heard while recording. It runs beside the recorder and never affects it.
+    let liveStream = RecordingLiveStream()
+    private var cutPolicy = RecordingCutPolicy()
+    private var levelTask: Task<Void, Never>?
+    private var liveStartTask: Task<Void, Never>?
+    private var isCutting = false
+    private var lastUploadKickUptime: TimeInterval = 0
+
+    override init() {
+        super.init()
+        liveStream.didHearUtteranceEnd = { [weak self] in self?.heardUtteranceEnd() }
+    }
 
     var isCapturing: Bool { localRecording?.recordingCaptureState == "active" }
     var hasSession: Bool { localRecording != nil && localRecording?.recordingCaptureState != "stopped" }
@@ -60,11 +72,15 @@ final class MeetingRecorder: NSObject {
             elapsedMS = 0
             startedUptime = ProcessInfo.processInfo.systemUptime
             timelineAtStartMS = 0
+            liveStream.reset()
             _ = ensureRecordingActivity(canCreate: true)
             try await startSegment()
             recording = localRecording ?? recording
             observeInterruptions()
             startClock()
+            startWatchingLevel()
+            startLiveStream()
+            kickUploads()
             problemText = nil
         } catch { await fail(error) }
     }
@@ -77,14 +93,15 @@ final class MeetingRecorder: NSObject {
         }
         isChangingCapture = true
         defer { finishChangingCapture() }
+        stopLiveWords()
         do {
             updateElapsed()
             try await finishSegment()
             guard var recording = localRecording else { return }
             try recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: isInterruption ? "interrupted" : "paused")
-            try await journal?.save(recording)
-            localRecording = recording
+            localRecording = try await persist(recording)
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            kickUploads()
             await updateActivity()
         } catch { await fail(error) }
     }
@@ -108,10 +125,12 @@ final class MeetingRecorder: NSObject {
             try await finishSegment()
             guard var recording = localRecording else { return }
             try recording.resume(at: elapsedMS)
-            try await journal?.save(recording)
-            localRecording = recording
+            localRecording = try await persist(recording)
             try await startSegment()
             startClock()
+            startWatchingLevel()
+            startLiveStream()
+            kickUploads()
             await updateActivity()
         } catch { await fail(error) }
     }
@@ -126,13 +145,13 @@ final class MeetingRecorder: NSObject {
         }
         isChangingCapture = true
         defer { finishChangingCapture() }
+        stopLiveWords()
         do {
             updateElapsed()
             do { try await finishSegment() } catch { problemText = error.localizedDescription }
             guard var recording = localRecording else { return }
             try recording.stop(at: max(elapsedMS, recording.timelineDurationMS))
-            try await journal?.save(recording)
-            localRecording = recording
+            localRecording = try await persist(recording)
             captureTask?.cancel()
             captureTask = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -170,13 +189,14 @@ final class MeetingRecorder: NSObject {
             }
             if recording.recordingCaptureState == "active" {
                 try recording.pause(at: recording.timelineDurationMS, gapReason: "interrupted")
-                try await journal?.save(recording)
+                recording = try await persist(recording)
             }
             localRecording = recording
             startedUptime = ProcessInfo.processInfo.systemUptime
             timelineAtStartMS = elapsedMS
             observeInterruptions()
             startClock()
+            kickUploads()
             problemText = String(localized: "Recovered local audio. Resume when you are ready; the interruption is marked as a gap.")
             for activity in Activity<RecordingActivityAttributes>.activities {
                 if activity.attributes.localRecordingId == recording.id.uuidString {
@@ -249,7 +269,10 @@ final class MeetingRecorder: NSObject {
         do {
             updateElapsed()
             try await finishSegment()
-            if pendingTransitions.shouldStartNextSegment { try await startSegment() }
+            if pendingTransitions.shouldStartNextSegment {
+                try await startSegment()
+                kickUploads()
+            }
         } catch { await fail(error) }
     }
 
@@ -262,9 +285,10 @@ final class MeetingRecorder: NSObject {
         try session.setCategory(.record, mode: .default, options: [.allowBluetoothHFP])
         try session.setActive(true)
         updateElapsed()
+        cutPolicy.startPiece(atMS: elapsedMS)
         let media = LocalRecordingMedia(originalFilename: "recording.caf", originalContentType: "audio/x-caf", timelineStartMS: elapsedMS)
         recording.localMedia.append(media)
-        try await journal.save(recording)
+        recording = try await persist(recording)
         localRecording = recording
         let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
         guard pendingTransitions.shouldStartNextSegment else { return }
@@ -283,6 +307,7 @@ final class MeetingRecorder: NSObject {
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: original.path)
         audioRecorder = recorder
         recorderId = UUID()
+        // Pieces end where the cut policy says (at 60 seconds at the latest); the recorder's own end is only a backstop.
         guard recorder.record(forDuration: 600) else {
             throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
         }
@@ -314,8 +339,7 @@ final class MeetingRecorder: NSObject {
             recording.localMedia[mediaIndex].originalSha256 = try await Task.detached { try Self.digest(original) }.value
             recording.timelineDurationMS = max(recording.timelineDurationMS, media.timelineStartMS + recording.localMedia[mediaIndex].mediaDurationMS)
         }
-        try await journal.save(recording)
-        localRecording = recording
+        localRecording = try await persist(recording)
     }
 
     nonisolated static func digest(_ original: URL) throws -> String {
@@ -349,8 +373,7 @@ final class MeetingRecorder: NSObject {
                         self.isChangingCapture = true
                         recording.timelineDurationMS = self.elapsedMS
                         do {
-                            try await self.journal?.save(recording)
-                            self.localRecording = recording
+                            self.localRecording = try await self.persist(recording)
                             self.finishChangingCapture()
                         } catch {
                             self.finishChangingCapture()
@@ -360,6 +383,8 @@ final class MeetingRecorder: NSObject {
                     }
                     await self.updateActivity()
                 }
+                // The server learns how far the recording has come, and takes the pieces closed so far.
+                if ProcessInfo.processInfo.systemUptime - self.lastUploadKickUptime >= 15 { self.kickUploads() }
             }
         }
     }
@@ -405,7 +430,99 @@ final class MeetingRecorder: NSObject {
         await RecordingActivities.update(activityId, captureState: localRecording.recordingCaptureState, elapsedMS: elapsedMS)
     }
 
+    // MARK: Sharing the manifest, the uploads and the live words
+
+    /// Writes what the recorder owns of the manifest, keeping what the uploader has written to it meanwhile, and gives back the
+    /// recording with the uploader's side as it is now.
+    private func persist(_ recording: LocalRecording) async throws -> LocalRecording {
+        guard let journal else { return recording }
+        let capture = recording
+        let stored = try await journal.update(capture.id, accountKey: capture.accountKey) { $0.adoptCapture(from: capture) }
+        var merged = capture
+        merged.adoptUpload(from: stored)
+        return merged
+    }
+
+    private func uploadConnection() -> Connection? {
+        guard let accountKey = localRecording?.accountKey, let account = try? KeychainAccountStore().load(accountKey: accountKey) else { return nil }
+        return Connection(account: account, transport: URLSessionTransport(), store: KeychainAccountStore())
+    }
+
+    /// Asks the uploader to look at the recording: it creates it on the server, reports how far it has come and uploads each
+    /// piece once it is closed.
+    private func kickUploads() {
+        lastUploadKickUptime = ProcessInfo.processInfo.systemUptime
+        guard let connection = uploadConnection() else { return }
+        RecordingUploads.shared.resume(connection: connection)
+    }
+
+    /// Where on the recording's timeline it is now, without touching the clock the screen shows.
+    private func timelineNowMS() -> Int64 {
+        max(elapsedMS, timelineAtStartMS + Int64(max(0, ProcessInfo.processInfo.systemUptime - startedUptime) * 1000))
+    }
+
+    /// Starts the live stream as soon as the server knows the recording; the uploader creates it a moment after the start.
+    private func startLiveStream() {
+        liveStartTask?.cancel()
+        liveStartTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.isCapturing, let local = self.localRecording else { return }
+                if let journal = self.journal, let stored = try? await journal.read(local.id, accountKey: local.accountKey),
+                    let remoteId = stored.recordingId, let connection = self.uploadConnection()
+                {
+                    self.liveStream.begin(connection: connection, recordingId: remoteId, timelineMS: { [weak self] in self?.timelineNowMS() ?? 0 })
+                    return
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func stopLiveWords() {
+        liveStartTask?.cancel()
+        liveStartTask = nil
+        levelTask?.cancel()
+        levelTask = nil
+        liveStream.end()
+    }
+
+    /// Reads the meter about twenty times a second for the cut policy, and closes the piece when the policy says.
+    private func startWatchingLevel() {
+        levelTask?.cancel()
+        levelTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled, let self else { return }
+                self.watchLevel()
+            }
+        }
+    }
+
+    private func watchLevel() {
+        guard isCapturing, let audioRecorder else { return }
+        audioRecorder.updateMeters()
+        cutPolicy.recordLevel(decibels: audioRecorder.averagePower(forChannel: 0), atMS: timelineNowMS())
+        cutIfDue()
+    }
+
+    private func heardUtteranceEnd() {
+        cutPolicy.recordUtteranceEnd(atMS: timelineNowMS())
+        cutIfDue()
+    }
+
+    private func cutIfDue() {
+        guard isCapturing, !isChangingCapture, !isCutting, let recorderId,
+            cutPolicy.cutReason(atMS: timelineNowMS(), isStreamConnected: liveStream.isConnected) != nil
+        else { return }
+        isCutting = true
+        Task {
+            await rollover(recorderId: recorderId, wasSuccessful: true)
+            isCutting = false
+        }
+    }
+
     private func fail(_ error: Error) async {
+        stopLiveWords()
         audioRecorder?.delegate = nil
         audioRecorder?.stop()
         audioRecorder = nil
@@ -414,8 +531,7 @@ final class MeetingRecorder: NSObject {
         problemText = error.localizedDescription
         if var recording = localRecording, recording.recordingCaptureState == "active" {
             try? recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: "interrupted")
-            try? await journal?.save(recording)
-            localRecording = recording
+            localRecording = (try? await persist(recording)) ?? recording
         }
         await updateActivity()
     }

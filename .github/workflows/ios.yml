@@ -150,7 +150,7 @@ jobs:
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
-          for recording_screen in recording-compatible-playback recording-original-playback recording-original-preview recording-attachment-import recording-source-settings recording-citation recording-learning-stopped recording-detail recording-capture recording-transcript recording-version recording-speakers recording-text-history recording-text-editor recording-model-settings recording-quota-settings; do
+          for recording_screen in recording-compatible-playback recording-original-playback recording-original-preview recording-attachment-import recording-source-settings recording-citation recording-learning-stopped recording-detail recording-capture recording-capture-live recording-transcript recording-version recording-speakers recording-text-history recording-text-editor recording-model-settings recording-quota-settings; do
             shoot "$recording_screen-light" light large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-dark" dark large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"

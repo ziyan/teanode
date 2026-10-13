@@ -14,7 +14,7 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - [x] Milestone 2 (2026-10-13): sentences that cross a cut between pieces come out whole (held-back last segment, re-read with the next piece).
 - [x] Milestone 3 (2026-10-13): speakers keep their label across pieces (recording-scoped temporary voice samples) and naming a speaker during capture applies to the whole recording.
 - [x] Milestone 4 (2026-10-13): live words stream through the server (recording mode of the voice relay), stored as live utterances and merged with speaker-separated segments in the timeline. Built on `feat/recording-live-stream` and merged into this branch.
-- [ ] Milestone 5: the iPhone cuts pieces at utterance ends, uploads them while recording, streams the microphone, and shows live bubbles with naming on the recording screen.
+- [x] Milestone 5 (2026-10-13, on `ios/recording-live`): the iPhone cuts pieces at utterance ends, uploads them while recording, streams the microphone, and shows live bubbles with naming on the recording screen. TeaNodeKit tests run in Linux containers here; the app itself is built and photographed by CI (see Artifacts and Notes for the runs).
 - [ ] Milestone 6: the dashboard shows a capture in progress live; settings, CLI and tool parity; deploy and real-device check.
 - [ ] Milestone 7: the dashboard records from the browser's microphone, with a recording bar that stays while the person moves around the dashboard and a live recording page.
 - [ ] Milestone 8: the agent's recording tool imports a recording straight from a message attachment, a file on an attached computer or a chat attachment, and the CLI records from a microphone or standard input and watches a capture in progress.
@@ -32,6 +32,12 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - Naming a temporary speaker a second time with a different name works (a new correction under a new key), but naming it back to a name it already had is answered by the first correction, which an intermediate name's later generation still outranks. This is the same as the existing `speaker-confirm` behavior for a repeated client correction key and is left alone.
 - `isRecognizedSpeaker` was missing from the command line and tool timeline document, so a speaker recognized by voice could not be told from an unnamed one there. Added with the new fields.
 - The existing test `TestRecordingCaptureHistoryAndReservedQuota` expected each progress update to advance the generation (it used the stale value 1 after two updates). It now checks a generation from the future and, after the stop, the pre-stop generation.
+- The recorder and the uploader both wrote the whole local manifest (`RecordingJournal.save`). That was safe while only a stopped recording had an uploader, but with an upload running during capture, either side saving an older copy would have dropped a freshly closed piece (the recorder's side) or undone upload progress and, worse, a released original (the uploader's side), leaving a piece the manifest says is not uploaded and whose file is gone. Each writer now hands over only what it owns through `RecordingJournal.update` (`LocalRecording.adoptCapture` for the recorder: state, duration, gaps, pieces with their size and digest; `adoptUpload` for the uploader: the server's recording id, publication flag, errors, and each piece's manifest, accepted parts and receipt), and the journal applies it to what is on disk inside the actor, so nothing is written from a stale copy.
+- The server accepts a gap only with an end, and lets a gap's end move on only while the capture is paused or interrupted and the gap ends at the recording's duration. A paused phone therefore publishes its open gap ending at the duration so far (`LocalRecording.publishedCaptureGaps`) and moves both on together at each report.
+- The stream's timeline start has to be sent in the hello, before the server has opened the provider session and said ready. The phone queues its audio behind the hello (the socket keeps send order) so the first frame is where `streamStartMS` says, instead of leaving the first second or so of every stream misplaced.
+- A temporary speaker's bubbles are keyed by their label, so one speaker is one bubble run across pieces; they are not given the letters ("Speaker A") that unconfirmed speakers of a finished recording get, since the label itself ("Speaker 1") is already stable.
+- The timeline read starts at the first passage. A long capture would show its first page on the capture screen, so the screen reads the first page (for the live words and the passage count) and then the last 40 passages.
+- Closing a piece costs a short gap in the audio (the old recorder is stopped and a new one prepared), as the 600 second rollover always did; cuts are now every 20 to 60 seconds instead of every ten minutes, and they fall at the end of an utterance or in a pause, so the gap normally falls in silence. A forced cut at 60 seconds can fall inside speech and lose that gap's few tens of milliseconds, which the server's handoff does not recover because the audio is not there. Overlapping the next recorder with the previous one was not done: the two files would both carry the overlap and the transcript would repeat it.
 
 ## Decision Log
 
@@ -83,6 +89,19 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - Decision: the recording tool imports from the same sources as `share_file` (mail, computer, conversation), and still cannot turn on a microphone; the CLI may record, because the person runs it on their own machine.
   Rationale: the owner asked for tool and CLI parity, for example creating a recording from a file. The agent recording someone without the person starting it would be covert recording, which the tool has always refused.
   Date/Author: 2026-10-13, Claude, asked by the owner.
+
+- Decision: words on the capture screen are neutral bubbles without a name, and the long-press menu on them offers Copy only; Name speaker and This is me are offered on bubbles that have a speaker (a temporary speaker's, or a finished transcript's).
+  Rationale: a live utterance has no speaker until the speaker-separated pass reaches it about half a minute later; there is nothing yet to name, and naming "the utterance" would be a correction with no label to attach to.
+  Date/Author: 2026-10-13, Claude (Milestone 5).
+- Decision: a live utterance is hidden on the phone once finished passages cover 60 percent of its time span, and utterances this phone heard on its own stream are shown beside the server's list (each once, by utterance identifier) until then.
+  Rationale: the server drops an utterance only when a completed piece covers all of it; the phone sees passages sooner than it re-reads the server's list, and a sentence that crosses a cut is covered by the next piece's handoff, so waiting for full coverage would show the same words twice.
+  Date/Author: 2026-10-13, Claude (Milestone 5).
+- Decision: the live stream is opened by the recorder, not by the capture screen, so it keeps running when the screen is closed, and the recorder starts it once the uploader has created the recording on the server (about a second after the start). The stream is ended on pause, interruption, stop and failure and opened again on resume, with a new start time.
+  Rationale: cuts depend on the stream's utterance ends whether or not the screen is open; during a pause there is no audio.
+  Date/Author: 2026-10-13, Claude (Milestone 5).
+- Decision: the capture screen's naming of a temporary speaker uses the label alone and offers no passage range; naming a speaker of a finished transcript keeps the existing form.
+  Rationale: `NameRecordingTemporarySpeaker` names the speaker in every piece at once.
+  Date/Author: 2026-10-13, Claude (Milestone 5).
 
 ## Outcomes & Retrospective
 

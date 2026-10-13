@@ -75,8 +75,12 @@ final class RecordingUploads: NSObject {
                     try self.requireRetainedAccount(accountKey)
                     let journal = try MeetingRecorder.makeJournal()
                     let recordings = try await journal.recordings(accountKey: ownerConnection.accountKey)
+                    // A capture under way is looked at too: it is created on the server, its progress is reported and the
+                    // pieces closed so far are uploaded, while the piece still being recorded is left alone.
                     for recording in recordings
-                    where ["stopped", "imported"].contains(recording.recordingCaptureState) && !recording.isDeletedRemotely {
+                    where (["stopped", "imported"].contains(recording.recordingCaptureState) || recording.isCaptureUnderWay)
+                        && !recording.isDeletedRemotely
+                    {
                         do {
                             if try await self.advance(recording.id, connection: ownerConnection, journal: journal) {
                                 try self.requireRetainedAccount(accountKey)
@@ -104,6 +108,18 @@ final class RecordingUploads: NSObject {
         }
     }
 
+    /// Writes the manifest. A capture's manifest is shared with the recorder, so only what the uploader owns goes in
+    /// (`LocalRecording.adoptUpload`), on top of whatever the recorder has written since this copy was read; the
+    /// recording that was written is given back. Other recordings have one writer and are saved whole.
+    private func persist(_ recording: LocalRecording, journal: RecordingJournal) async throws -> LocalRecording {
+        guard recording.recordingOrigin == "capture" else {
+            try await journal.save(recording)
+            return recording
+        }
+        let upload = recording
+        return try await journal.update(upload.id, accountKey: upload.accountKey) { $0.adoptUpload(from: upload) }
+    }
+
     private func advance(_ recordingId: UUID, connection: Connection, journal: RecordingJournal) async throws -> Bool {
         var recording = try await journal.read(recordingId, accountKey: connection.accountKey)
         do {
@@ -114,9 +130,12 @@ final class RecordingUploads: NSObject {
                     clientRecordingId: recording.clientRecordingId, recordingTitle: recording.recordingTitle,
                     recordingOrigin: recording.recordingOrigin)
                 recording.recordingId = remote.id
-                try await journal.save(recording)
+                _ = try await persist(recording, journal: journal)
             }
             guard let remoteId = recording.recordingId else { throw TeaNodeError.unreadableAnswer }
+            // The capture's state, duration and gaps go to the server as they are: while it runs, every pass reports how
+            // far it has come; once it is stopped, the stop is published before any piece is uploaded, and only then is
+            // the capture marked as published.
             if recording.recordingOrigin == "capture", recording.hasPublishedCapture != true {
                 try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                 var remote = try await connection.recording(remoteId).recording
@@ -126,21 +145,26 @@ final class RecordingUploads: NSObject {
                         recordingId: remoteId, expectedSourceGeneration: remote.sourceGeneration,
                         recordingTitle: nil, recordedAt: recording.startedAt.formatted(.iso8601))
                 }
-                if remote.recordingCaptureState != "stopped" || remote.timelineDurationMS != recording.timelineDurationMS
-                    || remote.captureGaps != recording.captureGaps
+                let publishedGaps = recording.publishedCaptureGaps
+                if remote.recordingCaptureState != recording.recordingCaptureState
+                    || remote.timelineDurationMS != recording.timelineDurationMS || remote.captureGaps != publishedGaps
                 {
                     try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                     _ = try await connection.updateRecordingCapture(
                         recordingId: remoteId, expectedGeneration: remote.sourceGeneration,
-                        recordingCaptureState: "stopped", timelineDurationMS: recording.timelineDurationMS, captureGaps: recording.captureGaps)
+                        recordingCaptureState: recording.recordingCaptureState, timelineDurationMS: recording.timelineDurationMS,
+                        captureGaps: publishedGaps)
                 }
-                recording.hasPublishedCapture = true
-                try await journal.save(recording)
+                if recording.recordingCaptureState == "stopped" { recording.hasPublishedCapture = true }
+                _ = try await persist(recording, journal: journal)
             }
             try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
             let limits = try await connection.recordingLimits()
             guard limits.uploadPartBytes == 8 * 1024 * 1024 else { throw TeaNodeError.unreadableAnswer }
             for mediaIndex in recording.localMedia.indices {
+                // The piece still being recorded has no digest yet: it is still growing, and is not touched until the
+                // recorder closes it and records its size and digest.
+                if recording.isCaptureUnderWay, recording.localMedia[mediaIndex].originalSha256 == nil { continue }
                 if recording.localMedia[mediaIndex].originalSha256 == nil {
                     let pending = recording.localMedia[mediaIndex]
                     let source = try await journal.originalURL(recordingId: recording.id, mediaId: pending.id, accountKey: recording.accountKey)
@@ -151,7 +175,7 @@ final class RecordingUploads: NSObject {
                     }
                     recording.localMedia[mediaIndex].originalSha256 = try await Task.detached { try MeetingRecorder.digest(source) }.value
                     try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
-                    try await journal.save(recording)
+                    _ = try await persist(recording, journal: journal)
                 }
                 let localMedia = recording.localMedia[mediaIndex]
                 if localMedia.isDurablyUploaded {
@@ -172,7 +196,7 @@ final class RecordingUploads: NSObject {
                         originalContentType: localMedia.originalContentType,
                         originalSizeBytes: localMedia.originalSizeBytes, originalSha256: digest, timelineStartMS: localMedia.timelineStartMS,
                         mediaDurationMS: localMedia.mediaDurationMS)
-                    try await journal.save(recording)
+                    _ = try await persist(recording, journal: journal)
                 }
                 guard let manifest = recording.localMedia[mediaIndex].mediaManifest, manifest.recordingId == remoteId,
                     manifest.clientMediaId == localMedia.id.uuidString, manifest.originalSha256 == digest,
@@ -217,7 +241,7 @@ final class RecordingUploads: NSObject {
                         transportFilename: transportFile.lastPathComponent)
                     let taskDescription = String(data: try JSONEncoder().encode(partTask), encoding: .utf8)
                     recording.uploadErrorMessage = nil
-                    do { try await journal.save(recording) } catch {
+                    do { _ = try await persist(recording, journal: journal) } catch {
                         try? FileManager.default.removeItem(at: transportFile)
                         throw error
                     }
@@ -236,15 +260,19 @@ final class RecordingUploads: NSObject {
                 }
                 try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                 recording.localMedia[mediaIndex].completionReceipt = try await connection.completeRecordingUpload(manifest)
-                try await journal.save(recording)
+                _ = try await persist(recording, journal: journal)
                 try await journal.releaseUploadedOriginal(recordingId: recording.id, mediaId: localMedia.id, accountKey: recording.accountKey)
             }
             recording.uploadErrorMessage = nil
-            try await journal.save(recording)
+            // What the recorder wrote meanwhile (a capture's state and pieces) is read back from the journal.
+            let current = try await persist(recording, journal: journal)
             // Once the server holds every original, verified, nothing is left
             // that only the phone has: the recording is the server's from here.
-            if ["stopped", "imported"].contains(recording.recordingCaptureState), !recording.localMedia.isEmpty,
-                recording.localMedia.allSatisfy(\.isDurablyUploaded)
+            // A capture is not left before its stop has been published, and not
+            // while it can still gain a piece: only after the stop.
+            if ["stopped", "imported"].contains(current.recordingCaptureState), !current.localMedia.isEmpty,
+                current.localMedia.allSatisfy(\.isDurablyUploaded),
+                current.recordingOrigin != "capture" || current.hasPublishedCapture == true
             {
                 try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                 try await journal.removeLocalRecording(recording.id, accountKey: connection.accountKey)
@@ -254,7 +282,7 @@ final class RecordingUploads: NSObject {
             recording.uploadErrorMessage = error.localizedDescription
             recording.isUploadWaitingForNetwork = RecordingLibrary.isConnectivityFailure(error)
             if error as? TeaNodeError == .recordingDeleted { recording.isDeletedRemotely = true }
-            try await journal.save(recording)
+            _ = try await persist(recording, journal: journal)
             throw error
         }
     }
@@ -292,7 +320,7 @@ final class RecordingUploads: NSObject {
                 recording.uploadErrorMessage = errorMessage ?? String(localized: "The upload was not verified. Keep the original and retry.")
                 recording.isUploadWaitingForNetwork = isConnectivityFailure
             }
-            try await journal.save(recording)
+            _ = try await persist(recording, journal: journal)
             hasVerifiedReceipt = recording.uploadErrorMessage == nil
             if hasVerifiedReceipt, let account = try KeychainAccountStore().load(accountKey: task.accountKey) {
                 resume(connection: Connection(account: account, transport: URLSessionTransport(), store: KeychainAccountStore()))

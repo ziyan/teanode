@@ -393,7 +393,7 @@ struct RecordingsScreen: View {
                     onStart: startRecording, onShow: { isShowingCapture = true })
             }
             .sheet(isPresented: $isShowingCapture) {
-                RecordingCaptureScreen {
+                RecordingCaptureScreen(connection: model.connection) {
                     await model.refresh()
                     model.doneText = String(localized: "Saved. TeaNode will upload the recording, then name it.")
                 }

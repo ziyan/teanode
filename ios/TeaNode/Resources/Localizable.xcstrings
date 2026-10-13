@@ -43560,6 +43560,22 @@
         }
       }
     },
+    "Everything this speaker says in this recording, now and later, gets the name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この話者がこの録音で話すことすべてに、今も今後もこの名前が付きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此说话人在本次录音中现在和之后说的每一句话，都会使用这个名字。"
+          }
+        }
+      }
+    },
     "Off changes this passage only. Naming is free metadata. Suitable voice samples are selected automatically, and learned material is reconciled.": {
       "localizations": {
         "zh-Hans": {
