@@ -70,4 +70,21 @@ The exact simulator build and all checks passed, and all 48 recording captures w
 inspected. Largest text in supported-preview mode compressed and truncated the
 explanation that the original stays unchanged. That caption now keeps its natural
 vertical size, matching existing native text handling. Its content assertion requires
-the complete meaning, and the final SDK and captures will verify the correction.
+the complete meaning. The final SDK and all 48 exact-head captures passed and were
+visually inspected after this correction; the native playback increment is merged.
+
+## Preparation timeout follow-up
+
+The synchronous local conversion can take up to ten minutes without sending response
+bytes. The native transport used the default sixty-second request timeout, which
+could cancel preparation before the server finishes. Only preparation now requests
+an eleven-minute timeout through the existing GraphQL transport, with one minute
+for the response after the bounded conversion. Ordinary reads keep their defaults.
+Authentication retry retains the request timeout; cancellation and receipt checks
+remain unchanged. No new whole-download timeout is inferred from the idle timeout.
+
+- [x] Apply the preparation-specific timeout without changing other requests.
+- [x] Verify the actual outgoing preparation request and authenticated retry.
+- [x] Run all 329 package tests, the real document schema check and full naming lint.
+- [x] Complete independent focused review; no confirmed finding remains in this diff.
+- [ ] Complete SDK CI. No screen changes are introduced by this transport fix.
