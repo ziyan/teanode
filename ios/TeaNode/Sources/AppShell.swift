@@ -33,7 +33,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .contacts: "person"
         case .knowledge: "brain"
         case .finance: "creditcard"
-        case .recordings: "waveform"
+        case .recordings: "record.circle"
         case .settings: "gearshape"
         }
     }
