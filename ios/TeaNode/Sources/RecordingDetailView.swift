@@ -257,7 +257,21 @@ struct RecordingDetailScreen: View {
         case .failed:
             VStack(alignment: .leading, spacing: 8) {
                 RecordingStatusLabel(status: .failed)
-                if let run = model.latestTranscriptRun {
+                if let run = model.latestTranscriptRun, run.recordingProcessingState == "uncertain" {
+                    // The answer to a request already sent never arrived, so
+                    // whether it was charged is unknown: resuming it could pay
+                    // twice. Transcribing again is a new request, said so.
+                    Text("The answer from the transcription service was lost, so this recording was not transcribed. Transcribing it again is a new paid request.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        Task { await model.transcribeAgain() }
+                    } label: {
+                        Label("Transcribe again", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.isTranscriptionAvailable || model.isSubmitting)
+                } else if let run = model.latestTranscriptRun {
                     Button {
                         Task { await model.retry(run) }
                     } label: {
