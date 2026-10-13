@@ -2740,9 +2740,10 @@ export const ja: Catalog = {
   'mailboxSettings.devicesHint':
     'メールソフトやスマートフォンごとに 1 つ。ソフトはあなたのアドレスと専用のアプリパスワードでサインインし、アカウントのパスワードは使いません。端末をなくしたら、そのパスワードだけを取り消せます。',
   'mailboxSettings.noDevices': 'まだメールソフトは設定されていません。',
-  'mailboxSettings.neverUsed': '未使用',
-  'mailboxSettings.deviceCreated': '{time} に設定',
-  'mailboxSettings.deviceLastUsed': '最終使用',
+  'passwordUsage.created': '作成：{time}',
+  'passwordUsage.lastUsed': '最終使用',
+  'passwordUsage.neverUsed': '未使用',
+  'passwordUsage.maybeSafeToDelete': '削除しても問題ない可能性があります',
   'mailboxSettings.appPasswordUsername': '{username} でサインインし、これをパスワードにします。',
   'mailboxSettings.revoke': '取り消す',
   'mailboxSettings.revokeConfirm':

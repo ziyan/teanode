@@ -2668,9 +2668,10 @@ export const zh: Catalog = {
   'mailboxSettings.devicesHint':
     '每个邮件客户端或手机一个。客户端用你的地址和它自己的应用密码登录，从不使用账号密码；手机丢了，只需撤销它的密码。',
   'mailboxSettings.noDevices': '还没有设置任何邮件客户端。',
-  'mailboxSettings.neverUsed': '从未使用',
-  'mailboxSettings.deviceCreated': '设置于 {time}',
-  'mailboxSettings.deviceLastUsed': '最近使用',
+  'passwordUsage.created': '创建于 {time}',
+  'passwordUsage.lastUsed': '上次使用',
+  'passwordUsage.neverUsed': '从未使用',
+  'passwordUsage.maybeSafeToDelete': '可能可以安全删除',
   'mailboxSettings.appPasswordUsername': '用 {username} 登录，密码就是它。',
   'mailboxSettings.revoke': '撤销',
   'mailboxSettings.revokeConfirm': '撤销“{name}”的应用密码？该客户端将被登出，且无法再次登录。',

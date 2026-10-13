@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
-import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
+import { ErrorMessage, Loading, Tag } from '../components/common'
 import { Tooltip } from '../components/tooltip'
-import { RelativeTime } from '../components/relativeTime'
+import { PasswordUsage, sortNewestFirst } from '../components/passwordUsage'
 import { Combobox, Select } from '../components/select'
 import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -1301,7 +1301,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
     return <Loading />
   }
   const addresses = query.data?.GetMailProgramSettings
-  const appPasswords = query.data?.ListMailboxAppPasswords ?? []
+  const appPasswords = sortNewestFirst(query.data?.ListMailboxAppPasswords ?? [])
   const address = view.mailbox.addresses?.[0]?.address
 
   return (
@@ -1348,19 +1348,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
             <SettingsRow
               key={appPassword.id}
               title={appPassword.name}
-              subtitle={
-                <>
-                  {t('mailboxSettings.deviceCreated', { time: formatTime(appPassword.createdAt) })}
-                  {' · '}
-                  {appPassword.lastUsedAt ? (
-                    <>
-                      {t('mailboxSettings.deviceLastUsed')} <RelativeTime value={appPassword.lastUsedAt} />
-                    </>
-                  ) : (
-                    t('mailboxSettings.neverUsed')
-                  )}
-                </>
-              }
+              subtitle={<PasswordUsage password={appPassword} />}
               actions={
                 <Tooltip label={t('mailboxSettings.revoke')}>
                   <button

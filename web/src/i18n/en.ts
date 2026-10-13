@@ -2756,9 +2756,10 @@ export const en = {
   'mailboxSettings.devicesHint':
     'One for each mail program or phone. A program signs in with your address and its own app password, never with your account password; lose the phone and revoke its password alone.',
   'mailboxSettings.noDevices': 'No mail program has been set up yet.',
-  'mailboxSettings.neverUsed': 'never used',
-  'mailboxSettings.deviceCreated': 'set up {time}',
-  'mailboxSettings.deviceLastUsed': 'last used',
+  'passwordUsage.created': 'Created {time}',
+  'passwordUsage.lastUsed': 'Last used',
+  'passwordUsage.neverUsed': 'Never used',
+  'passwordUsage.maybeSafeToDelete': 'May be safe to delete',
   'mailboxSettings.appPasswordUsername': 'Sign in as {username}, with this as the password.',
   'mailboxSettings.revoke': 'Revoke',
   'mailboxSettings.revokeConfirm':
