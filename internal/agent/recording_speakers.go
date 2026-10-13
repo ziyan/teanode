@@ -230,7 +230,7 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 
 // The fixed normalized PCM format comes from TeaNode's own decoder. Conservative
 // gates reject clipping, nearly silent speech and high measured background noise.
-// Noise is measured as the spread between the quieter frames, where the floor
+// Noise is measured as the spread between the quietest frames, where the floor
 // shows between syllables, and the louder ones: speech rises well above its
 // floor, steady noise does not. A clip need not contain a pause, since one
 // sentence spoken without stopping is the clip a person most often confirms.
@@ -264,7 +264,7 @@ func isCleanRecordingVoice(samples []byte) bool {
 	}
 	sortedLevels := slices.Clone(frameLevels)
 	slices.Sort(sortedLevels)
-	floorLevel := sortedLevels[len(sortedLevels)/10]
+	floorLevel := sortedLevels[len(sortedLevels)/20]
 	loudLevel := sortedLevels[len(sortedLevels)*9/10]
 	// Speech at least 12 dB above its floor: four times the amplitude.
 	return voicedFrames*100 >= len(frameLevels)*30 && loudLevel >= floorLevel*4
