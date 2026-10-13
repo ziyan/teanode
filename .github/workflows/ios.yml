@@ -89,6 +89,7 @@ jobs:
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
           swiftc scripts/assert-recording-screenshot.swift -o build/assert-recording-screenshot
+          swiftc scripts/assert-device-setup-screenshot.swift -o build/assert-device-setup-screenshot
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
@@ -100,6 +101,7 @@ jobs:
             xcrun simctl io "$device" screenshot "screenshots/$name.png"
             case "$name" in
               recordings-*|recording-*) build/assert-recording-screenshot "$name" "screenshots/$name.png" ;;
+              device-setup-*) build/assert-device-setup-screenshot "$name" "screenshots/$name.png" ;;
             esac
           }
           shoot connect-light light large
@@ -109,6 +111,10 @@ jobs:
           shoot conversation-light light large -TeaNodeDemo
           if build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
             echo "Recording content assertion accepted the conversation screen."
+            exit 1
+          fi
+          if build/assert-device-setup-screenshot device-setup-light screenshots/conversation-light.png; then
+            echo "Device setup assertion accepted the conversation screen."
             exit 1
           fi
           shoot conversation-dark dark large -TeaNodeDemo
@@ -151,6 +157,11 @@ jobs:
           # Settings, and the screens it pushes, named by -TeaNodeScreen.
           shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
           shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
+          for setup_screen in device-setup device-setup-mail device-setup-collections device-setup-profile device-setup-unavailable; do
+            shoot "$setup_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$setup_screen"
+            shoot "$setup_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$setup_screen"
+            shoot "$setup_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$setup_screen"
+          done
           shoot agent-settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-settings
           shoot manage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen manage
           shoot people-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen people

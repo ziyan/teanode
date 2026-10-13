@@ -239,8 +239,6 @@ struct MailFoldersView: View {
 struct MailAppPasswordsView: View {
     let mail: MailModel
     let mailboxId: String
-    @Environment(\.openURL) private var openURL
-    @State private var isMakingProfile = false
     @State private var passwords: [MailAppPassword] = []
     @State private var settings: MailProgramSettings?
     @State private var isAdding = false
@@ -251,15 +249,15 @@ struct MailAppPasswordsView: View {
     var body: some View {
         List {
             Section {
-                Button {
-                    Task { await addToThisPhone() }
+                NavigationLink {
+                    DeviceSetupView(connection: mail.connection, preselectedMailboxId: mailboxId)
                 } label: {
-                    Label("Add mail, calendars and contacts to this iPhone", systemImage: "iphone.badge.plus")
+                    Label("Set up on this iPhone", systemImage: "iphone.badge.plus")
                 }
-                .disabled(isMakingProfile)
             } footer: {
-                Text("Safari downloads a profile; install it in Settings, under Profile Downloaded. It signs in with an app password of its own, listed below.")
+                Text("Choose Mail, Calendar, Reminders and Contacts, then install one profile. A mailbox is optional.")
             }
+
             Section {
                 ForEach(passwords) { password in
                     VStack(alignment: .leading, spacing: 2) {
@@ -354,20 +352,6 @@ struct MailAppPasswordsView: View {
             }
         } message: {
             Text("The mail program using it stops reaching the mailbox.")
-        }
-    }
-
-    /// Makes a setup profile for this phone and opens it in Safari, which
-    /// hands it to Settings: an app cannot install a profile itself.
-    private func addToThisPhone() async {
-        isMakingProfile = true
-        defer { isMakingProfile = false }
-        do {
-            let link = try await mail.connection.createSetupProfile(mailboxId: mailboxId, deviceName: UIDevice.current.name)
-            openURL(link)
-            await load()
-        } catch {
-            mail.problemText = error.localizedDescription
         }
     }
 

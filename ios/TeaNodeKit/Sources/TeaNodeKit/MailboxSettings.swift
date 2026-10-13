@@ -2,6 +2,7 @@ import Foundation
 
 /// MailAppPassword is a password a mail program uses for the mailbox.
 public struct MailAppPassword: Codable, Hashable, Sendable, Identifiable {
+    public let mailboxId: String?
     public let id: String
     public let name: String
     public let createdAt: String

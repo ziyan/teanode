@@ -45791,6 +45791,358 @@
           }
         }
       }
+    },
+    "No Mail, Calendar, Reminders or Contacts service is available for this account.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントではメール、カレンダー、リマインダー、連絡先のサービスを利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此账户没有可用的邮件、日历、提醒事项或联系人服务。"
+          }
+        }
+      }
+    },
+    "Safari downloads the profile. Open Settings, tap Profile Downloaded, then install it. The download link works once.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safariでプロファイルをダウンロードします。「設定」を開き、「プロファイルがダウンロードされました」をタップしてインストールしてください。ダウンロードリンクは1回だけ使用できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 会下载描述文件。打开“设置”，轻点“已下载描述文件”，然后安装。下载链接仅可使用一次。"
+          }
+        }
+      }
+    },
+    "Access for this device": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスのアクセス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此设备的访问权限"
+          }
+        }
+      }
+    },
+    "Choose Mail, Calendar, Reminders and Contacts, then install one profile. A mailbox is optional.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メール、カレンダー、リマインダー、連絡先を選び、1つのプロファイルをインストールします。メールボックスは必須ではありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择邮件、日历、提醒事项和联系人，然后安装一个描述文件。邮箱为可选项。"
+          }
+        }
+      }
+    },
+    "Choose a mailbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールボックスを選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择邮箱"
+          }
+        }
+      }
+    },
+    "Mail uses a mailbox app password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールにはメールボックスのアプリ用パスワードを使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件使用邮箱应用专用密码"
+          }
+        }
+      }
+    },
+    "Manage sync passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期用パスワードを管理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理同步密码"
+          }
+        }
+      }
+    },
+    "Collections use an account sync password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションにはアカウントの同期用パスワードを使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历和联系人使用账户同步密码"
+          }
+        }
+      }
+    },
+    "Safari could not open the profile. Try downloading it again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safariでプロファイルを開けませんでした。もう一度ダウンロードしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 无法打开描述文件。请尝试重新下载。"
+          }
+        }
+      }
+    },
+    "Your setup profile is ready": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定プロファイルが用意できました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置描述文件已就绪"
+          }
+        }
+      }
+    },
+    "Sync passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期用パスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步密码"
+          }
+        }
+      }
+    },
+    "Choose what to add": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加する項目を選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要添加的内容"
+          }
+        }
+      }
+    },
+    "Profile download started": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルのダウンロードを開始しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已开始下载描述文件"
+          }
+        }
+      }
+    },
+    "Choose only the services you want on this iPhone. Calendar, Reminders and Contacts do not need a mailbox.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このiPhoneで使うサービスだけを選んでください。カレンダー、リマインダー、連絡先にメールボックスは不要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅选择要在此 iPhone 上使用的服务。日历、提醒事项和联系人无需邮箱。"
+          }
+        }
+      }
+    },
+    "Set up on this iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このiPhoneで設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此 iPhone 上设置"
+          }
+        }
+      }
+    },
+    "No services available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用できるサービスがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用服务"
+          }
+        }
+      }
+    },
+    "The profile expired. Create a new one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルの有効期限が切れました。新しく作成してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述文件已过期。请创建一个新的描述文件。"
+          }
+        }
+      }
+    },
+    "Install the profile": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルをインストール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装描述文件"
+          }
+        }
+      }
+    },
+    "Manual setup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手動設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动设置"
+          }
+        }
+      }
+    },
+    "Create setup profile": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定プロファイルを作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建设置描述文件"
+          }
+        }
+      }
+    },
+    "The profile signs in with separate mail and sync passwords. You can revoke either without changing your account password.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルはメール用と同期用の別々のパスワードでサインインします。アカウントのパスワードを変えずに、どちらも個別に取り消せます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述文件使用独立的邮件和同步密码登录。您可以分别撤销它们，而无需更改账户密码。"
+          }
+        }
+      }
+    },
+    "Manage mail passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メール用パスワードを管理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理邮件密码"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
