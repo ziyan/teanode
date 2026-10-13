@@ -46,7 +46,11 @@ public enum RecordingConversation {
             currentSegments = []
         }
         for segment in passages {
-            let key = speakerKey(segment)
+            var key = speakerKey(segment)
+            // A word or two the diarization gave to a speaker nobody has named would otherwise become a bubble of its own, and
+            // two such speakers answering in turn at the same second make a bubble for each word: it stays in the bubble that
+            // is being built.
+            if let currentKey, key != currentKey, isBackchannel(segment) { key = currentKey }
             if key.hasPrefix("local:"), ordinalByKey[key] == nil {
                 ordinalByKey[key] = ordinalByKey.count
             }
@@ -56,6 +60,18 @@ public enum RecordingConversation {
         }
         flush()
         return bubbles
+    }
+
+    /// How many words and how long a passage of an unnamed speaker can be and still be taken as a word thrown in (diarization splits a few words spoken together into passages under a second), which stays in the
+    /// bubble it came in the middle of.
+    static let backchannelWordsMaximum = 3
+    static let backchannelMillisecondsMaximum: Int64 = 800
+
+    /// Whether this is a passage of a speaker nobody has named that is only a few words and a moment long.
+    static func isBackchannel(_ segment: RecordingTranscriptSegment) -> Bool {
+        guard !segment.isLiveUtterance, segment.confirmedSpeakerName == nil, segment.effectiveSpeakerIdentityId?.isEmpty ?? true else { return false }
+        let wordCount = segment.displayedTranscriptText.split(whereSeparator: \.isWhitespace).count
+        return wordCount <= backchannelWordsMaximum && segment.segmentEndMS - segment.segmentStartMS <= backchannelMillisecondsMaximum
     }
 
     /// How many people spoke, counting a confirmed person once however many requests they spoke in.
@@ -182,4 +198,33 @@ public enum RecordingLiveWords {
         kept.append(utterance)
         return Array(kept.suffix(heardUtterancesKept))
     }
+}
+
+/// RecordingLevelHistory is the latest input levels of a recording under way, for the graph of bars on its screen: a fixed number,
+/// the newest last, so the bars scroll from right to left.
+public struct RecordingLevelHistory: Sendable, Equatable {
+    public static let barCount = 48
+    private var levels: [Double] = []
+
+    public init() {}
+
+    /// Adds the meter's reading in decibels; the oldest goes once there are more than `barCount`.
+    public mutating func append(decibels: Float) {
+        levels.append(RecordingInputLevel.normalized(decibels: decibels))
+        if levels.count > Self.barCount { levels.removeFirst(levels.count - Self.barCount) }
+    }
+
+    /// `barCount` levels from 0 to 1, oldest first; a recording just begun has silence before its first reading.
+    public var bars: [Double] {
+        [Double](repeating: 0, count: Self.barCount - levels.count) + levels
+    }
+}
+
+/// RecordingLiveSession says when the live stream is closed on purpose and opened again, before the server's limit does it in the
+/// middle of someone speaking.
+public enum RecordingLiveSession {
+    /// The server ends a live stream after 30 minutes.
+    public static let recycleAfterSeconds: TimeInterval = 25 * 60
+    public static func shouldRecycle(sessionAgeSeconds: TimeInterval) -> Bool { sessionAgeSeconds >= recycleAfterSeconds }
+
 }

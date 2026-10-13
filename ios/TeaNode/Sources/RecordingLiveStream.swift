@@ -65,6 +65,7 @@ final class RecordingLiveStream {
     /// One connection, until it ends. True if the server was listening at some point.
     private func runSession(connection: Connection, recordingId: String, timelineMS: @MainActor () -> Int64) async -> Bool {
         var wasListening = false
+        var recycleTask: Task<Void, Never>?
         do {
             let token = try await connection.accessToken()
             let server = await connection.account.server
@@ -73,6 +74,12 @@ final class RecordingLiveStream {
             let socket = URLSession.shared.webSocketTask(with: components.url!)
             self.socket = socket
             socket.resume()
+            // The server ends a stream after 30 minutes, in the middle of whatever is being said; this one is closed a little
+            // before and opened again at once.
+            recycleTask = Task { [socket] in
+                try? await Task.sleep(for: .seconds(RecordingLiveSession.recycleAfterSeconds))
+                if !Task.isCancelled { socket.cancel(with: .goingAway, reason: nil) }
+            }
             // The audio from here on is queued behind the hello, so the stream starts where the hello says: the server
             // reads the hello first, then waits for the transcription to open before it reads the audio.
             let hello: [String: Any] = ["voiceEvent": "hello", "authorization": "Bearer \(token)", "streamStartMS": timelineMS()]
@@ -88,6 +95,7 @@ final class RecordingLiveStream {
                 try handle(event, timelineMS: timelineMS())
             }
         } catch {}
+        recycleTask?.cancel()
         closeSocket()
         return wasListening
     }

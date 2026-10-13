@@ -32,7 +32,7 @@ struct RecordingCaptureScreen: View {
         NavigationStack {
             RecordingCaptureView(
                 elapsedMS: recorder.elapsedMS, displayState: displayState, inputLevel: { recorder.inputLevel() },
-                bubbles: conversation.bubbles, actions: passageActions, microphoneModeText: microphoneMode.displayedName,
+                recentLevels: { recorder.recentLevels() }, bubbles: conversation.bubbles, actions: passageActions, microphoneModeText: microphoneMode.displayedName,
                 onMicrophoneModes: { AVCaptureDevice.showSystemUserInterface(.microphoneModes) },
                 onPauseOrResume: {
                     Task { if recorder.isCapturing { await recorder.pause() } else { await recorder.resume() } }
@@ -99,6 +99,8 @@ struct RecordingCaptureView: View {
     let elapsedMS: Int64
     let displayState: RecordingCaptureDisplayState
     let inputLevel: @MainActor () -> Double
+    /// The latest levels, oldest first, for the graph of bars under the clock; empty draws silence.
+    var recentLevels: @MainActor () -> [Double] = { [] }
     /// The conversation so far, oldest first: transcript passages with their speakers, and after them the words just heard.
     var bubbles: [RecordingConversationBubble] = []
     var actions: RecordingPassageActions = .none
@@ -127,23 +129,19 @@ struct RecordingCaptureView: View {
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
+                // Voice Memos' graph: a bar for each tenth of a second, the newest on the right, scrolling left. It holds
+                // still when paused.
                 TimelineView(.animation(minimumInterval: 0.1, paused: displayState != .recording)) { _ in
-                    Gauge(value: displayState == .recording ? inputLevel() : 0) {
-                        Text("Input level")
-                    }
-                    .gaugeStyle(.accessoryLinearCapacity)
-                    .labelsHidden()
-                    .tint(.accentColor)
+                    RecordingLevelGraph(levels: recentLevels(), isActive: displayState == .recording)
                 }
+                .frame(height: 44)
+                .accessibilityElement()
                 .accessibilityLabel("Input level")
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
-            // At the largest text sizes the row would take the screen from the conversation, so it scrolls with it instead.
-            if !dynamicTypeSize.isAccessibilitySize { microphoneModeRow.padding(.horizontal).padding(.bottom, 8) }
             ScrollView {
                 VStack(spacing: 12) {
-                    if dynamicTypeSize.isAccessibilitySize { microphoneModeRow }
                     Text(
                         "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload."
                     )
@@ -166,6 +164,19 @@ struct RecordingCaptureView: View {
                     dynamicTypeSize.isAccessibilitySize
                     ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(spacing: 16))
                 layout {
+                    // Pause and Stop have the room; the microphone mode is an icon beside them (a full-width button at the
+                    // largest sizes, where the row stacks).
+                    if let microphoneModeText, let onMicrophoneModes {
+                        Button(action: onMicrophoneModes) {
+                            if dynamicTypeSize.isAccessibilitySize {
+                                Label("Mic mode: \(microphoneModeText)", systemImage: "mic").lineLimit(2).frame(maxWidth: .infinity)
+                            } else {
+                                Image(systemName: "mic").frame(minWidth: 24)
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .accessibilityLabel("Mic mode: \(microphoneModeText)")
+                    }
                     Button(action: onPauseOrResume) {
                         Label(
                             displayState == .recording ? String(localized: "Pause") : String(localized: "Resume"),
@@ -189,28 +200,6 @@ struct RecordingCaptureView: View {
             .padding(.bottom, 8)
         }
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    /// The microphone mode in use, and a button for the system's menu to choose another.
-    @ViewBuilder
-    private var microphoneModeRow: some View {
-        if let microphoneModeText, let onMicrophoneModes {
-            Button(action: onMicrophoneModes) {
-                let layout =
-                    dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
-                layout {
-                    Label("Mic mode", systemImage: "mic")
-                    if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
-                    Text(microphoneModeText).foregroundStyle(.primary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .accessibilityLabel("Mic mode")
-            .accessibilityValue(microphoneModeText)
-        }
     }
 
     private var stateText: String {
@@ -265,29 +254,29 @@ struct RecordingCaptureView: View {
     #Preview("Live bubbles, light") {
         NavigationStack {
             RecordingCaptureView(
-                elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
-                onPauseOrResume: {}, onStop: {})
+                elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, recentLevels: { DemoServer.levelBars }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
+                microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {})
         }.preferredColorScheme(.light)
     }
     #Preview("Live bubbles, dark") {
         NavigationStack {
             RecordingCaptureView(
-                elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
-                onPauseOrResume: {}, onStop: {})
+                elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, recentLevels: { DemoServer.levelBars }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
+                microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {})
         }.preferredColorScheme(.dark)
     }
     #Preview("Live bubbles, largest text") {
         NavigationStack {
             RecordingCaptureView(
-                elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
-                onPauseOrResume: {}, onStop: {})
+                elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, recentLevels: { DemoServer.levelBars }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
+                microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {})
         }.dynamicTypeSize(.accessibility5).preferredColorScheme(.light)
     }
     #Preview("Live bubbles, paused, dark") {
         NavigationStack {
             RecordingCaptureView(
-                elapsedMS: 754_000, displayState: .paused, inputLevel: { 0 }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
-                onPauseOrResume: {}, onStop: {})
+                elapsedMS: 754_000, displayState: .paused, inputLevel: { 0 }, recentLevels: { DemoServer.levelBars }, bubbles: DemoServer.liveCaptureBubbles, actions: .none,
+                microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {})
         }.preferredColorScheme(.dark)
     }
 #endif
@@ -300,6 +289,26 @@ extension AVCaptureDevice.MicrophoneMode {
         case .wideSpectrum: String(localized: "Wide Spectrum")
         case .voiceIsolation: String(localized: "Voice Isolation")
         @unknown default: String(localized: "Standard")
+        }
+    }
+}
+
+/// RecordingLevelGraph draws the latest input levels as vertical bars, the newest on the right.
+struct RecordingLevelGraph: View {
+    let levels: [Double]
+    let isActive: Bool
+
+    var body: some View {
+        Canvas { context, size in
+            let barCount = max(levels.count, 1)
+            let spacing: CGFloat = 2
+            let barWidth = max(1, (size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
+            let minimumHeight: CGFloat = 3
+            for (index, level) in levels.enumerated() {
+                let height = max(minimumHeight, size.height * CGFloat(level))
+                let rect = CGRect(x: CGFloat(index) * (barWidth + spacing), y: (size.height - height) / 2, width: barWidth, height: height)
+                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2), with: .color(isActive ? .red : .secondary))
+            }
         }
     }
 }

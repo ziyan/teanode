@@ -397,3 +397,60 @@ final class RecordingStuckChangeTests: XCTestCase {
         XCTAssertNil(recording.captureGaps[1].gapEndMS)
     }
 }
+
+final class RecordingBackchannelTests: XCTestCase {
+    private func segment(_ segmentId: String, start: Int64, end: Int64, speaker: String, text: String, confirmedName: String? = nil) -> RecordingTranscriptSegment {
+        RecordingTranscriptSegment(
+            id: segmentId, recordingTranscriptRunId: "run-a", recordingTranscriptionAttemptId: "attempt-a", localSpeakerId: speaker,
+            segmentStartMS: start, segmentEndMS: end, transcriptText: text, effectiveSpeakerIdentityId: confirmedName.map { _ in "identity-a" },
+            effectiveSpeakerName: confirmedName, hasUserConfirmedSpeaker: confirmedName != nil)
+    }
+
+    func testWordsTwoUnnamedSpeakersThrowInAtTheSameSecondStayInOneBubble() {
+        let bubbles = RecordingConversation.bubbles([
+            segment("s1", start: 0, end: 6_000, speaker: "A", text: "We should move the review to Thursday afternoon."),
+            segment("s2", start: 6_000, end: 6_400, speaker: "B", text: "Well,"),
+            segment("s3", start: 6_400, end: 6_700, speaker: "C", text: "So"),
+            segment("s4", start: 6_700, end: 7_000, speaker: "B", text: "no,"),
+            segment("s5", start: 7_000, end: 7_300, speaker: "C", text: "we"),
+            segment("s6", start: 7_300, end: 12_000, speaker: "C", text: "can keep it on Wednesday if Priya is back by then."),
+        ])
+        // The words thrown in join the bubble being built; the long passage of the other speaker then begins their own.
+        XCTAssertEqual(bubbles.map(\.id), ["s1", "s6"])
+        XCTAssertEqual(bubbles[0].segments.count, 5)
+    }
+
+    func testANamedPersonsShortAnswerIsStillTheirOwnBubbleAndALongPassageIsNeverAbsorbed() {
+        let bubbles = RecordingConversation.bubbles([
+            segment("s1", start: 0, end: 6_000, speaker: "A", text: "Shall we begin the review of the second layout today?"),
+            segment("s2", start: 6_000, end: 6_500, speaker: "B", text: "Yes.", confirmedName: "Priya"),
+            segment("s3", start: 6_500, end: 12_000, speaker: "C", text: "I think so, and I would start with search and the list."),
+        ])
+        XCTAssertEqual(bubbles.map(\.id), ["s1", "s2", "s3"])
+    }
+
+    func testAShortPassageBeginningTheConversationHasNothingToJoin() {
+        let bubbles = RecordingConversation.bubbles([segment("s1", start: 0, end: 500, speaker: "A", text: "Okay.")])
+        XCTAssertEqual(bubbles.map(\.id), ["s1"])
+    }
+}
+
+final class RecordingLevelHistoryTests: XCTestCase {
+    func testTheBarsAreAFixedNumberNewestLastScrollingAsLevelsArrive() {
+        var history = RecordingLevelHistory()
+        XCTAssertEqual(history.bars, [Double](repeating: 0, count: RecordingLevelHistory.barCount))
+        history.append(decibels: -50)
+        history.append(decibels: 0)
+        XCTAssertEqual(history.bars.count, RecordingLevelHistory.barCount)
+        XCTAssertEqual(history.bars.suffix(2), [0, 1])
+        for _ in 0..<(RecordingLevelHistory.barCount + 10) { history.append(decibels: -25) }
+        XCTAssertEqual(history.bars.count, RecordingLevelHistory.barCount)
+        XCTAssertEqual(Set(history.bars), [0.5])
+    }
+
+    func testTheLiveStreamIsRecycledBeforeTheServersLimit() {
+        XCTAssertFalse(RecordingLiveSession.shouldRecycle(sessionAgeSeconds: 24 * 60))
+        XCTAssertTrue(RecordingLiveSession.shouldRecycle(sessionAgeSeconds: 25 * 60))
+        XCTAssertTrue(RecordingLiveSession.recycleAfterSeconds < 30 * 60)
+    }
+}

@@ -47369,6 +47369,22 @@
           }
         }
       }
+    },
+    "Mic mode: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクモード: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风模式：%@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

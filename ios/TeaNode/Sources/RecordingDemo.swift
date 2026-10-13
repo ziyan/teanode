@@ -100,6 +100,14 @@
                     partialStartMS: 40000, segments: []))
         }
 
+        /// A graph of levels as speech makes them: bursts and pauses.
+        static var levelBars: [Double] {
+            (0..<RecordingLevelHistory.barCount).map { index in
+                let burst = abs(sin(Double(index) * 0.55)) * (index % 11 < 7 ? 1 : 0.15)
+                return min(1, 0.12 + burst * 0.8)
+            }
+        }
+
         static var liveCaptureTimelineAnswer: String {
             let liveWords = liveCaptureUtterances.map {
                 #"{"utteranceId":"\#($0.utteranceId)","utteranceStartMS":\#($0.utteranceStartMS),"utteranceEndMS":\#($0.utteranceEndMS),"transcriptText":"\#($0.transcriptText)"}"#
@@ -350,7 +358,7 @@
 
         var body: some View {
             RecordingCaptureView(
-                elapsedMS: 94_000, displayState: .recording, inputLevel: { 0.6 }, bubbles: conversation.bubbles,
+                elapsedMS: 94_000, displayState: .recording, inputLevel: { 0.6 }, recentLevels: { DemoServer.levelBars }, bubbles: conversation.bubbles,
                 actions: RecordingPassageActions(
                     play: { _ in }, copy: { _ in }, correctText: { _ in }, nameSpeaker: { segment in conversation.beginNaming(segment) },
                     thisIsMe: { segment in Task { await conversation.confirmAsAccountOwner(segment) } },

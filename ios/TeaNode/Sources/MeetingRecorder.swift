@@ -38,6 +38,9 @@ final class MeetingRecorder: NSObject {
     private var levelTask: Task<Void, Never>?
     private var liveStartTask: Task<Void, Never>?
     private var isCutting = false
+    /// The latest levels for the graph on the screen; read on the screen's own clock, so the view does not watch it.
+    @ObservationIgnored private var levelHistory = RecordingLevelHistory()
+    private var levelReadingCount = 0
     private var lastUploadKickUptime: TimeInterval = 0
 
     override init() {
@@ -409,6 +412,9 @@ final class MeetingRecorder: NSObject {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The levels of the last few seconds, oldest first, for the graph of bars; it holds still while paused.
+    func recentLevels() -> [Double] { levelHistory.bars }
+
     /// How loud the microphone hears the room now, from 0 to 1; 0 while nothing is being recorded.
     func inputLevel() -> Double {
         guard isCapturing, let capture else { return 0 }
@@ -627,6 +633,9 @@ final class MeetingRecorder: NSObject {
             return
         }
         cutPolicy.recordLevel(decibels: capture.decibels, atMS: timelineNowMS())
+        // A bar every tenth of a second, from the meter read every twentieth.
+        levelReadingCount += 1
+        if levelReadingCount % 2 == 0 { levelHistory.append(decibels: capture.decibels) }
         cutIfDue()
     }
 
