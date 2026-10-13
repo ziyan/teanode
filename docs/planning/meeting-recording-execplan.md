@@ -327,7 +327,7 @@ request-local speaker IDs never establish identity across files.
 | Confirmed labels, passage edits, references | Merged | Merged | Merged | Merged |
 | Source title/date and transcript text corrections | Merged | Merged | Merged | Merged |
 | Learning progress and reference invalidations | Merged | Merged | Merged | Merged |
-| Explicit compatible audio preview/export | Merged in #453 | Merged in #453 | Merged in #453 | #452 caption fix and final CI pending |
+| Explicit compatible audio preview/export | Merged in #453 | Merged in #453 | Merged in #453 | Merged in #452; physical-device checks pending |
 | Capture, interruptions, locked-screen controls | Not applicable | Not applicable | Not applicable | Merged; physical-device checks pending |
 
 No row is complete until shared authorization/error checks and applicable client
@@ -559,14 +559,20 @@ verify model speaker identity, and actual provider billing remains unavailable.
 
 ## Official deployment and remaining acceptance checkpoint
 
-The coordinator independently verified official v0.145.0, published commit
-`7dda68b8e7fadbebf32b8814950cb9db5a5bc200`, running from the registry digest
+The coordinator independently verified official v0.150.0, published commit
+`87550ed2383c9b1e94161b20e214a2aa51430eb0`, running from the registry digest
 published by its successful release workflow. The running binary and authenticated
-API agree. Service health has zero restarts and no observed startup panics.
-The same 170 migrations remain applied, with no pending restart. All API settings
-sections match the paused baseline. Transcription remains enabled with the existing
-diarization/reference model and unchanged budgets. A fresh database archive passed
-full parsing before replacement, and previous backups and rollback images remain.
+API agree. The service is running with zero restarts. The same 170 migrations
+remain applied, with no pending restart. The checked agent settings match the
+pre-deployment snapshot, including enabled dreaming and transcription, existing
+models and unchanged budgets. The database archive passed full parsing before
+replacement, and previous backups and rollback images remain.
+
+Authenticated playback again verified unchanged original bytes. The compatible
+preview prepared and downloaded successfully as a 638852-byte WAV lasting
+19963 MS. HEAD, a byte-range request and private no-store headers passed. These
+checks establish deployed preview integrity and HTTP behavior; they do not
+establish physical-device capture or representative meeting quality.
 
 Both #448 and #438 are deployed together. The coordinator restored only the original dreaming flag after verifying the
 combined guard and configuration preservation. Five temporarily held passages
@@ -597,16 +603,18 @@ knowledge projection explicitly represents the new passages as uncertain.
 That source projection is not actual learned-memory quality acceptance.
 
 The native capture/library increment #435 and compatible playback backend #451
-are merged after code review, findings fixes and required CI. They are newer than
-the current deployment. Native capture has 39 inspected simulator views in light,
+are merged after code review, findings fixes and required CI. The server-side
+playback increment is included in the current official deployment. Native capture
+has 39 inspected simulator views in light,
 dark and largest text; physical-device audio and background behavior are unverified.
 The playback backend has PostgreSQL/race, packaged codec, integrity, retry and
 ownership/range evidence. Actual desktop/mobile Chrome checks demonstrated CAF
 fallback, original retention and bounded citation playback. Web/CLI/LLM #453 is reviewed, CI verified and merged. The integrated published
 main passed full lint/naming, client/CLI/tool race checks, 21 focused UI regressions
-and 38 complete documents against the built API schema. iOS #452 passed SDK/package and required CI at its prior checkpoint; actual
-simulator review found a truncated caption at largest text. The existing wrapping
-pattern is being applied before final validation and merge. Supported video must keep its visual player by default, with
+and 38 complete documents against the built API schema. iOS #452 passed SDK/package and required CI after fixing a truncated
+caption at largest text. Independent inspection of the fresh simulator captures
+confirmed the caption wraps fully. All 48 recording simulator captures were
+reviewed before merging #452. Signed playback/export still needs device evidence. Supported video must keep its visual player by default, with
 explicit preview preparation/export and a return to the supported original.
 
 An isolated synthetic account with fixed timezone, limited budgets and no mailbox
@@ -634,12 +642,14 @@ Synthetic references from the earlier retained-media correction test were also
 revoked so they cannot condition future recordings; originals and version history
 remain available for authenticated deployment smoke checks.
 
-The next official image deployment has a fresh fully parsed database archive,
-preserved Compose and rollback image. Current production still serves v0.145.0;
-newer reviewed merges are not deployment evidence. The separate device-setup
-backend and web/CLI/tool increments are reviewed and merged; its native client
-remains under final CI and visual review. Remaining acceptance includes corrected
-fact re-learning, representative human-meeting quality and real-iPhone capture,
+The current official deployment includes the reviewed compatible playback
+backend and dashboard/tool increment. The separate device-setup backend and
+web/CLI/tool increments are reviewed and merged; its native client remains under
+final CI and visual review. CLI and iOS preview preparation currently have shorter
+client deadlines than the server's bounded preparation operation. Separate owned
+follow-ups will align those deadlines before claiming long-media preparation
+parity. Remaining acceptance includes corrected fact re-learning, representative
+human-meeting quality and real-iPhone capture,
 interruption, background-upload, signed sharing, lock-screen and battery evidence.
 Learning requires no product approval gate. Do not fabricate facts, trigger a
 broad account dream, change global models or infer invoice cost from estimates.
