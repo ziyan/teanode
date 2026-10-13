@@ -687,6 +687,15 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			summary = cutWithMore(opening, recallOpeningLength, readPage)
 			text += "\n  " + summary
 		}
+		// What the page is linked to among the person's own records, by
+		// kind and title, where the agent may read the record.
+		recordLines, err := recordLinkPromptLines(tx, self.settings.Agent, node)
+		if err != nil {
+			return nil, err
+		}
+		if recordLines != "" {
+			text += "\n  " + strings.ReplaceAll(recordLines, "\n", "\n  ")
+		}
 		factLines := ""
 		for _, fact := range pageFactsFound {
 			line := fact.Line()

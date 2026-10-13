@@ -50,6 +50,12 @@ type AgentEvidence struct {
 	Kind  string `json:"kind"`
 	ID    string `json:"id"`
 	Quote string `json:"quote"`
+
+	// For a passage of a recording, the transcript and the range in
+	// milliseconds the fact was read from.
+	TranscriptRunID string `json:"transcriptRunId"`
+	StartMS         int64  `json:"startMS"`
+	EndMS           int64  `json:"endMS"`
 }
 
 // AgentEdge joins two pages. Status is "stated" or "proposed": a link
@@ -73,6 +79,10 @@ type AgentGraphPage struct {
 	// the next part of them starts, zero when Edges reaches the last.
 	LinkCount      int `json:"linkCount"`
 	NextLinkOffset int `json:"nextLinkOffset"`
+
+	// RecordLinkCount is how many links the page has to the person's own
+	// records; ListAgentRecordLinks reads them.
+	RecordLinkCount int `json:"recordLinkCount"`
 }
 
 // AgentLearnedFact is a fact with the page it sits on.
@@ -363,7 +373,7 @@ const nodeFields = `{ id path kind name aliases summary contactId pinned importa
 // own: an index of four hundred pages has no use for four hundred
 // overviews.
 const pageNodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt overview overviewWrittenAt }`
-const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
+const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote transcriptRunId startMS endMS } audiences dormant createdAt }`
 const sourceFields = `{ id kind name specification { type settings computer path format include exclude tool start depth mailboxId readEveryCheckout commitsPerPass ownCommitsAtLeast } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors checkoutsKeptToProfile filesKeptToProfile }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
 const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
@@ -382,7 +392,7 @@ const (
 			edges { relation status fromPath toPath }
 			children ` + nodeFields + `
 			contact { id name emails phones organization }
-			linkCount nextLinkOffset
+			linkCount nextLinkOffset recordLinkCount
 		}
 	}`
 	DocumentSearchAgentGraph = `query ($query: String!, $first: Int, $offset: Int) {
