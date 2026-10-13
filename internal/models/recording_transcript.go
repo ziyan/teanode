@@ -122,6 +122,7 @@ type RecordingTranscriptSegment struct {
 	EffectiveSpeakerIdentityID      string `json:"effectiveSpeakerIdentityId" gorm:"-"`
 	EffectiveSpeakerName            string `json:"effectiveSpeakerName" gorm:"-"`
 	HasUserConfirmedSpeaker         bool   `json:"hasUserConfirmedSpeaker" gorm:"-"`
+	IsAccountOwner                  bool   `json:"isAccountOwner" gorm:"-"`
 	HasUnalignedSpeakerCorrection   bool   `json:"hasUnalignedSpeakerCorrection" gorm:"-"`
 	AppliedSpeakerCorrectionID      string `json:"appliedSpeakerCorrectionId" gorm:"-"`
 }

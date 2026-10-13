@@ -296,6 +296,7 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 		return err
 	}
 	self.WakeRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID)
+	self.queueRecordingSummary(ctx, run.Agent.UserID, transcriptRun.RecordingID)
 	return nil
 }
 

@@ -118,3 +118,30 @@ func TestPlaybackPreparationIsAWriteAndReadyPlaybackIsARead(test *testing.T) {
 		}
 	}
 }
+
+// The tool shows the generated summary and who wrote the title, and only sets the owner flag when asked.
+func TestRecordingToolReadsTheSummaryAndOffersTheOwnerFlag(test *testing.T) {
+	operations := &recordingTestOperations{responseJSON: `{"ReadRecording":{"recording":{"id":"fixture-recording","recordingTitle":"Launch plan","recordingTitleSource":"generated","recordingSummary":"They moved the launch."},"mediaFiles":[]}}`}
+	run := &recordingTestRun{operations: operations}
+	result, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(`{"operation":"read","recording_id":"fixture-recording"}`)})
+	if err != nil || !strings.Contains(result.Content, "recordingSummary") || !strings.Contains(result.Content, "recordingTitleSource") {
+		test.Fatal("read dropped the summary or the title source", err)
+	}
+	properties := recordingParameters(map[string]any{})
+	property, isPresent := properties["is_account_owner"].(map[string]any)
+	if !isPresent || !strings.Contains(property["description"].(string), "only when the person says") {
+		test.Fatal("is_account_owner is missing or does not say when to set it")
+	}
+	operations.responseJSON = `{"CorrectRecordingSpeaker":{}}`
+	arguments := `{"operation":"speaker-confirm","recording_id":"fixture-recording","expected_source_generation":2,"client_correction_id":"stable","attempt_id":"fixture-attempt","local_speaker_id":"local","passage_start_ms":-1,"passage_end_ms":-1,"is_account_owner":true}`
+	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(arguments)}); err != nil || operations.variables["isAccountOwner"] != true {
+		test.Fatal("the owner flag did not reach the mutation", err)
+	}
+	operations.responseJSON = `{"UpdateRecordingMetadata":{}}`
+	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(`{"operation":"metadata","recording_id":"fixture-recording","expected_source_generation":2,"recorded_at":"2031-03-04T05:06:00Z"}`)}); err != nil {
+		test.Fatal("the tool requires a title to change the date", err)
+	}
+	if _, isPresent := operations.variables["recordingTitle"]; isPresent {
+		test.Fatal("an absent title was sent")
+	}
+}

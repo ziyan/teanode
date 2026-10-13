@@ -12,8 +12,10 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 		return err
 	}
 	confirmedNames := map[string]string{}
+	isOwnerByIdentityID := map[string]bool{}
 	for _, identity := range identities {
 		confirmedNames[identity.ID] = identity.ConfirmedName
+		isOwnerByIdentityID[identity.ID] = identity.IsAccountOwner
 	}
 	transcriptRuns := map[string]*models.RecordingTranscriptRun{}
 	correctionsByRecording := map[string][]*models.RecordingSpeakerCorrection{}
@@ -24,6 +26,7 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 		segment.EffectiveSpeakerIdentityID = ""
 		segment.EffectiveSpeakerName = segment.LocalSpeakerID
 		segment.HasUserConfirmedSpeaker = false
+		segment.IsAccountOwner = false
 		segment.HasUnalignedSpeakerCorrection = false
 		segment.AppliedSpeakerCorrectionID = ""
 		transcriptRun := transcriptRuns[segment.RecordingTranscriptRunID]
@@ -63,6 +66,7 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 			segment.EffectiveSpeakerIdentityID = ""
 			segment.EffectiveSpeakerName = segment.LocalSpeakerID
 			segment.HasUserConfirmedSpeaker = false
+			segment.IsAccountOwner = false
 			segment.AppliedSpeakerCorrectionID = ""
 			if correction.PassageStartMS > segment.SegmentStartMS || correction.PassageEndMS < segment.SegmentEndMS {
 				segment.HasUnalignedSpeakerCorrection = true
@@ -74,6 +78,7 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 			segment.EffectiveSpeakerIdentityID = correction.SpeakerIdentityID
 			segment.EffectiveSpeakerName = confirmedNames[correction.SpeakerIdentityID]
 			segment.HasUserConfirmedSpeaker = true
+			segment.IsAccountOwner = isOwnerByIdentityID[correction.SpeakerIdentityID]
 			segment.AppliedSpeakerCorrectionID = correction.ID
 		}
 	}

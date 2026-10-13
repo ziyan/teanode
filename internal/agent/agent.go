@@ -105,6 +105,7 @@ type Agent struct {
 	// a request; lastScavenge is when old rows were last swept.
 	operations                           OperationsFactory
 	lastScavenge                         time.Time
+	lastRecordingSummaryId               string
 	lastRecordingMediaId                 string
 	lastRecordingReferenceReconciliation time.Time
 	lastDescribe                         time.Time
@@ -278,6 +279,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobRemember, self.runRemember)
 	self.Register(models.AgentJobIngest, self.runIngest)
 	self.Register(models.AgentJobRecording, self.runRecording)
+	self.Register(models.AgentJobRecordingSummary, self.runRecordingSummary)
 	self.Register(models.AgentJobDream, self.runDream)
 	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)
@@ -467,6 +469,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueRemembering(ctx, now)
 	self.queueIngestion(ctx, now)
 	self.queueRecordings(ctx)
+	self.queueRecordingSummaries(ctx)
 	self.queueRecordingSpeakerCuration(ctx)
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)

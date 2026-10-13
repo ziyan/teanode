@@ -15,7 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-const recordingSelection = `{ id userId createdAt updatedAt clientRecordingId recordingTitle recordingOrigin recordingCaptureState timelineDurationMS sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason } }`
+const recordingSelection = `{ id userId createdAt updatedAt clientRecordingId recordingTitle recordingTitleSource recordingSummary recordingOrigin recordingCaptureState timelineDurationMS recordedAt sourceGeneration captureGaps { gapId gapStartMS gapEndMS recordingGapReason } }`
 const recordingMediaSelection = `{ id recordingId createdAt clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt }`
 
 // RecordingDocuments are shared by the CLI and the recording tool. All calls

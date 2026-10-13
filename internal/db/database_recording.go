@@ -40,20 +40,25 @@ type RecordingOperation interface {
 }
 
 type recordingModel struct {
-	ID                    string
-	UserID                *string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	RecordedAt            *time.Time
-	ClientRecordingID     string
-	RecordingTitle        string
-	RecordingOrigin       models.RecordingOrigin
-	RecordingCaptureState models.RecordingCaptureState
-	TimelineDurationMS    int64
-	CaptureGaps           []models.RecordingGap `gorm:"serializer:json"`
-	SourceGeneration      int64
-	DeletedAt             *time.Time
-	CleanupCompletedAt    *time.Time
+	ID                   string
+	UserID               *string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	RecordedAt           *time.Time
+	ClientRecordingID    string
+	RecordingTitle       string
+	RecordingTitleSource models.RecordingTitleSource
+	RecordingSummary     string
+	// RecordingSummaryQueuedAt is when generation was last queued; recordings
+	// without it are the ones the startup sweep still has to offer once.
+	RecordingSummaryQueuedAt *time.Time
+	RecordingOrigin          models.RecordingOrigin
+	RecordingCaptureState    models.RecordingCaptureState
+	TimelineDurationMS       int64
+	CaptureGaps              []models.RecordingGap `gorm:"serializer:json"`
+	SourceGeneration         int64
+	DeletedAt                *time.Time
+	CleanupCompletedAt       *time.Time
 }
 
 func (recordingModel) TableName() string { return "recording" }
@@ -72,7 +77,7 @@ func recordingFromModel(row *recordingModel) *models.Recording {
 		recordedAtUTC := recordedAt.UTC()
 		recordedAt = &recordedAtUTC
 	}
-	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingTitleSource: row.RecordingTitleSource, RecordingSummary: row.RecordingSummary, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
 }
 
 func recordingMediaFromModel(row *recordingMediaModel) *models.RecordingMedia {
@@ -129,7 +134,12 @@ func (self *transaction) CreateRecording(recording *models.Recording) (*models.R
 	if recording.RecordingOrigin == models.RecordingOriginCapture {
 		captureState = models.RecordingCaptureActive
 	}
-	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
+	recordingTitle := strings.TrimSpace(recording.RecordingTitle)
+	recordingTitleSource := models.RecordingTitleSourceNone
+	if recordingTitle != "" {
+		recordingTitleSource = models.RecordingTitleSourceUser
+	}
+	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: recordingTitle, RecordingTitleSource: recordingTitleSource, RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}

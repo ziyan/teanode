@@ -187,6 +187,9 @@ func (self *Store) Complete(ctx context.Context, userId, mediaId string) (*model
 		media, isFirstCompletion, err = transaction.CompleteRecordingMedia(userId, mediaId, verifiedSha256)
 		return err
 	})
+	if err == nil && isFirstCompletion {
+		self.recordCreationTime(ctx, userId, mediaId)
+	}
 	return media, isFirstCompletion, err
 }
 

@@ -27,7 +27,7 @@ func recordingActionCommands() []*cli.Command {
 		{"cancel", "stop further processing without claiming an in-flight call was refunded", []string{"transcript-run-id"}},
 		{"retry", "resume this version when the server can safely continue its work", []string{"transcript-run-id"}},
 		{"speakers", "inspect confirmed identities, correction intervals and voice references", []string{"recording-id"}},
-		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
+		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group; --me says the speaker is you", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "me", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
 		{"speaker-rename", "rename an identity linked to this recording using the name supplied by the user", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "confirmed-name"}},
 		{"speaker-reset", "remove a manual speaker correction", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
 		{"reference-delete", "revoke a curated voice reference without deleting the original", []string{"recording-id", "expected-source-generation", "voice-reference-id", "force"}},
@@ -38,7 +38,7 @@ func recordingActionCommands() []*cli.Command {
 		{"learning", "inspect automatic knowledge ingestion and processed passage counts", []string{"recording-id"}},
 		{"source-schedule", "change periodic source reading; an explicit empty cron disables it", []string{"knowledge-source-id", "source-cron"}},
 		{"reference-invalidations", "inspect attribution made uncertain by revoked voice references", []string{"recording-id"}},
-		{"metadata", "edit the title and occurrence date (empty date means unknown)", []string{"recording-id", "expected-source-generation", "recording-title", "recorded-at"}},
+		{"metadata", "edit the title and occurrence date (empty date means unknown; leave --recording-title out to keep the title, give it empty to have it generated again)", []string{"recording-id", "expected-source-generation", "recording-title", "recorded-at"}},
 		{"import-attachment", "import a delivered audio/video attachment within the attachment delivery limit", []string{"attachment-id", "client-recording-id", "recording-title", "media-id"}},
 	}
 	commands := make([]*cli.Command, 0, len(definitions))
@@ -48,6 +48,8 @@ func recordingActionCommands() []*cli.Command {
 			switch flagName {
 			case "force":
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "perform this explicit operation without asking first"})
+			case "me":
+				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "this speaker is you; the name defaults to your display name and no other speaker stays marked as you"})
 			case "expected-source-generation", "passage-start-ms", "passage-end-ms":
 				flags = append(flags, &cli.Int64Flag{Name: flagName, Usage: "explicit generation or passage bound in milliseconds; -1/-1 selects the request-local speaker group"})
 			case "segment-offset", "page-size":
@@ -73,6 +75,8 @@ func runRecordingAction(ctx context.Context, command *cli.Command) error {
 			continue
 		case "expected-source-generation", "passage-start-ms", "passage-end-ms":
 			inputFields[fieldName] = command.Int64(flagName)
+		case "me":
+			inputFields["is_account_owner"] = command.Bool(flagName)
 		case "segment-offset", "page-size":
 			inputFields[fieldName] = command.Int(flagName)
 		default:
