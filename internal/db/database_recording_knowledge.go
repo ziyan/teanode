@@ -383,13 +383,19 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 					}
 					transcriptText += fmt.Sprintf("\nSelected passage correction generation %d, %d-%d MS: %s. Text has segment-level timing only; do not assign the whole statement to this passage.", correction.SourceGeneration, correction.PassageStartMS, correction.PassageEndMS, attribution)
 				}
-				digest := sha256.Sum256([]byte(transcriptText))
 				externalId := transcriptRun.ID + ":" + segment.ID
 				previous, err := self.GetAgentDocumentByExternal(source.ID, externalId)
 				if err != nil {
 					return false, err
 				}
+				chunkText := transcriptText
+				digest := sha256.Sum256([]byte(transcriptText))
 				if previous != nil && previous.Hash != hex.EncodeToString(digest[:]) {
+					// Read before the page's reconcile strikes the facts that cite the old words.
+					chunkText, err = self.withRetiredRecordingNotes(ownerAgent.ID, previous, transcriptText)
+					if err != nil {
+						return false, err
+					}
 					changedDocumentIds = append(changedDocumentIds, previous.ID)
 				}
 				metadata := map[string]any{"recordingId": recordingId, "recordingMediaId": transcriptRun.RecordingMediaID, "recordingTranscriptRunId": transcriptRun.ID, "transcriptVersionNumber": transcriptRun.VersionNumber, "passageStartMS": segment.SegmentStartMS, "passageEndMS": segment.SegmentEndMS, "sourceGeneration": recordingSource.SourceGeneration, "isUntrustedRecording": true, "speakerAttribution": confirmedName}
@@ -414,7 +420,7 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 					passageTime := passageHappenedAt.Add(time.Duration(segment.SegmentStartMS) * time.Millisecond)
 					passageHappenedAt = &passageTime
 				}
-				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(transcriptText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
+				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(chunkText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
 				if err != nil {
 					return false, err
 				}
@@ -423,7 +429,7 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 				}
 				if previous == nil || previous.Hash != document.Hash {
 					hasChangedEvidence = true
-					if err := self.ReplaceAgentChunks(document, []*models.AgentChunk{{Text: transcriptText}}); err != nil {
+					if err := self.ReplaceAgentChunks(document, []*models.AgentChunk{{Text: chunkText}}); err != nil {
 						return false, err
 					}
 				}
@@ -474,6 +480,42 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 		return true, self.RequestAgentSourceRun(source.ID, time.Now())
 	}
 	return true, nil
+}
+
+// withRetiredRecordingNotes gives a corrected passage the notes its correction
+// retires, so the next dream can file what still holds in corrected form instead
+// of reading a lone sentence that has lost the context the old note carried.
+// It only adds notes at the moment the plain passage text differs from the
+// stored document, before reconcileRecordingDocument strikes them, and lists
+// only live notes. The stored hash is always that of the plain text, so a later
+// sync of an unchanged passage compares equal and neither re-reads nor strikes
+// the corrected notes filed since.
+func (self *transaction) withRetiredRecordingNotes(agentId string, previous *models.AgentDocument, passageText string) (string, error) {
+	if previous == nil || previous.Hash == recordingPassageHash(passageText) {
+		return passageText, nil
+	}
+	evidence := fmt.Sprintf("[{\"id\":\"%s\",\"kind\":\"document\"}]", previous.ID)
+	var retiringFacts []*agentFactModel
+	if err := self.tx.Where("agent_id = ? AND NOT dormant AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&retiringFacts).Error; err != nil {
+		return "", err
+	}
+	return appendRetiredRecordingNotes(passageText, retiringFacts), nil
+}
+
+func appendRetiredRecordingNotes(passageText string, retiredFacts []*agentFactModel) string {
+	if len(retiredFacts) == 0 {
+		return passageText
+	}
+	passageText += "\nBefore the latest correction this passage supported these notes, now retired. File the corrected version of any that still holds with the corrected text or attribution; do not restore what the correction contradicts:"
+	for _, retiredFact := range retiredFacts {
+		passageText += "\n- " + retiredFact.Text
+	}
+	return passageText
+}
+
+func recordingPassageHash(passageText string) string {
+	digest := sha256.Sum256([]byte(passageText))
+	return hex.EncodeToString(digest[:])
 }
 
 func (self *transaction) reconcileRecordingDocument(agentId, documentId string) error {
