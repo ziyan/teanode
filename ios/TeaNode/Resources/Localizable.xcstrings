@@ -47353,6 +47353,22 @@
           }
         }
       }
+    },
+    "Could not resume. Open TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開できませんでした。TeaNode を開いてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法继续录制。请打开 TeaNode。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
