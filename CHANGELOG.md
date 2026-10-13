@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.144.0] - 2026-10-13
+
+### Added
+
+- Retain recording corrections, curate confirmed samples and reconcile evidence through existing knowledge/dreaming. (#437)
+
 ## [0.143.1] - 2026-10-13
 
 ### Changed
