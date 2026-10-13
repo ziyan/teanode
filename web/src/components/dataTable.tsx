@@ -128,8 +128,12 @@ export function DataTable<Row>({
   onSelect,
   selectionActions,
   remote,
+  search,
 }: {
   columns: Column<Row>[]
+  // search is a box the page searches its own way with, the server's
+  // rather than the table's filters, at the start of the same row as them.
+  search?: React.ReactNode
   rows: Row[]
   rowKey: (row: Row) => string
   remote?: { total: number; onRange: (range: Range) => void }
@@ -324,8 +328,9 @@ export function DataTable<Row>({
 
   return (
     <>
-      {(filterable || chosen.length > 0 || pinnedFilters.length > 0) && (
+      {(filterable || chosen.length > 0 || pinnedFilters.length > 0 || search) && (
         <div className="table-tools">
+          {search}
           {pinnedFilters.map((filter) => (
             <span key={filter.key} className="table-pinned">
               {filter.label}
@@ -346,7 +351,11 @@ export function DataTable<Row>({
                 {t('filter.toggle')}
               </button>
               {filtering && (
-                <button /* link-button: the table's own clear-filters control */ type="button" className="link" onClick={() => setFilters({})}>
+                <button
+                  /* link-button: the table's own clear-filters control */ type="button"
+                  className="link"
+                  onClick={() => setFilters({})}
+                >
                   {t('filter.clearAll')}
                 </button>
               )}
@@ -505,7 +514,9 @@ export function DataTable<Row>({
                           // from the last box clicked to this one, the way
                           // a mail program's list does.
                           const index = visible.indexOf(row)
-                          const anchorIndex = visible.findIndex((candidate) => rowKey(candidate) === rangeAnchor.current)
+                          const anchorIndex = visible.findIndex(
+                            (candidate) => rowKey(candidate) === rangeAnchor.current,
+                          )
                           const isRange = (event.nativeEvent as MouseEvent).shiftKey && anchorIndex >= 0
                           const span = isRange
                             ? visible.slice(Math.min(index, anchorIndex), Math.max(index, anchorIndex) + 1)
@@ -564,7 +575,10 @@ export function DataTable<Row>({
           </span>
 
           {filtering && (
-            <button /* link-button: the table's own clear-filters control */ className="link" onClick={() => setFilters({})}>
+            <button
+              /* link-button: the table's own clear-filters control */ className="link"
+              onClick={() => setFilters({})}
+            >
               {t('filter.clearAll')}
             </button>
           )}
@@ -572,7 +586,9 @@ export function DataTable<Row>({
           <Pager
             pageIndex={current}
             pageSize={pageSize}
-            shownCount={remote ? rows.length : Math.max(0, Math.min(total, (current + 1) * pageSize) - current * pageSize)}
+            shownCount={
+              remote ? rows.length : Math.max(0, Math.min(total, (current + 1) * pageSize) - current * pageSize)
+            }
             totalCount={total}
             onPageIndex={setPage}
             onPageSize={setPageSize}
