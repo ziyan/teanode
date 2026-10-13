@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.149.0] - 2026-10-13
+
+### Added
+
+- Choose optional Mail, Calendar, Reminders and Contacts in one device setup flow across dashboard, CLI and agent handoff. (#449)
+
 ## [0.148.0] - 2026-10-13
 
 ### Added
