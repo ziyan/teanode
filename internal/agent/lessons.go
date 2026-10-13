@@ -543,6 +543,9 @@ func (self *AskRun) lessonLinesAbove(ctx context.Context, words string, floor fl
 		for _, fact := range facts {
 			line := "- " + fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
 			if cost := llm.EstimateTokens(line); spent+cost <= recallLessonTokens {
+				if err := checkRecordingPromptEvidence(ctx, tx, agentId, nil, []*models.AgentFact{fact}, nil); err != nil {
+					return err
+				}
 				spent += cost
 				lines = append(lines, line)
 			}

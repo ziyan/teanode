@@ -280,3 +280,59 @@ func TestRecordingDreamMixedMemoryBatchCannotWriteBeforeEvidenceMarker(test *tes
 		}
 	})
 }
+
+func TestRecordingCheckoutReadMarksDerivedEvidence(test *testing.T) {
+	world := newCodingWorld(test)
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		source, err := transaction.PutAgentSource(&models.AgentKnowledgeSource{AgentID: world.agent.ID, Kind: models.SourceRecording, Name: "fixture-checkout-recording"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		document, err := transaction.PutAgentDocument(&models.AgentDocument{AgentID: world.agent.ID, SourceID: source.ID, ExternalID: "fixture-checkout-passage", Kind: models.DocumentJournal, Title: "Fixture checkout passage", Hash: "fixture-checkout-hash"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.AddAgentFact(&models.AgentFact{AgentID: world.agent.ID, NodeID: world.project.ID, Kind: models.FactPlain, Text: "Recording-derived checkout evidence", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: document.ID}}}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	ctx := withRecordingEvidenceSafety(test.Context())
+	text, err := world.run.agent.codingMemory(ctx, world.agent, world.run.settings.Owner, "~/code/seedling", "workbench", "")
+	if err != nil || !strings.Contains(text, "Recording-derived checkout evidence") || !recordingEvidenceSafetyOf(ctx).isRestricted() {
+		test.Fatal("checkout read lost owned recording provenance", err)
+	}
+}
+
+func TestRecordingAutomaticLessonRecallMarksOwnedEvidence(test *testing.T) {
+	world := newRecallWorld(test)
+	vector := []float32{1, 0, 0}
+	modelName := "fixture:lesson-meaning"
+	question := "fixture lesson question"
+	world.run.meanings = map[string]*meaning{question: {ModelName: modelName, Vector: vector}}
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		source, err := transaction.PutAgentSource(&models.AgentKnowledgeSource{AgentID: world.agent.ID, Kind: models.SourceRecording, Name: "fixture-lesson-recording"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		document, err := transaction.PutAgentDocument(&models.AgentDocument{AgentID: world.agent.ID, SourceID: source.ID, ExternalID: "fixture-lesson-passage", Kind: models.DocumentJournal, Title: "Fixture lesson passage", Hash: "fixture-lesson-hash"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		page, err := transaction.PutAgentNode(&models.AgentNode{AgentID: world.agent.ID, Path: "lessons/fixture-evidence", Kind: models.NodeThing, Name: "Fixture lesson"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		fact, err := transaction.AddAgentFact(&models.AgentFact{AgentID: world.agent.ID, NodeID: page.ID, Kind: models.FactLesson, Text: "Recording-derived fixture lesson", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: document.ID}}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.PutAgentFactVector(world.agent.ID, fact.ID, modelName, vector); err != nil {
+			test.Fatal(err)
+		}
+	})
+	ctx := withRecordingEvidenceSafety(test.Context())
+	lines := world.run.lessonLinesAbove(ctx, question, 0.9)
+	if !strings.Contains(strings.Join(lines, "\n"), "Recording-derived fixture lesson") || !recordingEvidenceSafetyOf(ctx).isRestricted() {
+		test.Fatal("automatic lesson recall lost owned recording evidence", lines)
+	}
+}

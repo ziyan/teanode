@@ -24,7 +24,8 @@ missing or unreadable provenance refuses the result and restricts subsequent cal
 Initial self-page and index context checks the same owned provenance before the first
 model request. Guarded turns read this context afresh because the existing cross-turn
 snapshot does not retain citations; ordinary conversation caching stays unchanged.
-Memory batches preserve the flag, including errors and retained deletion
+Checkout context, automatic lesson recall and document lookups check the same owned
+provenance before returning evidence. Memory batches preserve the flag, including errors and retained deletion
 history.
 Human-started conversations and dreams that consume no recording evidence retain
 existing behavior. Background work cannot be started from an existing run conversation;
