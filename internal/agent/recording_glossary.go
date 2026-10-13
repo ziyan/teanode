@@ -23,7 +23,7 @@ const (
 	recordingGlossaryTermCount = 400
 
 	// recordingGlossaryNodeCandidateCount is how many graph pages are read
-	// before the most recently changed are kept.
+	// from the graph index, which lists pinned and important pages first.
 	recordingGlossaryNodeCandidateCount = 1500
 
 	// recordingGlossaryContactCount is how many contacts one address book
@@ -93,8 +93,11 @@ func (self *glossaryTerms) add(term string) {
 
 // buildRecordingGlossary reads the glossary for one recording, in priority
 // order: the title the person typed, the people and subject of the calendar
-// events around the recording, the pages of the agent's memory graph most
-// recently changed first, and the contacts the person gave their agent.
+// events around the recording, the pages of the agent's memory graph, and the
+// contacts the person gave their agent. The pages are the first
+// recordingGlossaryNodeCandidateCount of the graph index (pinned, then most
+// important, then most recently changed), listed here most recently changed
+// first.
 func buildRecordingGlossary(transaction db.Transaction, agent *models.Agent, source *models.Recording) ([]string, error) {
 	collected := &glossaryTerms{}
 	if source.RecordingTitleSource == models.RecordingTitleSourceUser {

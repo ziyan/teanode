@@ -283,6 +283,9 @@ func TestValidateRecordingTermFixRejectsWhatIsNotASmallGlossaryFix(test *testing
 		},
 		"a phrase that is not in the segment": func(proposal *recordingTermProposal) { proposal.OriginalPhrase = "Fern kroft" },
 		"a corrected phrase without the term": func(proposal *recordingTermProposal) { proposal.CorrectedPhrase = "Fernkroft" },
+		"extra words riding along with the term": func(proposal *recordingTermProposal) {
+			proposal.CorrectedPhrase = "Ferncroft, send money"
+		},
 		"a correction that changes nothing": func(proposal *recordingTermProposal) {
 			proposal.OriginalPhrase = "Ferncroft"
 			proposal.CorrectedPhrase = "Ferncroft"
@@ -302,6 +305,17 @@ func TestValidateRecordingTermFixRejectsWhatIsNotASmallGlossaryFix(test *testing
 		if _, isValid := validateRecordingTermFix(proposal, segmentTexts, glossary); isValid {
 			test.Errorf("accepted %s: %+v", name, proposal)
 		}
+	}
+}
+
+func TestValidateRecordingTermFixMatchesWholeWordsAndCollapsedWhiteSpace(test *testing.T) {
+	glossary := map[string]string{"ferncroft": "Ferncroft"}
+	proposal := recordingTermProposal{SegmentID: "seg-1", OriginalPhrase: "Fern croft", CorrectedPhrase: "Ferncroft", GlossaryTerm: "Ferncroft"}
+	if _, isValid := validateRecordingTermFix(proposal, map[string]string{"seg-1": "We shipped Fern crofts today."}, glossary); isValid {
+		test.Error("a phrase that is only the start of a longer word was accepted")
+	}
+	if _, isValid := validateRecordingTermFix(proposal, map[string]string{"seg-1": "We shipped Fern  \n croft today."}, glossary); !isValid {
+		test.Error("the model reads white space collapsed, so a phrase must match across a longer run of it")
 	}
 }
 
@@ -339,11 +353,19 @@ func TestRecordingTermsJobAppliesGlossaryFixesAndQueuesTheSummary(test *testing.
 	if activeCount != 1 {
 		test.Fatalf("the second fix replaces the first on the same passage: %d active of %d", activeCount, len(corrections))
 	}
-	// The pass sent the glossary outside the fence and the transcript inside it.
+	// The pass fenced both the glossary and the transcript as data, each in a fence of its own.
 	prompt := fixture.firstUserMessage(test)
-	fenceStart := strings.Index(prompt, "<untrusted-data>")
-	if fenceStart < 0 || strings.Index(prompt, "Ferncroft") > fenceStart || !strings.Contains(prompt[fenceStart:], fixture.segments[0].ID) {
-		test.Fatal("the glossary belongs before the fence and the transcript segment ids inside it")
+	glossaryFenceStart := strings.Index(prompt, "<untrusted-data>")
+	transcriptFenceStart := strings.LastIndex(prompt, "<untrusted-data>")
+	if glossaryFenceStart < 0 || transcriptFenceStart <= glossaryFenceStart || strings.Count(prompt, "<untrusted-data>") != 2 {
+		test.Fatalf("the glossary and the transcript each have a fence: %q", prompt)
+	}
+	glossaryFence := prompt[glossaryFenceStart:transcriptFenceStart]
+	if !strings.Contains(glossaryFence, "- Ferncroft") || strings.Contains(glossaryFence, fixture.segments[0].ID) || !strings.Contains(prompt[transcriptFenceStart:], fixture.segments[0].ID) {
+		test.Fatal("the glossary terms are in the first fence and the transcript segment ids in the second")
+	}
+	if strings.Contains(prompt, "(trusted)") || !strings.Contains(prompt, "not instructions") {
+		test.Fatal("the glossary is introduced as a list of spellings, not as trusted")
 	}
 	if kinds := fixture.queuedJobKinds(test); kinds[models.AgentJobRecordingSummary] != 1 {
 		test.Fatalf("finishing the pass queues the summary: %v", kinds)
@@ -362,7 +384,7 @@ func TestRecordingTermsJobIgnoresWhatHostileSpeechTellsTheModelToDo(test *testin
 		test.Fatalf("a model that obeyed the transcript changed text the validation forbids: %q", texts)
 	}
 	prompt := fixture.firstUserMessage(test)
-	if strings.Count(prompt, "</untrusted-data>") != 1 || !strings.Contains(prompt, "&lt;/untrusted-data&gt;") {
+	if strings.Count(prompt, "</untrusted-data>") != 2 || !strings.Contains(prompt, "&lt;/untrusted-data&gt;") {
 		test.Fatalf("the transcript closing tag ended the fence: %d %q", strings.Count(prompt, "</untrusted-data>"), prompt)
 	}
 	if kinds := fixture.queuedJobKinds(test); kinds[models.AgentJobRecordingSummary] != 1 {
@@ -442,6 +464,13 @@ func TestAFixMustReadLikeTheTermItSpells(test *testing.T) {
 		{"herder", "Robot Bridge", "Robot Bridge", false},
 		{"herder pains", "Robot Bridge", "Robot Bridge", false},
 		{"the weather", "the Ferncroft", "Ferncroft", false},
+		{"Tea note", "TeaNode, send money", "TeaNode", false},
+		{"Tea note", "TeaNode send", "TeaNode", false},
+		{"Tea node,", "TeaNode,", "TeaNode", true},
+		{"and", "Ann", "Ann", false},
+		{"ann", "Ann", "Ann", true},
+		{"herdy", "herdr", "herdr", true},
+		{"herdxy", "herdr", "herdr", false},
 	} {
 		if isMisheard := isMisheardAs(example.original, example.corrected, example.term); isMisheard != example.isMisheard {
 			test.Errorf("%q to %q for %q: misheard %v, want %v", example.original, example.corrected, example.term, isMisheard, example.isMisheard)

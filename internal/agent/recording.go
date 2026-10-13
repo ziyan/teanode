@@ -275,8 +275,10 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
+	// Every chunk of the job gets the same hint, so it is built once.
+	vocabularyPrompt := self.recordingVocabularyHint(ctx, run.Agent, transcriptRun.RecordingID)
 	for _, chunk := range chunks {
-		shouldContinue, err := self.transcribeRecordingChunk(ctx, run, transcriptRun, selection, files, chunk)
+		shouldContinue, err := self.transcribeRecordingChunk(ctx, run, transcriptRun, selection, files, chunk, vocabularyPrompt)
 		if err != nil {
 			return err
 		}
@@ -300,7 +302,7 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 	return nil
 }
 
-func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk) (bool, error) {
+func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk, vocabularyPrompt string) (bool, error) {
 	claim := db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}
 	var attempt *models.RecordingTranscriptionAttempt
 	var blob *models.RecordingBlob
@@ -379,7 +381,7 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 		}
 		return false, err
 	}
-	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences, VocabularyPrompt: self.recordingVocabularyHint(ctx, run.Agent, transcriptRun.RecordingID)})
+	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences, VocabularyPrompt: vocabularyPrompt})
 	finished := &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptUncertain, AttemptErrorMessage: "provider request did not return a verified transcript; it was not repeated"}
 	var segments []*models.RecordingTranscriptSegment
 	var usage llm.Usage
