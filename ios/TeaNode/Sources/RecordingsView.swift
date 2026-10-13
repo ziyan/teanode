@@ -349,6 +349,7 @@ struct RecordingsScreen: View {
                 }
             }
             .listStyle(.plain)
+            .listSectionSpacing(.compact)
             .navigationTitle("Recordings")
             .searchable(text: $model.searchText, prompt: "Search")
             .onSubmit(of: .search) { Task { await model.search() } }
