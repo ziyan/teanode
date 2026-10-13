@@ -84,7 +84,7 @@ struct AgentWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Your agent")
-        .description("Ask your agent or call it.")
+        .description("Ask your agent, call it, or start a recording.")
         .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
     }
 }
@@ -127,6 +127,12 @@ struct AgentWidgetView: View {
                         Image(systemName: "waveform").frame(maxWidth: .infinity)
                     }
                     .accessibilityLabel("Call your agent")
+                    // Opens TeaNode recording, as the Control Center button and
+                    // the app icon's menu do.
+                    Button(intent: StartRecordingIntent()) {
+                        Image(systemName: "mic").frame(maxWidth: .infinity)
+                    }
+                    .accessibilityLabel("Start recording")
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
