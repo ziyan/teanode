@@ -268,12 +268,13 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 				if err != nil {
 					return err
 				}
-				transcriptText, err = self.withRetiredRecordingNotes(ownerAgent.ID, previous, transcriptText)
-				if err != nil {
-					return err
-				}
+				chunkText := transcriptText
 				digest := sha256.Sum256([]byte(transcriptText))
 				if previous != nil && previous.Hash != hex.EncodeToString(digest[:]) {
+					chunkText, err = self.withRetiredRecordingNotes(ownerAgent.ID, previous, transcriptText)
+					if err != nil {
+						return err
+					}
 					if err := self.reconcileRecordingDocument(ownerAgent.ID, previous.ID); err != nil {
 						return err
 					}
@@ -298,7 +299,7 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 					passageTime := passageHappenedAt.Add(time.Duration(segment.SegmentStartMS) * time.Millisecond)
 					passageHappenedAt = &passageTime
 				}
-				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(transcriptText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
+				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(chunkText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
 				if err != nil {
 					return err
 				}
@@ -307,7 +308,7 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 				}
 				if previous == nil || previous.Hash != document.Hash {
 					hasChangedEvidence = true
-					if err := self.ReplaceAgentChunks(document, []*models.AgentChunk{{Text: transcriptText}}); err != nil {
+					if err := self.ReplaceAgentChunks(document, []*models.AgentChunk{{Text: chunkText}}); err != nil {
 						return err
 					}
 				}
@@ -353,29 +354,21 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 // withRetiredRecordingNotes gives a corrected passage the notes its correction
 // retires, so the next dream can file what still holds in corrected form instead
 // of reading a lone sentence that has lost the context the old note carried.
-// An unchanged passage keeps the text it was stored with, so this never
-// re-reads or retires anything by itself.
+// It only adds notes at the moment the plain passage text differs from the
+// stored document, before reconcileRecordingDocument strikes them, and lists
+// only live notes. The stored hash is always that of the plain text, so a later
+// sync of an unchanged passage compares equal and neither re-reads nor strikes
+// the corrected notes filed since.
 func (self *transaction) withRetiredRecordingNotes(agentId string, previous *models.AgentDocument, passageText string) (string, error) {
-	if previous == nil {
-		return passageText, nil
-	}
-	if previous.Hash == recordingPassageHash(passageText) {
+	if previous == nil || previous.Hash == recordingPassageHash(passageText) {
 		return passageText, nil
 	}
 	evidence := fmt.Sprintf("[{\"id\":\"%s\",\"kind\":\"document\"}]", previous.ID)
-	var retiredFacts []*agentFactModel
-	if err := self.tx.Where("agent_id = ? AND dormant AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&retiredFacts).Error; err != nil {
+	var retiringFacts []*agentFactModel
+	if err := self.tx.Where("agent_id = ? AND NOT dormant AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&retiringFacts).Error; err != nil {
 		return "", err
 	}
-	if withRetired := appendRetiredRecordingNotes(passageText, retiredFacts); previous.Hash == recordingPassageHash(withRetired) {
-		return withRetired, nil
-	}
-	// The passage changed now: the notes citing it are about to be retired too.
-	var citingFacts []*agentFactModel
-	if err := self.tx.Where("agent_id = ? AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&citingFacts).Error; err != nil {
-		return "", err
-	}
-	return appendRetiredRecordingNotes(passageText, citingFacts), nil
+	return appendRetiredRecordingNotes(passageText, retiringFacts), nil
 }
 
 func appendRetiredRecordingNotes(passageText string, retiredFacts []*agentFactModel) string {
