@@ -18,7 +18,7 @@ struct DeviceSetupView: View {
         Form {
             if let capabilities, capabilities.hasAvailableService, let selection {
                 if let profile {
-                    Section("Install the profile") {
+                    Section {
                         Label("Your setup profile is ready", systemImage: "checkmark.circle")
                         if hasOpenedProfile {
                             Text("Profile download started").foregroundStyle(.secondary)
@@ -33,6 +33,8 @@ struct DeviceSetupView: View {
                         if let expiration = ServerTime.date(profile.expiresAt) {
                             Text("Expires \(expiration, style: .relative)").foregroundStyle(.secondary)
                         }
+                    } header: {
+                        Text("Install the profile")
                     } footer: {
                         Text("Safari downloads the profile. Open Settings, tap Profile Downloaded, then install it. The download link works once.")
                     }
@@ -61,7 +63,7 @@ struct DeviceSetupView: View {
                         TextField("Device name", text: binding(\.deviceName, fallback: ""))
                             .textInputAutocapitalization(.words)
                     }
-                    Section("Choose what to add") {
+                    Section {
                         if capabilities.canSetUpMail {
                             Toggle("Mail", isOn: binding(\.hasMailAccess, fallback: false))
                             if selection.hasMailAccess {
@@ -77,6 +79,8 @@ struct DeviceSetupView: View {
                         if capabilities.canSetUpCalendar { Toggle("Calendar", isOn: binding(\.hasCalendarAccess, fallback: false)) }
                         if capabilities.canSetUpReminders { Toggle("Reminders", isOn: binding(\.hasRemindersAccess, fallback: false)) }
                         if capabilities.canSetUpContacts { Toggle("Contacts", isOn: binding(\.hasContactsAccess, fallback: false)) }
+                    } header: {
+                        Text("Choose what to add")
                     } footer: {
                         Text("Choose only the services you want on this iPhone. Calendar, Reminders and Contacts do not need a mailbox.")
                     }

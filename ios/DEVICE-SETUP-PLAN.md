@@ -69,3 +69,7 @@ Native compilation, screenshots and signed-device installation remain pending.
 Review retained the existing sync-profile sharing option. Creation shows installation
 guidance and the primary Download action without automatically consuming the one-use
 link; the system Share action remains available until download starts.
+
+The first native SDK run rejected a titled Section initializer combined with a
+footer. Both service-selection and installation sections now use the existing
+content/header/footer initializer. Fresh SDK validation is pending.
