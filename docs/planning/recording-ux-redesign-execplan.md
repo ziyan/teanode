@@ -14,7 +14,8 @@ To see it working: record a few seconds on the phone with the screen locked, sto
 
 - [x] Milestone 1, server (2026-10-13): generated title and summary job `recording_brief` (`internal/agent/recording_summary.go`), `isAccountOwner` speaker flag, API fields, CLI and LLM tool parity, container creation time for imported originals, one-time sweep that names existing untitled recordings, optional titles everywhere, tests. Migration `0170_recording_summary`.
 - [ ] Milestone 2, dashboard: one list, simplified detail, conversation transcript, context menu, details drawer; Chrome audit at desktop and phone widths, light and dark.
-- [ ] Milestone 3, iPhone: one list with status, one-tap record button, App Shortcut and Control Center control, conversation transcript with long-press menu, details sheet; simulator screenshots in light, dark and largest text.
+- [x] Milestone 3, iPhone, code (2026-10-13): one library list merged by `clientRecordingId` with a status line per row (`TeaNodeKit` `RecordingLibrary`, tested), floating glass record button with no title prompt and a capture screen (elapsed time, input level, pause, stop), `StartRecordingIntent` with the "Start a recording in TeaNode" phrase and a Control Center `RecordingControl`, detail with summary, mini player and the transcript as bubbles with a long-press menu ("This is me" sends `isAccountOwner`), toolbar menu and a Details sheet, toasts instead of inline errors, demo data and screenshot entries (`recordings`, `recording-detail`, `recording-capture`), strings in English, Simplified Chinese and Japanese. Package tests pass on Linux.
+- [ ] Milestone 3, iPhone, verification: CI build, and simulator screenshots in light, dark and largest text looked at (nothing here compiles SwiftUI on Linux).
 - [ ] Milestone 4: review every diff, run all checks, open draft PRs, update #423.
 
 ## Surprises & Discoveries
