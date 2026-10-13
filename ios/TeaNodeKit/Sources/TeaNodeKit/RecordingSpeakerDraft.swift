@@ -11,6 +11,8 @@ public struct RecordingSpeakerDraft: Codable, Hashable, Sendable {
     public var passageStartMS: Int64
     public var passageEndMS: Int64
     public var hasSubmittedRequest: Bool
+    /// True when the person said the speaker is them; the name may then be empty and the server uses the account's own.
+    public var isAccountOwner: Bool? = nil
 
     public init(accountKey: String, recordingId: String, segment: RecordingTranscriptSegment, expectedSourceGeneration: Int64) {
         self.accountKey = accountKey

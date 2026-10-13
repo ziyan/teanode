@@ -33,13 +33,10 @@ final class MeetingRecorder: NSObject {
         return try RecordingJournal(directory: directory)
     }
 
-    func start(accountKey: String, title: String) async {
+    /// The title is never asked for: the server names the recording from its transcript.
+    func start(accountKey: String) async {
         guard !hasSession, !isChangingCapture, AppModel.shared.currentCall == nil else {
             problemText = String(localized: "Stop the current recording or call before starting another recording.")
-            return
-        }
-        guard title.utf8.count <= 255 else {
-            problemText = String(localized: "Use a recording title of at most 255 UTF-8 bytes.")
             return
         }
         guard let ownerId = try? KeychainAccountStore().load(accountKey: accountKey)?.cachedRecordingUserId else {
@@ -57,7 +54,7 @@ final class MeetingRecorder: NSObject {
         else { return }
         do {
             journal = try Self.makeJournal()
-            var recording = LocalRecording(accountKey: accountKey, recordingTitle: title, recordingOrigin: "capture", recordingUserId: ownerId)
+            var recording = LocalRecording(accountKey: accountKey, recordingTitle: "", recordingOrigin: "capture", recordingUserId: ownerId)
             try await journal?.create(recording)
             localRecording = recording
             elapsedMS = 0
@@ -278,6 +275,7 @@ final class MeetingRecorder: NSObject {
                 AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
             ])
         recorder.delegate = self
+        recorder.isMeteringEnabled = true
         guard recorder.prepareToRecord() else {
             throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
         }
@@ -326,6 +324,13 @@ final class MeetingRecorder: NSObject {
         var hash = SHA256()
         while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty { hash.update(data: chunk) }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// How loud the microphone hears the room now, from 0 to 1; 0 while nothing is being recorded.
+    func inputLevel() -> Double {
+        guard isCapturing, let audioRecorder else { return 0 }
+        audioRecorder.updateMeters()
+        return RecordingInputLevel.normalized(decibels: audioRecorder.averagePower(forChannel: 0))
     }
 
     private func updateElapsed() {
