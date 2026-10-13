@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.151.1] - 2026-10-13
+
+### Fixed
+
+- A gray shadow no longer appears beside the closed phone menu. (#446)
+
 ## [0.151.0] - 2026-10-13
 
 ### Added
