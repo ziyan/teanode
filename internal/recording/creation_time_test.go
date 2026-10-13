@@ -116,6 +116,10 @@ func TestImportedOriginalGetsItsContainerCreationTime(test *testing.T) {
 	if stored.RecordedAt == nil || stored.RecordedAt.Format(time.RFC3339) != "2024-05-06T07:08:09Z" {
 		test.Fatalf("the container's creation time was not used: %v", stored.RecordedAt)
 	}
+	// The fixture plays for one second; an encoder may pad it a little.
+	if stored.TimelineDurationMS < 900 || stored.TimelineDurationMS > 1200 {
+		test.Fatalf("the container's length was not used: %d MS", stored.TimelineDurationMS)
+	}
 }
 
 func TestContainerCreationTimeNeverReplacesAnEarlierDateOrDescribesACapture(test *testing.T) {
@@ -124,8 +128,8 @@ func TestContainerCreationTimeNeverReplacesAnEarlierDateOrDescribesACapture(test
 	if stored := importAndComplete(test, models.RecordingOriginAudioImport, content, &preset); stored.RecordedAt == nil || !stored.RecordedAt.Equal(preset) {
 		test.Fatalf("a date somebody set was replaced: %v", stored.RecordedAt)
 	}
-	if stored := importAndComplete(test, models.RecordingOriginCapture, content, nil); stored.RecordedAt != nil {
-		test.Fatalf("a capture got a date from its container: %v", stored.RecordedAt)
+	if stored := importAndComplete(test, models.RecordingOriginCapture, content, nil); stored.RecordedAt != nil || stored.TimelineDurationMS != 0 {
+		test.Fatalf("a capture got a date or a length from its container: %v, %d MS", stored.RecordedAt, stored.TimelineDurationMS)
 	}
 }
 

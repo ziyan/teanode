@@ -23,6 +23,7 @@ type Store struct {
 	maintenanceMutex         sync.Mutex
 	lastKnowledgeRecordingId string
 	lastRevokedReferenceId   string
+	lastImportedMediaId      string
 }
 
 // New requires range-capable storage rather than buffering an entire import.
@@ -188,7 +189,7 @@ func (self *Store) Complete(ctx context.Context, userId, mediaId string) (*model
 		return err
 	})
 	if err == nil && isFirstCompletion {
-		self.recordCreationTime(ctx, userId, mediaId)
+		self.recordImportedContainer(ctx, userId, mediaId)
 	}
 	return media, isFirstCompletion, err
 }

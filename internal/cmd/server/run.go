@@ -738,6 +738,9 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 			if err := store.InitializeKnowledge(ctx, 25); err != nil {
 				log.Warningf("cannot initialize recording knowledge: %s", err)
 			}
+			if err := store.FillImportedMediaDurations(ctx, 10); err != nil {
+				log.Warningf("cannot read the length of imported recordings: %s", err)
+			}
 			if err := store.ReconcileReferences(ctx, 25); err != nil {
 				log.Warningf("cannot reconcile changed recording references: %s", err)
 			}

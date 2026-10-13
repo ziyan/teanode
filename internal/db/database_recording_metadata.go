@@ -14,6 +14,57 @@ type RecordingMetadataOperation interface {
 	MarkRecordingSummaryQueued(userId, recordingId string) error
 	StoreGeneratedRecordingSummary(userId, recordingId, recordingTitle, recordingSummary string) error
 	SetRecordingRecordedAtIfUnset(userId, recordingId string, recordedAt time.Time) (bool, error)
+	SetRecordingMediaDurationIfUnknown(userId, mediaId string, mediaDurationMS int64) (bool, error)
+	ListImportedMediaWithoutDuration(afterMediaId string, limit int) ([]ImportedMediaReference, error)
+}
+
+// ImportedMediaReference names an imported original and the account that owns it.
+type ImportedMediaReference struct {
+	UserID           string
+	RecordingMediaID string
+}
+
+// SetRecordingMediaDurationIfUnknown fills the length of an imported original
+// that arrived without one, read from its container, and stretches the
+// recording's timeline to its end. A length already known is never replaced.
+func (self *transaction) SetRecordingMediaDurationIfUnknown(userId, mediaId string, mediaDurationMS int64) (bool, error) {
+	if mediaDurationMS <= 0 {
+		return false, ErrInvalidArguments
+	}
+	media, err := self.GetRecordingMedia(userId, mediaId)
+	if err != nil {
+		return false, err
+	}
+	source, err := self.LockRecording(userId, media.RecordingID)
+	if err != nil {
+		return false, err
+	}
+	if source.RecordingOrigin == models.RecordingOriginCapture {
+		return false, nil
+	}
+	update := self.tx.Model(&recordingMediaModel{}).Where("id = ? AND media_duration_ms = 0", mediaId).Update("media_duration_ms", mediaDurationMS)
+	if update.Error != nil || update.RowsAffected == 0 {
+		return false, update.Error
+	}
+	if end := media.TimelineStartMS + mediaDurationMS; end > source.TimelineDurationMS {
+		if err := self.tx.Model(&recordingModel{}).Where("id = ?", source.ID).Update("timeline_duration_ms", end).Error; err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// ListImportedMediaWithoutDuration finds verified imported originals whose
+// length was never read, in identifier order after afterMediaId.
+func (self *transaction) ListImportedMediaWithoutDuration(afterMediaId string, limit int) ([]ImportedMediaReference, error) {
+	var references []ImportedMediaReference
+	if err := self.tx.Table("recording_media").Select("recording.user_id AS user_id, recording_media.id AS recording_media_id").
+		Joins("JOIN recording ON recording.id = recording_media.recording_id").
+		Where("recording_media.media_duration_ms = 0 AND recording_media.verified_at IS NOT NULL AND recording.deleted_at IS NULL AND recording.user_id IS NOT NULL AND recording.recording_origin <> ? AND recording_media.id > ?", models.RecordingOriginCapture, afterMediaId).
+		Order("recording_media.id").Limit(limit).Scan(&references).Error; err != nil {
+		return nil, err
+	}
+	return references, nil
 }
 
 // SetRecordingRecordedAtIfUnset fills an occurrence date read from the
