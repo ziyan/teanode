@@ -67,9 +67,7 @@ it('does not prepare on mount, metadata loading or unsupported-original detectio
   await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce())
   expect(graphql).toHaveBeenCalledOnce()
   expect(screen.queryByRole('button', { name: 'Use original' })).toBeNull()
-  expect(screen.getByRole('link', { name: 'Download original' }).getAttribute('href')).toBe(
-    '/api/v1/recordings/media/fixture-media',
-  )
+  expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
     playbackReceipt.playbackPath,
   )
@@ -127,14 +125,31 @@ it('keeps a supported video original by default and offers only an explicit audi
   fireEvent.loadedMetadata(original)
   expect(view.container.querySelector('audio')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Play compatible audio' })).toBeNull()
-  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
   expect(graphql).not.toHaveBeenCalled()
 })
 
-it('switches supported video to explicit audio preview and returns to the original without another preparation', async () => {
+it('offers the audio preview only when the browser cannot play the original', () => {
+  const canPlayType = vi.spyOn(HTMLMediaElement.prototype, 'canPlayType')
+  canPlayType.mockReturnValue('probably')
+  const playable = render(player())
+  expect(screen.queryByRole('button', { name: 'Use audio preview' })).toBeNull()
+  expect(screen.queryByText(/cannot play the original/)).toBeNull()
+  // The element reporting an error is the other way to find out.
+  fireEvent.error(playable.container.querySelector('audio')!)
+  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
+  playable.unmount()
+
+  canPlayType.mockReturnValue('')
+  render(player())
+  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
+  expect(screen.getByText(/An audio preview plays here instead/)).toBeTruthy()
+})
+
+it('switches video the browser cannot play to explicit audio preview and returns to the original without another preparation', async () => {
   const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
   const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   vi.mocked(graphql).mockResolvedValue({ PrepareRecordingPlayback: playbackReceipt })
+  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
   const view = render(player(new RecordingPassagePlayback(), { ...media, originalContentType: 'video/mp4' }))
   const original = view.container.querySelector('video')!
   Object.defineProperty(original, 'videoWidth', { value: 1920 })
@@ -155,7 +170,7 @@ it('switches supported video to explicit audio preview and returns to the origin
   expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
     playbackReceipt.playbackPath,
   )
-  expect(screen.getByRole('link', { name: 'Download original' })).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
   expect(pause).toHaveBeenCalled()
   expect(graphql).toHaveBeenCalledOnce()
 })

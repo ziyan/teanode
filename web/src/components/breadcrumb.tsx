@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { useMailboxes } from '../mailboxes'
 
@@ -75,17 +76,42 @@ const SECTION_PAGES: { path: string; label: Key; isRailItem?: boolean }[] = [
 
 const SetDetailContext = createContext<((details: string[]) => void) | null>(null)
 const DetailContext = createContext<string[]>([])
+// The place beside the page heading where a page puts its one primary action,
+// and the setter the heading uses to say where that is.
+const HeadingActionSlotContext = createContext<HTMLElement | null>(null)
+const SetHeadingActionSlotContext = createContext<((slot: HTMLElement | null) => void) | null>(null)
 
 export function BreadcrumbProvider({ children }: { children: React.ReactNode }) {
   const [detail, setDetail] = useState<string[]>([])
+  const [headingActionSlot, setHeadingActionSlot] = useState<HTMLElement | null>(null)
   return (
     <SetDetailContext.Provider value={setDetail}>
       <DetailContext.Provider value={detail}>
-        <DocumentTitle />
-        {children}
+        <SetHeadingActionSlotContext.Provider value={setHeadingActionSlot}>
+          <HeadingActionSlotContext.Provider value={headingActionSlot}>
+            <DocumentTitle />
+            {children}
+          </HeadingActionSlotContext.Provider>
+        </SetHeadingActionSlotContext.Provider>
       </DetailContext.Provider>
     </SetDetailContext.Provider>
   )
+}
+
+// useHeadingActionSlot is the element beside the heading that a page may put
+// its actions into, or null where the heading is not drawn (a phone).
+export function useHeadingActionSlot(): HTMLElement | null {
+  return useContext(HeadingActionSlotContext)
+}
+
+// PageHeadingActions is a page's primary action (Import, Add, New) on the same
+// line as its title, at the right. Where the heading is not drawn, as on a
+// phone, whose bar carries the title, the action is a row of its own at the
+// end, as every other page puts it.
+export function PageHeadingActions({ children }: { children: React.ReactNode }) {
+  const slot = useContext(HeadingActionSlotContext)
+  if (slot) return createPortal(children, slot)
+  return <div className="page-actions page-actions-end">{children}</div>
 }
 
 // useBreadcrumbDetail names the thing the page is showing — a domain, a
@@ -274,6 +300,7 @@ function DocumentTitle() {
 // the content reads as a fragment of an application rather than a page of one.
 export function PageHeading() {
   const trail = useTrail()
+  const setSlot = useContext(SetHeadingActionSlotContext)
   const last = trail[trail.length - 1]
 
   if (!last) {
@@ -283,7 +310,12 @@ export function PageHeading() {
   // A non-breaking space rather than nothing: an empty h1 collapses to no
   // height, and the page below it would jump up and back down as the name
   // arrives.
-  return <h1 className="page-heading">{last.label || '\u00a0'}</h1>
+  return (
+    <div className="page-heading-row">
+      <h1 className="page-heading">{last.label || '\u00a0'}</h1>
+      <div className="page-heading-actions" ref={setSlot} />
+    </div>
+  )
 }
 
 // Breadcrumb is the way back up.

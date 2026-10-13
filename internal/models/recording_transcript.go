@@ -67,6 +67,9 @@ type RecordingTranscriptRun struct {
 	ProcessingErrorMessage   string                   `json:"processingErrorMessage"`
 	IsReprocessingRequested  bool                     `json:"isReprocessingRequested"`
 	CompletedAt              *time.Time               `json:"completedAt"`
+	// SegmentCount is how many passages the version holds, filled when runs are
+	// listed, so a client can tell a complete version with no speech from one with some.
+	SegmentCount int64 `json:"segmentCount" gorm:"-"`
 }
 
 // RecordingAudioChunk is a bounded derived WAV on the original media timeline.

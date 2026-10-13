@@ -82,6 +82,9 @@ final class AppModel {
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
 
+    /// Siri, the Action button or Control Center asked for a recording: the recordings screen starts one once it can.
+    var isRecordingRequested = false
+
     /// The call under way, for the buttons on its Live Activity.
     weak var currentCall: VoiceCall?
 

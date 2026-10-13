@@ -124,7 +124,7 @@ final class RecordingUploads: NSObject {
                     try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                     remote = try await connection.updateRecordingMetadata(
                         recordingId: remoteId, expectedSourceGeneration: remote.sourceGeneration,
-                        recordingTitle: remote.recordingTitle, recordedAt: recording.startedAt.formatted(.iso8601))
+                        recordingTitle: nil, recordedAt: recording.startedAt.formatted(.iso8601))
                 }
                 if remote.recordingCaptureState != "stopped" || remote.timelineDurationMS != recording.timelineDurationMS
                     || remote.captureGaps != recording.captureGaps
@@ -244,13 +244,14 @@ final class RecordingUploads: NSObject {
             return false
         } catch {
             recording.uploadErrorMessage = error.localizedDescription
+            recording.isUploadWaitingForNetwork = RecordingLibrary.isConnectivityFailure(error)
             if error as? TeaNodeError == .recordingDeleted { recording.isDeletedRemotely = true }
             try await journal.save(recording)
             throw error
         }
     }
 
-    private func finished(_ task: PartTask, responseCode: Int?, responseData: Data, errorMessage: String?) async {
+    private func finished(_ task: PartTask, responseCode: Int?, responseData: Data, errorMessage: String?, isConnectivityFailure: Bool) async {
         var hasVerifiedReceipt = false
         defer {
             if !hasVerifiedReceipt {
@@ -281,6 +282,7 @@ final class RecordingUploads: NSObject {
                 recording.uploadErrorMessage = nil
             } else {
                 recording.uploadErrorMessage = errorMessage ?? String(localized: "The upload was not verified. Keep the original and retry.")
+                recording.isUploadWaitingForNetwork = isConnectivityFailure
             }
             try await journal.save(recording)
             hasVerifiedReceipt = recording.uploadErrorMessage == nil
@@ -302,8 +304,11 @@ extension RecordingUploads: URLSessionDataDelegate {
         else { return }
         let responseCode = (task.response as? HTTPURLResponse)?.statusCode
         let errorMessage = error?.localizedDescription
+        let isConnectivityFailure = error.map(RecordingLibrary.isConnectivityFailure) ?? false
         let completed = Task { @MainActor in
-            await finished(partTask, responseCode: responseCode, responseData: responseData, errorMessage: errorMessage)
+            await finished(
+                partTask, responseCode: responseCode, responseData: responseData, errorMessage: errorMessage,
+                isConnectivityFailure: isConnectivityFailure)
         }
         completions.append(completed)
     }

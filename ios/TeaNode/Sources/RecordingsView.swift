@@ -10,7 +10,10 @@ final class RecordingsModel {
     let connection: Connection
     var recordings: [Recording] = []
     var localRecordings: [LocalRecording] = []
+    var serverProgress: [String: RecordingServerProgress] = [:]
     var problemText: String?
+    var doneText: String?
+    var loadFailureText: String?
     var hasUnverifiedLocalOwner = false
     var isLoaded = false
     var isImporting = false
@@ -18,6 +21,20 @@ final class RecordingsModel {
     var isLoadingPage = false
 
     init(connection: Connection) { self.connection = connection }
+
+    /// The one list: the phone's recordings and the server's, merged by the identifier they share.
+    var rows: [RecordingLibraryRow] {
+        RecordingLibrary.rows(recordings: recordings, localRecordings: localRecordings, serverProgress: serverProgress)
+    }
+
+    var isStillChanging: Bool { rows.contains { $0.isStillChanging() } }
+
+    /// What the library says while it has no rows.
+    var phase: RecordingLibraryPhase {
+        guard isLoaded else { return .loading }
+        if let loadFailureText { return .failed(loadFailureText) }
+        return .empty
+    }
 
     func load() async {
         do {
@@ -29,10 +46,36 @@ final class RecordingsModel {
             hasMoreRecordings = recordings.count == 50
             isLoaded = true
             problemText = nil
+            loadFailureText = nil
             RecordingUploads.shared.resume(connection: connection)
+            await loadServerProgress()
         } catch {
             problemText = error.localizedDescription
+            loadFailureText = error.localizedDescription
             isLoaded = true
+        }
+    }
+
+    /// Reads the first page again without dropping the older pages already loaded, so a title the server just wrote shows.
+    func refresh() async {
+        await loadLocalRecordings()
+        do {
+            let page = try await connection.recordings()
+            let freshIds = Set(page.map(\.id))
+            recordings = page + recordings.filter { !freshIds.contains($0.id) }
+            problemText = nil
+        } catch { problemText = error.localizedDescription }
+        await loadServerProgress()
+    }
+
+    /// Asks the server how the recordings that have no summary yet are doing: uploading, transcribing, failed or done.
+    func loadServerProgress() async {
+        let waiting = recordings.filter {
+            RecordingLibrary.firstLine(of: $0.recordingSummary).isEmpty && serverProgress[$0.id]?.isSettled != true
+        }
+        for recording in waiting.prefix(20) {
+            guard let view = try? await connection.recording(recording.id), view.recording.id == recording.id else { continue }
+            serverProgress[recording.id] = RecordingServerProgress(view: view)
         }
     }
 
@@ -48,6 +91,12 @@ final class RecordingsModel {
     }
 
     private func loadLocalRecordings() async {
+        #if DEBUG
+            if DemoServer.isRequested {
+                localRecordings = DemoServer.localRecordings
+                return
+            }
+        #endif
         guard let ownerId = try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId,
             isCurrentOwner(ownerId)
         else { return }
@@ -92,6 +141,24 @@ final class RecordingsModel {
             recordings.append(contentsOf: page.filter { !knownIds.contains($0.id) })
             hasMoreRecordings = page.count == 50 && page.last?.id != beforeRecordingId
             problemText = nil
+            await loadServerProgress()
+        } catch { problemText = error.localizedDescription }
+    }
+
+    func delete(_ recording: Recording) async {
+        do {
+            try await connection.deleteRecording(recording.id)
+            recordings.removeAll { $0.id == recording.id }
+            doneText = String(localized: "Recording deleted.")
+        } catch { problemText = error.localizedDescription }
+    }
+
+    func removeFromPhone(_ localRecording: LocalRecording) async {
+        do {
+            let journal = try MeetingRecorder.makeJournal()
+            try await journal.removeLocalRecording(localRecording.id, accountKey: connection.accountKey)
+            await load()
+            doneText = String(localized: "Removed from this phone.")
         } catch { problemText = error.localizedDescription }
     }
 
@@ -121,10 +188,9 @@ final class RecordingsModel {
             guard try KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId == ownerId else {
                 throw TeaNodeError.signedOut
             }
+            // The file name stays on the original; the server names the recording once it is transcribed.
             var recording = LocalRecording(
-                accountKey: connection.accountKey,
-                recordingTitle: source.deletingPathExtension().lastPathComponent.utf8.count <= 255
-                    ? source.deletingPathExtension().lastPathComponent : String(localized: "Recording"),
+                accountKey: connection.accountKey, recordingTitle: "",
                 recordingOrigin: contentType.conforms(to: .movie) ? "videoImport" : "audioImport", recordingUserId: ownerId)
             let duration = try? await AVURLAsset(url: source).load(.duration)
             let durationSeconds = duration.map { CMTimeGetSeconds($0) } ?? 0
@@ -150,11 +216,13 @@ final class RecordingsModel {
 struct RecordingsScreen: View {
     @State private var model: RecordingsModel
     @State private var isImporting = false
-    @State private var isNaming = false
-    @State private var meetingTitle = ""
     @State private var recorder = MeetingRecorder.shared
-    @State private var isDiscarding = false
-    @State private var discardedRecording: LocalRecording?
+    @State private var isShowingCapture = false
+    @State private var isStarting = false
+    @State private var removedRecording: LocalRecording?
+    @State private var isRemoving = false
+    @State private var deletedRecording: Recording?
+    @State private var isDeleting = false
     @State private var localPlayback: LocalRecording?
     @State private var openedCitation: RecordingLink?
 
@@ -163,126 +231,80 @@ struct RecordingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                if let current = recorder.localRecording, recorder.hasSession {
-                    Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(
-                                current.belongsTo(
-                                    accountKey: model.connection.accountKey, recordingUserId: AppModel.shared.account?.cachedRecordingUserId)
-                                    ? (current.recordingTitle.isEmpty ? String(localized: "Recording") : current.recordingTitle)
-                                    : String(localized: "Recording on this phone")
-                            ).font(.headline)
-                            Text(Duration.milliseconds(recorder.elapsedMS).formatted(.time(pattern: .hourMinuteSecond)))
-                                .monospacedDigit().contentTransition(.numericText())
-                            Text(
-                                recorder.isCapturing
-                                    ? String(localized: "Recording locally")
-                                    : (current.recordingCaptureState == "interrupted"
-                                        ? String(localized: "Interrupted. Resume when you are ready.")
-                                        : String(localized: "Paused. Resume when you are ready."))
-                            ).foregroundStyle(.secondary)
-                        }
-                        Button {
-                            Task { if recorder.isCapturing { await recorder.pause() } else { await recorder.resume() } }
-                        } label: {
-                            Label(
-                                recorder.isCapturing ? String(localized: "Pause recording") : String(localized: "Resume recording"),
-                                systemImage: recorder.isCapturing ? "pause" : "mic")
-                        }
-                        .disabled(
-                            !recorder.isCapturing
-                                && !current.belongsTo(
-                                    accountKey: model.connection.accountKey, recordingUserId: AppModel.shared.account?.cachedRecordingUserId)
-                        )
-                        Button(role: .destructive) {
-                            Task {
-                                await recorder.stop()
-                                await model.load()
-                            }
-                        } label: {
-                            Label("Stop recording", systemImage: "stop")
-                        }
-                    } footer: {
-                        Text(
-                            "Audio stays on this phone until the server verifies the upload. Recorded speech is source material, never instructions to your agent."
-                        )
-                    }
+                let rows = model.rows
+                if rows.isEmpty {
+                    RecordingLibraryPlaceholder(phase: model.phase)
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
                 }
-                if let problem = recorder.problemText { Section { Text(problem).foregroundStyle(.secondary) } }
-                if !model.localRecordings.isEmpty {
-                    Section("On this phone") {
-                        ForEach(model.localRecordings) { recording in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
-                                Text(recording.startedAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                                if RecordingLibraryProgress.canPlayLocalOriginal(recording) {
-                                    Button {
-                                        localPlayback = recording
-                                    } label: {
-                                        Label("Play local original", systemImage: "play")
-                                    }
-                                }
-                                if let error = recording.uploadErrorMessage {
-                                    Text(error).font(.callout).foregroundStyle(.secondary)
-                                } else {
-                                    Text(
-                                        recording.localMedia.allSatisfy(\.isDurablyUploaded) && !recording.localMedia.isEmpty
-                                            ? String(localized: "Uploaded and verified") : String(localized: "Original kept locally")
-                                    ).font(.caption).foregroundStyle(.secondary)
+                ForEach(rows) { row in
+                    rowLink(row)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if let recording = row.recording {
+                                Button(role: .destructive) {
+                                    deletedRecording = recording
+                                    isDeleting = true
+                                } label: {
+                                    Label("Delete recording", systemImage: "trash")
                                 }
                             }
-                            .contextMenu {
+                            if row.canRemoveFromPhone, let localRecording = row.localRecording {
+                                Button {
+                                    removedRecording = localRecording
+                                    isRemoving = true
+                                } label: {
+                                    Label("Remove from this phone", systemImage: "iphone.slash")
+                                }
+                            }
+                        }
+                        .contextMenu {
+                            if row.canRetryUpload {
                                 Button {
                                     RecordingUploads.shared.resume(connection: model.connection)
                                     Task { await model.load() }
                                 } label: {
                                     Label("Retry upload", systemImage: "arrow.clockwise")
                                 }
-                                if recording.recordingCaptureState == "stopped" || recording.recordingCaptureState == "imported" {
-                                    Button(role: .destructive) {
-                                        discardedRecording = recording
-                                        isDiscarding = true
-                                    } label: {
-                                        Label("Remove from this phone", systemImage: "trash")
-                                    }
+                            }
+                            if row.canPlayLocalOriginal, let localRecording = row.localRecording {
+                                Button {
+                                    localPlayback = localRecording
+                                } label: {
+                                    Label("Play local original", systemImage: "play")
+                                }
+                            }
+                            if row.canRemoveFromPhone, let localRecording = row.localRecording {
+                                Button(role: .destructive) {
+                                    removedRecording = localRecording
+                                    isRemoving = true
+                                } label: {
+                                    Label("Remove from this phone", systemImage: "iphone.slash")
+                                }
+                            }
+                            if let recording = row.recording {
+                                Button(role: .destructive) {
+                                    deletedRecording = recording
+                                    isDeleting = true
+                                } label: {
+                                    Label("Delete recording", systemImage: "trash")
                                 }
                             }
                         }
-                    }
                 }
-                Section("On the server") {
-                    ForEach(model.recordings) { recording in
-                        NavigationLink {
-                            RecordingDetailScreen(connection: model.connection, recording: recording)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
-                                Text("Uploaded \(ServerTime.date(recording.createdAt) ?? .distantPast, style: .date)").font(.caption).foregroundStyle(
-                                    .secondary)
-                            }
-                        }
+                if model.hasMoreRecordings {
+                    Button {
+                        Task { await model.loadMore() }
+                    } label: {
+                        Label("Load more recordings", systemImage: "chevron.down")
                     }
-                    if model.hasMoreRecordings {
-                        Button {
-                            Task { await model.loadMore() }
-                        } label: {
-                            Label("Load more recordings", systemImage: "chevron.down")
-                        }
-                        .disabled(model.isLoadingPage)
-                    }
-                    if model.isLoaded && model.recordings.isEmpty {
-                        ContentUnavailableView(
-                            "No recordings", systemImage: "waveform", description: Text("Start a recording or import audio or video."))
-                    }
+                    .disabled(model.isLoadingPage)
                 }
                 if model.hasUnverifiedLocalOwner {
-                    Section {
-                        Text(
-                            "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
-                        ).foregroundStyle(.secondary)
-                    }
+                    Text(
+                        "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
+                    )
+                    .font(.footnote).foregroundStyle(.secondary)
                 }
-                if let problem = model.problemText { Section { Text(problem).foregroundStyle(.secondary) } }
             }
             .navigationTitle("Recordings")
             .navigationDestination(item: $openedCitation) { citation in
@@ -293,32 +315,44 @@ struct RecordingsScreen: View {
                 AppModel.shared.openedRecordingLink = nil
                 openedCitation = citation
             }
+            .onChange(of: AppModel.shared.isRecordingRequested) { startRequestedRecording() }
+            .onChange(of: recorder.problemText) { _, text in
+                guard let text else { return }
+                model.problemText = text
+                recorder.problemText = nil
+            }
             .toolbar {
                 MenuButton()
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button {
-                            isNaming = true
-                        } label: {
-                            Label("Start recording", systemImage: "mic")
-                        }.disabled(recorder.hasSession)
-                        Button {
-                            isImporting = true
-                        } label: {
-                            Label("Import audio or video", systemImage: "square.and.arrow.down")
-                        }
+                    Button {
+                        isImporting = true
                     } label: {
-                        Label("Add recording", systemImage: "plus")
+                        Label("Import audio or video", systemImage: "square.and.arrow.down")
                     }
                 }
             }
+            .contentMargins(.bottom, 96, for: .scrollContent)
             .refreshable { await model.load() }
             .task {
                 await recorder.recover(accountKey: model.connection.accountKey)
                 await model.load()
+                startRequestedRecording()
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(5)) } catch { break }
                     if model.hasPendingLocalUploads { await model.refreshUploadProgress() }
+                    if model.isStillChanging { await model.refresh() }
+                }
+            }
+            .toast(done: $model.doneText, problem: $model.problemText)
+            .safeAreaInset(edge: .bottom) {
+                RecordingFloatingButton(
+                    isRecording: recorder.hasSession, elapsedMS: recorder.elapsedMS, isStarting: isStarting,
+                    onStart: startRecording, onShow: { isShowingCapture = true })
+            }
+            .sheet(isPresented: $isShowingCapture) {
+                RecordingCaptureScreen {
+                    await model.refresh()
+                    model.doneText = String(localized: "Saved. TeaNode will upload the recording, then name it.")
                 }
             }
             .sheet(item: $localPlayback) { recording in
@@ -330,334 +364,264 @@ struct RecordingsScreen: View {
                 case .failure(let error): model.problemText = error.localizedDescription
                 }
             }
-            .alert("Start recording", isPresented: $isNaming) {
-                TextField("Meeting title (optional)", text: $meetingTitle)
-                Button("Start") {
-                    Task {
-                        await recorder.start(accountKey: model.connection.accountKey, title: meetingTitle)
-                        await model.load()
-                    }
-                    meetingTitle = ""
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Everyone should know you are recording. TeaNode stays silent and saves the audio locally.")
-            }
-            .confirmationDialog("Remove the local original?", isPresented: $isDiscarding, titleVisibility: .visible) {
+            .confirmationDialog("Remove the local original?", isPresented: $isRemoving, titleVisibility: .visible) {
                 Button("Remove from this phone", role: .destructive) {
-                    if let recording = discardedRecording {
-                        Task {
-                            do {
-                                let journal = try MeetingRecorder.makeJournal()
-                                try await journal.removeLocalRecording(recording.id, accountKey: model.connection.accountKey)
-                                await model.load()
-                            } catch { model.problemText = error.localizedDescription }
-                        }
-                    }
+                    if let removedRecording { Task { await model.removeFromPhone(removedRecording) } }
                 }
             } message: {
                 Text("Any audio not verified by the server will be lost. This does not delete the server recording.")
             }
+            .confirmationDialog("Delete recording and its originals?", isPresented: $isDeleting, titleVisibility: .visible) {
+                Button("Delete recording", role: .destructive) {
+                    if let deletedRecording { Task { await model.delete(deletedRecording) } }
+                }
+            } message: {
+                Text("Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.")
+            }
             .withoutSwipeBack()
         }
     }
+
+    /// A recording opens whatever it is: a live one on the capture screen, one the server has on its page, and one only the
+    /// phone has on its local original.
+    @ViewBuilder
+    private func rowLink(_ row: RecordingLibraryRow) -> some View {
+        if row.isLiveSession {
+            Button {
+                isShowingCapture = true
+            } label: {
+                RecordingRowView(row: row)
+            }
+            .buttonStyle(.plain)
+        } else if let recording = row.recording {
+            NavigationLink {
+                RecordingDetailScreen(connection: model.connection, recording: recording)
+            } label: {
+                RecordingRowView(row: row)
+            }
+        } else {
+            Button {
+                localPlayback = row.localRecording
+            } label: {
+                RecordingRowView(row: row)
+            }
+            .buttonStyle(.plain)
+            .disabled(!row.canPlayLocalOriginal)
+        }
+    }
+
+    private func startRecording() {
+        guard !isStarting else { return }
+        isStarting = true
+        Task {
+            defer { isStarting = false }
+            if !recorder.hasSession {
+                await recorder.start(accountKey: model.connection.accountKey)
+                await model.refresh()
+            }
+            if recorder.hasSession { isShowingCapture = true }
+        }
+    }
+
+    /// Siri, the Action button and Control Center ask for a recording by setting a flag on the app model.
+    private func startRequestedRecording() {
+        guard AppModel.shared.isRecordingRequested else { return }
+        AppModel.shared.isRecordingRequested = false
+        startRecording()
+    }
 }
 
-struct RecordingDetailScreen: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    let connection: Connection
-    let recording: Recording
-    var shouldFocusLearning = false
-    @Environment(\.dismiss) private var dismiss
-    @State private var recordingView: RecordingView?
-    @State private var learning: RecordingLearningView?
-    @State private var editingLearningSource: KnowledgeSource?
-    @State private var limits: RecordingLimits?
-    @State private var problemText: String?
-    @State private var isDeleting = false
-    @State private var selectedMedia: RecordingMedia?
-    @State private var reprocessedMedia: RecordingMedia?
-    @State private var isReprocessing = false
-    @State private var isSubmitting = false
-    @State private var transcriptionRequestId = UUID().uuidString
-    @State private var isEditingMetadata = false
-    @State private var isSavingMetadata = false
-    @State private var recordingTitle = ""
-    @State private var metadataExpectedGeneration: Int64 = 0
-    @State private var hasRecordedAt = false
-    @State private var recordedAt = Date()
-
-    private var displayedRecordingTitle: String {
-        let latestTitle = recordingView?.recording.recordingTitle ?? recording.recordingTitle
-        return latestTitle.isEmpty ? String(localized: "Recording") : latestTitle
-    }
+/// RecordingFloatingButton is the round record button that floats over the bottom of the library. While a recording is under
+/// way it shows the time instead, and opens the recording screen.
+struct RecordingFloatingButton: View {
+    let isRecording: Bool
+    let elapsedMS: Int64
+    let isStarting: Bool
+    let onStart: @MainActor () -> Void
+    let onShow: @MainActor () -> Void
 
     var body: some View {
-        ScrollViewReader { scrollProxy in
-            List {
-                if dynamicTypeSize.isAccessibilitySize {
-                    Section {
-                        Text(displayedRecordingTitle).font(.headline)
+        GlassEffectContainer {
+            if isRecording {
+                Button(action: onShow) {
+                    Label {
+                        Text(Duration.milliseconds(elapsedMS).formatted(.time(pattern: .hourMinuteSecond)))
+                            .monospacedDigit().contentTransition(.numericText())
+                    } icon: {
+                        Image(systemName: "waveform")
                     }
+                    .font(.headline)
+                    .padding(.horizontal, 8)
                 }
-                if let recordingView {
-                    Section {
-                        ForEach(recordingView.mediaFiles) { media in
-                            Button {
-                                selectedMedia = media
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Label(media.originalFilename, systemImage: media.originalContentType.hasPrefix("video/") ? "video" : "waveform")
-                                    Text(
-                                        media.recordingUploadState == "complete"
-                                            ? String(localized: "Ready to play") : String(localized: "Upload pending")
-                                    ).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }.disabled(media.recordingUploadState != "complete")
-                            if media.recordingUploadState == "complete" {
-                                Button {
-                                    reprocessedMedia = media
-                                    transcriptionRequestId = RecordingRequestIdentity.acquire(accountKey: connection.accountKey, mediaId: media.id)
-                                    isReprocessing = true
-                                } label: {
-                                    Label("Transcribe or reprocess", systemImage: "text.bubble")
-                                }.disabled(isSubmitting || limits?.isTranscriptionAvailable != true)
-                            }
-                        }
-                    } header: {
-                        Text("Original media")
-                    }
-                    NavigationLink {
-                        RecordingTranscriptScreen(connection: connection, recording: recordingView.recording)
-                    } label: {
-                        Label("Full recording transcript", systemImage: "text.alignleft")
-                    }
-                    if let runs = recordingView.transcriptRuns, !runs.isEmpty {
-                        Section("Transcript versions") {
-                            ForEach(runs) { run in
-                                NavigationLink {
-                                    RecordingTranscriptScreen(connection: connection, recording: recordingView.recording, transcriptRun: run)
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Version \(run.versionNumber)")
-                                        Text(RecordingWords.processing(run.recordingProcessingState)).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }
-                                if ["queued", "preparing", "transcribing", "failed", "canceled"].contains(run.recordingProcessingState) {
-                                    Button {
-                                        Task {
-                                            do {
-                                                _ = try await connection.retryRecordingTranscription(recordingTranscriptRunId: run.id)
-                                                await load()
-                                            } catch { problemText = error.localizedDescription }
-                                        }
-                                    } label: {
-                                        Label("Retry transcription", systemImage: "arrow.clockwise")
-                                    }.disabled(limits?.isTranscriptionAvailable != true)
-                                }
-                                if run.isRunning {
-                                    Button("Cancel transcription", role: .destructive) {
-                                        Task {
-                                            do {
-                                                _ = try await connection.cancelRecordingTranscription(recordingTranscriptRunId: run.id)
-                                                await load()
-                                            } catch { problemText = error.localizedDescription }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if limits?.isTranscriptionAvailable != true {
-                        Section {
-                            Text(
-                                limits?.transcriptionUnavailableMessage?.isEmpty == false
-                                    ? (limits?.transcriptionUnavailableMessage ?? "")
-                                    : String(localized: "Transcription availability has not been verified. Refresh or ask the operator.")
-                            ).foregroundStyle(.secondary)
-                        }
-                    }
-                    if !recordingView.recording.captureGaps.isEmpty {
-                        Section("Capture gaps") {
-                            ForEach(recordingView.recording.captureGaps) { gap in
-                                LabeledContent(gap.recordingGapReason == "paused" ? String(localized: "Paused") : String(localized: "Interrupted")) {
-                                    Text(Duration.milliseconds(gap.gapStartMS).formatted(.time(pattern: .hourMinuteSecond))).monospacedDigit()
-                                }
-                            }
-                        }
-                    }
+                .buttonStyle(.glassProminent)
+                .controlSize(.extraLarge)
+                .accessibilityLabel("Show the recording")
+            } else {
+                Button(action: onStart) {
+                    Image(systemName: "mic.fill")
+                        .font(.largeTitle)
+                        .padding(8)
                 }
-                if let learning {
-                    Section {
-                        if learning.hasStoppedReading == true {
-                            Text("Stopped reading transcripts").foregroundStyle(.secondary)
-                            Button("Resume reading", systemImage: "play") {
-                                isSubmitting = true
-                                Task {
-                                    defer { isSubmitting = false }
-                                    do {
-                                        self.learning = try await connection.resumeRecordingLearning(
-                                            recordingId: recording.id, expectedSourceGeneration: learning.sourceGeneration)
-                                        await load()
-                                    } catch { problemText = error.localizedDescription }
-                                }
-                            }.disabled(isSubmitting)
-                            Text("Previously learned pages remain. Transcript corrections still reconcile outdated material.").font(.callout)
-                                .foregroundStyle(.secondary)
-                        } else if !learning.hasAgent {
-                            Text("Enable your personal agent to learn from transcripts.").foregroundStyle(.secondary)
-                        } else if let source = learning.knowledgeSource {
-                            LabeledContent("Passages waiting", value: learning.pendingDocumentCount.formatted())
-                            LabeledContent("Processed passages", value: learning.digestedDocumentCount.formatted())
-                            if let lastRunAt = ServerTime.date(source.lastRunAt) {
-                                LabeledContent("Last source pass") { Text(lastRunAt, style: .date) }
-                            }
-                            if let nextRunAt = ServerTime.date(source.nextRunAt) {
-                                LabeledContent("Next source pass") { Text(nextRunAt, style: .relative) }
-                            } else if source.cron.isEmpty {
-                                Text("Reads only when you ask.").foregroundStyle(.secondary)
-                            }
-                            if !source.lastError.isEmpty { Text(source.lastError).foregroundStyle(.secondary) }
-                            NavigationLink {
-                                KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
-                            } label: {
-                                Label("Knowledge source", systemImage: "brain")
-                            }
-                            Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }
-                        } else {
-                            Text("Waiting for a completed transcript").foregroundStyle(.secondary)
-                        }
-                        if learning.isCurationPending { Text("Voice reference curation pending").foregroundStyle(.secondary) }
-                    } header: {
-                        Text("Learning")
-                    } footer: {
-                        Text(
-                            "Learning uses the existing knowledge and dreaming pipeline without an approval step. Processed passages show source progress, not proof of useful memories."
-                        )
-                    }.id("recording-learning")
-                }
-                if let problemText { Text(problemText).foregroundStyle(.secondary) }
-                Section {
-                    Button {
-                        recordingTitle = recordingView?.recording.recordingTitle ?? recording.recordingTitle
-                        metadataExpectedGeneration = recordingView?.recording.sourceGeneration ?? recording.sourceGeneration
-                        hasRecordedAt = recordingView?.recording.recordedAt != nil
-                        recordedAt = ServerTime.date(recordingView?.recording.recordedAt) ?? Date()
-                        isEditingMetadata = true
-                    } label: {
-                        Label("Edit recording details", systemImage: "pencil")
-                    }
-                    Button("Delete recording", role: .destructive) { isDeleting = true }
-                }
-            }
-            .task(id: learning) {
-                guard shouldFocusLearning, learning != nil else { return }
-                try? await Task.sleep(for: .milliseconds(200))
-                scrollProxy.scrollTo("recording-learning", anchor: .top)
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .controlSize(.extraLarge)
+                .disabled(isStarting)
+                .accessibilityLabel("Start recording")
             }
         }
-        .navigationTitle(displayedRecordingTitle)
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            await load()
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled else { return }
-                if !isEditingMetadata && !isReprocessing && !isSubmitting,
-                    recordingView?.transcriptRuns?.contains(where: \.isRunning) == true || learning?.isCurationPending == true
-                {
-                    await load()
-                }
-            }
-        }
-        .refreshable { await load() }
-        .sheet(isPresented: $isEditingMetadata) {
-            NavigationStack {
-                Form {
-                    TextField("Meeting title (optional)", text: $recordingTitle)
-                    Toggle("Meeting date is known", isOn: $hasRecordedAt)
-                    if hasRecordedAt { DatePicker("Recorded at", selection: $recordedAt) }
-                    if let problemText { Text(problemText).foregroundStyle(.secondary) }
-                }
-                .navigationTitle("Recording details")
-                .navigationBarTitleDisplayMode(.inline)
-                .disabled(isSavingMetadata)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { isEditingMetadata = false } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            Task {
-                                guard !isSavingMetadata else { return }
-                                isSavingMetadata = true
-                                defer { isSavingMetadata = false }
-                                do {
-                                    _ = try await connection.updateRecordingMetadata(
-                                        recordingId: recording.id, expectedSourceGeneration: metadataExpectedGeneration,
-                                        recordingTitle: recordingTitle,
-                                        recordedAt: hasRecordedAt ? recordedAt.formatted(.iso8601) : nil)
-                                    isEditingMetadata = false
-                                    await load()
-                                } catch {
-                                    let failure = error.localizedDescription
-                                    await load()
-                                    problemText = failure
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .sheet(item: $selectedMedia) { media in RecordingPlaybackScreen(connection: connection, media: media) }
-        .sheet(item: $editingLearningSource) { source in
-            KnowledgeSourceEditor(connection: connection, source: source, sourceTypes: [], mailboxes: []) { _ in
-                Task { await load() }
-            }
-        }
-        .confirmationDialog("Start another transcription pass?", isPresented: $isReprocessing, titleVisibility: .visible) {
-            Button("Transcribe or reprocess") {
-                guard let media = reprocessedMedia, !isSubmitting, limits?.isTranscriptionAvailable == true else { return }
-                isSubmitting = true
-                Task {
-                    defer { isSubmitting = false }
-                    do {
-                        let hasPriorRun = recordingView?.transcriptRuns?.contains { $0.recordingMediaId == media.id } == true
-                        _ = try await connection.requestRecordingTranscription(
-                            recordingMediaId: media.id, clientRunId: hasPriorRun ? transcriptionRequestId : "initial",
-                            isReprocessingRequested: hasPriorRun)
-                        RecordingRequestIdentity.finish(accountKey: connection.accountKey, mediaId: media.id, requestId: transcriptionRequestId)
-                        transcriptionRequestId = UUID().uuidString
-                        await load()
-                    } catch { problemText = error.localizedDescription }
-                }
-            }
-        } message: {
-            Text(
-                "A new pass can be billed again by the provider. Confirmed labels stay separate from generated versions. Rename a speaker without reprocessing to avoid another pass."
-            )
-        }
-        .confirmationDialog("Delete recording and its originals?", isPresented: $isDeleting, titleVisibility: .visible) {
-            Button("Delete recording", role: .destructive) {
-                Task {
-                    do {
-                        try await connection.deleteRecording(recording.id)
-                        dismiss()
-                    } catch { problemText = error.localizedDescription }
-                }
-            }
-        } message: {
-            Text("Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.")
-        }
-    }
-    private func load() async {
-        do {
-            recordingView = try await connection.recording(recording.id)
-            limits = try await connection.recordingLimits()
-            learning = try await connection.recordingLearning(recordingId: recording.id)
-            problemText = nil
-        } catch { problemText = error.localizedDescription }
+        .padding(.bottom, 8)
+        .sensoryFeedback(.impact, trigger: isRecording)
     }
 }
+
+/// RecordingRowView is one recording in the library: its name, a line of what was said, when it was made and where it
+/// stands.
+struct RecordingRowView: View {
+    let row: RecordingLibraryRow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
+                .font(.headline)
+                .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
+                .lineLimit(2)
+            if !row.recordingSummaryFirstLine.isEmpty {
+                Text(row.recordingSummaryFirstLine).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Text(verbatim: "\(row.recordedAt.formatted(date: .abbreviated, time: .shortened)) · \(RecordingDuration.text(row.timelineDurationMS))")
+                .font(.caption).foregroundStyle(.secondary)
+            RecordingStatusLabel(status: row.status)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// RecordingStatusLabel says where a recording is in words and a symbol, so no state rests on a color.
+struct RecordingStatusLabel: View {
+    let status: RecordingRowStatus
+
+    var body: some View {
+        Label {
+            Text(statusText)
+        } icon: {
+            Image(systemName: symbolName).symbolEffect(.pulse, isActive: status == .recording)
+        }
+        .font(.caption)
+        .foregroundStyle(needsAttention ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+    }
+
+    private var needsAttention: Bool { status == .recording || status == .failed }
+
+    private var statusText: String {
+        switch status {
+        case .recording: String(localized: "Recording")
+        case .paused: String(localized: "Paused")
+        case .uploading(let percent): String(localized: "Uploading \(percent)%")
+        case .waitingForNetwork: String(localized: "Waiting for network")
+        case .transcribing: String(localized: "Transcribing")
+        case .ready: String(localized: "Ready")
+        case .failed: String(localized: "Failed")
+        }
+    }
+
+    private var symbolName: String {
+        switch status {
+        case .recording: "record.circle"
+        case .paused: "pause.circle"
+        case .uploading: "arrow.up.circle"
+        case .waitingForNetwork: "wifi.slash"
+        case .transcribing: "waveform"
+        case .ready: "checkmark.circle"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+}
+
+enum RecordingLibraryPhase: Equatable {
+    case loading
+    case empty
+    case failed(String)
+}
+
+/// RecordingLibraryPlaceholder is what the library says while it has no rows to show.
+struct RecordingLibraryPlaceholder: View {
+    let phase: RecordingLibraryPhase
+
+    var body: some View {
+        switch phase {
+        case .loading:
+            ProgressView("Loading recordings").padding()
+        case .empty:
+            ContentUnavailableView(
+                "No recordings", systemImage: "waveform", description: Text("Tap the microphone to start a recording, or import audio or video."))
+        case .failed(let failureText):
+            ContentUnavailableView("Cannot load recordings", systemImage: "exclamationmark.triangle", description: Text(failureText))
+        }
+    }
+}
+
+enum RecordingDuration {
+    static func text(_ milliseconds: Int64) -> String {
+        Duration.milliseconds(milliseconds).formatted(.time(pattern: milliseconds >= 3_600_000 ? .hourMinuteSecond : .minuteSecond))
+    }
+}
+
+#if DEBUG
+    extension RecordingLibraryRow {
+        static func sample(
+            _ recordingTitle: String, summary: String = "", status: RecordingRowStatus, durationMS: Int64 = 754_000, hoursAgo: Double = 2
+        ) -> RecordingLibraryRow {
+            RecordingLibraryRow(
+                id: UUID().uuidString, recordingTitle: recordingTitle, recordingSummaryFirstLine: summary,
+                recordedAt: Date(timeIntervalSinceNow: -hoursAgo * 3600), timelineDurationMS: durationMS, status: status)
+        }
+
+        static var samples: [RecordingLibraryRow] {
+            [
+                sample("", status: .recording, durationMS: 42_000, hoursAgo: 0),
+                sample("", status: .paused, durationMS: 310_000, hoursAgo: 0.5),
+                sample("", status: .uploading(percent: 40), hoursAgo: 1),
+                sample("", status: .waitingForNetwork, hoursAgo: 1.5),
+                sample("", status: .transcribing, hoursAgo: 2),
+                sample(
+                    "Quarterly planning with the design team", summary: "They chose the second layout and set a review for Friday.", status: .ready,
+                    hoursAgo: 26),
+                sample("", status: .ready, durationMS: 95_000, hoursAgo: 30),
+                sample("Voice memo", status: .failed, durationMS: 20_000, hoursAgo: 50),
+            ]
+        }
+    }
+
+    #Preview("Library rows, light") {
+        List(RecordingLibraryRow.samples) { RecordingRowView(row: $0) }.preferredColorScheme(.light)
+    }
+    #Preview("Library rows, dark") {
+        List(RecordingLibraryRow.samples) { RecordingRowView(row: $0) }.preferredColorScheme(.dark)
+    }
+    #Preview("Library loading, light") { RecordingLibraryPlaceholder(phase: .loading).preferredColorScheme(.light) }
+    #Preview("Library loading, dark") { RecordingLibraryPlaceholder(phase: .loading).preferredColorScheme(.dark) }
+    #Preview("Library empty, light") { RecordingLibraryPlaceholder(phase: .empty).preferredColorScheme(.light) }
+    #Preview("Library empty, dark") { RecordingLibraryPlaceholder(phase: .empty).preferredColorScheme(.dark) }
+    #Preview("Library failed, light") {
+        RecordingLibraryPlaceholder(phase: .failed("The server did not answer.")).preferredColorScheme(.light)
+    }
+    #Preview("Library failed, dark") {
+        RecordingLibraryPlaceholder(phase: .failed("The server did not answer.")).preferredColorScheme(.dark)
+    }
+    #Preview("Record button, light") {
+        RecordingFloatingButton(isRecording: false, elapsedMS: 0, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.light)
+    }
+    #Preview("Record button, dark") {
+        RecordingFloatingButton(isRecording: false, elapsedMS: 0, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.dark)
+    }
+    #Preview("Recording under way, light") {
+        RecordingFloatingButton(isRecording: true, elapsedMS: 754_000, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.light)
+    }
+    #Preview("Recording under way, dark") {
+        RecordingFloatingButton(isRecording: true, elapsedMS: 754_000, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.dark)
+    }
+#endif
 
 struct RecordingPlaybackScreen: View {
     let connection: Connection

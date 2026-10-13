@@ -1,6 +1,8 @@
 package db_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -123,6 +125,105 @@ func TestRecordingSummarySweepOffersEachUntitledTranscribedRecordingOnce(test *t
 	if len(list()) != 0 {
 		test.Fatal("a recording is offered once, however the job ends")
 	}
+	// A title the agent wrote is offered again once its queued mark is cleared;
+	// a recording with a typed title is offered only while it has no summary.
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.StoreGeneratedRecordingSummary(fixture.userId, fixture.media.RecordingID, "Generated title", "A summary."); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if len(list()) != 0 {
+		test.Fatal("a generated recording that was queued is not offered")
+	}
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET recording_summary_queued_at = NULL`)
+	if recordings := list(); len(recordings) != 1 {
+		test.Fatalf("a generated recording with its queued mark cleared is offered again: %+v", recordings)
+	}
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET recording_title_source = 'user'`)
+	if len(list()) != 0 {
+		test.Fatal("a recording with a typed title and a summary is not offered")
+	}
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET recording_summary = ''`)
+	if recordings := list(); len(recordings) != 1 {
+		test.Fatalf("a recording with a typed title and no summary is offered: %+v", recordings)
+	}
+}
+
+func TestRecordingImportDurationFollowsTheLastVerifiedOriginal(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	test.Cleanup(closeDatabase)
+	userId := dbtest.CreateUser(test, database, "duration-owner")
+	originalBytes := []byte("fixture-audio")
+	digest := sha256.Sum256(originalBytes)
+	digestText := hex.EncodeToString(digest[:])
+	complete := func(origin models.RecordingOrigin, clientRecordingId string, timelineStartMS, mediaDurationMS int64) string {
+		var recordingId string
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			source, err := transaction.CreateRecording(&models.Recording{UserID: userId, ClientRecordingID: clientRecordingId, RecordingOrigin: origin})
+			if err != nil {
+				test.Fatal(err)
+			}
+			recordingId = source.ID
+			media, err := transaction.CreateRecordingMedia(userId, &models.RecordingMedia{RecordingID: source.ID, ClientMediaID: "media-" + clientRecordingId, OriginalFilename: "fixture.wav", OriginalContentType: "audio/wav", OriginalSizeBytes: int64(len(originalBytes)), OriginalSHA256: digestText, TimelineStartMS: timelineStartMS, MediaDurationMS: mediaDurationMS}, 1024, 4096)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if _, err := transaction.PutRecordingMediaPart(userId, &models.RecordingMediaPart{RecordingMediaID: media.ID, PartIndex: 0, PartSizeBytes: int64(len(originalBytes)), PartSHA256: digestText}); err != nil {
+				test.Fatal(err)
+			}
+			if _, _, err := transaction.CompleteRecordingMedia(userId, media.ID, digestText); err != nil {
+				test.Fatal(err)
+			}
+		})
+		return recordingId
+	}
+	durationOf := func(recordingId string) int64 {
+		var timelineDurationMS int64
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			source, err := transaction.GetRecording(userId, recordingId)
+			if err != nil {
+				test.Fatal(err)
+			}
+			timelineDurationMS = source.TimelineDurationMS
+		})
+		return timelineDurationMS
+	}
+	if durationMS := durationOf(complete(models.RecordingOriginAudioImport, "imported", 2000, 60000)); durationMS != 62000 {
+		test.Fatalf("an import is as long as the end of its original on the timeline: %d", durationMS)
+	}
+	if durationMS := durationOf(complete(models.RecordingOriginCapture, "captured", 0, 60000)); durationMS != 0 {
+		test.Fatalf("a capture reports its own length: %d", durationMS)
+	}
+}
+
+func TestRecordingImportDurationMigrationBackfillsOnlyEmptyLengths(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	dbtest.Exec(test, fixture.database, `UPDATE recording_media SET media_duration_ms = 30000`)
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET timeline_duration_ms = 0`)
+	var migration migrations.Migration
+	for _, candidate := range migrations.Migrations() {
+		if candidate.ID == "0171_recording_import_duration" {
+			migration = candidate
+		}
+	}
+	if migration.ID == "" {
+		test.Fatal("there is no migration 0171_recording_import_duration")
+	}
+	dbtest.Exec(test, fixture.database, migration.SQL)
+	if length := dbtest.QueryString(test, fixture.database, `SELECT timeline_duration_ms::text FROM recording`); length != "32000" {
+		test.Fatalf("an empty length is filled from the verified original: %s", length)
+	}
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET timeline_duration_ms = 5000`)
+	dbtest.Exec(test, fixture.database, migration.SQL)
+	if length := dbtest.QueryString(test, fixture.database, `SELECT timeline_duration_ms::text FROM recording`); length != "5000" {
+		test.Fatalf("a length that was set is kept: %s", length)
+	}
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET recording_title_source = 'generated', recording_summary_queued_at = now()`)
+	dbtest.Exec(test, fixture.database, migration.SQL)
+	if queued := dbtest.QueryString(test, fixture.database, `SELECT (recording_summary_queued_at IS NULL)::text FROM recording`); queued != "true" {
+		test.Fatal("a generated recording is queued for a new summary")
+	}
+	dbtest.Exec(test, fixture.database, migration.ReverseSQL)
 }
 
 func TestRecordingAccountOwnerIsOnePerAccountAndMarksSegments(test *testing.T) {
@@ -198,4 +299,18 @@ func TestRecordingSummaryMigrationBackfillsTitleSourceAndReverses(test *testing.
 	if sources := dbtest.QueryString(test, fixture.database, `SELECT string_agg(recording_title_source, ',' ORDER BY client_recording_id) FROM recording`); sources != "none,user" {
 		test.Fatalf("titled recordings backfill as user and untitled as none: %s", sources)
 	}
+}
+
+func TestRecordingTranscriptRunsReportTheirSegmentCount(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	completeFixtureTranscript(test, fixture)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		transcriptRuns, err := transaction.ListRecordingTranscriptRuns(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(transcriptRuns) != 1 || transcriptRuns[0].SegmentCount != 2 {
+			test.Fatalf("a listed run reports how many passages it holds: %+v", transcriptRuns)
+		}
+	})
 }

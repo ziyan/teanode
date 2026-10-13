@@ -26,7 +26,13 @@ export function RecordedAtText({ recordedAt }: { recordedAt: string | null }) {
 export function RecordingStatusTag({ status }: { status: ReturnType<typeof recordingStatus> }) {
   const { t } = useTranslation()
   const tone =
-    status === 'failed' ? 'bad' : status === 'ready' ? 'good' : status === 'notTranscribed' ? undefined : 'warn'
+    status === 'failed'
+      ? 'bad'
+      : status === 'ready'
+        ? 'good'
+        : status === 'notTranscribed' || status === 'noSpeech'
+          ? undefined
+          : 'warn'
   return <Tag value={t(`recordings.status.${status}` as Parameters<typeof t>[0])} tone={tone} />
 }
 

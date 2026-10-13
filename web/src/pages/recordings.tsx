@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { PageHeadingActions, useBreadcrumbDetail, useHeadingActionSlot } from '../components/breadcrumb'
 import { MoreIcon } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -39,6 +40,8 @@ export function RecordingsPage() {
 function AccountRecordingsPage() {
   const { t, plural } = useTranslation(),
     session = useSession(),
+    // Set only where the page heading is drawn, which is a wide screen.
+    headingActionSlot = useHeadingActionSlot(),
     toast = useToast(),
     navigate = useNavigate()
   const { recordingId } = useParams()
@@ -208,16 +211,80 @@ function AccountRecordingsPage() {
       fields: [],
     })
   }
+  const recordingMenu = view ? (
+    <MenuButton
+      label={t('recordings.menu')}
+      className="icon-button"
+      icon={<MoreIcon size={18} />}
+      render={(close) => (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close()
+              rename()
+            }}
+          >
+            {t('common.rename')}
+          </button>
+          {completeMedia[0] ? (
+            <a
+              role="menuitem"
+              href={recordingMediaPath(completeMedia[0].id)}
+              download={completeMedia[0].originalFilename}
+              onClick={close}
+            >
+              {t('recordings.download')}
+            </a>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!completeMedia[0]}
+            onClick={() => {
+              close()
+              transcribeAgain()
+            }}
+          >
+            {t('recordings.transcribeAgain')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close()
+              setIsShowingDetails(true)
+            }}
+          >
+            {t('recordings.details')}
+          </button>
+          <div className="menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close()
+              setIsDeleting(true)
+              setDeleteError(null)
+            }}
+          >
+            {t('common.delete')}
+          </button>
+        </>
+      )}
+    />
+  ) : null
   return (
     <div className="recording-page">
       <ErrorMessage error={recordingId ? detail.error : library.error} />
       {!recordingId ? (
         <>
-          <div className="page-actions page-actions-end">
+          <PageHeadingActions>
             <button type="button" className="primary" onClick={() => showImport()}>
               {t('recordings.import')}
             </button>
-          </div>
+          </PageHeadingActions>
           {library.loading && !library.data ? (
             <Loading />
           ) : (
@@ -272,68 +339,7 @@ function AccountRecordingsPage() {
                   ) : null}
                 </p>
               </div>
-              <MenuButton
-                label={t('recordings.menu')}
-                className="icon-button"
-                icon={<MoreIcon size={18} />}
-                render={(close) => (
-                  <>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        close()
-                        rename()
-                      }}
-                    >
-                      {t('common.rename')}
-                    </button>
-                    {completeMedia[0] ? (
-                      <a
-                        role="menuitem"
-                        href={recordingMediaPath(completeMedia[0].id)}
-                        download={completeMedia[0].originalFilename}
-                        onClick={close}
-                      >
-                        {t('recordings.download')}
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={!completeMedia[0]}
-                      onClick={() => {
-                        close()
-                        transcribeAgain()
-                      }}
-                    >
-                      {t('recordings.transcribeAgain')}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        close()
-                        setIsShowingDetails(true)
-                      }}
-                    >
-                      {t('recordings.details')}
-                    </button>
-                    <div className="menu-separator" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        close()
-                        setIsDeleting(true)
-                        setDeleteError(null)
-                      }}
-                    >
-                      {t('common.delete')}
-                    </button>
-                  </>
-                )}
-              />
+              {headingActionSlot ? createPortal(recordingMenu, headingActionSlot) : recordingMenu}
             </div>
             {view.recording.recordingSummary ? (
               <section className="recording-summary">
@@ -380,6 +386,15 @@ function AccountRecordingsPage() {
                   key={media.id}
                   title={media.originalFilename}
                   subtitle={t('recordings.size', { byteCount: media.originalSizeBytes.toLocaleString() })}
+                  actions={
+                    media.recordingUploadState === 'complete' ? (
+                      <div className="row-actions">
+                        <a className="button" href={recordingMediaPath(media.id)} download={media.originalFilename}>
+                          {t('recordings.download')}
+                        </a>
+                      </div>
+                    ) : undefined
+                  }
                   badge={
                     <Tag
                       value={

@@ -120,24 +120,99 @@ it('plays a passage from its start when clicked', async () => {
   expect(passagePlayback.play).toHaveBeenCalledWith('fixture-media', 2000, 4000, 1000)
 })
 
-it('opens the passage menu on right-click and runs the chosen action', async () => {
+// jsdom has no PointerEvent: a mouse event that carries the pointer's id and
+// kind is what React reads.
+if (typeof window.PointerEvent === 'undefined') {
+  class TestPointerEvent extends MouseEvent {
+    pointerId: number
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerId = init.pointerId ?? 1
+      this.pointerType = init.pointerType ?? 'mouse'
+    }
+  }
+  window.PointerEvent = TestPointerEvent as unknown as typeof PointerEvent
+}
+
+// swipe runs a finger across a bubble from (100, 100) through the points given.
+const swipe = (bubble: HTMLElement, points: [number, number][]) => {
+  const at = (x: number, y: number) => ({ pointerId: 3, pointerType: 'touch', clientX: 100 + x, clientY: 100 + y })
+  fireEvent.pointerDown(bubble, at(0, 0))
+  for (const [x, y] of points) fireEvent.pointerMove(bubble, at(x, y))
+  const [lastX, lastY] = points[points.length - 1]
+  fireEvent.pointerUp(bubble, at(lastX, lastY))
+}
+const bubbleOf = (text: string) => screen.getByText(text).closest('.agent-line') as HTMLElement
+const openMenu = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Actions for this passage' }))
+  return screen.getByRole('menu')
+}
+
+it('draws bubbles with the agent chat classes, the owner on the right', async () => {
+  show([
+    segment('guest', confirmed('Fixture Guest', 'identity-guest')),
+    segment('mine', { localSpeakerId: 'local-two', ...confirmed('Fixture Owner', 'identity-owner', true) }),
+  ])
+  await screen.findByText('Text of guest')
+  expect(bubbleOf('Text of guest').className).toContain('agent-line assistant')
+  expect(bubbleOf('Text of mine').className).toContain('agent-line user')
+  expect(document.querySelector('.recording-bubble')).toBeNull()
+})
+
+it('plays from the bubble on a swipe to the left', async () => {
+  const { passagePlayback } = show([segment('one'), segment('two', { segmentStartMS: 4000, segmentEndMS: 6000 })])
+  await screen.findByText('Text of one')
+  swipe(bubbleOf('Text of one'), [
+    [-14, 2],
+    [-50, 10],
+    [-90, 20],
+  ])
+  expect(passagePlayback.play).toHaveBeenCalledTimes(1)
+  expect(passagePlayback.play).toHaveBeenCalledWith('fixture-media', 2000, 4000, 1000)
+})
+
+it('copies the whole bubble on a swipe to the right', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  show([segment('one'), segment('two', { segmentStartMS: 4000, segmentEndMS: 6000 })])
+  await screen.findByText('Text of one')
+  swipe(bubbleOf('Text of one'), [
+    [14, 0],
+    [90, 0],
+  ])
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('Text of one Text of two'))
+})
+
+it('does nothing for a short swipe or a scroll, and a long press opens no menu', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   const { passagePlayback } = show([segment('one')])
-  fireEvent.contextMenu(await screen.findByText('Text of one'), { clientX: 20, clientY: 20 })
-  const menu = screen.getByRole('menu')
+  const passage = await screen.findByText('Text of one')
+  swipe(bubbleOf('Text of one'), [[-30, 0]])
+  fireEvent.pointerDown(passage, { pointerType: 'touch', pointerId: 5, clientX: 5, clientY: 5 })
+  act(() => void vi.advanceTimersByTime(800))
+  expect(screen.queryByRole('menu')).toBeNull()
+  fireEvent.pointerUp(passage, { pointerType: 'touch', pointerId: 5, clientX: 5, clientY: 5 })
+  fireEvent.contextMenu(passage, { clientX: 20, clientY: 20 })
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(passagePlayback.play).not.toHaveBeenCalled()
+})
+
+it('offers the other actions from the More button in the dashboard menu', async () => {
+  show([segment('one')])
+  const menu = await openMenu()
   expect(
     within(menu)
       .getAllByRole('menuitem')
       .map((item) => item.textContent),
-  ).toEqual(['Play from here', 'Copy', 'Correct text', 'Name speaker', 'This is me'])
-  fireEvent.click(within(menu).getByRole('menuitem', { name: 'Play from here' }))
-  expect(passagePlayback.play).toHaveBeenCalled()
+  ).toEqual(['Correct text', 'Name speaker', 'This is me'])
+  fireEvent.keyDown(document, { key: 'Escape' })
   expect(screen.queryByRole('menu')).toBeNull()
 })
 
 it('corrects text through the shared dialog', async () => {
   const { onChanged } = show([segment('one')])
-  fireEvent.contextMenu(await screen.findByText('Text of one'), { clientX: 20, clientY: 20 })
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Correct text' }))
+  fireEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Correct text' }))
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Better words' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -152,8 +227,7 @@ it('corrects text through the shared dialog', async () => {
 
 it('names a speaker through the shared dialog', async () => {
   show([segment('one')])
-  fireEvent.contextMenu(await screen.findByText('Text of one'), { clientX: 20, clientY: 20 })
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Name speaker' }))
+  fireEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Name speaker' }))
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'Fixture Guest' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -168,38 +242,18 @@ it('names a speaker through the shared dialog', async () => {
 
 it('marks a passage as the account owner, and Not me opens the name form', async () => {
   const { onChanged } = show([segment('mine', confirmed('Fixture Owner', 'identity-owner', true)), segment('other')])
-  fireEvent.contextMenu(await screen.findByText('Text of other'), { clientX: 20, clientY: 20 })
+  await screen.findByText('Text of other')
+  const [mineMore, otherMore] = screen.getAllByRole('button', { name: 'Actions for this passage' })
+  fireEvent.click(otherMore)
   fireEvent.click(screen.getByRole('menuitem', { name: 'This is me' }))
   await waitFor(() => expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1))
   expect(calls('CorrectRecordingSpeakerOwner')[0][1]).toMatchObject({ isAccountOwner: true, confirmedName: '' })
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
-  fireEvent.contextMenu(screen.getByText('Text of mine'), { clientX: 20, clientY: 20 })
+  fireEvent.click(mineMore)
   fireEvent.click(screen.getByRole('menuitem', { name: 'Not me' }))
   // Releasing a passage is confirming it as somebody else: the name form opens.
   expect(within(screen.getByRole('dialog')).getByRole('combobox')).toBeTruthy()
   expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1)
-})
-
-it('opens the menu after a half second press on touch and not before', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true })
-  const { passagePlayback } = show([segment('one')])
-  const passage = await screen.findByText('Text of one')
-  fireEvent.pointerDown(passage, { pointerType: 'touch', clientX: 5, clientY: 5 })
-  act(() => void vi.advanceTimersByTime(300))
-  expect(screen.queryByRole('menu')).toBeNull()
-  act(() => void vi.advanceTimersByTime(250))
-  expect(screen.getByRole('menu')).toBeTruthy()
-  fireEvent.pointerUp(passage)
-  fireEvent.click(passage)
-  expect(passagePlayback.play).not.toHaveBeenCalled()
-})
-
-it('is reachable by keyboard through the More button', async () => {
-  show([segment('one')])
-  fireEvent.click(await screen.findByRole('button', { name: 'Actions for this passage' }))
-  expect(screen.getByRole('menu')).toBeTruthy()
-  fireEvent.keyDown(document, { key: 'Escape' })
-  expect(screen.queryByRole('menu')).toBeNull()
 })
 
 it('opens an exact older version read-only, without correction actions', async () => {
@@ -207,8 +261,7 @@ it('opens an exact older version read-only, without correction actions', async (
   await screen.findByText('Text of one')
   expect(calls('ReadRecordingTranscript')[0][1]).toMatchObject({ recordingTranscriptRunId: 'older-run' })
   expect(screen.getByText('You are reading an earlier transcript.')).toBeTruthy()
-  fireEvent.contextMenu(screen.getByText('Text of one'), { clientX: 20, clientY: 20 })
-  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Play from here', 'Copy'])
+  expect(screen.queryByRole('button', { name: 'Actions for this passage' })).toBeNull()
 })
 
 it('shows the advanced panels in the details drawer and closes with Escape', async () => {

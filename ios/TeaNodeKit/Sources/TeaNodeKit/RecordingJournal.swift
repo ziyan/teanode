@@ -17,6 +17,8 @@ public struct LocalRecording: Codable, Hashable, Sendable, Identifiable {
     public var uploadErrorMessage: String?
     public var isDeletedRemotely: Bool
     public var hasPublishedCapture: Bool? = nil
+    /// Whether the last upload attempt failed for want of a connection, which clears by itself, rather than being refused.
+    public var isUploadWaitingForNetwork: Bool? = nil
 
     public init(
         accountKey: String, recordingTitle: String, recordingOrigin: String, recordingUserId: String? = nil, startedAt: Date = Date(),

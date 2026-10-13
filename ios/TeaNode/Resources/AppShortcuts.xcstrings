@@ -19,6 +19,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "呼叫 ${applicationName}" } }
       }
     },
+    "Start a recording in ${applicationName}" : {
+      "localizations" : {
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "${applicationName} で録音を開始" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 ${applicationName} 中开始录音" } }
+      }
+    },
     "Talk to ${applicationName}" : {
       "localizations" : {
         "ja" : { "stringUnit" : { "state" : "translated", "value" : "${applicationName} と話す" } },
