@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.0] - 2026-10-13
+
+### Added
+
+- Live words while recording on the iPhone, the dashboard and the command line. (#466)
+- Memory pages link to the mail, events, contacts, recordings and receipts they come from. (#466)
+- Not me and Clear name take back a speaker naming. (#466)
+
+### Changed
+
+- Recordings are transcribed several pieces at once, so a backlog clears faster than real time. (#466)
+- Naming a speaker on a long recording returns at once; memory catches up in the background. (#466)
+- Playing a bubble stops at its end, with a floating player to pause it. (#466)
+
 ## [0.153.0] - 2026-10-13
 
 ### Added
