@@ -241,8 +241,21 @@ final class KnowledgePageModel {
     private(set) var neighbours: KnowledgeNeighbours?
     private(set) var history: [KnowledgeRevision]?
     private(set) var isMissing = false
+    /// The record links past the first part the page read, as they are asked for.
+    private(set) var laterRecordLinks: [KnowledgeRecordLink] = []
     var doneText: String?
     var problemText: String?
+
+    /// The records the page is linked to that have been read so far.
+    var recordLinks: [KnowledgeRecordLink] { (page?.recordLinks ?? []).compactMap { $0 } + laterRecordLinks }
+    var recordLinkCount: Int { page?.recordLinkCount ?? 0 }
+
+    /// Reads the next part of a page with more links than the page carries.
+    func loadMoreRecordLinks() async {
+        if let more = try? await connection.knowledgeRecordLinks(pagePath, first: 50, offset: recordLinks.count) {
+            laterRecordLinks += more
+        }
+    }
 
     init(connection: Connection, pagePath: String) {
         self.connection = connection
@@ -252,6 +265,7 @@ final class KnowledgePageModel {
     func load() async {
         do {
             page = try await connection.knowledgePage(pagePath)
+            laterRecordLinks = []
             isMissing = page?.node == nil
             neighbours = try? await connection.knowledgeNeighbours(pagePath)
         } catch {
@@ -293,6 +307,7 @@ struct KnowledgePageView: View {
     @State private var editingFact: FactDraft?
     @State private var choosing: PageChoice?
     @State private var isLinking = false
+    @State private var isLinkingContact = false
     @State private var isConfirmingForget = false
     @State private var mergingInto: String?
     @State private var forgettingFact: KnowledgeFact?
@@ -308,6 +323,7 @@ struct KnowledgePageView: View {
         List {
             if let page = model.page, let node = page.node {
                 header(page, node)
+                linkedRecords(node)
                 reflections(page)
                 facts(page)
                 connections
@@ -356,6 +372,17 @@ struct KnowledgePageView: View {
         }
         .sheet(isPresented: $isLinking) {
             LinkEditor(model: model)
+        }
+        .sheet(isPresented: $isLinkingContact) {
+            ContactPickerSheet(connection: model.connection, currentContactId: model.page?.node?.contactId ?? "") { chosen in
+                let pagePath = model.pagePath
+                Task {
+                    let isLinked = await model.act(saying: chosen.isEmpty ? String(localized: "Contact unlinked") : String(localized: "Contact linked")) {
+                        try await model.connection.setKnowledgeContact(pagePath, contactId: chosen)
+                    }
+                    if isLinked { isLinkingContact = false }
+                }
+            }
         }
         .confirmationDialog("Forget this page?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
             Button("Forget page", role: .destructive) {
@@ -413,11 +440,21 @@ struct KnowledgePageView: View {
                 Text("Also called \(aliases.joined(separator: ", "))").font(.footnote).foregroundStyle(.secondary)
             }
             if let contact = page.contact {
-                Label(
-                    [contact.name, contact.emails.first ?? contact.organization].filter { !$0.isEmpty }.joined(separator: " · "),
-                    systemImage: "person.crop.circle"
-                )
-                .font(.footnote)
+                // The linked card: it opens in Contacts.
+                Button {
+                    app.openRecord(dashboardPath: "/contacts?contact=\(contact.id)")
+                } label: {
+                    Label(
+                        [contact.name, contact.emails.first ?? contact.organization].filter { !$0.isEmpty }.joined(separator: " · "),
+                        systemImage: "person.crop.circle"
+                    )
+                    .font(.footnote)
+                }
+            }
+            if node.kind == "person", !node.isSelf {
+                Button(page.contact == nil ? LocalizedStringKey("Link contact") : LocalizedStringKey("Change contact"), systemImage: "person.crop.circle.badge.plus") {
+                    isLinkingContact = true
+                }
             }
             if node.summary.isEmpty {
                 Text("No summary yet.").foregroundStyle(.secondary)
@@ -433,6 +470,42 @@ struct KnowledgePageView: View {
             } footer: {
                 if let written = ServerTime.date(node.overviewWrittenAt) {
                     Text("Written \(written.formatted(date: .abbreviated, time: .omitted))")
+                }
+            }
+        }
+    }
+
+    /// The person's own records the page is linked to, by kind. A guess is
+    /// marked and is confirmed or removed by swiping it or in its menu.
+    @ViewBuilder
+    private func linkedRecords(_ node: KnowledgeNode) -> some View {
+        let links = model.recordLinks
+        if !links.isEmpty {
+            ForEach(KnowledgeRecordKinds.grouped(links)) { group in
+                Section {
+                    ForEach(group.links) { link in
+                        LinkedRecordRow(link: link) { action in
+                            let pagePath = model.pagePath
+                            Task {
+                                switch action {
+                                case .confirm:
+                                    _ = await model.act(saying: String(localized: "Link confirmed")) {
+                                        try await model.connection.linkKnowledgeRecord(pagePath, link: link)
+                                    }
+                                case .remove:
+                                    _ = await model.act(saying: String(localized: "Link removed")) {
+                                        try await model.connection.unlinkKnowledgeRecord(pagePath, link: link)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Label(KnowledgeRecordWords.kind(group.recordKind), systemImage: KnowledgeRecordKinds.symbol(group.recordKind))
+                } footer: {
+                    if group.recordKind == KnowledgeRecordKinds.grouped(links).last?.recordKind, links.count < model.recordLinkCount {
+                        Button("Show \(model.recordLinkCount - links.count) more") { Task { await model.loadMoreRecordLinks() } }
+                    }
                 }
             }
         }
@@ -479,6 +552,11 @@ struct KnowledgePageView: View {
                         choosing = PageChoice(kind: .moveFact(fact.number), title: String(localized: "Move it to"), initial: "")
                     }
                     .tint(.indigo)
+                }
+                // Where the evidence is one of the person's own records, the
+                // record opens, at the passage for a recording.
+                ForEach(page.records(of: fact), id: \.evidenceIndex) { record in
+                    EvidenceRecordRow(record: record)
                 }
             }
             if facts.count > shownFactCount {
@@ -671,6 +749,12 @@ enum KnowledgeWordsShown {
         case "chat": String(localized: "from a chat")
         case "contact": String(localized: "from a contact")
         case "repository": String(localized: "from a repository")
+        case "calendar_event": String(localized: "from a calendar event")
+        case "reminder": String(localized: "from a reminder")
+        case "conversation_message": String(localized: "from a conversation")
+        case "finance_transaction": String(localized: "from a transaction")
+        case "finance_receipt": String(localized: "from a receipt")
+        case "recording_passage": String(localized: "from a recording")
         case "memory": String(localized: "from memory")
         case "person": String(localized: "from you")
         case "dream": String(localized: "from a dream")
@@ -1223,5 +1307,143 @@ struct DocumentReader: View {
         }
         text += slice.text
         extract = slice
+    }
+}
+
+
+/// LinkedRecordRow is a record a page is linked to: its title, what the page
+/// is to it, its date, and a guess marked as one.
+struct LinkedRecordRow: View {
+    enum Action { case confirm, remove }
+
+    let link: KnowledgeRecordLink
+    let onAct: (Action) -> Void
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button {
+            app.openRecord(dashboardPath: link.dashboardPath)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                if link.isUnavailable {
+                    Text("No longer available").foregroundStyle(.secondary)
+                } else {
+                    Text(link.recordTitle.isEmpty ? KnowledgeRecordWords.kind(link.recordKind) : link.recordTitle)
+                }
+                HStack(spacing: 6) {
+                    Text(KnowledgeRecordWords.relation(link.recordRelation))
+                    if let date = link.date {
+                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                    }
+                    if link.isProposed {
+                        Chip(text: String(localized: "A guess"), isAlert: false)
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!link.canOpen)
+        .swipeActions(edge: .trailing) {
+            Button("Remove", systemImage: "minus.circle", role: .destructive) { onAct(.remove) }
+            if link.isProposed {
+                Button("Confirm", systemImage: "checkmark") { onAct(.confirm) }.tint(.accentColor)
+            }
+        }
+        .contextMenu {
+            if link.isProposed {
+                Button("Confirm link", systemImage: "checkmark") { onAct(.confirm) }
+            }
+            Button("Remove link", systemImage: "minus.circle", role: .destructive) { onAct(.remove) }
+        }
+    }
+}
+
+/// EvidenceRecordRow is the record a fact's evidence names, under the fact.
+struct EvidenceRecordRow: View {
+    let record: KnowledgeEvidenceRecord
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button {
+            app.openRecord(dashboardPath: record.dashboardPath)
+        } label: {
+            Label(
+                record.isUnavailable
+                    ? String(localized: "\(KnowledgeRecordWords.kind(record.recordKind)): no longer available")
+                    : (record.recordTitle.isEmpty ? KnowledgeRecordWords.kind(record.recordKind) : record.recordTitle),
+                systemImage: KnowledgeRecordKinds.symbol(record.recordKind)
+            )
+            .font(.footnote)
+        }
+        .disabled(!record.canOpen)
+    }
+}
+
+/// ContactPickerSheet chooses the card a person's page is about, from the
+/// cards in the person's own address books. It never makes a card.
+struct ContactPickerSheet: View {
+    let connection: Connection
+    let currentContactId: String
+    let onChoose: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var contacts: [ContactSummary] = []
+    @State private var isLoaded = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !currentContactId.isEmpty {
+                    Button("Unlink contact", systemImage: "person.crop.circle.badge.minus", role: .destructive) { onChoose("") }
+                }
+                ForEach(contacts) { contact in
+                    Button {
+                        onChoose(contact.id)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(contact.shownName)
+                                if let email = contact.emails?.first, email != contact.shownName {
+                                    Text(email).font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if contact.id == currentContactId {
+                                Image(systemName: "checkmark").foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .overlay {
+                if !isLoaded {
+                    ProgressView()
+                } else if contacts.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                }
+            }
+            .searchable(text: $searchText, prompt: "Name, address or phone")
+            .navigationTitle("Link a contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .task(id: searchText) {
+                if !searchText.isEmpty {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled else { return }
+                }
+                let books = (try? await connection.addressBooks()) ?? []
+                var found: [ContactSummary] = []
+                for book in books {
+                    found += (try? await connection.contacts(addressBookId: book.id, matching: searchText, first: 30)) ?? []
+                }
+                contacts = found
+                isLoaded = true
+            }
+        }
     }
 }

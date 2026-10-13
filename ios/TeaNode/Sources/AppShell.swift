@@ -177,6 +177,9 @@ struct MainView: View {
         .onChange(of: app.openedMailItemId) { _, itemId in
             if itemId != nil { section = .mail }
         }
+        .onChange(of: app.openedContactId) { _, contactId in
+            if contactId != nil { section = .contacts }
+        }
         .onChange(of: app.openedSection) { _, opened in
             guard let opened else { return }
             app.openedSection = nil
@@ -332,6 +335,15 @@ struct KnowledgeStack: View {
             path = NavigationPath()
             path.append(KnowledgePlace.page(knowledgePath))
         }
+        #if DEBUG
+            // A screenshot of a page with its records linked
+            // (`-TeaNodeScreen knowledge-records`).
+            .task {
+                if DemoServer.isRequested, DemoServer.screen == "knowledge-records", path.isEmpty {
+                    path.append(KnowledgePlace.page("people/dana-fixture"))
+                }
+            }
+        #endif
     }
 }
 

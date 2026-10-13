@@ -963,6 +963,7 @@ struct TransactionDetail: View {
     @State private var readingText: String?
     @State private var pickedItems: [PhotosPickerItem] = []
     @State private var isTakingPicture = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         List {
@@ -1019,6 +1020,7 @@ struct TransactionDetail: View {
                 }
                 duplicatesSection(transaction)
                 receiptsSection(transaction)
+                InMemorySection(model: memory)
             } else {
                 ProgressView().frame(maxWidth: .infinity)
             }
@@ -1037,6 +1039,7 @@ struct TransactionDetail: View {
                 }
             }
         }
+        .inMemory(memory, recordKind: "finance_transaction", recordId: transactionId)
         .task { await load() }
         .cameraPicker(isPresented: $isTakingPicture) { picture in
             if let file = PendingFile(picture: picture, index: 0) { Task { await readReceipt(file) } }

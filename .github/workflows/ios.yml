@@ -90,6 +90,7 @@ jobs:
           mkdir -p screenshots
           swiftc scripts/assert-recording-screenshot.swift -o build/assert-recording-screenshot
           swiftc scripts/assert-device-setup-screenshot.swift -o build/assert-device-setup-screenshot
+          swiftc scripts/assert-knowledge-screenshot.swift -o build/assert-knowledge-screenshot
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
@@ -100,11 +101,12 @@ jobs:
             sleep 8
             xcrun simctl io "$device" screenshot "screenshots/$name.png"
             case "$name" in
-              recordings-*|recording-*|device-setup-*)
+              recordings-*|recording-*|device-setup-*|knowledge-records-*)
                 # The screen may still be loading its demo answers: look
                 # again a few times before calling it wrong.
                 case "$name" in
                   device-setup-*) assertion=build/assert-device-setup-screenshot ;;
+                  knowledge-records-*) assertion=build/assert-knowledge-screenshot ;;
                   *) assertion=build/assert-recording-screenshot ;;
                 esac
                 is_setup_ready=false
@@ -160,6 +162,10 @@ jobs:
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
           shoot menu-light light large -TeaNodeDemo -TeaNodeMenu
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
+          # A page with the person's own records linked to it, asserted by what it shows.
+          shoot knowledge-records-light light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
+          shoot knowledge-records-dark dark large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
+          shoot knowledge-linked-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
           shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
           # The finance charts: the donut and its rows, a touched month, slice

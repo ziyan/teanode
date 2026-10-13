@@ -971,6 +971,7 @@ struct ReceiptDetailView: View {
     var transactionId: String?
     let onChange: () -> Void
     @State private var isConfirmingDelete = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         List {
@@ -1044,6 +1045,7 @@ struct ReceiptDetailView: View {
                     }
                 }
             }
+            InMemorySection(model: memory)
             Section {
                 Button(role: .destructive) {
                     isConfirmingDelete = true
@@ -1055,6 +1057,7 @@ struct ReceiptDetailView: View {
         }
         .navigationTitle(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
         .navigationBarTitleDisplayMode(.inline)
+        .inMemory(memory, recordKind: "finance_receipt", recordId: receipt.id)
         .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
             Button("Delete receipt", role: .destructive) {
                 Task {

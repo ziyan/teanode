@@ -22,6 +22,8 @@ final class RecordingConversationModel {
     var isLoadingMore = false
     var isLoadingMoreFailed = false
     var editingSegment: RecordingTranscriptSegment?
+    /// The passage whose pages of memory are being looked at.
+    var memorySegment: RecordingTranscriptSegment?
     var selectedSegment: RecordingTranscriptSegment?
     var confirmedName = ""
     var correctionStartMS = ""
@@ -188,6 +190,7 @@ struct RecordingPassageActions {
     var nameSpeaker: @MainActor (RecordingTranscriptSegment) -> Void
     var thisIsMe: @MainActor (RecordingTranscriptSegment) -> Void
     var notMe: @MainActor (RecordingTranscriptSegment) -> Void
+    var inMemory: @MainActor (RecordingTranscriptSegment) -> Void = { _ in }
 
     static var none: RecordingPassageActions {
         RecordingPassageActions(
@@ -223,6 +226,11 @@ struct RecordingBubbleView: View {
                                 actions.copy(segment)
                             } label: {
                                 Label("Copy", systemImage: "doc.on.doc")
+                            }
+                            Button {
+                                actions.inMemory(segment)
+                            } label: {
+                                Label("In memory", systemImage: "brain")
                             }
                             Button {
                                 actions.correctText(segment)
@@ -324,7 +332,8 @@ struct RecordingConversationSection: View {
             correctText: { segment in model.editingSegment = segment },
             nameSpeaker: { segment in model.beginNaming(segment) },
             thisIsMe: { segment in Task { await model.confirmAsAccountOwner(segment) } },
-            notMe: { segment in model.beginNaming(segment, startsBlank: true) })
+            notMe: { segment in model.beginNaming(segment, startsBlank: true) },
+            inMemory: { segment in model.memorySegment = segment })
     }
 }
 
@@ -347,6 +356,9 @@ struct RecordingPassageSheets: ViewModifier {
                 }
             }
             .sheet(isPresented: $model.isNaming) { RecordingSpeakerNamingSheet(model: model) }
+            .sheet(item: $model.memorySegment) { segment in
+                RecordingPassageMemorySheet(recordingId: model.recording.id, segment: segment)
+            }
     }
 }
 
@@ -448,3 +460,58 @@ extension RecordingSpeakerNamingSheet {
         }.preferredColorScheme(.dark)
     }
 #endif
+
+
+/// RecordingPassageMemorySheet is the pages of the agent's memory linked to
+/// what was said in a passage: the people who spoke in it, and whatever the
+/// agent filed from this stretch of the recording. Asked for when the menu
+/// item is chosen, not for every passage of the transcript.
+struct RecordingPassageMemorySheet: View {
+    let recordingId: String
+    let segment: RecordingTranscriptSegment
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var model = InMemoryModel()
+    @State private var isLoaded = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if model.pages.isEmpty {
+                    Text(isLoaded ? "No page in memory is linked to this passage yet." : "Reading…").foregroundStyle(.secondary)
+                } else {
+                    Section {
+                        ForEach(model.pages) { link in
+                            Button {
+                                dismiss()
+                                app.openedKnowledgePath = link.nodePath
+                            } label: {
+                                HStack {
+                                    Label(link.nodeName.isEmpty ? link.nodePath : link.nodeName, systemImage: KnowledgeSymbols.symbol(link.nodeKind))
+                                    Spacer()
+                                    if link.isProposed {
+                                        Chip(text: String(localized: "A guess"), isAlert: false)
+                                    }
+                                }
+                            }
+                        }
+                    } footer: {
+                        Text("Pages in the agent's memory that mention what was said here.")
+                    }
+                }
+            }
+            .navigationTitle("In memory")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .task {
+                guard let connection = app.connection else { return }
+                await model.load(
+                    connection: connection, recordKind: "recording_passage", recordId: recordingId,
+                    passageStartMS: segment.segmentStartMS, passageEndMS: segment.segmentEndMS)
+                isLoaded = true
+            }
+        }
+    }
+}
