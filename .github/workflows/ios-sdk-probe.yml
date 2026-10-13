@@ -1,0 +1,30 @@
+name: iOS SDK probe
+
+# Prints what the iOS SDK says about Live Activity backgrounds. Temporary.
+on:
+  push:
+    branches: ["ios/recording-live"]
+    paths: [".github/workflows/ios-sdk-probe.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    steps:
+      - name: Look in the SDK
+        run: |
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "$sdk"
+          for framework in WidgetKit ActivityKit; do
+            find "$sdk/System/Library/Frameworks/$framework.framework" -name '*.swiftinterface' | head -3
+          done
+          grep -rhn -i "activityBackgroundTint\|activitySystemActionForegroundColor\|ActivityBackground\|glass\|supplementalActivityFamilies\|activityFamily" \
+            "$sdk/System/Library/Frameworks/WidgetKit.framework/Modules/WidgetKit.swiftmodule/" 2>/dev/null | head -60
+          grep -rhn -i "activityBackgroundTint\|glass" \
+            "$sdk/System/Library/Frameworks/ActivityKit.framework/Modules/" 2>/dev/null | head -30
+          grep -rhn -i "func glassEffect\|struct Glass\|backgroundExtensionEffect\|func containerBackground" \
+            "$sdk/System/Library/Frameworks/SwiftUI.framework/Modules/SwiftUI.swiftmodule/" 2>/dev/null | head -40
+          grep -rhn -i "glass\|ActivityBackground" "$sdk/System/Library/Frameworks/WidgetKit.framework/Headers/" 2>/dev/null | head -30
