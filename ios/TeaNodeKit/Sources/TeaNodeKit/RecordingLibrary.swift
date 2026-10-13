@@ -167,6 +167,9 @@ public enum RecordingLibrary {
             }
         }
         guard let recording else { return .ready }
+        // A summary is written only from a finished transcript: whatever an
+        // earlier version did, the recording is ready.
+        if !RecordingLibrary.firstLine(of: recording.recordingSummary).isEmpty { return .ready }
         guard let progress else {
             return RecordingLibrary.firstLine(of: recording.recordingSummary).isEmpty ? .transcribing : .ready
         }

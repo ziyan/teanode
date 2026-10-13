@@ -87,6 +87,9 @@ final class RecordingsModel {
         await loadLocalRecordings()
         do {
             let page = try await connection.recordings()
+            // A version that failed can be transcribed again: what was
+            // learned about it is asked again rather than kept.
+            serverProgress = serverProgress.filter { $0.value.transcriptProcessingStates.contains("complete") }
             let freshIds = Set(page.map(\.id))
             recordings = page + recordings.filter { !freshIds.contains($0.id) }
             problemText = nil
