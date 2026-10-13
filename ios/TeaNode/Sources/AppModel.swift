@@ -735,8 +735,11 @@ extension AppModel {
         if let availableServices { self.services = availableServices }
     }
 
+    /// Whether a part of TeaNode can be opened. Until the server has said
+    /// which services it runs, every part is taken to be on, so the first
+    /// screen at launch is the part itself rather than a moment of "off".
     func isSectionAvailable(_ section: AppSection) -> Bool {
-        let services = services ?? .unavailable
+        guard let services else { return true }
         switch section {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled

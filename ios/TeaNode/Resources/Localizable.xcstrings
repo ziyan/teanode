@@ -337,6 +337,22 @@
         }
       }
     },
+    "%@ is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已关闭"
+          }
+        }
+      }
+    },
     "%@ is offered again": {
       "localizations": {
         "ja": {
@@ -16277,6 +16293,38 @@
         }
       }
     },
+    "It is turned off for this server. Turn it on in Services.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。「サービス」でオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。可在“服务”中开启。"
+          }
+        }
+      }
+    },
+    "It is turned off for this server. Whoever manages your TeaNode server can turn it on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。TeaNode サーバーの管理者がオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。管理你的 TeaNode 服务器的人可以将其开启。"
+          }
+        }
+      }
+    },
     "It reads this at its next turn.": {
       "localizations": {
         "ja": {
@@ -23425,6 +23473,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开目标"
+          }
+        }
+      }
+    },
+    "Open Services": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サービスを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开服务"
           }
         }
       }
