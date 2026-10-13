@@ -32,6 +32,9 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     public var isAccountOwner: Bool? = nil
     public var hasUnalignedSpeakerCorrection: Bool? = nil
     public var appliedSpeakerCorrectionId: String? = nil
+    /// "Speaker 1" and so on for a speaker of a capture under way whom nobody has named: the same speaker has the same label in
+    /// every piece. Empty or nil otherwise.
+    public var temporarySpeakerLabel: String? = nil
     /// The speaker's name when the person confirmed it or a voice sample recognized it; nil while it is only a label.
     public var confirmedSpeakerName: String? {
         guard hasUserConfirmedSpeaker == true || isRecognizedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
@@ -144,6 +147,11 @@ extension Documents {
         $clientCorrectionId, confirmedName: $confirmedName, isAccountOwner: $isAccountOwner, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
         localSpeakerId: $localSpeakerId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { \(recordingSpeakersFields) } }
         """
+    public static let nameRecordingTemporarySpeaker = """
+        mutation ($recordingId: String!, $speakerLabel: String!, $confirmedName: String!, $isAccountOwner: Boolean) {
+        NameRecordingTemporarySpeaker(recordingId: $recordingId, speakerLabel: $speakerLabel, confirmedName: $confirmedName, isAccountOwner:
+        $isAccountOwner) }
+        """
     public static let renameRecordingSpeaker = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $confirmedName: String!) {
         RenameRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, speakerIdentityId:
@@ -152,6 +160,11 @@ extension Documents {
     public static let removeRecordingSpeakerCorrection = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
         RemoveRecordingSpeakerCorrection(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
+        recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
+        """
+    public static let undoRecordingSpeakerNaming = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
+        UndoRecordingSpeakerNaming(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
         recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
         """
     public static let deleteRecordingVoiceReference = """
@@ -241,6 +254,19 @@ extension Connection {
         else { throw TeaNodeError.unreadableAnswer }
         return response
     }
+    /// Names a speaker of a capture under way by the label the timeline shows, in every piece. An empty name with `isAccountOwner`
+    /// means the person who owns the account.
+    public func nameRecordingTemporarySpeaker(recordingId: String, speakerLabel: String, confirmedName: String, isAccountOwner: Bool) async throws {
+        struct Answer: Decodable, Sendable { let NameRecordingTemporarySpeaker: Bool }
+        let answer = try await execute(
+            Documents.nameRecordingTemporarySpeaker,
+            variables: [
+                "recordingId": .string(recordingId), "speakerLabel": .string(speakerLabel), "confirmedName": .string(confirmedName),
+                "isAccountOwner": isAccountOwner ? .bool(true) : .null,
+            ], as: Answer.self
+        ).NameRecordingTemporarySpeaker
+        guard answer else { throw TeaNodeError.unreadableAnswer }
+    }
     public func renameRecordingSpeaker(recordingId: String, expectedSourceGeneration: Int64, speakerIdentityId: String, confirmedName: String)
         async throws -> RecordingSpeakersView
     {
@@ -264,6 +290,19 @@ extension Connection {
                 "recordingSpeakerCorrectionId": .string(recordingSpeakerCorrectionId),
             ], as: Answer.self
         ).RemoveRecordingSpeakerCorrection
+    }
+    /// Takes back the naming a correction belongs to, whole: every passage that naming named returns to its speaker's label.
+    public func undoRecordingSpeakerNaming(recordingId: String, expectedSourceGeneration: Int64, recordingSpeakerCorrectionId: String)
+        async throws -> RecordingSpeakersView
+    {
+        struct Answer: Decodable, Sendable { let UndoRecordingSpeakerNaming: RecordingSpeakersView }
+        return try await execute(
+            Documents.undoRecordingSpeakerNaming,
+            variables: [
+                "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
+                "recordingSpeakerCorrectionId": .string(recordingSpeakerCorrectionId),
+            ], as: Answer.self
+        ).UndoRecordingSpeakerNaming
     }
     public func deleteRecordingVoiceReference(recordingId: String, expectedSourceGeneration: Int64, recordingVoiceReferenceId: String) async throws
         -> RecordingSpeakersView

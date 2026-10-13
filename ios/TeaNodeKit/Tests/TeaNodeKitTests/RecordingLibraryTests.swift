@@ -72,8 +72,19 @@ final class RecordingLibraryTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id), ["client-local", "client-b", "client-a"])
     }
 
-    func testUploadedLocalEntryWithoutAServerRowIsNotListedTwice() {
-        let local = localRecording(isDurable: true)
+    func testUploadedLocalEntryKeepsItsRowUntilTheServerRowIsReadThenIsListedOnce() {
+        var local = localRecording(isDurable: true)
+        local.clientRecordingId = "client-a"
+        XCTAssertEqual(RecordingLibrary.rows(recordings: [], localRecordings: [local]).count, 1)
+        let rows = RecordingLibrary.rows(
+            recordings: [serverRecording("recording-a", clientRecordingId: "client-a", title: "Planning")], localRecordings: [local])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].recordingTitle, "Planning")
+    }
+
+    func testARecordingDeletedOnTheServerIsNotShownFromThePhone() {
+        var local = localRecording(isDurable: true)
+        local.isDeletedRemotely = true
         XCTAssertTrue(RecordingLibrary.rows(recordings: [], localRecordings: [local]).isEmpty)
     }
 
@@ -97,6 +108,13 @@ final class RecordingLibraryTests: XCTestCase {
         XCTAssertEqual(status(["failed", "transcribing"]), .transcribing)
         XCTAssertEqual(status(["failed", "complete"]), .ready)
         XCTAssertEqual(status(["failed"]), .failed)
+        // Transcribed again after a lost answer: the summary says it is done,
+        // whatever an earlier version left in the progress.
+        XCTAssertEqual(
+            RecordingLibrary.status(
+                recording: serverRecording("recording-a", clientRecordingId: "a", summary: "They agreed."), localRecording: nil,
+                progress: RecordingServerProgress(isUploadComplete: true, uploadedPercent: 100, transcriptProcessingStates: ["uncertain"])),
+            .ready)
         XCTAssertEqual(status(["canceled"]), .failed)
     }
 

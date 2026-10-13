@@ -87,6 +87,9 @@ final class RecordingsModel {
         await loadLocalRecordings()
         do {
             let page = try await connection.recordings()
+            // A version that failed can be transcribed again: what was
+            // learned about it is asked again rather than kept.
+            serverProgress = serverProgress.filter { $0.value.transcriptProcessingStates.contains("complete") }
             let freshIds = Set(page.map(\.id))
             recordings = page + recordings.filter { !freshIds.contains($0.id) }
             problemText = nil
@@ -144,6 +147,12 @@ final class RecordingsModel {
         let pendingIds = RecordingLibraryProgress.pendingLocalRecordingIds(localRecordings)
         await loadLocalRecordings()
         guard isCurrentOwner(ownerId) else { return }
+        // A recording the uploader finished is removed from the phone; the
+        // server's row takes its place, so the first page is read again.
+        if !pendingIds.isSubset(of: Set(localRecordings.map(\.id))) {
+            await refresh()
+            return
+        }
         for local in localRecordings where pendingIds.contains(local.id) {
             guard isCurrentOwner(ownerId) else { return }
             guard let recordingId = local.recordingId, !recordings.contains(where: { $0.id == recordingId }) else { continue }
@@ -257,75 +266,86 @@ struct RecordingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(shownRows) { row in
-                    rowLink(row)
-                        // The first is what a full swipe does, as in Mail:
-                        // delete, which still asks first.
-                        .swipeActions(edge: .trailing) {
-                            if let recording = row.recording {
-                                Button(role: .destructive) {
-                                    deletedRecording = recording
-                                    isDeleting = true
-                                } label: {
-                                    Label("Delete recording", systemImage: "trash")
+                // Sections by period, as the mail list has them.
+                ForEach(ListPeriod.periods(of: shownRows, at: \.recordedAt)) { period in
+                    Section {
+                        ForEach(period.items) { row in
+                            rowLink(row)
+                                .listRowInsets(ListRowSpacing.insets)
+                                .listRowSeparator(.hidden)
+                                // The first is what a full swipe does, as in Mail:
+                                // delete, which still asks first.
+                                .swipeActions(edge: .trailing) {
+                                    if let recording = row.recording {
+                                        Button(role: .destructive) {
+                                            deletedRecording = recording
+                                            isDeleting = true
+                                        } label: {
+                                            Label("Delete recording", systemImage: "trash")
+                                        }
+                                    }
+                                    if row.canRemoveFromPhone, let localRecording = row.localRecording {
+                                        Button {
+                                            removedRecording = localRecording
+                                            isRemoving = true
+                                        } label: {
+                                            Label("Remove from this phone", systemImage: "iphone.slash")
+                                        }
+                                    }
                                 }
-                            }
-                            if row.canRemoveFromPhone, let localRecording = row.localRecording {
-                                Button {
-                                    removedRecording = localRecording
-                                    isRemoving = true
-                                } label: {
-                                    Label("Remove from this phone", systemImage: "iphone.slash")
+                                .contextMenu {
+                                    if row.canRetryUpload {
+                                        Button {
+                                            RecordingUploads.shared.resume(connection: model.connection)
+                                            Task { await model.load() }
+                                        } label: {
+                                            Label("Retry upload", systemImage: "arrow.clockwise")
+                                        }
+                                    }
+                                    if row.canPlayLocalOriginal, let localRecording = row.localRecording {
+                                        Button {
+                                            localPlayback = localRecording
+                                        } label: {
+                                            Label("Play local original", systemImage: "play")
+                                        }
+                                    }
+                                    if row.canRemoveFromPhone, let localRecording = row.localRecording {
+                                        Button(role: .destructive) {
+                                            removedRecording = localRecording
+                                            isRemoving = true
+                                        } label: {
+                                            Label("Remove from this phone", systemImage: "iphone.slash")
+                                        }
+                                    }
+                                    if let recording = row.recording {
+                                        Button(role: .destructive) {
+                                            deletedRecording = recording
+                                            isDeleting = true
+                                        } label: {
+                                            Label("Delete recording", systemImage: "trash")
+                                        }
+                                    }
                                 }
-                            }
+                                .onAppear {
+                                    if row.id == shownRows.last?.id, model.hasMoreRecordings, !model.isLoadingPage {
+                                        Task { await model.loadMore() }
+                                    }
+                                }
                         }
-                        .contextMenu {
-                            if row.canRetryUpload {
-                                Button {
-                                    RecordingUploads.shared.resume(connection: model.connection)
-                                    Task { await model.load() }
-                                } label: {
-                                    Label("Retry upload", systemImage: "arrow.clockwise")
-                                }
-                            }
-                            if row.canPlayLocalOriginal, let localRecording = row.localRecording {
-                                Button {
-                                    localPlayback = localRecording
-                                } label: {
-                                    Label("Play local original", systemImage: "play")
-                                }
-                            }
-                            if row.canRemoveFromPhone, let localRecording = row.localRecording {
-                                Button(role: .destructive) {
-                                    removedRecording = localRecording
-                                    isRemoving = true
-                                } label: {
-                                    Label("Remove from this phone", systemImage: "iphone.slash")
-                                }
-                            }
-                            if let recording = row.recording {
-                                Button(role: .destructive) {
-                                    deletedRecording = recording
-                                    isDeleting = true
-                                } label: {
-                                    Label("Delete recording", systemImage: "trash")
-                                }
-                            }
-                        }
-                        .onAppear {
-                            if row.id == shownRows.last?.id, model.hasMoreRecordings, !model.isLoadingPage {
-                                Task { await model.loadMore() }
-                            }
-                        }
+                    } header: {
+                        ListPeriodHeader(title: period.title)
+                    }
+                    .listSectionSeparator(.hidden)
                 }
                 if model.isLoadingPage, !shownRows.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity)
+                    ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
                 }
                 if model.hasUnverifiedLocalOwner {
                     Text(
                         "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
                     )
                     .font(.footnote).foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
@@ -406,7 +426,7 @@ struct RecordingsScreen: View {
             }
             .toast(done: $model.doneText, problem: $model.problemText)
             .sheet(isPresented: $isShowingCapture) {
-                RecordingCaptureScreen {
+                RecordingCaptureScreen(connection: model.connection) {
                     await model.refresh()
                     model.doneText = String(localized: "Saved. TeaNode will upload the recording, then name it.")
                 }
@@ -457,6 +477,7 @@ struct RecordingsScreen: View {
             } label: {
                 RecordingRowView(row: row)
             }
+            .navigationLinkIndicatorVisibility(.hidden)
         } else {
             Button {
                 localPlayback = row.localRecording
@@ -503,11 +524,11 @@ struct RecordingRowView: View {
             Circle()
                 .fill(isLive ? AnyShapeStyle(.red) : AnyShapeStyle(.clear))
                 .frame(width: 8, height: 8)
-                .padding(.top, 16)
+                .padding(.top, 8)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                // At the accessibility sizes there is no room for the time
-                // beside the name: each goes on a line of its own.
+            VStack(alignment: .leading, spacing: 2) {
+                // At the accessibility sizes there is no room for when beside
+                // the name: each goes on a line of its own.
                 if dynamicTypeSize.isAccessibilitySize {
                     title.lineLimit(3)
                     recordedTime
@@ -528,30 +549,27 @@ struct RecordingRowView: View {
                         if row.status != .ready { RecordingStatusLabel(status: row.status) }
                     }
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.body)
                 if !row.recordingSummaryFirstLine.isEmpty {
                     Text(row.recordingSummaryFirstLine)
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
                 }
             }
         }
-        .padding(.vertical, 6)
         .padding(.leading, -12)
         .accessibilityElement(children: .combine)
     }
 
     private var title: some View {
         Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
-            .font(.body.weight(.semibold))
-            .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
+            .font(.headline)
     }
 
     private var recordedTime: some View {
-        Text(MailTime.short(row.recordedAt))
-            .font(.footnote)
+        Text(ListTime.label(of: row.recordedAt))
+            .font(.subheadline)
             .foregroundStyle(.secondary)
             .lineLimit(1)
     }
