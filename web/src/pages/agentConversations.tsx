@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
@@ -61,6 +62,30 @@ export function AgentConversationsPage() {
   const open = (conversationId: string) => {
     if (!openAgentConversation(conversationId)) toast.failed(t('agentConversations.unavailable'))
   }
+
+  // A link from the agent's memory names the conversation in the address
+  // ("?conversation=...&message=..."): it opens in the drawer once, and the
+  // address forgets it, so a reload does not open it again.
+  const [parameters, setParameters] = useSearchParams()
+  const linkedConversationId = parameters.get('conversation') ?? ''
+  const openedLink = useRef('')
+  useEffect(() => {
+    if (!linkedConversationId || openedLink.current === linkedConversationId) return
+    openedLink.current = linkedConversationId
+    if (!openAgentConversation(linkedConversationId)) toast.failed(t('agentConversations.unavailable'))
+    setParameters(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        next.delete('conversation')
+        next.delete('message')
+        return next
+      },
+      { replace: true },
+    )
+    // The toast and the translation are made again on every render; the
+    // conversation is opened once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedConversationId])
 
   const startNew = () => {
     if (!startAgentConversation(() => void reload(true))) toast.failed(t('agentConversations.unavailable'))

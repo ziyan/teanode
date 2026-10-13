@@ -12,6 +12,7 @@ import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { InMemory } from '../../memoryLinks'
 import {
   CATEGORIZE_TRANSACTION,
   COUNT_TRANSACTION,
@@ -244,6 +245,45 @@ export function FinanceReceiptListSection() {
   const reload = async () => {
     await receiptsQuery.reload(true)
   }
+
+  // A link from the agent's memory names the receipt in the address: it opens
+  // once, read by its identifier since it may not be on the page shown, and
+  // the address forgets it when the dialog closes.
+  const linkedReceiptId = search.get('receipt') ?? ''
+  const linkedReceipt = useRef({ id: '', wasShown: false })
+  useEffect(() => {
+    if (!linkedReceiptId || linkedReceipt.current.id === linkedReceiptId) return
+    linkedReceipt.current = { id: linkedReceiptId, wasShown: false }
+    void graphql<{ FinanceReceipts?: FinanceReceiptPage | null }>(FINANCE_RECEIPTS, { receiptId: linkedReceiptId, limit: 1 })
+      .then((answer) => {
+        const found = answer?.FinanceReceipts?.financeReceipts[0]
+        if (!found) {
+          toast.failed(t('memoryLinks.unavailable'))
+          return
+        }
+        setLastOpenedReceipt(found)
+        setOpened({ dialogKind: 'receipt', receiptId: found.id })
+      })
+      .catch((caught) => toast.failure(caught, t('finance.failed')))
+    // The toast and the translation are made again on every render; the
+    // receipt is read once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedReceiptId])
+  useEffect(() => {
+    if (opened && opened.dialogKind !== 'transaction' && opened.receiptId === linkedReceiptId)
+      linkedReceipt.current.wasShown = true
+    if (!opened && linkedReceiptId && linkedReceipt.current.wasShown) {
+      linkedReceipt.current = { id: '', wasShown: false }
+      setSearch(
+        (previous) => {
+          const next = new URLSearchParams(previous)
+          next.delete('receipt')
+          return next
+        },
+        { replace: true },
+      )
+    }
+  }, [opened, linkedReceiptId, setSearch])
 
   const unmatch = async (receipt: FinanceReceipt, financeTransactionId: string) => {
     setIsBusy(true)
@@ -692,6 +732,7 @@ function FinanceReceiptDialog({
           )}
           <ReceiptPhoto receipt={receipt} name={name} />
           <ReceiptLines receipt={receipt} />
+          <InMemory recordKind="finance_receipt" recordId={receipt.id} />
           <div className="finance-receipt-buttons">
             <button type="button" disabled={isBusy} onClick={onMatch}>
               {t('finance.matchReceiptToCharge')}

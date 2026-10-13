@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { graphql } from '../api'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { type RecordingMedia } from './api'
@@ -10,6 +11,10 @@ import { recordingOperation } from './processing'
 import { RecordingProcessingPanel } from './processingPanel'
 import { type RecordingPassagePlayback } from './playback'
 
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  graphql: vi.fn(),
+}))
 vi.mock('./processing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./processing')>()),
   recordingOperation: vi.fn(),
@@ -214,7 +219,7 @@ it('does nothing for a short swipe or a scroll, and a long press opens no menu',
 it('offers its actions in the corner, and in a pill a tap opens, as the agent chat does', async () => {
   show([segment('one')])
   await screen.findByText('Text of one')
-  for (const label of ['Correct text', 'Name speaker', 'This is me'])
+  for (const label of ['In memory', 'Correct text', 'Name speaker', 'This is me'])
     expect(screen.getByRole('button', { name: label })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
   tapBubble('Text of one')
@@ -223,9 +228,48 @@ it('offers its actions in the corner, and in a pill a tap opens, as the agent ch
     within(pill)
       .getAllByRole('menuitem')
       .map((item) => item.getAttribute('aria-label')),
-  ).toEqual(['Play', 'Copy', 'Correct text', 'Name speaker', 'This is me'])
+  ).toEqual(['Play', 'Copy', 'In memory', 'Correct text', 'Name speaker', 'This is me'])
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it('asks which pages of memory are linked to the bubble, by its range, only when asked', async () => {
+  vi.mocked(graphql).mockResolvedValue({
+    ReadRecordMemoryLinks: [
+      {
+        id: 'link-1',
+        nodePath: 'people/fixture-guest',
+        nodeName: 'Fixture Guest',
+        nodeKind: 'person',
+        recordKind: 'recording_passage',
+        recordId: 'fixture-recording',
+        recordRelation: 'spoke_in',
+        linkStatus: 'proposed',
+        passageStartMS: 2000,
+        passageEndMS: 4000,
+        transcriptRunId: 'fixture-run',
+        note: '',
+        createdAt: '2026-01-01T00:00:00Z',
+        recordTitle: '',
+        dashboardPath: '',
+        isUnavailable: false,
+      },
+    ],
+  } as never)
+  show([segment('one', { segmentStartMS: 2000, segmentEndMS: 4000 }), segment('two', { segmentStartMS: 4000, segmentEndMS: 9000 })])
+  await screen.findByText('Text of one')
+  expect(vi.mocked(graphql)).not.toHaveBeenCalled()
+  fireEvent.click(screen.getAllByRole('button', { name: 'In memory' })[0])
+  const link = await screen.findByRole('link', { name: 'Fixture Guest' })
+  expect(link.getAttribute('href')).toBe('/knowledge/people/fixture-guest')
+  // A guess is said to be one.
+  expect(screen.getByText('Perhaps')).toBeTruthy()
+  const [, variables] = vi.mocked(graphql).mock.calls[0]
+  expect(variables).toMatchObject({
+    recordKind: 'recording_passage',
+    recordId: 'fixture-recording',
+    passageStartMS: 2000,
+  })
 })
 
 it('corrects text through the shared dialog', async () => {

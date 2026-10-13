@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading } from '../components/common'
 import { LineActionPill, type LineAction } from '../components/agentReactions'
-import { CopyIcon, PencilIcon, PeopleIcon, PlayIcon, UserIcon } from '../components/icons'
+import { CopyIcon, GraphIcon, PencilIcon, PeopleIcon, PlayIcon, UserIcon } from '../components/icons'
 import { SettingsEmpty } from '../components/settingsList'
 import { SwipeableLine } from '../components/swipeableLine'
 import { useToast } from '../components/toast'
@@ -18,6 +18,7 @@ import {
   type ConversationGroup,
 } from './conversation'
 import { BubbleTextDialog } from './bubbleTextDialog'
+import { PassageMemoryDialog } from './passageMemoryDialog'
 import { RecordingEditDialog, type ProcessingDialog } from './editDialog'
 import { formatRecordingLength } from './library'
 import { type RecordingPassagePlayback } from './playback'
@@ -117,6 +118,7 @@ export function RecordingConversation({
   const [dialog, setDialog] = useState<ProcessingDialog | null>(null)
   const [actingOnGroupKey, setActingOnGroupKey] = useState<string | null>(null)
   const [editingGroup, setEditingGroup] = useState<ConversationGroup | null>(null)
+  const [memoryGroup, setMemoryGroup] = useState<ConversationGroup | null>(null)
 
   // A capture in progress grows at the end. A reader who is looking at the
   // end is kept there as it grows; one who has scrolled up is left alone.
@@ -261,6 +263,15 @@ export function RecordingConversation({
           void copyText(group.segments.map(passageText).join(' ')).then((isCopied) =>
             isCopied ? toast.done(t('common.copied')) : toast.failed(t('common.copyFailed')),
           ),
+      },
+      // Which pages of the agent's memory this stretch of the recording is
+      // linked to, for a recording that has finished being read: words heard
+      // live have no passage to link yet.
+      {
+        actionKey: 'memory',
+        label: t('memoryLinks.inMemory'),
+        icon: <GraphIcon size={16} />,
+        onAct: () => setMemoryGroup(group),
       },
     ]
     if (canEdit)
@@ -430,6 +441,14 @@ export function RecordingConversation({
           passageText={passageText}
           onClose={() => setEditingGroup(null)}
           onSaved={onChanged}
+        />
+      ) : null}
+      {memoryGroup ? (
+        <PassageMemoryDialog
+          recordingId={recordingId}
+          passageStartMS={memoryGroup.segments[0].segmentStartMS}
+          passageEndMS={memoryGroup.segments[memoryGroup.segments.length - 1].segmentEndMS}
+          onClose={() => setMemoryGroup(null)}
         />
       ) : null}
       {dialog ? (

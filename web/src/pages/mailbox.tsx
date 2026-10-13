@@ -60,6 +60,7 @@ import { MailboxComposer } from './mailboxCompose'
 import { ReadAsReceiptMenuItem } from './mailboxReadReceipt'
 import { Select } from '../components/select'
 import { useAgent } from './agent'
+import { InMemory } from '../memoryLinks'
 
 // The mailbox: one folder's messages beside the one being read.
 //
@@ -2474,6 +2475,9 @@ export function ThreadMessage({
                   )}
                 />
               )}
+              {/* Which pages of the agent's memory this message is linked to:
+                  the people who wrote or received it, the topics it is about. */}
+              <InMemory recordKind="mail" recordId={entry.item.id} />
             </>
           ) : (
             <p className="muted">{t('mailbox.messageGone')}</p>
