@@ -121,4 +121,20 @@ final class DeviceSetupTests: XCTestCase {
         XCTAssertEqual(profile.syncCredential?.id, "sync-a")
     }
 
+    func testExpiredIssuedConnectionResponseRetainsValidatedCredentialReceipt() async throws {
+        let answer =
+            #"{"data":{"CreateDeviceSetupProfile":{"downloadPath":"/api/v1/mailbox/profile/test.mobileconfig","downloadLink":"https://node.example.com/api/v1/mailbox/profile/test.mobileconfig","expiresAt":"2000-01-01T00:00:00Z","mailboxAppPassword":null,"syncCredential":{"id":"sync-expired","credentialName":"Phone","hasCalendarAccess":true,"hasRemindersAccess":false,"hasContactsAccess":true}}}}"#
+        let (connection, fake) = try connection(answer: answer)
+        let available = try capabilities()
+        let selection = DeviceSetupSelection(deviceName: "Phone", capabilities: available)
+        let profile = try await connection.createDeviceSetupProfile(selection, capabilities: available)
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertTrue(profile.hasExpired())
+        XCTAssertEqual(profile.syncCredential?.id, "sync-expired")
+        XCTAssertEqual(profile.syncCredential?.hasCalendarAccess, true)
+        XCTAssertEqual(profile.syncCredential?.hasRemindersAccess, false)
+        XCTAssertNil(profile.mailboxAppPassword)
+        XCTAssertThrowsError(try profile.downloadURL(server: ServerAddress(parsing: "node.example.com")))
+    }
+
 }

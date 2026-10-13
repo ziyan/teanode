@@ -83,13 +83,19 @@ public struct CreatedDeviceSetupProfile: Codable, Sendable {
     }
 
     public func downloadURL(server: ServerAddress) throws -> URL {
+        let downloadURL = try validatedDownloadURL(server: server)
+        guard !hasExpired() else { throw TeaNodeError.unreadableAnswer }
+        return downloadURL
+    }
+
+    fileprivate func validatedDownloadURL(server: ServerAddress) throws -> URL {
         guard let downloadURL = URL(string: downloadLink), downloadURL.user == nil, downloadURL.password == nil,
             downloadURL.scheme == server.origin.scheme, downloadURL.host == server.origin.host,
             (downloadURL.port ?? (downloadURL.scheme == "https" ? 443 : 80)) == (server.origin.port ?? (server.origin.scheme == "https" ? 443 : 80)),
             downloadURL.path == downloadPath,
             downloadURL.query == nil, downloadURL.fragment == nil,
             downloadPath.hasPrefix("/api/v1/mailbox/profile/"), downloadPath.hasSuffix(".mobileconfig"),
-            let expiration = ServerTime.date(expiresAt), expiration > Date()
+            ServerTime.date(expiresAt) != nil
         else { throw TeaNodeError.unreadableAnswer }
         return downloadURL
     }
@@ -125,7 +131,7 @@ extension Connection {
         guard selection.canCreateProfile(capabilities: capabilities) else { throw TeaNodeError.unreadableAnswer }
         struct Answer: Decodable, Sendable { let CreateDeviceSetupProfile: CreatedDeviceSetupProfile }
         let profile = try await execute(Documents.createDeviceSetupProfile, variables: selection.variables, as: Answer.self).CreateDeviceSetupProfile
-        _ = try profile.downloadURL(server: account.server)
+        _ = try profile.validatedDownloadURL(server: account.server)
         guard (profile.mailboxAppPassword != nil) == selection.hasMailAccess,
             (profile.syncCredential != nil) == (selection.hasCalendarAccess || selection.hasRemindersAccess || selection.hasContactsAccess)
         else { throw TeaNodeError.unreadableAnswer }

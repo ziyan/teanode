@@ -77,7 +77,7 @@ content/header/footer initializer. Fresh SDK validation is pending.
 The corrected native Section forms built successfully with the real simulator SDK.
 Fifteen actual setup images were inspected across light, dark and largest text;
 selection and receipt content remained readable. The largest-text Download label
-was shortened to avoid splitting the verb. No physical-device installation is claimed.
+was shortened to reduce wrapping; the system still hyphenates it at the largest size. No physical-device installation is claimed.
 
 Independent review found expired receipt removal, receipt hiding when all services
 turn off, and stale unavailable selections. Receipt rendering now precedes capability
@@ -87,3 +87,16 @@ existing secure download behavior when services are later disabled. Capability
 refresh prunes unavailable choices only before creation without selecting newly available services. Two regressions bring the portable
 suite to 293 passing tests. Fresh SDK and expired/unavailable receipt captures remain
 pending for the updated code.
+
+The next exact SDK run and all 21 setup captures passed and were visually inspected.
+The expired receipt still displayed an upcoming-expiry label, which is now hidden
+when expiration passes. Independent Connection review also found that an expired
+issued response could be discarded before publishing its credential receipt. URL
+origin/path and exact scopes remain validated at creation, while download alone
+rejects expiry; the receipt is retained. A Connection-level regression exercises
+that response, not just DTO decoding. Fresh exact-head checks remain required.
+
+The late-response Connection regression passes with the full 294-test portable
+suite. Independent rereview found no remaining confirmed issue in the response
+validation and retained receipt changes. Fresh SDK and screenshot evidence remains
+pending for this final focused fix.
