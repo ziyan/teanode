@@ -53,7 +53,8 @@ The backend prepares local descriptor-only WAV audio with a process-wide concurr
 bound, a ten-minute cancellation deadline and a two-gibibyte original/output bound.
 The existing recording blob table accepts the new purpose without a migration.
 Owned reservations precede persistent bytes; failed writes and missing derived storage
-can resume under an already reserved quota. Account and source deletion use the existing
+can resume under an already reserved quota. Explicit preparation also checks cached
+preview bytes and repairs corruption without additional quota or a provider call. Account and source deletion use the existing
 cleanup worker. Raw media and upload receipts are unchanged.
 
 Actual PostgreSQL race tests passed for ownership, related parents, concurrent quota,
@@ -62,7 +63,9 @@ for CAF conversion, unchanged originals, WAV digest and header, absolute timelin
 ranges, reduced-quota storage repair and original corruption refusal. Existing delayed
 video and cancellation checks passed. Authenticated HTTP/query tests passed with the
 agent disabled, including HEAD, byte ranges, If-Range, denied owners and deletion.
-Review found and fixed a reduced-quota retry refusal before reservation reuse.
+Review found and fixed a reduced-quota retry refusal before reservation reuse,
+then a cached-corruption repair gap. The same-size corruption regression passed
+with the packaged reader and actual PostgreSQL after the recovery fix.
 
 Actual Chrome reproduced unsupported CAF and playable WAV; this establishes the
 codec gap, not yet the integrated dashboard fallback. Web, CLI, LLM tools and applicable

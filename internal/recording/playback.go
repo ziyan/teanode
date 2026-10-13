@@ -54,7 +54,7 @@ func (self *Store) ReadPlayback(ctx context.Context, userId, mediaId string) (*m
 	if blob == nil || !blob.IsStoredVerified {
 		return nil, nil
 	}
-	if blob.BlobSizeBytes <= 44 || (blob.BlobSizeBytes-44)%audioSampleBytes != 0 {
+	if blob.BlobSizeBytes <= 44 || blob.BlobSizeBytes > maximumPlaybackBytes || (blob.BlobSizeBytes-44)%audioSampleBytes != 0 {
 		return nil, db.ErrInvalidArguments
 	}
 	stream, err := self.files.OpenFileRange(ctx, blob.ID, 0, 1)
@@ -73,9 +73,6 @@ func (self *Store) PreparePlayback(ctx context.Context, userId, mediaId string, 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	ready, err := self.ReadPlayback(ctx, userId, mediaId)
-	if err == nil && ready != nil {
-		return ready, nil
-	}
 	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return nil, err
 	}
@@ -86,6 +83,17 @@ func (self *Store) PreparePlayback(ctx context.Context, userId, mediaId string, 
 		return nil, ctx.Err()
 	default:
 		return nil, fmt.Errorf("%w: recording playback preparation is busy; retry shortly", db.ErrTooMuchAsked)
+	}
+	if ready != nil {
+		// Explicit preparation can repair corruption as well as absent bytes,
+		// without changing the immutable reservation or consuming more quota.
+		previewDigest := sha256.New()
+		if err := self.CopyPlaybackRange(ctx, userId, mediaId, previewDigest, 0, ready.PlaybackSizeBytes); err == nil && hex.EncodeToString(previewDigest.Sum(nil)) == ready.PlaybackSHA256 {
+			return ready, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 	var media *models.RecordingMedia
 	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {

@@ -147,6 +147,16 @@ func TestAudioPlaybackFailedWriteReservationRetryAndLostStorage(test *testing.T)
 	if err != nil || repaired.PlaybackSHA256 != ready.PlaybackSHA256 {
 		test.Fatal("lost derived bytes could not repair", err)
 	}
+	if err := fixture.files.PutFile(test.Context(), pending.ID, bytes.Repeat([]byte("q"), int(ready.PlaybackSizeBytes))); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := store.PreparePlayback(test.Context(), fixture.userId, fixture.media.ID, 1); err != nil {
+		test.Fatal("corrupt cached preview could not repair under reserved quota", err)
+	}
+	var verifiedPreview bytes.Buffer
+	if err := store.CopyPlaybackRange(test.Context(), fixture.userId, fixture.media.ID, &verifiedPreview, 0, ready.PlaybackSizeBytes); err != nil || digestBytes(verifiedPreview.Bytes()) != ready.PlaybackSHA256 {
+		test.Fatal("corrupt cached bytes survived explicit preparation", err)
+	}
 	if err := fixture.files.PutFile(test.Context(), db.RecordingPartFileID(fixture.media.ID, 0), bytes.Repeat([]byte("x"), len(fixture.content))); err != nil {
 		test.Fatal(err)
 	}
