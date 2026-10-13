@@ -26,6 +26,14 @@
                 answer = recordingAnswer
             } else if query.contains("ReadRecordingLimits") {
                 answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608,"isTranscriptionAvailable":true,"transcriptionUnavailableMessage":"","transcriptionProviderModelName":"demo:transcription"}}}"#
+            } else if query.contains("GetDeviceSetupCapabilities") {
+                if ["device-setup-unavailable", "device-setup-receipt-unavailable"].contains(Self.screen) {
+                    answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":false,"canSetUpCalendar":false,"canSetUpReminders":false,"canSetUpContacts":false,"mailboxes":[]}}}"#
+                } else if Self.screen == "device-setup-collections" {
+                    answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":false,"canSetUpCalendar":true,"canSetUpReminders":true,"canSetUpContacts":true,"mailboxes":[]}}}"#
+                } else {
+                    answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":true,"canSetUpCalendar":true,"canSetUpReminders":true,"canSetUpContacts":true,"mailboxes":[{"id":"mailbox-demo","name":"Personal","addresses":[]}]}}}"#
+                }
             } else if query.contains("GetServiceCapabilities") {
                 answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
