@@ -241,6 +241,12 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return "", nil, err
 		}
 		variables["recordingSpeakerCorrectionId"] = arguments.RecordingSpeakerCorrectionID
+	case "speaker-undo":
+		operationName = "UndoRecordingSpeakerNaming"
+		if err := require("speaker_correction_id", arguments.RecordingSpeakerCorrectionID); err != nil {
+			return "", nil, err
+		}
+		variables["recordingSpeakerCorrectionId"] = arguments.RecordingSpeakerCorrectionID
 	case "reference-delete":
 		operationName = "DeleteRecordingVoiceReference"
 		if err := require("voice_reference_id", arguments.RecordingVoiceReferenceID); err != nil {
@@ -269,14 +275,14 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return "", nil, fmt.Errorf("unknown recording operation %q", arguments.Operation)
 	}
 	switch arguments.Operation {
-	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if err := require("recording_id", arguments.RecordingID); err != nil {
 			return "", nil, err
 		}
 		variables["recordingId"] = arguments.RecordingID
 	}
 	switch arguments.Operation {
-	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if arguments.ExpectedSourceGeneration == nil || *arguments.ExpectedSourceGeneration < 0 {
 			return "", nil, fmt.Errorf("give expected_source_generation from the current recording view")
 		}

@@ -4362,6 +4362,7 @@ export const zh: Catalog = {
   'recordings.correctText': "修正文字",
   'recordings.thisIsMe': "这是我",
   'recordings.notMe': "这不是我",
+  'recordings.clearName': "清除名字",
   'recordings.startRecording': "开始录音",
   'recordings.startFailed': "无法开始录音。",
   'recordings.liveHint': "这段录音仍在进行中。听到的文字会即时出现在这里，大约半分钟后会标出说话人。",
