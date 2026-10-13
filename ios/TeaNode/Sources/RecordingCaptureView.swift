@@ -139,24 +139,11 @@ struct RecordingCaptureView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
-            if let microphoneModeText, let onMicrophoneModes {
-                Button(action: onMicrophoneModes) {
-                    HStack {
-                        Label("Mic mode", systemImage: "mic")
-                        Spacer(minLength: 8)
-                        Text(microphoneModeText).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                .accessibilityLabel("Mic mode")
-                .accessibilityValue(microphoneModeText)
-            }
+            // At the largest text sizes the row would take the screen from the conversation, so it scrolls with it instead.
+            if !dynamicTypeSize.isAccessibilitySize { microphoneModeRow.padding(.horizontal).padding(.bottom, 8) }
             ScrollView {
                 VStack(spacing: 12) {
+                    if dynamicTypeSize.isAccessibilitySize { microphoneModeRow }
                     Text(
                         "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload."
                     )
@@ -202,6 +189,28 @@ struct RecordingCaptureView: View {
             .padding(.bottom, 8)
         }
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// The microphone mode in use, and a button for the system's menu to choose another.
+    @ViewBuilder
+    private var microphoneModeRow: some View {
+        if let microphoneModeText, let onMicrophoneModes {
+            Button(action: onMicrophoneModes) {
+                let layout =
+                    dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+                layout {
+                    Label("Mic mode", systemImage: "mic")
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
+                    Text(microphoneModeText).foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .accessibilityLabel("Mic mode")
+            .accessibilityValue(microphoneModeText)
+        }
     }
 
     private var stateText: String {
