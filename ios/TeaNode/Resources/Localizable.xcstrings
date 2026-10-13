@@ -10725,6 +10725,22 @@
         }
       }
     },
+    "Details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详情"
+          }
+        }
+      }
+    },
     "Detection decides again": {
       "localizations": {
         "ja": {
@@ -14897,6 +14913,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "隐藏回复"
+          }
+        }
+      }
+    },
+    "Hides the details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を隠します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏详情"
           }
         }
       }
@@ -30561,6 +30593,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示其交易"
+          }
+        }
+      }
+    },
+    "Shows the details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示详情"
           }
         }
       }
