@@ -14336,3 +14336,14 @@ button.herdr-question-head {
   overflow-y: auto;
   padding: 16px;
 }
+
+.recording-turn.live {
+  align-items: flex-start;
+}
+.recording-live-line {
+  opacity: 0.85;
+  font-style: italic;
+}
+.recording-live-note {
+  margin: 0;
+}

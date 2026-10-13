@@ -31,6 +31,13 @@ import {
   type RecordingMedia,
 } from '../recording/api'
 
+// How often the page of a recording that is still being captured is read again.
+const LIVE_POLL_MS = 3000
+const isCaptureOngoing = (recording: Recording) =>
+  recording.recordingCaptureState === 'active' ||
+  recording.recordingCaptureState === 'paused' ||
+  recording.recordingCaptureState === 'interrupted'
+
 const errorText = (caught: unknown) => (caught instanceof Error ? caught.message : String(caught))
 
 export function RecordingsPage() {
@@ -192,6 +199,19 @@ function AccountRecordingsPage() {
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailStatus, recordingId])
+  // A capture in progress is read again every few seconds, which is how its
+  // words and its speakers arrive on the page; the recording's own state is
+  // read with it, so the page notices when the capture is stopped.
+  const isLive = view ? isCaptureOngoing(view.recording) : false
+  useEffect(() => {
+    if (!isLive) return
+    const timer = window.setInterval(() => {
+      void detail.reload()
+      setConversationReloadToken((previous) => previous + 1)
+    }, LIVE_POLL_MS)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive, recordingId])
   const changed = () => {
     void detail.reload()
     setConversationReloadToken((previous) => previous + 1)
@@ -393,18 +413,21 @@ function AccountRecordingsPage() {
               </div>
               {headingActionSlot ? createPortal(recordingActions, headingActionSlot) : recordingActions}
             </div>
+            {isLive ? <p className="muted recording-live-note">{t('recordings.liveHint')}</p> : null}
             {view.recording.recordingSummary ? (
               <section className="recording-summary">
                 <h3>{t('recordings.summary')}</h3>
                 <p>{view.recording.recordingSummary}</p>
               </section>
             ) : null}
-            {completeMedia.map((media) => (
+            {/* The pieces of a capture in progress are not offered as originals
+                until it is stopped: there would be a player for each. */}
+            {(isLive ? [] : completeMedia).map((media) => (
               <div className="recording-original" key={media.id}>
                 <RecordingOriginalPlayer media={media} passagePlayback={passagePlayback.current} />
               </div>
             ))}
-            {incompleteMedia.map((media) => (
+            {(isLive ? [] : incompleteMedia).map((media) => (
               <div className="recording-original" key={media.id}>
                 <p className="muted">
                   {media.originalFilename}: {t('recordings.resumeHint')}
@@ -421,6 +444,7 @@ function AccountRecordingsPage() {
               mediaFiles={view.mediaFiles}
               passagePlayback={passagePlayback.current}
               reloadToken={conversationReloadToken}
+              isLive={isLive}
               onChanged={changed}
               onSpeakerCount={setSpeakerCount}
             />
