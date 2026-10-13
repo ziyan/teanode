@@ -379,16 +379,21 @@ struct TurnActivityWidget: Widget {
 struct CallActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: CallActivityAttributes.self) { context in
-            HStack(spacing: 12) {
-                Image("Logo").resizable().frame(width: 36, height: 36)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(context.attributes.agentTitle).font(.headline).lineLimit(1)
-                    CallDuration(startedAt: context.attributes.startedAt).font(.subheadline).foregroundStyle(.secondary)
+            // As a call banner reads: who, round, then the name with how long
+            // it has run under it, both on the left, then the two buttons.
+            HStack(spacing: 14) {
+                Image("Logo").resizable().scaledToFill().frame(width: 52, height: 52).clipShape(.circle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(context.attributes.agentTitle).font(.title3.weight(.semibold)).lineLimit(1)
+                    CallDuration(startedAt: context.attributes.startedAt, alignment: .leading)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 CallButtons(isMuted: context.state.isMuted)
             }
-            .padding()
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             .activityBackgroundTint(nil)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -398,16 +403,17 @@ struct CallActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 2) {
                         Text(context.attributes.agentTitle).font(.headline).lineLimit(1)
-                        CallDuration(startedAt: context.attributes.startedAt).font(.subheadline).foregroundStyle(.secondary)
+                        CallDuration(startedAt: context.attributes.startedAt, alignment: .center).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    CallButtons(isMuted: context.state.isMuted)
+                    CallButtons(isMuted: context.state.isMuted, isOnBlack: true)
                 }
             } compactLeading: {
                 Image(systemName: context.state.isMuted ? "mic.slash.fill" : "waveform").foregroundStyle(.tint)
             } compactTrailing: {
-                CallDuration(startedAt: context.attributes.startedAt).frame(width: 44)
+                // Wide enough for a call past an hour, 1:02:30.
+                CallDuration(startedAt: context.attributes.startedAt, alignment: .trailing).frame(minWidth: 44, maxWidth: 64)
             } minimal: {
                 Image(systemName: "waveform").foregroundStyle(.tint)
             }
@@ -415,38 +421,63 @@ struct CallActivityWidget: Widget {
     }
 }
 
-/// CallDuration counts up from when the call began.
+/// CallDuration counts up from when the call began. A running timer takes
+/// all the width it is offered, so where its digits sit is said outright:
+/// trailing pushed the lock screen's under the buttons, away from the name.
 struct CallDuration: View {
     let startedAt: Date
+    var alignment: TextAlignment = .leading
 
     var body: some View {
         Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
             .monospacedDigit()
-            .multilineTextAlignment(.trailing)
+            .multilineTextAlignment(alignment)
+            .frame(maxWidth: .infinity, alignment: frameAlignment)
+    }
+
+    private var frameAlignment: Alignment {
+        switch alignment {
+        case .center: .center
+        case .trailing: .trailing
+        default: .leading
+        }
     }
 }
 
 /// CallButtons are a call's mute and hang up, run in the app.
 struct CallButtons: View {
     let isMuted: Bool
+    /// Whether the buttons sit on the Dynamic Island, which is black in
+    /// light and dark alike, rather than on the lock screen's banner, which
+    /// follows the appearance.
+    var isOnBlack = false
+
+    /// The circle and the glyph: semantic on the banner, so they read in
+    /// light and dark; light on the island, where a semantic dark would not
+    /// show. Muted fills the mute button's circle harder, to read at a glance.
+    private var circleFill: Color { isOnBlack ? .white.opacity(0.2) : Color.primary.opacity(0.14) }
+    private var mutedCircleFill: Color { isOnBlack ? .white.opacity(0.4) : Color.primary.opacity(0.3) }
+    private var glyphColor: Color { isOnBlack ? .white : .primary }
 
     var body: some View {
+        // Two round buttons alike, as a call banner has them: mute, which
+        // shows the slashed microphone while muted, and close, which hangs up.
         HStack(spacing: 12) {
             Button(intent: ToggleCallMuteIntent()) {
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
-                    .font(.title3)
-                    .frame(width: 44, height: 44)
-                    .background(isMuted ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary.opacity(0.25)), in: .circle)
-                    .foregroundStyle(isMuted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    .font(.title2)
+                    .foregroundStyle(glyphColor)
+                    .frame(width: 52, height: 52)
+                    .background(isMuted ? mutedCircleFill : circleFill, in: .circle)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isMuted ? Text("Unmute") : Text("Mute"))
             Button(intent: EndCallIntent()) {
-                Image(systemName: "phone.down.fill")
-                    .font(.title3)
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.red, in: .circle)
+                Image(systemName: "xmark")
+                    .font(.title2.weight(.medium))
+                    .foregroundStyle(glyphColor)
+                    .frame(width: 52, height: 52)
+                    .background(circleFill, in: .circle)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Hang up")
