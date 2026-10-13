@@ -1737,6 +1737,7 @@ export const en = {
   'agent.runKinds.summarize': 'Summary',
   'agent.runKinds.remember': 'Remembering',
   'agent.runKinds.recording': 'Recording transcription',
+  'agent.runKinds.recording_brief': 'Name a recording',
   'agent.runKinds.ingest': 'Reading a source',
   'agent.runKinds.dream': 'Dream',
   'agent.runKinds.schedule': 'Scheduled run',

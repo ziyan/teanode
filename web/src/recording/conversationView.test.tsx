@@ -166,7 +166,7 @@ it('names a speaker through the shared dialog', async () => {
   })
 })
 
-it('marks a passage as the account owner and releases it again', async () => {
+it('marks a passage as the account owner, and Not me opens the name form', async () => {
   const { onChanged } = show([segment('mine', confirmed('Fixture Owner', 'identity-owner', true)), segment('other')])
   fireEvent.contextMenu(await screen.findByText('Text of other'), { clientX: 20, clientY: 20 })
   fireEvent.click(screen.getByRole('menuitem', { name: 'This is me' }))
@@ -175,11 +175,9 @@ it('marks a passage as the account owner and releases it again', async () => {
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
   fireEvent.contextMenu(screen.getByText('Text of mine'), { clientX: 20, clientY: 20 })
   fireEvent.click(screen.getByRole('menuitem', { name: 'Not me' }))
-  await waitFor(() => expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(2))
-  expect(calls('CorrectRecordingSpeakerOwner')[1][1]).toMatchObject({
-    isAccountOwner: false,
-    confirmedName: 'Fixture Owner',
-  })
+  // Releasing a passage is confirming it as somebody else: the name form opens.
+  expect(within(screen.getByRole('dialog')).getByRole('combobox')).toBeTruthy()
+  expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1)
 })
 
 it('opens the menu after a half second press on touch and not before', async () => {

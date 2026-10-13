@@ -192,16 +192,15 @@ export function RecordingConversation({
         },
       ],
     })
-  const setOwnership = async (segment: TranscriptSegment, isAccountOwner: boolean) => {
+  const setOwnership = async (segment: TranscriptSegment) => {
     try {
       await recordingOperation('CorrectRecordingSpeakerOwner', {
         ...speakerCorrectionVariables(segment),
-        // Left empty when claiming the passage, so the server names the
-        // speaker after the person; kept when releasing it.
-        confirmedName: isAccountOwner ? '' : segment.effectiveSpeakerName,
+        // Left empty so the server names the speaker after the person.
+        confirmedName: '',
         passageStartMS: segment.segmentStartMS,
         passageEndMS: segment.segmentEndMS,
-        isAccountOwner,
+        isAccountOwner: true,
       })
       toast.done(t('recordingProcessing.saved'))
       onChanged()
@@ -235,7 +234,9 @@ export function RecordingConversation({
           itemKey: 'owner',
           label: t(segment.isAccountOwner ? 'recordings.notMe' : 'recordings.thisIsMe'),
           isDisabled: !canName,
-          onSelect: () => void setOwnership(segment, !segment.isAccountOwner),
+          // There is no call that unsets the owner: releasing a passage means
+          // confirming it as somebody else, so the name form opens.
+          onSelect: () => (segment.isAccountOwner ? nameSpeaker(segment) : void setOwnership(segment)),
         },
       )
     return items
