@@ -37,6 +37,9 @@ type RecordingActionArguments struct {
 	PassageEndMS                        *int64  `json:"passage_end_ms"`
 	SegmentOffset                       int     `json:"segment_offset"`
 	PageSize                            int     `json:"page_size"`
+	// SearchText narrows a list of recordings, or the names offered for a
+	// speaker, to those containing it.
+	SearchText string `json:"search_text"`
 }
 
 // RecordingAction resolves one reviewed operation and refuses incomplete edits.
@@ -87,6 +90,12 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		operationName = "ReadRecordingProcessing"
 	case "speakers":
 		operationName = "ReadRecordingSpeakers"
+	case "speaker-names":
+		operationName = "SuggestRecordingSpeakerNames"
+		variables["searchText"] = arguments.SearchText
+		if arguments.PageSize > 0 {
+			variables["pageSize"] = arguments.PageSize
+		}
 	case "learning":
 		operationName = "ReadRecordingLearning"
 	case "reference-invalidations":

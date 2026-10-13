@@ -27,7 +27,7 @@ type recordingReferenceCandidate struct {
 // recordingSpeakerReferences picks the voice samples to send with a piece of a
 // recording. The provider takes at most four, so they go in this order: people
 // already named in this recording, then the person themselves, then the
-// recording's speakers nobody has named yet (most recently heard first), then
+// recording's speakers nobody has named yet (who has spoken most first), then
 // the account's other known voices, newest first. One sample per name.
 func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recordingId string, capabilities llm.TranscriptionCapabilities, files storage.StreamFiles) ([]llm.SpeakerReference, []string, error) {
 	if !capabilities.HasSpeakerReferences || capabilities.MaximumSpeakerReferenceCount <= 0 {
@@ -89,8 +89,10 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 			temporaryCandidates = append(temporaryCandidates, candidate)
 		}
 	}
+	// The provider takes few samples: those who have spoken most are the
+	// likeliest to speak again, and the ones a wrong label costs most.
 	sort.SliceStable(temporaryCandidates, func(left, right int) bool {
-		return lastHeardMS(temporarySpeakers, temporaryCandidates[left].BlobID) > lastHeardMS(temporarySpeakers, temporaryCandidates[right].BlobID)
+		return spokenMS(temporarySpeakers, temporaryCandidates[left].BlobID) > spokenMS(temporarySpeakers, temporaryCandidates[right].BlobID)
 	})
 	for _, reference := range references {
 		candidate := recordingReferenceCandidate{SpeakerName: names[reference.SpeakerIdentityID], BlobID: reference.RecordingBlobID, DurationMS: reference.PassageEndMS - reference.PassageStartMS}
@@ -152,10 +154,10 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 	return speakerReferences, referenceBlobIds, nil
 }
 
-func lastHeardMS(temporarySpeakers []*models.RecordingTemporarySpeaker, blobId string) int64 {
+func spokenMS(temporarySpeakers []*models.RecordingTemporarySpeaker, blobId string) int64 {
 	for _, temporarySpeaker := range temporarySpeakers {
 		if temporarySpeaker.RecordingBlobID == blobId {
-			return temporarySpeaker.LastHeardEndMS
+			return temporarySpeaker.SpokenMS
 		}
 	}
 	return 0

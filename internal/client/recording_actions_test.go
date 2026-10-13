@@ -114,3 +114,13 @@ func TestSpeakerConfirmAcceptsTheAccountOwnerWithoutAName(test *testing.T) {
 		test.Fatal("the mutation document drops the owner flag")
 	}
 }
+
+func TestSpeakerNamesAsksForNamesContainingTheSearch(test *testing.T) {
+	operationName, variables, err := RecordingAction(RecordingActionArguments{Operation: "speaker-names", SearchText: "ali", PageSize: 5})
+	if err != nil || operationName != "SuggestRecordingSpeakerNames" || variables["searchText"] != "ali" || variables["pageSize"] != 5 {
+		test.Fatal("the search was not sent", operationName, variables, err)
+	}
+	if !strings.Contains(RecordingDocuments["SuggestRecordingSpeakerNames"], "speakerNameSource") {
+		test.Fatal("the document does not ask where each name came from")
+	}
+}

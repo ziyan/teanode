@@ -13,6 +13,7 @@ type RecordingSpeakerQuery interface {
 	ReadRecordingReferenceInvalidations(context.Context, RecordingArguments) ([]*models.RecordingReferenceInvalidation, error)
 	ReadRecordingLearning(context.Context, RecordingArguments) (*models.RecordingLearningView, error)
 	ReadRecordingSpeakers(context.Context, RecordingArguments) (*RecordingSpeakersView, error)
+	SuggestRecordingSpeakerNames(context.Context, SuggestRecordingSpeakerNamesArguments) ([]*RecordingSpeakerNameSuggestion, error)
 }
 
 // RecordingSpeakerMutation applies explicit user confirmations without retranscription.

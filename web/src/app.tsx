@@ -22,6 +22,7 @@ import { PasskeyNudge } from './components/passkeyNudge'
 import { SessionProvider, hasAnywhere } from './session'
 import { firstManagementPath } from './components/sidebar'
 import { AgentDrawer } from './components/agentDrawer'
+import { RecordingBar } from './recording/recordingBar'
 import { MailboxesProvider } from './mailboxes'
 import { homePath } from './services'
 import { ServiceGate } from './components/serviceGate'
@@ -523,6 +524,8 @@ export function App() {
               </main>
             </div>
             {session.username && <AgentDrawer />}
+            {/* Above the agent's button while a recording is made or sent. */}
+            {session.username && <RecordingBar />}
           </div>
         </BreadcrumbProvider>
       </MailboxesProvider>

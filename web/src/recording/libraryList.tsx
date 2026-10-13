@@ -43,10 +43,13 @@ export function RecordingLibraryTable({
   recordings,
   evidenceByRecordingId,
   loading,
+  search,
 }: {
   recordings: Recording[]
   evidenceByRecordingId: Record<string, RecordingStatusEvidence>
   loading?: boolean
+  // search is the page's box that searches the server, in the table's toolbar.
+  search?: React.ReactNode
 }) {
   const { t, plural } = useTranslation()
   const rows = useMemo(() => sortRecordingsNewestFirst(recordings), [recordings])
@@ -107,6 +110,7 @@ export function RecordingLibraryTable({
   ]
   return (
     <DataTable
+      search={search}
       columns={columns}
       rows={rows}
       rowKey={(recording) => recording.id}

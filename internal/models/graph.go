@@ -281,6 +281,17 @@ const (
 	EvidenceMemory       EvidenceKind = "memory"
 	EvidencePerson       EvidenceKind = "person"
 
+	// The records of the person's own that evidence can name, besides mail
+	// and contact above: the same words as the kinds of record a page can
+	// be linked to (AgentRecordKind), so that a fact's source opens the
+	// record. A recording passage carries its range, see Evidence.
+	EvidenceCalendarEvent       EvidenceKind = "calendar_event"
+	EvidenceReminder            EvidenceKind = "reminder"
+	EvidenceConversationMessage EvidenceKind = "conversation_message"
+	EvidenceFinanceTransaction  EvidenceKind = "finance_transaction"
+	EvidenceFinanceReceipt      EvidenceKind = "finance_receipt"
+	EvidenceRecordingPassage    EvidenceKind = "recording_passage"
+
 	// EvidenceDream is the agent's own reasoning rather than anything it
 	// read: the path a nightly walk took to reach a page. It has its own
 	// kind so that no reader mistakes the walk for a document.
@@ -304,6 +315,13 @@ type Evidence struct {
 	// At is when the evidence was written, where that is known and
 	// different from when the fact was filed.
 	At *time.Time `json:"at,omitempty"`
+
+	// For a recording passage, ID is the recording and these are the
+	// transcript it was read in and the range, in milliseconds, so that the
+	// dashboard opens the recording at the passage. Zero for any other kind.
+	TranscriptRunID string `json:"transcriptRunId,omitempty"`
+	StartMS         int64  `json:"startMS,omitempty"`
+	EndMS           int64  `json:"endMS,omitempty"`
 }
 
 // AgentFact is one sentence kept on a page.

@@ -133,6 +133,10 @@ extension Documents {
         mutation ($recordingTranscriptRunId: String!) { CancelRecordingTranscription(recordingTranscriptRunId:
         $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }
         """
+    public static let suggestRecordingSpeakerNames = """
+        query ($searchText: String, $pageSize: Int) { SuggestRecordingSpeakerNames(searchText: $searchText, pageSize: $pageSize) {
+        confirmedName speakerNameSource } }
+        """
     public static let readRecordingSpeakers = """
         query ($recordingId: String!) { ReadRecordingSpeakers(recordingId: $recordingId) { \(recordingSpeakersFields) } }
         """
@@ -206,6 +210,13 @@ extension Connection {
         return try await execute(
             Documents.cancelRecordingTranscription, variables: ["recordingTranscriptRunId": .string(recordingTranscriptRunId)], as: Answer.self
         ).CancelRecordingTranscription
+    }
+    /// Names to offer while a speaker is named: voices already named, then people in the agent's memory, then contacts.
+    public func suggestRecordingSpeakerNames(searchText: String) async throws -> [RecordingSpeakerNameSuggestion] {
+        struct Answer: Decodable, Sendable { let SuggestRecordingSpeakerNames: [RecordingSpeakerNameSuggestion] }
+        return try await execute(
+            Documents.suggestRecordingSpeakerNames, variables: ["searchText": .string(searchText)], as: Answer.self
+        ).SuggestRecordingSpeakerNames
     }
     public func recordingSpeakers(recordingId: String) async throws -> RecordingSpeakersView {
         struct Answer: Decodable, Sendable { let ReadRecordingSpeakers: RecordingSpeakersView }
@@ -287,4 +298,11 @@ extension Connection {
             ], as: Answer.self
         ).DeleteRecordingVoiceReference
     }
+}
+
+/// RecordingSpeakerNameSuggestion is a name offered for a speaker and where it came from: speaker, memory or contact.
+public struct RecordingSpeakerNameSuggestion: Codable, Hashable, Sendable, Identifiable {
+    public let confirmedName: String
+    public let speakerNameSource: String
+    public var id: String { confirmedName }
 }

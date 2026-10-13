@@ -366,15 +366,33 @@ struct RecordingsScreen: View {
             }
             .toolbar {
                 MenuButton()
+                // One menu for a new recording, made here or brought in. A
+                // recording under way is reached from its row, its Live
+                // Activity, or the first item here.
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        isImporting = true
+                    Menu {
+                        if recorder.hasSession {
+                            Button {
+                                isShowingCapture = true
+                            } label: {
+                                Label("Show the recording", systemImage: "waveform")
+                            }
+                        } else {
+                            Button(action: startRecording) {
+                                Label("Start recording", systemImage: "mic")
+                            }
+                            .disabled(isStarting)
+                        }
+                        Button {
+                            isImporting = true
+                        } label: {
+                            Label("Import audio or video", systemImage: "square.and.arrow.down")
+                        }
                     } label: {
-                        Label("Import audio or video", systemImage: "square.and.arrow.down")
+                        Label("New recording", systemImage: "plus")
                     }
                 }
             }
-            .contentMargins(.bottom, 96, for: .scrollContent)
             .refreshable { await model.load() }
             .task {
                 await recorder.recover(accountKey: model.connection.accountKey)
@@ -387,11 +405,6 @@ struct RecordingsScreen: View {
                 }
             }
             .toast(done: $model.doneText, problem: $model.problemText)
-            .safeAreaInset(edge: .bottom) {
-                RecordingFloatingButton(
-                    isRecording: recorder.hasSession, elapsedMS: recorder.elapsedMS, isStarting: isStarting,
-                    onStart: startRecording, onShow: { isShowingCapture = true })
-            }
             .sheet(isPresented: $isShowingCapture) {
                 RecordingCaptureScreen(connection: model.connection) {
                     await model.refresh()
@@ -476,52 +489,9 @@ struct RecordingsScreen: View {
     }
 }
 
-/// RecordingFloatingButton is the round record button that floats over the bottom of the library. While a recording is under
-/// way it shows the time instead, and opens the recording screen.
-struct RecordingFloatingButton: View {
-    let isRecording: Bool
-    let elapsedMS: Int64
-    let isStarting: Bool
-    let onStart: @MainActor () -> Void
-    let onShow: @MainActor () -> Void
-
-    var body: some View {
-        GlassEffectContainer {
-            if isRecording {
-                Button(action: onShow) {
-                    Label {
-                        Text(Duration.milliseconds(elapsedMS).formatted(.time(pattern: .hourMinuteSecond)))
-                            .monospacedDigit().contentTransition(.numericText())
-                    } icon: {
-                        Image(systemName: "waveform")
-                    }
-                    .font(.headline)
-                    .padding(.horizontal, 8)
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.extraLarge)
-                .accessibilityLabel("Show the recording")
-            } else {
-                Button(action: onStart) {
-                    Image(systemName: "mic.fill")
-                        .font(.largeTitle)
-                        .padding(8)
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
-                .controlSize(.extraLarge)
-                .disabled(isStarting)
-                .accessibilityLabel("Start recording")
-            }
-        }
-        .padding(.bottom, 8)
-        .sensoryFeedback(.impact, trigger: isRecording)
-    }
-}
-
 /// RecordingRowView is one recording in the library, laid out as a mail row
-/// is: a round mark, the name with when it was made on the right, how long
-/// it runs and where it stands, then a line of what was said.
+/// is but without a picture: the name with when it was made on the right,
+/// how long it runs and where it stands, then a line of what was said.
 struct RecordingRowView: View {
     let row: RecordingLibraryRow
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -535,7 +505,6 @@ struct RecordingRowView: View {
                 .frame(width: 8, height: 8)
                 .padding(.top, 16)
                 .accessibilityHidden(true)
-            RecordingMark(origin: row.recording?.recordingOrigin ?? row.localRecording?.recordingOrigin ?? "capture", isLive: isLive)
             VStack(alignment: .leading, spacing: 3) {
                 // At the accessibility sizes there is no room for the time
                 // beside the name: each goes on a line of its own.
@@ -589,33 +558,6 @@ struct RecordingRowView: View {
 
     private var duration: some View {
         Text(RecordingDuration.text(row.timelineDurationMS)).monospacedDigit().lineLimit(1)
-    }
-}
-
-/// RecordingMark stands where a mail row has the sender's logo: what kind of
-/// recording it is, in the accent color, and red while it is being recorded.
-struct RecordingMark: View {
-    let origin: String
-    let isLive: Bool
-
-    var body: some View {
-        // The circle stays the size of a mail row's logo at every text size,
-        // so its glyph does too.
-        Image(systemName: symbolName)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(.white)
-            .symbolEffect(.pulse, isActive: isLive)
-            .frame(width: 40, height: 40)
-            .background(isLive ? AnyShapeStyle(.red) : AnyShapeStyle(.tint), in: .circle)
-            .accessibilityHidden(true)
-    }
-
-    private var symbolName: String {
-        switch origin {
-        case "videoImport": "video.fill"
-        case "audioImport": "waveform"
-        default: "mic.fill"
-        }
     }
 }
 
@@ -676,7 +618,7 @@ struct RecordingLibraryPlaceholder: View {
             ProgressView("Loading recordings").padding()
         case .empty:
             ContentUnavailableView(
-                "No recordings", systemImage: "waveform", description: Text("Tap the microphone to start a recording, or import audio or video."))
+                "No recordings", systemImage: "waveform", description: Text("Tap + to start a recording or import audio or video."))
         case .failed(let failureText):
             ContentUnavailableView("Cannot load recordings", systemImage: "exclamationmark.triangle", description: Text(failureText))
         }
@@ -730,18 +672,6 @@ enum RecordingDuration {
     }
     #Preview("Library failed, dark") {
         RecordingLibraryPlaceholder(phase: .failed("The server did not answer.")).preferredColorScheme(.dark)
-    }
-    #Preview("Record button, light") {
-        RecordingFloatingButton(isRecording: false, elapsedMS: 0, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.light)
-    }
-    #Preview("Record button, dark") {
-        RecordingFloatingButton(isRecording: false, elapsedMS: 0, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.dark)
-    }
-    #Preview("Recording under way, light") {
-        RecordingFloatingButton(isRecording: true, elapsedMS: 754_000, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.light)
-    }
-    #Preview("Recording under way, dark") {
-        RecordingFloatingButton(isRecording: true, elapsedMS: 754_000, isStarting: false, onStart: {}, onShow: {}).preferredColorScheme(.dark)
     }
 #endif
 

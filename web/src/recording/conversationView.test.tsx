@@ -144,9 +144,13 @@ const swipe = (bubble: HTMLElement, points: [number, number][]) => {
   fireEvent.pointerUp(bubble, at(lastX, lastY))
 }
 const bubbleOf = (text: string) => screen.getByText(text).closest('.agent-line') as HTMLElement
-const openMenu = async () => {
-  fireEvent.click(await screen.findByRole('button', { name: 'Actions for this passage' }))
-  return screen.getByRole('menu')
+// tapBubble is a finger's tap on a bubble's words, which opens its actions.
+const tapBubble = (text: string) => {
+  const words = screen.getByText(text)
+  const at = { pointerId: 7, pointerType: 'touch', clientX: 50, clientY: 50 }
+  fireEvent.pointerDown(words, at)
+  fireEvent.pointerUp(words, at)
+  fireEvent.click(words)
 }
 
 it('draws bubbles with the agent chat classes, the owner on the right', async () => {
@@ -198,21 +202,26 @@ it('does nothing for a short swipe or a scroll, and a long press opens no menu',
   expect(passagePlayback.play).not.toHaveBeenCalled()
 })
 
-it('offers the other actions from the More button in the dashboard menu', async () => {
+it('offers its actions in the corner, and in a pill a tap opens, as the agent chat does', async () => {
   show([segment('one')])
-  const menu = await openMenu()
+  await screen.findByText('Text of one')
+  for (const label of ['Correct text', 'Name speaker', 'This is me'])
+    expect(screen.getByRole('button', { name: label })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
+  tapBubble('Text of one')
+  const pill = screen.getByRole('menu')
   expect(
-    within(menu)
+    within(pill)
       .getAllByRole('menuitem')
-      .map((item) => item.textContent),
-  ).toEqual(['Correct text', 'Name speaker', 'This is me'])
+      .map((item) => item.getAttribute('aria-label')),
+  ).toEqual(['Play', 'Copy', 'Correct text', 'Name speaker', 'This is me'])
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(screen.queryByRole('menu')).toBeNull()
 })
 
 it('corrects text through the shared dialog', async () => {
   const { onChanged } = show([segment('one')])
-  fireEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Correct text' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Correct text' }))
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Better words' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -227,7 +236,7 @@ it('corrects text through the shared dialog', async () => {
 
 it('names a speaker through the shared dialog', async () => {
   show([segment('one')])
-  fireEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Name speaker' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Name speaker' }))
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'Fixture Guest' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -235,22 +244,22 @@ it('names a speaker through the shared dialog', async () => {
   expect(calls('CorrectRecordingSpeaker')[0][1]).toMatchObject({
     confirmedName: 'Fixture Guest',
     localSpeakerId: 'local-one',
-    passageStartMS: 2000,
-    passageEndMS: 4000,
+    // The voice, every passage of it in the request, not one span of time.
+    passageStartMS: -1,
+    passageEndMS: -1,
   })
 })
 
 it('marks a passage as the account owner, and Not me opens the name form', async () => {
   const { onChanged } = show([segment('mine', confirmed('Fixture Owner', 'identity-owner', true)), segment('other')])
   await screen.findByText('Text of other')
-  const [mineMore, otherMore] = screen.getAllByRole('button', { name: 'Actions for this passage' })
-  fireEvent.click(otherMore)
-  fireEvent.click(screen.getByRole('menuitem', { name: 'This is me' }))
+  fireEvent.click(screen.getByRole('button', { name: 'This is me' }))
   await waitFor(() => expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1))
   expect(calls('CorrectRecordingSpeakerOwner')[0][1]).toMatchObject({ isAccountOwner: true, confirmedName: '' })
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
-  fireEvent.click(mineMore)
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Not me' }))
+  // Your own bubble offers one way to say who it was: Not me, not Name speaker too.
+  expect(within(bubbleOf('Text of mine')).queryByRole('button', { name: 'Name speaker' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Not me' }))
   // Releasing a passage is confirming it as somebody else: the name form opens.
   expect(within(screen.getByRole('dialog')).getByRole('combobox')).toBeTruthy()
   expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1)
@@ -261,7 +270,7 @@ it('opens an exact older version read-only, without correction actions', async (
   await screen.findByText('Text of one')
   expect(calls('ReadRecordingTranscript')[0][1]).toMatchObject({ recordingTranscriptRunId: 'older-run' })
   expect(screen.getByText('You are reading an earlier transcript.')).toBeTruthy()
-  expect(screen.queryByRole('button', { name: 'Actions for this passage' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Correct text' })).toBeNull()
 })
 
 it('shows the advanced panels in the details drawer and closes with Escape', async () => {
@@ -310,4 +319,19 @@ it('shows the advanced panels in the details drawer and closes with Escape', asy
   expect(within(drawer).getByText('Text correction history')).toBeTruthy()
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(onClose).toHaveBeenCalled()
+})
+
+it('corrects a bubble of two passages, saving only the passage that changed', async () => {
+  show([segment('one'), segment('two', { segmentStartMS: 4000, segmentEndMS: 6000 })])
+  fireEvent.click(await screen.findByRole('button', { name: 'Correct text' }))
+  const dialog = screen.getByRole('dialog')
+  const boxes = within(dialog).getAllByRole('textbox')
+  expect(boxes).toHaveLength(2)
+  fireEvent.change(boxes[1], { target: { value: 'Second passage, corrected' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(calls('CorrectRecordingTranscriptText')).toHaveLength(1))
+  expect(calls('CorrectRecordingTranscriptText')[0][1]).toMatchObject({
+    recordingTranscriptSegmentId: 'two',
+    correctedTranscriptText: 'Second passage, corrected',
+  })
 })

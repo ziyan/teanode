@@ -575,6 +575,16 @@ type AgentGraphPageResult struct {
 
 	// Contact is the address book entry this page is about, for a person.
 	Contact *models.Contact `json:"contact" graphapi:"nullable"`
+
+	// RecordLinks are the first of the page's links to the person's own
+	// records, each found again for the person, and RecordLinkCount how
+	// many there are; ListAgentRecordLinks reads the rest.
+	RecordLinks     []*AgentRecordLinkView `json:"recordLinks"`
+	RecordLinkCount int                    `json:"recordLinkCount"`
+
+	// EvidenceRecords are the records that the facts' evidence names, so
+	// that a fact's source opens the record.
+	EvidenceRecords []*AgentEvidenceRecordView `json:"evidenceRecords"`
 }
 
 // AgentGraphSearchResult is what words found.
@@ -862,6 +872,19 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageR
 		if err != nil {
 			return nil, err
 		}
+	}
+	// The page's links to the person's other records. The person's own
+	// dashboard: all of them, whatever the agent was granted.
+	recordLinks, err := tx.ListAgentRecordLinks(found.ID, node.ID)
+	if err != nil {
+		return nil, err
+	}
+	result.RecordLinkCount = len(recordLinks)
+	if result.RecordLinks, err = self.recordLinkViews(tx, found, recordLinks[:min(len(recordLinks), recordLinksOnPage)], node); err != nil {
+		return nil, err
+	}
+	if result.EvidenceRecords, err = self.evidenceRecordsOf(tx, found, result.Facts); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

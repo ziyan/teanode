@@ -44,6 +44,7 @@ type Query interface {
 	AgentAskQuery
 	AgentMemoryQuery
 	AgentGraphQuery
+	AgentRecordLinkQuery
 	AgentCodingQuery
 	AgentEvaluationQuery
 	AgentIdeaQuery
@@ -121,6 +122,7 @@ type Mutation interface {
 	AgentAskMutation
 	AgentMemoryMutation
 	AgentGraphMutation
+	AgentRecordLinkMutation
 	AgentCodingMutation
 	AgentSpeakFirstMutation
 	AgentEvaluationMutation

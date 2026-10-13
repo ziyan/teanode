@@ -227,5 +227,14 @@ func (self *Agent) createRecordingTemporarySpeaker(ctx context.Context, userId s
 			return transaction.VerifyRecordingBlob(userId, sampleBlob.ID, hex.EncodeToString(digest[:]))
 		})
 	}
-	return nil
+	// No passage gave a clean sample: the speaker still gets a label, so the
+	// conversation shows "Speaker N" for every voice and each can be named.
+	err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingTemporarySpeaker(userId, &models.RecordingTemporarySpeaker{RecordingID: transcriptRun.RecordingID, SourceAttemptID: attempt.ID, SourceLocalSpeakerID: localSpeakerId}, nil, int64(maximumAccountBytes))
+		return err
+	})
+	if errors.Is(err, db.ErrTooMuchAsked) {
+		return nil
+	}
+	return err
 }

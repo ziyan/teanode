@@ -14,7 +14,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.setNotificationCategories(NotificationCategories.fixed)
+        HomeScreenActions.offer()
         return true
+    }
+
+    /// Every window gets HomeScreenActionsSceneDelegate, which is where iOS
+    /// hands over an action chosen on the app's icon while the app runs; one
+    /// chosen to launch it comes with the connection, here.
+    func application(
+        _ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        if let shortcutItem = options.shortcutItem { HomeScreenActions.perform(shortcutItem) }
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = HomeScreenActionsSceneDelegate.self
+        return configuration
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
@@ -56,5 +69,39 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     private func perform(_ pressed: PressedButton) async {
         await app.perform(pressed)
+    }
+}
+
+/// HomeScreenActions are the actions held up when the app's icon is pressed
+/// and held: Start recording, which does what the Siri phrase and the
+/// Control Center button do.
+@MainActor
+enum HomeScreenActions {
+    static let startRecordingType = "startRecording"
+
+    /// Set in code rather than in Info.plist so the title follows the
+    /// person's language like every other string.
+    static func offer() {
+        UIApplication.shared.shortcutItems = [
+            UIApplicationShortcutItem(
+                type: startRecordingType, localizedTitle: String(localized: "Start recording"), localizedSubtitle: nil,
+                icon: UIApplicationShortcutIcon(systemImageName: "mic"))
+        ]
+    }
+
+    @discardableResult
+    static func perform(_ shortcutItem: UIApplicationShortcutItem) -> Bool {
+        guard shortcutItem.type == startRecordingType else { return false }
+        AppModel.shared.openedSection = .recordings
+        AppModel.shared.isRecordingRequested = true
+        return true
+    }
+}
+
+/// HomeScreenActionsSceneDelegate takes an icon action chosen while the app
+/// is already running; SwiftUI keeps managing the window.
+final class HomeScreenActionsSceneDelegate: NSObject, UIWindowSceneDelegate {
+    func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem) async -> Bool {
+        await MainActor.run { HomeScreenActions.perform(shortcutItem) }
     }
 }

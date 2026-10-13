@@ -337,6 +337,22 @@
         }
       }
     },
+    "%@ is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已关闭"
+          }
+        }
+      }
+    },
     "%@ is offered again": {
       "localizations": {
         "ja": {
@@ -3649,6 +3665,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有一个工具调用无法读取，已重新请求。"
+          }
+        }
+      }
+    },
+    "A voice you named before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前名前を付けた声"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你之前命名过的声音"
           }
         }
       }
@@ -7829,6 +7861,22 @@
         }
       }
     },
+    "Cannot reach your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到你的服务器"
+          }
+        }
+      }
+    },
     "Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.": {
       "localizations": {
         "ja": {
@@ -9121,6 +9169,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已连接。"
+          }
+        }
+      }
+    },
+    "Connecting to your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接你的服务器"
           }
         }
       }
@@ -14069,6 +14133,38 @@
         }
       }
     },
+    "From your agent's memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの記憶から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你的助手记忆"
+          }
+        }
+      }
+    },
+    "From your contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你的联系人"
+          }
+        }
+      }
+    },
     "General": {
       "localizations": {
         "ja": {
@@ -16273,6 +16369,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "它只会显示这一次，请现在输入到邮件程序中。"
+          }
+        }
+      }
+    },
+    "It is turned off for this server. Turn it on in Services.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。「サービス」でオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。可在“服务”中开启。"
+          }
+        }
+      }
+    },
+    "It is turned off for this server. Whoever manages your TeaNode server can turn it on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。TeaNode サーバーの管理者がオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。管理你的 TeaNode 服务器的人可以将其开启。"
           }
         }
       }
@@ -20101,6 +20229,22 @@
         }
       }
     },
+    "New recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新录音"
+          }
+        }
+      }
+    },
     "New reminder": {
       "localizations": {
         "ja": {
@@ -23409,6 +23553,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开目标"
+          }
+        }
+      }
+    },
+    "Open Services": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サービスを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开服务"
           }
         }
       }
@@ -32501,6 +32661,22 @@
         }
       }
     },
+    "Suggestions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候補"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
     "Summaries": {
       "localizations": {
         "ja": {
@@ -32721,6 +32897,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟随系统"
+          }
+        }
+      }
+    },
+    "TeaNode could not ask your server what it runs. Check the connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はサーバーで動いているサービスを確認できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法向你的服务器查询其运行的服务。请检查网络连接后重试。"
           }
         }
       }
@@ -46672,18 +46864,18 @@
         }
       }
     },
-    "Tap the microphone to start a recording, or import audio or video.": {
+    "Tap + to start a recording or import audio or video.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "マイクをタップして録音を開始するか、音声または動画を読み込んでください。"
+            "value": "＋をタップして録音を開始するか、音声や動画を取り込みます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点按麦克风开始录音，或导入音频或视频。"
+            "value": "轻点 + 开始录音，或导入音频或视频。"
           }
         }
       }

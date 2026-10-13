@@ -350,6 +350,16 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 		if !isCaptureFinished {
 			return nil
 		}
+		// Another piece still being transcribed will do both when it is
+		// done; doing them now would name the recording from part of it.
+		hasUnfinishedPiece, err := transaction.HasUnfinishedRecordingTranscription(run.Agent.UserID, transcriptRun.RecordingID)
+		if err != nil {
+			return err
+		}
+		if hasUnfinishedPiece {
+			isCaptureFinished = false
+			return nil
+		}
 		return transaction.SyncRecordingKnowledge(run.Agent.UserID, transcriptRun.RecordingID)
 	}); err != nil {
 		return err

@@ -58,7 +58,8 @@ struct TeaNodeShortcuts: AppShortcutsProvider {
             intent: CallAgentIntent(), phrases: ["Call \(.applicationName)", "Talk to \(.applicationName)"],
             shortTitle: "Call", systemImageName: "waveform")
         AppShortcut(
-            intent: StartRecordingIntent(), phrases: ["Start a recording in \(.applicationName)"],
+            intent: StartRecordingIntent(),
+            phrases: ["Start a recording in \(.applicationName)", "Start recording in \(.applicationName)", "Record a meeting with \(.applicationName)"],
             shortTitle: "Record", systemImageName: "mic")
     }
 }

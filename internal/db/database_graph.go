@@ -82,6 +82,7 @@ type GraphOperation interface {
 	// ListAgentIndex is the top of the graph, pinned first then by
 	// importance: what a prompt carries. Dormant pages are never in it.
 	ListAgentIndex(agentId string, limit int) ([]*models.AgentNode, error)
+	ListAgentNodesOfKind(agentId string, kind models.AgentNodeKind, searchText string, limit int) ([]*models.AgentNode, error)
 
 	// ListAgentNodesUnder is every page at or below a path, oldest first,
 	// for a tree view and for the move above.
@@ -209,6 +210,30 @@ type GraphOperation interface {
 	// SetUserContact names the address book entry that is the account
 	// itself, and GetUserContact reads it back.
 	SetUserContact(userId, contactId string) error
+
+	// PutAgentRecordLink joins a page to one of the person's own records,
+	// or changes the join: the same page, record and relation said again
+	// is the same link. A statement is never turned back into a proposal
+	// by being proposed again. DeleteAgentRecordLink takes a page's links
+	// to a record away, those of one relation or, with none given, all of
+	// them, and says how many there were. A range limits it to one
+	// passage of a recording.
+	PutAgentRecordLink(link *models.AgentRecordLink) (*models.AgentRecordLink, error)
+	DeleteAgentRecordLink(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64) (int64, error)
+	GetAgentRecordLink(agentId, linkId string) (*models.AgentRecordLink, error)
+
+	// ListAgentRecordLinks is everything a page is linked to, grouped by
+	// the kind of record and newest first. ListAgentRecordBacklinks is the
+	// other direction: the pages linked to one record, with their paths
+	// filled in. For a passage of a recording, a range narrows it to the
+	// passages that overlap it.
+	ListAgentRecordLinks(agentId, nodeId string) ([]*models.AgentRecordLink, error)
+	ListAgentRecordBacklinks(agentId string, recordKind models.AgentRecordKind, recordId string, startMS, endMS int64, limit int) ([]*models.AgentRecordLink, error)
+
+	// SetAgentNodeContact names the address book entry a page is about,
+	// and empty clears it. It writes that one column: saving the whole
+	// page from a copy read earlier would put back whatever else changed.
+	SetAgentNodeContact(agentId, nodeId, contactId string) error
 }
 
 // --- rows -------------------------------------------------------------
@@ -886,6 +911,20 @@ func (self *transaction) FirstAgentFactLines(agentId string, nodeIds []string) (
 func (self *transaction) ListAgentNodeChildren(agentId, nodeId string) ([]*models.AgentNode, error) {
 	return self.nodesFrom(self.tx.Where(`"agent_id" = ? AND "parent_id" = ?`, agentId, nodeId).
 		Order(`"pinned" DESC, "importance" DESC, "path" ASC`))
+}
+
+// ListAgentNodesOfKind are an agent's live pages of one kind whose name or an
+// alias contains the search, case aside, the most important first.
+func (self *transaction) ListAgentNodesOfKind(agentId string, kind models.AgentNodeKind, searchText string, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query := self.tx.Where(`"agent_id" = ? AND "kind" = ? AND NOT "dormant"`, agentId, string(kind))
+	if trimmed := strings.TrimSpace(searchText); trimmed != "" {
+		like := "%" + escapeLike(strings.ToLower(trimmed)) + "%"
+		query = query.Where(`LOWER("name") LIKE ? OR LOWER("aliases"::text) LIKE ?`, like, like)
+	}
+	return self.nodesFrom(query.Order(`"importance" DESC, "modified_at" DESC`).Limit(limit))
 }
 
 func (self *transaction) ListAgentIndex(agentId string, limit int) ([]*models.AgentNode, error) {
@@ -1801,6 +1840,14 @@ func (self *transaction) MergeAgentNodes(agentId, fromPath, intoPath string) (*m
 		if err := self.PutAgentEdge(&moved); err != nil {
 			return nil, err
 		}
+	}
+	if err := self.moveAgentRecordLinks(agentId, from.ID, into.ID); err != nil {
+		return nil, err
+	}
+	// The card of the page that goes is the card of the one that stays,
+	// unless the survivor already has its own.
+	if into.ContactID == "" {
+		into.ContactID = from.ContactID
 	}
 	children, err := self.ListAgentNodeChildren(agentId, from.ID)
 	if err != nil {
