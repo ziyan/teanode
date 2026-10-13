@@ -16,7 +16,7 @@ import { useTranslation } from '../i18n/i18n'
 import { useSession } from '../session'
 import { RecordingProcessingPanel } from '../recording/processingPanel'
 import { RecordingPassagePlayback } from '../recording/playback'
-import { RecordingOriginalPlayer } from '../recording/originalPlayer'
+import { RecordingTimelinePlayer } from '../recording/timelinePlayer'
 import { RecordingConversation } from '../recording/conversationView'
 import { useCaptureSnapshot } from '../recording/captureSnapshot'
 import { RecordingDetailsDrawer } from '../recording/detailsDrawer'
@@ -449,12 +449,15 @@ function AccountRecordingsPage() {
               </section>
             ) : null}
             {/* The pieces of a capture in progress are not offered as originals
-                until it is stopped: there would be a player for each. */}
-            {(isLive ? [] : completeMedia).map((media) => (
-              <div className="recording-original" key={media.id}>
-                <RecordingOriginalPlayer media={media} passagePlayback={passagePlayback.current} />
-              </div>
-            ))}
+                until it is stopped. Once it is, all of them play in one player. */}
+            {!isLive && completeMedia.length > 0 ? (
+              <RecordingTimelinePlayer
+                key={`player-${view.recording.id}`}
+                mediaFiles={completeMedia}
+                timelineDurationMS={view.recording.timelineDurationMS}
+                passagePlayback={passagePlayback.current}
+              />
+            ) : null}
             {(isLive ? [] : incompleteMedia).map((media) => (
               <div className="recording-original" key={media.id}>
                 <p className="muted">
@@ -469,7 +472,6 @@ function AccountRecordingsPage() {
               key={view.recording.id}
               recordingId={view.recording.id}
               userId={session.userId ?? ''}
-              mediaFiles={view.mediaFiles}
               passagePlayback={passagePlayback.current}
               reloadToken={conversationReloadToken}
               isLive={isLive}
