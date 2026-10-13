@@ -213,11 +213,8 @@ struct RecordingBubbleView: View {
                             } label: {
                                 Label("Correct text", systemImage: "pencil")
                             }
-                            Button {
-                                actions.nameSpeaker(segment)
-                            } label: {
-                                Label("Name speaker", systemImage: "person.text.rectangle")
-                            }
+                            // Your own bubble has one way to say who it was
+                            // instead: Not me, which asks for the name.
                             if bubble.isAccountOwner {
                                 Button {
                                     actions.notMe(segment)
@@ -225,6 +222,11 @@ struct RecordingBubbleView: View {
                                     Label("Not me", systemImage: "person.crop.circle.badge.xmark")
                                 }
                             } else {
+                                Button {
+                                    actions.nameSpeaker(segment)
+                                } label: {
+                                    Label("Name speaker", systemImage: "person.text.rectangle")
+                                }
                                 Button {
                                     actions.thisIsMe(segment)
                                 } label: {

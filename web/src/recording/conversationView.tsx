@@ -234,7 +234,16 @@ export function RecordingConversation({
         icon: <PencilIcon size={16} />,
         onAct: () => setEditingGroup(group),
       })
-    if (canName)
+    // Your own bubble has one way to say who it was instead: Not me, which
+    // opens the name form, since there is no call that unsets the owner.
+    if (canName && firstSegment.isAccountOwner)
+      actions.push({
+        actionKey: 'owner',
+        label: t('recordings.notMe'),
+        icon: <UserIcon size={16} />,
+        onAct: () => nameSpeaker(firstSegment, groupEndMS),
+      })
+    else if (canName)
       actions.push(
         {
           actionKey: 'name',
@@ -244,14 +253,9 @@ export function RecordingConversation({
         },
         {
           actionKey: 'owner',
-          label: t(firstSegment.isAccountOwner ? 'recordings.notMe' : 'recordings.thisIsMe'),
+          label: t('recordings.thisIsMe'),
           icon: <UserIcon size={16} />,
-          // There is no call that unsets the owner: releasing a passage means
-          // confirming it as somebody else, so the name form opens.
-          onAct: () =>
-            firstSegment.isAccountOwner
-              ? nameSpeaker(firstSegment, groupEndMS)
-              : void setOwnership(firstSegment, groupEndMS),
+          onAct: () => void setOwnership(firstSegment, groupEndMS),
         },
       )
     return actions
