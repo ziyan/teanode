@@ -101,6 +101,10 @@ type UnmatchReceiptArguments struct {
 // FinanceReceiptsArguments narrow a page of receipts. Every field is
 // optional.
 type FinanceReceiptsArguments struct {
+	// ReceiptID keeps only this receipt, which is how a link to a receipt
+	// opens it.
+	ReceiptID string `json:"receiptId" graphapi:"nullable"`
+
 	// FinanceTransactionID keeps the receipts matched to this finance
 	// transaction.
 	FinanceTransactionID string `json:"financeTransactionId" graphapi:"nullable"`
@@ -468,6 +472,7 @@ func (self *graph) FinanceReceipts(ctx context.Context, arguments FinanceReceipt
 		return nil, err
 	}
 	filter := &db.FinanceReceiptFilter{
+		ReceiptID:            strings.TrimSpace(arguments.ReceiptID),
 		FinanceTransactionID: strings.TrimSpace(arguments.FinanceTransactionID),
 		IsUndated:            arguments.IsUndated != nil && *arguments.IsUndated,
 		IsUnmatched:          arguments.IsUnmatched != nil && *arguments.IsUnmatched,
