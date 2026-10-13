@@ -14,6 +14,10 @@ final class RecordingPlayer {
     private(set) var isPlaying = false
     private(set) var isPreparing = false
     private(set) var timelineMS: Int64 = 0
+    /// True from the first play until the person stops it. Pausing keeps it, so the floating player stays to play on.
+    private(set) var hasPlaybackSession = false
+    /// Where a bubble played on its own stops on the timeline. Nil when playing is not bounded.
+    private(set) var boundTimelineMS: Int64?
     var problemText: String?
     private var player: AVPlayer?
     private var loadedMedia: RecordingMedia?
@@ -38,16 +42,28 @@ final class RecordingPlayer {
         if isPlaying {
             player?.pause()
             isPlaying = false
+        } else if let boundTimelineMS, timelineMS < boundTimelineMS {
+            // A bubble paused part way plays on to the same end.
+            await play(fromTimelineMS: timelineMS, untilTimelineMS: boundTimelineMS)
         } else {
             await play(fromTimelineMS: timelineMS)
         }
     }
 
-    func play(fromTimelineMS target: Int64) async {
+    /// Plays one stretch of the timeline, such as a conversation bubble, and pauses at its end.
+    func playRange(fromTimelineMS rangeStartMS: Int64, untilTimelineMS rangeEndMS: Int64) async {
+        guard RecordingTimelinePieces.locateRange(rangeStartMS: rangeStartMS, rangeEndMS: rangeEndMS, in: mediaFiles) != nil else { return }
+        await play(fromTimelineMS: rangeStartMS, untilTimelineMS: rangeEndMS)
+    }
+
+    func play(fromTimelineMS target: Int64, untilTimelineMS rangeEndMS: Int64? = nil) async {
         // One timeline over every original: the position picks the original and the offset into it, and a position in a gap
         // between two originals is the start of the next.
         guard !isPreparing, let location = RecordingTimelinePieces.locate(timelineMS: target, in: mediaFiles) else { return }
         let media = location.media
+        // The end is in the same original as the start: a stretch that runs past it stops there.
+        let range = rangeEndMS.flatMap { RecordingTimelinePieces.locateRange(rangeStartMS: target, rangeEndMS: $0, in: mediaFiles) }
+        if rangeEndMS != nil, range == nil { return }
         isPreparing = true
         defer { isPreparing = false }
         do {
@@ -59,8 +75,11 @@ final class RecordingPlayer {
             }
             let offsetMS = location.offsetMS
             _ = await player.seek(to: CMTime(value: offsetMS, timescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+            player.currentItem?.forwardPlaybackEndTime = range.map { CMTime(value: $0.endOffsetMS, timescale: 1000) } ?? .invalid
+            boundTimelineMS = range?.endTimelineMS
             player.play()
             isPlaying = true
+            hasPlaybackSession = true
             timelineMS = media.timelineStartMS + offsetMS
             problemText = nil
         } catch {
@@ -71,12 +90,15 @@ final class RecordingPlayer {
     /// Moves to a point on the timeline, and goes on playing from there if it was playing.
     func seek(toTimelineMS target: Int64) async {
         timelineMS = RecordingTimelinePieces.locate(timelineMS: target, in: mediaFiles)?.timelineMS ?? target
+        boundTimelineMS = nil
         if isPlaying { await play(fromTimelineMS: target) }
     }
 
     func stop() {
         removePlayer()
         isPlaying = false
+        hasPlaybackSession = false
+        boundTimelineMS = nil
         if !MeetingRecorder.shared.hasSession {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
@@ -135,6 +157,12 @@ final class RecordingPlayer {
 
     /// An original ended: the next one carries on from its start, which skips any gap between them, or playing stops.
     private func playbackEnded() async {
+        // A bubble stops at its end, paused there, and does not go on into the next original.
+        if let boundTimelineMS {
+            isPlaying = false
+            timelineMS = boundTimelineMS
+            return
+        }
         guard let loadedMedia, let next = RecordingTimelinePieces.original(after: loadedMedia, in: mediaFiles) else {
             isPlaying = false
             return
@@ -235,6 +263,41 @@ struct RecordingMiniPlayerView: View {
     }
 }
 
+/// RecordingFloatingPlayerView is the small bar over the foot of the screen while the recording plays, so a bubble that was
+/// started can be paused or stopped from wherever the transcript is scrolled to.
+struct RecordingFloatingPlayerView: View {
+    let isPlaying: Bool
+    let isPreparing: Bool
+    let timelineMS: Int64
+    let onToggle: @MainActor () -> Void
+    let onStop: @MainActor () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onToggle) {
+                if isPreparing {
+                    ProgressView()
+                } else {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill").contentTransition(.symbolEffect(.replace))
+                }
+            }
+            .disabled(isPreparing)
+            .accessibilityLabel(isPlaying ? String(localized: "Pause") : String(localized: "Play"))
+            Text(RecordingDuration.text(timelineMS))
+                .font(.subheadline).monospacedDigit()
+                .accessibilityLabel(Text("Position in the recording"))
+                .accessibilityValue(Text(RecordingDuration.text(timelineMS)))
+            Button(action: onStop) { Image(systemName: "xmark") }
+                .accessibilityLabel(String(localized: "Stop playback"))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.bottom, 8)
+    }
+}
+
 #Preview("Player paused, light") {
     RecordingMiniPlayerView(
         canPlay: true, isPlaying: false, isPreparing: false, timelineMS: 125_000, durationMS: 754_000, onToggle: {}, onSeek: { _ in }
@@ -249,4 +312,12 @@ struct RecordingMiniPlayerView: View {
     RecordingMiniPlayerView(
         canPlay: false, isPlaying: false, isPreparing: false, timelineMS: 0, durationMS: 754_000, onToggle: {}, onSeek: { _ in }
     ).padding().preferredColorScheme(.light)
+}
+#Preview("Floating player playing, light") {
+    RecordingFloatingPlayerView(isPlaying: true, isPreparing: false, timelineMS: 125_000, onToggle: {}, onStop: {})
+        .padding().preferredColorScheme(.light)
+}
+#Preview("Floating player paused, dark") {
+    RecordingFloatingPlayerView(isPlaying: false, isPreparing: false, timelineMS: 125_000, onToggle: {}, onStop: {})
+        .padding().preferredColorScheme(.dark)
 }

@@ -189,6 +189,16 @@ struct RecordingDetailScreen: View {
             }
             .padding(.horizontal)
         }
+        // Over the foot of the screen, with the content pushed up by its height, so it never covers the last bubble.
+        .safeAreaInset(edge: .bottom) {
+            if player.hasPlaybackSession {
+                RecordingFloatingPlayerView(
+                    isPlaying: player.isPlaying, isPreparing: player.isPreparing, timelineMS: player.timelineMS,
+                    onToggle: { Task { await player.toggle() } }, onStop: { player.stop() })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.default, value: player.hasPlaybackSession)
         .onScrollGeometryChange(for: Bool.self) { geometry in geometry.contentOffset.y > 40 } action: { _, isScrolled in
             isTitleScrolledAway = isScrolled
         }

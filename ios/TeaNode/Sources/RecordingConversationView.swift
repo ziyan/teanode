@@ -486,7 +486,11 @@ struct RecordingConversationSection: View {
 
     private var actions: RecordingPassageActions {
         RecordingPassageActions(
-            play: { segment in Task { await player.play(fromTimelineMS: segment.segmentStartMS) } },
+            play: { segment in
+                // From the tapped passage to the end of its bubble, and then it stops.
+                let lastSegment = model.bubbles.first { bubble in bubble.segments.contains { $0.id == segment.id } }?.segments.last ?? segment
+                Task { await player.playRange(fromTimelineMS: segment.segmentStartMS, untilTimelineMS: lastSegment.segmentEndMS) }
+            },
             copy: { segment in
                 UIPasteboard.general.string = segment.displayedTranscriptText
                 model.doneText = String(localized: "Copied.")

@@ -32725,6 +32725,22 @@
         }
       }
     },
+    "Stop playback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生を停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播放"
+          }
+        }
+      }
+    },
     "Stop publishing this logo?": {
       "localizations": {
         "ja": {
