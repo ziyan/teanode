@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.151.5] - 2026-10-13
+
+### Fixed
+
+- Allow CLI recording import and resume to transfer valid slow upload parts beyond the normal one-minute request allowance. (#459)
+
 ## [0.151.4] - 2026-10-13
 
 ### Fixed
