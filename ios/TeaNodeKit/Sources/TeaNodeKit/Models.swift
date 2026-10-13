@@ -62,7 +62,8 @@ public struct AgentUsage: Codable, Hashable, Sendable {
 }
 
 /// AgentReference is something a message points at: a mail thread, a
-/// memory page, a finance transaction, or an earlier message replied to.
+/// memory page, a finance transaction, a recording, or an earlier message
+/// replied to.
 public struct AgentReference: Codable, Hashable, Sendable {
     public var itemId: String? = nil
     public var threadId: String? = nil
@@ -70,6 +71,8 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var from: String? = nil
     public var path: String? = nil
     public var name: String? = nil
+    public var recordingId: String? = nil
+    public var recordingTitle: String? = nil
     public var financeTransactionId: String? = nil
     public var postedOn: String? = nil
     public var amount: String? = nil
@@ -89,6 +92,13 @@ public struct AgentReference: Codable, Hashable, Sendable {
         self.currencyCode = currencyCode
         self.merchantName = merchantName
         self.description = description
+    }
+
+    /// A recording the message asks about. The server reads the title again
+    /// from the stored recording.
+    public init(recordingId: String, recordingTitle: String) {
+        self.recordingId = recordingId
+        self.recordingTitle = recordingTitle
     }
 
     /// A page of the agent's knowledge the message asks about.
@@ -116,6 +126,7 @@ public struct AgentReference: Codable, Hashable, Sendable {
 
     /// What the reference's chip says.
     public var label: String {
+        if let recordingTitle, !recordingTitle.isEmpty { return recordingTitle }
         if let subject, !subject.isEmpty { return subject }
         if let name, !name.isEmpty { return name }
         if let path, !path.isEmpty { return path }

@@ -18,8 +18,9 @@ function referenceDay(postedOn: string): string {
 }
 
 // referenceLabel is what a chip says about what the person pointed at: a
-// thread by its subject, a page of memory by its name, a finance
-// transaction by its day, merchant (or description) and amount.
+// thread by its subject, a page of memory by its name, a recording by
+// its title, a finance transaction by its day, merchant (or description)
+// and amount.
 export function referenceLabel(reference: AgentReference, t: ReturnType<typeof useTranslation>['t']): string {
   if (reference.financeTransactionId) {
     const amount = Number(reference.amount)
@@ -29,6 +30,8 @@ export function referenceLabel(reference: AgentReference, t: ReturnType<typeof u
       amount: Number.isFinite(amount) ? formatMoney(amount, reference.currencyCode) : (reference.amount ?? ''),
     })
   }
+  if (reference.recordingId)
+    return t('agentDrawer.recordingReference', { title: reference.recordingTitle || t('recordings.untitled') })
   return reference.subject || reference.name || reference.path || reference.itemId || reference.threadId || ''
 }
 
@@ -89,7 +92,7 @@ export function ReferenceChips({
         const label = referenceLabel(reference, t)
         return (
           <Tooltip
-            key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? ''}-${index}`}
+            key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? reference.recordingId ?? ''}-${index}`}
             label={referenceHint(reference)}
           >
             <span className="agent-reference-chip">

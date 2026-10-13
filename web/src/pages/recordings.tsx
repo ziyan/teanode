@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { graphql } from '../api'
+import { askAgentAbout, graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PageHeadingActions, useBreadcrumbDetail, useHeadingActionSlot } from '../components/breadcrumb'
-import { MoreIcon } from '../components/icons'
+import { MoreIcon, SparkIcon } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Pager } from '../components/pager'
+import { Tooltip } from '../components/tooltip'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
@@ -290,6 +291,33 @@ function AccountRecordingsPage() {
       )}
     />
   ) : null
+  // The agent, pointed at this recording: the drawer opens with a chip for
+  // it, or the agent page when there is no agent to open. The server reads
+  // the title again from the stored row.
+  const askAgentButton = view ? (
+    <Tooltip label={t('recordings.askAgent')}>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={t('recordings.askAgent')}
+        onClick={() => {
+          const isHandled = askAgentAbout({
+            recordingId: view.recording.id,
+            recordingTitle: view.recording.recordingTitle || t('recordings.untitled'),
+          })
+          if (!isHandled) navigate('/settings/agent')
+        }}
+      >
+        <SparkIcon size={18} />
+      </button>
+    </Tooltip>
+  ) : null
+  const recordingActions = (
+    <>
+      {askAgentButton}
+      {recordingMenu}
+    </>
+  )
   return (
     <div className="recording-page">
       <ErrorMessage error={recordingId ? detail.error : library.error} />
@@ -363,7 +391,7 @@ function AccountRecordingsPage() {
                   ) : null}
                 </p>
               </div>
-              {headingActionSlot ? createPortal(recordingMenu, headingActionSlot) : recordingMenu}
+              {headingActionSlot ? createPortal(recordingActions, headingActionSlot) : recordingActions}
             </div>
             {view.recording.recordingSummary ? (
               <section className="recording-summary">

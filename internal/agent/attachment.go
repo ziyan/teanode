@@ -165,6 +165,12 @@ func referenceLines(references []models.AgentReference) string {
 			parts = append(parts, fmt.Sprintf("finance transaction %s (posted on %s, %s %s): described below when it was pointed at in this turn, else read it with the finance tool (transactions with finance_transaction_ids); act on it by that id with the same tool if asked, as categorize_transaction does",
 				reference.FinanceTransactionID, reference.PostedOn, reference.Amount, reference.CurrencyCode))
 		}
+		if reference.RecordingID != "" {
+			// A recording, not a message: the turn it was pointed at carries
+			// its summary fenced, and an earlier turn reads it with the tool.
+			parts = append(parts, fmt.Sprintf("recording %s (%q): described below when it was pointed at in this turn, else read it with the recording tool (read with recording_id); read its words with the same tool (transcript) when the answer needs them",
+				reference.RecordingID, reference.RecordingTitle))
+		}
 		if reference.QuotedText != "" {
 			// A message of this conversation the person is answering: what
 			// they write is about it, and "this" or "that" means it.
@@ -204,6 +210,9 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 	for _, reference := range references {
 		if reference.FinanceTransactionContext != "" {
 			blocks = append(blocks, reference.FinanceTransactionContext)
+		}
+		if reference.RecordingContext != "" {
+			blocks = append(blocks, reference.RecordingContext)
 		}
 	}
 	blocks = append(blocks, text)
