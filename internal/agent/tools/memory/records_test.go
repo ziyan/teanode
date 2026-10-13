@@ -323,3 +323,35 @@ func TestLinksAreReadsAndLinkingIsAWrite(t *testing.T) {
 		}
 	}
 }
+
+// Taking back a proposed relation to a card leaves the card the page names
+// and its is_contact link alone, and is not remembered as the person turning
+// the proposal down, so it may be proposed again.
+func TestWithdrawingAnAboutLinkKeepsTheCardAndForgetsNothing(t *testing.T) {
+	shelf, release := aRecordShelf(t, "fixture-about")
+	defer release()
+	shelf.say(t, "Yes, this is my friend's card, please remember that.")
+	if _, err := shelf.call(t, shelf.run, `{"action":"link","path":"people/fixture-friend","record":"contact:`+shelf.granted.ID+
+		`","relation":"is_contact","link_status":"stated","quote":"this is my friend's card"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shelf.call(t, shelf.run, `{"action":"link","path":"people/fixture-friend","record":"contact:`+shelf.granted.ID+`","relation":"about"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shelf.call(t, shelf.run, `{"action":"unlink","path":"people/fixture-friend","record":"contact:`+shelf.granted.ID+`","relation":"about"}`); err != nil {
+		t.Fatalf("withdrawing a proposal needs no words of theirs: %s", err)
+	}
+	dbtest.RunTransactionOn(t, shelf.database, func(tx db.Transaction) {
+		node, _ := tx.GetAgentNode(shelf.run.agent.ID, "people/fixture-friend")
+		if node.ContactID != shelf.granted.ID {
+			t.Errorf("removing an about link cleared the card: %q", node.ContactID)
+		}
+		links, _ := tx.ListAgentRecordLinks(shelf.run.agent.ID, node.ID)
+		if len(links) != 1 || links[0].RecordRelation != models.RecordRelationIsContact {
+			t.Errorf("only the about link goes: %v", links)
+		}
+		if dismissed, err := tx.ListAgentRecordLinkDismissals(shelf.run.agent.ID); err != nil || len(dismissed) != 0 {
+			t.Errorf("the agent's own withdrawal is remembered as a refusal: %v %v", dismissed, err)
+		}
+	})
+}

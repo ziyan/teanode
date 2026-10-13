@@ -2,6 +2,9 @@ package apigraph
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -286,6 +289,165 @@ func TestFactEvidenceNamesTheRecordItWasReadFrom(t *testing.T) {
 		}
 		if gone.EvidenceIndex != 1 || !gone.IsUnavailable {
 			t.Errorf("a contact that is gone: %+v", gone)
+		}
+	})
+}
+
+// Confirming a proposed is_contact link names the card on the page, as the
+// memory tool does, and removing that link takes the card away and is
+// remembered as the person's doing. Removing some other link to the same
+// card leaves both the card and its link where they were.
+func TestConfirmingAndRemovingAContactLinkMovesThePagesCard(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := aRecordWorld(t, tx)
+		ctx := world.ownContext(tx)
+		pagePath := "people/fixture-friend"
+		if _, err := tx.PutAgentRecordLink(&models.AgentRecordLink{
+			AgentID: world.agent.ID, NodeID: world.page.ID, RecordKind: models.RecordContact, RecordID: world.ownCard.ID,
+			RecordRelation: models.RecordRelationIsContact, LinkStatus: models.EdgeProposed,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		page, err := resolver.AgentGraphPage(ctx, AgentGraphPageReadArguments{Path: pagePath})
+		if err != nil || page.Node.ContactID != "" {
+			t.Fatalf("a guess names no card: %+v %v", page.Node, err)
+		}
+
+		if _, err := resolver.LinkAgentRecord(ctx, LinkAgentRecordArguments{
+			Path: pagePath, RecordKind: "contact", RecordID: world.ownCard.ID, RecordRelation: "is_contact",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		page, _ = resolver.AgentGraphPage(ctx, AgentGraphPageReadArguments{Path: pagePath})
+		if page.Node.ContactID != world.ownCard.ID || page.Contact == nil {
+			t.Fatalf("confirming the link names the card on the page: %+v", page.Node)
+		}
+
+		// Another relation to the same card is not the card's link.
+		if _, err := resolver.LinkAgentRecord(ctx, LinkAgentRecordArguments{
+			Path: pagePath, RecordKind: "contact", RecordID: world.ownCard.ID, RecordRelation: "about",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		removed, err := resolver.UnlinkAgentRecord(ctx, UnlinkAgentRecordArguments{
+			Path: pagePath, RecordKind: "contact", RecordID: world.ownCard.ID, RecordRelation: "about",
+		})
+		if err != nil || !removed {
+			t.Fatalf("the about link goes: %v %v", removed, err)
+		}
+		page, _ = resolver.AgentGraphPage(ctx, AgentGraphPageReadArguments{Path: pagePath})
+		if page.Node.ContactID != world.ownCard.ID || page.RecordLinkCount != 1 {
+			t.Errorf("removing an about link leaves the card: %+v %d", page.Node, page.RecordLinkCount)
+		}
+
+		removed, err = resolver.UnlinkAgentRecord(ctx, UnlinkAgentRecordArguments{
+			Path: pagePath, RecordKind: "contact", RecordID: world.ownCard.ID, RecordRelation: "is_contact",
+		})
+		if err != nil || !removed {
+			t.Fatalf("the is_contact link goes: %v %v", removed, err)
+		}
+		page, _ = resolver.AgentGraphPage(ctx, AgentGraphPageReadArguments{Path: pagePath})
+		if page.Node.ContactID != "" || page.Contact != nil || page.RecordLinkCount != 0 {
+			t.Errorf("removing the is_contact link takes the card: %+v %d", page.Node, page.RecordLinkCount)
+		}
+		dismissed, err := tx.ListAgentRecordLinkDismissals(world.agent.ID)
+		key := models.RecordLinkKey(world.page.ID, models.RecordContact, world.ownCard.ID, models.RecordRelationIsContact, 0, 0)
+		if err != nil || !dismissed[key] {
+			t.Errorf("the person's removal is remembered: %v %v", dismissed, err)
+		}
+	})
+}
+
+// Swapping a page's card for another is not the person turning the old card
+// down, so the old card may be proposed again.
+func TestSwappingAPagesCardDoesNotDismissTheOldOne(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := aRecordWorld(t, tx)
+		ctx := world.ownContext(tx)
+		for _, card := range []*models.Contact{world.ownCard, world.closedCard} {
+			if _, err := resolver.SetAgentNodeContact(ctx, SetAgentNodeContactArguments{Path: "people/fixture-friend", ContactID: card.ID}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		dismissed, err := tx.ListAgentRecordLinkDismissals(world.agent.ID)
+		if err != nil || len(dismissed) != 0 {
+			t.Errorf("a swap dismisses nothing: %v %v", dismissed, err)
+		}
+	})
+}
+
+// A link to a passage of a recording may name only a transcript run of that
+// recording, of a sane length.
+func TestLinkingAPassageChecksItsTranscriptRun(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := aRecordWorld(t, tx)
+		ctx := world.ownContext(tx)
+		runOf := func(clientRecordingId string) (*models.Recording, *models.RecordingTranscriptRun) {
+			recording, err := tx.CreateRecording(&models.Recording{UserID: world.owner.ID, ClientRecordingID: clientRecordingId, RecordingTitle: clientRecordingId, RecordingOrigin: models.RecordingOriginAudioImport})
+			if err != nil {
+				t.Fatal(err)
+			}
+			content := []byte("audio of " + clientRecordingId)
+			digest := sha256.Sum256(content)
+			digestText := hex.EncodeToString(digest[:])
+			media, err := tx.CreateRecordingMedia(world.owner.ID, &models.RecordingMedia{
+				RecordingID: recording.ID, ClientMediaID: clientRecordingId + "-media", OriginalFilename: "original.wav",
+				OriginalContentType: "audio/wav", OriginalSizeBytes: int64(len(content)), OriginalSHA256: digestText,
+			}, 1024, 4096)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.PutRecordingMediaPart(world.owner.ID, &models.RecordingMediaPart{RecordingMediaID: media.ID, PartIndex: 0, PartSizeBytes: int64(len(content)), PartSHA256: digestText}); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := tx.CompleteRecordingMedia(world.owner.ID, media.ID, digestText); err != nil {
+				t.Fatal(err)
+			}
+			transcriptRun, err := tx.CreateRecordingTranscriptRun(world.owner.ID, media.ID, world.agent.ID, clientRecordingId+"-run", "fixture:diarize", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return recording, transcriptRun
+		}
+		recording, transcriptRun := runOf("first-fixture")
+		_, otherRun := runOf("second-fixture")
+
+		link := func(transcriptRunId string) error {
+			_, err := resolver.LinkAgentRecord(ctx, LinkAgentRecordArguments{
+				Path: "people/fixture-friend", RecordKind: "recording_passage", RecordID: recording.ID, RecordRelation: "spoke_in",
+				TranscriptRunID: transcriptRunId, PassageStartMS: 1000, PassageEndMS: 2000,
+			})
+			return err
+		}
+		for name, transcriptRunId := range map[string]string{
+			"a run of another recording": otherRun.ID,
+			"a run that is not there":    "missing-run",
+			"a run too long to be one":   strings.Repeat("r", 200),
+		} {
+			if err := link(transcriptRunId); err == nil {
+				t.Errorf("%s was accepted", name)
+			}
+		}
+		if err := link(transcriptRun.ID); err != nil {
+			t.Errorf("a run of the recording is accepted: %s", err)
+		}
+		if err := link(""); err != nil {
+			t.Errorf("no run is accepted: %s", err)
 		}
 	})
 }

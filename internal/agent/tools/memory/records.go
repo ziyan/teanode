@@ -277,17 +277,16 @@ func recordLinkAction(ctx context.Context, run tools.Run, arguments *memoryArgum
 		case resolved.IsWithheld:
 			return fmt.Errorf("the person has not shared that %s with you, so you cannot link a page to it", recordKind)
 		}
+		if recordKind == models.RecordRecordingPassage {
+			if err := recordlink.ValidateTranscriptRun(tx, run.Agent().UserID, recordId, link.RecordDetail.TranscriptRunID); err != nil {
+				return err
+			}
+		}
 		link.NodeID = node.ID
-		if _, err := tx.PutAgentRecordLink(link); err != nil {
-			return err
-		}
-		// The page names its card when the person said so. A guess names
-		// nothing: the card shown on a page is what the person confirmed.
-		if recordKind == models.RecordContact && recordRelation == models.RecordRelationIsContact &&
-			link.LinkStatus == models.EdgeStated && node.Kind == models.NodePerson && node.ContactID == "" {
-			return tx.SetAgentNodeContact(run.Agent().ID, node.ID, recordId)
-		}
-		return nil
+		// A stated link to a card also names it on the page; a guess names
+		// nothing. The database keeps that rule.
+		_, err = tx.PutAgentRecordLink(link)
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -352,15 +351,16 @@ func recordUnlinkAction(ctx context.Context, run tools.Run, arguments *memoryArg
 				return fmt.Errorf("the person stated that link, so it goes only on their own words: quote what they just asked for in quote")
 			}
 		}
-		removed, err = tx.DeleteAgentRecordLink(run.Agent().ID, node.ID, recordKind, recordId, recordRelation, startMS, endMS)
-		if err != nil {
-			return err
+		// Only a link the person stated is theirs to have removed, and is
+		// remembered as removed. The agent taking back its own proposal is
+		// not the person turning it down, so the dream may propose it again.
+		// A card the page names goes with its is_contact link.
+		if hasStated {
+			removed, err = tx.DeleteAgentRecordLink(run.Agent().ID, node.ID, recordKind, recordId, recordRelation, startMS, endMS)
+		} else {
+			removed, err = tx.WithdrawAgentRecordLink(run.Agent().ID, node.ID, recordKind, recordId, recordRelation, startMS, endMS)
 		}
-		// A card the page names goes with its link.
-		if removed > 0 && recordKind == models.RecordContact && node.ContactID == recordId {
-			return tx.SetAgentNodeContact(run.Agent().ID, node.ID, "")
-		}
-		return nil
+		return err
 	}); err != nil {
 		return nil, err
 	}

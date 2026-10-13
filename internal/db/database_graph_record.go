@@ -152,13 +152,33 @@ func (self *transaction) PutAgentRecordLink(link *models.AgentRecordLink) (*mode
 		self.note(written.AgentID, written.NodeID, models.RevisionLinked, nil,
 			map[string]any{"path": written.Reference(), "relation": string(written.RecordRelation), "text": row.Note}, "")
 	}
+	// A page names its card when the link to it is stated: the card shown
+	// on a page is what the person confirmed, and a guess names nothing.
+	if written.RecordKind == models.RecordContact && written.RecordRelation == models.RecordRelationIsContact &&
+		stored.LinkStatus == string(models.EdgeStated) && node.Kind == models.NodePerson && node.ContactID == "" {
+		if err := self.SetAgentNodeContact(written.AgentID, node.ID, written.RecordID); err != nil {
+			return nil, err
+		}
+	}
 	return stored.toModel()
 }
 
 // recordLinkKeyWhere is the unique key of a link.
 const recordLinkKeyWhere = `"agent_id" = ? AND "node_id" = ? AND "record_kind" = ? AND "record_id" = ? AND "record_relation" = ? AND "passage_start_ms" = ? AND "passage_end_ms" = ?`
 
+// DeleteAgentRecordLink is a person taking links off a page, which the
+// automatic passes then leave off. WithdrawAgentRecordLink takes them off
+// without that memory, for a link nobody asked to be rid of: the agent
+// taking back its own proposal, or a card being swapped for another.
 func (self *transaction) DeleteAgentRecordLink(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64) (int64, error) {
+	return self.removeAgentRecordLinks(agentId, nodeId, recordKind, recordId, recordRelation, startMS, endMS, true)
+}
+
+func (self *transaction) WithdrawAgentRecordLink(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64) (int64, error) {
+	return self.removeAgentRecordLinks(agentId, nodeId, recordKind, recordId, recordRelation, startMS, endMS, false)
+}
+
+func (self *transaction) removeAgentRecordLinks(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64, shouldDismiss bool) (int64, error) {
 	query := self.tx.Where(`"agent_id" = ? AND "node_id" = ? AND "record_kind" = ? AND "record_id" = ?`,
 		agentId, nodeId, string(recordKind), recordId)
 	if recordRelation != "" {
@@ -167,14 +187,19 @@ func (self *transaction) DeleteAgentRecordLink(agentId, nodeId string, recordKin
 	if recordKind == models.RecordRecordingPassage && (startMS != 0 || endMS != 0) {
 		query = query.Where(`"passage_start_ms" = ? AND "passage_end_ms" = ?`, startMS, endMS)
 	}
-	// Remembered before the links go, so that the automatic passes do not
-	// make again what somebody just took away.
 	var removed []agentRecordLinkModel
 	if err := query.Session(&gorm.Session{}).Find(&removed).Error; err != nil {
 		return 0, err
 	}
 	now := time.Now().Truncate(time.Microsecond)
+	isContactLinkRemoved := false
 	for index := range removed {
+		isContactLinkRemoved = isContactLinkRemoved || removed[index].RecordRelation == string(models.RecordRelationIsContact)
+		if !shouldDismiss {
+			continue
+		}
+		// Remembered before the links go, so that the automatic passes do
+		// not make again what somebody just took away.
 		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&agentRecordLinkDismissalModel{
 			AgentID: removed[index].AgentID, NodeID: removed[index].NodeID,
 			RecordKind: removed[index].RecordKind, RecordID: removed[index].RecordID,
@@ -192,6 +217,19 @@ func (self *transaction) DeleteAgentRecordLink(agentId, nodeId string, recordKin
 	if result.RowsAffected > 0 {
 		self.note(agentId, nodeId, models.RevisionUnlinked,
 			map[string]any{"path": models.FormatRecordReference(recordKind, recordId, startMS, endMS), "relation": string(recordRelation)}, nil, "")
+	}
+	// A page's card goes with the link that named it, and only that link:
+	// a mail or a note about the same contact does not.
+	if isContactLinkRemoved && recordKind == models.RecordContact {
+		node, err := self.GetAgentNodeByID(agentId, nodeId)
+		if err != nil {
+			return 0, err
+		}
+		if node != nil && node.ContactID == recordId {
+			if err := self.SetAgentNodeContact(agentId, nodeId, ""); err != nil {
+				return 0, err
+			}
+		}
 	}
 	return result.RowsAffected, nil
 }
@@ -328,7 +366,18 @@ func (self *transaction) moveAgentRecordLinks(agentId, fromNodeId, intoNodeId st
 		return err
 	}
 	// What is left on the merged page went with its twin on the survivor.
-	return self.tx.Exec(`DELETE FROM "agent_record_link" WHERE "agent_id" = ? AND "node_id" = ?`, agentId, fromNodeId).Error
+	if err := self.tx.Exec(`DELETE FROM "agent_record_link" WHERE "agent_id" = ? AND "node_id" = ?`, agentId, fromNodeId).Error; err != nil {
+		return err
+	}
+	// What the person took off the merged page stays off the survivor,
+	// or the next dream would make the link again. A removal the survivor
+	// has already recorded is kept as it is; the rest go when the merged
+	// page is deleted.
+	return self.tx.Exec(`INSERT INTO "agent_record_link_dismissal"
+		("agent_id", "node_id", "record_kind", "record_id", "record_relation", "passage_start_ms", "passage_end_ms", "created_at")
+		SELECT "agent_id", ?, "record_kind", "record_id", "record_relation", "passage_start_ms", "passage_end_ms", "created_at"
+		FROM "agent_record_link_dismissal" WHERE "agent_id" = ? AND "node_id" = ?
+		ON CONFLICT DO NOTHING`, intoNodeId, agentId, fromNodeId).Error
 }
 
 // ListAgentRecordLinkStatuses is every record link of the agent as its key

@@ -103,8 +103,8 @@ func (self *graph) recordingLiveView(response http.ResponseWriter, request *http
 	defer func() { _ = connection.Close() }()
 	connection.SetReadLimit(voice.MaximumFrameBytes + 1024)
 	socket := &voiceSocket{conn: connection}
-	refuse := func(reason string) {
-		_ = socket.say(&voice.Event{VoiceEvent: voice.EventRefused, ErrorMessage: reason})
+	refuse := func(refusalReason string) {
+		_ = socket.say(&voice.Event{VoiceEvent: voice.EventRefused, ErrorMessage: refusalReason})
 	}
 
 	// Who this is, and where on the timeline the stream begins, come with

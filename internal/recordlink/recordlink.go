@@ -81,6 +81,28 @@ func Resolve(transaction db.Transaction, reader Reader, link *models.AgentRecord
 	return ResolveRecord(transaction, reader, link.RecordKind, link.RecordID, link.RecordDetail, link.PassageStartMS, link.PassageEndMS)
 }
 
+// maximumTranscriptRunIDLength is the longest transcript run identifier a
+// link keeps. The ones the server makes are far shorter; the bound is what
+// stops a client storing, and the dashboard echoing, an arbitrary string.
+const maximumTranscriptRunIDLength = 64
+
+// ValidateTranscriptRun says whether a link to a recording may name this
+// transcript run: none, or one of that recording. Somebody else's run is
+// reported as not there.
+func ValidateTranscriptRun(transaction db.Transaction, userId, recordingId, transcriptRunId string) error {
+	if transcriptRunId == "" {
+		return nil
+	}
+	if len(transcriptRunId) > maximumTranscriptRunIDLength {
+		return fmt.Errorf("recordlink: a transcript run identifier is at most %d characters", maximumTranscriptRunIDLength)
+	}
+	run, err := transaction.GetRecordingTranscriptRun(userId, transcriptRunId)
+	if errors.Is(err, db.ErrNotFound) || (err == nil && run.RecordingID != recordingId) {
+		return fmt.Errorf("recordlink: there is no transcript run %q of that recording", transcriptRunId)
+	}
+	return err
+}
+
 // ResolveRecord is Resolve for a record named without a link: the record
 // a person asks to link, or that a fact's evidence names.
 func ResolveRecord(transaction db.Transaction, reader Reader, recordKind models.AgentRecordKind, recordId string, detail models.AgentRecordDetail, startMS, endMS int64) (*Resolved, error) {

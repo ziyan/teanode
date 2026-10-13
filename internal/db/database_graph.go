@@ -217,9 +217,14 @@ type GraphOperation interface {
 	// by being proposed again. DeleteAgentRecordLink takes a page's links
 	// to a record away, those of one relation or, with none given, all of
 	// them, and says how many there were. A range limits it to one
-	// passage of a recording.
+	// passage of a recording. Deleting is the person's removal, which the
+	// automatic passes remember; WithdrawAgentRecordLink is the same
+	// without that memory, for the agent taking back its own proposal and
+	// for a card swapped for another. A stated link to a person page's
+	// card sets the page's contact, and removing that link clears it.
 	PutAgentRecordLink(link *models.AgentRecordLink) (*models.AgentRecordLink, error)
 	DeleteAgentRecordLink(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64) (int64, error)
+	WithdrawAgentRecordLink(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64) (int64, error)
 	GetAgentRecordLink(agentId, linkId string) (*models.AgentRecordLink, error)
 
 	// ListAgentRecordLinkDismissals is the links the person took off a

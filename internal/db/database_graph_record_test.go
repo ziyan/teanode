@@ -344,3 +344,114 @@ func TestItemsByReceivedTimeNeedNoOtherOption(t *testing.T) {
 		}
 	})
 }
+
+// What the person took off a page that is folded into another stays off the
+// survivor, so the next dream does not make the link again.
+func TestRemovedRecordLinksFollowAMerge(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		from, into := aPersonPage(t, tx, agent, "people/fixture-from"), aPersonPage(t, tx, agent, "people/fixture-into")
+		for _, recordId := range []string{"item-1", "item-2"} {
+			link := models.AgentRecordLink{AgentID: agent.ID, NodeID: from.ID, RecordKind: models.RecordMail, RecordID: recordId, RecordRelation: models.RecordRelationWrote}
+			if _, err := tx.PutAgentRecordLink(&link); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// The survivor already remembers one of the two removals.
+		if _, err := tx.PutAgentRecordLink(&models.AgentRecordLink{AgentID: agent.ID, NodeID: into.ID, RecordKind: models.RecordMail, RecordID: "item-2", RecordRelation: models.RecordRelationWrote}); err != nil {
+			t.Fatal(err)
+		}
+		for _, nodeId := range []string{from.ID, into.ID} {
+			if removed, err := tx.DeleteAgentRecordLink(agent.ID, nodeId, models.RecordMail, "item-2", "", 0, 0); err != nil || removed != 1 {
+				t.Fatalf("remove: %d %v", removed, err)
+			}
+		}
+		if removed, err := tx.DeleteAgentRecordLink(agent.ID, from.ID, models.RecordMail, "item-1", "", 0, 0); err != nil || removed != 1 {
+			t.Fatalf("remove: %d %v", removed, err)
+		}
+		if _, err := tx.MergeAgentNodes(agent.ID, from.Path, into.Path); err != nil {
+			t.Fatal(err)
+		}
+		dismissed, err := tx.ListAgentRecordLinkDismissals(agent.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, recordId := range []string{"item-1", "item-2"} {
+			if !dismissed[models.RecordLinkKey(into.ID, models.RecordMail, recordId, models.RecordRelationWrote, 0, 0)] {
+				t.Errorf("the survivor forgot the removal of %s: %v", recordId, dismissed)
+			}
+		}
+		if _, err := tx.DeleteAgentNode(agent.ID, into.Path); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// Only the person removing a link is remembered. The agent taking back its
+// own proposal, or a card swapped for another, leaves the link free to be
+// proposed again.
+func TestWithdrawingARecordLinkIsNotRemembered(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		page := aPersonPage(t, tx, agent, "people/fixture-one")
+		if _, err := tx.PutAgentRecordLink(&models.AgentRecordLink{
+			AgentID: agent.ID, NodeID: page.ID, RecordKind: models.RecordMail, RecordID: "item-1",
+			RecordRelation: models.RecordRelationWrote, LinkStatus: models.EdgeProposed,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if removed, err := tx.WithdrawAgentRecordLink(agent.ID, page.ID, models.RecordMail, "item-1", "", 0, 0); err != nil || removed != 1 {
+			t.Fatalf("withdraw: %d %v", removed, err)
+		}
+		if dismissed, err := tx.ListAgentRecordLinkDismissals(agent.ID); err != nil || len(dismissed) != 0 {
+			t.Errorf("a withdrawal is not a refusal: %v %v", dismissed, err)
+		}
+	})
+}
+
+// A stated link to a card names it on a person's page, a proposal does not,
+// and removing that one link (and no other to the same card) clears it.
+func TestAStatedContactLinkNamesTheCardAndItsRemovalClearsIt(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		page := aPersonPage(t, tx, agent, "people/fixture-one")
+		contactOf := func() string {
+			found, err := tx.GetAgentNodeByID(agent.ID, page.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return found.ContactID
+		}
+		link := models.AgentRecordLink{
+			AgentID: agent.ID, NodeID: page.ID, RecordKind: models.RecordContact, RecordID: "card-1",
+			RecordRelation: models.RecordRelationIsContact, LinkStatus: models.EdgeProposed,
+		}
+		if _, err := tx.PutAgentRecordLink(&link); err != nil || contactOf() != "" {
+			t.Fatalf("a proposal names no card: %q %v", contactOf(), err)
+		}
+		link.LinkStatus = models.EdgeStated
+		if _, err := tx.PutAgentRecordLink(&link); err != nil || contactOf() != "card-1" {
+			t.Fatalf("a stated link names the card: %q %v", contactOf(), err)
+		}
+		about := link
+		about.RecordRelation = models.RecordRelationAbout
+		if _, err := tx.PutAgentRecordLink(&about); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.DeleteAgentRecordLink(agent.ID, page.ID, models.RecordContact, "card-1", models.RecordRelationAbout, 0, 0); err != nil || contactOf() != "card-1" {
+			t.Fatalf("removing another relation keeps the card: %q %v", contactOf(), err)
+		}
+		if _, err := tx.DeleteAgentRecordLink(agent.ID, page.ID, models.RecordContact, "card-1", models.RecordRelationIsContact, 0, 0); err != nil || contactOf() != "" {
+			t.Fatalf("removing the is_contact link clears the card: %q %v", contactOf(), err)
+		}
+	})
+}

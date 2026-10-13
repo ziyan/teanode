@@ -318,6 +318,11 @@ func (self *graph) LinkAgentRecord(ctx context.Context, arguments LinkAgentRecor
 	if err := self.requireOwnRecord(tx, found, link.RecordKind, link.RecordID, link.RecordDetail, link.PassageStartMS, link.PassageEndMS); err != nil {
 		return nil, err
 	}
+	if link.RecordKind == models.RecordRecordingPassage {
+		if err := recordlink.ValidateTranscriptRun(tx, found.UserID, link.RecordID, link.RecordDetail.TranscriptRunID); err != nil {
+			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+	}
 	link.NodeID = node.ID
 	stored, err := tx.PutAgentRecordLink(link)
 	if err != nil {
@@ -391,7 +396,9 @@ func (self *graph) SetAgentNodeContact(ctx context.Context, arguments SetAgentNo
 		}
 	}
 	if node.ContactID != "" && node.ContactID != contactId {
-		if _, err := tx.DeleteAgentRecordLink(found.ID, node.ID, models.RecordContact, node.ContactID, models.RecordRelationIsContact, 0, 0); err != nil {
+		// Swapping a card is not the person removing the old link, so the
+		// dream may propose that card again.
+		if _, err := tx.WithdrawAgentRecordLink(found.ID, node.ID, models.RecordContact, node.ContactID, models.RecordRelationIsContact, 0, 0); err != nil {
 			return false, err
 		}
 	}
