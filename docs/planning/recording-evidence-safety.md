@@ -22,7 +22,9 @@ The flag is internal, not a user setting or model-supplied argument. Provenance 
 follow account-owned document, fact and overview citations with bounded traversal;
 missing or unreadable provenance refuses the result and restricts subsequent calls.
 Initial self-page and index context checks the same owned provenance before the first
-model request. Memory batches preserve the flag, including errors and retained deletion
+model request. Guarded turns read this context afresh because the existing cross-turn
+snapshot does not retain citations; ordinary conversation caching stays unchanged.
+Memory batches preserve the flag, including errors and retained deletion
 history.
 Human-started conversations and dreams that consume no recording evidence retain
 existing behavior. Background work cannot be started from an existing run conversation;

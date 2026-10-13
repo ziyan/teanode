@@ -2216,7 +2216,11 @@ func (self *AskRun) personSnapshot(ctx context.Context) (knowledge, selfLines []
 		conversationID = settings.Conversation.ID
 	}
 	now := time.Now()
-	if conversationID != "" {
+	// A cached conversation snapshot does not retain its citations. A dream
+	// reads the owned graph afresh so provenance is checked before that text
+	// reaches the model; the ordinary conversation cache stays unchanged.
+	canCacheSnapshot := conversationID != "" && !self.GuardRecordingEvidence()
+	if canCacheSnapshot {
 		if found, isFound := self.agent.promptSnapshots.Load(conversationID); isFound {
 			snapshot := found.(*promptSnapshot)
 			if snapshot.agentID == settings.Agent.ID && now.Sub(snapshot.takenAt) < promptSnapshotLasts {
@@ -2226,7 +2230,7 @@ func (self *AskRun) personSnapshot(ctx context.Context) (knowledge, selfLines []
 	}
 	knowledge = self.carryIndex(ctx, indexTokens)
 	selfLines = self.agent.selfLines(ctx, settings.Agent, settings.Owner)
-	if conversationID != "" {
+	if canCacheSnapshot {
 		self.agent.promptSnapshots.Store(conversationID, &promptSnapshot{agentID: settings.Agent.ID, knowledge: knowledge, self: selfLines, takenAt: now})
 		// The ones run out are let go here, so that the map holds only
 		// the conversations of the last half hour.

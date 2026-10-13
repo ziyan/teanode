@@ -234,6 +234,14 @@ func TestRecordingDreamInitialSnapshotRefusesProviderExecution(test *testing.T) 
 					test.Fatal(err)
 				}
 			})
+			cachedConversation := &models.AgentConversation{ID: "fixture-cached-context"}
+			worker.promptSnapshots.Store(cachedConversation.ID, &promptSnapshot{agentID: run.Agent.ID, knowledge: []string{"unmarked cached context"}, takenAt: time.Now()})
+			cachedContext := withRecordingEvidenceSafety(test.Context())
+			cachedTurn := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: cachedConversation, recordingEvidenceSafety: recordingEvidenceSafetyOf(cachedContext)}}
+			cachedKnowledge, _ := cachedTurn.personSnapshot(cachedContext)
+			if !recordingEvidenceSafetyOf(cachedContext).isRestricted() || strings.Contains(strings.Join(cachedKnowledge, "\n"), "unmarked cached context") {
+				test.Fatal("guarded turn reused an unmarked conversation snapshot")
+			}
 			var commandCount atomic.Int64
 			worker.AttachComputer(run.Agent.ID, &fakeComputer{agent: worker, agentId: run.Agent.ID, answers: func(string, json.RawMessage) (bool, string) { commandCount.Add(1); return true, `{}` }}, ComputerIdentity{Name: "fixture-computer", System: "linux", Home: "~"})
 			ctx := withRecordingEvidenceSafety(test.Context())
