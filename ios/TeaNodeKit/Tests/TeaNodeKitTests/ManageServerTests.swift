@@ -327,6 +327,30 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(sent["agent"]?["skipCertificateCheck"], .array([.string("camera.example.com"), .string("192.0.2.20")]))
     }
 
+    func testTheRecordingSettingsAreReadAndSavedAsTheDashboardSavesThem() async throws {
+        let withRecording = Self.agentSettingsAnswer.replacingOccurrences(
+            of: #""voice":{"#, with: #""recording":{"isLiveTranscriptionEnabled":false,"isAccurateWordsEnabled":true},"voice":{"#)
+        let settings = try JSONDecoder().decode(AgentServerSettings.self, from: Data(withRecording.utf8))
+        XCTAssertEqual(settings.recording, AgentServerSettings.RecordingOptions(isLiveTranscriptionEnabled: false, isAccurateWordsEnabled: true))
+        // A server that does not say has both on.
+        XCTAssertNil(try agentSettings().recording)
+        let unsaid = AgentServerRecordingDraft(nil)
+        XCTAssertTrue(unsaid.isLiveTranscriptionEnabled && unsaid.isAccurateWordsEnabled)
+
+        var draft = AgentServerRecordingDraft(settings.recording)
+        XCTAssertFalse(draft.isLiveTranscriptionEnabled)
+        draft.isLiveTranscriptionEnabled = true
+        draft.isAccurateWordsEnabled = false
+        XCTAssertEqual(
+            draft.agentParameters,
+            ["recording": .object(["isLiveTranscriptionEnabled": .bool(true), "isAccurateWordsEnabled": .bool(false)])])
+        let (connection, fake) = connection(answering: #"{"data":{"UpdateSettings":{"agent":"# + withRecording + "}}}")
+        _ = try await connection.updateAgentServerSettings(draft.agentParameters)
+        let sent = try sentVariables(fake.sent[0])
+        XCTAssertEqual(sent["agent"]?["recording"]?["isAccurateWordsEnabled"], .bool(false))
+        XCTAssertTrue(Documents.manageAgentSettingsFields.contains("recording { isLiveTranscriptionEnabled isAccurateWordsEnabled }"))
+    }
+
     func testARenamedProviderTakesItsModelsWithIt() throws {
         let settings = try agentSettings()
         var draft = AgentProviderDraft(settings.providers[0])

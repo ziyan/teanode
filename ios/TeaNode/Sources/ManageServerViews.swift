@@ -1897,6 +1897,7 @@ struct AgentAdminView: View {
                 NavigationLink { AgentProvidersView(model: model) } label: { Label("Providers", systemImage: "cpu") }
                 NavigationLink { AgentModelsFormView(model: model) } label: { Label("Models", systemImage: "square.stack.3d.up") }
                 NavigationLink { AgentVoiceFormView(model: model) } label: { Label("Voice", systemImage: "waveform") }
+                NavigationLink { AgentRecordingFormView(model: model) } label: { Label("Recording", systemImage: "record.circle") }
                 NavigationLink { AgentFeaturesFormView(model: model) } label: { Label("What people may turn on", systemImage: "switch.2") }
                 NavigationLink { AgentLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.67percent") }
             }
@@ -3381,6 +3382,29 @@ private struct AgentVoiceFormView: View {
             }
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+        }
+    }
+}
+
+/// AgentRecordingFormView is what the server does with a recording while it is captured and after: the live words, and the
+/// second transcription of each speaker's turn. Both are charged to the person's agent.
+private struct AgentRecordingFormView: View {
+    let model: AgentAdminModel
+
+    var body: some View {
+        AgentSettingsForm(model: model, title: "Recording", makeDraft: { AgentServerRecordingDraft($0.recording) }, parameters: { $0.agentParameters }) { draft, _ in
+            Section {
+                Toggle("Live transcription while recording", isOn: draft.isLiveTranscriptionEnabled)
+            } header: {
+                Text("Recording while capturing")
+            } footer: {
+                Text("Show words as they are spoken while a recording is being captured. The audio is also streamed through this server to the voice provider's realtime transcription, billed by the minute to the person's agent, and the words are kept only until the saved audio has been transcribed with speakers.")
+            }
+            Section {
+                Toggle("Accurate words in recordings", isOn: draft.isAccurateWordsEnabled)
+            } footer: {
+                Text("Transcribe each speaker's turn a second time with the voice transcription model, which is given the names and terms from the person's own data and spells them better. Speakers and times do not change, and a person's corrections still win. The audio is charged a second time to the person's agent.")
+            }
         }
     }
 }
