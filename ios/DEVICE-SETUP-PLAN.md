@@ -29,7 +29,7 @@ omitted and a failed refresh cannot silently broaden the selected permissions.
 A common DeviceSetupView uses the existing Form, Toggle, Picker, NavigationLink and
 system profile-download behavior. Creation returns a short-lived link and separate
 revocation metadata. Repeated taps are disabled while the request is running. The
-profile opens in Safari, then the person installs it under Profile Downloaded in
+ready profile can be shared through the system share sheet or opened in Safari, then the person installs it under Profile Downloaded in
 Settings. An app cannot install a configuration profile itself. Existing manual mail
 and sync password controls remain secondary, with existing separate revocation APIs.
 
@@ -65,3 +65,7 @@ is currently claimed.
 Portable package validation passed 291 tests, including 5 focused device setup tests.
 The actual app-document/schema check passed against the shared backend contract.
 Native compilation, screenshots and signed-device installation remain pending.
+
+Review retained the existing sync-profile sharing option. Creation shows installation
+guidance and the primary Download action without automatically consuming the one-use
+link; the system Share action remains available until download starts.

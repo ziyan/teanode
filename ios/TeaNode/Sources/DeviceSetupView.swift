@@ -28,6 +28,7 @@ struct DeviceSetupView: View {
                             } label: {
                                 Label("Download setup profile", systemImage: "arrow.down.circle")
                             }.buttonStyle(.glassProminent)
+                            if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
                         }
                         if let expiration = ServerTime.date(profile.expiresAt) {
                             Text("Expires \(expiration, style: .relative)").foregroundStyle(.secondary)
@@ -146,7 +147,6 @@ struct DeviceSetupView: View {
             let created = try await connection.createDeviceSetupProfile(selection, capabilities: capabilities)
             profile = created
             problemText = nil
-            await download(created)
         } catch { problemText = app.describe(error) }
     }
 
