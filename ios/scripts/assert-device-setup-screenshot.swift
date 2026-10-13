@@ -18,7 +18,7 @@ let expectedMarkersByScreen: [String: [String]] = [
     "device-setup": ["choosewhattoadd", "mail"],
     "device-setup-mail": ["choosewhattoadd", "mailbox", "personal"],
     "device-setup-collections": ["choosewhattoadd", "calendar", "contacts"],
-    "device-setup-profile": ["installtheprofile", "yoursetupprofileisready"],
+    "device-setup-profile": ["installtheprofile", "yoursetupprofileisready", "downloadprofile"],
     "device-setup-expired": ["setuplinkexpired", "thissetuplinkhasexpired"],
     "device-setup-receipt-unavailable": ["downloadprofile", "yoursetupprofileisready"],
     "device-setup-unavailable": ["noservicesavailable"],

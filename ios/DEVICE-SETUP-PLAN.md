@@ -124,3 +124,15 @@ the existing inactive status style. Download link expiration names the ceremony
 lifetime explicitly; existing device passwords and revocation metadata stay active.
 The expired capture asserts the new heading and rejects ready/download controls.
 Fresh final SDK and rendered artifacts will verify this wording correction.
+
+The next exact SDK passed, and all 21 setup images were inspected. The expired
+heading and credential explanation now render correctly in all three appearances.
+The new action stack compressed Download profile to a truncated label at the
+largest text size, and its content assertion correctly failed. Download and Share
+now use the existing natural-height wrapping pattern. The ordinary ready-profile
+capture also asserts the complete download action. The branch is rebased onto the
+merged playback increment with both catalogs and screenshot routes preserved;
+fresh SDK and visual evidence must confirm the action fix before merge.
+All 335 integrated package tests, the real app-document schema check and full naming
+lint pass after the rebase and wrapping change. Physical installation and separate
+credential-revocation checks remain unrun.

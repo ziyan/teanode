@@ -33,8 +33,11 @@ struct DeviceSetupView: View {
                                         Task { await download(profile) }
                                     } label: {
                                         Label("Download profile", systemImage: "arrow.down.circle")
+                                            .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
                                     }.buttonStyle(.glassProminent)
-                                    if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
+                                    if let profileURL = URL(string: profile.downloadLink) {
+                                        ShareLink(item: profileURL).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                                    }
                                 }
                             }
                         }
