@@ -116,8 +116,14 @@ func TestTheRecordingSocketTranscribesALiveCaptureForItsOwner(t *testing.T) {
 		} {
 			_ = conn.WriteJSON(event)
 		}
-		var ignored map[string]any
-		_ = conn.ReadJSON(&ignored)
+		// Keep reading until the server hangs up, so audio still on its way
+		// never meets a closed socket.
+		for {
+			var ignored map[string]any
+			if err := conn.ReadJSON(&ignored); err != nil {
+				return
+			}
+		}
 	}))
 	defer provider.Close()
 
