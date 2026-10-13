@@ -9,6 +9,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/deferutil"
 	"github.com/ziyan/teanode/internal/util/emoji"
@@ -164,12 +165,25 @@ func (self *Agent) acknowledge(ctx context.Context, settings *AskSettings, messa
 	// Cheap work, as compaction is: the compact model when one is set,
 	// else the fast one, else the default (AgentModels). The turn's own
 	// model would answer seconds later, after the reaction stopped
-	// meaning "I read it".
-	thinking, err := self.oneShot(ctx, self.runFor(settings.Agent, settings.Owner, nil, settings.Conversation.ID), "Picked a reaction", prompt, models.AgentJobReact, config.AgentWorkCompact)
+	// meaning "I read it". One plain call, as the effort judge makes:
+	// a headless turn would build the system prompt and the tools, and
+	// leave a run conversation behind, for every message, to get back one
+	// emoji.
+	provider, modelName, err := self.settings.Registry.ForWork(config.AgentWorkCompact)
 	if err != nil {
 		return err
 	}
-	reactionEmoji := parseAcknowledgement(thinking.Text)
+	response, err := provider.Chat(ctx, &llm.ChatRequest{
+		// Room for a model that reasons before it writes; the answer is a
+		// word.
+		Model: modelName, MaxTokens: 2000,
+		Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
+	})
+	if err != nil {
+		return err
+	}
+	RecordUsage(self.settings.Database, settings.Agent.ID, "", configuration.Agent.Models.ForWork(config.AgentWorkCompact), string(models.AgentJobReact), response.Usage)
+	reactionEmoji := parseAcknowledgement(response.Message.Content)
 	if reactionEmoji == "" {
 		return nil
 	}

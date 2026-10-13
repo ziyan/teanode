@@ -108,9 +108,21 @@ func answerReactionChoice(writer http.ResponseWriter, raw []byte) bool {
 	if !strings.Contains(string(raw), "Choose the one emoji") {
 		return false
 	}
-	writer.Header().Set("Content-Type", "text/event-stream")
-	_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"\U0001F440\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+	writeEmojiChoice(writer, raw, "\U0001F440")
 	return true
+}
+
+// writeEmojiChoice answers the call that picks the emoji with one, in the
+// form it was asked in: the server asks it in one plain call, not a
+// stream, so a stream would go unread.
+func writeEmojiChoice(writer http.ResponseWriter, raw []byte, reactionEmoji string) {
+	if strings.Contains(string(raw), `"stream":true`) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"" + reactionEmoji + "\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"` + reactionEmoji + `"},"finish_reason":"stop"}],"usage":{}}`))
 }
 
 // toolsNamed is one round's tools as a set.

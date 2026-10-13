@@ -16,6 +16,11 @@ import (
 // left alone.
 var hiddenMarkerPattern = regexp.MustCompile("(?s)```.*?(?:```|$)|`[^`\n]*`|<!--.*?(?:-->|$)")
 
+// emphasisPattern is a pair of bold marks or a code span around words.
+// Only a pair is taken off: a name such as __init__ or a**b has marks that
+// are not Markdown, and dropping every one corrupted it.
+var emphasisPattern = regexp.MustCompile("\\*\\*([^*\n]+?)\\*\\*|`([^`\n]+)`")
+
 // linkPattern is a Markdown link or picture, [words](target) or
 // ![words](target).
 var linkPattern = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
@@ -42,8 +47,6 @@ func StripHiddenMarkers(text string) string {
 func PlainText(text string) string {
 	text = StripHiddenMarkers(text)
 	text = linkPattern.ReplaceAllString(text, "$1")
-	for _, mark := range []string{"**", "__", "`"} {
-		text = strings.ReplaceAll(text, mark, "")
-	}
+	text = emphasisPattern.ReplaceAllString(text, "$1$2")
 	return strings.TrimSpace(text)
 }

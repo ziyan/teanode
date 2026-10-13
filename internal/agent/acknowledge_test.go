@@ -38,7 +38,7 @@ func TestTheServerReactsToThePersonsMessage(t *testing.T) {
 			if !strings.Contains(string(raw), "thank you for the invoice") {
 				t.Errorf("the person's message is not in the prompt: %s", raw)
 			}
-			_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"❤️\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+			writeEmojiChoice(writer, raw, "❤️")
 			return
 		}
 		time.Sleep(800 * time.Millisecond)
@@ -138,4 +138,17 @@ func TestTheServerReactsToThePersonsMessage(t *testing.T) {
 	if choosingCalls.Load() != 1 {
 		t.Fatalf("one call to pick the emoji, got %d", choosingCalls.Load())
 	}
+}
+
+// writeEmojiChoice answers the call that picks the emoji with one, in the
+// form it was asked in: the server asks it in one plain call, not a
+// stream, so a stream would go unread.
+func writeEmojiChoice(writer http.ResponseWriter, raw []byte, reactionEmoji string) {
+	if strings.Contains(string(raw), `"stream":true`) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"" + reactionEmoji + "\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"` + reactionEmoji + `"},"finish_reason":"stop"}],"usage":{}}`))
 }

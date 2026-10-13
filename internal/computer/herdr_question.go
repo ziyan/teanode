@@ -376,13 +376,13 @@ func questionTextAbove(lines []string, first int) string {
 // questionFingerprint names a question by what it asks and offers.
 // Every space is left out, since where a pane breaks a line depends on how
 // wide it is, and a pane resized must not make the same question another.
-// A clock's time is left out too: one that ran on the screen made the same
-// question a new one every second, and each was told answered and asked
-// again.
+// A countdown under the form is not part of the question (see
+// isCountdownLine, which questionTextAbove leaves out), so a clock that
+// runs on the screen does not make the same question a new one. Any other
+// time stays in: two questions that differ only by one are two questions,
+// and an answer to one must not be taken for the other.
 func questionFingerprint(question *HerdrQuestion) string {
-	withoutSpaces := func(text string) string {
-		return strings.Join(strings.Fields(herdrClockPattern.ReplaceAllString(text, "#")), "")
-	}
+	withoutSpaces := func(text string) string { return strings.Join(strings.Fields(text), "") }
 	hash := sha256.New()
 	hash.Write([]byte(question.HerdrQuestionKind + "\n" + withoutSpaces(question.QuestionText) + "\n"))
 	for _, option := range question.Options {

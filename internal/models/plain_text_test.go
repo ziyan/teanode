@@ -29,6 +29,7 @@ func TestPlainText(t *testing.T) {
 		"a link":            {"See [the invoice](mail:01abc) from the plumber.", "See the invoice from the plumber."},
 		"a picture":         {"Here it is: ![the driveway](https://example.org/a.jpg)", "Here it is: the driveway"},
 		"bold and code":     {"**Paid** `INV-1`", "Paid INV-1"},
+		"a name with marks": {"Fix __init__ and a**b", "Fix __init__ and a**b"},
 		"lines kept":        {"One\nTwo", "One\nTwo"},
 	} {
 		if got := PlainText(testCase.given); got != testCase.want {

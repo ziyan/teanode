@@ -154,3 +154,18 @@ func TestACountdownUnderAFormIsNotPartOfTheQuestion(t *testing.T) {
 		t.Fatalf("options %q", got)
 	}
 }
+
+// Leaving the countdown out must not leave out every time: two questions
+// that differ only by one are two questions, and an answer meant for the
+// first must not be taken for the second.
+func TestQuestionsThatDifferOnlyByATimeAreTwo(t *testing.T) {
+	screen := readHerdrFixture(t, "claude-tool-countdown")
+	early := recognizeQuestion(CodingAgentKindClaude, strings.ReplaceAll(screen, "make -C build test", "run the backup at 10:30"))
+	late := recognizeQuestion(CodingAgentKindClaude, strings.ReplaceAll(screen, "make -C build test", "run the backup at 14:00"))
+	if early == nil || late == nil {
+		t.Fatal("no question recognized")
+	}
+	if early.QuestionFingerprint == late.QuestionFingerprint {
+		t.Fatal("two questions that differ by their time share a fingerprint")
+	}
+}
