@@ -189,3 +189,46 @@ it('toggles between pausing and playing on from the position, and restarts after
   await playback.toggle(100000)
   expect(first.currentTime).toBe(0)
 })
+
+it('plays a range from its start and stops at its end, without going on into the next piece', async () => {
+  const { playback, first, second } = twoPieces()
+  await playback.playRange(20000, 25000)
+  expect(first.currentTime).toBe(20)
+  first.currentTime = 25.2
+  first.dispatchEvent(new Event('timeupdate'))
+  expect(first.pause).toHaveBeenCalled()
+  expect(first.currentTime).toBe(25)
+  first.dispatchEvent(new Event('ended'))
+  await Promise.resolve()
+  expect(second.play).not.toHaveBeenCalled()
+})
+
+it('stops a range that runs past its piece at the end of that piece', async () => {
+  const { playback, first, second } = twoPieces()
+  await playback.playRange(50000, 90000)
+  first.currentTime = 60
+  first.dispatchEvent(new Event('timeupdate'))
+  expect(first.pause).toHaveBeenCalled()
+  first.dispatchEvent(new Event('ended'))
+  await Promise.resolve()
+  expect(second.play).not.toHaveBeenCalled()
+})
+
+it('plays a paused range on to the same end, and a seek frees it', async () => {
+  const { playback, first } = twoPieces()
+  await playback.playRange(20000, 25000)
+  first.dispatchEvent(new Event('play'))
+  first.currentTime = 22
+  first.dispatchEvent(new Event('timeupdate'))
+  await playback.toggle(100000)
+  first.dispatchEvent(new Event('pause'))
+  await playback.toggle(100000)
+  expect(first.currentTime).toBe(22)
+  first.currentTime = 25.1
+  first.dispatchEvent(new Event('timeupdate'))
+  expect(first.currentTime).toBe(25)
+  await playback.seekTo(30000, true)
+  first.currentTime = 40
+  first.dispatchEvent(new Event('timeupdate'))
+  expect(first.currentTime).toBe(40)
+})

@@ -160,11 +160,11 @@ export function RecordingConversation({
     if (isLive && wasAtEnd.current) endOfConversation.current?.scrollIntoView?.({ block: 'end' })
   }, [isLive, liveSignature])
 
-  // play plays from the start of a bubble on the recording's one player and
-  // goes on from there, into the next piece if the recording is made of several.
+  // play plays one bubble on the recording's one player, from the start of its
+  // first passage to the end of its last, and stops there.
   const play = (segments: TranscriptSegment[]) => {
     void passagePlayback
-      .seekTo(segments[0].segmentStartMS, true)
+      .playRange(segments[0].segmentStartMS, segments[segments.length - 1].segmentEndMS)
       .catch((caught) => toast.failure(caught, t('recordings.playerUnavailable')))
   }
   const passageText = (segment: TranscriptSegment) => segment.effectiveTranscriptText || segment.transcriptText

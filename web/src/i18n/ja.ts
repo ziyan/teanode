@@ -4503,6 +4503,8 @@ export const ja: Catalog = {
   'recordings.passageActions': "この箇所の操作",
   'recordings.playFromHere': "再生",
   'recordings.pause': "一時停止",
+  'recordings.floatingPlayer': "再生",
+  'recordings.stopPlayback': "再生を停止",
   'recordings.seekPosition': "録音内の位置",
   'recordings.passageNumber': "{passageNumber} 番目の文",
   'recordings.correctText': "テキストを修正",

@@ -4550,6 +4550,8 @@ export const en = {
   'recordings.passageActions': "Actions for this passage",
   'recordings.playFromHere': "Play",
   'recordings.pause': "Pause",
+  'recordings.floatingPlayer': "Playback",
+  'recordings.stopPlayback': "Stop playback",
   'recordings.seekPosition': "Position in the recording",
   'recordings.passageNumber': "Passage {passageNumber}",
   'recordings.correctText': "Correct text",

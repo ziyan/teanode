@@ -31,6 +31,10 @@ export class RecordingPassagePlayback {
   // A passage played from the processing panel stops at its end; playing from a
   // position does not, and goes on into the next piece.
   private isBounded = false
+  // Where a bubble played from the conversation ends on the timeline. Pausing
+  // keeps it so that playing on stops there too; a seek or a new selection
+  // that is not a bubble clears it.
+  private boundEndMS: number | null = null
   private playbackGeneration = 0
 
   subscribe = (listener: () => void) => {
@@ -128,10 +132,32 @@ export class RecordingPassagePlayback {
   // seekTo moves the player to a position on the timeline, and plays from there
   // when asked to. A position in a gap lands at the start of the next piece.
   async seekTo(positionMS: number, shouldPlay: boolean) {
+    this.boundEndMS = null
+    await this.seekWithin(positionMS, shouldPlay, null)
+  }
+
+  // playRange plays one stretch of the timeline, a conversation bubble, from
+  // its start and stops at its end. The end is in the same piece as the start;
+  // a stretch that runs past the end of its piece stops there.
+  async playRange(startMS: number, endMS: number) {
+    this.boundEndMS = endMS
+    try {
+      await this.seekWithin(startMS, true, endMS)
+    } catch (caught) {
+      this.boundEndMS = null
+      throw caught
+    }
+  }
+
+  private async seekWithin(positionMS: number, shouldPlay: boolean, endMS: number | null) {
     const located = locateTimelinePosition(this.pieces, positionMS)
     if (!located) throw new Error(unavailableMessage)
     if (shouldPlay) {
-      await this.playFrom(located.piece.mediaId, located.offsetMS / 1000, null)
+      // The end is bounded by the start's piece, so a stretch past its end plays to
+      // the end of the piece and stops, never on into the next one.
+      const endSeconds =
+        endMS === null ? null : Math.max(0, Math.min(endMS, located.piece.endMS) - located.piece.startMS) / 1000
+      await this.playFrom(located.piece.mediaId, located.offsetMS / 1000, endSeconds)
       return
     }
     this.stop()
@@ -147,10 +173,15 @@ export class RecordingPassagePlayback {
       this.stop()
       return
     }
+    if (this.boundEndMS !== null && this.state.positionMS < this.boundEndMS) {
+      await this.playRange(this.state.positionMS, this.boundEndMS)
+      return
+    }
     await this.seekTo(this.state.positionMS >= timelineEndMS ? 0 : this.state.positionMS, true)
   }
 
   async play(mediaId: string, passageStartMS: number, passageEndMS: number, timelineStartMS: number) {
+    this.boundEndMS = null
     const startSeconds = (passageStartMS - timelineStartMS) / 1000
     const endSeconds = (passageEndMS - timelineStartMS) / 1000
     if (
@@ -230,6 +261,7 @@ export class RecordingPassagePlayback {
   }
 
   async playCompatible(mediaId: string) {
+    this.boundEndMS = null
     this.stop()
     this.setState({ activeMediaId: mediaId })
     const playbackGeneration = this.playbackGeneration
@@ -244,6 +276,13 @@ export class RecordingPassagePlayback {
       this.stop()
       throw caught
     }
+  }
+
+  // end stops what plays and forgets where a bubble was to end, so that playing
+  // again from the top player goes on as it does from a seek.
+  end() {
+    this.boundEndMS = null
+    this.stop()
   }
 
   stop() {

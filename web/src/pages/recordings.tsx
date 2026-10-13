@@ -18,6 +18,7 @@ import { RecordingProcessingPanel } from '../recording/processingPanel'
 import { RecordingPassagePlayback } from '../recording/playback'
 import { RecordingTimelinePlayer } from '../recording/timelinePlayer'
 import { RecordingConversation } from '../recording/conversationView'
+import { RecordingFloatingPlayer } from '../recording/floatingPlayer'
 import { useCaptureSnapshot } from '../recording/captureSnapshot'
 import { RecordingDetailsDrawer } from '../recording/detailsDrawer'
 import { RecordingEditDialog, type ProcessingDialog } from '../recording/editDialog'
@@ -477,6 +478,10 @@ function AccountRecordingsPage() {
               isLive={isLive}
               onChanged={changed}
               onSpeakerCount={setSpeakerCount}
+            />
+            <RecordingFloatingPlayer
+              passagePlayback={passagePlayback.current}
+              timelineEndMS={view.recording.timelineDurationMS}
             />
           </div>
         )

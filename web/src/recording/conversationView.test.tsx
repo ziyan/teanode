@@ -60,7 +60,11 @@ const pageOf = (segments: unknown[], variables?: Record<string, unknown>) => {
 }
 
 function show(segments: unknown[], route = '/', passageOffset = 0) {
-  const passagePlayback = { play: vi.fn().mockResolvedValue(undefined), seekTo: vi.fn().mockResolvedValue(undefined) }
+  const passagePlayback = {
+    play: vi.fn().mockResolvedValue(undefined),
+    seekTo: vi.fn().mockResolvedValue(undefined),
+    playRange: vi.fn().mockResolvedValue(undefined),
+  }
   const onChanged = vi.fn()
   vi.mocked(recordingOperation).mockImplementation(async (operationName, variables) => {
     const responses: Record<string, unknown> = {
@@ -185,9 +189,11 @@ it('plays the whole bubble on a swipe to the left', async () => {
     [-50, 10],
     [-90, 20],
   ])
-  // The one player seeks to where the bubble begins on the recording's timeline.
-  expect(passagePlayback.seekTo).toHaveBeenCalledTimes(1)
-  expect(passagePlayback.seekTo).toHaveBeenCalledWith(2000, true)
+  // The one player plays from where the bubble begins on the recording's
+  // timeline to where its last passage ends, and stops there.
+  expect(passagePlayback.playRange).toHaveBeenCalledTimes(1)
+  expect(passagePlayback.playRange).toHaveBeenCalledWith(2000, 6000)
+  expect(passagePlayback.seekTo).not.toHaveBeenCalled()
 })
 
 it('copies the whole bubble on a swipe to the right', async () => {
@@ -256,7 +262,10 @@ it('asks which pages of memory are linked to the bubble, by its range, only when
       },
     ],
   } as never)
-  show([segment('one', { segmentStartMS: 2000, segmentEndMS: 4000 }), segment('two', { segmentStartMS: 4000, segmentEndMS: 9000 })])
+  show([
+    segment('one', { segmentStartMS: 2000, segmentEndMS: 4000 }),
+    segment('two', { segmentStartMS: 4000, segmentEndMS: 9000 }),
+  ])
   await screen.findByText('Text of one')
   expect(vi.mocked(graphql)).not.toHaveBeenCalled()
   fireEvent.click(screen.getAllByRole('button', { name: 'In memory' })[0])

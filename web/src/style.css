@@ -14509,6 +14509,31 @@ button.herdr-question-head {
   padding: 16px;
 }
 
+/* The player that floats over the page while the recording plays: a pause
+   button, the position and a close, at the foot of the window above the
+   agent's button. The room after the conversation keeps the last bubble clear. */
+.recording-floating-player {
+  position: fixed;
+  left: 50%;
+  bottom: 76px;
+  z-index: 29;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+.recording-floating-player .recording-player-time:last-child {
+  text-align: left;
+}
+.recording-floating-player-room {
+  height: 72px;
+}
+
 /* --- the recording bar -----------------------------------------------------
    Fixed at the foot of the dashboard while a recording is made or sent, above
    the agent's button (44px high, 20px from the corner) so neither covers the

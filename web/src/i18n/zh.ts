@@ -4409,6 +4409,8 @@ export const zh: Catalog = {
   'recordings.passageActions': "此段落的操作",
   'recordings.playFromHere': "播放",
   'recordings.pause': "暂停",
+  'recordings.floatingPlayer': "播放",
+  'recordings.stopPlayback': "停止播放",
   'recordings.seekPosition': "录音中的位置",
   'recordings.passageNumber': "第 {passageNumber} 段",
   'recordings.correctText': "修正文字",
