@@ -529,6 +529,25 @@ func TestRecordingRenameReconcilesEverySharedIdentitySourceAtomically(test *test
 		if err != nil || second.SourceGeneration != previousSecondGeneration+1 {
 			test.Fatal("rename missed second source", err)
 		}
+		// The rename queues the memory sync of every recording that uses the identity and does not run it.
+		jobs, err := transaction.ClaimAgentJobs("rename-worker", 10, time.Now())
+		if err != nil {
+			test.Fatal(err)
+		}
+		queuedSubjects := map[string]bool{}
+		for _, job := range jobs {
+			if job.Kind == models.AgentJobRecordingKnowledge {
+				queuedSubjects[job.SubjectID] = true
+			}
+		}
+		if len(queuedSubjects) != 2 || !queuedSubjects[first.ID] || !queuedSubjects[second.ID] {
+			test.Fatal("rename did not queue the memory sync of both recordings", queuedSubjects)
+		}
+		for _, recordingId := range []string{first.ID, second.ID} {
+			if err := transaction.SyncRecordingKnowledge(fixture.userId, recordingId); err != nil {
+				test.Fatal(err)
+			}
+		}
 		documents, _, err := transaction.ListAgentDocumentsToDigest(fixture.agentId, nil, 10)
 		if err != nil || len(documents) != 2 {
 			test.Fatal(err)

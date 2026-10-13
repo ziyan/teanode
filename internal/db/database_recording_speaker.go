@@ -323,7 +323,8 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 		if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 			return err
 		}
-		if err := self.SyncRecordingKnowledge(userId, source.ID); err != nil {
+		// The memory catches up in the background; the passages read the new name at once.
+		if err := self.QueueRecordingKnowledgeSync(userId, source.ID); err != nil {
 			return err
 		}
 	}
