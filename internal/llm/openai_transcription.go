@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const maximumTranscriptionAudioBytes = 25000000
@@ -45,6 +46,8 @@ func (self *openAI) Transcribe(ctx context.Context, request *TranscriptionReques
 	if request == nil {
 		return nil, fmt.Errorf("llm: transcription requires media")
 	}
+	ctx, cancel := context.WithTimeout(ctx, transcriptionTimeout)
+	defer cancel()
 	capabilities := self.TranscriptionCapabilities(request.Model)
 	if !capabilities.CanTranscribe {
 		return nil, fmt.Errorf("llm: transcription capabilities for model %q are unknown", request.Model)
@@ -124,7 +127,7 @@ func (self *openAI) Transcribe(ctx context.Context, request *TranscriptionReques
 	for headerName, headerValue := range self.headers() {
 		outgoing.Header.Set(headerName, headerValue)
 	}
-	response, err := self.client.Do(outgoing)
+	response, err := self.transcriptionClient().Do(outgoing)
 	if err != nil {
 		return nil, fmt.Errorf("llm: transcription: %w", err)
 	}
@@ -189,6 +192,14 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 		if request.MediaDurationMS > 0 && endMS > request.MediaDurationMS+1000 {
 			return nil, fmt.Errorf("llm: transcription segment exceeds the source timeline")
 		}
+		// A provider's last segment may end a little past the audio it was
+		// sent. Within the second allowed, it is cut to the audio's end: the
+		// transcript keeps no time the source does not have, and a paid
+		// answer is not thrown away over a rounding at its last word.
+		if request.MediaDurationMS > 0 && endMS > request.MediaDurationMS {
+			endMS = request.MediaDurationMS
+			startMS = min(startMS, endMS)
+		}
 		normalized.Segments = append(normalized.Segments, TranscriptSegment{SegmentID: fmt.Sprintf("segment-%d", segmentIndex), SpeakerID: segment.Speaker, StartMS: startMS, EndMS: endMS, TranscriptText: segment.Text})
 	}
 	if len(decoded.Usage) > 0 && string(decoded.Usage) != "null" {
@@ -227,4 +238,16 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 		}
 	}
 	return normalized, nil
+}
+
+// transcriptionTimeout bounds one transcription request. Uploading ten
+// minutes of audio and having it transcribed and told apart by speaker can
+// take minutes, past the request timeout chat calls share.
+const transcriptionTimeout = 10 * time.Minute
+
+// transcriptionClient is the provider's client without the chat request
+// timeout, which would cut a long transcription short; the request's
+// context bounds it instead (see Transcribe).
+func (self *openAI) transcriptionClient() *http.Client {
+	return &http.Client{Transport: self.client.Transport, CheckRedirect: self.client.CheckRedirect, Jar: self.client.Jar}
 }
