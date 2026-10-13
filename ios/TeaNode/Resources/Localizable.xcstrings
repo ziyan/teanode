@@ -14613,6 +14613,22 @@
         }
       }
     },
+    "Has attachments": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添付ファイルあり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有附件"
+          }
+        }
+      }
+    },
     "HTML": {
       "localizations": {
         "ja": {
@@ -17121,6 +17137,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "上次使用：%@"
+          }
+        }
+      }
+    },
+    "Last Week": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先週"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上周"
           }
         }
       }
@@ -32849,6 +32881,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 无法向你的服务器查询其运行的服务。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "This Month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今月"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本月"
+          }
+        }
+      }
+    },
+    "This Week": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今週"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
           }
         }
       }
