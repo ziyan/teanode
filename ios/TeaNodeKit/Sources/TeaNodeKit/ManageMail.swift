@@ -873,9 +873,11 @@ public struct DomainAlias: Codable, Hashable, Sendable, Identifiable {
 
     /// Whether the destination the kind needs has been filled in: an
     /// address to forward to, a URL to post to, or a mailbox to deliver
-    /// into. Discarding and relaying need none here.
+    /// into. Discarding and relaying need none here. No kind chosen yet
+    /// (empty) is never filled in.
     public static func isDestinationFilled(aliasKind: String, destination: String, mailboxId: String) -> Bool {
         switch aliasKind {
+        case "": return false
         case "email", "webhook": return !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case "mailbox": return !mailboxId.isEmpty
         default: return true
@@ -885,11 +887,28 @@ public struct DomainAlias: Codable, Hashable, Sendable, Identifiable {
     /// The text to put in the destination field when editing: the address
     /// or URL the alias has now, empty for any other kind.
     public var editableDestination: String {
-        switch aliasKind ?? "" {
+        editableDestination(forKind: aliasKind ?? "")
+    }
+
+    /// The text to put in the destination field once the editor's kind is
+    /// changed to `kind`: what the alias already holds for that kind, and
+    /// empty for a kind it never had, so an address typed for one kind is
+    /// never saved as the URL of another.
+    public func editableDestination(forKind kind: String) -> String {
+        guard aliasKind == kind else { return "" }
+        switch kind {
         case "email": return email ?? ""
         case "webhook": return webhook ?? ""
         default: return ""
         }
+    }
+
+    /// The kind the editor starts on: the alias's own, or empty when the
+    /// server sent none or one this app does not know, so the person must
+    /// choose a kind rather than have the alias silently saved as a discard.
+    public var editorKind: String {
+        guard let aliasKind, selectableKinds.contains(aliasKind) else { return "" }
+        return aliasKind
     }
 }
 

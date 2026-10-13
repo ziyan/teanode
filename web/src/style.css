@@ -7413,6 +7413,32 @@ button.agent-reaction:focus-visible {
   }
 }
 
+/* A finger needs 44px, which nine emoji and the more button do not fit
+   across a phone: the row scrolls sideways inside its pill instead of
+   overflowing the drawer, and the grid of more emoji keeps its wrapping. */
+@media (pointer: coarse) {
+  .agent-reaction-picker {
+    max-width: calc(100vw - 32px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .agent-reaction-choice {
+    flex: none;
+    width: 44px;
+    height: 44px;
+  }
+
+  .agent-reaction-grid {
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  }
+
+  .agent-reaction-grid .agent-reaction-choice {
+    width: 100%;
+    height: 44px;
+  }
+}
+
 /* The message the next turn answers, above the box: who said it and its
    start, with a way to drop it. */
 .agent-reply-quote {
@@ -11592,6 +11618,12 @@ main.content:has(> .knowledge-frame) {
   margin-top: var(--space-1);
   min-height: 32px;
   font-size: var(--text-label);
+}
+
+@media (pointer: coarse) {
+  .authorize-switch {
+    min-height: 44px;
+  }
 }
 
 .authorize-claimed {

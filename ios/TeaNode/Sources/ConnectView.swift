@@ -114,9 +114,9 @@ struct ConnectView: View {
                 }
             }
             .sheet(isPresented: $isAskingForServer) {
-                ServerSheet(serverText: $serverText) {
+                ServerSheet(serverText: $serverText) { server in
                     isAskingForServer = false
-                    Task { await signInWithPassword() }
+                    Task { await signInWithPassword(to: server) }
                 }
             }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
@@ -136,13 +136,7 @@ struct ConnectView: View {
 
     /// Signs in on the server's own page; the person allows the app there,
     /// so nothing is asked again here.
-    private func signInWithPassword() async {
-        let written = serverText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !written.isEmpty else { return }
-        guard let server = try? ServerAddress(parsing: written) else {
-            problemText = String(localized: "That is not a server address.")
-            return
-        }
+    private func signInWithPassword(to server: ServerAddress) async {
         isConnecting = true
         defer { isConnecting = false }
         do {
@@ -173,12 +167,15 @@ struct ConnectView: View {
 
 /// ServerSheet asks for the server to sign in to with a password. It is a
 /// sheet rather than an alert: an alert's text field draws past the alert's
-/// edge on iOS 26, and an address wants room to be read as it is typed.
+/// edge on iOS 26, and an address wants room to be read as it is typed. The
+/// address is read here, so a bad one is said while the sheet is still open
+/// and the person can correct it, and only a good one is handed on.
 struct ServerSheet: View {
     @Binding var serverText: String
-    let onContinue: () -> Void
+    let onContinue: (ServerAddress) -> Void
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
+    @State private var problemText: String?
 
     private var isEmpty: Bool {
         serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -195,9 +192,14 @@ struct ServerSheet: View {
                         .textContentType(.URL)
                         .submitLabel(.continue)
                         .focused($isFocused)
-                        .onSubmit { if !isEmpty { onContinue() } }
+                        .onSubmit { if !isEmpty { continueWithAddress() } }
+                        .onChange(of: serverText) { problemText = nil }
                 } footer: {
-                    Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
+                    if let problemText {
+                        Text(problemText).foregroundStyle(.red)
+                    } else {
+                        Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
+                    }
                 }
             }
             .navigationTitle("Your server")
@@ -207,13 +209,32 @@ struct ServerSheet: View {
                     Button("Cancel", role: .cancel) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Continue", action: onContinue)
+                    Button("Continue", action: continueWithAddress)
                         .disabled(isEmpty)
                 }
             }
             .onAppear { isFocused = true }
         }
         .presentationDetents([.medium])
+    }
+
+    private func continueWithAddress() {
+        do {
+            onContinue(try ServerAddress(parsing: serverText))
+        } catch {
+            problemText = addressProblemText(for: error)
+        }
+    }
+
+    private func addressProblemText(for error: Error) -> String {
+        switch error as? ServerAddressError {
+        case .isNotEncrypted:
+            return String(localized: "That address is not encrypted. Use an https address.")
+        case .hasCredentials:
+            return String(localized: "Leave the username and password out of the address. You sign in on the next page.")
+        default:
+            return String(localized: "That is not a server address.")
+        }
     }
 }
 
