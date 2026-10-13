@@ -347,43 +347,52 @@ struct ThreadList: View {
     var body: some View {
         @Bindable var list = list
         List(selection: $selection) {
-            ForEach(list.threads) { thread in
-                NavigationLink(value: OpenedThread(itemId: thread.item?.id ?? thread.threadId, folderId: list.isAcrossFolders ? nil : folder?.id)) {
-                    ThreadRow(thread: thread, folderName: folderName(of: thread))
-                }
-                .swipeActions(edge: .leading) {
-                    Button {
-                        Task { await setSeen([thread], isSeen: thread.unread > 0) }
-                    } label: {
-                        thread.unread > 0 ? Label("Mark read", systemImage: "envelope.open") : Label("Mark unread", systemImage: "envelope.badge")
-                    }
-                    .tint(.blue)
-                }
-                // The first is what a full swipe does: archive, as the
-                // dashboard's swipe does, and delete where there is no
-                // archive or the row is in it.
-                .swipeActions(edge: .trailing) {
-                    if let archive = mail.folder(kind: "archive"), folder?.id != archive.id {
-                        Button {
-                            Task { await move([thread], to: archive, saying: String(localized: "Conversation archived")) }
-                        } label: {
-                            Label("Archive", systemImage: "archivebox")
+            // Sections by period, as a mail app has them: Today,
+            // Yesterday, This Week, Last Week, then each month.
+            ForEach(ListPeriod.periods(of: list.threads, at: { MailTime.date($0.item?.mail?.receivedAt ?? $0.item?.addedAt ?? "") })) { period in
+                Section {
+                    ForEach(period.items) { thread in
+                        NavigationLink(value: OpenedThread(itemId: thread.item?.id ?? thread.threadId, folderId: list.isAcrossFolders ? nil : folder?.id)) {
+                            ThreadRow(thread: thread, folderName: folderName(of: thread))
                         }
-                        .tint(.purple)
+                        .listRowSeparator(.hidden)
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                Task { await setSeen([thread], isSeen: thread.unread > 0) }
+                            } label: {
+                                thread.unread > 0 ? Label("Mark read", systemImage: "envelope.open") : Label("Mark unread", systemImage: "envelope.badge")
+                            }
+                            .tint(.blue)
+                        }
+                        // The first is what a full swipe does: archive, as the
+                        // dashboard's swipe does, and delete where there is no
+                        // archive or the row is in it.
+                        .swipeActions(edge: .trailing) {
+                            if let archive = mail.folder(kind: "archive"), folder?.id != archive.id {
+                                Button {
+                                    Task { await move([thread], to: archive, saying: String(localized: "Conversation archived")) }
+                                } label: {
+                                    Label("Archive", systemImage: "archivebox")
+                                }
+                                .tint(.purple)
+                            }
+                            Button(role: .destructive) {
+                                Task { await delete([thread]) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .contextMenu {
+                            rowMenu([thread])
+                        }
+                        .onAppear {
+                            if thread.id == list.threads.last?.id, list.threads.count < list.total, !list.isLoading {
+                                Task { await list.load(mail, isMore: true) }
+                            }
+                        }
                     }
-                    Button(role: .destructive) {
-                        Task { await delete([thread]) }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-                .contextMenu {
-                    rowMenu([thread])
-                }
-                .onAppear {
-                    if thread.id == list.threads.last?.id, list.threads.count < list.total, !list.isLoading {
-                        Task { await list.load(mail, isMore: true) }
-                    }
+                } header: {
+                    ListPeriodHeader(title: period.title)
                 }
             }
             if list.isLoading, !list.threads.isEmpty {
@@ -669,27 +678,28 @@ struct ThreadRow: View {
             Circle()
                 .fill(isUnread ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear))
                 .frame(width: 8, height: 8)
-                .padding(.top, 16)
+                .padding(.top, 20)
                 .accessibilityLabel(isUnread ? Text("Unread") : Text(verbatim: ""))
-            SenderLogo(domain: message?.logoDomain ?? "", name: message?.shownSender ?? "", size: 40)
-            VStack(alignment: .leading, spacing: 3) {
+            SenderLogo(domain: message?.logoDomain ?? "", name: message?.shownSender ?? "", size: 48)
+            VStack(alignment: .leading, spacing: 4) {
+                // Who, in bold, with when on the right: the time today and
+                // yesterday, else the weekday or the date.
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(senders)
-                        .font(.body.weight(isUnread ? .semibold : .regular))
+                        .font(.title3.weight(isUnread ? .bold : .semibold))
                         .lineLimit(1)
-                    if thread.count > 1 {
-                        Text("\(thread.count)").font(.footnote).foregroundStyle(.tertiary)
-                    }
                     Spacer(minLength: 4)
                     if thread.flagged {
-                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(.orange)
+                        Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange)
                             .accessibilityLabel("Starred")
                     }
-                    Text(MailTime.short(message?.receivedAt ?? item?.addedAt ?? ""))
-                        .font(.footnote)
+                    Text(ListTime.label(of: MailTime.date(message?.receivedAt ?? item?.addedAt ?? "")))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                HStack(spacing: 6) {
+                // The subject, with whether it carries attachments and how
+                // many messages the conversation holds.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if thread.hasDraft {
                         Text("Draft").foregroundStyle(.red)
                     }
@@ -698,12 +708,29 @@ struct ThreadRow: View {
                     }
                     Text(message?.subject.isEmpty == false ? message?.subject ?? "" : String(localized: "(no subject)"))
                         .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if (message?.attachmentCount ?? 0) > 0 {
+                        Image(systemName: "paperclip")
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Has attachments")
+                    }
+                    if thread.count > 1 {
+                        Text(verbatim: "\(thread.count)")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(isUnread ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(
+                                isUnread ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: .rect(cornerRadius: 5)
+                            )
+                            .accessibilityLabel(Text("\(thread.count) messages"))
+                    }
                 }
-                .font(.subheadline)
+                .font(.body)
                 let preview = insight?.summary ?? ""
                 if !preview.isEmpty {
                     Text(preview)
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -728,7 +755,7 @@ struct ThreadRow: View {
                 }
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
         .padding(.leading, -12)
     }
 
@@ -736,6 +763,97 @@ struct ThreadRow: View {
         if thread.participants.count > 1 { return thread.participants.joined(separator: ", ") }
         let sender = thread.item?.mail?.shownSender ?? ""
         return sender.isEmpty ? String(localized: "Unknown sender") : sender
+    }
+}
+
+/// ListPeriod is a stretch of time in a list ordered newest first, as a mail
+/// app groups its rows: Today, Yesterday, This Week, Last Week, This Month,
+/// then each month. A row says its time within the first two and its weekday or date
+/// beyond them.
+struct ListPeriod<Item: Identifiable>: Identifiable {
+    let id: String
+    let title: String
+    let items: [Item]
+
+    /// The periods of rows already ordered newest first, keeping that order.
+    static func periods(of items: [Item], at moment: (Item) -> Date) -> [ListPeriod<Item>] {
+        var periods: [ListPeriod<Item>] = []
+        var currentKey: String?
+        var currentTitle = ""
+        var currentItems: [Item] = []
+        for item in items {
+            let (key, title) = ListTime.period(of: moment(item))
+            if key != currentKey, let currentKey, !currentItems.isEmpty {
+                periods.append(ListPeriod(id: currentKey, title: currentTitle, items: currentItems))
+                currentItems = []
+            }
+            currentKey = key
+            currentTitle = title
+            currentItems.append(item)
+        }
+        if let currentKey, !currentItems.isEmpty {
+            periods.append(ListPeriod(id: currentKey, title: currentTitle, items: currentItems))
+        }
+        return periods
+    }
+}
+
+/// ListTime says when a row happened, in the words a mail list uses.
+enum ListTime {
+    /// The period a moment falls in: a key that tells periods apart and the
+    /// heading it is shown under.
+    static func period(of moment: Date) -> (String, String) {
+        let calendar = Calendar.current
+        let now = Date()
+        if moment == .distantPast { return ("earlier", String(localized: "Earlier")) }
+        if calendar.isDateInToday(moment) { return ("today", String(localized: "Today")) }
+        if calendar.isDateInYesterday(moment) { return ("yesterday", String(localized: "Yesterday")) }
+        if calendar.isDate(moment, equalTo: now, toGranularity: .weekOfYear) { return ("this-week", String(localized: "This Week")) }
+        if let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: now),
+            calendar.isDate(moment, equalTo: lastWeek, toGranularity: .weekOfYear)
+        {
+            return ("last-week", String(localized: "Last Week"))
+        }
+        let month = calendar.dateComponents([.year, .month], from: moment)
+        if calendar.isDate(moment, equalTo: now, toGranularity: .month) {
+            return ("this-month", String(localized: "This Month"))
+        }
+        let title =
+            calendar.isDate(moment, equalTo: now, toGranularity: .year)
+            ? moment.formatted(.dateTime.month(.wide)) : moment.formatted(.dateTime.month(.wide).year())
+        return ("month-\(month.year ?? 0)-\(month.month ?? 0)", title)
+    }
+
+    /// What a row shows on its right: the time today and yesterday, the
+    /// weekday this week and last, else the short date (10/2/26 in English).
+    static func label(of moment: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        if moment == .distantPast { return "" }
+        if calendar.isDateInToday(moment) || calendar.isDateInYesterday(moment) {
+            return moment.formatted(date: .omitted, time: .shortened)
+        }
+        if let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: now),
+            calendar.isDate(moment, equalTo: now, toGranularity: .weekOfYear)
+                || calendar.isDate(moment, equalTo: lastWeek, toGranularity: .weekOfYear)
+        {
+            return moment.formatted(.dateTime.weekday(.wide))
+        }
+        return moment.formatted(.dateTime.year(.twoDigits).month(.defaultDigits).day())
+    }
+}
+
+/// ListPeriodHeader is a period's heading in a list: plain words, as a mail
+/// app draws them.
+struct ListPeriodHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+            .padding(.top, 8)
     }
 }
 
@@ -861,6 +979,11 @@ struct VerdictShield: View {
 }
 
 enum MailTime {
+    /// The moment a server time stands for, or the distant past for none.
+    static func date(_ text: String) -> Date {
+        ServerTime.date(text) ?? .distantPast
+    }
+
     /// A time today, a weekday this week, else a date.
     static func short(_ text: String) -> String {
         guard let date = ServerTime.date(text) else { return "" }
