@@ -46191,6 +46191,22 @@
           }
         }
       }
+    },
+    "Setup could not be read": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取设置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を読み込めませんでした"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

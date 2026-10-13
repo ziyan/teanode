@@ -13,6 +13,7 @@ struct DeviceSetupView: View {
     @State private var hasOpenedProfile = false
     @State private var isCreating = false
     @State private var problemText: String?
+    @State private var loadProblemText: String?
 
     var body: some View {
         Form {
@@ -113,16 +114,21 @@ struct DeviceSetupView: View {
                 ContentUnavailableView(
                     "No services available", systemImage: "iphone",
                     description: Text("No Mail, Calendar, Reminders or Contacts service is available for this account."))
-            } else if problemText == nil {
+            } else if let loadProblemText {
+                ContentUnavailableView {
+                    Label("Setup could not be read", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(loadProblemText)
+                } actions: {
+                    Button("Try again") {
+                        Task { await load() }
+                    }
+                }
+            } else {
                 ProgressView()
             }
-            if let problemText {
-                Section {
-                    Text(problemText).foregroundStyle(.secondary)
-                    if capabilities == nil { Button("Retry") { Task { await load() } } }
-                }
-            }
         }
+        .toast(done: .constant(nil), problem: $problemText)
         .navigationTitle("Set up on this iPhone")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -155,8 +161,8 @@ struct DeviceSetupView: View {
                                 ).utf8))
                 }
             #endif
-            problemText = nil
-        } catch { problemText = app.describe(error) }
+            loadProblemText = nil
+        } catch { loadProblemText = app.describe(error) }
     }
 
     private func create() async {
@@ -166,7 +172,6 @@ struct DeviceSetupView: View {
         do {
             let created = try await connection.createDeviceSetupProfile(selection, capabilities: capabilities)
             profile = created
-            problemText = nil
         } catch { problemText = app.describe(error) }
     }
 
