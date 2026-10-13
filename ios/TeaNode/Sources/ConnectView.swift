@@ -146,10 +146,13 @@ struct ConnectView: View {
                 }
             }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
-            .task(id: app.openedLink?.url) {
+            // A link opened from Safari or a message. The connection runs in a
+            // task of its own: clearing the link ends any task keyed on it,
+            // which cancelled the request half way (NSURLErrorDomain -999).
+            .onChange(of: app.openedLink?.url, initial: true) {
                 guard let link = app.openedLink else { return }
                 app.openedLink = nil
-                await connect(link.url.absoluteString)
+                Task { await connect(link.url.absoluteString) }
             }
         }
     }
