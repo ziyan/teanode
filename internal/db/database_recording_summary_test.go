@@ -125,8 +125,8 @@ func TestRecordingSummarySweepOffersEachUntitledTranscribedRecordingOnce(test *t
 	if len(list()) != 0 {
 		test.Fatal("a recording is offered once, however the job ends")
 	}
-	// A title the agent wrote is offered again once its queued mark is cleared,
-	// and a title the person typed never is.
+	// A title the agent wrote is offered again once its queued mark is cleared;
+	// a recording with a typed title is offered only while it has no summary.
 	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
 		if err := transaction.StoreGeneratedRecordingSummary(fixture.userId, fixture.media.RecordingID, "Generated title", "A summary."); err != nil {
 			test.Fatal(err)
@@ -141,7 +141,11 @@ func TestRecordingSummarySweepOffersEachUntitledTranscribedRecordingOnce(test *t
 	}
 	dbtest.Exec(test, fixture.database, `UPDATE recording SET recording_title_source = 'user'`)
 	if len(list()) != 0 {
-		test.Fatal("a recording with a typed title is never offered")
+		test.Fatal("a recording with a typed title and a summary is not offered")
+	}
+	dbtest.Exec(test, fixture.database, `UPDATE recording SET recording_summary = ''`)
+	if recordings := list(); len(recordings) != 1 {
+		test.Fatalf("a recording with a typed title and no summary is offered: %+v", recordings)
 	}
 }
 
