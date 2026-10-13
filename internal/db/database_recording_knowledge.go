@@ -23,6 +23,7 @@ type RecordingKnowledgeOperation interface {
 	SyncRecordingKnowledge(userId, recordingId string) error
 	SyncRecordingKnowledgeStep(userId, recordingId string, progress *RecordingKnowledgeSyncProgress) (bool, error)
 	QueueRecordingKnowledgeSync(userId, recordingId string) error
+	ListRecordingsAwaitingKnowledgeSync(pageSize int) ([]*models.Recording, error)
 	ResumeRecordingLearning(userId, recordingId string, expectedSourceGeneration int64) (*models.RecordingLearningView, error)
 	CheckRecordingKnowledgeEvidence(userId string, documents []*models.AgentDocument) error
 	ReconcileDeletedRecordingKnowledge(recordingId string) error
@@ -42,6 +43,11 @@ type RecordingKnowledgeSyncProgress struct {
 	IsRunFinished        bool
 	SegmentCursorStartMS int64
 	SegmentCursorID      string
+	// HasStarted is whether the first slice has run, and SourceGeneration the
+	// recording's generation then: the one the finished pass is recorded as
+	// having synced, so a change made during the pass leaves it behind.
+	HasStarted       bool
+	SourceGeneration int64
 	// HasChangedEvidence is whether any slice of the pass wrote a document
 	// that differs from the one before it.
 	HasChangedEvidence bool
@@ -133,6 +139,17 @@ func (self *transaction) SyncRecordingKnowledgeStep(userId, recordingId string, 
 	return self.syncRecordingKnowledgeStep(userId, recordingId, false, progress, 1)
 }
 
+// syncRecordingKnowledgeStep reads slices of a pass and, when the pass is
+// finished, records the generation it started at on the recording.
+func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, shouldResumeReading bool, progress *RecordingKnowledgeSyncProgress, maximumPageCount int) (bool, error) {
+	isFinished, err := self.syncRecordingKnowledgeSlices(userId, recordingId, shouldResumeReading, progress, maximumPageCount)
+	if err != nil || !isFinished || !progress.HasStarted {
+		return isFinished, err
+	}
+	// Never moves the marker back: a pass that started earlier than another finished.
+	return true, self.tx.Model(&recordingModel{}).Where("id = ? AND (knowledge_synced_generation IS NULL OR knowledge_synced_generation < ?)", recordingId, progress.SourceGeneration).Update("knowledge_synced_generation", progress.SourceGeneration).Error
+}
+
 // QueueRecordingKnowledgeSync asks for the recording's knowledge to be synced
 // in the background, after the request's transaction commits. One job is open
 // per recording, so several requests in a row queue one sync, and the sync
@@ -150,8 +167,37 @@ func (self *transaction) QueueRecordingKnowledgeSync(userId, recordingId string)
 	if err != nil || ownerAgent == nil {
 		return err
 	}
+	// From here the sweep watches the recording: a change that lands while the
+	// job runs leaves the generation ahead of the marker and is queued again.
+	if err := self.tx.Model(&recordingModel{}).Where("id = ? AND knowledge_synced_generation IS NULL", recordingId).Update("knowledge_synced_generation", 0).Error; err != nil {
+		return err
+	}
 	_, err = self.EnqueueAgentJob(&models.AgentJob{AgentID: ownerAgent.ID, Kind: models.AgentJobRecordingKnowledge, SubjectID: recordingId})
 	return err
+}
+
+// ListRecordingsAwaitingKnowledgeSync lists recordings whose generation is ahead
+// of the one their knowledge was synced at and that have no sync queued or
+// running, so a sync that missed a change, or a queue that was lost, is asked
+// for again. A recording nothing has asked to sync has no marker and is left alone.
+func (self *transaction) ListRecordingsAwaitingKnowledgeSync(pageSize int) ([]*models.Recording, error) {
+	if pageSize < 1 || pageSize > 100 {
+		return nil, ErrInvalidArguments
+	}
+	var rows []*recordingModel
+	if err := self.tx.Where(`user_id IS NOT NULL AND deleted_at IS NULL AND knowledge_synced_generation IS NOT NULL AND knowledge_synced_generation < source_generation
+		AND (recording_origin <> ? OR recording_capture_state = ?)
+		AND EXISTS (SELECT 1 FROM agent WHERE agent.user_id = recording.user_id)
+		AND NOT EXISTS (SELECT 1 FROM agent_job WHERE agent_job.kind = ? AND agent_job.subject_id = recording.id AND agent_job.status IN ?)`,
+		models.RecordingOriginCapture, models.RecordingCaptureStopped, models.AgentJobRecordingKnowledge, []string{string(models.AgentJobQueued), string(models.AgentJobRunning)}).
+		Order("updated_at, id").Limit(pageSize).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	sources := make([]*models.Recording, 0, len(rows))
+	for _, row := range rows {
+		sources = append(sources, recordingFromModel(row))
+	}
+	return sources, nil
 }
 
 func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shouldResumeReading bool) error {
@@ -164,14 +210,17 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 	}
 }
 
-// syncRecordingKnowledgeStep reads up to maximumPageCount pages of passages
+// syncRecordingKnowledgeSlices reads up to maximumPageCount pages of passages
 // (all of them when it is zero) and, once there are none left, retires what the
 // pass did not see. It repeats everything before the first page on each call,
 // so that a slice sees the corrections and runs as they are now.
-func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, shouldResumeReading bool, progress *RecordingKnowledgeSyncProgress, maximumPageCount int) (bool, error) {
+func (self *transaction) syncRecordingKnowledgeSlices(userId, recordingId string, shouldResumeReading bool, progress *RecordingKnowledgeSyncProgress, maximumPageCount int) (bool, error) {
 	recordingSource, err := self.LockRecording(userId, recordingId)
 	if err != nil {
 		return false, err
+	}
+	if !progress.HasStarted {
+		progress.HasStarted, progress.SourceGeneration = true, recordingSource.SourceGeneration
 	}
 	// The transcript of a capture still being recorded is partial and changes
 	// with every piece. Stopping the capture syncs it once.
@@ -383,13 +432,19 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 					}
 					transcriptText += fmt.Sprintf("\nSelected passage correction generation %d, %d-%d MS: %s. Text has segment-level timing only; do not assign the whole statement to this passage.", correction.SourceGeneration, correction.PassageStartMS, correction.PassageEndMS, attribution)
 				}
-				digest := sha256.Sum256([]byte(transcriptText))
 				externalId := transcriptRun.ID + ":" + segment.ID
 				previous, err := self.GetAgentDocumentByExternal(source.ID, externalId)
 				if err != nil {
 					return false, err
 				}
+				chunkText := transcriptText
+				digest := sha256.Sum256([]byte(transcriptText))
 				if previous != nil && previous.Hash != hex.EncodeToString(digest[:]) {
+					// Read before the page's reconcile strikes the facts that cite the old words.
+					chunkText, err = self.withRetiredRecordingNotes(ownerAgent.ID, previous, transcriptText)
+					if err != nil {
+						return false, err
+					}
 					changedDocumentIds = append(changedDocumentIds, previous.ID)
 				}
 				metadata := map[string]any{"recordingId": recordingId, "recordingMediaId": transcriptRun.RecordingMediaID, "recordingTranscriptRunId": transcriptRun.ID, "transcriptVersionNumber": transcriptRun.VersionNumber, "passageStartMS": segment.SegmentStartMS, "passageEndMS": segment.SegmentEndMS, "sourceGeneration": recordingSource.SourceGeneration, "isUntrustedRecording": true, "speakerAttribution": confirmedName}
@@ -414,7 +469,7 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 					passageTime := passageHappenedAt.Add(time.Duration(segment.SegmentStartMS) * time.Millisecond)
 					passageHappenedAt = &passageTime
 				}
-				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(transcriptText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
+				document, err := self.PutAgentDocument(&models.AgentDocument{AgentID: ownerAgent.ID, SourceID: source.ID, ExternalID: externalId, Kind: models.DocumentJournal, Title: title, URL: fmt.Sprintf("/recordings/%s?version=%s&startMS=%d&endMS=%d", recordingId, transcriptRun.ID, segment.SegmentStartMS, segment.SegmentEndMS), Hash: hex.EncodeToString(digest[:]), Bytes: int64(len(chunkText)), Private: true, HappenedAt: passageHappenedAt, Metadata: metadata})
 				if err != nil {
 					return false, err
 				}
@@ -423,7 +478,7 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 				}
 				if previous == nil || previous.Hash != document.Hash {
 					hasChangedEvidence = true
-					if err := self.ReplaceAgentChunks(document, []*models.AgentChunk{{Text: transcriptText}}); err != nil {
+					if err := self.ReplaceAgentChunks(document, []*models.AgentChunk{{Text: chunkText}}); err != nil {
 						return false, err
 					}
 				}
@@ -474,6 +529,42 @@ func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, 
 		return true, self.RequestAgentSourceRun(source.ID, time.Now())
 	}
 	return true, nil
+}
+
+// withRetiredRecordingNotes gives a corrected passage the notes its correction
+// retires, so the next dream can file what still holds in corrected form instead
+// of reading a lone sentence that has lost the context the old note carried.
+// It only adds notes at the moment the plain passage text differs from the
+// stored document, before reconcileRecordingDocument strikes them, and lists
+// only live notes. The stored hash is always that of the plain text, so a later
+// sync of an unchanged passage compares equal and neither re-reads nor strikes
+// the corrected notes filed since.
+func (self *transaction) withRetiredRecordingNotes(agentId string, previous *models.AgentDocument, passageText string) (string, error) {
+	if previous == nil || previous.Hash == recordingPassageHash(passageText) {
+		return passageText, nil
+	}
+	evidence := fmt.Sprintf("[{\"id\":\"%s\",\"kind\":\"document\"}]", previous.ID)
+	var retiringFacts []*agentFactModel
+	if err := self.tx.Where("agent_id = ? AND NOT dormant AND superseded_by IS NULL AND evidence @> ?::jsonb", agentId, evidence).Order("id").Limit(10).Find(&retiringFacts).Error; err != nil {
+		return "", err
+	}
+	return appendRetiredRecordingNotes(passageText, retiringFacts), nil
+}
+
+func appendRetiredRecordingNotes(passageText string, retiredFacts []*agentFactModel) string {
+	if len(retiredFacts) == 0 {
+		return passageText
+	}
+	passageText += "\nBefore the latest correction this passage supported these notes, now retired. File the corrected version of any that still holds with the corrected text or attribution; do not restore what the correction contradicts:"
+	for _, retiredFact := range retiredFacts {
+		passageText += "\n- " + retiredFact.Text
+	}
+	return passageText
+}
+
+func recordingPassageHash(passageText string) string {
+	digest := sha256.Sum256([]byte(passageText))
+	return hex.EncodeToString(digest[:])
 }
 
 func (self *transaction) reconcileRecordingDocument(agentId, documentId string) error {

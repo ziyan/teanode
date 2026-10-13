@@ -423,11 +423,15 @@
                   {"id":"7","createdAt":"2026-10-10T09:01:03Z","role":"tool","content":"drafted","toolCallId":"c2"},
                   {"id":"8","createdAt":"2026-10-10T09:05:00Z","role":"user","content":"[alert] A parcel was delivered to the front door."},
                   {"id":"9","createdAt":"2026-10-10T09:05:02Z","role":"assistant","content":"Your parcel from the bookshop was left at the front door a few minutes ago."},
+                  {"id":"10a","createdAt":"2026-10-10T10:40:00Z","role":"user","content":"[herdr question] desktop w2:p1 f0"},
+                  {"id":"10b","createdAt":"2026-10-10T10:40:01Z","role":"assistant","content":"**Claude Code** in recipe-box asks:"},
+                  {"id":"10c","createdAt":"2026-10-10T10:40:01Z","role":"note","name":"herdr_asked","content":"{\"computer\":\"desktop\",\"paneId\":\"w2:p1\",\"questionFingerprint\":\"f0\",\"herdrSession\":{\"paneName\":\"recipe-box\",\"codingAgentKind\":\"claude\",\"question\":{\"questionFingerprint\":\"f0\",\"questionText\":\"What do you want to do?\",\"isMultipleChoice\":false,\"options\":[{\"optionNumber\":1,\"optionLabel\":\"Run the tests\",\"herdrOptionKind\":\"choice\"},{\"optionNumber\":2,\"optionLabel\":\"Stop here\",\"herdrOptionKind\":\"choice\"}]}}}"},
+                  {"id":"10d","createdAt":"2026-10-10T10:41:00Z","role":"note","name":"herdr_answered","content":"{\"computer\":\"desktop\",\"paneId\":\"w2:p1\",\"questionFingerprint\":\"f0\",\"answerText\":\"Run the tests\"}"},
                   {"id":"10","createdAt":"2026-10-10T11:20:00Z","role":"user","content":"[herdr question] laptop w1:p1 f1"},
                   {"id":"11","createdAt":"2026-10-10T11:20:01Z","role":"assistant","content":"**Claude Code** in garden-planner asks:"},
                   {"id":"12","createdAt":"2026-10-10T11:20:01Z","role":"note","name":"herdr_asked","content":"{\"computer\":\"laptop\",\"paneId\":\"w1:p1\",\"questionFingerprint\":\"f1\",\"herdrSession\":{\"paneName\":\"garden-planner\",\"codingAgentKind\":\"claude\",\"question\":{\"questionFingerprint\":\"f1\",\"questionText\":\"The tests pass. Open a pull request now?\",\"isMultipleChoice\":false,\"options\":[{\"optionNumber\":1,\"optionLabel\":\"Yes\",\"herdrOptionKind\":\"choice\"},{\"optionNumber\":2,\"optionLabel\":\"Not yet\",\"optionDescription\":\"Keep working on the layout first\",\"herdrOptionKind\":\"choice\"},{\"optionNumber\":3,\"optionLabel\":\"Type something\",\"herdrOptionKind\":\"freeText\"}]}}}"}
                 ],
-                "total":12
+                "total":16
               },
               "ListAgentInteractions":[
                 {"runId":"r","callId":"c3","interactionKind":"approval","toolName":"mail_send","interactionText":"Send the reply to the plumber: \"Thursday at 9 works, see you then.\"","interactionChoices":null,"createdAt":"2026-10-10T09:01:04Z"}

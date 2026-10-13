@@ -55,6 +55,10 @@ func TestRecordingCorrectionsDoNotNameOrRewriteOverlappingSpeakers(test *testing
 		if _, err := transaction.CorrectRecordingTranscriptText(fixture.userId, db.RecordingTranscriptTextCorrectionInput{RecordingID: source.ID, RecordingTranscriptSegmentID: firstSegmentId, ClientCorrectionID: "overlap-text", CorrectedTranscriptText: "The first participant proposed an optional change.", ExpectedSourceGeneration: source.SourceGeneration}); err != nil {
 			test.Fatal(err)
 		}
+		// The text correction queues the memory sync; this is what its job runs.
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
+			test.Fatal(err)
+		}
 		knowledge, err := transaction.GetAgentSourceByName(fixture.agentId, "recording:"+source.ID)
 		if err != nil {
 			test.Fatal(err)
@@ -192,6 +196,10 @@ func TestRecordingKnowledgeTitleKeepsStableSourceIdentity(test *testing.T) {
 			test.Fatal(err)
 		}
 		if _, err := transaction.UpdateRecordingMetadata(fixture.userId, source.ID, source.SourceGeneration, new("Fixture \"quoted\" title"), nil); err != nil {
+			test.Fatal(err)
+		}
+		// The title edit queues the memory sync; this is what its job runs.
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, source.ID); err != nil {
 			test.Fatal(err)
 		}
 		knowledge, err := transaction.GetAgentSourceByName(fixture.agentId, originalSource.Name)

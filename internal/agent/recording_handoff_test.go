@@ -85,6 +85,9 @@ func TestASentenceAcrossACutIsReadOnceAndWhole(test *testing.T) {
 			test.Fatal(err)
 		}
 	})
+	if err := fixture.worker.SyncRecordingKnowledge(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
 	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM agent_document") != "3" {
 		test.Fatal("memory kept the half sentence beside the whole one")
 	}

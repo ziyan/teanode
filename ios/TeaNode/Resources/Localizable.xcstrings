@@ -10949,6 +10949,22 @@
         }
       }
     },
+    "Details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详情"
+          }
+        }
+      }
+    },
     "Detection decides again": {
       "localizations": {
         "ja": {
@@ -15173,6 +15189,22 @@
         }
       }
     },
+    "Hides the details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を隠します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏详情"
+          }
+        }
+      }
+    },
     "High": {
       "localizations": {
         "ja": {
@@ -15985,6 +16017,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "队列中"
+          }
+        }
+      }
+    },
+    "In the dashboard, open Settings, then Phones, and choose Connect a phone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダッシュボードで設定を開き、電話を選んで、電話を接続を選びます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在仪表板中打开设置，再打开手机，选择连接手机。"
           }
         }
       }
@@ -24117,6 +24165,22 @@
         }
       }
     },
+    "Or connect with a code from your dashboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "またはダッシュボードのコードで接続"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或使用仪表板中的代码连接"
+          }
+        }
+      }
+    },
     "Or start with one of these": {
       "localizations": {
         "ja": {
@@ -24753,6 +24817,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "密码已设置"
+          }
+        }
+      }
+    },
+    "Paste link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを貼り付け"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴链接"
           }
         }
       }
@@ -30373,6 +30453,22 @@
         }
       }
     },
+    "Server address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーのアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器地址"
+          }
+        }
+      }
+    },
     "Server and agents": {
       "localizations": {
         "ja": {
@@ -31173,6 +31269,22 @@
         }
       }
     },
+    "Shows the details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示详情"
+          }
+        }
+      }
+    },
     "Shows the whole goal": {
       "localizations": {
         "ja": {
@@ -31205,6 +31317,22 @@
         }
       }
     },
+    "Sign in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录"
+          }
+        }
+      }
+    },
     "Sign in again": {
       "localizations": {
         "ja": {
@@ -31217,6 +31345,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新登录"
+          }
+        }
+      }
+    },
+    "Sign in to your TeaNode server.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode サーバーにサインインします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录你的 TeaNode 服务器。"
           }
         }
       }

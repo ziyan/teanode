@@ -58,8 +58,11 @@ type recordingModel struct {
 	TimelineDurationMS       int64
 	CaptureGaps              []models.RecordingGap `gorm:"serializer:json"`
 	SourceGeneration         int64
-	DeletedAt                *time.Time
-	CleanupCompletedAt       *time.Time
+	// KnowledgeSyncedGeneration is the source generation the recording's
+	// knowledge was last synced at. It is null until a change asks for a sync.
+	KnowledgeSyncedGeneration *int64
+	DeletedAt                 *time.Time
+	CleanupCompletedAt        *time.Time
 }
 
 func (recordingModel) TableName() string { return "recording" }

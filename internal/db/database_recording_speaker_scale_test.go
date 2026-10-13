@@ -265,3 +265,114 @@ func TestKnowledgeSyncQueuedByNamingsMatchesTheInlinePass(test *testing.T) {
 		test.Fatal("the renamed sync read in slices differs from the inline pass")
 	}
 }
+
+func nameScaleSpeaker(test *testing.T, scale *scaleFixture, name string) {
+	test.Helper()
+	if err := scale.database.Transaction(func(transaction db.Transaction) error {
+		if err := transaction.NameRecordingTemporarySpeaker(scale.userId, scale.recordingId, scale.speaker.SpeakerLabel, name, false); err != nil {
+			return err
+		}
+		return transaction.QueueRecordingKnowledgeSync(scale.userId, scale.recordingId)
+	}); err != nil {
+		test.Fatal(err)
+	}
+}
+
+func awaitingKnowledgeSyncIds(test *testing.T, scale *scaleFixture) []string {
+	test.Helper()
+	recordingIds := []string{}
+	dbtest.RunTransactionOn(test, scale.database, func(transaction db.Transaction) {
+		sources, err := transaction.ListRecordingsAwaitingKnowledgeSync(25)
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, source := range sources {
+			recordingIds = append(recordingIds, source.ID)
+		}
+	})
+	return recordingIds
+}
+
+// A naming that lands while a sync runs finds the job open and queues nothing
+// more. The generation the sync recorded is behind, so once the job is over the
+// sweep asks for another, and a sync that catches up ends the asking.
+func TestKnowledgeSyncSweepAsksAgainForAChangeThatLandedDuringASync(test *testing.T) {
+	scale := newScaleFixture(test)
+	stopScaleCapture(test, scale)
+	if len(awaitingKnowledgeSyncIds(test, scale)) != 0 {
+		test.Fatal("a recording nothing asked to sync was swept")
+	}
+	nameScaleSpeaker(test, scale, "Participant One")
+	// The job is claimed and reads its first slice.
+	dbtest.RunTransactionOn(test, scale.database, func(transaction db.Transaction) {
+		if _, err := transaction.ClaimAgentJobs("sweep-worker", 10, time.Now()); err != nil {
+			test.Fatal(err)
+		}
+	})
+	progress := &db.RecordingKnowledgeSyncProgress{}
+	if err := scale.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.SyncRecordingKnowledgeStep(scale.userId, scale.recordingId, progress)
+		return err
+	}); err != nil {
+		test.Fatal(err)
+	}
+	nameScaleSpeaker(test, scale, "Participant Two")
+	for isFinished := false; !isFinished; {
+		if err := scale.database.Transaction(func(transaction db.Transaction) (err error) {
+			isFinished, err = transaction.SyncRecordingKnowledgeStep(scale.userId, scale.recordingId, progress)
+			return err
+		}); err != nil {
+			test.Fatal(err)
+		}
+	}
+	if dbtest.QueryString(test, scale.database, "SELECT COUNT(*)::text FROM agent_job WHERE kind = 'recording_sync'") != "1" {
+		test.Fatal("the second naming queued a second job beside the running one")
+	}
+	if len(awaitingKnowledgeSyncIds(test, scale)) != 0 {
+		test.Fatal("the sweep asked while a sync was still running")
+	}
+	dbtest.Exec(test, scale.database, "UPDATE agent_job SET status = 'done' WHERE kind = 'recording_sync'")
+	if ids := awaitingKnowledgeSyncIds(test, scale); len(ids) != 1 || ids[0] != scale.recordingId {
+		test.Fatal("the change that landed during the sync was not found", ids)
+	}
+	// The sweep queues it, and a sync that starts after the change catches up.
+	if err := scale.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.QueueRecordingKnowledgeSync(scale.userId, scale.recordingId)
+	}); err != nil {
+		test.Fatal(err)
+	}
+	if err := scale.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.SyncRecordingKnowledge(scale.userId, scale.recordingId)
+	}); err != nil {
+		test.Fatal(err)
+	}
+	dbtest.Exec(test, scale.database, "UPDATE agent_job SET status = 'done' WHERE kind = 'recording_sync'")
+	if ids := awaitingKnowledgeSyncIds(test, scale); len(ids) != 0 {
+		test.Fatal("a caught up recording was swept again", ids)
+	}
+}
+
+// Editing a title or the words of a passage stores the edit and queues the sync.
+func TestEditingALongRecordingQueuesTheKnowledgeSyncInsteadOfRunningIt(test *testing.T) {
+	scale := newScaleFixture(test)
+	stopScaleCapture(test, scale)
+	var elapsed time.Duration
+	dbtest.RunTransactionOn(test, scale.database, func(transaction db.Transaction) {
+		current, err := transaction.GetRecording(scale.userId, scale.recordingId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		startedAt := time.Now()
+		if _, err := transaction.UpdateRecordingMetadata(scale.userId, scale.recordingId, current.SourceGeneration, new("A long meeting"), nil); err != nil {
+			test.Fatal(err)
+		}
+		elapsed = time.Since(startedAt)
+	})
+	test.Logf("editing the title took %s", elapsed)
+	if elapsed > scaleSpeakerCallLimit {
+		test.Fatalf("editing took %s, limit %s", elapsed, scaleSpeakerCallLimit)
+	}
+	if dbtest.QueryString(test, scale.database, "SELECT COUNT(*)::text FROM recording_knowledge_document") != "0" || dbtest.QueryString(test, scale.database, "SELECT COUNT(*)::text FROM agent_job WHERE kind = 'recording_sync'") != "1" {
+		test.Fatal("the edit ran the sync or did not queue it")
+	}
+}
