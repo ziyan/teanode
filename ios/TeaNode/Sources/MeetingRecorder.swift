@@ -25,7 +25,12 @@ final class MeetingRecorder: NSObject {
     private var activityId: String?
     private var startedUptime: TimeInterval = 0
     private var timelineAtStartMS: Int64 = 0
-    private var isChangingCapture = false
+    private var isChangingCapture = false {
+        didSet { if isChangingCapture { changeStartedUptime = ProcessInfo.processInfo.systemUptime } }
+    }
+    private var changeStartedUptime: TimeInterval = 0
+    /// Whether the last attempt to resume failed, which the lock screen says so the person opens the app.
+    private var didResumeFail = false
     private var pendingTransitions = RecordingCaptureTransitions()
     /// The words heard while recording. It is fed by the capture and never affects it.
     let liveStream = RecordingLiveStream()
@@ -33,6 +38,9 @@ final class MeetingRecorder: NSObject {
     private var levelTask: Task<Void, Never>?
     private var liveStartTask: Task<Void, Never>?
     private var isCutting = false
+    /// The latest levels for the graph on the screen; read on the screen's own clock, so the view does not watch it.
+    @ObservationIgnored private var levelHistory = RecordingLevelHistory()
+    private var levelReadingCount = 0
     private var lastUploadKickUptime: TimeInterval = 0
 
     override init() {
@@ -88,8 +96,17 @@ final class MeetingRecorder: NSObject {
         } catch { await fail(error) }
     }
 
+    /// A change of the capture (pause, resume, stop) that has not finished in 30 seconds is taken as stuck, so it cannot stop the
+    /// next one for ever.
+    private func releaseStuckChange() {
+        if isChangingCapture, RecordingStuckChange.isStuck(startedUptime: changeStartedUptime, nowUptime: ProcessInfo.processInfo.systemUptime) {
+            isChangingCapture = false
+        }
+    }
+
     func pause(isInterruption: Bool = false) async {
         guard isCapturing else { return }
+        releaseStuckChange()
         if isChangingCapture {
             pendingTransitions.enqueue(.pause(isInterruption: isInterruption))
             return
@@ -97,19 +114,25 @@ final class MeetingRecorder: NSObject {
         isChangingCapture = true
         defer { finishChangingCapture() }
         stopLiveWords()
+        // A pause the person asks for leaves the microphone running and the audio session active, and only closes the piece:
+        // the audio is dropped while paused, and resuming needs nothing from the system, which iOS refuses to a recording app
+        // that is not in front (from the lock screen). An interruption, which stops the microphone itself, closes everything.
+        let isMicrophoneKept = !isInterruption && capture?.isRunning == true
         do {
             updateElapsed()
-            try await closeCapture()
+            if isMicrophoneKept { try await closePiece() } else { try await closeCapture() }
             guard var recording = localRecording else { return }
             try recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: isInterruption ? "interrupted" : "paused")
             localRecording = try await persist(recording)
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            if !isMicrophoneKept { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+            didResumeFail = false
             kickUploads()
             await updateActivity()
         } catch { await fail(error) }
     }
 
     func resume(localRecordingId: String? = nil, requiresExistingActivity: Bool = false) async {
+        releaseStuckChange()
         guard let current = localRecording, localRecordingId == nil || current.id.uuidString == localRecordingId,
             ["paused", "interrupted"].contains(current.recordingCaptureState), !isChangingCapture,
             AppModel.shared.currentCall == nil
@@ -133,9 +156,10 @@ final class MeetingRecorder: NSObject {
             startClock()
             startWatchingLevel()
             startLiveStream()
+            didResumeFail = false
             kickUploads()
             await updateActivity()
-        } catch { await fail(error) }
+        } catch { await fail(error, didResumeFail: true) }
     }
 
     func stop(localRecordingId: String? = nil) async {
@@ -296,10 +320,18 @@ final class MeetingRecorder: NSObject {
         guard let retained = try KeychainAccountStore().load(accountKey: recording.accountKey),
             recording.belongsTo(accountKey: retained.accountKey, recordingUserId: retained.cachedRecordingUserId)
         else { throw TeaNodeError.signedOut }
-        let session = AVAudioSession.sharedInstance()
-        // Voice processing, which the capture asks the input for, needs the session to play as well as record.
-        try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothHFP])
-        try session.setActive(true)
+        // A microphone still running (a pause the person asked for kept it) takes the next piece with nothing asked of the system.
+        let isMicrophoneRunning = capture?.isRunning == true
+        if !isMicrophoneRunning {
+            if let stale = capture {
+                _ = await stale.stop()
+                capture = nil
+            }
+            let session = AVAudioSession.sharedInstance()
+            // Voice processing, which the capture asks the input for, needs the session to play as well as record.
+            try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothHFP])
+            try session.setActive(true)
+        }
         updateElapsed()
         cutPolicy.startPiece(atMS: elapsedMS)
         let media = LocalRecordingMedia(originalFilename: "recording.caf", originalContentType: "audio/x-caf", timelineStartMS: elapsedMS)
@@ -308,11 +340,23 @@ final class MeetingRecorder: NSObject {
         localRecording = recording
         let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
         guard pendingTransitions.shouldStartNextSegment else { return }
+        if isMicrophoneRunning, let running = capture {
+            _ = await running.switchFile(to: original)
+            currentMediaId = media.id
+            return
+        }
         let capture = RecordingEngineCapture(liveSender: liveStream.sender)
         try capture.start(writingTo: original)
         self.capture = capture
         currentMediaId = media.id
         observeConfigurationChanges(of: capture.engine)
+    }
+
+    /// Closes the file being written and records the pieces; the microphone goes on, its audio dropped until the next piece.
+    private func closePiece() async throws {
+        if let capture { _ = await capture.switchFile(to: nil) }
+        currentMediaId = nil
+        try await finishSegment()
     }
 
     /// Stops the microphone, closes the file being written and records the pieces.
@@ -368,6 +412,9 @@ final class MeetingRecorder: NSObject {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The levels of the last few seconds, oldest first, for the graph of bars; it holds still while paused.
+    func recentLevels() -> [Double] { levelHistory.bars }
+
     /// How loud the microphone hears the room now, from 0 to 1; 0 while nothing is being recorded.
     func inputLevel() -> Double {
         guard isCapturing, let capture else { return 0 }
@@ -415,7 +462,14 @@ final class MeetingRecorder: NSObject {
         becameActiveObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
             [weak self] _ in
             Task { @MainActor in
-                guard let self, self.hasSession, self.activityId == nil, self.ensureRecordingActivity(canCreate: true) else { return }
+                guard let self, self.hasSession else { return }
+                // A resume from the lock screen that could not get the microphone is tried again now the app is in front.
+                if self.didResumeFail, self.localRecording?.recordingCaptureState == "interrupted" {
+                    _ = self.ensureRecordingActivity(canCreate: true)
+                    await self.resume()
+                    return
+                }
+                guard self.activityId == nil, self.ensureRecordingActivity(canCreate: true) else { return }
                 await self.updateActivity()
             }
         }
@@ -498,7 +552,8 @@ final class MeetingRecorder: NSObject {
 
     private func updateActivity() async {
         guard let activityId, let localRecording else { return }
-        await RecordingActivities.update(activityId, captureState: localRecording.recordingCaptureState, elapsedMS: elapsedMS)
+        await RecordingActivities.update(
+            activityId, captureState: localRecording.recordingCaptureState, elapsedMS: elapsedMS, didResumeFail: didResumeFail)
     }
 
     // MARK: Sharing the manifest, the uploads and the live words
@@ -578,6 +633,9 @@ final class MeetingRecorder: NSObject {
             return
         }
         cutPolicy.recordLevel(decibels: capture.decibels, atMS: timelineNowMS())
+        // A bar every tenth of a second, from the meter read every twentieth.
+        levelReadingCount += 1
+        if levelReadingCount % 2 == 0 { levelHistory.append(decibels: capture.decibels) }
         cutIfDue()
     }
 
@@ -597,7 +655,8 @@ final class MeetingRecorder: NSObject {
         }
     }
 
-    private func fail(_ error: Error) async {
+    private func fail(_ error: Error, didResumeFail didFailToResume: Bool = false) async {
+        didResumeFail = didFailToResume
         stopLiveWords()
         if let capture {
             _ = await capture.stop()

@@ -36,6 +36,9 @@ final class RecordingEngineCapture: @unchecked Sendable {
         self.liveSender = liveSender
     }
 
+    /// Whether the microphone is running: it is not after an interruption, which stops the engine.
+    var isRunning: Bool { engine.isRunning }
+
     /// The meter's reading, in decibels, of the latest buffer.
     var decibels: Float { lock.withLock { _decibels } }
 

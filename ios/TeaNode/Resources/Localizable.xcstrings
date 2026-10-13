@@ -47088,22 +47088,6 @@
         }
       }
     },
-    "Clear name": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名前を消す"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除名字"
-          }
-        }
-      }
-    },
     "Copied.": {
       "localizations": {
         "ja": {
@@ -47260,22 +47244,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已标记为你。"
-          }
-        }
-      }
-    },
-    "Name cleared.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名前を消しました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已清除名字。"
           }
         }
       }
@@ -47926,6 +47894,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "用语音转写模型把每位说话人的发言再转写一遍，并提供来自用户自身数据的名称和术语，使拼写更准确。说话人和时间不变，用户的修改仍然优先。音频会再向用户的代理计费一次。"
+          }
+        }
+      }
+    },
+    "Could not resume. Open TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開できませんでした。TeaNode を開いてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法继续录制。请打开 TeaNode。"
+          }
+        }
+      }
+    },
+    "Mic mode: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクモード: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风模式：%@"
           }
         }
       }
