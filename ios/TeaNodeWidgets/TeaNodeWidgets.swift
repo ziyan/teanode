@@ -353,7 +353,7 @@ struct TurnActivityWidget: Widget {
                 Spacer()
             }
             .padding()
-            .activityBackgroundTint(Color(.systemBackground).opacity(0.4))
+            .activityBackgroundTint(nil)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -402,7 +402,7 @@ struct CallActivityWidget: Widget {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
-            .activityBackgroundTint(Color(.systemBackground).opacity(0.4))
+            .activityBackgroundTint(nil)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -547,7 +547,7 @@ struct RecordingActivityWidget: Widget {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
-            .activityBackgroundTint(Color(.systemBackground).opacity(0.4))
+            .activityBackgroundTint(nil)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
