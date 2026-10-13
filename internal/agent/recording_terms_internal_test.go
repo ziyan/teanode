@@ -269,7 +269,7 @@ func TestRecordingVocabularyPromptIsShort(test *testing.T) {
 
 func TestValidateRecordingTermFixRejectsWhatIsNotASmallGlossaryFix(test *testing.T) {
 	segmentTexts := map[string]string{"seg-1": "We shipped Fern croft today and talked about the weather."}
-	glossary := map[string]string{"ferncroft": "Ferncroft"}
+	glossary := map[string]string{"ferncroft": "Ferncroft", "stonebridge works": "Stonebridge Works"}
 	valid := recordingTermProposal{SegmentID: "seg-1", OriginalPhrase: "Fern croft", CorrectedPhrase: "Ferncroft", GlossaryTerm: "ferncroft"}
 	fix, isValid := validateRecordingTermFix(valid, segmentTexts, glossary)
 	if !isValid || fix.GlossaryTerm != "Ferncroft" || fix.CorrectedPhrase != "Ferncroft" {
@@ -289,6 +289,10 @@ func TestValidateRecordingTermFixRejectsWhatIsNotASmallGlossaryFix(test *testing
 		},
 		"a rewrite much larger than the phrase": func(proposal *recordingTermProposal) {
 			proposal.CorrectedPhrase = "Ferncroft " + strings.Repeat("and more ", 6)
+		},
+		"a glossary term the words do not sound like": func(proposal *recordingTermProposal) {
+			proposal.CorrectedPhrase = "Stonebridge Works"
+			proposal.GlossaryTerm = "Stonebridge Works"
 		},
 		"an empty original phrase":          func(proposal *recordingTermProposal) { proposal.OriginalPhrase = "" },
 		"a phrase with a control character": func(proposal *recordingTermProposal) { proposal.CorrectedPhrase = "Ferncroft\x00" },
@@ -424,5 +428,23 @@ func TestTranscriptCompletionQueuesTheTermsJobBeforeTheSummary(test *testing.T) 
 	kinds = other.queuedJobKinds(test)
 	if kinds[models.AgentJobRecordingTerms] != 0 || kinds[models.AgentJobRecordingSummary] != 1 {
 		test.Fatalf("with no pass possible the summary is queued at once: %v", kinds)
+	}
+}
+
+func TestAFixMustReadLikeTheTermItSpells(test *testing.T) {
+	for _, example := range []struct {
+		original, corrected, term string
+		isMisheard                bool
+	}{
+		{"T node", "TeaNode", "TeaNode", true},
+		{"herder", "herdr", "herdr", true},
+		{"the Fern croft release", "the Ferncroft release", "Ferncroft", true},
+		{"herder", "Robot Bridge", "Robot Bridge", false},
+		{"herder pains", "Robot Bridge", "Robot Bridge", false},
+		{"the weather", "the Ferncroft", "Ferncroft", false},
+	} {
+		if isMisheard := isMisheardAs(example.original, example.corrected, example.term); isMisheard != example.isMisheard {
+			test.Errorf("%q to %q for %q: misheard %v, want %v", example.original, example.corrected, example.term, isMisheard, example.isMisheard)
+		}
 	}
 }

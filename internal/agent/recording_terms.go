@@ -74,12 +74,69 @@ type recordingTermSegment struct {
 	Text        string
 }
 
+// recordingTermsSimilarity is how alike the misheard words and the term must
+// read, once case, spaces and punctuation are set aside: "T node" for
+// TeaNode passes, a different name that merely appears in the glossary does not.
+const recordingTermsSimilarity = 0.6
+
+// isMisheardAs says whether the words a fix replaces could be the term misheard.
+// It sets aside the words the fix keeps on either side, and compares what is
+// left with the term letter by letter.
+func isMisheardAs(original, corrected, term string) bool {
+	originalWords, correctedWords := strings.Fields(original), strings.Fields(corrected)
+	for len(originalWords) > 0 && len(correctedWords) > 0 && originalWords[0] == correctedWords[0] {
+		originalWords, correctedWords = originalWords[1:], correctedWords[1:]
+	}
+	for len(originalWords) > 0 && len(correctedWords) > 0 && originalWords[len(originalWords)-1] == correctedWords[len(correctedWords)-1] {
+		originalWords, correctedWords = originalWords[:len(originalWords)-1], correctedWords[:len(correctedWords)-1]
+	}
+	replaced, replacement, spelled := lettersOf(strings.Join(originalWords, " ")), lettersOf(strings.Join(correctedWords, " ")), lettersOf(term)
+	if len(replaced) == 0 || !strings.Contains(string(replacement), string(spelled)) {
+		return false
+	}
+	longest := max(len(replaced), len(spelled))
+	return 1-float64(editDistance(replaced, spelled))/float64(longest) >= recordingTermsSimilarity
+}
+
+// lettersOf is text in lower case with only its letters and digits.
+func lettersOf(text string) []rune {
+	var letters []rune
+	for _, character := range strings.ToLower(text) {
+		if unicode.IsLetter(character) || unicode.IsDigit(character) {
+			letters = append(letters, character)
+		}
+	}
+	return letters
+}
+
+// editDistance counts the single-letter insertions, deletions and
+// substitutions that turn one word into the other.
+func editDistance(first, second []rune) int {
+	previous := make([]int, len(second)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for firstIndex := 1; firstIndex <= len(first); firstIndex++ {
+		current := make([]int, len(second)+1)
+		current[0] = firstIndex
+		for secondIndex := 1; secondIndex <= len(second); secondIndex++ {
+			substitution := previous[secondIndex-1]
+			if first[firstIndex-1] != second[secondIndex-1] {
+				substitution++
+			}
+			current[secondIndex] = min(previous[secondIndex]+1, current[secondIndex-1]+1, substitution)
+		}
+		previous = current
+	}
+	return previous[len(second)]
+}
+
 // validateRecordingTermFix says whether a proposed fix may be applied, and
 // what to apply. The segment must be one this pass read, the original words
 // must occur in its current text, the term must be one of the glossary (the
 // returned input carries the glossary's own spelling of it), the corrected
-// words must contain the term and differ from the original, and the change
-// must be small.
+// words must contain the term and differ from the original, the change must
+// be small, and the words replaced must read like the term.
 func validateRecordingTermFix(proposal recordingTermProposal, segmentTexts map[string]string, glossary map[string]string) (db.RecordingGlossaryCorrectionInput, bool) {
 	text, isKnownSegment := segmentTexts[proposal.SegmentID]
 	if !isKnownSegment {
@@ -103,6 +160,9 @@ func validateRecordingTermFix(proposal recordingTermProposal, segmentTexts map[s
 	}
 	term, isGlossaryTerm := glossary[strings.ToLower(strings.TrimSpace(proposal.GlossaryTerm))]
 	if !isGlossaryTerm || !strings.Contains(strings.ToLower(corrected), strings.ToLower(term)) {
+		return db.RecordingGlossaryCorrectionInput{}, false
+	}
+	if !isMisheardAs(original, corrected, term) {
 		return db.RecordingGlossaryCorrectionInput{}, false
 	}
 	return db.RecordingGlossaryCorrectionInput{RecordingTranscriptSegmentID: proposal.SegmentID, OriginalPhrase: original, CorrectedPhrase: corrected, GlossaryTerm: term}, true
@@ -154,7 +214,9 @@ func (self *Agent) QueueRecordingTerms(transaction db.Transaction, userId, recor
 	if _, err := self.Enqueue(transaction, models.AgentJobRecordingTerms, assistant.ID, "", recordingId); err != nil {
 		return false, err
 	}
-	return true, nil
+	// The term job queues naming when it ends; marking it now keeps the
+	// sweep from naming the recording from its uncorrected words meanwhile.
+	return true, transaction.MarkRecordingSummaryQueued(userId, recordingId)
 }
 
 // queueRecordingTerms is the hook for a transcript that has just completed. It
