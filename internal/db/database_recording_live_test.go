@@ -1,6 +1,9 @@
 package db_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -93,6 +96,56 @@ func TestSummarySweepSkipsACaptureStillBeingRecorded(test *testing.T) {
 		awaiting, err = transaction.ListRecordingsAwaitingSummary("", 10)
 		if err != nil || len(awaiting) != 1 {
 			test.Fatal("a stopped capture was not offered for naming", err, len(awaiting))
+		}
+	})
+}
+
+// Only a piece of a capture can start reading earlier than its own audio, and
+// only a little, and only the way it said it would when a job starts over.
+func TestAHandoffIsOnlyForAPieceOfACaptureAndIsNotChangedLater(test *testing.T) {
+	imported := newTranscriptFixture(test)
+	err := imported.database.Transaction(func(transaction db.Transaction) error {
+		return transaction.SetRecordingTranscriptRunHandoff(imported.userId, imported.transcriptRun.ID, imported.claim, 1000)
+	})
+	if !errors.Is(err, db.ErrInvalidArguments) {
+		test.Fatal("an import was handed off", err)
+	}
+	captured := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	for name, handoffStartMS := range map[string]int64{"at the piece's own start": 2000, "after the piece's start": 2500, "before the start of the timeline": -1} {
+		err := captured.database.Transaction(func(transaction db.Transaction) error {
+			return transaction.SetRecordingTranscriptRunHandoff(captured.userId, captured.transcriptRun.ID, captured.claim, handoffStartMS)
+		})
+		if !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatal("a handoff "+name+" was accepted", err)
+		}
+	}
+	dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
+		for repeat := 0; repeat < 2; repeat++ {
+			if err := transaction.SetRecordingTranscriptRunHandoff(captured.userId, captured.transcriptRun.ID, captured.claim, 500); err != nil {
+				test.Fatal("the same handoff was refused on a repeat", err)
+			}
+		}
+		if err := transaction.SetRecordingTranscriptRunHandoff(captured.userId, captured.transcriptRun.ID, captured.claim, 900); !errors.Is(err, db.ErrAlreadyExists) {
+			test.Fatal("a different handoff replaced the first", err)
+		}
+		run, err := transaction.GetRecordingTranscriptRun(captured.userId, captured.transcriptRun.ID)
+		if err != nil || run.HandoffStartMS == nil || *run.HandoffStartMS != 500 {
+			test.Fatal("the handoff was not kept", err)
+		}
+	})
+	// The first chunk of that run then starts where the handoff does.
+	digest := sha256.Sum256([]byte("derived-wave-bytes"))
+	blob := &models.RecordingBlob{ID: db.RecordingAudioFileID(captured.transcriptRun.ID, 0), BlobSizeBytes: 128, BlobSHA256: hex.EncodeToString(digest[:])}
+	err = captured.database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.CreateRecordingAudioChunk(captured.userId, captured.transcriptRun.ID, captured.claim, &models.RecordingAudioChunk{ChunkIndex: 0, TimelineStartMS: 2000, AudioDurationMS: 1000}, blob, 4096)
+		return err
+	})
+	if !errors.Is(err, db.ErrInvalidArguments) {
+		test.Fatal("a first chunk ignored the handoff", err)
+	}
+	dbtest.RunTransactionOn(test, captured.database, func(transaction db.Transaction) {
+		if _, err := transaction.CreateRecordingAudioChunk(captured.userId, captured.transcriptRun.ID, captured.claim, &models.RecordingAudioChunk{ChunkIndex: 0, TimelineStartMS: 500, AudioDurationMS: 1500}, blob, 4096); err != nil {
+			test.Fatal(err)
 		}
 	})
 }

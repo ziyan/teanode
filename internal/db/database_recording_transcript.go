@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ type RecordingTranscriptOperation interface {
 	CreateRecordingTranscriptRun(userId, mediaId, agentId, clientRunId, providerModelName string, isReprocessingRequested bool) (*models.RecordingTranscriptRun, error)
 	GetRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
 	ListRecordingTranscriptRuns(userId, recordingId string) ([]*models.RecordingTranscriptRun, error)
+	SetRecordingTranscriptRunHandoff(userId, runId string, claim RecordingWorkerClaim, handoffStartMS int64) error
 	UpdateRecordingTranscriptProgress(userId, runId string, claim RecordingWorkerClaim, processingState models.RecordingProcessingState, errorMessage string, derivedDurationMS int64) error
 	CreateRecordingAudioChunk(userId, runId string, claim RecordingWorkerClaim, chunk *models.RecordingAudioChunk, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingAudioChunk, error)
 	ListRecordingAudioChunks(userId, runId string) ([]*models.RecordingAudioChunk, error)
@@ -70,6 +72,15 @@ func (self *transaction) ReadRecordingTranscriptTimelinePage(userId, recordingId
 		return segments, transcriptRuns, 0, nil
 	}
 	query := self.tx.Model(&recordingSegmentModel{}).Where("recording_transcript_run_id IN ?", runIds)
+	cutoffs, err := self.recordingHandoffCutoffs(recordingId, runRows)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	for _, runId := range runIds {
+		if cutoffMS, isCut := cutoffs[runId]; isCut {
+			query = query.Where("NOT (recording_transcript_run_id = ? AND segment_start_ms >= ?)", runId, cutoffMS)
+		}
+	}
 	var segmentCount int64
 	if err := query.Count(&segmentCount).Error; err != nil {
 		return nil, nil, 0, err
@@ -82,6 +93,44 @@ func (self *transaction) ReadRecordingTranscriptTimelinePage(userId, recordingId
 		segments = append(segments, (*models.RecordingTranscriptSegment)(&row))
 	}
 	return segments, transcriptRuns, segmentCount, nil
+}
+
+// recordingHandoffCutoffs says, for the runs that are the latest of their
+// originals, from which timeline millisecond a run's passages are hidden: the
+// run of the next piece of a capture re-read the end of this one from there, so
+// showing both would say the same sentence twice. A run is cut only by the
+// follower that handed off from it, the next original on the timeline, and
+// only once that follower's own run is among the latest completed ones.
+func (self *transaction) recordingHandoffCutoffs(recordingId string, runRows []recordingRunModel) (map[string]int64, error) {
+	cutoffs := map[string]int64{}
+	hasHandoff := false
+	for index := range runRows {
+		hasHandoff = hasHandoff || runRows[index].HandoffStartMS != nil
+	}
+	if !hasHandoff {
+		return cutoffs, nil
+	}
+	var mediaRows []recordingMediaModel
+	if err := self.tx.Select("id", "timeline_start_ms").Where("recording_id = ?", recordingId).Find(&mediaRows).Error; err != nil {
+		return nil, err
+	}
+	startByMediaId := map[string]int64{}
+	for _, mediaRow := range mediaRows {
+		startByMediaId[mediaRow.ID] = mediaRow.TimelineStartMS
+	}
+	ordered := make([]*recordingRunModel, 0, len(runRows))
+	for index := range runRows {
+		ordered = append(ordered, &runRows[index])
+	}
+	sort.SliceStable(ordered, func(left, right int) bool {
+		return startByMediaId[ordered[left].RecordingMediaID] < startByMediaId[ordered[right].RecordingMediaID]
+	})
+	for index := 1; index < len(ordered); index++ {
+		if ordered[index].HandoffStartMS != nil {
+			cutoffs[ordered[index-1].ID] = *ordered[index].HandoffStartMS
+		}
+	}
+	return cutoffs, nil
 }
 
 // GetLatestRecordingChunkAttempt avoids loading current references for already submitted evidence.
@@ -301,6 +350,49 @@ func (self *transaction) lockRecordingWorker(userId, runId string, claim Recordi
 	return transcriptRun, nil
 }
 
+// recordingHandoffLongestMS bounds how far before a piece's own start its audio
+// may begin when it re-reads the end of the piece before it.
+const recordingHandoffLongestMS = 15000
+
+// SetRecordingTranscriptRunHandoff records, before any audio is derived, that
+// the first chunk of a piece of a capture starts earlier than the piece does,
+// with the tail of the previous piece. It can be repeated with the same value
+// when a job starts over.
+func (self *transaction) SetRecordingTranscriptRunHandoff(userId, runId string, claim RecordingWorkerClaim, handoffStartMS int64) error {
+	transcriptRun, err := self.lockRecordingWorker(userId, runId, claim)
+	if err != nil {
+		return err
+	}
+	if transcriptRun.RecordingProcessingState != models.RecordingProcessingPreparing {
+		return ErrAlreadyExists
+	}
+	source, err := self.GetRecording(userId, transcriptRun.RecordingID)
+	if err != nil {
+		return err
+	}
+	media, err := self.GetRecordingMedia(userId, transcriptRun.RecordingMediaID)
+	if err != nil {
+		return err
+	}
+	if source.RecordingOrigin != models.RecordingOriginCapture || handoffStartMS < 0 || handoffStartMS >= media.TimelineStartMS || media.TimelineStartMS-handoffStartMS > recordingHandoffLongestMS {
+		return ErrInvalidArguments
+	}
+	if transcriptRun.HandoffStartMS != nil {
+		if *transcriptRun.HandoffStartMS != handoffStartMS {
+			return ErrAlreadyExists
+		}
+		return nil
+	}
+	chunks, err := self.ListRecordingAudioChunks(userId, runId)
+	if err != nil {
+		return err
+	}
+	if len(chunks) > 0 {
+		return ErrAlreadyExists
+	}
+	return self.tx.Model(&recordingRunModel{}).Where("id = ?", runId).Update("handoff_start_ms", handoffStartMS).Error
+}
+
 func (self *transaction) UpdateRecordingTranscriptProgress(userId, runId string, claim RecordingWorkerClaim, processingState models.RecordingProcessingState, errorMessage string, derivedDurationMS int64) error {
 	transcriptRun, err := self.lockRecordingWorker(userId, runId, claim)
 	if err != nil {
@@ -402,6 +494,9 @@ func (self *transaction) CreateRecordingAudioChunk(userId, runId string, claim R
 		return nil, err
 	}
 	expectedStartMS := media.TimelineStartMS
+	if transcriptRun.HandoffStartMS != nil {
+		expectedStartMS = *transcriptRun.HandoffStartMS
+	}
 	if len(chunks) > 0 {
 		previousChunk := chunks[len(chunks)-1]
 		expectedStartMS = previousChunk.TimelineStartMS + previousChunk.AudioDurationMS

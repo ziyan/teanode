@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -196,12 +197,25 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 		}
 	}
 	passStartedAt := time.Now().UTC().Truncate(time.Microsecond)
+	latestRunRows := make([]recordingRunModel, 0, len(latestRuns))
 	for _, transcriptRun := range latestRuns {
+		latestRunRows = append(latestRunRows, recordingRunModel{RecordingTranscriptRun: *transcriptRun})
+	}
+	handoffCutoffs, err := self.recordingHandoffCutoffs(recordingId, latestRunRows)
+	if err != nil {
+		return err
+	}
+	for _, transcriptRun := range latestRuns {
+		// The follower of a piece re-read its last passage, so the piece's own copy is not evidence.
+		segmentLimitMS := int64(math.MaxInt64)
+		if cutoffMS, isCut := handoffCutoffs[transcriptRun.ID]; isCut {
+			segmentLimitMS = cutoffMS
+		}
 		segmentCursorStartMS := int64(-1)
 		segmentCursorId := ""
 		for {
 			var segmentRows []*recordingSegmentModel
-			if err := self.tx.Where("recording_transcript_run_id = ? AND (segment_start_ms > ? OR (segment_start_ms = ? AND id > ?))", transcriptRun.ID, segmentCursorStartMS, segmentCursorStartMS, segmentCursorId).Order("segment_start_ms,id").Limit(250).Find(&segmentRows).Error; err != nil {
+			if err := self.tx.Where("recording_transcript_run_id = ? AND segment_start_ms < ? AND (segment_start_ms > ? OR (segment_start_ms = ? AND id > ?))", transcriptRun.ID, segmentLimitMS, segmentCursorStartMS, segmentCursorStartMS, segmentCursorId).Order("segment_start_ms,id").Limit(250).Find(&segmentRows).Error; err != nil {
 				return err
 			}
 			segments := make([]*models.RecordingTranscriptSegment, 0, len(segmentRows))

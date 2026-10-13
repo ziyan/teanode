@@ -11,7 +11,7 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 ## Progress
 
 - [x] Milestone 1 (2026-10-13): the server takes pieces of a recording while it is still being captured (no generation bump on capture progress, no summary or memory sync per piece, transcription of each piece as it arrives).
-- [ ] Milestone 2: sentences that cross a cut between pieces come out whole (held-back last segment, re-read with the next piece).
+- [x] Milestone 2 (2026-10-13): sentences that cross a cut between pieces come out whole (held-back last segment, re-read with the next piece).
 - [ ] Milestone 3: speakers keep their label across pieces (recording-scoped temporary voice samples) and naming a speaker during capture applies to the whole recording.
 - [ ] Milestone 4: live words stream through the server (recording mode of the voice relay), stored as live utterances and merged with speaker-separated segments in the timeline.
 - [ ] Milestone 5: the iPhone cuts pieces at utterance ends, uploads them while recording, streams the microphone, and shows live bubbles with naming on the recording screen.
@@ -21,6 +21,10 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 
 - The summary sweep `queueRecordingSummaries` (`ListRecordingsAwaitingSummary`) also finds any recording with a completed run, so an active capture would have been named by the sweep within a minute even with the run-completion path fixed. Milestone 1 also filters that query to stopped and imported captures.
 - `CorrectRecordingSpeaker` advances the generation itself, once per call. A client that names several speakers must re-read the generation between calls; stopping the generation bump for capture progress does not change that. Milestone 3's temporary-speaker naming therefore re-reads the generation inside its transaction before each correction.
+- Two pieces of a capture can be picked up by workers at the same moment, and the second then looks for the first one's last passage before it exists. The second piece now returns a `Deferral` (retried after 5 seconds) while the previous piece has no transcript yet, for at most 30 minutes, so a failed or abandoned piece cannot hold up the rest.
+- `CreateRecordingAudioChunk` required the first chunk to start at the media's own timeline start. A piece with a handoff starts earlier, so the check now expects `handoff_start_ms` when the run has one; `SetRecordingTranscriptRunHandoff` records it before any audio is derived and refuses a different value later.
+- The memory sync (`syncRecordingKnowledge`) reads every run's passages directly instead of the timeline, so the hidden passage would have been filed as evidence beside the whole sentence. It applies the same cutoff as the timeline read.
+- The previous piece's tail is cut from its own derived audio chunks (kept as `recording_blob` rows), not by decoding the original again.
 - The existing test `TestRecordingCaptureHistoryAndReservedQuota` expected each progress update to advance the generation (it used the stale value 1 after two updates). It now checks a generation from the future and, after the stop, the pre-stop generation.
 
 ## Decision Log
@@ -43,6 +47,10 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
   Date/Author: 2026-10-13, Claude.
 - Decision: `UpdateRecordingCapture` advances the generation only on the first move to stopped (and for an import's own state), not on a repeated stop report.
   Rationale: every correction compares the generation the client read; a repeated stop report from a retrying phone must not invalidate it.
+  Date/Author: 2026-10-13, Claude.
+
+- Decision: a handoff is skipped when the previous piece's last passage began more than 15 seconds before the cut, when the two pieces are more than 1 second apart on the timeline (a pause), and when that last passage ended more than 500 ms before the previous piece's end.
+  Rationale: replacing only the tail of a longer passage would show its beginning twice (the timeline hides previous-piece passages that start at or after `handoff_start_ms`, so a passage starting earlier is not hidden); a pause is not a sentence running over. A long turn is then split at the cut into two bubbles, which is wrong in layout but never wrong or repeated in words.
   Date/Author: 2026-10-13, Claude.
 
 ## Outcomes & Retrospective

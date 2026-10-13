@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -33,9 +34,10 @@ type fakeTranscriptionSegment struct {
 
 // fakeTranscriptionRequest is what the fake provider received for one piece.
 type fakeTranscriptionRequest struct {
-	AudioDurationMS    int64
-	KnownSpeakerNames  []string
-	KnownSpeakerSample map[string][]byte
+	AudioDurationMS   int64
+	KnownSpeakerNames []string
+	// WaveBytes is the whole file the provider was sent.
+	WaveBytes []byte
 }
 
 // fakeTranscriptionProvider speaks the file-transcription protocol of the
@@ -62,8 +64,12 @@ func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
 			return
 		}
 		defer func() { _ = file.Close() }()
-		waveSizeBytes, _ := file.Seek(0, 2)
-		received := fakeTranscriptionRequest{AudioDurationMS: (waveSizeBytes - 44) / 32, KnownSpeakerNames: request.MultipartForm.Value["known_speaker_names[]"], KnownSpeakerSample: map[string][]byte{}}
+		waveBytes, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		received := fakeTranscriptionRequest{AudioDurationMS: int64(len(waveBytes)-44) / 32, KnownSpeakerNames: request.MultipartForm.Value["known_speaker_names[]"], WaveBytes: waveBytes}
 		provider.lock.Lock()
 		requestIndex := len(provider.requests)
 		provider.requests = append(provider.requests, received)
@@ -120,6 +126,8 @@ type liveRecordingFixture struct {
 	nextStartMS   int64
 	pieceCount    int
 	configuration *config.Configuration
+	claimedJobs   map[string]*models.AgentJob
+	pieceWaves    [][]byte
 }
 
 func newLiveRecordingFixture(test *testing.T) *liveRecordingFixture {
@@ -147,7 +155,7 @@ func newLiveRecordingFixture(test *testing.T) *liveRecordingFixture {
 	if err != nil {
 		test.Fatal(err)
 	}
-	fixture := &liveRecordingFixture{test: test, database: database, files: store.(storage.StreamFiles), provider: provider, userId: dbtest.CreateUser(test, database, "live-owner"), configuration: configuration}
+	fixture := &liveRecordingFixture{test: test, database: database, files: store.(storage.StreamFiles), provider: provider, userId: dbtest.CreateUser(test, database, "live-owner"), configuration: configuration, claimedJobs: map[string]*models.AgentJob{}}
 	fixture.worker = New(&Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }})
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		role, err := transaction.CreateRole(&models.Role{Name: "Live recording", Permissions: []models.Permission{models.PermissionAgentUse}})
@@ -175,11 +183,11 @@ func newLiveRecordingFixture(test *testing.T) *liveRecordingFixture {
 
 // liveSpeechWave is mono 16 kHz speech-like audio: a tone with a short silence
 // every second, which passes the screening a voice sample goes through.
-func liveSpeechWave(durationMS int64) []byte {
+func liveSpeechWave(durationMS int64, toneStep float64) []byte {
 	samples := make([]byte, durationMS*32)
 	for sampleIndex := 0; sampleIndex < len(samples)/2; sampleIndex++ {
 		if sampleIndex%16000 > 2000 {
-			binary.LittleEndian.PutUint16(samples[sampleIndex*2:], uint16(int16(4000*math.Sin(float64(sampleIndex)*0.1))))
+			binary.LittleEndian.PutUint16(samples[sampleIndex*2:], uint16(int16(4000*math.Sin(float64(sampleIndex)*toneStep))))
 		}
 	}
 	return recordingReferenceWave(samples)
@@ -191,7 +199,9 @@ func (self *liveRecordingFixture) addPiece(durationMS, gapMS int64) *models.Reco
 	self.test.Helper()
 	self.nextStartMS += gapMS
 	self.pieceCount++
-	waveBytes := liveSpeechWave(durationMS)
+	// Each piece has its own tone, so a test can tell whose audio it was sent.
+	waveBytes := liveSpeechWave(durationMS, 0.05+0.03*float64(self.pieceCount))
+	self.pieceWaves = append(self.pieceWaves, waveBytes)
 	digest := sha256.Sum256(waveBytes)
 	digestText := hex.EncodeToString(digest[:])
 	var media *models.RecordingMedia
@@ -213,8 +223,9 @@ func (self *liveRecordingFixture) addPiece(durationMS, gapMS int64) *models.Reco
 	return media
 }
 
-// transcribe queues a piece the way the sweep does and runs its job to the end.
-func (self *liveRecordingFixture) transcribe(media *models.RecordingMedia) *models.RecordingTranscriptRun {
+// queue makes the run for a piece, the way the sweep does, and claims its job
+// without running it.
+func (self *liveRecordingFixture) queue(media *models.RecordingMedia) *models.RecordingTranscriptRun {
 	self.test.Helper()
 	var transcriptRun *models.RecordingTranscriptRun
 	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
@@ -224,23 +235,35 @@ func (self *liveRecordingFixture) transcribe(media *models.RecordingMedia) *mode
 			self.test.Fatal(err)
 		}
 	})
-	var job *models.AgentJob
 	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
-		jobs, err := transaction.ClaimAgentJobs("live-worker", 10, time.Now())
+		jobs, err := transaction.ClaimAgentJobs("live-worker", 100, time.Now())
 		if err != nil {
 			self.test.Fatal(err)
 		}
 		for _, claimed := range jobs {
 			if claimed.Kind == models.AgentJobRecording && claimed.SubjectID == transcriptRun.ID {
-				job = claimed
+				self.claimedJobs[transcriptRun.ID] = claimed
 			}
 		}
-		if job == nil {
-			self.test.Fatal("the piece's job was not claimed")
-		}
 	})
-	run := &Run{Job: job, Agent: self.assistant, Owner: self.owner, settings: self.worker.settings}
-	if err := self.worker.runRecording(self.test.Context(), run); err != nil {
+	if self.claimedJobs[transcriptRun.ID] == nil {
+		self.test.Fatal("the piece's job was not claimed")
+	}
+	return transcriptRun
+}
+
+// execute runs the claimed job of a queued run and returns what the job returned.
+func (self *liveRecordingFixture) execute(transcriptRun *models.RecordingTranscriptRun) error {
+	self.test.Helper()
+	run := &Run{Job: self.claimedJobs[transcriptRun.ID], Agent: self.assistant, Owner: self.owner, settings: self.worker.settings}
+	return self.worker.runRecording(self.test.Context(), run)
+}
+
+// transcribe queues a piece and runs its job to the end.
+func (self *liveRecordingFixture) transcribe(media *models.RecordingMedia) *models.RecordingTranscriptRun {
+	self.test.Helper()
+	transcriptRun := self.queue(media)
+	if err := self.execute(transcriptRun); err != nil {
 		self.test.Fatal(err)
 	}
 	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {

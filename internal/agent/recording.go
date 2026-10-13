@@ -156,15 +156,35 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	if err != nil {
 		return self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingFailed, err.Error(), transcriptRun.DerivedDurationMS)
 	}
-	if err := self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingPreparing, "", transcriptRun.DerivedDurationMS); err != nil {
-		return err
-	}
 	var media *models.RecordingMedia
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
 		media, err = transaction.GetRecordingMedia(run.Agent.UserID, transcriptRun.RecordingMediaID)
 		return err
 	}); err != nil {
 		return err
+	}
+	// Decided before the run leaves the queue's state: when the piece before
+	// this one has no transcript yet this returns a Deferral, and the run
+	// simply starts over later.
+	handoff, err := self.recordingHandoffBefore(ctx, run.Agent.UserID, media, files)
+	if err != nil {
+		return err
+	}
+	if handoff != nil && chunkDurationMS-int64(len(handoff.PCM))/recordingPCMBytesPerMS < 1000 {
+		handoff = nil
+	}
+	if err := self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingPreparing, "", transcriptRun.DerivedDurationMS); err != nil {
+		return err
+	}
+	if handoff != nil {
+		// The first chunk carries the tail of the previous piece, so it is
+		// shortened by that much to stay within the provider's bound.
+		chunkDurationMS -= int64(len(handoff.PCM)) / recordingPCMBytesPerMS
+		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			return transaction.SetRecordingTranscriptRunHandoff(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, handoff.StartMS)
+		}); err != nil {
+			return err
+		}
 	}
 	original, err := recording.PrivateMediaFile()
 	if err != nil {
@@ -188,6 +208,9 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	claim := db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}
 	var publicationError error
 	durationMS, err := decoder.Decode(ctx, original, media.TimelineStartMS, recordingMaximumDurationMS, chunkDurationMS, func(decoded *recording.DecodedAudioChunk) error {
+		if handoff != nil && decoded.ChunkIndex == 0 {
+			decoded = withRecordingHandoff(decoded, handoff)
+		}
 		chunkDigest := sha256.Sum256(decoded.WaveBytes)
 		blob := &models.RecordingBlob{ID: db.RecordingAudioFileID(transcriptRun.ID, decoded.ChunkIndex), BlobSizeBytes: int64(len(decoded.WaveBytes)), BlobSHA256: hex.EncodeToString(chunkDigest[:])}
 		chunk := &models.RecordingAudioChunk{ChunkIndex: decoded.ChunkIndex, TimelineStartMS: decoded.TimelineStartMS, AudioDurationMS: decoded.AudioDurationMS}
@@ -227,6 +250,17 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	transcriptRun.DerivedDurationMS = durationMS
 	transcriptRun.RecordingProcessingState = models.RecordingProcessingTranscribing
 	return nil
+}
+
+// withRecordingHandoff puts the end of the previous piece in front of a piece's
+// first chunk, so the passage that crossed the cut is heard whole, and moves the
+// chunk's start back to where that audio begins.
+func withRecordingHandoff(decoded *recording.DecodedAudioChunk, handoff *recordingHandoff) *recording.DecodedAudioChunk {
+	prefixDurationMS := int64(len(handoff.PCM)) / recordingPCMBytesPerMS
+	samples := make([]byte, 0, len(handoff.PCM)+len(decoded.WaveBytes)-44)
+	samples = append(samples, handoff.PCM...)
+	samples = append(samples, decoded.WaveBytes[44:]...)
+	return &recording.DecodedAudioChunk{ChunkIndex: decoded.ChunkIndex, TimelineStartMS: handoff.StartMS, AudioDurationMS: prefixDurationMS + decoded.AudioDurationMS, WaveBytes: recordingReferenceWave(samples)}
 }
 
 // runRecording never enters Ask, a conversation, speech synthesis or tool execution.
