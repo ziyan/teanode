@@ -59,6 +59,7 @@ type Query interface {
 	RecordingTextCorrectionQuery
 	RecordingSpeakerQuery
 	RecordingQuery
+	RecordingPlaybackQuery
 	RecordingTranscriptQuery
 	AgentVoiceQuery
 	AgentComputerQuery
@@ -109,6 +110,7 @@ type Mutation interface {
 	RecordingTextCorrectionMutation
 	RecordingSpeakerMutation
 	RecordingMutation
+	RecordingPlaybackMutation
 	RecordingTranscriptMutation
 	RecordingAttachmentMutation
 	RecordingMetadataMutation

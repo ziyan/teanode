@@ -38,6 +38,7 @@ const (
 	PathRecordingPart     = Prefix + "/recordings/media/{mediaId}/parts/{partIndex}"
 	PathRecordingComplete = Prefix + "/recordings/media/{mediaId}/complete"
 	PathRecordingMedia    = Prefix + "/recordings/media/{mediaId}"
+	PathRecordingPlayback = Prefix + "/recordings/media/{mediaId}/playback"
 
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
