@@ -109,7 +109,7 @@ export function ReactionPicker({
   const choices = hasOtherCurrent ? [...QUICK_REACTIONS, current] : QUICK_REACTIONS
   useEffect(() => {
     const opener = document.activeElement
-    picker.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    if (canMovePillFocus()) picker.current?.querySelector<HTMLButtonElement>('button')?.focus()
     return () => {
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
     }
@@ -257,6 +257,13 @@ function EmojiChooser({ current, onPick }: { current: string; onPick: (emoji: st
   )
 }
 
+// canMovePillFocus says whether a pill that opens takes the focus to its first
+// button, which a keyboard needs; on a touch screen it would only draw a ring
+// around a button nobody chose.
+function canMovePillFocus(): boolean {
+  return !window.matchMedia?.('(hover: none)').matches
+}
+
 // useLinePillDismissal closes a pill over a message: a press outside it, or
 // Escape (onEscape, which may close something inside it first). A press on
 // the message it belongs to is left to the message, whose tap opens and
@@ -306,7 +313,7 @@ export function LineActionPill({
   const pill = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const opener = document.activeElement
-    pill.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    if (canMovePillFocus()) pill.current?.querySelector<HTMLButtonElement>('button')?.focus()
     return () => {
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
     }
