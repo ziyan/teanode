@@ -67,11 +67,19 @@ type RecordingTranscriptRun struct {
 	ProcessingErrorMessage   string                   `json:"processingErrorMessage"`
 	IsReprocessingRequested  bool                     `json:"isReprocessingRequested"`
 	CompletedAt              *time.Time               `json:"completedAt"`
-	// HandoffStartMS is the timeline millisecond the audio of this version
-	// starts at when it begins with the end of the previous piece of a capture,
-	// because speech ran across the cut between them. The previous piece's
-	// passages from this millisecond on are replaced by the ones read here.
+	// HandoffStartMS is the timeline millisecond the second look at the end of
+	// the previous piece of a capture starts at, set when speech ran across the
+	// cut between them. That audio is a chunk of this version after the
+	// piece's own, and the previous piece's passages from this millisecond on
+	// are replaced by the ones read there.
 	HandoffStartMS *int64 `json:"handoffStartMS"`
+	// PublishedAt is when this version was stitched to the piece before it
+	// and its passages became final for the piece after it to read. A version
+	// can be published well before it is complete, because the second pass over
+	// its words comes between the two. Empty on a version that has not been
+	// stitched, and on every version from before this was kept; those are final
+	// once complete.
+	PublishedAt *time.Time `json:"-"`
 	// SegmentCount is how many passages the version holds, filled when runs are
 	// listed, so a client can tell a complete version with no speech from one with some.
 	SegmentCount int64 `json:"segmentCount" gorm:"-"`

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -58,6 +59,13 @@ type fakeTranscriptionProvider struct {
 	// they are refused with instead.
 	plainAnswer func(plainIndex int, request fakeTranscriptionRequest) string
 	plainStatus int
+	// hold, when set, is called with each request before it is answered, and
+	// may block until the test lets it go or the client hangs up.
+	hold func(requestContext context.Context, request fakeTranscriptionRequest)
+	// inFlight is how many requests are being answered now, and maxInFlight
+	// the most there have been at once.
+	inFlight    int
+	maxInFlight int
 }
 
 func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
@@ -91,7 +99,18 @@ func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
 		provider.requests = append(provider.requests, received)
 		answer := provider.answer
 		plainAnswer, plainStatus := provider.plainAnswer, provider.plainStatus
+		hold := provider.hold
+		provider.inFlight++
+		provider.maxInFlight = max(provider.maxInFlight, provider.inFlight)
 		provider.lock.Unlock()
+		defer func() {
+			provider.lock.Lock()
+			provider.inFlight--
+			provider.lock.Unlock()
+		}()
+		if hold != nil {
+			hold(request.Context(), received)
+		}
 		if !strings.Contains(received.Model, "diarize") {
 			if plainStatus != 0 {
 				http.Error(writer, "refused", plainStatus)
@@ -135,6 +154,25 @@ func (self *fakeTranscriptionProvider) requestAt(index int) fakeTranscriptionReq
 	return self.requests[index]
 }
 
+func (self *fakeTranscriptionProvider) mostInFlight() int {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	return self.maxInFlight
+}
+
+// diarizedRequestCount is how many requests went to the speaker-separating model.
+func (self *fakeTranscriptionProvider) diarizedRequestCount() int {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	count := 0
+	for _, received := range self.requests {
+		if strings.Contains(received.Model, "diarize") {
+			count++
+		}
+	}
+	return count
+}
+
 func (self *fakeTranscriptionProvider) requestCount() int {
 	self.lock.Lock()
 	defer self.lock.Unlock()
@@ -156,7 +194,7 @@ type liveRecordingFixture struct {
 	nextStartMS   int64
 	pieceCount    int
 	configuration *config.Configuration
-	claimedJobs   map[string]*models.AgentJob
+	claimedJobs   map[string]*models.AgentJob // by run
 	pieceWaves    [][]byte
 }
 
@@ -288,8 +326,59 @@ func (self *liveRecordingFixture) queue(media *models.RecordingMedia) *models.Re
 // execute runs the claimed job of a queued run and returns what the job returned.
 func (self *liveRecordingFixture) execute(transcriptRun *models.RecordingTranscriptRun) error {
 	self.test.Helper()
+	return self.executeIn(self.test.Context(), transcriptRun)
+}
+
+// executeIn is execute with the context the job runs in, which a test cancels
+// to stop the server in the middle of a request.
+func (self *liveRecordingFixture) executeIn(ctx context.Context, transcriptRun *models.RecordingTranscriptRun) error {
 	run := &Run{Job: self.claimedJobs[transcriptRun.ID], Agent: self.assistant, Owner: self.owner, settings: self.worker.settings}
-	return self.worker.runRecording(self.test.Context(), run)
+	return self.worker.runRecording(ctx, run)
+}
+
+// finishJob records how a claimed job ended, the way the worker does, so a
+// Deferral puts it back in the queue with its wait.
+func (self *liveRecordingFixture) finishJob(transcriptRun *models.RecordingTranscriptRun, jobError error) {
+	self.test.Helper()
+	job := self.claimedJobs[transcriptRun.ID]
+	outcome := outcomeForJob(job, jobError, time.Now())
+	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishAgentJob(job.ID, job.ClaimID, outcome); err != nil {
+			self.test.Fatal(err)
+		}
+	})
+}
+
+// claimAgain claims the jobs that are due at a moment, and keeps the ones for
+// runs of this capture, as the worker's next tick would.
+func (self *liveRecordingFixture) claimAgain(at time.Time) {
+	self.test.Helper()
+	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
+		jobs, err := transaction.ClaimAgentJobs("live-worker", 100, at)
+		if err != nil {
+			self.test.Fatal(err)
+		}
+		for _, claimed := range jobs {
+			if claimed.Kind == models.AgentJobRecording {
+				self.claimedJobs[claimed.SubjectID] = claimed
+			}
+		}
+	})
+}
+
+// queueWithoutClaim makes the run for a piece and its job, and leaves the job
+// as the queue holds it.
+func (self *liveRecordingFixture) queueWithoutClaim(media *models.RecordingMedia) *models.RecordingTranscriptRun {
+	self.test.Helper()
+	var transcriptRun *models.RecordingTranscriptRun
+	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
+		var err error
+		transcriptRun, err = self.worker.QueueRecordingTranscription(transaction, self.userId, media.ID, "initial", false)
+		if err != nil {
+			self.test.Fatal(err)
+		}
+	})
+	return transcriptRun
 }
 
 // transcribe queues a piece and runs its job to the end.

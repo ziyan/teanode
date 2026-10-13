@@ -681,6 +681,19 @@ func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backg
 	if backgroundRoom <= 0 {
 		query = query.Where("\"kind\" NOT IN ?", backgroundKinds)
 	}
+	// Several pieces of one capture are transcribed at once, and a backlog
+	// has plenty of them, so they get the same bound: a slot stays for the
+	// triage or the answer somebody is waiting on.
+	var runningRecording int64
+	if err := self.tx.Model(&agentJobModel{}).
+		Where("\"status\" = ? AND \"claimed_by\" = ? AND \"kind\" = ?", string(models.AgentJobRunning), instance, string(models.AgentJobRecording)).
+		Count(&runningRecording).Error; err != nil {
+		return nil, err
+	}
+	recordingRoom := backgroundLimit - int(runningRecording)
+	if recordingRoom <= 0 {
+		query = query.Where("\"kind\" <> ?", string(models.AgentJobRecording))
+	}
 	var due []agentJobModel
 	if err := query.Order(backgroundLast).Order("\"created_at\" ASC").Limit(limit).Find(&due).Error; err != nil {
 		return nil, err
@@ -688,6 +701,12 @@ func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backg
 	// Of the reading found, only as many as there is room for.
 	kept := due[:0]
 	for _, job := range due {
+		if job.Kind == string(models.AgentJobRecording) {
+			if recordingRoom <= 0 {
+				continue
+			}
+			recordingRoom--
+		}
 		if slices.Contains(backgroundKinds, job.Kind) {
 			if backgroundRoom <= 0 {
 				continue

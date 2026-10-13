@@ -91,6 +91,10 @@ type Agent struct {
 	handlersMutex sync.RWMutex
 	handlers      map[models.AgentJobKind]Handler
 
+	// claimMutex keeps two passes that claim jobs, the tick and a wake, from
+	// each counting the same free slots.
+	claimMutex sync.Mutex
+
 	// slots bounds how many runs execute at once on this instance.
 	slots chan struct{}
 
@@ -480,6 +484,15 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.sweepBrowsers()
 	self.sweepSessions()
 
+	return self.claimJobs(ctx, now)
+}
+
+// claimJobs takes the jobs that are due, up to the slots that are free, and
+// starts them.
+func (self *Agent) claimJobs(ctx context.Context, now time.Time) error {
+	configuration := self.settings.Configuration()
+	self.claimMutex.Lock()
+	defer self.claimMutex.Unlock()
 	free := cap(self.slots) - len(self.slots)
 	if free <= 0 {
 		return nil
@@ -531,6 +544,23 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		}(job)
 	}
 	return nil
+}
+
+// claimSoon claims what is due without waiting for the next tick, for a job
+// that has just been made due: a piece of a recording waiting for the piece
+// before it should start when that one is published, not up to a tick later.
+func (self *Agent) claimSoon() {
+	if self.ctx == nil || self.ctx.Err() != nil || !self.settings.Configuration().Agent.Enabled {
+		return
+	}
+	self.waitGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer self.waitGroup.Done()
+		if err := self.claimJobs(self.ctx, time.Now()); err != nil && self.ctx.Err() == nil {
+			log.Warningf("cannot claim the jobs that just became due: %s", err)
+		}
+	}()
 }
 
 // Deferral is what a handler returns when a run must wait — for a budget,
