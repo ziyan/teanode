@@ -39,7 +39,7 @@ automatic and retain the existing evidence-generation checks.
 - [x] Preserve automatic fact application and ordinary user conversations.
 - [x] Complete adversarial fake-provider, initial-context, ownership, history and race regressions.
 - [x] Run full lint including naming and fix review findings.
-- [ ] Publish the reviewed draft increment.
+- [x] Publish draft PR #448 with architecture and flow diagrams after local review.
 - [ ] Integrate recording tool markers with the surface workstream.
 - [ ] Merge and deploy reviewed green changes through the coordinating session.
 

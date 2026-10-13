@@ -6,7 +6,7 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
-### Fixed
+### Security
 
 - Hold unattended recording evidence to lookup tools while preserving automatic learning.
 
