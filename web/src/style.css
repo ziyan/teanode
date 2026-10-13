@@ -14271,25 +14271,6 @@ button.herdr-question-head {
 .recording-turn-name.muted {
   font-weight: 500;
 }
-.recording-passage {
-  display: inline;
-  padding: 0;
-  border: none;
-  border-radius: 3px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.recording-passage:hover {
-  background: color-mix(in srgb, currentColor 12%, transparent);
-}
-.recording-passage:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
-}
 .recording-passage.cited {
   background: color-mix(in srgb, currentColor 22%, transparent);
 }

@@ -118,18 +118,24 @@ export function RecordingConversation({
   }, [citedSegmentId, citationKey])
 
   const [dialog, setDialog] = useState<ProcessingDialog | null>(null)
-  const lastPassageByGroup = useRef(new Map<string, TranscriptSegment>())
 
   const runs = timeline.data?.transcriptRuns ?? []
-  const play = (segment: TranscriptSegment) => {
-    const run = runs.find((candidate) => candidate.id === segment.recordingTranscriptRunId)
+  // play plays a whole bubble: from its first passage to the last one taken
+  // from the same original, which is every passage unless the bubble spans two.
+  const play = (segments: TranscriptSegment[]) => {
+    const firstSegment = segments[0]
+    const run = runs.find((candidate) => candidate.id === firstSegment.recordingTranscriptRunId)
     const media = mediaFiles.find((candidate) => candidate.id === run?.recordingMediaId)
     if (!media) {
       toast.failed(t('recordings.playerUnavailable'))
       return
     }
+    const sameOriginal = segments.filter(
+      (segment) => segment.recordingTranscriptRunId === firstSegment.recordingTranscriptRunId,
+    )
+    const endMS = Math.max(...sameOriginal.map((segment) => segment.segmentEndMS))
     void passagePlayback
-      .play(media.id, segment.segmentStartMS, segment.segmentEndMS, media.timelineStartMS)
+      .play(media.id, firstSegment.segmentStartMS, endMS, media.timelineStartMS)
       .catch((caught) => toast.failure(caught, t('recordings.playerUnavailable')))
   }
   const passageText = (segment: TranscriptSegment) => segment.effectiveTranscriptText || segment.transcriptText
@@ -150,7 +156,7 @@ export function RecordingConversation({
     recordingTranscriptionAttemptId: segment.recordingTranscriptionAttemptId,
     localSpeakerId: segment.localSpeakerId,
   })
-  const nameSpeaker = (segment: TranscriptSegment) =>
+  const nameSpeaker = (segment: TranscriptSegment, passageEndMS = segment.segmentEndMS) =>
     setDialog({
       operationName: 'CorrectRecordingSpeaker',
       titleKey: 'nameSpeaker',
@@ -171,7 +177,7 @@ export function RecordingConversation({
           fieldName: 'passageEndMS',
           labelKey: 'passageEnd',
           inputType: 'number',
-          fieldValue: String(segment.segmentEndMS),
+          fieldValue: String(passageEndMS),
         },
       ],
     })
@@ -194,14 +200,14 @@ export function RecordingConversation({
         },
       ],
     })
-  const setOwnership = async (segment: TranscriptSegment) => {
+  const setOwnership = async (segment: TranscriptSegment, passageEndMS: number) => {
     try {
       await recordingOperation('CorrectRecordingSpeakerOwner', {
         ...speakerCorrectionVariables(segment),
         // Left empty so the server names the speaker after the person.
         confirmedName: '',
         passageStartMS: segment.segmentStartMS,
-        passageEndMS: segment.segmentEndMS,
+        passageEndMS,
         isAccountOwner: true,
       })
       toast.done(t('recordingProcessing.saved'))
@@ -211,55 +217,65 @@ export function RecordingConversation({
     }
   }
 
-  // The actions that are not a swipe. A version read for its citation is read
-  // only, so it has none.
-  const passageMenu = (segment: TranscriptSegment) => {
-    const canEdit = generation !== undefined
-    const canName = canEdit && Boolean(segment.localSpeakerId)
+  // The bubble's menu: correct its words and say who spoke it, over the whole
+  // bubble. Playing is the swipe to the left. A version read for its citation
+  // is read only, so it has no menu.
+  const bubbleMenu = (group: ConversationGroup) => {
+    const firstSegment = group.segments[0]
+    const groupEndMS = Math.max(...group.segments.map((segment) => segment.segmentEndMS))
+    const canEdit = !isReadOnly && generation !== undefined
+    const canName = canEdit && Boolean(firstSegment.localSpeakerId)
     return (close: () => void) => (
       <>
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canEdit}
-          onClick={() => {
-            close()
-            correctText(segment)
-          }}
-        >
-          {t('recordings.correctText')}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canName}
-          onClick={() => {
-            close()
-            nameSpeaker(segment)
-          }}
-        >
-          {t('recordingProcessing.nameSpeaker')}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canName}
-          onClick={() => {
-            close()
-            // There is no call that unsets the owner: releasing a passage means
-            // confirming it as somebody else, so the name form opens.
-            if (segment.isAccountOwner) nameSpeaker(segment)
-            else void setOwnership(segment)
-          }}
-        >
-          {t(segment.isAccountOwner ? 'recordings.notMe' : 'recordings.thisIsMe')}
-        </button>
+        {canEdit
+          ? group.segments.map((segment) => (
+              <button
+                key={segment.id}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  close()
+                  correctText(segment)
+                }}
+              >
+                {group.segments.length > 1
+                  ? t('recordings.correctPassage', { passageStart: shortPassage(passageText(segment)) })
+                  : t('recordings.correctText')}
+              </button>
+            ))
+          : null}
+        {canName ? (
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                close()
+                nameSpeaker(firstSegment, groupEndMS)
+              }}
+            >
+              {t('recordingProcessing.nameSpeaker')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                close()
+                // There is no call that unsets the owner: releasing a passage means
+                // confirming it as somebody else, so the name form opens.
+                if (firstSegment.isAccountOwner) nameSpeaker(firstSegment, groupEndMS)
+                else void setOwnership(firstSegment, groupEndMS)
+              }}
+            >
+              {t(firstSegment.isAccountOwner ? 'recordings.notMe' : 'recordings.thisIsMe')}
+            </button>
+          </>
+        ) : null}
       </>
     )
   }
 
   const bubble = (group: ConversationGroup) => {
-    const lastSegment = () => lastPassageByGroup.current.get(group.groupKey) ?? group.segments[0]
     const speakerLabel = group.speakerName ?? t('recordings.speakerLabel', { speakerLetter: group.speakerLetter })
     return (
       <div key={group.groupKey} className={group.isAccountOwner ? 'recording-turn own' : 'recording-turn'}>
@@ -272,35 +288,27 @@ export function RecordingConversation({
             replyLabel={t('recordings.playFromHere')}
             copyLabel={t('common.copy')}
             replyIcon={PlayIcon}
-            onReply={() => play(group.segments[0])}
+            onReply={() => play(group.segments)}
             onCopy={() => copyText(group.segments.map(passageText).join(' '))}
             onCopyFailed={() => toast.failed(t('common.copyFailed'))}
             extraActions={
-              isReadOnly ? null : (
+              isReadOnly || generation === undefined ? null : (
                 <MenuButton
                   label={t('recordings.passageActions')}
                   className="icon-action recording-line-more"
                   icon={<MoreIcon size={14} />}
-                  render={(close) => passageMenu(lastSegment())(close)}
+                  render={bubbleMenu(group)}
                 />
               )
             }
           >
             {group.segments.map((segment) => (
-              <span key={segment.id}>
+              <span
+                key={segment.id}
+                className={segment.id === citedSegmentId ? 'recording-passage cited' : 'recording-passage'}
+              >
                 {segment.id === citedSegmentId ? <span ref={citedElement} /> : null}
-                <button
-                  type="button"
-                  className={segment.id === citedSegmentId ? 'recording-passage cited' : 'recording-passage'}
-                  onClick={() => {
-                    lastPassageByGroup.current.set(group.groupKey, segment)
-                    play(segment)
-                  }}
-                  onFocus={() => lastPassageByGroup.current.set(group.groupKey, segment)}
-                  onPointerEnter={() => lastPassageByGroup.current.set(group.groupKey, segment)}
-                >
-                  {passageText(segment)}
-                </button>{' '}
+                {passageText(segment)}{' '}
               </span>
             ))}
           </SwipeableLine>
@@ -353,4 +361,11 @@ export function RecordingConversation({
       ) : null}
     </div>
   )
+}
+
+// shortPassage is the start of a passage, enough to tell it from the others
+// in the same bubble.
+function shortPassage(passageText: string): string {
+  const words = passageText.trim().split(/\s+/)
+  return words.length > 5 ? `${words.slice(0, 5).join(' ')}…` : words.join(' ')
 }

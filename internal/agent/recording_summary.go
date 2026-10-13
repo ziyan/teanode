@@ -36,6 +36,11 @@ const (
 	// for the combining call.
 	recordingPieceNotesCharacters = 3000
 
+	// recordingSummaryLongest bounds one naming job. A long recording is
+	// read in many pieces, one model call each, and a job cut off by its
+	// deadline goes back in the queue and starts again from the first piece.
+	recordingSummaryLongest = 45 * time.Minute
+
 	// recordingSummaryPageSize is how many untitled recordings one tick offers to the job queue.
 	recordingSummaryPageSize = 25
 )
@@ -137,6 +142,15 @@ func (self *Agent) summarizeRecordingLines(ctx context.Context, run *Run, lines 
 	if len(pieces) > 1 {
 		notes := make([]string, 0, len(pieces))
 		for index, piece := range pieces {
+			// Each piece is paid for, so a long recording stops when the
+			// agent's budget runs out rather than after the last piece.
+			if index > 0 {
+				if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+					return RequireBudget(transaction, self.settings.Configuration(), run.Agent, run.Owner, time.Now())
+				}); err != nil {
+					return nil, err
+				}
+			}
 			said, err := ask(fmt.Sprintf("Read part %d of %d of a recording", index+1, len(pieces)), recordingSummaryInstructions+recordingPieceInstructions, fmt.Sprintf("Part %d of %d.\n\n%s", index+1, len(pieces), fenced(piece)))
 			if err != nil {
 				return nil, err

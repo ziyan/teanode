@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -229,13 +230,17 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 
 // The fixed normalized PCM format comes from TeaNode's own decoder. Conservative
 // gates reject clipping, nearly silent speech and high measured background noise.
+// Noise is measured as the spread between the quieter frames, where the floor
+// shows between syllables, and the louder ones: speech rises well above its
+// floor, steady noise does not. A clip need not contain a pause, since one
+// sentence spoken without stopping is the clip a person most often confirms.
 // This is sample screening, not a promise that a model's diarization is correct.
 func isCleanRecordingVoice(samples []byte) bool {
 	if len(samples) < 64000 || len(samples)%2 != 0 {
 		return false
 	}
 	frameSamples := 320
-	voicedFrames, quietFrames, totalFrames := 0, 0, 0
+	var frameLevels []float64
 	clippedSamples := 0
 	for start := 0; start+frameSamples*2 <= len(samples); start += frameSamples * 2 {
 		energy := float64(0)
@@ -246,16 +251,23 @@ func isCleanRecordingVoice(samples []byte) bool {
 				clippedSamples++
 			}
 		}
-		rms := math.Sqrt(energy / float64(frameSamples))
-		totalFrames++
-		if rms > 0.025 {
+		frameLevels = append(frameLevels, math.Sqrt(energy/float64(frameSamples)))
+	}
+	if len(frameLevels) == 0 || clippedSamples*1000 >= len(samples)/2 {
+		return false
+	}
+	voicedFrames := 0
+	for _, frameLevel := range frameLevels {
+		if frameLevel > 0.025 {
 			voicedFrames++
 		}
-		if rms < 0.008 {
-			quietFrames++
-		}
 	}
-	return totalFrames > 0 && voicedFrames*100 >= totalFrames*30 && quietFrames*100 >= totalFrames*5 && clippedSamples*1000 < len(samples)/2
+	sortedLevels := slices.Clone(frameLevels)
+	slices.Sort(sortedLevels)
+	floorLevel := sortedLevels[len(sortedLevels)/10]
+	loudLevel := sortedLevels[len(sortedLevels)*9/10]
+	// Speech at least 12 dB above its floor: four times the amplitude.
+	return voicedFrames*100 >= len(frameLevels)*30 && loudLevel >= floorLevel*4
 }
 func recordingReferenceWave(samples []byte) []byte {
 	waveBytes := make([]byte, 44+len(samples))

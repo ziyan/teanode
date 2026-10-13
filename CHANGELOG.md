@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.152.0] - 2026-10-13
+
+### Added
+
+- Unified iPhone setup for selected Mail, Calendar, Reminders and Contacts services. (#445)
+
 ## [0.151.5] - 2026-10-13
 
 ### Fixed

@@ -113,8 +113,8 @@ extension Documents {
         mediaDurationMS partCount recordingUploadState verifiedAt
         """
     public static let listRecordings = """
-        query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize:
-        $pageSize) { \(recordingFields) } }
+        query ($beforeRecordingId: String!, $pageSize: Int!, $searchText: String) { ListRecordings(beforeRecordingId: $beforeRecordingId,
+        pageSize: $pageSize, searchText: $searchText) { \(recordingFields) } }
         """
     public static let readRecording = """
         query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { \(recordingFields) } mediaFiles {
@@ -151,12 +151,12 @@ extension Documents {
 }
 
 extension Connection {
-    public func recordings(beforeRecordingId: String = "", pageSize: Int = 50) async throws -> [Recording] {
+    /// The account's recordings, newest first; a search keeps those whose title, summary or transcript contains it.
+    public func recordings(beforeRecordingId: String = "", pageSize: Int = 50, searchText: String = "") async throws -> [Recording] {
         struct Answer: Decodable, Sendable { let ListRecordings: [Recording] }
-        return try await execute(
-            Documents.listRecordings, variables: ["beforeRecordingId": .string(beforeRecordingId), "pageSize": .number(Double(pageSize))],
-            as: Answer.self
-        ).ListRecordings
+        var variables: [String: JSONValue] = ["beforeRecordingId": .string(beforeRecordingId), "pageSize": .number(Double(pageSize))]
+        if !searchText.isEmpty { variables["searchText"] = .string(searchText) }
+        return try await execute(Documents.listRecordings, variables: variables, as: Answer.self).ListRecordings
     }
 
     public func recording(_ recordingId: String) async throws -> RecordingView {

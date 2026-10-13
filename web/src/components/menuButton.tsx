@@ -51,16 +51,31 @@ export function MenuButton({
     // the account row and stays inside the rail's column. Below: right-aligned
     // to the button, which is where a menu hanging off a control in the
     // top-right corner has to be.
+    // A menu wider than the room beside its button is kept in the window:
+    // a button near the left edge, as a chat bubble's on a phone is, would
+    // otherwise hang the menu off the screen with its words cut away.
+    const menuWidth = menu.current?.offsetWidth ?? 0
+    const menuHeight = menu.current?.offsetHeight ?? 0
+    const isOverflowingLeft = rectangle.right - menuWidth < 8
+    const isOverflowingBottom = placement === 'below' && rectangle.bottom + 6 + menuHeight > window.innerHeight - 8
+    const horizontal = isOverflowingLeft
+      ? { left: Math.max(8, Math.min(rectangle.left, window.innerWidth - menuWidth - 8)) }
+      : placement === 'above'
+        ? { left: rectangle.left }
+        : { right: window.innerWidth - rectangle.right }
     setPosition(
-      placement === 'above'
-        ? { bottom: window.innerHeight - rectangle.top + 6, left: rectangle.left }
-        : { top: rectangle.bottom + 6, right: window.innerWidth - rectangle.right },
+      placement === 'above' || isOverflowingBottom
+        ? { bottom: window.innerHeight - rectangle.top + 6, ...horizontal }
+        : { top: rectangle.bottom + 6, ...horizontal },
     )
   }, [placement])
 
+  // Placed twice: once from the button alone, then again once the menu is
+  // in the page and its size can be read.
   useLayoutEffect(() => {
     if (open) {
       place()
+      requestAnimationFrame(place)
     }
   }, [open, place])
 

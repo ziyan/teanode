@@ -112,6 +112,9 @@ func probeImportedContainer(ctx context.Context, file *os.File) importedContaine
 
 // maximumImportedDurationSeconds rejects lengths no meeting has, which a
 // damaged container can report.
+// containerReadLongest bounds copying an imported original and reading its container.
+const containerReadLongest = 10 * time.Minute
+
 const maximumImportedDurationSeconds = 7 * 24 * 60 * 60
 
 // recordImportedContainer gives an imported original what its container

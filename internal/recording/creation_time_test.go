@@ -101,6 +101,7 @@ func importAndComplete(test *testing.T, origin models.RecordingOrigin, content [
 	if _, _, err := store.Complete(test.Context(), userId, media.ID); err != nil {
 		test.Fatal(err)
 	}
+	store.WaitForContainerReads()
 	var stored *models.Recording
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		var err error

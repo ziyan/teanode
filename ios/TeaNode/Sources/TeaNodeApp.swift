@@ -328,7 +328,12 @@ struct SettingsForm: View {
             AccountsSection()
             if let connection = app.connection {
                 Section("Your account") {
-                    NavigationLink { SyncCredentialsView(connection: connection) } label: { Label("Device sync", systemImage: "arrow.triangle.2.circlepath") }
+                    NavigationLink { DeviceSetupView(connection: connection) } label: {
+                        Label("Set up on this iPhone", systemImage: "iphone")
+                    }
+                    NavigationLink { SyncCredentialsView(connection: connection) } label: {
+                        Label("Sync passwords", systemImage: "key")
+                    }
                     NavigationLink {
                         PreferencesView(connection: connection)
                     } label: {
@@ -473,6 +478,8 @@ struct SettingsForm: View {
         private var demoScreen: some View {
             if let connection = app.connection {
                 switch DemoServer.screen ?? "" {
+                case "device-setup", "device-setup-collections", "device-setup-unavailable": DeviceSetupView(connection: connection)
+                case "device-setup-mail", "device-setup-profile", "device-setup-expired", "device-setup-receipt-unavailable": DeviceSetupView(connection: connection, preselectedMailboxId: "mailbox-demo")
                 case "agent-settings": AgentSettingsView(connection: connection)
                 case "manage": ManageOverviewView(connection: connection)
                 case "domain": DemoDomainScreen(connection: connection, isShowingRecords: false)

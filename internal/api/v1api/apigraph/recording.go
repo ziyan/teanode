@@ -28,6 +28,8 @@ type RecordingMutation interface {
 type ListRecordingsArguments struct {
 	BeforeRecordingID string `json:"beforeRecordingId"`
 	PageSize          int    `json:"pageSize"`
+	// SearchText keeps recordings whose title, summary or transcript contains it.
+	SearchText string `json:"searchText" graphapi:"nullable"`
 }
 
 // RecordingArguments names one account-owned source.
@@ -109,7 +111,7 @@ func (self *graph) ListRecordings(ctx context.Context, arguments ListRecordingsA
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	recordings, err := self.transaction(ctx).ListRecordings(principal.User.ID, arguments.BeforeRecordingID, pageSize)
+	recordings, err := self.transaction(ctx).ListRecordings(principal.User.ID, arguments.BeforeRecordingID, arguments.SearchText, pageSize)
 	return recordings, translateError(err)
 }
 

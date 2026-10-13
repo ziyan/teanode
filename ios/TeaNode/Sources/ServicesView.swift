@@ -62,14 +62,20 @@ struct SyncCredentialsView: View {
     @State private var hasRemindersAccess = false
     @State private var hasContactsAccess = false
     @State private var created: CreatedSyncCredential?
-    @State private var profile: CreatedSyncProfile?
     @State private var revoking: SyncCredential?
     @State private var isWorking = false
     @State private var problemText: String?
 
     var body: some View {
         Form {
-            Section("Device sync") {
+            Section {
+                NavigationLink { DeviceSetupView(connection: connection) } label: {
+                    Label("Set up on this iPhone", systemImage: "iphone")
+                }
+            } footer: {
+                Text("Choose Mail, Calendar, Reminders and Contacts, then install one profile. A mailbox is optional.")
+            }
+            Section("Manual setup") {
                 TextField("Device name", text: $credentialName)
                 if app.services?.isCalendarEnabled == true { Toggle("Calendar", isOn: $hasCalendarAccess) }
                 if app.services?.isRemindersEnabled == true { Toggle("Reminders", isOn: $hasRemindersAccess) }
@@ -81,21 +87,8 @@ struct SyncCredentialsView: View {
                         do { created = try await connection.createSyncCredential(credentialName: credentialName, hasCalendarAccess: hasCalendarAccess, hasRemindersAccess: hasRemindersAccess, hasContactsAccess: hasContactsAccess); await load() } catch { problemText = app.describe(error) }
                     }
                 }.disabled(isWorking || credentialName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(hasCalendarAccess || hasRemindersAccess || hasContactsAccess))
-                Button("Create device setup profile") {
-                    isWorking = true
-                    Task {
-                        defer { isWorking = false }
-                        do { profile = try await connection.createSyncSetupProfile(credentialName: credentialName, hasCalendarAccess: hasCalendarAccess, hasRemindersAccess: hasRemindersAccess, hasContactsAccess: hasContactsAccess); await load() } catch { problemText = app.describe(error) }
-                    }
-                }.disabled(isWorking || credentialName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(hasCalendarAccess || hasRemindersAccess || hasContactsAccess))
             }
-            if let profile, let profileURL = URL(string: profile.downloadLink) {
-                Section("Device sync") {
-                    Link("Download setup profile", destination: profileURL)
-                    ShareLink(item: profileURL)
-                    Text(profile.expiresAt, style: .relative)
-                }
-            }
+
             if let created {
                 Section("Save this password now") {
                     Text(created.username).textSelection(.enabled)

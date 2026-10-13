@@ -65,13 +65,29 @@ function AccountRecordingsPage() {
     setPageParameters(nextParameters)
   }
   const beforeRecordingId = pageCursors[pageCursors.length - 1]
+  // The search lives in the address, as the page does, and is sent once
+  // typing pauses: the server looks through titles, summaries and transcripts.
+  const searchText = pageParameters.get('search') ?? ''
+  const [searchInput, setSearchInput] = useState(searchText)
+  useEffect(() => {
+    if (searchInput.trim() === searchText) return
+    const timer = window.setTimeout(() => {
+      const nextParameters = new URLSearchParams(pageParameters)
+      if (searchInput.trim()) nextParameters.set('search', searchInput.trim())
+      else nextParameters.delete('search')
+      nextParameters.delete('before')
+      setPageParameters(nextParameters, { replace: true })
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [searchInput, searchText, pageParameters, setPageParameters])
   const library = useQuery(
     () =>
       graphql<{ ListRecordings: Recording[] }>(RECORDING_DOCUMENTS.ListRecordings, {
         beforeRecordingId,
         pageSize: 51,
+        searchText,
       }),
-    [beforeRecordingId, session.userId],
+    [beforeRecordingId, searchText, session.userId],
   )
   const detail = useQuery(
     async () => (recordingId ? await readRecording(recordingId) : null),
@@ -80,8 +96,7 @@ function AccountRecordingsPage() {
   const [isImporting, setIsImporting] = useState(false),
     [originalFile, setOriginalFile] = useState<File | null>(null)
   const [resumeMedia, setResumeMedia] = useState<RecordingMedia | null>(null)
-  const [recordingTitle, setRecordingTitle] = useState(''),
-    [isUploading, setIsUploading] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{
     completedBytes: number
     totalBytes: number
@@ -107,7 +122,7 @@ function AccountRecordingsPage() {
     try {
       const view = await importRecording(
         originalFile,
-        recordingTitle || originalFile.name,
+        '',
         session.userId,
         controller.signal,
         (completedBytes, totalBytes, isHashing) => setUploadProgress({ completedBytes, totalBytes, isHashing }),
@@ -285,6 +300,15 @@ function AccountRecordingsPage() {
               {t('recordings.import')}
             </button>
           </PageHeadingActions>
+          <div className="list-toolbar">
+            <input
+              type="search"
+              value={searchInput}
+              placeholder={t('recordings.search')}
+              aria-label={t('recordings.search')}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+          </div>
           {library.loading && !library.data ? (
             <Loading />
           ) : (
@@ -476,20 +500,9 @@ function AccountRecordingsPage() {
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null
                 setOriginalFile(file)
-                if (file) setRecordingTitle(file.name)
               }}
             />
           </label>
-          {!resumeMedia && (
-            <label>
-              {t('recordings.name')}
-              <input
-                value={recordingTitle}
-                disabled={isUploading}
-                onChange={(event) => setRecordingTitle(event.target.value)}
-              />
-            </label>
-          )}
           {resumeMedia && <p className="muted">{resumeMedia.originalFilename}</p>}
           {uploadProgress && (
             <div role="status">
