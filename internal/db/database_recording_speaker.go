@@ -397,7 +397,15 @@ func (self *transaction) UndoRecordingSpeakerNaming(userId, recordingId, correct
 		return 0, err
 	}
 	var correctionIds []string
-	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND client_correction_id = ? AND NOT is_removed", recordingId, named.ClientCorrectionID).Pluck("id", &correctionIds).Error; err != nil {
+	correctionQuery := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND NOT is_removed", recordingId)
+	temporarySpeakerId, nameDigest := temporarySpeakerNamingOf(named.ClientCorrectionID)
+	if temporarySpeakerId != "" {
+		// A temporary speaker is named with one correction per piece, each under its own key.
+		correctionQuery = correctionQuery.Where("client_correction_id LIKE ? AND client_correction_id LIKE ?", temporarySpeakerKeyPrefix+temporarySpeakerId+"-%", "%-"+nameDigest)
+	} else {
+		correctionQuery = correctionQuery.Where("client_correction_id = ?", named.ClientCorrectionID)
+	}
+	if err := correctionQuery.Pluck("id", &correctionIds).Error; err != nil {
 		return 0, err
 	}
 	if len(correctionIds) == 0 {
@@ -425,6 +433,12 @@ func (self *transaction) UndoRecordingSpeakerNaming(userId, recordingId, correct
 	}
 	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_speaker_correction_id IN ?", correctionIds).Update("is_revoked", true).Error; err != nil {
 		return 0, err
+	}
+	if temporarySpeakerId != "" {
+		// Without this a later piece sent the speaker's sample would be named again.
+		if err := self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ? AND recording_id = ?", temporarySpeakerId, recordingId).Update("speaker_identity_id", nil).Error; err != nil {
+			return 0, err
+		}
 	}
 	return len(correctionIds), self.advanceRecordingSpeakerGeneration(recordingId)
 }

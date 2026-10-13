@@ -13,6 +13,18 @@ export const LIVE_SAMPLE_RATE = 24_000
 const MAXIMUM_WAITING_FRAMES = 50
 const MAXIMUM_BUFFERED_BYTES = 1 << 20
 
+const LIVE_RETRY_MINIMUM_MS = 1_000
+const LIVE_RETRY_MAXIMUM_MS = 30_000
+
+// liveRetryDelayMS is how long to wait before opening the stream again after it
+// closed for the retryCount-th time in a row, or null when it should not be
+// opened again: the server refused it. A network drop is tried again at growing
+// delays, forever, because words are a convenience and the recording goes on.
+export function liveRetryDelayMS(retryCount: number, isRefused: boolean): number | null {
+  if (isRefused) return null
+  return Math.min(LIVE_RETRY_MAXIMUM_MS, LIVE_RETRY_MINIMUM_MS * 2 ** retryCount)
+}
+
 export function liveSocketAddress(location: Pick<Location, 'protocol' | 'host'>, recordingId: string): string {
   return `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/v1/recordings/${encodeURIComponent(recordingId)}/live`
 }
@@ -28,7 +40,9 @@ export interface LiveEvent {
 export interface LiveStreamCallbacks {
   onReady: () => void
   // onClosed is told once, with why, when the stream ends for any reason but being closed by the caller.
-  onClosed: (reason: string) => void
+  // isRefused says the server answered that it will not take this recording's stream (live words
+  // are off, or the recording is not being captured), which asking again will not change.
+  onClosed: (reason: string, isRefused: boolean) => void
   // onWords is told the words of an utterance as they are heard (isFinal false) and when they are settled.
   onWords: (utteranceId: string, transcriptText: string, isFinal: boolean) => void
   // onUtteranceEnd is told where on the timeline the provider decided an utterance ended.
@@ -76,8 +90,10 @@ export class LiveTranscriptionStream {
       }
       this.accept(event)
     }
-    socket.onerror = () => this.fail('the connection failed')
-    socket.onclose = () => this.fail('the connection closed')
+    // A browser cannot read the status of a refused upgrade, so a refusal before the socket
+    // opened looks like a dropped connection and is asked again, slowly.
+    socket.onerror = () => this.fail('the connection failed', false)
+    socket.onclose = () => this.fail('the connection closed', false)
   }
 
   private accept(event: LiveEvent) {
@@ -89,8 +105,10 @@ export class LiveTranscriptionStream {
         this.callbacks.onReady()
         return
       case 'refused':
+        this.fail(event.errorMessage ?? 'the transcription was refused', true)
+        return
       case 'error':
-        this.fail(event.errorMessage ?? 'the transcription stopped')
+        this.fail(event.errorMessage ?? 'the transcription stopped', false)
         return
       case 'speechStopped':
         if (event.utteranceEndMS) this.callbacks.onUtteranceEnd(event.utteranceEndMS)
@@ -114,18 +132,18 @@ export class LiveTranscriptionStream {
   append(frame: ArrayBuffer) {
     if (this.isClosed || !this.socket) return
     if (!this.isReady || this.socket.readyState !== WebSocket.OPEN) {
-      if (this.waitingFrames.length >= MAXIMUM_WAITING_FRAMES) return this.fail('the connection is too slow')
+      if (this.waitingFrames.length >= MAXIMUM_WAITING_FRAMES) return this.fail('the connection is too slow', false)
       this.waitingFrames.push(frame)
       return
     }
-    if (this.socket.bufferedAmount > MAXIMUM_BUFFERED_BYTES) return this.fail('the connection is too slow')
+    if (this.socket.bufferedAmount > MAXIMUM_BUFFERED_BYTES) return this.fail('the connection is too slow', false)
     this.socket.send(frame)
   }
 
-  private fail(reason: string) {
+  private fail(reason: string, isRefused: boolean) {
     if (this.isClosed) return
     this.close()
-    this.callbacks.onClosed(reason)
+    this.callbacks.onClosed(reason, isRefused)
   }
 
   // close ends the stream without telling the callbacks.

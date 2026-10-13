@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { LiveTranscriptionStream, liveSocketAddress, type LiveStreamCallbacks } from './liveStream'
+import { LiveTranscriptionStream, liveRetryDelayMS, liveSocketAddress, type LiveStreamCallbacks } from './liveStream'
 
 class FakeSocket {
   static sockets: FakeSocket[] = []
@@ -87,7 +87,7 @@ it('reports where an utterance ended and the words as they are heard', () => {
 it('closes, once, when the server refuses or the connection is too slow, never continuing on a gap', () => {
   const refused = open(0)
   refused.socket.say({ voiceEvent: 'refused', errorMessage: 'live transcription is off' })
-  expect(refused.handlers.onClosed).toHaveBeenCalledWith('live transcription is off')
+  expect(refused.handlers.onClosed).toHaveBeenCalledWith('live transcription is off', true)
   refused.socket.onclose?.()
   expect(refused.handlers.onClosed).toHaveBeenCalledTimes(1)
 
@@ -95,7 +95,7 @@ it('closes, once, when the server refuses or the connection is too slow, never c
   slow.socket.say({ voiceEvent: 'ready' })
   slow.socket.bufferedAmount = 2 << 20
   slow.stream.append(frame(1))
-  expect(slow.handlers.onClosed).toHaveBeenCalledWith('the connection is too slow')
+  expect(slow.handlers.onClosed).toHaveBeenCalledWith('the connection is too slow', false)
   slow.stream.append(frame(2))
   expect(slow.socket.sent.filter((sent) => typeof sent !== 'string')).toEqual([])
 })
@@ -106,4 +106,20 @@ it('tells the server to stop when closed by the caller, without calling back', (
   stream.close()
   expect(JSON.parse(socket.sent[socket.sent.length - 1] as string)).toEqual({ voiceEvent: 'stop' })
   expect(handlers.onClosed).not.toHaveBeenCalled()
+})
+
+it('stops asking after a refusal and keeps asking, slowly, after a drop', () => {
+  const refused = open(0)
+  refused.socket.say({ voiceEvent: 'refused', errorMessage: 'that recording is not being captured' })
+  expect(refused.handlers.onClosed).toHaveBeenCalledWith('that recording is not being captured', true)
+  const dropped = open(0)
+  dropped.socket.onclose?.()
+  expect(dropped.handlers.onClosed).toHaveBeenCalledWith('the connection closed', false)
+  const ended = open(0)
+  ended.socket.say({ voiceEvent: 'error', errorMessage: 'the session reached its end; stream again' })
+  expect(ended.handlers.onClosed).toHaveBeenCalledWith('the session reached its end; stream again', false)
+
+  expect(liveRetryDelayMS(0, true)).toBeNull()
+  expect(liveRetryDelayMS(7, true)).toBeNull()
+  expect([0, 1, 2, 10].map((retryCount) => liveRetryDelayMS(retryCount, false))).toEqual([1_000, 2_000, 4_000, 30_000])
 })

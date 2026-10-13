@@ -216,3 +216,42 @@ func TestRecordingSearchMatchesTitleAndSummaryLiterally(test *testing.T) {
 		}
 	})
 }
+
+// The search reads what the person reads: the accurate words where the second
+// pass produced them, not the first pass's words they replaced.
+func TestRecordingSearchFindsTheAccurateWordsOfTheLatestVersion(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "A", SegmentStartMS: 2000, SegmentEndMS: 2500, TranscriptText: "The sea bass quarterly was discussed."},
+			{LocalSpeakerID: "A", SegmentStartMS: 2500, SegmentEndMS: 3000, TranscriptText: "Nothing else was said."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.Exec(test, fixture.database, "UPDATE recording_transcript_segment SET accurate_transcript_text = 'The Zebrafish quarterly was discussed.' WHERE transcript_text LIKE 'The sea bass%'")
+	search := func(searchText string) int {
+		var found []*models.Recording
+		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+			var err error
+			if found, err = transaction.ListRecordings(fixture.userId, "", searchText, 10); err != nil {
+				test.Fatal(err)
+			}
+		})
+		return len(found)
+	}
+	if search("zebrafish") != 1 {
+		test.Fatal("a word only the accurate pass heard was not found")
+	}
+	if search("else was said") != 1 {
+		test.Fatal("a passage the second pass left alone was not found by its first words")
+	}
+	if search("sea bass") != 0 {
+		test.Fatal("words the accurate pass replaced still matched")
+	}
+}

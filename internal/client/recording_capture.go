@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -65,7 +66,7 @@ func (self *Client) CaptureRecording(ctx context.Context, pcm io.Reader, options
 	var live *recordingLiveStream
 	if options.IsLiveTranscriptionWanted {
 		var err error
-		if live, err = self.openRecordingLiveStream(ctx, recording.ID, options); err != nil {
+		if live, err = self.openRecordingLiveStream(ctx, recording.ID, 0, options); err != nil {
 			problem(options, "live words are off: "+err.Error())
 		}
 	}
@@ -91,6 +92,7 @@ func (self *Client) CaptureRecording(ctx context.Context, pcm io.Reader, options
 		if readBytes > 0 {
 			piece = append(piece, frame[:readBytes]...)
 			timelineMS += int64(readBytes) * 1000 / (RecordingCaptureSampleRate * 2)
+			live = self.refreshRecordingLiveStream(ctx, live, recording.ID, timelineMS, options)
 			if live != nil {
 				live.send(frame[:readBytes])
 			}
@@ -150,13 +152,30 @@ func (self *Client) stopRecordingCapture(ctx context.Context, recordingId string
 	return &stopped, err
 }
 
+// The most piece audio held in memory waiting for an upload, and how long a
+// piece is retried before it is given up on. A piece larger than the limit is
+// still taken when nothing else is waiting. The delays are variables so a test
+// need not wait out the real ones.
+const recordingPieceQueueLimitBytes = 64 << 20
+
+var (
+	recordingPieceRetryWindow     = 5 * time.Minute
+	recordingPieceRetryFirstDelay = time.Second
+	recordingPieceRetryLongest    = 30 * time.Second
+)
+
 // recordingPieceUploads uploads pieces one after another, in order, while the
-// capture goes on reading.
+// capture goes on reading. Adding a piece waits while too much audio is already
+// queued, so a server that is down slows the capture instead of using up memory.
 type recordingPieceUploads struct {
 	client      *Client
 	recordingId string
 	options     RecordingCaptureOptions
-	queue       chan recordingPiece
+	mutex       sync.Mutex
+	changed     *sync.Cond
+	pending     []recordingPiece
+	heldBytes   int
+	isClosed    bool
 	done        chan error
 }
 
@@ -167,11 +186,17 @@ type recordingPiece struct {
 }
 
 func newRecordingPieceUploads(client *Client, recordingId string, options RecordingCaptureOptions) *recordingPieceUploads {
-	uploads := &recordingPieceUploads{client: client, recordingId: recordingId, options: options, queue: make(chan recordingPiece, 1024), done: make(chan error, 1)}
+	uploads := &recordingPieceUploads{client: client, recordingId: recordingId, options: options, done: make(chan error, 1)}
+	uploads.changed = sync.NewCond(&uploads.mutex)
 	go func() {
 		var firstError error
-		for piece := range uploads.queue {
-			durationMS, err := client.uploadRecordingPiece(context.Background(), recordingId, piece)
+		for {
+			piece, isTaken := uploads.take()
+			if !isTaken {
+				break
+			}
+			durationMS, err := uploads.uploadWithRetry(piece)
+			uploads.release(len(piece.pcm))
 			if err != nil {
 				problem(options, fmt.Sprintf("piece %d was not uploaded: %s", piece.pieceIndex+1, err))
 				if firstError == nil {
@@ -188,16 +213,71 @@ func newRecordingPieceUploads(client *Client, recordingId string, options Record
 	return uploads
 }
 
+// take is the next piece to upload, waiting for one, or false once the capture
+// has ended and every piece has been taken. The piece stays counted as held
+// until release, so the one being uploaded is part of the bound.
+func (self *recordingPieceUploads) take() (recordingPiece, bool) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for len(self.pending) == 0 && !self.isClosed {
+		self.changed.Wait()
+	}
+	if len(self.pending) == 0 {
+		return recordingPiece{}, false
+	}
+	piece := self.pending[0]
+	self.pending = self.pending[1:]
+	return piece, true
+}
+
+func (self *recordingPieceUploads) release(pieceBytes int) {
+	self.mutex.Lock()
+	self.heldBytes -= pieceBytes
+	self.mutex.Unlock()
+	self.changed.Broadcast()
+}
+
 func (self *recordingPieceUploads) add(pieceIndex int, timelineStartMS int64, pcm []byte) {
 	if len(pcm) == 0 {
 		return
 	}
-	self.queue <- recordingPiece{pieceIndex: pieceIndex, timelineStartMS: timelineStartMS, pcm: pcm}
+	self.mutex.Lock()
+	for self.heldBytes > 0 && self.heldBytes+len(pcm) > recordingPieceQueueLimitBytes {
+		self.changed.Wait()
+	}
+	self.heldBytes += len(pcm)
+	self.pending = append(self.pending, recordingPiece{pieceIndex: pieceIndex, timelineStartMS: timelineStartMS, pcm: pcm})
+	self.mutex.Unlock()
+	self.changed.Broadcast()
 }
 
 func (self *recordingPieceUploads) wait() error {
-	close(self.queue)
+	self.mutex.Lock()
+	self.isClosed = true
+	self.mutex.Unlock()
+	self.changed.Broadcast()
 	return <-self.done
+}
+
+// uploadWithRetry uploads a piece, and when that fails tries again
+// after a growing delay until recordingPieceRetryWindow has passed. Asking the
+// server for the same piece again is safe: it answers with the manifest it
+// already has and takes only the parts it is missing.
+func (self *recordingPieceUploads) uploadWithRetry(piece recordingPiece) (int64, error) {
+	startedAt := time.Now()
+	delay := recordingPieceRetryFirstDelay
+	for {
+		durationMS, err := self.client.uploadRecordingPiece(context.Background(), self.recordingId, piece)
+		if err == nil {
+			return durationMS, nil
+		}
+		if time.Since(startedAt)+delay > recordingPieceRetryWindow {
+			return 0, err
+		}
+		problem(self.options, fmt.Sprintf("piece %d was not uploaded, trying again in %s: %s", piece.pieceIndex+1, delay, err))
+		time.Sleep(delay)
+		delay = min(delay*2, recordingPieceRetryLongest)
+	}
 }
 
 // uploadRecordingPiece stores one piece as a WAV original placed on the
@@ -271,17 +351,19 @@ func recordingLevelDecibels(pcm []byte) float64 {
 // recordingLiveStream streams a capture's audio to the server for words as
 // they are spoken.
 type recordingLiveStream struct {
-	conn         *websocket.Conn
+	connection   *websocket.Conn
 	writeMutex   sync.Mutex
 	stateMutex   sync.Mutex
 	isReady      bool
 	isBroken     bool
+	isRefused    bool
+	openedAt     time.Time
 	utteranceEnd int64
 	hasEnded     bool
 	resampled    float64
 }
 
-func (self *Client) openRecordingLiveStream(ctx context.Context, recordingId string, options RecordingCaptureOptions) (*recordingLiveStream, error) {
+func (self *Client) openRecordingLiveStream(ctx context.Context, recordingId string, streamStartMS int64, options RecordingCaptureOptions) (*recordingLiveStream, error) {
 	address, err := url.Parse(self.url)
 	if err != nil {
 		return nil, err
@@ -293,23 +375,23 @@ func (self *Client) openRecordingLiveStream(ctx context.Context, recordingId str
 		address.Scheme = "ws"
 	}
 	address.Path = strings.TrimSuffix(address.Path, "/") + strings.Replace(api.PathRecordingLive, "{recordingId}", url.PathEscape(recordingId), 1)
-	conn, response, err := websocket.DefaultDialer.DialContext(ctx, address.String(), http.Header{"Authorization": {"Bearer " + self.token}})
+	connection, response, err := websocket.DefaultDialer.DialContext(ctx, address.String(), http.Header{"Authorization": {"Bearer " + self.token}})
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
 	if err != nil {
 		return nil, err
 	}
-	hello, err := json.Marshal(map[string]any{"voiceEvent": "hello", "authorization": "Bearer " + self.token, "streamStartMS": 0})
+	hello, err := json.Marshal(map[string]any{"voiceEvent": "hello", "authorization": "Bearer " + self.token, "streamStartMS": streamStartMS})
 	if err != nil {
-		_ = conn.Close()
+		_ = connection.Close()
 		return nil, err
 	}
-	if err := conn.WriteMessage(websocket.TextMessage, hello); err != nil {
-		_ = conn.Close()
+	if err := connection.WriteMessage(websocket.TextMessage, hello); err != nil {
+		_ = connection.Close()
 		return nil, err
 	}
-	stream := &recordingLiveStream{conn: conn}
+	stream := &recordingLiveStream{connection: connection, openedAt: time.Now()}
 	go stream.read(options)
 	return stream, nil
 }
@@ -321,7 +403,7 @@ func (self *recordingLiveStream) read(options RecordingCaptureOptions) {
 		self.stateMutex.Unlock()
 	}()
 	for {
-		_, message, err := self.conn.ReadMessage()
+		_, message, err := self.connection.ReadMessage()
 		if err != nil {
 			return
 		}
@@ -348,11 +430,49 @@ func (self *recordingLiveStream) read(options RecordingCaptureOptions) {
 			if options.OnUtterance != nil && strings.TrimSpace(event.TranscriptText) != "" {
 				options.OnUtterance(event.TranscriptText, event.UtteranceStartMS, event.UtteranceEndMS)
 			}
-		case "refused", "error":
+		case "refused":
+			// Asking again would be refused again.
+			self.stateMutex.Lock()
+			self.isRefused = true
+			self.stateMutex.Unlock()
+			problem(options, "live words stopped: "+event.ErrorMessage)
+			return
+		case "error":
 			problem(options, "live words stopped: "+event.ErrorMessage)
 			return
 		}
 	}
+}
+
+// recordingLiveReopenAfter is the least time a live stream is left alone before
+// a broken one is opened again, so a server that keeps ending it is not asked
+// in a tight loop. The server ends a session at its longest length, and the
+// capture goes on with a new one from the point it has reached.
+var recordingLiveReopenAfter = 30 * time.Second
+
+// refreshRecordingLiveStream is live, or a new stream starting at timelineMS
+// when live has ended without being refused. A capture that began without live
+// words keeps none.
+func (self *Client) refreshRecordingLiveStream(ctx context.Context, live *recordingLiveStream, recordingId string, timelineMS int64, options RecordingCaptureOptions) *recordingLiveStream {
+	if live == nil {
+		return nil
+	}
+	live.stateMutex.Lock()
+	isReopenable := live.isBroken && !live.isRefused && time.Since(live.openedAt) >= recordingLiveReopenAfter
+	live.stateMutex.Unlock()
+	if !isReopenable || ctx.Err() != nil {
+		return live
+	}
+	live.close()
+	reopened, err := self.openRecordingLiveStream(ctx, recordingId, timelineMS, options)
+	if err != nil {
+		problem(options, "live words are still off: "+err.Error())
+		live.stateMutex.Lock()
+		live.openedAt = time.Now()
+		live.stateMutex.Unlock()
+		return live
+	}
+	return reopened
 }
 
 // isConnected says whether the stream is ready and has not broken.
@@ -380,7 +500,7 @@ func (self *recordingLiveStream) send(pcm []byte) {
 	}
 	self.writeMutex.Lock()
 	defer self.writeMutex.Unlock()
-	_ = self.conn.WriteMessage(websocket.BinaryMessage, self.resample(pcm))
+	_ = self.connection.WriteMessage(websocket.BinaryMessage, self.resample(pcm))
 }
 
 // resample turns 16 kHz samples into 24 kHz ones by linear interpolation,
@@ -412,7 +532,7 @@ func (self *recordingLiveStream) close() {
 	self.writeMutex.Lock()
 	defer self.writeMutex.Unlock()
 	if stop, err := json.Marshal(map[string]string{"voiceEvent": "stop"}); err == nil {
-		_ = self.conn.WriteMessage(websocket.TextMessage, stop)
+		_ = self.connection.WriteMessage(websocket.TextMessage, stop)
 	}
-	_ = self.conn.Close()
+	_ = self.connection.Close()
 }
