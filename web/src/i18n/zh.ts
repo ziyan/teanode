@@ -533,7 +533,7 @@ export const zh: Catalog = {
   'agent.addSchedule': '添加计划',
   'profile.name': '姓名',
   'profile.namePlaceholder': '希望被如何称呼',
-  'profile.nameHint': '显示在此面板中。可选 \u2014 未填写时使用用户名。',
+  'profile.nameHint': '显示在此面板中。可选：未填写时使用用户名。',
   'profile.username': '用户名',
   'profile.usernameHint': '用于登录的名字。修改后会话和 API 令牌会一并迁移，无需重新登录。',
   'profile.email': '通知地址',

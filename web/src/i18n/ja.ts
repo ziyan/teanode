@@ -547,7 +547,7 @@ export const ja: Catalog = {
   'agent.addSchedule': 'スケジュールを追加',
   'profile.name': '名前',
   'profile.namePlaceholder': '呼ばれたい名前',
-  'profile.nameHint': 'このダッシュボードで表示されます。省略可 \u2014 未設定ならユーザー名を使います。',
+  'profile.nameHint': 'このダッシュボードで表示されます。省略可：未設定ならユーザー名を使います。',
   'profile.username': 'ユーザー名',
   'profile.usernameHint':
     'サインインに使う名前です。変更してもセッションと API トークンはそのまま引き継がれ、再サインインは不要です。',
