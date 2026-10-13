@@ -16,6 +16,7 @@ struct ConnectView: View {
     @State private var problemText: String?
     @State private var serverText = ""
     @FocusState private var isServerFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
     private var isServerEmpty: Bool {
@@ -78,7 +79,11 @@ struct ConnectView: View {
                         Text("Or connect with a code from your dashboard")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        HStack(spacing: 12) {
+                        // Side by side, or one above the other at the
+                        // largest text sizes, where both would not fit.
+                        let codeButtonLayout =
+                            dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                        codeButtonLayout {
                             Button {
                                 problemText = nil
                                 isScanning = true
