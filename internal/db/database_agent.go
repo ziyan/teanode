@@ -653,7 +653,10 @@ func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Tim
 }
 
 // backgroundKinds are the long reading jobs backgroundLast puts last.
-var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill), string(models.AgentJobRecording)}
+// backgroundKinds are the long jobs nobody is waiting on. Transcribing a
+// recording is not one: the person who just recorded waits for it, and as
+// background it sat behind two long ingests until one of them finished.
+var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill)}
 
 // ClaimAgentJobsKeepingRoom keeps a slot from the reading. Putting what a
 // person waits for first in the queue was not enough: with every slot

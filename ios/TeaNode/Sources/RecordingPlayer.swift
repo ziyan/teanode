@@ -30,7 +30,7 @@ final class RecordingPlayer {
     var canPlay: Bool { !mediaFiles.isEmpty }
 
     func update(mediaFiles: [RecordingMedia], durationMS: Int64) {
-        self.mediaFiles = mediaFiles.filter { $0.recordingUploadState == "complete" }.sorted { $0.timelineStartMS < $1.timelineStartMS }
+        self.mediaFiles = RecordingTimelinePieces.playable(mediaFiles)
         self.durationMS = durationMS
     }
 
@@ -44,7 +44,10 @@ final class RecordingPlayer {
     }
 
     func play(fromTimelineMS target: Int64) async {
-        guard !isPreparing, let media = mediaFiles.last(where: { $0.timelineStartMS <= target }) ?? mediaFiles.first else { return }
+        // One timeline over every original: the position picks the original and the offset into it, and a position in a gap
+        // between two originals is the start of the next.
+        guard !isPreparing, let location = RecordingTimelinePieces.locate(timelineMS: target, in: mediaFiles) else { return }
+        let media = location.media
         isPreparing = true
         defer { isPreparing = false }
         do {
@@ -54,7 +57,7 @@ final class RecordingPlayer {
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
                 try? AVAudioSession.sharedInstance().setActive(true)
             }
-            let offsetMS = media.playbackOffsetMS(for: max(target, media.timelineStartMS))
+            let offsetMS = location.offsetMS
             _ = await player.seek(to: CMTime(value: offsetMS, timescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
             player.play()
             isPlaying = true
@@ -67,7 +70,7 @@ final class RecordingPlayer {
 
     /// Moves to a point on the timeline, and goes on playing from there if it was playing.
     func seek(toTimelineMS target: Int64) async {
-        timelineMS = target
+        timelineMS = RecordingTimelinePieces.locate(timelineMS: target, in: mediaFiles)?.timelineMS ?? target
         if isPlaying { await play(fromTimelineMS: target) }
     }
 
@@ -130,10 +133,9 @@ final class RecordingPlayer {
         timelineMS = loadedMedia.timelineStartMS + Int64(seconds * 1000)
     }
 
-    /// An original ended: the next one carries on, or playing stops.
+    /// An original ended: the next one carries on from its start, which skips any gap between them, or playing stops.
     private func playbackEnded() async {
-        guard let loadedMedia, let next = mediaFiles.first(where: { $0.timelineStartMS >= loadedMedia.timelineStartMS + loadedMedia.mediaDurationMS && $0.id != loadedMedia.id })
-        else {
+        guard let loadedMedia, let next = RecordingTimelinePieces.original(after: loadedMedia, in: mediaFiles) else {
             isPlaying = false
             return
         }

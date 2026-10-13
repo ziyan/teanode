@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
-import { type RecordingMedia } from './api'
 import { RecordingConversation } from './conversationView'
 import { recordingOperation } from './processing'
 import { type RecordingPassagePlayback } from './playback'
@@ -67,7 +66,6 @@ function showLive(segments: unknown[], liveUtterances: unknown[], isLive = true)
           <RecordingConversation
             recordingId="fixture-recording"
             userId="fixture-owner"
-            mediaFiles={[{ id: 'fixture-media', timelineStartMS: 0 } as RecordingMedia]}
             passagePlayback={{ play: vi.fn() } as unknown as RecordingPassagePlayback}
             reloadToken={0}
             isLive={isLive}

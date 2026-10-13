@@ -111,9 +111,20 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 		return nil, err
 	}
 	if correction.IsAccountOwner && strings.TrimSpace(correction.ConfirmedName) == "" {
-		correction.ConfirmedName = strings.TrimSpace(owner.Name)
-		if correction.ConfirmedName == "" {
-			correction.ConfirmedName = owner.Username
+		// "This is me" without a name is the person's own identity under the
+		// name it already has, so a repeated request reads as the same one.
+		var ownIdentity recordingSpeakerIdentityModel
+		err := self.tx.Where("user_id = ? AND is_account_owner", userId).Take(&ownIdentity).Error
+		switch {
+		case err == nil:
+			correction.ConfirmedName = ownIdentity.ConfirmedName
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			correction.ConfirmedName = strings.TrimSpace(owner.Name)
+			if correction.ConfirmedName == "" {
+				correction.ConfirmedName = owner.Username
+			}
+		default:
+			return nil, err
 		}
 	}
 	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {

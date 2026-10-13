@@ -93,45 +93,9 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := run.Storage()
-	if store == nil {
-		return nil, fmt.Errorf("nowhere to keep a file")
-	}
-	var file *fetched
-	switch arguments.Source {
-	case "mail":
-		file, err = fromMail(ctx, run, arguments)
-	case "computer":
-		file, err = fromComputer(ctx, run, arguments)
-	case "conversation":
-		file, err = fromConversation(ctx, run, arguments)
-	default:
-		return nil, fmt.Errorf("%q is not mail, computer or conversation", arguments.Source)
-	}
+	file, attachment, err := fetchIntoConversation(ctx, run, arguments)
 	if err != nil {
 		return nil, err
-	}
-	if len(file.content) > shareBytes {
-		return nil, fmt.Errorf("%s is %d bytes, more than %d; it is too large to hand over", file.name, len(file.content), shareBytes)
-	}
-	attachment := file.existing
-	if attachment == nil {
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
-				AgentID:        run.Agent().ID,
-				ConversationID: tools.ConversationIDOf(run),
-				MessageID:      sharedMessage,
-				Name:           safeName(file.name),
-				ContentType:    file.contentType,
-				Size:           int64(len(file.content)),
-			})
-			if err != nil {
-				return err
-			}
-			return store.PutFile(ctx, attachment.ID, file.content)
-		}); err != nil {
-			return nil, err
-		}
 	}
 	answer := map[string]any{
 		"attachment_id": attachment.ID, "name": attachment.Name, "content_type": attachment.ContentType, "size": attachment.Size,
@@ -183,6 +147,78 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	result.Note = "handed over " + attachment.Name
 	result.Images = images
 	return result, nil
+}
+
+// FileSource names a file the agent may bring into the conversation: a part
+// of a message (Source mail, ItemID and Attachment as mail_read lists them),
+// a file on the person's attached computer (Source computer, Computer and
+// Path), or a file already in this conversation (Source conversation and
+// AttachmentID).
+type FileSource struct {
+	Source       string
+	ItemID       string
+	Attachment   string
+	Computer     string
+	Path         string
+	AttachmentID string
+}
+
+// FetchIntoConversation brings a file into the conversation as an attachment,
+// read with the same permissions share_file reads it with, for a tool that
+// works on the file rather than handing it over.
+func FetchIntoConversation(ctx context.Context, run tools.Run, source FileSource) (*models.AgentAttachment, error) {
+	_, attachment, err := fetchIntoConversation(ctx, run, shareArguments{
+		Source: source.Source, ItemID: source.ItemID, Attachment: source.Attachment, Computer: source.Computer, Path: source.Path,
+		AttachmentID: source.AttachmentID,
+	})
+	return attachment, err
+}
+
+// fetchIntoConversation reads a file from its source and keeps it as an
+// attachment of the conversation, unless it is one already.
+func fetchIntoConversation(ctx context.Context, run tools.Run, arguments shareArguments) (*fetched, *models.AgentAttachment, error) {
+	store := run.Storage()
+	if store == nil {
+		return nil, nil, fmt.Errorf("nowhere to keep a file")
+	}
+	var file *fetched
+	var err error
+	switch arguments.Source {
+	case "mail":
+		file, err = fromMail(ctx, run, arguments)
+	case "computer":
+		file, err = fromComputer(ctx, run, arguments)
+	case "conversation":
+		file, err = fromConversation(ctx, run, arguments)
+	default:
+		return nil, nil, fmt.Errorf("%q is not mail, computer or conversation", arguments.Source)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(file.content) > shareBytes {
+		return nil, nil, fmt.Errorf("%s is %d bytes, more than %d; it is too large to hand over", file.name, len(file.content), shareBytes)
+	}
+	attachment := file.existing
+	if attachment == nil {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
+				AgentID:        run.Agent().ID,
+				ConversationID: tools.ConversationIDOf(run),
+				MessageID:      sharedMessage,
+				Name:           safeName(file.name),
+				ContentType:    file.contentType,
+				Size:           int64(len(file.content)),
+			})
+			if err != nil {
+				return err
+			}
+			return store.PutFile(ctx, attachment.ID, file.content)
+		}); err != nil {
+			return nil, nil, err
+		}
+	}
+	return file, attachment, nil
 }
 
 // fromMail is a part of a message the person may read, by the number or

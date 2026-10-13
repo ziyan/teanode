@@ -14207,9 +14207,45 @@ button.herdr-question-head {
   -webkit-line-clamp: 2;
 }
 
-.recording-original + .recording-original { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem; }
 .recording-original { display: flex; flex-direction: column; gap: var(--space-2); }
 .recording-player { display: block; width: 100%; max-height: 65vh; }
+.recording-player[hidden] { display: none; }
+/* The one player: a play button, the time, a scrubber along the recording's
+   whole timeline, and its length. The range input lies over the drawn track,
+   invisible, so a drag, a tap and the arrow keys all reach it. */
+.recording-player-controls { display: flex; align-items: center; gap: var(--space-2); }
+.recording-player-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 2.75rem; }
+.recording-player-time:last-child { text-align: right; }
+.recording-scrubber { position: relative; flex: 1; min-width: 0; height: 28px; }
+.recording-scrubber-track {
+  position: absolute;
+  inset: 11px 0;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.recording-scrubber-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+/* Time between two pieces that nobody captured, which the player skips. */
+.recording-scrubber-gap { position: absolute; top: -2px; bottom: -2px; background: var(--surface); }
+.recording-scrubber-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.recording-scrubber:focus-within .recording-scrubber-thumb { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-strong); }
+.recording-scrubber input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
 .recording-progress { width: 100%; }
 
 /* --- a recording as a conversation -----------------------------------------

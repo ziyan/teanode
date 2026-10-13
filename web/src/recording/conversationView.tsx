@@ -3,14 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading } from '../components/common'
 import { LineActionPill, type LineAction } from '../components/agentReactions'
 import { CopyIcon, PencilIcon, PeopleIcon, PlayIcon, UserIcon } from '../components/icons'
-import { Pager, usePageInAddress } from '../components/pager'
 import { SettingsEmpty } from '../components/settingsList'
 import { SwipeableLine } from '../components/swipeableLine'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
-import { type RecordingMedia } from './api'
 import { overlapsRecordingCitation, readRecordingCitation } from './citation'
 import {
   distinctSpeakerCount,
@@ -23,16 +21,8 @@ import { BubbleTextDialog } from './bubbleTextDialog'
 import { RecordingEditDialog, type ProcessingDialog } from './editDialog'
 import { formatRecordingLength } from './library'
 import { type RecordingPassagePlayback } from './playback'
-import {
-  recordingOperation,
-  type LiveUtterance,
-  type SpeakersView,
-  type TranscriptSegment,
-  type TranscriptTimeline,
-  type TranscriptView,
-} from './processing'
-
-const PAGE_SIZE = 50
+import { useTranscriptPages } from './transcriptPages'
+import { recordingOperation, type LiveUtterance, type SpeakersView, type TranscriptSegment } from './processing'
 
 // RecordingConversation is the transcript read as a chat: one bubble per run of
 // passages by the same speaker, other people on the left with their name above,
@@ -43,7 +33,6 @@ const PAGE_SIZE = 50
 export function RecordingConversation({
   recordingId,
   userId,
-  mediaFiles,
   passagePlayback,
   reloadToken,
   isLive = false,
@@ -52,7 +41,6 @@ export function RecordingConversation({
 }: {
   recordingId: string
   userId: string
-  mediaFiles: RecordingMedia[]
   passagePlayback: RecordingPassagePlayback
   reloadToken: number
   // isLive is a capture still in progress: the words heard so far are drawn
@@ -66,10 +54,7 @@ export function RecordingConversation({
   const [parameters, setParameters] = useSearchParams()
   const citation = readRecordingCitation(parameters)
   const olderRunId = citation.requestedRunId
-  const page = usePageInAddress({ pageParameter: 'transcriptPage', defaultPageSize: PAGE_SIZE })
-  const { setPageIndex } = page
   const citedElement = useRef<HTMLSpanElement>(null)
-  const appliedCitation = useRef('')
   const citationKey = `${recordingId}/${olderRunId}/${citation.passageStartMS}/${citation.passageEndMS}`
 
   const citationOffset = useQuery(
@@ -83,33 +68,20 @@ export function RecordingConversation({
         : Promise.resolve(null),
     [olderRunId, citation.passageStartMS, citation.passageEndMS, userId],
   )
+  // The transcript is read a hundred passages at a time as the reader scrolls.
+  // A citation to a passage further down is not scrolled to until it is read, so
+  // pages are read one after another until the passage's offset is among them.
+  const transcript = useTranscriptPages({ recordingId, olderRunId: olderRunId ?? '', userId, reloadToken })
+  const timeline = { data: transcript.timeline, error: transcript.error, loading: transcript.isLoading }
+  const { loadMore, loadAll } = transcript
+  const loadedCount = transcript.timeline?.segments.length ?? 0
+  const hasMoreSegments = transcript.timeline?.hasMoreSegments ?? false
   useEffect(() => {
-    if (citation.passageStartMS === null) appliedCitation.current = ''
-    else if (citationOffset.data !== null && appliedCitation.current !== citationKey) {
-      appliedCitation.current = citationKey
-      setPageIndex(Math.floor(citationOffset.data / PAGE_SIZE), { replace: true })
-    }
-  }, [citationKey, citation.passageStartMS, citationOffset.data, setPageIndex])
+    if (citation.passageStartMS === null) return
+    if (citationOffset.data !== null && loadedCount <= citationOffset.data && hasMoreSegments && !transcript.isLoading)
+      void loadMore()
+  }, [citation.passageStartMS, citationOffset.data, loadedCount, hasMoreSegments, transcript.isLoading, loadMore])
 
-  const timeline = useQuery(
-    () =>
-      olderRunId
-        ? recordingOperation<TranscriptView>('ReadRecordingTranscript', {
-            recordingTranscriptRunId: olderRunId,
-            segmentOffset: page.pageIndex * PAGE_SIZE,
-            pageSize: PAGE_SIZE,
-          }).then((view): TranscriptTimeline => ({
-            ...view,
-            sourceGeneration: 0,
-            transcriptRuns: [view.transcriptRun],
-          }))
-        : recordingOperation<TranscriptTimeline>('ReadRecordingTranscriptTimeline', {
-            recordingId,
-            segmentOffset: page.pageIndex * PAGE_SIZE,
-            pageSize: PAGE_SIZE,
-          }),
-    [recordingId, olderRunId, page.pageIndex, userId, reloadToken],
-  )
   // Only the first page of the timeline carries the words heard live, so a
   // later page asks for them on their own.
   const liveTail = useQuery(
@@ -128,11 +100,9 @@ export function RecordingConversation({
   const segments = timeline.data?.segments ?? []
   const liveUtterances = isLive && !isReadOnly ? (liveTail.data?.liveUtterances ?? []) : []
   const isLastPage = timeline.data ? !timeline.data.hasMoreSegments : false
-  const groups = groupConversation(
-    segments,
-    liveUtterances,
-    liveRangeOfPage(segments, page.pageIndex === 0, isLastPage),
-  )
+  // The passages read so far are one list from the start, so the live words
+  // stop where the last passage read does until the rest is read.
+  const groups = groupConversation(segments, liveUtterances, liveRangeOfPage(segments, true, isLastPage))
   const speakerCount = distinctSpeakerCount(segments)
   useEffect(() => onSpeakerCount?.(speakerCount), [speakerCount, onSpeakerCount])
   const citedSegmentId =
@@ -159,28 +129,40 @@ export function RecordingConversation({
     window.addEventListener('scroll', keepTrack, { passive: true })
     return () => window.removeEventListener('scroll', keepTrack)
   }, [])
+  // The next page is read when the end of what is read comes near the screen.
+  // Each page read makes a new observer, which reports at once whether the end
+  // is still near, so a short page is followed by the next.
+  const moreSentinel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const sentinel = moreSentinel.current
+    if (!sentinel || !hasMoreSegments) return
+    if (typeof IntersectionObserver === 'undefined') {
+      void loadAll()
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMore()
+      },
+      { rootMargin: '600px 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMoreSegments, loadedCount, loadMore, loadAll])
+  const showLatestWords = async () => {
+    wasAtEnd.current = true
+    await loadAll()
+  }
   const liveSignature = `${groups.length}/${liveUtterances.length}/${segments.length}`
   useEffect(() => {
     if (isLive && wasAtEnd.current) endOfConversation.current?.scrollIntoView?.({ block: 'end' })
   }, [isLive, liveSignature])
 
-  const runs = timeline.data?.transcriptRuns ?? []
-  // play plays a whole bubble: from its first passage to the last one taken
-  // from the same original, which is every passage unless the bubble spans two.
+  // play plays from the start of a bubble on the recording's one player and
+  // goes on from there, into the next piece if the recording is made of several.
   const play = (segments: TranscriptSegment[]) => {
-    const firstSegment = segments[0]
-    const run = runs.find((candidate) => candidate.id === firstSegment.recordingTranscriptRunId)
-    const media = mediaFiles.find((candidate) => candidate.id === run?.recordingMediaId)
-    if (!media) {
-      toast.failed(t('recordings.playerUnavailable'))
-      return
-    }
-    const sameOriginal = segments.filter(
-      (segment) => segment.recordingTranscriptRunId === firstSegment.recordingTranscriptRunId,
-    )
-    const endMS = Math.max(...sameOriginal.map((segment) => segment.segmentEndMS))
     void passagePlayback
-      .play(media.id, firstSegment.segmentStartMS, endMS, media.timelineStartMS)
+      .seekTo(segments[0].segmentStartMS, true)
       .catch((caught) => toast.failure(caught, t('recordings.playerUnavailable')))
   }
   const passageText = (segment: TranscriptSegment) => segment.effectiveTranscriptText || segment.transcriptText
@@ -432,27 +414,15 @@ export function RecordingConversation({
       ) : null}
       {isLive && timeline.data?.hasMoreSegments ? (
         <div className="recording-earlier-notice muted">
-          <button
-            type="button"
-            onClick={() => page.setPageIndex(Math.floor((timeline.data!.segmentCount - 1) / PAGE_SIZE))}
-          >
+          <button type="button" onClick={() => void showLatestWords()}>
             {t('recordings.showLatestWords')}
           </button>
         </div>
       ) : null}
       {groups.map(bubble)}
       <div ref={endOfConversation} />
-      {timeline.data && groups.length > 0 ? (
-        <Pager
-          pageIndex={page.pageIndex}
-          pageSize={PAGE_SIZE}
-          shownCount={segments.length}
-          totalCount={timeline.data.segmentCount}
-          hasNextPage={timeline.data.hasMoreSegments}
-          isLoading={timeline.loading}
-          onPageIndex={page.setPageIndex}
-        />
-      ) : null}
+      {transcript.timeline?.hasMoreSegments ? <div ref={moreSentinel} className="recording-more-sentinel" /> : null}
+      {timeline.loading && timeline.data ? <Loading /> : null}
       {editingGroup ? (
         <BubbleTextDialog
           recordingId={recordingId}
