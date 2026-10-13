@@ -1,5 +1,5 @@
+import { graphql } from '../api'
 import { storedSettings } from '../components/sourceTypeSettings'
-import { graphqlWithOptionalFields } from './optionalFields'
 import { RECORDING_PROCESSING_DOCUMENTS } from './processingDocuments'
 
 export interface TranscriptionAvailability {
@@ -140,11 +140,7 @@ export async function recordingOperation<T>(
   variables: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
-  const response = await graphqlWithOptionalFields<Record<string, T>>(
-    RECORDING_PROCESSING_DOCUMENTS[operationName],
-    variables,
-    signal,
-  )
+  const response = await graphql<Record<string, T>>(RECORDING_PROCESSING_DOCUMENTS[operationName], variables, signal)
   return response[operationName]
 }
 // Only the server's canonical projection can confirm a segment speaker.

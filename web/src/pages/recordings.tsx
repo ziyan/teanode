@@ -20,7 +20,6 @@ import { RecordingDetailsDrawer } from '../recording/detailsDrawer'
 import { RecordingEditDialog, type ProcessingDialog } from '../recording/editDialog'
 import { formatRecordingLength, readRecordingStatusEvidence, recordingStatus } from '../recording/library'
 import { RecordedAtText, RecordingLibraryTable, RecordingStatusTag } from '../recording/libraryList'
-import { graphqlWithOptionalFields } from '../recording/optionalFields'
 import {
   importRecording,
   readRecording,
@@ -65,7 +64,7 @@ function AccountRecordingsPage() {
   const beforeRecordingId = pageCursors[pageCursors.length - 1]
   const library = useQuery(
     () =>
-      graphqlWithOptionalFields<{ ListRecordings: Recording[] }>(RECORDING_DOCUMENTS.ListRecordings, {
+      graphql<{ ListRecordings: Recording[] }>(RECORDING_DOCUMENTS.ListRecordings, {
         beforeRecordingId,
         pageSize: 51,
       }),

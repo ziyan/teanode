@@ -1,6 +1,5 @@
 import { APIError, authorization, graphql } from '../api'
 import { translateNow } from '../i18n/i18n'
-import { graphqlWithOptionalFields } from './optionalFields'
 import { RecordingSha256, recordingDigest } from './sha256'
 
 export interface Recording {
@@ -65,7 +64,7 @@ export const RECORDING_DOCUMENTS = {
 export const RECORDING_PART_BYTES = 8 * 1024 * 1024
 export const recordingMediaPath = (mediaId: string) => `/api/v1/recordings/media/${encodeURIComponent(mediaId)}`
 export async function readRecording(recordingId: string, signal?: AbortSignal): Promise<RecordingView> {
-  const response = await graphqlWithOptionalFields<{ ReadRecording: RecordingView }>(
+  const response = await graphql<{ ReadRecording: RecordingView }>(
     RECORDING_DOCUMENTS.ReadRecording,
     { recordingId },
     signal,
