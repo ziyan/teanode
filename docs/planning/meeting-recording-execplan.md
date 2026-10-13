@@ -511,8 +511,8 @@ and curating only bounded, non-overlapping confirmed audio. Incomplete, uncertai
 or mixed passages cannot become automatic or durable references. Completion
 queues curation transactionally; bounded local maintenance recovers it even when
 global model work is disabled, without constructing a provider. These runtime
-hooks passed focused race tests and full lint, including naming checks. Production
-correction, curation and dreaming checks still await the reviewed backend merge.
+hooks passed focused race tests and full lint, including naming checks. Production correction and curation checks are recorded in the deployment
+checkpoint below. Actual assessed dreaming acceptance remains outstanding.
 
 The current native simulator job built successfully, but a visual audit found
 recording routes displaying Conversation after service capabilities published
@@ -555,24 +555,56 @@ verify model speaker identity, and actual provider billing remains unavailable.
 
 ## Official deployment and remaining acceptance checkpoint
 
-The coordinating session verified official v0.144.2, commit
-`0711c213dddf7058f6bcd5bad15b968add4bd919`, running from its published image.
-Service health, unchanged migrations and authenticated API smoke checks passed.
-The stored configuration matched the paused baseline. A fresh database backup
-completed and its archive parsed in full. Retained synthetic original bytes and
-the existing transcript were unchanged; no correction or additional processing
-request was executed during this deployment verification.
+The coordinator independently verified official v0.145.0, published commit
+`7dda68b8e7fadbebf32b8814950cb9db5a5bc200`, running from the registry digest
+published by its successful release workflow. The running binary and authenticated
+API agree. Service health has zero restarts and no observed startup panics.
+The same 170 migrations remain applied, with no pending restart. All API settings
+sections match the paused baseline. Transcription remains enabled with the existing
+diarization/reference model and unchanged budgets. A fresh database archive passed
+full parsing before replacement, and previous backups and rollback images remain.
 
-This establishes the official deployed baseline. It does not establish deployment
-of #448 or the pending #438/#435 client increments. Production dreaming stays
-disabled with no running dream jobs. Held synthetic documents remain test evidence,
-not successful digestion or useful-memory acceptance.
+Both #448 and #438 are deployed together. Production dreaming remains disabled
+while isolated source-specific acceptance is prepared. No queued or running dream
+job was observed; five temporarily held passages remain held. Those markers are
+not successful digestion or useful-memory acceptance. Hidden secret ciphertext
+changed during configuration rewriting; plaintext preservation is being verified
+privately before asserting complete stored configuration equality.
 
-After the combined evidence guard and direct recording-tool integration are
-verified running, validation must observe the retained synthetic source through
-natural ingestion and scheduled digestion. Then exercise user corrections and
-reference revocation, verify obsolete derived evidence becomes dormant, and remove
-only the synthetic acceptance artifacts after checks. Do not trigger a broad dream,
-change global models, fabricate production facts or infer actual billing from the
-configured estimate. Physical-iPhone recording, lock-screen controls, interruption
-recovery and installation still require device evidence.
+Authenticated playback verified retained original bytes. Naming the synthetic
+recording's merged label automatically produced three screened references.
+Passage corrections then split it into two confirmed identities and revoked the
+previous merged-label references. Three bounded references remain from confirmed
+passages. Generated transcript text was unchanged and these metadata operations
+created no additional transcription attempt.
+
+One explicit paid reprocessing version completed with reported usage of 259 audio
+input tokens, 22 text input tokens and 564 output tokens. Actual billed cost remains
+unavailable. Original corrections and generated text remained auditable. The
+provider returned four segments instead of five, merging adjacent passages and
+changing an end boundary. Two passages retained aligned confirmation; two were
+explicitly flagged as unaligned instead of receiving false confirmation. This
+establishes preserved corrections and visible uncertainty, not perfect automatic
+speaker projection. Reference curation and memory uncertainty need integrated
+inspection of this production result.
+
+The native capture/library increment #435 and compatible playback backend #451
+are merged after code review, findings fixes and required CI. They are newer than
+the current deployment. Native capture has 39 inspected simulator views in light,
+dark and largest text; physical-device audio and background behavior are unverified.
+The playback backend has PostgreSQL/race, packaged codec, integrity, retry and
+ownership/range evidence. Actual desktop/mobile Chrome checks demonstrated CAF
+fallback, original retention and bounded citation playback. Web/CLI/LLM #453 and
+iOS #452 preview companions remain under final parity review, exact-head CI and
+visual validation. Supported video must keep its visual player by default, with
+explicit preview preparation/export and a return to the supported original.
+
+Remaining acceptance requires automatic source ingestion and assessed digestion
+using an isolated synthetic account, actual source-linked facts, correction
+reconciliation and cleanup. Do not fabricate facts, trigger a broad account dream,
+change global models or infer invoice cost from estimates. Learning requires no
+product approval gate; the private validation harness uses a coordinator execution
+checkpoint to prevent accidental production calls before deployment verification.
+Physical-iPhone lock-screen controls, interruptions, background transfers, signed
+sharing, large-import recovery and battery checks still require device evidence.
+The separate device-setup redesign does not block recording implementation.
