@@ -18,7 +18,7 @@ final class RecordingUploads: NSObject {
     private let responses = RecordingUploadResponses()
     private let completions = RecordingUploadCompletions()
     private var workerTask: Task<Void, Never>?
-    private var pendingAccountKeys: [String] = []
+    private var pendingAccounts = RecordingUploadScheduling()
     private var pendingConnections: [String: Connection] = [:]
     private var canceledAccountKeys: Set<String> = []
     private var backgroundCompletion: (() -> Void)?
@@ -57,7 +57,7 @@ final class RecordingUploads: NSObject {
 
     func resume(connection: Connection) {
         guard (try? requireRetainedAccount(connection.accountKey)) != nil else { return }
-        if pendingConnections[connection.accountKey] == nil { pendingAccountKeys.append(connection.accountKey) }
+        pendingAccounts.enqueue(connection.accountKey)
         pendingConnections[connection.accountKey] = connection
         startWorker()
     }
@@ -67,9 +67,9 @@ final class RecordingUploads: NSObject {
         workerTask = Task { [weak self] in
             guard let self else { return }
             defer { self.workerTask = nil }
-            while !self.pendingAccountKeys.isEmpty {
+            while !self.pendingAccounts.isEmpty {
                 guard await self.session.allTasks.isEmpty else { return }
-                let accountKey = self.pendingAccountKeys.removeFirst()
+                guard let accountKey = self.pendingAccounts.next() else { return }
                 guard let ownerConnection = self.pendingConnections.removeValue(forKey: accountKey) else { continue }
                 do {
                     try self.requireRetainedAccount(accountKey)
@@ -80,8 +80,6 @@ final class RecordingUploads: NSObject {
                         do {
                             if try await self.advance(recording.id, connection: ownerConnection, journal: journal) {
                                 try self.requireRetainedAccount(accountKey)
-                                if self.pendingConnections[accountKey] == nil { self.pendingAccountKeys.append(accountKey) }
-                                self.pendingConnections[accountKey] = ownerConnection
                                 return
                             }
                         } catch {
@@ -97,7 +95,7 @@ final class RecordingUploads: NSObject {
     func cancel(accountKey: String) async {
         canceledAccountKeys.insert(accountKey)
         pendingConnections[accountKey] = nil
-        pendingAccountKeys.removeAll { $0 == accountKey }
+        pendingAccounts.remove(accountKey)
         for task in await session.allTasks {
             guard let description = task.taskDescription, let taskData = description.data(using: .utf8),
                 let partTask = try? JSONDecoder().decode(PartTask.self, from: taskData), partTask.accountKey == accountKey
@@ -198,6 +196,10 @@ final class RecordingUploads: NSObject {
                         continue
                     }
                     let transportFile = original.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".upload")
+                    var hasTransferredTransportFile = false
+                    defer {
+                        if !hasTransferredTransportFile { try? FileManager.default.removeItem(at: transportFile) }
+                    }
                     try part.write(to: transportFile, options: .atomic)
                     try FileManager.default.setAttributes(
                         [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600],
@@ -224,6 +226,7 @@ final class RecordingUploads: NSObject {
                     do {
                         try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
                         task.resume()
+                        hasTransferredTransportFile = true
                     } catch {
                         task.cancel()
                         try? FileManager.default.removeItem(at: transportFile)
@@ -248,7 +251,14 @@ final class RecordingUploads: NSObject {
     }
 
     private func finished(_ task: PartTask, responseCode: Int?, responseData: Data, errorMessage: String?) async {
-        defer { startWorker() }
+        var hasVerifiedReceipt = false
+        defer {
+            if !hasVerifiedReceipt {
+                pendingAccounts.remove(task.accountKey)
+                pendingConnections[task.accountKey] = nil
+            }
+            startWorker()
+        }
         do {
             let journal = try MeetingRecorder.makeJournal()
             var recording = try await journal.read(task.localRecordingId, accountKey: task.accountKey)
@@ -273,7 +283,8 @@ final class RecordingUploads: NSObject {
                 recording.uploadErrorMessage = errorMessage ?? String(localized: "The upload was not verified. Keep the original and retry.")
             }
             try await journal.save(recording)
-            if recording.uploadErrorMessage == nil, let account = try KeychainAccountStore().load(accountKey: task.accountKey) {
+            hasVerifiedReceipt = recording.uploadErrorMessage == nil
+            if hasVerifiedReceipt, let account = try KeychainAccountStore().load(accountKey: task.accountKey) {
                 resume(connection: Connection(account: account, transport: URLSessionTransport(), store: KeychainAccountStore()))
             }
         } catch {}
