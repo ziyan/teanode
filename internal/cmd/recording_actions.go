@@ -19,7 +19,7 @@ func recordingActionCommands() []*cli.Command {
 		{"availability", "show recording processing availability without making a provider call", nil},
 		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
 		{"passage-offset", "locate an exact historical citation without loading the whole transcript", []string{"transcript-run-id", "passage-start-ms", "passage-end-ms"}},
-		{"timeline", "read the latest completed original versions in absolute chronological order", []string{"recording-id", "segment-offset", "page-size"}},
+		{"timeline", "read the latest completed original versions in absolute chronological order; liveUtterances are words heard during a capture that no completed version covers yet", []string{"recording-id", "segment-offset", "page-size"}},
 		{"versions", "inspect immutable transcript versions and processing status", []string{"recording-id"}},
 		{"transcript", "read a transcript page, request-local speakers and provider usage evidence", []string{"transcript-run-id", "segment-offset", "page-size"}},
 		{"process", "request initial paid transcription using the configured audio model", []string{"media-id", "client-run-id"}},

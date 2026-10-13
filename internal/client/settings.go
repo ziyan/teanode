@@ -46,6 +46,7 @@ const settingsSelection = `{
 		retention { runs corrections }
 		search { kind hasApiKey }
 		voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
+		recording { isLiveTranscriptionEnabled }
 		tools { disabled confirm }
 		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
 		mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }

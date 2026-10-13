@@ -519,6 +519,9 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingTemporarySpeakerModel{}).Error; err != nil {
 		return err
 	}
+	if err := self.deleteRecordingLiveUtterances(recordingId); err != nil {
+		return err
+	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
 func (self *transaction) ListRecordingsForCleanup(limit int) ([]*models.Recording, error) {
@@ -573,6 +576,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 		return ErrInvalidArguments
 	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingKnowledgeDocumentModel{}).Error; err != nil {
+		return err
+	}
+	if err := self.deleteRecordingLiveUtterances(recordingId); err != nil {
 		return err
 	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingMediaModel{}).Error; err != nil {

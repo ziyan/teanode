@@ -129,6 +129,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathRecordingComplete).Methods(http.MethodPost).HandlerFunc(self.recordingCompleteView)
 	router.Path(api.PathRecordingMedia).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.recordingMediaView)
 	router.Path(api.PathRecordingPlayback).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.recordingPlaybackView)
+	router.Path(api.PathRecordingLive).Methods(http.MethodGet).HandlerFunc(self.recordingLiveView)
 	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)
 	router.Path(api.PathAgentAttachment).Methods(http.MethodGet).HandlerFunc(self.agentAttachmentView)
 	// And the file behind a document a knowledge source indexed, so that

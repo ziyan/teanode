@@ -107,6 +107,9 @@ type Agent struct {
 	// and each finished utterance is sent as an ordinary turn.
 	Voice AgentVoice `yaml:"voice"`
 
+	// Recording is how a recording still being captured is handled.
+	Recording AgentRecording `yaml:"recording"`
+
 	// MCP declares servers speaking the Model Context Protocol whose tools
 	// join the catalog.
 	MCP AgentMCP `yaml:"mcp"`
@@ -907,6 +910,22 @@ type AgentVoice struct {
 	// first words soon: on a long conversation a smaller model starts
 	// speaking a second or more before a larger one.
 	AskModel string `yaml:"askModel,omitempty"`
+}
+
+// AgentRecording is what the server does for a recording while it is being
+// captured.
+type AgentRecording struct {
+	// IsLiveTranscriptionEnabled says whether a phone or browser capturing
+	// a recording may stream its audio for words as they are spoken, a
+	// second transcription beside the speaker-separated one that is made of
+	// the saved audio. It is billed by the minute to the agent, so an
+	// operator who does not want that turns it off. Unset is on.
+	IsLiveTranscriptionEnabled *bool `yaml:"isLiveTranscriptionEnabled,omitempty"`
+}
+
+// IsLiveTranscriptionOn resolves the unset IsLiveTranscriptionEnabled to on.
+func (self *AgentRecording) IsLiveTranscriptionOn() bool {
+	return self.IsLiveTranscriptionEnabled == nil || *self.IsLiveTranscriptionEnabled
 }
 
 // The defaults of the voice settings.

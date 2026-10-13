@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -74,6 +75,14 @@ type Event struct {
 	// heard, or the whole of a finished one, empty when nothing was said.
 	TranscriptText string `json:"transcriptText,omitempty"`
 
+	// UtteranceStartMS and UtteranceEndMS are where the provider heard the
+	// utterance begin and end, in milliseconds from the start of the audio
+	// the session was given. Zero when the provider did not say; the start
+	// is on speechStarted and the end on speechStopped, and a final
+	// transcript has whichever were said.
+	UtteranceStartMS int64 `json:"utteranceStartMS,omitempty"`
+	UtteranceEndMS   int64 `json:"utteranceEndMS,omitempty"`
+
 	ErrorMessage string `json:"errorMessage,omitempty"`
 
 	// SampleRate is the audio the session takes, on ready.
@@ -120,6 +129,10 @@ type Session struct {
 	conn       *websocket.Conn
 	writeMutex sync.Mutex
 	order      utteranceOrder
+
+	// appendedBytes is the audio handed to the provider so far, which dates
+	// an utterance the provider gave no times for.
+	appendedBytes atomic.Int64
 }
 
 // realtimeURL is the provider's realtime address for a transcription
@@ -256,7 +269,17 @@ func (self *Session) Append(pcm []byte) error {
 	if len(pcm) > MaximumFrameBytes || len(pcm)%2 != 0 {
 		return fmt.Errorf("voice: a frame of %d bytes is not 16-bit audio of at most %d bytes", len(pcm), MaximumFrameBytes)
 	}
-	return self.send(map[string]any{"type": "input_audio_buffer.append", "audio": base64.StdEncoding.EncodeToString(pcm)})
+	if err := self.send(map[string]any{"type": "input_audio_buffer.append", "audio": base64.StdEncoding.EncodeToString(pcm)}); err != nil {
+		return err
+	}
+	self.appendedBytes.Add(int64(len(pcm)))
+	return nil
+}
+
+// AppendedMS is how much audio the session has been given, in milliseconds
+// of audio at SampleRate.
+func (self *Session) AppendedMS() int64 {
+	return self.appendedBytes.Load() * 1000 / (SampleRate * 2)
 }
 
 // Close ends the session.
@@ -314,6 +337,8 @@ func (self *Session) Read(emit func(*Event), used func(*Usage)) error {
 type providerEvent struct {
 	Type           string `json:"type"`
 	ItemID         string `json:"item_id"`
+	AudioStartMS   int64  `json:"audio_start_ms"`
+	AudioEndMS     int64  `json:"audio_end_ms"`
 	PreviousItemID string `json:"previous_item_id"`
 	Delta          string `json:"delta"`
 	Transcript     string `json:"transcript"`
@@ -352,18 +377,27 @@ type utteranceOrder struct {
 
 	// charged are the utterances whose transcription cost has been told.
 	charged map[string]bool
+
+	// startedMS and stoppedMS are where the provider heard each utterance
+	// begin and end, by its id, until it is released.
+	startedMS map[string]int64
+	stoppedMS map[string]int64
 }
 
 func (self *utteranceOrder) translate(event *providerEvent) []*Event {
 	if self.finished == nil {
 		self.finished = map[string]*Event{}
 		self.released = map[string]bool{}
+		self.startedMS = map[string]int64{}
+		self.stoppedMS = map[string]int64{}
 	}
 	switch event.Type {
 	case "input_audio_buffer.speech_started":
-		return []*Event{{VoiceEvent: EventSpeechStarted, UtteranceID: event.ItemID}}
+		self.startedMS[event.ItemID] = event.AudioStartMS
+		return []*Event{{VoiceEvent: EventSpeechStarted, UtteranceID: event.ItemID, UtteranceStartMS: event.AudioStartMS}}
 	case "input_audio_buffer.speech_stopped":
-		return []*Event{{VoiceEvent: EventSpeechStopped, UtteranceID: event.ItemID}}
+		self.stoppedMS[event.ItemID] = event.AudioEndMS
+		return []*Event{{VoiceEvent: EventSpeechStopped, UtteranceID: event.ItemID, UtteranceEndMS: event.AudioEndMS}}
 	case "input_audio_buffer.committed":
 		self.commit(event.ItemID, event.PreviousItemID)
 		return self.release()
@@ -424,6 +458,10 @@ func (self *utteranceOrder) release() []*Event {
 		}
 		self.sequence++
 		next.UtteranceSequence = self.sequence
+		next.UtteranceStartMS = self.startedMS[self.committed[0]]
+		next.UtteranceEndMS = self.stoppedMS[self.committed[0]]
+		delete(self.startedMS, self.committed[0])
+		delete(self.stoppedMS, self.committed[0])
 		told = append(told, next)
 		self.released[self.committed[0]] = true
 		delete(self.finished, self.committed[0])

@@ -82,6 +82,7 @@ type AgentSettings struct {
 	Tools        *AgentToolsSettings         `json:"tools"`
 	Browser      *AgentBrowserSettings       `json:"browser"`
 	Voice        *AgentVoiceSettings         `json:"voice"`
+	Recording    *AgentRecordingSettings     `json:"recording"`
 	MCPServers   []*AgentMCPServerSettings   `json:"mcpServers"`
 	Finance      *AgentFinanceSettings       `json:"finance"`
 	Push         *AgentPushSettings          `json:"push"`
@@ -304,6 +305,12 @@ type AgentVoiceSettings struct {
 	AskModel           string `json:"askModel"`
 }
 
+// AgentRecordingSettings is what the server does for a recording while it
+// is being captured.
+type AgentRecordingSettings struct {
+	IsLiveTranscriptionEnabled bool `json:"isLiveTranscriptionEnabled"`
+}
+
 // AgentBrowserSettings is the headless browser.
 type AgentBrowserSettings struct {
 	Enabled               bool     `json:"enabled"`
@@ -439,6 +446,9 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			SpeechVoice:        agent.Voice.SpeechVoice,
 			AskModel:           agent.Voice.AskModel,
 		},
+		Recording: &AgentRecordingSettings{
+			IsLiveTranscriptionEnabled: agent.Recording.IsLiveTranscriptionOn(),
+		},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
 			CDPEndpoint:           agent.Browser.CDPEndpoint,
@@ -562,6 +572,7 @@ type AgentParameters struct {
 	Tools        *AgentToolsParameters          `json:"tools"`
 	Browser      *AgentBrowserParameters        `json:"browser"`
 	Voice        *AgentVoiceParameters          `json:"voice"`
+	Recording    *AgentRecordingParameters      `json:"recording"`
 	MCPServers   *[]*AgentMCPServerParameters   `json:"mcpServers"`
 	Finance      *AgentFinanceParameters        `json:"finance"`
 	Push         *AgentPushParameters           `json:"push"`
@@ -741,6 +752,11 @@ type AgentVoiceParameters struct {
 	SpeechModel        *string `json:"speechModel"`
 	SpeechVoice        *string `json:"speechVoice"`
 	AskModel           *string `json:"askModel"`
+}
+
+// AgentRecordingParameters change the recording settings.
+type AgentRecordingParameters struct {
+	IsLiveTranscriptionEnabled *bool `json:"isLiveTranscriptionEnabled"`
 }
 
 // AgentBrowserParameters change the headless browser.
@@ -1042,6 +1058,9 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&voice.SpeechModel, parameters.Voice.SpeechModel)
 		applyString(&voice.SpeechVoice, parameters.Voice.SpeechVoice)
 		applyString(&voice.AskModel, parameters.Voice.AskModel)
+	}
+	if parameters.Recording != nil {
+		applyFeature(&agent.Recording.IsLiveTranscriptionEnabled, parameters.Recording.IsLiveTranscriptionEnabled)
 	}
 	if parameters.Browser != nil {
 		browser := &agent.Browser

@@ -40,6 +40,10 @@ const (
 	PathRecordingMedia    = Prefix + "/recordings/media/{mediaId}"
 	PathRecordingPlayback = Prefix + "/recordings/media/{mediaId}/playback"
 
+	// PathRecordingLive is the websocket a capture streams its microphone to
+	// for words as they are spoken.
+	PathRecordingLive = Prefix + "/recordings/{recordingId}/live"
+
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
