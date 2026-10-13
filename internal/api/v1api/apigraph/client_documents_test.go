@@ -119,9 +119,15 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"SaveAgentNode":       client.DocumentSaveAgentNode,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
-		"AgentGraphPage":       client.DocumentAgentGraphPage,
-		"ListAgentDreams":      client.DocumentListAgentDreams,
-		"RewriteAgentOverview": client.DocumentRewriteAgentOverview,
+		"AgentGraphPage": client.DocumentAgentGraphPage,
+		// A page's links to the person's own records, both directions.
+		"ListAgentRecordLinks":  client.DocumentListAgentRecordLinks,
+		"ReadRecordMemoryLinks": client.DocumentReadRecordMemoryLinks,
+		"LinkAgentRecord":       client.DocumentLinkAgentRecord,
+		"UnlinkAgentRecord":     client.DocumentUnlinkAgentRecord,
+		"SetAgentNodeContact":   client.DocumentSetAgentNodeContact,
+		"ListAgentDreams":       client.DocumentListAgentDreams,
+		"RewriteAgentOverview":  client.DocumentRewriteAgentOverview,
 		// What the agent's shell left running on the person's computers.
 		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
 		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,
