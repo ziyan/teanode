@@ -64,4 +64,26 @@ final class RecordingPlaybackTests: XCTestCase {
             } catch {}
         }
     }
+    func testPlayableOriginalSkipsPreparationAndUnsupportedPlayRevalidatesCachedPreview() async throws {
+        let preparedJSON = playbackJSON
+        let fake = FakeServer { request in
+            let requestBody = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+            if requestBody.contains("ReadRecordingPlayback") {
+                return (200, "{\"data\":{\"ReadRecordingPlayback\":\(preparedJSON)}}")
+            }
+            return (200, "{\"data\":{\"PrepareRecordingPlayback\":\(preparedJSON)}}")
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "node.example.com"), clientId: "test-client", accessToken: "test-token", refreshToken: "",
+            expiresAt: .distantFuture, username: "test-owner")
+        let connection = Connection(account: account, transport: fake)
+        let originalSelection = try await connection.compatibleRecordingPlayback(for: media, isOriginalPlayable: true)
+        XCTAssertNil(originalSelection)
+        XCTAssertTrue(fake.sent.isEmpty)
+        let fallbackSelection = try await connection.compatibleRecordingPlayback(for: media, isOriginalPlayable: false)
+        XCTAssertNotNil(fallbackSelection)
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertTrue(String(data: fake.sent[0].httpBody ?? Data(), encoding: .utf8)?.contains("PrepareRecordingPlayback") == true)
+    }
+
 }

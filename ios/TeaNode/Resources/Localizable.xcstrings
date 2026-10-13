@@ -45727,6 +45727,54 @@
           }
         }
       }
+    },
+    "Share full audio preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声プレビュー全体を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享完整音频预览"
+          }
+        }
+      }
+    },
+    "Share full original": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のファイル全体を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享完整原文件"
+          }
+        }
+      }
+    },
+    "Use audio preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声プレビューを使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用音频预览"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

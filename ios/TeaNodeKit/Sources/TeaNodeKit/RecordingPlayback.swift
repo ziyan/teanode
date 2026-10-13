@@ -50,6 +50,11 @@ extension Connection {
         return playback
     }
 
+    public func compatibleRecordingPlayback(for media: RecordingMedia, isOriginalPlayable: Bool) async throws -> RecordingPlayback? {
+        guard !isOriginalPlayable else { return nil }
+        return try await prepareRecordingPlayback(for: media)
+    }
+
     public func prepareRecordingPlayback(for media: RecordingMedia) async throws -> RecordingPlayback {
         guard Self.isRecordingIdentifier(media.id) else { throw TeaNodeError.unreadableAnswer }
         struct Answer: Decodable, Sendable { let PrepareRecordingPlayback: RecordingPlayback }

@@ -44,3 +44,17 @@ Current account identity, retained profile and cancellation are rechecked across
 awaits. A silent local WAV demo covers the actual preview UI without network access.
 326 portable tests, the real built-schema document check and full lint pass. Native
 SDK and rendered preview captures remain pending.
+
+Review found that reading cached metadata alone could never reach the server repair
+operation after corrupt preview bytes. Unsupported user Play now always prepares
+locally, which verifies/repairs the cache using the existing reservation. Supported
+video avoids preparation. A production transport-selection regression covers both
+paths. Asset failures fall back only for an unsupported format/decoder, not unrelated
+permission or I/O errors. Ready verified original and preview files offer explicit
+whole-file Share actions; no automatic external sharing or journal release occurs.
+
+Ready supported originals also expose an explicit Use audio preview action, so CAF
+and other supported native formats can export compatible WAV without pretending
+they are unsupported. Default supported video playback stays visual. The action
+retains the original player on failure and uses the same verified download, bounded
+composition, visible-session cancellation and whole-file Share controls.

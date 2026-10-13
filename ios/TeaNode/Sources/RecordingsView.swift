@@ -669,6 +669,9 @@ struct RecordingPlaybackScreen: View {
     @State private var problemText: String?
     @State private var isCompatibleAudioPreview = false
     @State private var recordingUserId: String?
+    @State private var isPlaybackVisible = false
+    @State private var isPreparingPreview = false
+    @State private var previewTask: Task<Void, Never>?
     @State private var progressText = String(localized: "Downloading original for private playback")
     @Environment(\.dismiss) private var dismiss
 
@@ -682,6 +685,26 @@ struct RecordingPlaybackScreen: View {
                             Text("Audio preview prepared locally; original unchanged.").font(.caption).foregroundStyle(.secondary)
                         }
                         VideoPlayer(player: player)
+                        if let problemText { Text(problemText).font(.caption).foregroundStyle(.secondary) }
+                        if !isCompatibleAudioPreview {
+                            Button {
+                                guard !isPreparingPreview else { return }
+                                isPreparingPreview = true
+                                previewTask = Task { await useAudioPreview() }
+                            } label: {
+                                if isPreparingPreview { ProgressView() } else { Label("Use audio preview", systemImage: "waveform") }
+                            }
+                            .disabled(isPreparingPreview || (try? requireCurrentConnection()) == nil)
+                        }
+                        if let localURL {
+                            ShareLink(item: localURL) {
+                                Label(
+                                    isCompatibleAudioPreview
+                                        ? String(localized: "Share full audio preview") : String(localized: "Share full original"),
+                                    systemImage: "square.and.arrow.up")
+                            }
+                            .disabled(isPreparingPreview || (try? requireCurrentConnection()) == nil)
+                        }
                     }
                 } else if let problemText {
                     ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText))
@@ -692,6 +715,8 @@ struct RecordingPlaybackScreen: View {
             .navigationTitle(media.originalFilename)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task {
+                guard !Task.isCancelled else { return }
+                isPlaybackVisible = true
                 defer {
                     if Task.isCancelled || player == nil {
                         if let localURL { try? FileManager.default.removeItem(at: localURL) }
@@ -714,16 +739,21 @@ struct RecordingPlaybackScreen: View {
                         request, expectedSizeBytes: media.originalSizeBytes, expectedSha256: media.originalSha256,
                         fileExtension: (media.originalFilename as NSString).pathExtension)
                     guard let originalURL = localURL else { throw TeaNodeError.unreadableAnswer }
+                    isCompatibleAudioPreview = false
                     var playableAsset = AVURLAsset(url: originalURL)
-                    let isOriginalPlayable = (try? await playableAsset.load(.isPlayable)) == true
+                    let isOriginalPlayable: Bool
+                    do {
+                        isOriginalPlayable = try await playableAsset.load(.isPlayable)
+                    } catch let assetError as AVError
+                        where [.fileFormatNotRecognized, .decoderNotFound, .formatUnsupported].contains(assetError.code)
+                    {
+                        isOriginalPlayable = false
+                    }
                     try requireCurrentConnection()
-                    if !isOriginalPlayable {
-                        progressText = String(localized: "Preparing compatible audio preview")
-                        let existing = try await connection.recordingPlayback(for: media)
-                        try requireCurrentConnection()
-                        let playback: RecordingPlayback
-                        if let existing { playback = existing } else { playback = try await connection.prepareRecordingPlayback(for: media) }
-                        try requireCurrentConnection()
+                    if !isOriginalPlayable { progressText = String(localized: "Preparing compatible audio preview") }
+                    let compatiblePlayback = try await connection.compatibleRecordingPlayback(for: media, isOriginalPlayable: isOriginalPlayable)
+                    try requireCurrentConnection()
+                    if let playback = compatiblePlayback {
                         progressText = String(localized: "Downloading compatible audio preview")
                         let previewRequest = try await connection.recordingCompatiblePlaybackRequest(playback, for: media)
                         let previewURL = try await downloadVerifiedMedia(
@@ -736,39 +766,15 @@ struct RecordingPlaybackScreen: View {
                         isCompatibleAudioPreview = true
                     }
                     try requireCurrentConnection()
-                    let preparedPlayer: AVPlayer
-                    if let passageStartMS, let passageEndMS {
-                        let startOffsetMS = media.playbackOffsetMS(for: passageStartMS)
-                        let endOffsetMS = media.playbackOffsetMS(for: passageEndMS)
-                        guard passageStartMS >= media.timelineStartMS, endOffsetMS > startOffsetMS else {
-                            throw TeaNodeError.unreadableAnswer
-                        }
-                        // A trimmed in-memory composition bounds the standard player's entire seekable range.
-                        let composition = AVMutableComposition()
-                        let timeRange = CMTimeRange(
-                            start: CMTime(value: startOffsetMS, timescale: 1000),
-                            duration: CMTime(value: endOffsetMS - startOffsetMS, timescale: 1000))
-                        let tracks = try await playableAsset.load(.tracks)
-                        for originalTrack in tracks {
-                            guard originalTrack.mediaType == .audio || originalTrack.mediaType == .video,
-                                let passageTrack = composition.addMutableTrack(
-                                    withMediaType: originalTrack.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)
-                            else { continue }
-                            try passageTrack.insertTimeRange(timeRange, of: originalTrack, at: .zero)
-                            passageTrack.preferredTransform = try await originalTrack.load(.preferredTransform)
-                        }
-                        guard !composition.tracks.isEmpty else { throw TeaNodeError.unreadableAnswer }
-                        preparedPlayer = AVPlayer(playerItem: AVPlayerItem(asset: composition))
-                    } else if passageStartMS != nil || passageEndMS != nil {
-                        throw TeaNodeError.unreadableAnswer
-                    } else {
-                        preparedPlayer = AVPlayer(playerItem: AVPlayerItem(asset: playableAsset))
-                    }
+                    let preparedPlayer = try await makePlayer(for: playableAsset)
                     try requireCurrentConnection()
                     player = preparedPlayer
                 } catch { if !Task.isCancelled { problemText = error.localizedDescription } }
             }
             .onDisappear {
+                isPlaybackVisible = false
+                previewTask?.cancel()
+                previewTask = nil
                 player?.pause()
                 player = nil
                 if let localURL { try? FileManager.default.removeItem(at: localURL) }
@@ -776,9 +782,67 @@ struct RecordingPlaybackScreen: View {
             }
         }
     }
+    private func makePlayer(for playableAsset: AVURLAsset) async throws -> AVPlayer {
+        if let passageStartMS, let passageEndMS {
+            let startOffsetMS = media.playbackOffsetMS(for: passageStartMS)
+            let endOffsetMS = media.playbackOffsetMS(for: passageEndMS)
+            guard passageStartMS >= media.timelineStartMS, endOffsetMS > startOffsetMS else {
+                throw TeaNodeError.unreadableAnswer
+            }
+            // A trimmed in-memory composition bounds the standard player's entire seekable range.
+            let composition = AVMutableComposition()
+            let timeRange = CMTimeRange(
+                start: CMTime(value: startOffsetMS, timescale: 1000),
+                duration: CMTime(value: endOffsetMS - startOffsetMS, timescale: 1000))
+            let tracks = try await playableAsset.load(.tracks)
+            for originalTrack in tracks {
+                guard originalTrack.mediaType == .audio || originalTrack.mediaType == .video,
+                    let passageTrack = composition.addMutableTrack(
+                        withMediaType: originalTrack.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)
+                else { continue }
+                try passageTrack.insertTimeRange(timeRange, of: originalTrack, at: .zero)
+                passageTrack.preferredTransform = try await originalTrack.load(.preferredTransform)
+            }
+            guard !composition.tracks.isEmpty else { throw TeaNodeError.unreadableAnswer }
+            return AVPlayer(playerItem: AVPlayerItem(asset: composition))
+        } else if passageStartMS != nil || passageEndMS != nil {
+            throw TeaNodeError.unreadableAnswer
+        } else {
+            return AVPlayer(playerItem: AVPlayerItem(asset: playableAsset))
+        }
+    }
+
+    private func useAudioPreview() async {
+        defer { isPreparingPreview = false }
+        guard player != nil, !isCompatibleAudioPreview else { return }
+        var previewURL: URL?
+        do {
+            try requireCurrentConnection()
+            let playback = try await connection.prepareRecordingPlayback(for: media)
+            try requireCurrentConnection()
+            let request = try await connection.recordingCompatiblePlaybackRequest(playback, for: media)
+            previewURL = try await downloadVerifiedMedia(
+                request, expectedSizeBytes: playback.playbackSizeBytes, expectedSha256: playback.playbackSha256, fileExtension: "wav")
+            guard let previewURL else { throw TeaNodeError.unreadableAnswer }
+            let asset = AVURLAsset(url: previewURL)
+            guard try await asset.load(.isPlayable) else { throw TeaNodeError.unreadableAnswer }
+            let preparedPlayer = try await makePlayer(for: asset)
+            try requireCurrentConnection()
+            player?.pause()
+            if let localURL { try? FileManager.default.removeItem(at: localURL) }
+            localURL = previewURL
+            player = preparedPlayer
+            isCompatibleAudioPreview = true
+            problemText = nil
+        } catch {
+            if let previewURL { try? FileManager.default.removeItem(at: previewURL) }
+            if !Task.isCancelled { problemText = error.localizedDescription }
+        }
+    }
+
     private func requireCurrentConnection() throws {
         try Task.checkCancellation()
-        guard AppModel.shared.connection === connection, let recordingUserId,
+        guard isPlaybackVisible, AppModel.shared.connection === connection, let recordingUserId,
             RecordingLibraryProgress.isCurrentOwner(
                 accountKey: connection.accountKey, recordingUserId: recordingUserId,
                 currentAccountKey: AppModel.shared.connection?.accountKey,
