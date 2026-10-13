@@ -274,3 +274,66 @@ func TestThisIsMeRepeatedIsTheSameRequest(test *testing.T) {
 		}
 	})
 }
+
+// Undoing a naming takes the name off every passage it named, given any one of
+// them; removing one correction takes it off that passage only.
+func TestANamingCanBeUndoneWholeOrOnePassage(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	recordingId := fixture.media.RecordingID
+	name := func(transaction db.Transaction, key string) []*models.RecordingSpeakerCorrection {
+		source, err := transaction.GetRecording(fixture.userId, recordingId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		corrected, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: recordingId, RecordingTranscriptionAttemptID: attempt.ID, ClientCorrectionID: key, LocalSpeakerID: "A", ConfirmedName: "Fixture Colleague", ExpectedSourceGeneration: source.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1})
+		if err != nil || len(corrected) != 3 {
+			test.Fatal("the speaker was not named on every passage", err)
+		}
+		return corrected
+	}
+	generation := func(transaction db.Transaction) int64 {
+		source, err := transaction.GetRecording(fixture.userId, recordingId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		return source.SourceGeneration
+	}
+	namedCount := func(transaction db.Transaction) int {
+		count := 0
+		for _, segment := range timelineOf(test, transaction, fixture.userId, recordingId) {
+			if segment.HasUserConfirmedSpeaker {
+				count++
+			}
+		}
+		return count
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "A", SegmentStartMS: 2000, SegmentEndMS: 2300, TranscriptText: "One."},
+			{LocalSpeakerID: "A", SegmentStartMS: 2300, SegmentEndMS: 2600, TranscriptText: "Two."},
+			{LocalSpeakerID: "A", SegmentStartMS: 2600, SegmentEndMS: 2900, TranscriptText: "Three."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		corrected := name(transaction, "first-naming")
+		if err := transaction.RemoveRecordingSpeakerCorrection(fixture.userId, recordingId, corrected[1].ID, generation(transaction)); err != nil {
+			test.Fatal(err)
+		}
+		if namedCount(transaction) != 2 {
+			test.Fatal("removing one passage's naming did not leave the others named")
+		}
+		undone, err := transaction.UndoRecordingSpeakerNaming(fixture.userId, recordingId, corrected[0].ID, generation(transaction))
+		if err != nil || undone != 2 || namedCount(transaction) != 0 {
+			test.Fatal("undoing the naming left passages named", undone, err)
+		}
+		name(transaction, "second-naming")
+		if namedCount(transaction) != 3 {
+			test.Fatal("the speaker could not be named again after the undo")
+		}
+	})
+}

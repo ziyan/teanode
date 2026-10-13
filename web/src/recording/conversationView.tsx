@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading } from '../components/common'
 import { LineActionPill, type LineAction } from '../components/agentReactions'
-import { CopyIcon, GraphIcon, PencilIcon, PeopleIcon, PlayIcon, UserIcon } from '../components/icons'
+import { CloseIcon, CopyIcon, GraphIcon, PencilIcon, PeopleIcon, PlayIcon, UserIcon } from '../components/icons'
 import { SettingsEmpty } from '../components/settingsList'
 import { SwipeableLine } from '../components/swipeableLine'
 import { useToast } from '../components/toast'
@@ -239,6 +239,30 @@ export function RecordingConversation({
     }
   }
 
+  // clearName undoes what named this bubble's speaker: each naming whole, so a
+  // name given to a speaker leaves every passage it named and a name given to
+  // one passage leaves that passage. Each undo advances the recording's
+  // generation, so the next one reads it again first.
+  const clearName = async (group: ConversationGroup) => {
+    const correctionIds = [
+      ...new Set(group.segments.map((segment) => segment.appliedSpeakerCorrectionId).filter(Boolean)),
+    ]
+    try {
+      for (const recordingSpeakerCorrectionId of correctionIds) {
+        const speakers = await recordingOperation<SpeakersView>('ReadRecordingSpeakers', { recordingId })
+        await recordingOperation('UndoRecordingSpeakerNaming', {
+          recordingId,
+          expectedSourceGeneration: speakers.sourceGeneration,
+          recordingSpeakerCorrectionId,
+        })
+      }
+      toast.done(t('recordingProcessing.saved'))
+    } catch (caught) {
+      toast.failure(caught, t('recordingProcessing.saved'))
+    }
+    onChanged()
+  }
+
   // What can be done to a bubble, the same set in its corner under a mouse
   // and in the pill a tap opens on a touch screen, as the agent's messages
   // have: play it, copy it, and, unless this is a version read for its
@@ -298,15 +322,32 @@ export function RecordingConversation({
           onAct: () => void setTemporaryOwnership(temporarySpeakerLabel),
         },
       )
-    // Your own bubble has one way to say who it was instead: Not me, which
-    // opens the name form, since there is no call that unsets the owner.
+    // A name someone gave can be taken back: Not me on your own bubble, Clear
+    // name on anyone else's. Your voice recognized with no naming has nothing
+    // to take back, so Not me there asks who it was instead.
+    const hasNaming = group.segments.some((segment) => segment.appliedSpeakerCorrectionId)
     if (canName && firstSegment.isAccountOwner)
       actions.push({
         actionKey: 'owner',
         label: t('recordings.notMe'),
         icon: <UserIcon size={16} />,
-        onAct: () => nameSpeaker(firstSegment),
+        onAct: () => (hasNaming ? void clearName(group) : nameSpeaker(firstSegment)),
       })
+    else if (canName && hasNaming)
+      actions.push(
+        {
+          actionKey: 'name',
+          label: t('recordingProcessing.nameSpeaker'),
+          icon: <PeopleIcon size={16} />,
+          onAct: () => nameSpeaker(firstSegment),
+        },
+        {
+          actionKey: 'clear',
+          label: t('recordings.clearName'),
+          icon: <CloseIcon size={16} />,
+          onAct: () => void clearName(group),
+        },
+      )
     else if (canName)
       actions.push(
         {

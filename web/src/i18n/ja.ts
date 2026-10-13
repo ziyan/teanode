@@ -4508,6 +4508,7 @@ export const ja: Catalog = {
   'recordings.correctText': "テキストを修正",
   'recordings.thisIsMe': "これは自分です",
   'recordings.notMe': "自分ではありません",
+  'recordings.clearName': "名前を消す",
   'recordings.startRecording': "録音を開始",
   'recordings.startFailed': "録音を開始できませんでした。",
   'recordings.liveHint': "この録音はまだ進行中です。聞き取った言葉がここにすぐ表示され、話者は約30秒後に付きます。",

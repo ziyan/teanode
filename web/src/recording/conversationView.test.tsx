@@ -318,6 +318,33 @@ it('marks a passage as the account owner, and Not me opens the name form', async
   expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1)
 })
 
+it('takes a naming back: Not me on your own bubble, Clear name on anyone else', async () => {
+  const { onChanged } = show([
+    segment('mine', {
+      ...confirmed('Fixture Owner', 'identity-owner', true),
+      appliedSpeakerCorrectionId: 'naming-own',
+    }),
+    segment('theirs', {
+      ...confirmed('Fixture Guest', 'identity-guest'),
+      localSpeakerId: 'local-two',
+      appliedSpeakerCorrectionId: 'naming-guest',
+    }),
+  ])
+  await screen.findByText('Text of theirs')
+  fireEvent.click(within(bubbleOf('Text of mine')).getByRole('button', { name: 'Not me' }))
+  await waitFor(() => expect(calls('UndoRecordingSpeakerNaming')).toHaveLength(1))
+  expect(calls('UndoRecordingSpeakerNaming')[0][1]).toMatchObject({
+    expectedSourceGeneration: 4,
+    recordingSpeakerCorrectionId: 'naming-own',
+  })
+  // No name form: taking a naming back needs nobody else's name.
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(within(bubbleOf('Text of theirs')).getByRole('button', { name: 'Clear name' }))
+  await waitFor(() => expect(calls('UndoRecordingSpeakerNaming')).toHaveLength(2))
+  expect(calls('UndoRecordingSpeakerNaming')[1][1]).toMatchObject({ recordingSpeakerCorrectionId: 'naming-guest' })
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2))
+})
+
 it('opens an exact older version read-only, without correction actions', async () => {
   show([segment('one')], '/?version=older-run&startMS=2500&endMS=3500')
   await screen.findByText('Text of one')

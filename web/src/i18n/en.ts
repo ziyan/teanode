@@ -4555,6 +4555,7 @@ export const en = {
   'recordings.correctText': "Correct text",
   'recordings.thisIsMe': "This is me",
   'recordings.notMe': "Not me",
+  'recordings.clearName': "Clear name",
   'recordings.startRecording': "Start recording",
   'recordings.startFailed': "The recording could not be started.",
   'recordings.liveHint': "This recording is still being captured. New words appear here as they are heard, and speakers are added about half a minute later.",
