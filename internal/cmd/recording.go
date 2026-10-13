@@ -14,14 +14,14 @@ import (
 
 // NewRecordingCommand manages account-owned recordings through the shared API.
 func NewRecordingCommand() *cli.Command {
-	return &cli.Command{Name: "recording", Usage: "import, browse and download your retained meeting originals", Commands: []*cli.Command{
+	return &cli.Command{Name: "recording", Usage: "import, browse and download your retained meeting originals", Commands: append([]*cli.Command{
 		{Name: "list", Usage: "list your recording library", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "before", Usage: "continue before this recording ID"}, &cli.IntFlag{Name: "limit", Value: 25, Usage: "recordings per page (1 to 100)"}}, Action: runRecordingList},
 		{Name: "read", Usage: "inspect metadata, media and upload receipts", ArgsUsage: "<recording-id>", Flags: []cli.Flag{JSONFlag()}, Action: runRecordingRead},
 		{Name: "limits", Usage: "show recording storage and upload bounds", Flags: []cli.Flag{JSONFlag()}, Action: runRecordingLimits},
 		{Name: "import", Usage: "upload an unchanged audio/video file; rerun to resume, your file is always retained", ArgsUsage: "<file>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "recording-id", Usage: "resume this existing recording (requires --media-id)"}, &cli.StringFlag{Name: "media-id", Usage: "exact existing original to resume"}, &cli.StringFlag{Name: "title"}, &cli.StringFlag{Name: "content-type", Usage: "audio or video MIME type if the extension is unknown"}, &cli.StringFlag{Name: "client-recording-id", Usage: "stable import identity; default is the whole-file digest"}}, Action: runRecordingImport},
 		{Name: "download", Usage: "save and verify a recording original", ArgsUsage: "<recording-id> <media-id> <destination>", Action: runRecordingDownload},
 		{Name: "delete", Usage: "delete a recording, its originals and dependent derived media", ArgsUsage: "<recording-id>", Flags: []cli.Flag{&cli.BoolFlag{Name: "force", Usage: "delete without asking first"}}, Action: runRecordingDelete},
-	}}
+	}, recordingActionCommands()...)}
 }
 func recordingCall(ctx context.Context, command *cli.Command, operationName string, variables map[string]any, answered any) error {
 	connection, err := openClient(command)

@@ -15,6 +15,7 @@ import {
   ListIcon,
   LogoutIcon,
   MailIcon,
+  RecordIcon,
   PeopleIcon,
   QueueIcon,
   RefreshIcon,
@@ -69,7 +70,7 @@ const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   mailbox: <MailIcon />,
   knowledge: <GridIcon />,
   finance: <WalletIcon />,
-  recordings: <GridIcon />,
+  recordings: <RecordIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -513,7 +514,7 @@ export function Sidebar({
               )}
               {hasPermission(session.permissions, 'agent:use') && (
                 <NavLink to="/recordings">
-                  <GridIcon />
+                  <RecordIcon />
                   <span className="sidebar-label">{t('recordings.title')}</span>
                 </NavLink>
               )}

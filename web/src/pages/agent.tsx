@@ -60,6 +60,9 @@ import {
   storedSettings,
 } from '../components/sourceTypeSettings'
 
+import { recordingSourceTitle } from '../recording/processing'
+import { RecordingSourceSchedule } from '../recording/sourceSchedule'
+
 // A person's agent: the page where they turn it on, name it, tell it about
 // themselves, choose what it may reach and what it does there, and see what
 // it costs. Grouped the way a person thinks of it — about me, what it may
@@ -2122,6 +2125,10 @@ function KnowledgeSourcesCard() {
   // tab. This form would offer to change what they read, which only a new
   // link can.
   const sources = (data?.ListAgentKnowledgeSources ?? []).filter((source) => source.kind !== 'finance')
+  const sourceDisplayName = (source: KnowledgeSource) =>
+    source.kind === 'recording'
+      ? (recordingSourceTitle(source.specification.settings) ?? t('recordingProcessing.untitledRecording'))
+      : source.name
 
   const chooseSourceType = (name: string) => {
     setSourceTypeName(name)
@@ -2138,6 +2145,7 @@ function KnowledgeSourcesCard() {
   // Opening the form on a source, which is the whole of Edit: every box
   // the add dialog has, holding what the source already says.
   const openEdit = (source: KnowledgeSource) => {
+    if (source.kind === 'recording') return
     setSecretDrafts({})
     setSecretsKept({})
     setMadeSourceId(null)
@@ -2333,7 +2341,20 @@ function KnowledgeSourcesCard() {
         {sources.map((source) => (
           <SettingsRow
             key={source.id}
-            title={source.name}
+            title={
+              <span id={`source-${source.id}`}>
+                {source.kind === 'recording' &&
+                typeof storedSettings(source.specification.settings).recordingId === 'string' ? (
+                  <Link
+                    to={`/recordings/${encodeURIComponent(storedSettings(source.specification.settings).recordingId as string)}`}
+                  >
+                    {sourceDisplayName(source)}
+                  </Link>
+                ) : (
+                  sourceDisplayName(source)
+                )}
+              </span>
+            }
             badge={
               <>
                 {source.specification.type ? (
@@ -2346,7 +2367,13 @@ function KnowledgeSourcesCard() {
                     ) : null}
                   </>
                 ) : (
-                  <Tag value={t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')} />
+                  <Tag
+                    value={
+                      source.kind === 'recording'
+                        ? t('recordingProcessing.sourceKind')
+                        : t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')
+                    }
+                  />
                 )}
                 {source.more ? <Tag value={t('agent.knowledgeReading')} tone="good" /> : null}
                 {!source.enabled ? <Tag value={t('agent.knowledgePausedBadge')} tone="warn" /> : null}
@@ -2402,21 +2429,31 @@ function KnowledgeSourcesCard() {
             }
             actions={
               <div className="row-actions">
-                <Tooltip label={t('agent.editKnowledgeSource')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
-                    onClick={() => openEdit(source)}
-                  >
-                    <PencilIcon size={16} />
-                  </button>
-                </Tooltip>
+                {source.kind === 'recording' ? (
+                  <RecordingSourceSchedule
+                    sourceId={source.id}
+                    sourceCron={source.cron}
+                    sourceTitle={sourceDisplayName(source)}
+                    isIconOnly
+                    onSaved={reload}
+                  />
+                ) : (
+                  <Tooltip label={t('agent.editKnowledgeSource')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${sourceDisplayName(source)}: ${t('agent.editKnowledgeSource')}`}
+                      onClick={() => openEdit(source)}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                )}
                 <Tooltip label={t('agent.knowledgeSync')}>
                   <button
                     type="button"
                     className="icon-action"
-                    aria-label={`${source.name}: ${t('agent.knowledgeSync')}`}
+                    aria-label={`${sourceDisplayName(source)}: ${t('agent.knowledgeSync')}`}
                     onClick={() =>
                       void run(SYNC_KNOWLEDGE_SOURCE, { sourceId: source.id }, t('agent.knowledgeSyncing'))
                     }
@@ -2428,7 +2465,7 @@ function KnowledgeSourcesCard() {
                   <button
                     type="button"
                     className="icon-action"
-                    aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
+                    aria-label={`${sourceDisplayName(source)}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
                     onClick={() =>
                       void run(
                         SAVE_KNOWLEDGE_SOURCE,
@@ -2444,7 +2481,7 @@ function KnowledgeSourcesCard() {
                   <button
                     type="button"
                     className="icon-action danger"
-                    aria-label={`${source.name}: ${t('agent.knowledgeRemove')}`}
+                    aria-label={`${sourceDisplayName(source)}: ${t('agent.knowledgeRemove')}`}
                     onClick={() => setRemoving(source)}
                   >
                     <TrashIcon size={16} />
@@ -2649,7 +2686,10 @@ function KnowledgeSourcesCard() {
       {removing ? (
         <ConfirmDialog
           title={t('agent.knowledgeRemove')}
-          body={t('agent.knowledgeRemoveBody', { name: removing.name, documents: removing.documentCount })}
+          body={t('agent.knowledgeRemoveBody', {
+            name: sourceDisplayName(removing),
+            documents: removing.documentCount,
+          })}
           confirmLabel={t('agent.knowledgeRemove')}
           busy={busy}
           onClose={() => setRemoving(null)}

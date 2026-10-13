@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
@@ -10,6 +10,8 @@ import { Pager } from '../components/pager'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { useSession } from '../session'
+import { RecordingProcessingPanel } from '../recording/processingPanel'
+import { RecordingPassagePlayback } from '../recording/playback'
 import {
   importRecording,
   readRecording,
@@ -31,6 +33,13 @@ function AccountRecordingsPage() {
     session = useSession(),
     navigate = useNavigate()
   const { recordingId } = useParams()
+  const passagePlayback = useRef(new RecordingPassagePlayback())
+  const [passagePlaybackError, setPassagePlaybackError] = useState<string | null>(null)
+  useEffect(() => {
+    const playback = passagePlayback.current
+    setPassagePlaybackError(null)
+    return () => playback.stop()
+  }, [recordingId])
   const [pageParameters, setPageParameters] = useSearchParams()
   const pageCursors = ['', ...(pageParameters.get('before')?.split(',').filter(Boolean) ?? [])]
   const setPageCursors = (nextCursors: string[]) => {
@@ -127,7 +136,7 @@ function AccountRecordingsPage() {
       ? detail.data
       : null
   return (
-    <>
+    <div className="recording-page">
       <ErrorMessage error={recordingId ? detail.error : library.error} />
       {!recordingId ? (
         <SettingsSection
@@ -225,7 +234,7 @@ function AccountRecordingsPage() {
                     />
                     {media.recordingUploadState === 'complete' ? (
                       <>
-                        <RecordingOriginalPlayer media={media} />
+                        <RecordingOriginalPlayer media={media} passagePlayback={passagePlayback.current} />
                         <a className="button" href={recordingMediaPath(media.id)} download={media.originalFilename}>
                           {t('recordings.download')}
                         </a>
@@ -256,9 +265,27 @@ function AccountRecordingsPage() {
                 ))}
               </SettingsSection>
             )}
-            <p>
-              <Link to="/recordings">{t('recordings.back')}</Link>
-            </p>
+            <RecordingProcessingPanel
+              key={view.recording.id}
+              recordingId={view.recording.id}
+              userId={session.userId ?? ''}
+              mediaFiles={view.mediaFiles}
+              onMetadataChanged={detail.reload}
+              onPlayPassage={(mediaId, passageStartMS, passageEndMS) => {
+                const media = view.mediaFiles.find((original) => original.id === mediaId)
+                setPassagePlaybackError(null)
+                if (!media) return
+                void passagePlayback.current
+                  .play(mediaId, passageStartMS, passageEndMS, media.timelineStartMS)
+                  .catch((caught) => setPassagePlaybackError(errorText(caught)))
+              }}
+            />
+            <ErrorMessage error={passagePlaybackError} />
+            <div className="page-actions">
+              <button type="button" onClick={() => navigate('/recordings')}>
+                {t('recordings.back')}
+              </button>
+            </div>
           </>
         )
       )}
@@ -330,18 +357,29 @@ function AccountRecordingsPage() {
           onClose={() => setIsDeleting(false)}
         />
       )}
-    </>
+    </div>
   )
 }
 
-function RecordingOriginalPlayer({ media }: { media: RecordingMedia }) {
+function RecordingOriginalPlayer({
+  media,
+  passagePlayback,
+}: {
+  media: RecordingMedia
+  passagePlayback: RecordingPassagePlayback
+}) {
   const { t } = useTranslation()
+  const registerPlayer = useCallback(
+    (player: HTMLMediaElement | null) => passagePlayback.register(media.id, player),
+    [media.id, passagePlayback],
+  )
   const [playbackError, setPlaybackError] = useState<string | null>(null)
   const onError = () => setPlaybackError(t('recordings.playbackError'))
   return (
     <>
       {media.originalContentType.startsWith('video/') ? (
         <video
+          ref={registerPlayer}
           className="recording-player"
           controls
           preload="metadata"
@@ -353,6 +391,7 @@ function RecordingOriginalPlayer({ media }: { media: RecordingMedia }) {
         />
       ) : (
         <audio
+          ref={registerPlayer}
           className="recording-player"
           controls
           preload="metadata"

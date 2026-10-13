@@ -95,6 +95,7 @@ export type Agent = {
     default: string
     fast: string
     quick: string
+    transcription: string
     embedding: string
     triage: string
     research: string
@@ -177,7 +178,7 @@ export type Agent = {
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
-  models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
+  models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
   retention { runs corrections }
@@ -191,7 +192,16 @@ export const AGENT_SELECTION = `agent {
   works families kinds
 }`
 
-const LIST_MODELS = `{ ListAgentModels { name contextLength } }`
+type KnownAgentModel = {
+  name: string
+  canTranscribe: boolean
+  hasSpeakerDiarization: boolean
+  hasSegmentTimestamps: boolean
+  hasSpeakerReferences: boolean
+  maximumAudioBytes: number
+  maximumSpeakerReferenceCount: number
+}
+const LIST_MODELS = `{ ListAgentModels { name contextLength canTranscribe hasSpeakerDiarization hasSegmentTimestamps hasSpeakerReferences maximumAudioBytes maximumSpeakerReferenceCount } }`
 const TEST_PROVIDER = `query ($name: String!) { TestAgentProvider(name: $name) { name contextLength } }`
 
 const FEATURES = [
@@ -278,15 +288,19 @@ export type { AgentPart } from './agentParts'
 
 export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPart }) {
   const [known, setKnown] = useState<string[]>([])
+  const [knownModels, setKnownModels] = useState<KnownAgentModel[]>([])
 
   // The model pickers are fed by what the enabled providers offer, read
   // once per visit; a provider that cannot be reached simply contributes
   // nothing, and Test on its row says why.
   useEffect(() => {
     let cancelled = false
-    graphql<{ ListAgentModels: { name: string }[] }>(LIST_MODELS)
+    graphql<{ ListAgentModels: KnownAgentModel[] }>(LIST_MODELS)
       .then((data) => {
-        if (!cancelled) setKnown(data.ListAgentModels.map((model) => model.name))
+        if (!cancelled) {
+          setKnown(data.ListAgentModels.map((model) => model.name))
+          setKnownModels(data.ListAgentModels)
+        }
       })
       .catch(() => undefined)
     return () => {
@@ -306,7 +320,7 @@ export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPar
             onSaved={onSaved}
             onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
           />
-          <ModelsForm settings={settings} onSaved={onSaved} known={known} />
+          <ModelsForm settings={settings} onSaved={onSaved} known={known} knownModels={knownModels} />
           <VoiceForm settings={settings} onSaved={onSaved} />
           <FeaturesForm settings={settings} onSaved={onSaved} />
           <LimitsForm settings={settings} onSaved={onSaved} />
@@ -680,6 +694,7 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
                         'fast',
                         'quick',
                         'embedding',
+                        'transcription',
                         'triage',
                         'research',
                         'summarize',
@@ -967,7 +982,12 @@ function ModelPicker({
 // ModelsForm assigns work to models: three every deployment needs, then
 // one per kind of work for whoever wants to spend differently on sorting
 // than on conversations, and the models a person may pick for their own.
-function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
+function ModelsForm({
+  settings,
+  onSaved,
+  known,
+  knownModels,
+}: Props & { known: string[]; knownModels: KnownAgentModel[] }) {
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [models, setModels] = useState(settings.models)
@@ -1010,6 +1030,35 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
             onChange={(value) => setModels({ ...models, [field]: value })}
           />
         ))}
+        <ModelPicker
+          value={models.transcription}
+          known={knownModels.filter((model) => model.canTranscribe).map((model) => model.name)}
+          label={t('agentSettings.recordingTranscription')}
+          placeholder={t('agentSettings.recordingTranscriptionOff')}
+          onChange={(value) => setModels({ ...models, transcription: value })}
+        />
+        <p className="muted">{t('agentSettings.recordingTranscriptionDescription')}</p>
+        {models.transcription && knownModels.some((model) => model.name === models.transcription) ? (
+          <p className="muted">
+            {knownModels
+              .filter((model) => model.name === models.transcription)
+              .map((model) =>
+                [
+                  model.hasSpeakerDiarization ? t('agentSettings.recordingDiarization') : '',
+                  model.hasSegmentTimestamps ? t('agentSettings.recordingTimestamps') : '',
+                  model.hasSpeakerReferences ? t('agentSettings.recordingReferences') : '',
+                  model.maximumAudioBytes > 0
+                    ? t('agentSettings.recordingAudioLimit', { byteCount: model.maximumAudioBytes.toLocaleString() })
+                    : t('agentSettings.recordingAudioLimitUnknown'),
+                  model.maximumSpeakerReferenceCount > 0
+                    ? t('agentSettings.recordingReferenceLimit', { referenceCount: model.maximumSpeakerReferenceCount })
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(', '),
+              )}
+          </p>
+        ) : null}
         <div className="page-actions">
           <button type="button" onClick={() => setMore((previous) => !previous)}>
             {more ? t('agentSettings.fewerModels') : t('agentSettings.modelOverrides')}
@@ -1181,7 +1230,11 @@ function LimitsForm({ settings, onSaved }: Props) {
       <span>{t(`agentSettings.limit.${field}`)}</span>
       <input
         value={limits[field]}
-        inputMode={['requestTimeout', 'maxRecordingMediaBytes', 'maxRecordingAccountBytes'].includes(field) ? undefined : 'numeric'}
+        inputMode={
+          ['requestTimeout', 'maxRecordingMediaBytes', 'maxRecordingAccountBytes'].includes(field)
+            ? undefined
+            : 'numeric'
+        }
         onChange={(event) => setLimits({ ...limits, [field]: event.target.value })}
       />
     </label>
@@ -1228,9 +1281,7 @@ function LimitsForm({ settings, onSaved }: Props) {
     >
       <h3>{t('agentSettings.limits')}</h3>
       <p className="muted">{t('agentSettings.limitsDescription')}</p>
-      <div className="row">
-        {(['maxRecordingMediaBytes', 'maxRecordingAccountBytes'] as const).map(numeric)}
-      </div>
+      <div className="row">{(['maxRecordingMediaBytes', 'maxRecordingAccountBytes'] as const).map(numeric)}</div>
       <p className="muted">{t('agentSettings.recordingLimitsHint')}</p>
       <div className="row">
         {(['dailyTokensPerAgent', 'monthlyTokensPerServer', 'maxBodyCharacters'] as const).map(numeric)}
@@ -1259,9 +1310,7 @@ function LimitsForm({ settings, onSaved }: Props) {
       {/* What work nobody is watching may take before it stops: zero is
           each one's default. */}
       <p className="muted">{t('agentSettings.limitsUnattended')}</p>
-      <div className="row">
-        {(['maxRoundsPerSubagent', 'goalTurnsPerDay', 'goalTurnsAlone'] as const).map(numeric)}
-      </div>
+      <div className="row">{(['maxRoundsPerSubagent', 'goalTurnsPerDay', 'goalTurnsAlone'] as const).map(numeric)}</div>
       <div className="row">{(['goalsInProgress', 'backgroundWakesAlone'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
