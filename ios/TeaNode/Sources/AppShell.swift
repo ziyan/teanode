@@ -249,7 +249,11 @@ struct MainView: View {
             // offline once the account is known, so a meeting can be recorded.
             NavigationStack {
                 ServicesLoadingView()
-                    .toolbar { MenuButton() }
+                    .toolbar {
+                        // Only the logo while it loads; the menu returns
+                        // when the server cannot be reached.
+                        if app.hasServicesFailedToLoad { MenuButton() }
+                    }
             }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
@@ -481,7 +485,19 @@ struct ServicesLoadingView: View {
                 .disabled(isRetrying)
             }
         } else {
-            ProgressView("Connecting to your server")
+            // The logo, as the app opens, with a quiet spinner under it; the
+            // words are for VoiceOver, which reads the spinner's label.
+            VStack(spacing: 24) {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 96, height: 96)
+                    .clipShape(.rect(cornerRadius: 22))
+                    .accessibilityHidden(true)
+                ProgressView()
+                    .accessibilityLabel("Connecting to your server")
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
