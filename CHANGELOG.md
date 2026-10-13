@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.153.0] - 2026-10-13
+
+### Added
+
+- The agent names and summarizes each recording once it is transcribed. (#460)
+- Mark a speaker as yourself; your passages show on the right of the conversation. (#460)
+
+### Changed
+
+- The recordings page is a table and a recording reads as a conversation, with passage actions in a menu and advanced details in a drawer. (#460)
+
+## [0.152.3] - 2026-10-13
+
+### Changed
+
+- The iPhone's connect page asks for your server's address first, with Scan code and Paste link for a code from the dashboard. (#464)
+
+### Fixed
+
+- On the iPhone, signing in with a password opens the server's sign-in page instead of waiting on Connecting. (#464)
+- On the iPhone, opening a connect link from Safari connects instead of failing with an error. (#464)
+
 ## [0.152.2] - 2026-10-13
 
 ### Changed
