@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.144.4] - 2026-10-13
+
 ### Security
 
 - Hold unattended recording evidence to lookup tools while preserving automatic learning.
