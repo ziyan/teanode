@@ -31,7 +31,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/oschwald/maxminddb-golang v1.13.1
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/urfave/cli/v3 v3.14.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0
@@ -84,7 +84,7 @@ require (
 	github.com/teambition/rrule-go v1.8.2 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
