@@ -18,25 +18,29 @@ struct DeviceSetupView: View {
         Form {
             if let profile {
                 Section {
-                    Label("Your setup profile is ready", systemImage: "checkmark.circle")
-                    if hasOpenedProfile {
-                        Text("Profile download started").foregroundStyle(.secondary)
-                    } else {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        VStack(alignment: .leading, spacing: 12) {
                             if profile.hasExpired(at: context.date) {
-                                Text("The profile expired. Its passwords remain active until you revoke them.").foregroundStyle(.secondary)
+                                Label("Setup link expired", systemImage: "clock").foregroundStyle(.secondary)
+                                Text("This setup link has expired. Existing device passwords remain active until you revoke them.")
+                                    .foregroundStyle(.secondary)
                             } else {
-                                Button {
-                                    Task { await download(profile) }
-                                } label: {
-                                    Label("Download profile", systemImage: "arrow.down.circle")
-                                }.buttonStyle(.glassProminent)
-                                if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
+                                Label("Your setup profile is ready", systemImage: "checkmark.circle")
+                                if hasOpenedProfile {
+                                    Text("Profile download started").foregroundStyle(.secondary)
+                                } else {
+                                    Button {
+                                        Task { await download(profile) }
+                                    } label: {
+                                        Label("Download profile", systemImage: "arrow.down.circle")
+                                    }.buttonStyle(.glassProminent)
+                                    if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
+                                }
                             }
                         }
                     }
                     if let expiration = ServerTime.date(profile.expiresAt) {
-                        LabeledContent("Profile expiration", value: expiration.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Download link expiration", value: expiration.formatted(date: .abbreviated, time: .shortened))
                     }
                 } header: {
                     Text("Install the profile")
@@ -172,7 +176,7 @@ struct DeviceSetupView: View {
             }
         } catch {
             if let expiration = ServerTime.date(profile.expiresAt), expiration <= Date() {
-                problemText = String(localized: "The profile expired. Its passwords remain active until you revoke them.")
+                problemText = String(localized: "This setup link has expired. Existing device passwords remain active until you revoke them.")
             } else {
                 problemText = app.describe(error)
             }

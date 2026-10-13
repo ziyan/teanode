@@ -19,7 +19,7 @@ let expectedMarkersByScreen: [String: [String]] = [
     "device-setup-mail": ["choosewhattoadd", "mailbox", "personal"],
     "device-setup-collections": ["choosewhattoadd", "calendar", "contacts"],
     "device-setup-profile": ["installtheprofile", "yoursetupprofileisready"],
-    "device-setup-expired": ["profileexpired", "yoursetupprofileisready"],
+    "device-setup-expired": ["setuplinkexpired", "thissetuplinkhasexpired"],
     "device-setup-receipt-unavailable": ["downloadprofile", "yoursetupprofileisready"],
     "device-setup-unavailable": ["noservicesavailable"],
 ]
@@ -38,6 +38,12 @@ do {
     let missingMarkers = expectedMarkers.filter { !normalizedRenderedText.contains($0) }
     guard missingMarkers.isEmpty else {
         fputs("\(screenshotName) does not show its expected device setup content: \(missingMarkers.joined(separator: ", ")).\n", stderr)
+        exit(1)
+    }
+    if deviceSetupScreenName == "device-setup-expired",
+        ["yoursetupprofileisready", "downloadprofile"].contains(where: { normalizedRenderedText.contains($0) })
+    {
+        fputs("Expired setup still shows a ready heading or download action.\n", stderr)
         exit(1)
     }
     print("Verified rendered content: \(screenshotName)")

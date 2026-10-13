@@ -46144,34 +46144,50 @@
         }
       }
     },
-    "The profile expired. Its passwords remain active until you revoke them.": {
+    "This setup link has expired. Existing device passwords remain active until you revoke them.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プロファイルの有効期限が切れました。パスワードは取り消すまで有効です。"
+            "value": "この設定リンクは有効期限が切れました。既存のデバイス用パスワードは、取り消すまで有効です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配置描述文件已过期。其密码在您撤销前仍然有效。"
+            "value": "此设置链接已过期。现有设备密码在你撤销之前仍然有效。"
           }
         }
       }
     },
-    "Profile expiration": {
+    "Download link expiration": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プロファイルの有効期限"
+            "value": "ダウンロードリンクの有効期限"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "描述文件到期时间"
+            "value": "下载链接到期时间"
+          }
+        }
+      }
+    },
+    "Setup link expired": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定リンクの有効期限が切れました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置链接已过期"
           }
         }
       }

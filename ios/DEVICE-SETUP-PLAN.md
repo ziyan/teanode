@@ -116,3 +116,11 @@ symbol. Setup entries now reuse the existing iPhone symbol. The screenshot harne
 waits for actual expected content with a bounded capture loop, retains failed frames,
 and fails with runtime logs if the screen never appears. This does not establish a
 root cause or physical-device behavior; fresh final artifacts must still be reviewed.
+
+All exact checks and 21 rendered setup captures passed on the integrated checkpoint.
+Review then found that an expired link retained a green ready heading and the date
+row described profile expiration. The heading now changes to Setup link expired with
+the existing inactive status style. Download link expiration names the ceremony
+lifetime explicitly; existing device passwords and revocation metadata stay active.
+The expired capture asserts the new heading and rejects ready/download controls.
+Fresh final SDK and rendered artifacts will verify this wording correction.
