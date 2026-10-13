@@ -172,6 +172,7 @@ struct DeviceSetupView: View {
         do {
             let created = try await connection.createDeviceSetupProfile(selection, capabilities: capabilities)
             profile = created
+            problemText = nil
         } catch { problemText = app.describe(error) }
     }
 
@@ -180,7 +181,7 @@ struct DeviceSetupView: View {
             let profileURL = try profile.downloadURL(server: await connection.account.server)
             openURL(profileURL) { hasOpened in
                 hasOpenedProfile = hasOpened
-                if !hasOpened { problemText = String(localized: "Safari could not open the profile. Try downloading it again.") }
+                problemText = hasOpened ? nil : String(localized: "Safari could not open the profile. Try downloading it again.")
             }
         } catch {
             if let expiration = ServerTime.date(profile.expiresAt), expiration <= Date() {
