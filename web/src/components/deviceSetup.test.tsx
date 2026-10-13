@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { graphql } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
@@ -9,6 +9,7 @@ vi.mock('../api', () => ({ graphql: vi.fn() }))
 afterEach(() => {
   cleanup()
   vi.resetAllMocks()
+  vi.useRealTimers()
 })
 const collectionCapabilities: DeviceSetupCapabilities = {
   canSetUpMail: false,
@@ -31,12 +32,12 @@ function dialog(capabilities = collectionCapabilities, selectedMailboxId?: strin
     </TranslationProvider>
   )
 }
-function successfulProfile() {
+function successfulProfile(expiryMS = Date.now() + 60_000) {
   vi.mocked(graphql).mockResolvedValue({
     CreateDeviceSetupProfile: {
       downloadLink: 'https://setup.example.com/profile/fixture-link',
       qrCodeSvg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      expiresAt: new Date(expiryMS).toISOString(),
       mailboxAppPassword: null,
       syncCredential: { id: 'fixture-sync-credential', credentialName: 'Fixture device' },
     },
@@ -124,4 +125,65 @@ it('explains removed services inside the open selector instead of offering a bla
   expect((screen.getByRole('button', { name: 'Create a device setup profile' }) as HTMLButtonElement).disabled).toBe(
     true,
   )
+})
+
+it('keeps an already expired receipt and access details while disabling its download and QR', async () => {
+  successfulProfile(Date.now() - 1)
+  render(dialog())
+  fireEvent.change(screen.getByLabelText('Device name'), { target: { value: 'Fixture device' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create a device setup profile' }))
+  await screen.findByRole('alertdialog')
+  expect(screen.queryByRole('link', { name: 'Open setup profile on this device' })).toBeNull()
+  expect(
+    (screen.getByRole('button', { name: 'Open setup profile on this device' }) as HTMLButtonElement).disabled,
+  ).toBe(true)
+  expect(screen.queryByRole('img')).toBeNull()
+  expect(screen.getByText(/This setup link has expired/)).toBeTruthy()
+  expect(screen.getByText('https://setup.example.com/profile/fixture-link')).toBeTruthy()
+  expect(screen.getByText(/Mail access can be revoked/)).toBeTruthy()
+  expect(graphql).toHaveBeenCalledOnce()
+})
+it('expires the visible receipt without regenerating it and rejects a click if a background timer is delayed', async () => {
+  vi.useFakeTimers()
+  successfulProfile(Date.now() + 1000)
+  render(dialog())
+  fireEvent.change(screen.getByLabelText('Device name'), { target: { value: 'Fixture device' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Create a device setup profile' }))
+  })
+  const download = screen.getByRole('link', { name: 'Open setup profile on this device' })
+  vi.setSystemTime(Date.now() + 1001)
+  expect(fireEvent.click(download)).toBe(false)
+  expect(screen.queryByRole('link', { name: 'Open setup profile on this device' })).toBeNull()
+  expect(
+    (screen.getByRole('button', { name: 'Open setup profile on this device' }) as HTMLButtonElement).disabled,
+  ).toBe(true)
+  expect(graphql).toHaveBeenCalledOnce()
+})
+it('updates expiry on its timer and keeps an unexpired receipt downloadable after service refresh', async () => {
+  vi.useFakeTimers()
+  successfulProfile(Date.now() + 1000)
+  const view = render(dialog())
+  fireEvent.change(screen.getByLabelText('Device name'), { target: { value: 'Fixture device' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Create a device setup profile' }))
+  })
+  view.rerender(
+    dialog({
+      canSetUpMail: false,
+      canSetUpCalendar: false,
+      canSetUpReminders: false,
+      canSetUpContacts: false,
+      mailboxes: [],
+    }),
+  )
+  const download = screen.getByRole('link', { name: 'Open setup profile on this device' })
+  expect(download.getAttribute('target')).toBe('_blank')
+  expect(download.getAttribute('rel')).toBe('noopener noreferrer')
+  await act(async () => {
+    vi.advanceTimersByTime(1001)
+  })
+  expect(screen.queryByRole('link', { name: 'Open setup profile on this device' })).toBeNull()
+  expect(screen.getByText('https://setup.example.com/profile/fixture-link')).toBeTruthy()
+  expect(graphql).toHaveBeenCalledOnce()
 })

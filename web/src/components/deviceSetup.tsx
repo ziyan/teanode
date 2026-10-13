@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { graphql } from '../api'
 import { formatClock } from './common'
 import { FormDialog } from './dialog'
@@ -50,6 +50,13 @@ export function DeviceSetupDialog({
   const [isCreating, setIsCreating] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [createdProfile, setCreatedProfile] = useState<CreatedDeviceSetupProfile | null>(null)
+  const [isProfileExpired, setIsProfileExpired] = useState(false)
+  useEffect(() => {
+    if (!createdProfile) return
+    const profileValidityRemainingMS = Date.parse(createdProfile.expiresAt) - Date.now()
+    const timer = window.setTimeout(() => setIsProfileExpired(true), Math.max(profileValidityRemainingMS, 0))
+    return () => window.clearTimeout(timer)
+  }, [createdProfile])
   const selection = {
     hasMailAccess: hasMailAccess && capabilities.canSetUpMail,
     hasCalendarAccess: hasCalendarAccess && capabilities.canSetUpCalendar,
@@ -73,7 +80,10 @@ export function DeviceSetupDialog({
           ...selection,
         },
       )
-      setCreatedProfile(response.CreateDeviceSetupProfile)
+      const createdDeviceProfile = response.CreateDeviceSetupProfile
+      const profileExpiryMS = Date.parse(createdDeviceProfile.expiresAt)
+      setIsProfileExpired(!Number.isFinite(profileExpiryMS) || profileExpiryMS <= Date.now())
+      setCreatedProfile(createdDeviceProfile)
       await onCreated()
     } catch (caught) {
       setErrorMessage(caught instanceof Error ? caught.message : String(caught))
@@ -85,23 +95,43 @@ export function DeviceSetupDialog({
     return (
       <SecretDialog
         title={t('deviceSetup.ready', { deviceName })}
-        intro={t('deviceSetup.profileOnce')}
+        intro={t(isProfileExpired ? 'deviceSetup.profileExpired' : 'deviceSetup.profileOnce')}
         secret={createdProfile.downloadLink}
         onDone={onClose}
         extra={
           <>
-            <img
-              className="connect-qr"
-              src={`data:image/svg+xml;utf8,${encodeURIComponent(createdProfile.qrCodeSvg)}`}
-              alt={t('mailboxSettings.setupProfileQrAlt')}
-            />
+            {!isProfileExpired ? (
+              <img
+                className="connect-qr"
+                src={`data:image/svg+xml;utf8,${encodeURIComponent(createdProfile.qrCodeSvg)}`}
+                alt={t('mailboxSettings.setupProfileQrAlt')}
+              />
+            ) : null}
             <p className="muted">
               {t('mailboxSettings.setupProfileExpires', { time: formatClock(createdProfile.expiresAt) })}
             </p>
             <div className="page-actions">
-              <a className="button primary" href={createdProfile.downloadLink}>
-                {t('deviceSetup.openProfile')}
-              </a>
+              {isProfileExpired ? (
+                <button type="button" className="primary" disabled>
+                  {t('deviceSetup.openProfile')}
+                </button>
+              ) : (
+                <a
+                  className="button primary"
+                  href={createdProfile.downloadLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(event) => {
+                    const profileExpiryMS = Date.parse(createdProfile.expiresAt)
+                    if (!Number.isFinite(profileExpiryMS) || profileExpiryMS <= Date.now()) {
+                      event.preventDefault()
+                      setIsProfileExpired(true)
+                    }
+                  }}
+                >
+                  {t('deviceSetup.openProfile')}
+                </a>
+              )}
             </div>
             <p className="muted">{t('deviceSetup.revocationHint')}</p>
           </>

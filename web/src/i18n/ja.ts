@@ -4430,6 +4430,7 @@ export const ja: Catalog = {
   'deviceSetup.ready': '{deviceName}を設定',
   'deviceSetup.profileOnce': '有効期限内にこの非公開設定リンクを一度だけ開くかスキャンしてください。プロファイルは選択したサービスだけを追加します。',
   'deviceSetup.openProfile': 'このデバイスで設定プロファイルを開く',
+  'deviceSetup.profileExpired': 'この設定リンクは期限切れです。端末のアクセス情報としてこの控えを保管してください。新しいプロファイルを作成する場合は「完了」を選び、設定を開始してください。',
   'deviceSetup.revocationHint': 'メールへのアクセスはメールプログラムで取り消せます。カレンダー、リマインダー、連絡先へのアクセスはコレクション同期の一覧で取り消せます。',
   'deviceSetup.manualSync': 'コレクションの手動同期設定',
   'deviceSetup.manualMail': 'アプリ用パスワードを作成',

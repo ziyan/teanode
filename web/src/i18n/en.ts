@@ -4477,6 +4477,7 @@ export const en = {
   'deviceSetup.ready': 'Set up {deviceName}',
   'deviceSetup.profileOnce': 'Open or scan this private setup link once before it expires. The profile adds only the services you selected.',
   'deviceSetup.openProfile': 'Open setup profile on this device',
+  'deviceSetup.profileExpired': 'This setup link has expired. Keep this receipt for its device access details. To create a new profile, choose Done and start setup again.',
   'deviceSetup.revocationHint': 'Mail access can be revoked under Mail programs. Calendar, Reminders and Contacts access can be revoked in the collection sync list.',
   'deviceSetup.manualSync': 'Manual collection sync',
   'deviceSetup.manualMail': 'Create app password',

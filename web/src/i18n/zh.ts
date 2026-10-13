@@ -4336,6 +4336,7 @@ export const zh: Catalog = {
   'deviceSetup.ready': '设置{deviceName}',
   'deviceSetup.profileOnce': '请在到期前打开或扫描此私密设置链接一次。描述文件只添加你选择的服务。',
   'deviceSetup.openProfile': '在此设备上打开设置描述文件',
+  'deviceSetup.profileExpired': '此设置链接已过期。请保留此回执以查看设备访问信息。若需新配置文件，请选择完成并重新开始设置。',
   'deviceSetup.revocationHint': '邮件访问可在邮件程序中撤销。日历、提醒事项和联系人访问可在集合同步列表中撤销。',
   'deviceSetup.manualSync': '手动集合同步',
   'deviceSetup.manualMail': '创建应用密码',
