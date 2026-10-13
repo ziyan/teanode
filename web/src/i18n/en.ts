@@ -4491,7 +4491,7 @@ export const en = {
   'recordings.speakerLabel': "Speaker {speakerLetter}",
   'recordings.passageActions': "Actions for this passage",
   'recordings.playFromHere': "Play",
-  'recordings.correctPassage': "Correct “{passageStart}”",
+  'recordings.passageNumber': "Passage {passageNumber}",
   'recordings.correctText': "Correct text",
   'recordings.thisIsMe': "This is me",
   'recordings.notMe': "Not me",

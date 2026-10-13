@@ -32,6 +32,7 @@ export function SwipeableLine({
   onCopyFailed,
   reactLabel,
   onReact,
+  onTap,
   replyIcon: ReplyActionIcon = ReplyIcon,
   extraActions,
   children,
@@ -44,6 +45,9 @@ export function SwipeableLine({
   // without it there is no React button.
   reactLabel?: string
   onReact?: () => void
+  // onTap is what a finger's tap on the bubble does, for a line acted on
+  // rather than reacted to; without it a tap opens the reactions.
+  onTap?: () => void
   // replyIcon draws the action of the swipe to the left and of its button,
   // for a line whose action is not a reply (playing a passage). extraActions
   // are more buttons in the same corner, beside Copy.
@@ -180,7 +184,8 @@ export function SwipeableLine({
       // A finger's tap on the bubble itself, not on a link or a button in it
       // and not ending a selection, opens or closes its reactions.
       onClick={(event) => {
-        if (!wasTouch.current || !onReact) return
+        const tapAction = onTap ?? onReact
+        if (!wasTouch.current || !tapAction) return
         if (
           (event.target as Element).closest(
             'a, button, input, textarea, select, summary, [role="menu"], [role="dialog"]',
@@ -188,7 +193,7 @@ export function SwipeableLine({
         )
           return
         if (window.getSelection()?.toString()) return
-        onReact()
+        tapAction()
       }}
     >
       {children}
