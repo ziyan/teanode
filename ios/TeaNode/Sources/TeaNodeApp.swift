@@ -329,7 +329,7 @@ struct SettingsForm: View {
             if let connection = app.connection {
                 Section("Your account") {
                     NavigationLink { DeviceSetupView(connection: connection) } label: {
-                        Label("Set up on this iPhone", systemImage: "iphone.badge.plus")
+                        Label("Set up on this iPhone", systemImage: "iphone")
                     }
                     NavigationLink { SyncCredentialsView(connection: connection) } label: {
                         Label("Sync passwords", systemImage: "key")

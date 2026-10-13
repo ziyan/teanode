@@ -252,7 +252,7 @@ struct MailAppPasswordsView: View {
                 NavigationLink {
                     DeviceSetupView(connection: mail.connection, preselectedMailboxId: mailboxId)
                 } label: {
-                    Label("Set up on this iPhone", systemImage: "iphone.badge.plus")
+                    Label("Set up on this iPhone", systemImage: "iphone")
                 }
             } footer: {
                 Text("Choose Mail, Calendar, Reminders and Contacts, then install one profile. A mailbox is optional.")

@@ -93,7 +93,7 @@ struct DeviceSetupView: View {
                     Button {
                         Task { await create() }
                     } label: {
-                        if isCreating { ProgressView() } else { Label("Create setup profile", systemImage: "iphone.badge.plus") }
+                        if isCreating { ProgressView() } else { Label("Create setup profile", systemImage: "iphone") }
                     }
                     .buttonStyle(.glassProminent)
                     .disabled(isCreating || !selection.canCreateProfile(capabilities: capabilities))

@@ -109,3 +109,10 @@ expired downloads and sharing. Screenshot failures now retain app runtime logs t
 distinguish a rendering failure from an initial launch problem. Fresh exact-head
 SDK/capture verification remains required; the blank screen is not marked resolved
 without that evidence.
+
+The next simulator run still captured a blank ready-profile screen. Retained logs
+showed startup continuing beyond the fixed screenshot delay and an invalid setup
+symbol. Setup entries now reuse the existing iPhone symbol. The screenshot harness
+waits for actual expected content with a bounded capture loop, retains failed frames,
+and fails with runtime logs if the screen never appears. This does not establish a
+root cause or physical-device behavior; fresh final artifacts must still be reviewed.

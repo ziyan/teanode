@@ -102,7 +102,17 @@ jobs:
             case "$name" in
               recordings-*|recording-*) build/assert-recording-screenshot "$name" "screenshots/$name.png" ;;
               device-setup-*)
-                if ! build/assert-device-setup-screenshot "$name" "screenshots/$name.png"; then
+                is_setup_ready=false
+                for setup_attempt in {1..10}; do
+                  if build/assert-device-setup-screenshot "$name" "screenshots/$name.png"; then
+                    is_setup_ready=true
+                    break
+                  fi
+                  cp "screenshots/$name.png" "screenshots/$name-attempt-$setup_attempt.png"
+                  sleep 3
+                  xcrun simctl io "$device" screenshot "screenshots/$name.png"
+                done
+                if [ "$is_setup_ready" != true ]; then
                   xcrun simctl spawn "$device" log show --last 2m --style compact --predicate 'process == "TeaNode"' || true
                   exit 1
                 fi
