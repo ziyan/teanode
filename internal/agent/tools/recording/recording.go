@@ -97,11 +97,16 @@ func runRecording(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 			return nil, err
 		}
 		result.Untrusted = true
+		tools.MarkRecordingEvidence(tools.MustRun(ctx))
 		return result, nil
 	}
 	result, err := tools.JSONResult(answer)
 	if err == nil {
 		result.Untrusted = true
+		switch arguments.Operation {
+		case "list", "versions", "timeline", "transcript", "speakers", "text-corrections", "reference-invalidations", "learning":
+			tools.MarkRecordingEvidence(tools.MustRun(ctx))
+		}
 	}
 	return result, err
 }
