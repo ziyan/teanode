@@ -21,16 +21,10 @@ final class RecordingsModel {
 
     func load() async {
         do {
-            do {
-                if (try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId) == nil {
-                    _ = try? await connection.recordingOwnerId()
-                }
-                let journal = try MeetingRecorder.makeJournal()
-                let ownerId = try KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId
-                let kept = try await journal.recordings(accountKey: connection.accountKey)
-                localRecordings = kept.filter { $0.belongsTo(accountKey: connection.accountKey, recordingUserId: ownerId) }
-                hasUnverifiedLocalOwner = localRecordings.count != kept.count
-            } catch { localRecordings = [] }
+            if (try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId) == nil {
+                _ = try? await connection.recordingOwnerId()
+            }
+            await loadLocalRecordings()
             recordings = try await connection.recordings()
             hasMoreRecordings = recordings.count == 50
             isLoaded = true
@@ -39,6 +33,52 @@ final class RecordingsModel {
         } catch {
             problemText = error.localizedDescription
             isLoaded = true
+        }
+    }
+
+    var hasPendingLocalUploads: Bool { !RecordingLibraryProgress.pendingLocalRecordingIds(localRecordings).isEmpty }
+
+    private func isCurrentOwner(_ recordingUserId: String) -> Bool {
+        AppModel.shared.connection === connection
+            && RecordingLibraryProgress.isCurrentOwner(
+                accountKey: connection.accountKey, recordingUserId: recordingUserId,
+                currentAccountKey: AppModel.shared.connection?.accountKey,
+                currentRecordingUserId: AppModel.shared.account?.cachedRecordingUserId, isCancelled: Task.isCancelled)
+            && (try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId) == recordingUserId
+    }
+
+    private func loadLocalRecordings() async {
+        guard let ownerId = try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId,
+            isCurrentOwner(ownerId)
+        else { return }
+        do {
+            let journal = try MeetingRecorder.makeJournal()
+            let kept = try await journal.recordings(accountKey: connection.accountKey)
+            guard isCurrentOwner(ownerId) else { return }
+            localRecordings = kept.filter { $0.belongsTo(accountKey: connection.accountKey, recordingUserId: ownerId) }
+            hasUnverifiedLocalOwner = localRecordings.count != kept.count
+        } catch {
+            if isCurrentOwner(ownerId) { localRecordings = [] }
+        }
+    }
+
+    func refreshUploadProgress() async {
+        guard let ownerId = try? KeychainAccountStore().load(accountKey: connection.accountKey)?.cachedRecordingUserId,
+            isCurrentOwner(ownerId)
+        else { return }
+        let pendingIds = RecordingLibraryProgress.pendingLocalRecordingIds(localRecordings)
+        await loadLocalRecordings()
+        guard isCurrentOwner(ownerId) else { return }
+        for local in localRecordings where pendingIds.contains(local.id) {
+            guard isCurrentOwner(ownerId) else { return }
+            guard let recordingId = local.recordingId, !recordings.contains(where: { $0.id == recordingId }) else { continue }
+            let published = try? await connection.recording(recordingId).recording
+            guard isCurrentOwner(ownerId) else { return }
+            guard let published else { continue }
+            recordings = RecordingLibraryProgress.mergingPublishedRecording(
+                published, into: recordings, from: local, accountKey: connection.accountKey, recordingUserId: ownerId,
+                currentAccountKey: AppModel.shared.connection?.accountKey, currentRecordingUserId: AppModel.shared.account?.cachedRecordingUserId,
+                hasMoreRecordings: hasMoreRecordings, isCancelled: Task.isCancelled)
         }
     }
 
@@ -175,9 +215,7 @@ struct RecordingsScreen: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
                                 Text(recording.startedAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                                if ["stopped", "imported"].contains(recording.recordingCaptureState),
-                                    recording.localMedia.contains(where: { !$0.isDurablyUploaded && $0.originalSha256 != nil })
-                                {
+                                if RecordingLibraryProgress.canPlayLocalOriginal(recording) {
                                     Button {
                                         localPlayback = recording
                                     } label: {
@@ -278,6 +316,10 @@ struct RecordingsScreen: View {
             .task {
                 await recorder.recover(accountKey: model.connection.accountKey)
                 await model.load()
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(5)) } catch { break }
+                    if model.hasPendingLocalUploads { await model.refreshUploadProgress() }
+                }
             }
             .sheet(item: $localPlayback) { recording in
                 RecordingLocalPlaybackScreen(recording: recording, accountKey: model.connection.accountKey)

@@ -133,3 +133,11 @@ meaning. Edit and history utility views use the existing inline-title pattern;
 Speakers has a shorter title while reference sections stay explicit. Recording
 details retain the complete human title as wrapping body text at accessibility sizes,
 following existing calendar content patterns. The root library retains its large title.
+
+Foreground upload status now reads account-owned journals without scheduling transfers
+or resetting server pages. Verified originals lose the local-play control; newly
+published owned recordings are inserted using the existing ID-descending cursor order.
+Canceled, signed-out, changed-owner and foreign-original responses are ignored.
+Independent review found and fixed historical-journal discovery and cursor ordering;
+323 portable Swift tests pass, including durable-receipt, pagination and cancellation
+regressions. The updated native SDK and rendered views still require exact-head CI.
