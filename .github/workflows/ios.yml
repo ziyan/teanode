@@ -121,8 +121,7 @@ jobs:
           }
           shoot connect-light light large
           shoot connect-dark dark large
-          shoot server-address-dark dark large -TeaNodeScreen server-address
-          shoot server-address-light light large -TeaNodeScreen server-address
+          shoot connect-largest-text light accessibility-extra-extra-extra-large
           shoot conversation-light light large -TeaNodeDemo
           if build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
             echo "Recording content assertion accepted the conversation screen."
