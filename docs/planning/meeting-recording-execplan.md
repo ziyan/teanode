@@ -31,9 +31,13 @@ always-on activation and visual video understanding are deferred.
 - [x] Deploy merged durable media after confirming preservation of existing deployed work.
 - [x] Increment 2b: transcript runs/versions merged in #433; correction reconciliation follows in #437.
 - [x] Increment 3b: background transcription, existing budgets and usage accounting merged in #434.
-- [ ] Increment 4: recording transcript knowledge source, automatic dreaming
-  and corrections/deletion that reconcile dependent memories.
-- [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
+- [x] Increment 4 implementation merged in #437: recording knowledge sources and
+  corrections/deletion reconcile dependent evidence through existing dreaming machinery.
+- [x] Increment 5 implementation merged in #437: speaker/group/passage correction
+  and automatic bounded voice-reference curation.
+- [x] Recording evidence guard reviewed, required CI green and squash merged in #448.
+- [ ] Integrate and deploy #438 direct recording-tool observers with the shared guard
+  before restoring production dreaming or claiming end-to-end learning validation.
 - [ ] Increment 6: dashboard import, playback and transcript correction.
 - [ ] Four-surface parity: web, CLI, LLM tools and iOS for every recording capability
   and operator setting, with equivalent account ownership and error semantics.
@@ -523,16 +527,17 @@ mobile Chrome checks. The device-setup redesign remains a separate increment.
 
 The recording speaker, text correction, curation and knowledge reconciliation increment
 is merged. Follow-up knowledge-result fencing and provider timeout/clamp corrections
-are also merged. These repository results do not establish that the official merged
-release is running: the coordinating session is replacing an unpublished server build
-with the exact official release, with backup and rollback verification underway.
+are also merged. The shared recording evidence guard passed review and all required
+CI checks, then squash merged in #448. Direct recording-tool observer integration
+remains in #438; the guard alone does not cover the existing foundation tool reads.
 
 Production dreaming is explicitly paused and no dream job is running. The synthetic
 acceptance recording has five retained learning documents; temporary digest markers
 used to hold them are not successful ingestion, useful memories or model quality
 acceptance. Do not trigger a broad dream across the account or change global models
-for validation. Keep this pause until the recording evidence guard is reviewed,
-merged, deployed and verified, then restore only the coordinator's agreed setting.
+for validation. Keep this pause until both #448 and #438 are reviewed, merged,
+deployed and verified together, then restore only the coordinator's agreed setting.
+Do not restore dreaming after deployment of the shared guard alone.
 
 The additional guard follows trusted raw/derived source provenance into unattended
 model calls. It persists through ideas-before-digest lookups, digestion, nested turns
@@ -546,3 +551,28 @@ scheduled digestion separately; prove obsolete dependent facts become dormant on
 when real derived fixture facts exist. Do not create synthetic facts in production
 as a substitute for demonstrated learning. Screened reference acceptance does not
 verify model speaker identity, and actual provider billing remains unavailable.
+
+
+## Official deployment and remaining acceptance checkpoint
+
+The coordinating session verified official v0.144.2, commit
+`0711c213dddf7058f6bcd5bad15b968add4bd919`, running from its published image.
+Service health, unchanged migrations and authenticated API smoke checks passed.
+The stored configuration matched the paused baseline. A fresh database backup
+completed and its archive parsed in full. Retained synthetic original bytes and
+the existing transcript were unchanged; no correction or additional processing
+request was executed during this deployment verification.
+
+This establishes the official deployed baseline. It does not establish deployment
+of #448 or the pending #438/#435 client increments. Production dreaming stays
+disabled with no running dream jobs. Held synthetic documents remain test evidence,
+not successful digestion or useful-memory acceptance.
+
+After the combined evidence guard and direct recording-tool integration are
+verified running, validation must observe the retained synthetic source through
+natural ingestion and scheduled digestion. Then exercise user corrections and
+reference revocation, verify obsolete derived evidence becomes dormant, and remove
+only the synthetic acceptance artifacts after checks. Do not trigger a broad dream,
+change global models, fabricate production facts or infer actual billing from the
+configured estimate. Physical-iPhone recording, lock-screen controls, interruption
+recovery and installation still require device evidence.
