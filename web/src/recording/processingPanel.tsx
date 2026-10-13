@@ -95,6 +95,7 @@ export function RecordingProcessingPanel({
   const runs = owned?.transcriptRuns ?? []
   const selectedRun = runs.find((run) => run.id === citation.requestedRunId)
   const page = usePageInAddress({ pageParameter: 'transcriptPage', defaultPageSize: 50 })
+  const { setPageIndex } = page
   const citationOffset = useQuery(
     () =>
       selectedRun && citation.passageStartMS !== null && citation.passageEndMS !== null
@@ -122,9 +123,9 @@ export function RecordingProcessingPanel({
       appliedCitationFocus.current = ''
     } else if (ownedCitationOffset !== null && appliedCitationFocus.current !== citationFocusKey) {
       appliedCitationFocus.current = citationFocusKey
-      page.setPageIndex(Math.floor(ownedCitationOffset / 50), { replace: true })
+      setPageIndex(Math.floor(ownedCitationOffset / 50), { replace: true })
     }
-  }, [citationFocusKey, citation.passageStartMS, ownedCitationOffset, page.setPageIndex])
+  }, [citationFocusKey, citation.passageStartMS, ownedCitationOffset, setPageIndex])
   const transcript = useQuery(
     () =>
       selectedRun

@@ -36,8 +36,9 @@ function AccountRecordingsPage() {
   const passagePlayback = useRef(new RecordingPassagePlayback())
   const [passagePlaybackError, setPassagePlaybackError] = useState<string | null>(null)
   useEffect(() => {
+    const playback = passagePlayback.current
     setPassagePlaybackError(null)
-    return () => passagePlayback.current.stop()
+    return () => playback.stop()
   }, [recordingId])
   const [pageParameters, setPageParameters] = useSearchParams()
   const pageCursors = ['', ...(pageParameters.get('before')?.split(',').filter(Boolean) ?? [])]
