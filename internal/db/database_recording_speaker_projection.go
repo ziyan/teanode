@@ -93,6 +93,11 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 			}
 			break
 		}
+		// What the passage reads as before any correction applies, which is what a
+		// removed correction leaves it with: a speaker the person took the name off
+		// goes back to its label, not to the bare speaker ID.
+		uncorrectedIdentityId, uncorrectedName := segment.EffectiveSpeakerIdentityID, segment.EffectiveSpeakerName
+		isUncorrectedRecognized, isUncorrectedAccountOwner, uncorrectedLabel := segment.IsRecognizedSpeaker, segment.IsAccountOwner, segment.TemporarySpeakerLabel
 		corrections, hasCorrections := correctionsByRecording[transcriptRun.RecordingID]
 		if !hasCorrections {
 			var err error
@@ -130,6 +135,8 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 				continue
 			}
 			if correction.IsRemoved {
+				segment.EffectiveSpeakerIdentityID, segment.EffectiveSpeakerName = uncorrectedIdentityId, uncorrectedName
+				segment.IsRecognizedSpeaker, segment.IsAccountOwner, segment.TemporarySpeakerLabel = isUncorrectedRecognized, isUncorrectedAccountOwner, uncorrectedLabel
 				continue
 			}
 			segment.EffectiveSpeakerIdentityID = correction.SpeakerIdentityID

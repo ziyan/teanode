@@ -259,7 +259,7 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 		if _, err := self.CorrectRecordingSpeaker(userId, RecordingSpeakerCorrectionInput{
 			RecordingID: source.ID, RecordingTranscriptionAttemptID: appearance.RecordingTranscriptionAttemptID, LocalSpeakerID: appearance.LocalSpeakerID,
 			// The key names the speaker, the piece and the name, so repeating a request is harmless and renaming is a new correction.
-			ClientCorrectionID: "temporary-speaker-" + speaker.ID + "-" + appearance.RecordingTranscriptionAttemptID + "-" + hex.EncodeToString(nameDigest[:4]),
+			ClientCorrectionID: temporarySpeakerKeyPrefix + speaker.ID + "-" + appearance.RecordingTranscriptionAttemptID + "-" + hex.EncodeToString(nameDigest[:4]),
 			ConfirmedName:      confirmedName, IsAccountOwner: isAccountOwner, ExpectedSourceGeneration: current.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1,
 		}); err != nil {
 			return err
@@ -270,4 +270,25 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 		return err
 	}
 	return self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ?", speaker.ID).Update("speaker_identity_id", identity.ID).Error
+}
+
+// temporarySpeakerKeyPrefix starts the client correction ID of every correction
+// written by naming a temporary speaker: the prefix, the speaker's ID, the
+// piece's attempt ID, then the first bytes of the name's digest in hex.
+const temporarySpeakerKeyPrefix = "temporary-speaker-"
+
+// temporarySpeakerNamingOf reads the temporary speaker's ID and the name digest
+// out of a client correction ID, or returns empty strings when the key did not
+// come from naming a temporary speaker.
+func temporarySpeakerNamingOf(clientCorrectionId string) (string, string) {
+	rest, isTemporary := strings.CutPrefix(clientCorrectionId, temporarySpeakerKeyPrefix)
+	if !isTemporary {
+		return "", ""
+	}
+	// IDs are ULIDs and the digest is hex, so none of the three parts holds a hyphen.
+	parts := strings.Split(rest, "-")
+	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
+		return "", ""
+	}
+	return parts[0], parts[2]
 }

@@ -337,3 +337,83 @@ func TestANamingCanBeUndoneWholeOrOnePassage(test *testing.T) {
 		}
 	})
 }
+
+// Undoing the naming of a temporary speaker takes the name off the passages in
+// every piece it was named in, and a piece that comes later reads as the label.
+func TestUndoingATemporarySpeakerNamingReachesEveryPieceAndLaterOnes(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	chunk, blob := fixture.createChunk(test)
+	pieceDigest := sha256.Sum256([]byte("second-wave-bytes"))
+	secondBlob := &models.RecordingBlob{ID: db.RecordingAudioFileID(fixture.transcriptRun.ID, 1), BlobSizeBytes: 128, BlobSHA256: hex.EncodeToString(pieceDigest[:])}
+	var secondChunk *models.RecordingAudioChunk
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		secondChunk, err = transaction.CreateRecordingAudioChunk(fixture.userId, fixture.transcriptRun.ID, fixture.claim, &models.RecordingAudioChunk{ChunkIndex: 1, TimelineStartMS: 3000, AudioDurationMS: 1000}, secondBlob, 4096)
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	recordingId := fixture.media.RecordingID
+	var speaker *models.RecordingTemporarySpeaker
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.VerifyRecordingBlob(fixture.userId, secondBlob.ID, secondBlob.BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+		later, err := transaction.CreateRecordingTranscriptionAttempt(fixture.userId, fixture.transcriptRun.ID, secondChunk.ID, fixture.claim, "USD", nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SubmitRecordingTranscriptionAttempt(fixture.userId, later.ID, fixture.claim); err != nil {
+			test.Fatal(err)
+		}
+		// The second piece hears the first piece's speaker under the label the first piece will give it.
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, later.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "Speaker 1", SegmentStartMS: 3000, SegmentEndMS: 3500, TranscriptText: "Second piece."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "A", SegmentStartMS: 2000, SegmentEndMS: 2500, TranscriptText: "First piece."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		speaker, err = transaction.CreateRecordingTemporarySpeaker(fixture.userId, &models.RecordingTemporarySpeaker{RecordingID: recordingId, SourceAttemptID: attempt.ID, SourceLocalSpeakerID: "A", PassageStartMS: 2000, PassageEndMS: 4000}, temporarySpeakerSample("sample"), 1<<20)
+		if err != nil || speaker.SpeakerLabel != "Speaker 1" {
+			test.Fatal(err)
+		}
+		// The sample is sent along with the second piece.
+		if err := transaction.VerifyRecordingBlob(fixture.userId, speaker.RecordingBlobID, temporarySpeakerSample("sample").BlobSHA256); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.Exec(test, fixture.database, "UPDATE recording_transcription_attempt SET reference_blob_ids = jsonb_build_array('"+speaker.RecordingBlobID+"') WHERE recording_audio_chunk_id = '"+secondChunk.ID+"'")
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.NameRecordingTemporarySpeaker(fixture.userId, recordingId, speaker.SpeakerLabel, "Participant One", false); err != nil {
+			test.Fatal(err)
+		}
+		segments := timelineOf(test, transaction, fixture.userId, recordingId)
+		if len(segments) != 2 || segments[0].EffectiveSpeakerName != "Participant One" || segments[1].EffectiveSpeakerName != "Participant One" {
+			test.Fatal("naming did not reach both pieces", segments)
+		}
+	})
+	correctionId := dbtest.QueryString(test, fixture.database, "SELECT id FROM recording_speaker_correction WHERE recording_id = '"+recordingId+"' ORDER BY id LIMIT 1")
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		source, err := transaction.GetRecording(fixture.userId, recordingId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		undone, err := transaction.UndoRecordingSpeakerNaming(fixture.userId, recordingId, correctionId, source.SourceGeneration)
+		if err != nil || undone != 2 {
+			test.Fatal("undo did not take the name off both pieces", undone, err)
+		}
+		for _, segment := range timelineOf(test, transaction, fixture.userId, recordingId) {
+			if segment.EffectiveSpeakerName != speaker.SpeakerLabel || segment.HasUserConfirmedSpeaker || segment.IsRecognizedSpeaker || segment.TemporarySpeakerLabel != speaker.SpeakerLabel {
+				test.Fatalf("a passage kept the name after the undo: %+v", segment)
+			}
+		}
+	})
+}
