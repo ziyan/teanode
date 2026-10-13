@@ -100,7 +100,6 @@ export function RecordingEditDialog({
       {dialog.isDestructive ? <p>{t('recordingProcessing.referenceDeleteHint')}</p> : null}
       {dialog.operationName === 'RetryRecordingTranscription' ? <p>{t('recordingProcessing.retryHint')}</p> : null}
       {dialog.operationName === 'CancelRecordingTranscription' ? <p>{t('recordingProcessing.cancelHint')}</p> : null}
-      {dialog.operationName === 'CorrectRecordingSpeaker' ? <p>{t('recordingProcessing.groupHint')}</p> : null}
       {fields.map((field, fieldIndex) => (
         <label key={field.fieldName}>
           <span>{t(`recordingProcessing.${field.labelKey}` as Parameters<typeof t>[0])}</span>

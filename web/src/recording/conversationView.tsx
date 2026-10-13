@@ -201,28 +201,18 @@ export function RecordingConversation({
     recordingTranscriptionAttemptId: segment.recordingTranscriptionAttemptId,
     localSpeakerId: segment.localSpeakerId,
   })
-  const nameSpeaker = (segment: TranscriptSegment, passageEndMS = segment.segmentEndMS) =>
+  // Naming a speaker names the voice: every passage it spoke in the same
+  // transcription request (-1 and -1 select that group), not one span of time.
+  const nameSpeaker = (segment: TranscriptSegment) =>
     setDialog({
       operationName: 'CorrectRecordingSpeaker',
       titleKey: 'nameSpeaker',
-      variables: speakerCorrectionVariables(segment),
+      variables: { ...speakerCorrectionVariables(segment), passageStartMS: -1, passageEndMS: -1 },
       fields: [
         {
           fieldName: 'confirmedName',
           labelKey: 'confirmedName',
           fieldValue: segment.hasUserConfirmedSpeaker ? segment.effectiveSpeakerName : '',
-        },
-        {
-          fieldName: 'passageStartMS',
-          labelKey: 'passageStart',
-          inputType: 'number',
-          fieldValue: String(segment.segmentStartMS),
-        },
-        {
-          fieldName: 'passageEndMS',
-          labelKey: 'passageEnd',
-          inputType: 'number',
-          fieldValue: String(passageEndMS),
         },
       ],
     })
@@ -248,14 +238,14 @@ export function RecordingConversation({
       toast.failure(caught, t('recordingProcessing.saved'))
     }
   }
-  const setOwnership = async (segment: TranscriptSegment, passageEndMS: number) => {
+  const setOwnership = async (segment: TranscriptSegment) => {
     try {
       await recordingOperation('CorrectRecordingSpeakerOwner', {
         ...speakerCorrectionVariables(segment),
         // Left empty so the server names the speaker after the person.
         confirmedName: '',
-        passageStartMS: segment.segmentStartMS,
-        passageEndMS,
+        passageStartMS: -1,
+        passageEndMS: -1,
         isAccountOwner: true,
       })
       toast.done(t('recordingProcessing.saved'))
@@ -272,7 +262,6 @@ export function RecordingConversation({
   const bubbleActions = (group: ConversationGroup): LineAction[] => {
     const firstSegment = group.segments[0]
     const temporarySpeakerLabel = group.temporarySpeakerLabel
-    const groupEndMS = Math.max(...group.segments.map((segment) => segment.segmentEndMS))
     const canEdit = !isReadOnly && generation !== undefined
     const canName = canEdit && Boolean(firstSegment.localSpeakerId) && !temporarySpeakerLabel
     const actions: LineAction[] = [
@@ -323,7 +312,7 @@ export function RecordingConversation({
         actionKey: 'owner',
         label: t('recordings.notMe'),
         icon: <UserIcon size={16} />,
-        onAct: () => nameSpeaker(firstSegment, groupEndMS),
+        onAct: () => nameSpeaker(firstSegment),
       })
     else if (canName)
       actions.push(
@@ -331,13 +320,13 @@ export function RecordingConversation({
           actionKey: 'name',
           label: t('recordingProcessing.nameSpeaker'),
           icon: <PeopleIcon size={16} />,
-          onAct: () => nameSpeaker(firstSegment, groupEndMS),
+          onAct: () => nameSpeaker(firstSegment),
         },
         {
           actionKey: 'owner',
           label: t('recordings.thisIsMe'),
           icon: <UserIcon size={16} />,
-          onAct: () => void setOwnership(firstSegment, groupEndMS),
+          onAct: () => void setOwnership(firstSegment),
         },
       )
     return actions

@@ -244,8 +244,9 @@ it('names a speaker through the shared dialog', async () => {
   expect(calls('CorrectRecordingSpeaker')[0][1]).toMatchObject({
     confirmedName: 'Fixture Guest',
     localSpeakerId: 'local-one',
-    passageStartMS: 2000,
-    passageEndMS: 4000,
+    // The voice, every passage of it in the request, not one span of time.
+    passageStartMS: -1,
+    passageEndMS: -1,
   })
 })
 
