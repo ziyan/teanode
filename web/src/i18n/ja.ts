@@ -4409,4 +4409,12 @@ export const ja: Catalog = {
   'recordings.playbackError': "このブラウザーでは原本を再生できません。ダウンロードして対応するプレーヤーで開いてください。",
   'recordings.videoUnavailable': "このブラウザーでは映像を表示できません。音声のみ再生される場合があります。原本をダウンロードしてご覧ください。",
   'recordings.manifestError': "サーバーの原本情報が要求したファイルと一致しません。原本の部分はアップロードされませんでした。",
+  'recordingProcessing.sourceSchedule': 'ソースの読み取りスケジュール',
+  'recordingProcessing.sourceScheduleHint': 'あなたのタイムゾーンで5つのcronフィールドを入力してください。空欄は定期的な読み取りを無効にします。公開された文字起こしと修正は引き続き自動的に反映されます。',
+  'recordingProcessing.citationInvalidBounds': '引用箇所の時刻範囲が無効です。',
+  'recordingProcessing.citationVersionMissing': '指定された文字起こしのバージョンは利用できません。',
+  'recordingProcessing.citedPassage': '引用箇所',
+  'recordingProcessing.playCitedPassage': '引用箇所を再生',
+  'recordingProcessing.sourceStopped': '読み取りは停止されています。学習済みのページは保持されます。新しい文字起こしや修正によってソースの読み取りが再開されることはありません。',
+  'recordingProcessing.resumeReading': '読み取りを再開',
 }

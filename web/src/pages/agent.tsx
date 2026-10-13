@@ -61,6 +61,7 @@ import {
 } from '../components/sourceTypeSettings'
 
 import { recordingSourceTitle } from '../recording/processing'
+import { RecordingSourceSchedule } from '../recording/sourceSchedule'
 
 // A person's agent: the page where they turn it on, name it, tell it about
 // themselves, choose what it may reach and what it does there, and see what
@@ -2428,7 +2429,15 @@ function KnowledgeSourcesCard() {
             }
             actions={
               <div className="row-actions">
-                {source.kind !== 'recording' ? (
+                {source.kind === 'recording' ? (
+                  <RecordingSourceSchedule
+                    sourceId={source.id}
+                    sourceCron={source.cron}
+                    sourceTitle={sourceDisplayName(source)}
+                    isIconOnly
+                    onSaved={reload}
+                  />
+                ) : (
                   <Tooltip label={t('agent.editKnowledgeSource')}>
                     <button
                       type="button"
@@ -2439,7 +2448,7 @@ function KnowledgeSourcesCard() {
                       <PencilIcon size={16} />
                     </button>
                   </Tooltip>
-                ) : null}
+                )}
                 <Tooltip label={t('agent.knowledgeSync')}>
                   <button
                     type="button"

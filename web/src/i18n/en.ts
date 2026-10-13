@@ -4456,4 +4456,12 @@ export const en = {
   'recordings.playbackError': "This browser cannot play the original. Download it to use a compatible player.",
   'recordings.videoUnavailable': "This browser cannot display the video track. Audio may still play; download the original to view it.",
   'recordings.manifestError': "The server original manifest does not match the requested file. No original parts were uploaded.",
+  'recordingProcessing.sourceSchedule': 'Source reading schedule',
+  'recordingProcessing.sourceScheduleHint': 'Five cron fields in your timezone. Empty turns periodic reading off; published transcripts and corrections still reconcile automatically.',
+  'recordingProcessing.citationInvalidBounds': 'The cited passage has invalid timestamp bounds.',
+  'recordingProcessing.citationVersionMissing': 'The requested transcript version is unavailable.',
+  'recordingProcessing.citedPassage': 'Cited passage',
+  'recordingProcessing.playCitedPassage': 'Play cited passage',
+  'recordingProcessing.sourceStopped': 'Reading stopped. Learned pages remain; new transcript versions and corrections do not restart source reading.',
+  'recordingProcessing.resumeReading': 'Resume reading',
 }

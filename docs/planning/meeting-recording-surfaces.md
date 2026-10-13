@@ -1,176 +1,133 @@
 # Recording surfaces execution plan
 
-The account-owned recording API is shared by the dashboard, command line,
-agent tool and native app. This stream implements the first three surfaces;
-native support is coordinated with the capture stream. This plan supplements
-`meeting-recording-execplan.md` and does not change its completion criteria.
+This plan supplements `meeting-recording-execplan.md`. This stream owns the
+web dashboard, shared client, teanode CLI and grouped recording tool. Native
+support is owned by the iOS stream. Shared storage, worker, ownership,
+projection and learning APIs are coordinated with the backend streams.
 
-## Current increment
+## Implemented increments
 
-- Dashboard library, unchanged audio/video import, bounded hashing and part
-  upload, verified completion, native original playback/download and deletion.
-- Resume reselects and verifies the exact retained original. Existing native
-  capture originals resume their existing recording/media IDs, rather than
-  becoming a second imported recording.
-- CLI `recording list/read/limits/import/download/delete` uses the shared client.
-  Import always retains the local source. Download publishes only after the
-  whole original digest and size match and refuses to overwrite a destination.
-- The recording tool lists, reads and deletes owned recordings and returns
-  private playback paths. Results are marked untrusted. Delete uses existing
-  destructive confirmation handling. Microphone activation is never offered.
+The raw recording increment is merged. It provides the account-owned library,
+audio/video import, bounded hashing and resumable parts, verified completion,
+original playback/download and deletion. Resume verifies the retained exact
+original and preserves native recording/media IDs. CLI downloads publish only
+after matching the original digest and size and never overwrite an existing
+file. The tool uses existing attachment delivery and never activates a remote
+microphone or invents filesystem access. Evidence results remain untrusted.
+
+The processing increment remains a separate draft. It provides explicit
+transcription Off selection, known capability labels, provider/global/person
+budget settings, versions and full completed timeline, paginated transcript
+inspection, status/cancel/safe retry and explicit paid reprocessing. Free
+metadata, speaker and recognized-text edits require the current generation.
+Stable client keys are retained after uncertain responses. Generated text
+remains immutable beside effective corrections and retained edit history.
+
+Speaker names use canonical server projection: original attempt and local
+speaker binding, then unique source/destination interval alignment for reruns.
+Overlapping speakers, partial labels and ambiguous edits remain separate
+passage evidence. Automatic provider labels remain unconfirmed. References
+show their original passages; revocation warns about affected automatic
+attribution without scheduling a paid rerun. User naming curates references
+and reconciles memory automatically without another approval gate.
+
+Recording sources use their human title from existing specification metadata.
+Their internal name and path are not editable. Existing pause, sync, Stop
+reading and schedule controls are retained. Explicit Resume reading republishes
+current effective evidence after Stop reading without paid transcription.
+Normal corrections and new versions preserve stopped source reading.
 
 ## Capability parity
 
 | Capability | Dashboard | CLI | LLM tool | iOS |
 | --- | --- | --- | --- | --- |
-| Library and original metadata | Implemented | Implemented | Implemented | Capture stream |
-| Original playback/download | Implemented | Verified download | Private playback path | Capture stream |
-| Audio/video file import | Implemented | Implemented | Delivered attachment import, live smoke pending | Capture stream |
-| Recoverable original upload | Exact manifest resume | Exact manifest resume | Exact attachment manifest resume, live smoke pending | Capture stream |
-| Delete recording | Confirmation dialog | Confirmation/force | Destructive risk | Capture stream |
-| Transcription model/providers/budgets | Explicit Off and known capability display | Settings and capability read | Existing operator settings and capability read | Native stream, review pending |
-| Timeline/versions/status/cancel/retry/reprocess | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
-| Metadata and occurrence date editing | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
-| Speaker corrections/reference management | Canonical projection and free edits audited; populated references pending | Authenticated read verified | Shared actions tested, live agent execution pending | Native stream, review pending |
-| Recognized-text edit/reset/history | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
-| Learning/invalidated-reference evidence | Free edits and status inspected; paid processing pending | Authenticated reads verified | Shared actions tested, live agent execution pending | Native stream, review pending |
+| Library/import/recovery/deletion | Implemented and audited | Tested transport and live smoke | Shared attachment/ownership actions tested | Native stream, review and device evidence pending |
+| Original playback/download | Audio/video playback audited | Verified atomic download | Owned media paths and timestamps | Native stream, device evidence pending |
+| Provider/model/quota/budgets | Settings audited | Shared settings and capability reads | Existing operator settings and capability reads | Native stream, review pending |
+| Timeline/version/status/cancel/retry/reprocess | Implemented and audited | Live reads and shared action tests | Shared action validation and risk tests | Native stream, review pending |
+| Historical citation paging/playback | Exact version/page and bounded playback audited | Live bounded passage-offset read | Same bounded operation | Native stream, review pending |
+| Metadata/speaker/text corrections | Free edits and canonical warnings audited | Shared action tests and live reads | Explicit user edits only, untrusted results | Native stream, review pending |
+| Reference management/invalidation | Populated references and uncertainty audited | Live evidence reads | Same evidence and revoke operation | Native stream, review pending |
+| Learning/stop/resume/schedule | Actual source and resume/schedule flows audited | Live schedule set/clear and resume | Shared resume/schedule operations tested | Native stream, review pending |
 
-No row constitutes end-to-end completion while an applicable surface is pending.
+No row establishes full feature completion while an applicable surface or
+required real-device validation remains pending. Live LLM execution was not
+performed by this stream. Existing confirmation/risk policy is retained.
 
-## Review and validation evidence
+## Review findings and fixes
 
-Code review found and fixed stale account data display, missing URL pagination,
-and exact-source resume accidentally creating a new import for native media.
-The recording page remounts on account changes, aborts outstanding uploads and
-checks current account/source IDs before displaying cached query results.
+Raw review fixed account cache isolation, URL pagination, native upload resume,
+manifest validation before bytes, verified completion and atomic download.
+Processing review fixed stale outer titles, interpolation conventions, scoped
+speaker rename, missing unaligned text warnings and unsafe client-only speaker
+inference. All known names remain available for explicit confirmation.
 
-Meaningful tests cover lost upload responses after storage succeeds, reuse of
-verified parts, refusal of a different original/account on resume, corrupted or
-oversized downloads, whole-file receipt validation, independent incremental
-SHA-256 vectors around padding and transport boundaries, and untrusted tool
-results with no microphone operation. Review also added malformed-server
-manifest tests that require zero original-part/completion requests and atomic
-download tests preserving existing destinations even on corrupt responses.
-Go race tests and 14 dashboard tests pass. Full local lint, including naming checks, has been run successfully;
-repeat it after the final changes before committing.
+The Back control now follows the existing page-action button pattern.
+Recording navigation uses the established Microphone icon, distinct from the
+Knowledge grid. New row actions use existing icon-action/Tooltip components.
+Recording source schedule editing uses the existing FormDialog and generic
+source API; explicit empty Cron clears periodic scheduling and nextRunAt while
+preserving pause state.
 
-Chrome desktop and phone inspection has exercised empty/import forms, retained
-synthetic media and actual audio playback. The browser extension refuses file
-selection because its file access permission is disabled. Do not claim an
-end-to-end browser chooser/upload test or enable broader permissions silently.
-Final resume, deletion-dialog and deleted-source error layouts were inspected
-at desktop and phone widths after rebuilding. Audio and video originals import
-through the CLI and verified downloads match the source. Browser audio and
-compatible video playback advance; an unsupported video track now shows
-download guidance rather than silently appearing as audio. An early phone
-audio screenshot is clipped and is rejected evidence; fresh Chrome inspection confirmed a 390-pixel viewport and document, zero horizontal scroll, and a closed menu. A replacement phone screenshot was independently inspected. The integrated interface checkpoint below records subsequent interactions.
+Historical citations accept canonical version and legacy run parameters, use
+bounded passage-offset lookup and select the exact historical page. Missing
+versions and invalid/no-match bounds show persistent feedback without falling
+back to newer evidence. Fractional timestamps prevent short passages displaying
+identical rounded endpoints. Passage links retain their owned media href and
+play the correct existing original in-page, subtracting its timeline offset
+and pausing at the exact end. Navigation stops playback and superseded play
+failures cannot pause a newer selection.
 
-## Next increments
+## Actual validation evidence
 
-Integrate the shared attachment import and transcript worker APIs. Add the
-explicit transcription model with known capability display, preserve unknown
-pricing rather than presenting a guessed cost, and use existing budget controls.
-Then add version/status/cancel/explicit paid reprocessing and metadata editing
-across all surfaces. Integrate confirmed speaker correction/reference APIs and
-the recording knowledge source display. Review every increment and inspect each
-web interaction at desktop and phone widths before it is considered ready.
+Focused Go race checks cover shared client, CLI and recording tool. Full make
+lint includes naming, configuration documentation and link-style checks. The
+web type check and production/extension builds pass. Focused dashboard tests
+cover raw transfer/recovery, source schedule explicit clearing, historical
+citations, canonical correction projection, direct resume and media event
+boundaries. Current test counts and exact head are reported with the PR.
 
-Real-iPhone capture, background transfer, interruptions, lock-screen controls
-and battery checks belong to the native stream and remain unverified without
-actual device evidence. Actual provider billing is also unverified.
+An isolated authenticated preview accepts the nine current recording read
+GraphQL documents. CLI verifies bounded historical offset, learning status,
+schedule set/clear and idempotent resume with no new transcript version. These
+are synthetic fixtures, not provider transcript-quality or billing tests.
 
-## Processing interface work in progress
+Actual Chrome audits at desktop and 390-pixel phone widths inspect library,
+import/resume/error dialogs, audio/video originals, metadata, speaker naming,
+rename/reset, recognized-text edits/reset/history, version status/usage,
+cancel/retry and explicit paid-dialog warnings. Populated synthetic references,
+reference invalidation and unaligned text/speaker warnings were inspected.
+Source controls expose the human title and no generic name/path editor.
+Schedule save/clear preserves paused state; clearing resets nextRunAt. Stop
+reading is visibly distinct from unavailable evidence, and direct Resume
+reading restores current passage ingestion without another dialog or paid run.
 
-A separate follow-up implements explicit transcription model selection (blank is
-Off) and known audio capabilities. CLI settings read the new model without
-breaking reads against older servers; the existing operator settings tool uses
-the redacted configuration and common settings mutation.
+A historical fixture with more than one transcript page opens the old version
+on page two despite a newer version. Chrome observes audio start at 10.2
+seconds and pause at 10.38 seconds on both layouts. Reference playback selects
+its later original using the correct offset while the first original stays
+paused. Imported video passage playback is checked separately. Original
+receipts and source generation remain unchanged by playback.
 
-Shared action validation now powers CLI and tool operations for versions,
-bounded transcript pages, initial processing, safe same-version retry,
-cancellation, explicit paid reprocessing, delivered attachment import,
-metadata, speaker confirmation/rename/reset, reference revocation, recognized
-text edit/reset/history, learning counts and reference invalidation evidence.
-Free edits require the current source generation. Stable paid/correction keys
-are required and retained after an uncertain response. Metadata date is
-explicit so a title edit cannot silently replace the occurrence date.
+The phone viewport/document widths match, horizontal scroll is zero and menus
+are closed for content checks. Desktop and phone navigation compare the
+recording microphone with adjacent existing icons. The earlier clipped phone
+raw-player capture was rejected and replaced after fresh layout inspection.
+Browser file selection remains blocked by the extension's file-access setting;
+no extension permission was changed, and chooser completion is not claimed.
 
-The dashboard implements these processing and editing controls with original
-passage playback and immutable generated text alongside effective corrections.
-Canonical server projection confirms speakers with original attempt and local
-speaker binding. Reprocessed segments require unique source and destination
-intervals; ambiguous or partial corrections remain separate evidence. Clients
-never label equal-time overlapping speakers by interval alone. Automatically returned speaker labels remain unconfirmed.
-Recording knowledge sources have a human label and retain pause/sync/removal
-controls while excluding the unrelated generic path editor.
+A disposable loopback provider supplies known model metadata for settings and
+source UI audits and refuses execution requests. It has no external credentials.
+After audits the isolated global/personal agents are restored Off, providers
+removed, model assignments cleared and the preview restarted and verified.
+Production provider/billing checks and deployment are owned by the root stream.
 
-These interfaces are not yet accepted as ready: live contract smoke, desktop
-and phone Chrome interaction checks, integrated review, complete naming lint,
-iOS parity checks and the new correction backend integration remain required.
-Focused Go race tests and 20 dashboard tests currently pass; no paid provider
-call or real-phone validation has been performed.
+## Remaining acceptance
 
-The full recording timeline interface uses the latest completed version per
-original and chronological absolute timestamps. Incomplete originals and newer
-pending versions are explicitly excluded, with per-run inspection retained for
-status and billing evidence. The aggregate API is an integration dependency.
-Chrome inspected transcription Off selection and successful save at desktop
-and phone widths. Phone measurements show matching viewport/document width,
-zero horizontal scroll and the main content at the left edge. The integrated checkpoint below records the processing and correction controls
-that have since been exercised; fixture-only and device gaps remain explicit.
-
-Integrated review found and fixed passage playback seeking: absolute segment
-and reference bounds subtract the selected original's timeline offset before
-seeking. A regression covers a later capture chunk. Review also removed
-client time-only speaker inference in favor of canonical server projection;
-equal-time overlapping speakers and ambiguous reruns cannot inherit a name
-from another group. The UI test verifies confirmation and unresolved interval
-warnings. Formatting tests caught incorrect interpolation braces and those
-were corrected to the existing catalog convention.
-
-
-## Integrated interface audit checkpoint
-
-The integrated preview now accepts the actual recording documents for versions,
-per-run and aggregate transcripts, speakers, text history, learning, reference
-invalidations and processing availability. The timeline selects the completed
-original version and excludes newer failed, canceled and uncertain versions.
-Nine authenticated CLI read operations also passed against the same backend.
-These checks use synthetic transcript fixtures, not provider transcription.
-
-Actual Chrome desktop and phone interactions verified metadata editing, speaker
-group naming and rename, recognized-text editing with generated originals,
-text reset with retained history, selected speaker-passage reset, version usage
-inspection, queued cancellation, and the safe retry admission error while
-processing is off. Equal-time overlapping speakers retained separate attribution.
-Free API text edits also passed stable-key retry and immutable-original checks.
-The phone viewport and document both measured 390 pixels, with zero horizontal
-scroll and the main content starting at zero. Corrections and actions wrap
-without clipping. Review fixed the outer recording title staying stale after a
-metadata save, and restricted rename to identities linked to this recording.
-All account identities remain available as name suggestions for confirmation.
-Unaligned text and speaker corrections have explicit projection warnings.
-
-The source metadata exposes the human recording title. Global Agent Off keeps
-the raw library reachable but blocks the existing source settings page. Enabling
-only that flag is rejected by existing validation because a default model and
-enabled provider are required; no provider was enabled to bypass this rule.
-The source-control visual check, populated voice references and invalidations,
-paid processing confirmation with a configured model, and nonempty capability
-labels still need isolated fixtures. Browser file selection remains blocked by
-extension file access. No paid call, actual billing, live LLM execution or
-real-iPhone validation is claimed by this stream.
-
-
-A subsequent local-only model stub allowed the remaining configuration and
-source controls to be inspected at desktop and phone widths. Its model list
-used existing provider capability metadata; its execution endpoint refused
-requests. The audit opened and canceled the explicit paid-version dialog,
-inspected capability labels and the Off option, exercised source pause/resume,
-and canceled stop-reading confirmation. Source confirmation now uses the human
-recording title and links lead to recording metadata instead of generic source
-name/path editing. Global and personal agents were restored Off afterward,
-providers removed, default/transcription assignments cleared, and the isolated
-preview restarted and verified. These are interface checks, not provider or
-billing validation. Populated reference/invalidation and unaligned-projection
-visual fixtures remain pending.
+Rebase against the final learning API increment, rerun checks on the exact
+head, review integrated changes and let CI verify the updated draft. Native
+build review and applicable four-surface checks remain coordinated with iOS.
+Real-iPhone capture, background transfer, interruption recovery, lock-screen
+controls and battery behavior need actual device evidence. Actual provider
+billing must be verified from provider evidence and must not be inferred from
+provisional pricing. The separate device-setup redesign is not included here.

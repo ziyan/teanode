@@ -116,6 +116,7 @@ export interface ReferenceInvalidation {
 export interface RecordingLearning {
   sourceGeneration: number
   hasAgent: boolean
+  hasStoppedReading: boolean
   pendingDocumentCount: number
   digestedDocumentCount: number
   lastPublishedSourceGeneration: number
@@ -126,6 +127,7 @@ export interface RecordingLearning {
     name: string
     specification: { settings: unknown }
     enabled: boolean
+    cron: string
     lastError: string
     lastRunAt: string | null
     documentCount: number

@@ -28,6 +28,8 @@ type RecordingActionArguments struct {
 	CorrectedTranscriptText             string  `json:"corrected_transcript_text"`
 	RecordingTitle                      string  `json:"recording_title"`
 	RecordedAt                          *string `json:"recorded_at"`
+	KnowledgeSourceID                   string  `json:"knowledge_source_id"`
+	SourceCron                          *string `json:"source_cron"`
 	ExpectedSourceGeneration            *int64  `json:"expected_source_generation"`
 	PassageStartMS                      *int64  `json:"passage_start_ms"`
 	PassageEndMS                        *int64  `json:"passage_end_ms"`
@@ -46,6 +48,26 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 	}
 	operationName := ""
 	switch arguments.Operation {
+	case "passage-offset":
+		operationName = "ReadRecordingTranscriptPassageOffset"
+		if err := require("transcript_run_id", arguments.RecordingTranscriptRunID); err != nil {
+			return "", nil, err
+		}
+		if arguments.PassageStartMS == nil || arguments.PassageEndMS == nil || *arguments.PassageStartMS < 0 || *arguments.PassageEndMS <= *arguments.PassageStartMS {
+			return "", nil, fmt.Errorf("give nonnegative passage_start_ms and a later passage_end_ms explicitly")
+		}
+		variables["recordingTranscriptRunId"], variables["passageStartMS"], variables["passageEndMS"] = arguments.RecordingTranscriptRunID, *arguments.PassageStartMS, *arguments.PassageEndMS
+	case "source-schedule":
+		operationName = "SaveRecordingSourceSchedule"
+		if err := require("knowledge_source_id from the recording learning view", arguments.KnowledgeSourceID); err != nil {
+			return "", nil, err
+		}
+		if arguments.SourceCron == nil {
+			return "", nil, fmt.Errorf("give source_cron explicitly; empty disables periodic reading")
+		}
+		variables["sourceId"], variables["cron"] = arguments.KnowledgeSourceID, strings.TrimSpace(*arguments.SourceCron)
+	case "resume-learning":
+		operationName = "ResumeRecordingLearning"
 	case "availability":
 		operationName = "ReadRecordingTranscriptionAvailability"
 	case "models":
@@ -210,14 +232,14 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return "", nil, fmt.Errorf("unknown recording operation %q", arguments.Operation)
 	}
 	switch arguments.Operation {
-	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset":
+	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if err := require("recording_id", arguments.RecordingID); err != nil {
 			return "", nil, err
 		}
 		variables["recordingId"] = arguments.RecordingID
 	}
 	switch arguments.Operation {
-	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset":
+	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if arguments.ExpectedSourceGeneration == nil || *arguments.ExpectedSourceGeneration < 0 {
 			return "", nil, fmt.Errorf("give expected_source_generation from the current recording view")
 		}

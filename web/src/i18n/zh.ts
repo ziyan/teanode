@@ -4315,4 +4315,12 @@ export const zh: Catalog = {
   'recordings.playbackError': "此浏览器无法播放原始文件。请下载并使用兼容的播放器。",
   'recordings.videoUnavailable': "此浏览器无法显示视频轨道。音频可能仍可播放；请下载原始文件观看。",
   'recordings.manifestError': "服务器原始文件清单与请求的文件不匹配。未上传原始文件分块。",
+  'recordingProcessing.sourceSchedule': '来源阅读计划',
+  'recordingProcessing.sourceScheduleHint': '填写当前时区的五段 cron 表达式。留空关闭定期阅读；已发布的转录和更正仍会自动协调。',
+  'recordingProcessing.citationInvalidBounds': '引用段落的时间范围无效。',
+  'recordingProcessing.citationVersionMissing': '请求的转录版本不可用。',
+  'recordingProcessing.citedPassage': '引用段落',
+  'recordingProcessing.playCitedPassage': '播放引用段落',
+  'recordingProcessing.sourceStopped': '已停止阅读。已学到的页面会保留；新的转录版本和更正不会重新启动来源阅读。',
+  'recordingProcessing.resumeReading': '恢复阅读',
 }

@@ -16,6 +16,7 @@ func recordingActionCommands() []*cli.Command {
 	}{
 		{"availability", "show recording processing availability without making a provider call", nil},
 		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
+		{"passage-offset", "locate an exact historical citation without loading the whole transcript", []string{"transcript-run-id", "passage-start-ms", "passage-end-ms"}},
 		{"timeline", "read the latest completed original versions in absolute chronological order", []string{"recording-id", "segment-offset", "page-size"}},
 		{"versions", "inspect immutable transcript versions and processing status", []string{"recording-id"}},
 		{"transcript", "read a transcript page, request-local speakers and provider usage evidence", []string{"transcript-run-id", "segment-offset", "page-size"}},
@@ -31,7 +32,9 @@ func recordingActionCommands() []*cli.Command {
 		{"text-corrections", "inspect immutable recognized-text correction history", []string{"recording-id"}},
 		{"text-edit", "apply exact recognized-text correction supplied by the user without a provider call", []string{"recording-id", "expected-source-generation", "segment-id", "client-correction-id", "corrected-transcript-text"}},
 		{"text-reset", "remove a recognized-text correction without rewriting the generated version", []string{"recording-id", "expected-source-generation", "text-correction-id"}},
+		{"resume-learning", "resume source reading from current evidence without paid transcription", []string{"recording-id", "expected-source-generation"}},
 		{"learning", "inspect automatic knowledge ingestion and processed passage counts", []string{"recording-id"}},
+		{"source-schedule", "change periodic source reading; an explicit empty cron disables it", []string{"knowledge-source-id", "source-cron"}},
 		{"reference-invalidations", "inspect attribution made uncertain by revoked voice references", []string{"recording-id"}},
 		{"metadata", "edit the title and occurrence date (empty date means unknown)", []string{"recording-id", "expected-source-generation", "recording-title", "recorded-at"}},
 		{"import-attachment", "import a delivered audio/video attachment within the attachment delivery limit", []string{"attachment-id", "client-recording-id", "recording-title", "media-id"}},

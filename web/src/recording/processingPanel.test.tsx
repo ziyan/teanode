@@ -14,7 +14,11 @@ afterEach(() => {
   cleanup()
   vi.resetAllMocks()
 })
-function showFixture(extraSegments: Partial<TranscriptSegment>[] = [], overrides: Record<string, unknown> = {}) {
+function showFixture(
+  extraSegments: Partial<TranscriptSegment>[] = [],
+  overrides: Record<string, unknown> = {},
+  initialRoute = '/?version=fixture-run',
+) {
   vi.mocked(recordingOperation).mockImplementation(async (operationName) => {
     const responses: Record<string, unknown> = {
       ReadRecordingTranscriptionAvailability: {
@@ -104,7 +108,7 @@ function showFixture(extraSegments: Partial<TranscriptSegment>[] = [], overrides
   render(
     <TranslationProvider>
       <ToastProvider>
-        <MemoryRouter initialEntries={['/?version=fixture-run']}>
+        <MemoryRouter initialEntries={[initialRoute]}>
           <RecordingProcessingPanel recordingId="fixture-recording" userId="fixture-owner" mediaFiles={[media]} />
         </MemoryRouter>
       </ToastProvider>
@@ -199,7 +203,9 @@ it('keeps evidence editing available while paid processing is off', async () => 
   })
   expect(await screen.findByText('Processing is off for this fixture')).toBeTruthy()
   expect((screen.getByRole('button', { name: 'New paid version' }) as HTMLButtonElement).disabled).toBe(true)
-  expect((screen.getByRole('button', { name: 'Edit recognized text' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(((await screen.findByRole('button', { name: 'Edit recognized text' })) as HTMLButtonElement).disabled).toBe(
+    false,
+  )
 })
 it('limits rename controls to linked identities while retaining all account names for confirmation', async () => {
   showFixture([], {
@@ -216,8 +222,77 @@ it('limits rename controls to linked identities while retaining all account name
   expect(await screen.findByText('Linked fixture')).toBeTruthy()
   expect(screen.getAllByRole('button', { name: 'Rename speaker' })).toHaveLength(1)
   expect(screen.queryByText('Other fixture')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Name speaker' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Name speaker' }))
   expect(
     Array.from(document.querySelectorAll('datalist option')).map((option) => option.getAttribute('value')),
   ).toEqual(['Linked fixture', 'Other fixture'])
+})
+
+it('locates a legacy historical citation on its bounded page and plays the exact selected interval', async () => {
+  showFixture([], { ReadRecordingTranscriptPassageOffset: 51 }, '/?run=fixture-run&startMS=2500&endMS=3500')
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(recordingOperation)
+        .mock.calls.some(
+          ([operationName, variables]) =>
+            operationName === 'ReadRecordingTranscript' &&
+            variables.recordingTranscriptRunId === 'fixture-run' &&
+            variables.segmentOffset === 50,
+        ),
+    ).toBe(true),
+  )
+  expect((await screen.findByRole('link', { name: 'Play cited passage 0:02.5 to 0:03.5' })).getAttribute('href')).toBe(
+    '/api/v1/recordings/media/fixture-media#t=2.5,3.5',
+  )
+  expect(screen.getAllByText('Cited passage').length).toBeGreaterThan(0)
+})
+it('does not replace a missing explicitly cited version with the latest timeline', async () => {
+  showFixture(
+    [],
+    {
+      ReadRecordingTranscriptTimeline: {
+        segments: [{ id: 'latest-segment', transcriptText: 'Latest unrelated evidence' }],
+        transcriptRuns: [],
+        segmentCount: 1,
+      },
+    },
+    '/?run=missing-run',
+  )
+  expect(await screen.findByText('The requested transcript version is unavailable.')).toBeTruthy()
+  expect(screen.queryByText('Latest unrelated evidence')).toBeNull()
+  expect(
+    vi.mocked(recordingOperation).mock.calls.some(([operationName]) => operationName === 'ReadRecordingTranscript'),
+  ).toBe(false)
+})
+
+it('resumes explicitly stopped reading directly without requesting paid processing or adding a gate', async () => {
+  showFixture([], {
+    ReadRecordingLearning: {
+      hasAgent: true,
+      hasStoppedReading: true,
+      pendingDocumentCount: 0,
+      digestedDocumentCount: 0,
+      knowledgeSource: null,
+    },
+  })
+  fireEvent.click(await screen.findByRole('button', { name: 'Resume reading' }))
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(recordingOperation)
+        .mock.calls.some(
+          ([operationName, variables]) =>
+            operationName === 'ResumeRecordingLearning' &&
+            variables.recordingId === 'fixture-recording' &&
+            variables.expectedSourceGeneration === 4,
+        ),
+    ).toBe(true),
+  )
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(
+    vi
+      .mocked(recordingOperation)
+      .mock.calls.some(([operationName]) => operationName === 'RequestRecordingTranscription'),
+  ).toBe(false)
 })

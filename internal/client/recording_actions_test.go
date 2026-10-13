@@ -6,11 +6,21 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 	generation := int64(4)
 	groupBound := int64(-1)
 	unknownDate := ""
+	emptySourceCron := ""
+	passageStartMS := int64(2000)
+	passageEndMS := int64(4000)
 	cases := []struct {
 		arguments     RecordingActionArguments
 		isAllowed     bool
 		operationName string
 	}{
+		{RecordingActionArguments{Operation: "resume-learning", RecordingID: "fixture-recording"}, false, ""},
+		{RecordingActionArguments{Operation: "resume-learning", RecordingID: "fixture-recording", ExpectedSourceGeneration: &generation}, true, "ResumeRecordingLearning"},
+		{RecordingActionArguments{Operation: "passage-offset", RecordingTranscriptRunID: "fixture-run", PassageStartMS: &passageStartMS, PassageEndMS: &passageEndMS}, true, "ReadRecordingTranscriptPassageOffset"},
+		{RecordingActionArguments{Operation: "passage-offset", RecordingTranscriptRunID: "fixture-run", PassageStartMS: &groupBound, PassageEndMS: &passageEndMS}, false, ""},
+		{RecordingActionArguments{Operation: "source-schedule", KnowledgeSourceID: "fixture-source"}, false, ""},
+		{RecordingActionArguments{Operation: "source-schedule", KnowledgeSourceID: "fixture-source", SourceCron: &emptySourceCron}, true, "SaveRecordingSourceSchedule"},
+		{RecordingActionArguments{Operation: "source-schedule", SourceCron: &emptySourceCron}, false, ""},
 		{RecordingActionArguments{Operation: "process", RecordingMediaID: "fixture-media"}, true, "RequestRecordingTranscription"},
 		{RecordingActionArguments{Operation: "reprocess", RecordingMediaID: "fixture-media"}, false, ""},
 		{RecordingActionArguments{Operation: "reprocess", RecordingMediaID: "fixture-media", ClientRunID: "initial"}, false, ""},

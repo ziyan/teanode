@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { FormDialog } from '../components/dialog'
@@ -8,6 +8,18 @@ import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { type RecordingMedia } from './api'
 import { RECORDING_PROCESSING_DOCUMENTS } from './processingDocuments'
+import { RecordingSourceSchedule } from './sourceSchedule'
+import { overlapsRecordingCitation, readRecordingCitation } from './citation'
+import { RecordingRowAction } from './rowAction'
+import {
+  AddPersonIcon,
+  EraserIcon,
+  MicrophoneIcon,
+  PencilIcon,
+  RefreshIcon,
+  StopIcon,
+  TrashIcon,
+} from '../components/icons'
 import {
   confirmedSegmentName,
   passagePlaybackPath,
@@ -42,23 +54,34 @@ type ProcessingView = {
   transcriptRuns: TranscriptRun[]
 }
 const caughtText = (caught: unknown) => (caught instanceof Error ? caught.message : String(caught))
-const timelineTime = (milliseconds: number) =>
-  `${Math.floor(milliseconds / 60000)}:${String(Math.floor(milliseconds / 1000) % 60).padStart(2, '0')}`
+const timelineTime = (milliseconds: number) => {
+  const remainderMS = milliseconds % 1000
+  const fractionalSeconds = remainderMS ? `.${String(remainderMS).padStart(3, '0').replace(/0+$/, '')}` : ''
+  return `${Math.floor(milliseconds / 60000)}:${String(Math.floor(milliseconds / 1000) % 60).padStart(2, '0')}${fractionalSeconds}`
+}
 
 export function RecordingProcessingPanel({
   recordingId,
   userId,
   mediaFiles,
   onMetadataChanged,
+  onPlayPassage,
 }: {
   recordingId: string
   userId: string
   mediaFiles: RecordingMedia[]
   onMetadataChanged?: () => Promise<unknown>
+  onPlayPassage?: (mediaId: string, passageStartMS: number, passageEndMS: number) => void
 }) {
   const { t } = useTranslation()
   const speakerNamesListId = useId()
   const [parameters, setParameters] = useSearchParams()
+  const [isResumingReading, setIsResumingReading] = useState(false)
+  const [resumeReadingError, setResumeReadingError] = useState<string | null>(null)
+  const citation = readRecordingCitation(parameters)
+  const citationFocusKey = `${userId}/${recordingId}/${citation.requestedRunId}/${citation.passageStartMS}/${citation.passageEndMS}`
+  const appliedCitationFocus = useRef('')
+  const citedPassageElement = useRef<HTMLSpanElement>(null)
   const availability = useQuery(
     () => recordingOperation<TranscriptionAvailability>('ReadRecordingTranscriptionAvailability', {}),
     [userId],
@@ -70,8 +93,38 @@ export function RecordingProcessingPanel({
   const owned =
     versions.data?.recording.id === recordingId && versions.data.recording.userId === userId ? versions.data : null
   const runs = owned?.transcriptRuns ?? []
-  const selectedRun = runs.find((run) => run.id === parameters.get('version'))
+  const selectedRun = runs.find((run) => run.id === citation.requestedRunId)
   const page = usePageInAddress({ pageParameter: 'transcriptPage', defaultPageSize: 50 })
+  const citationOffset = useQuery(
+    () =>
+      selectedRun && citation.passageStartMS !== null && citation.passageEndMS !== null
+        ? recordingOperation<number>('ReadRecordingTranscriptPassageOffset', {
+            recordingTranscriptRunId: selectedRun.id,
+            passageStartMS: citation.passageStartMS,
+            passageEndMS: citation.passageEndMS,
+          }).then((segmentOffset) => ({
+            recordingTranscriptRunId: selectedRun.id,
+            passageStartMS: citation.passageStartMS,
+            passageEndMS: citation.passageEndMS,
+            segmentOffset,
+          }))
+        : Promise.resolve(null),
+    [selectedRun?.id, citation.passageStartMS, citation.passageEndMS, userId],
+  )
+  const ownedCitationOffset =
+    citationOffset.data?.recordingTranscriptRunId === selectedRun?.id &&
+    citationOffset.data?.passageStartMS === citation.passageStartMS &&
+    citationOffset.data?.passageEndMS === citation.passageEndMS
+      ? (citationOffset.data?.segmentOffset ?? null)
+      : null
+  useEffect(() => {
+    if (citation.passageStartMS === null) {
+      appliedCitationFocus.current = ''
+    } else if (ownedCitationOffset !== null && appliedCitationFocus.current !== citationFocusKey) {
+      appliedCitationFocus.current = citationFocusKey
+      page.setPageIndex(Math.floor(ownedCitationOffset / 50), { replace: true })
+    }
+  }, [citationFocusKey, citation.passageStartMS, ownedCitationOffset, page.setPageIndex])
   const transcript = useQuery(
     () =>
       selectedRun
@@ -115,12 +168,30 @@ export function RecordingProcessingPanel({
     transcript.data?.transcriptRun.id === selectedRun?.id && transcript.data?.transcriptRun.recordingId === recordingId
       ? transcript.data
       : null
-  const effectiveView = selectedRun ? versionView : timeline.data ? { ...timeline.data, attempts: [] } : null
-  const displayedRuns = selectedRun ? [selectedRun] : (timeline.data?.transcriptRuns ?? [])
+  const effectiveView = citation.requestedRunId
+    ? versionView
+    : timeline.data
+      ? { ...timeline.data, attempts: [] }
+      : null
+  const displayedRuns = citation.requestedRunId
+    ? selectedRun
+      ? [selectedRun]
+      : []
+    : (timeline.data?.transcriptRuns ?? [])
+  const citedSegmentId =
+    selectedRun && ownedCitationOffset !== null
+      ? effectiveView?.segments.find((segment) =>
+          overlapsRecordingCitation(segment.segmentStartMS, segment.segmentEndMS, citation),
+        )?.id
+      : undefined
+  useEffect(() => {
+    citedPassageElement.current?.scrollIntoView?.({ block: 'center' })
+  }, [citedSegmentId, citationFocusKey])
   const refresh = async () => {
     await Promise.all([
       versions.reload(),
       availability.reload(),
+      citationOffset.reload(),
       timeline.reload(),
       transcript.reload(),
       speakers.reload(),
@@ -145,6 +216,18 @@ export function RecordingProcessingPanel({
     setEditError(null)
   }
   const generation = speakers.data?.sourceGeneration ?? owned?.recording.sourceGeneration
+  const resumeReading = async () => {
+    setIsResumingReading(true)
+    setResumeReadingError(null)
+    try {
+      await recordingOperation('ResumeRecordingLearning', { recordingId, expectedSourceGeneration: generation })
+      await learning.reload()
+    } catch (caught) {
+      setResumeReadingError(caughtText(caught))
+    } finally {
+      setIsResumingReading(false)
+    }
+  }
   const save = async () => {
     if (!dialog) return
     setIsSaving(true)
@@ -168,6 +251,9 @@ export function RecordingProcessingPanel({
     setParameters((previous) => {
       const next = new URLSearchParams(previous)
       next.set('version', runId)
+      next.delete('run')
+      next.delete('startMS')
+      next.delete('endMS')
       next.delete('transcriptPage')
       return next
     })
@@ -203,8 +289,9 @@ export function RecordingProcessingPanel({
             title={t('recordingProcessing.occurrence')}
             subtitle={owned.recording.recordedAt ?? t('recordingProcessing.unknownOccurrence')}
             actions={
-              <button
-                type="button"
+              <RecordingRowAction
+                label={t('recordingProcessing.editMetadata')}
+                icon={<PencilIcon size={16} />}
                 onClick={() =>
                   show({
                     operationName: 'UpdateRecordingMetadata',
@@ -220,9 +307,7 @@ export function RecordingProcessingPanel({
                     ],
                   })
                 }
-              >
-                {t('recordingProcessing.editMetadata')}
-              </button>
+              />
             }
           />
         ) : null}
@@ -234,8 +319,13 @@ export function RecordingProcessingPanel({
               title={media.originalFilename}
               subtitle={t('recordingProcessing.timelineStart', { timelineTime: timelineTime(media.timelineStartMS) })}
               actions={
-                <button
-                  type="button"
+                <RecordingRowAction
+                  label={t(
+                    runs.some((run) => run.recordingMediaId === media.id)
+                      ? 'recordingProcessing.reprocess'
+                      : 'recordingProcessing.process',
+                  )}
+                  icon={<MicrophoneIcon size={16} />}
                   disabled={!owned || !availability.data?.isTranscriptionAvailable}
                   onClick={() =>
                     show({
@@ -252,13 +342,7 @@ export function RecordingProcessingPanel({
                       fields: [],
                     })
                   }
-                >
-                  {t(
-                    runs.some((run) => run.recordingMediaId === media.id)
-                      ? 'recordingProcessing.reprocess'
-                      : 'recordingProcessing.process',
-                  )}
-                </button>
+                />
               }
             />
           ))}
@@ -271,6 +355,9 @@ export function RecordingProcessingPanel({
             setParameters((previous) => {
               const next = new URLSearchParams(previous)
               next.delete('version')
+              next.delete('run')
+              next.delete('startMS')
+              next.delete('endMS')
               next.delete('transcriptPage')
               return next
             })
@@ -299,10 +386,11 @@ export function RecordingProcessingPanel({
               />
             }
             actions={
-              <div className="page-actions">
+              <div className="row-actions">
                 {['queued', 'preparing', 'transcribing'].includes(run.recordingProcessingState) ? (
-                  <button
-                    type="button"
+                  <RecordingRowAction
+                    label={t('recordingProcessing.cancelProcessing')}
+                    icon={<StopIcon size={16} />}
                     onClick={() =>
                       show({
                         operationName: 'CancelRecordingTranscription',
@@ -311,13 +399,12 @@ export function RecordingProcessingPanel({
                         fields: [],
                       })
                     }
-                  >
-                    {t('recordingProcessing.cancelProcessing')}
-                  </button>
+                  />
                 ) : null}
                 {!['complete', 'uncertain'].includes(run.recordingProcessingState) ? (
-                  <button
-                    type="button"
+                  <RecordingRowAction
+                    label={t('recordingProcessing.retry')}
+                    icon={<RefreshIcon size={16} />}
                     onClick={() =>
                       show({
                         operationName: 'RetryRecordingTranscription',
@@ -326,9 +413,7 @@ export function RecordingProcessingPanel({
                         fields: [],
                       })
                     }
-                  >
-                    {t('recordingProcessing.retry')}
-                  </button>
+                  />
                 ) : null}
               </div>
             }
@@ -338,8 +423,47 @@ export function RecordingProcessingPanel({
       </SettingsSection>
       {owned ? (
         <SettingsSection card title={t('recordingProcessing.transcript')}>
-          <ErrorMessage error={selectedRun ? transcript.error : timeline.error} />
-          {!selectedRun ? <p className="muted">{t('recordingProcessing.timelineHint')}</p> : null}
+          <ErrorMessage error={citation.requestedRunId ? transcript.error : timeline.error} />
+          {citation.hasInvalidBounds ? (
+            <SettingsEmpty>{t('recordingProcessing.citationInvalidBounds')}</SettingsEmpty>
+          ) : citation.requestedRunId && !selectedRun && !versions.loading ? (
+            <SettingsEmpty>{t('recordingProcessing.citationVersionMissing')}</SettingsEmpty>
+          ) : citationOffset.error ? (
+            <SettingsEmpty>{caughtText(citationOffset.error)}</SettingsEmpty>
+          ) : null}
+          {!citation.requestedRunId ? <p className="muted">{t('recordingProcessing.timelineHint')}</p> : null}
+          {selectedRun &&
+          ownedCitationOffset !== null &&
+          citation.passageStartMS !== null &&
+          citation.passageEndMS !== null ? (
+            <SettingsRow
+              title={t('recordingProcessing.citedPassage')}
+              subtitle={
+                <a
+                  href={passagePlaybackPath(
+                    selectedRun.recordingMediaId,
+                    citation.passageStartMS,
+                    citation.passageEndMS,
+                    mediaFiles.find((media) => media.id === selectedRun.recordingMediaId)?.timelineStartMS ?? 0,
+                  )}
+                  onClick={(event) => {
+                    if (!onPlayPassage || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                    if (citation.passageStartMS === null || citation.passageEndMS === null) return
+                    event.preventDefault()
+                    onPlayPassage(selectedRun.recordingMediaId, citation.passageStartMS, citation.passageEndMS)
+                  }}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t('recordingProcessing.playCitedPassage')}{' '}
+                  {t('recordingProcessing.passageRange', {
+                    startTime: timelineTime(citation.passageStartMS),
+                    endTime: timelineTime(citation.passageEndMS),
+                  })}
+                </a>
+              }
+            />
+          ) : null}
           <ErrorMessage error={invalidations.error} />
           {(invalidations.data ?? [])
             .filter((invalidation) => displayedRuns.some((run) => run.id === invalidation.recordingTranscriptRunId))
@@ -353,6 +477,11 @@ export function RecordingProcessingPanel({
             const segmentRun = displayedRuns.find((run) => run.id === segment.recordingTranscriptRunId)
             if (!segmentRun) return null
             const confirmedName = confirmedSegmentName(segment)
+            const isCitedPassage = Boolean(
+              selectedRun &&
+              ownedCitationOffset !== null &&
+              overlapsRecordingCitation(segment.segmentStartMS, segment.segmentEndMS, citation),
+            )
             const automaticIsUncertain = (invalidations.data ?? []).some(
               (invalidation) =>
                 invalidation.recordingTranscriptionAttemptId === segment.recordingTranscriptionAttemptId,
@@ -360,6 +489,13 @@ export function RecordingProcessingPanel({
             return (
               <SettingsRow
                 key={segment.id}
+                badge={
+                  isCitedPassage ? (
+                    <span ref={segment.id === citedSegmentId ? citedPassageElement : undefined}>
+                      <Tag value={t('recordingProcessing.citedPassage')} tone="good" />
+                    </span>
+                  ) : undefined
+                }
                 title={
                   <>
                     <a
@@ -369,6 +505,11 @@ export function RecordingProcessingPanel({
                         segment.segmentEndMS,
                         mediaFiles.find((media) => media.id === segmentRun.recordingMediaId)?.timelineStartMS ?? 0,
                       )}
+                      onClick={(event) => {
+                        if (!onPlayPassage || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                        event.preventDefault()
+                        onPlayPassage(segmentRun.recordingMediaId, segment.segmentStartMS, segment.segmentEndMS)
+                      }}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -406,9 +547,10 @@ export function RecordingProcessingPanel({
                   </>
                 }
                 actions={
-                  <div className="page-actions">
-                    <button
-                      type="button"
+                  <div className="row-actions">
+                    <RecordingRowAction
+                      label={t('recordingProcessing.nameSpeaker')}
+                      icon={<AddPersonIcon size={16} />}
                       disabled={generation === undefined || !segment.localSpeakerId}
                       onClick={() =>
                         show({
@@ -442,11 +584,10 @@ export function RecordingProcessingPanel({
                           ],
                         })
                       }
-                    >
-                      {t('recordingProcessing.nameSpeaker')}
-                    </button>
-                    <button
-                      type="button"
+                    />
+                    <RecordingRowAction
+                      label={t('recordingProcessing.editText')}
+                      icon={<PencilIcon size={16} />}
                       disabled={generation === undefined}
                       onClick={() =>
                         show({
@@ -468,12 +609,11 @@ export function RecordingProcessingPanel({
                           ],
                         })
                       }
-                    >
-                      {t('recordingProcessing.editText')}
-                    </button>
+                    />
                     {segment.appliedTextCorrectionId ? (
-                      <button
-                        type="button"
+                      <RecordingRowAction
+                        label={t('recordingProcessing.resetText')}
+                        icon={<EraserIcon size={16} />}
                         onClick={() =>
                           show({
                             operationName: 'RemoveRecordingTranscriptTextCorrection',
@@ -486,9 +626,7 @@ export function RecordingProcessingPanel({
                             fields: [],
                           })
                         }
-                      >
-                        {t('recordingProcessing.resetText')}
-                      </button>
+                      />
                     ) : null}
                   </div>
                 }
@@ -553,8 +691,9 @@ export function RecordingProcessingPanel({
               key={identity.id}
               title={identity.confirmedName}
               actions={
-                <button
-                  type="button"
+                <RecordingRowAction
+                  label={t('recordingProcessing.renameSpeaker')}
+                  icon={<PencilIcon size={16} />}
                   onClick={() =>
                     show({
                       operationName: 'RenameRecordingSpeaker',
@@ -565,9 +704,7 @@ export function RecordingProcessingPanel({
                       ],
                     })
                   }
-                >
-                  {t('recordingProcessing.renameSpeaker')}
-                </button>
+                />
               }
             />
           ))}
@@ -588,6 +725,11 @@ export function RecordingProcessingPanel({
                     correction.passageEndMS,
                     mediaFiles.find((media) => media.id === correction.recordingMediaId)?.timelineStartMS ?? 0,
                   )}
+                  onClick={(event) => {
+                    if (!onPlayPassage || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                    event.preventDefault()
+                    onPlayPassage(correction.recordingMediaId, correction.passageStartMS, correction.passageEndMS)
+                  }}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -598,8 +740,10 @@ export function RecordingProcessingPanel({
                 </a>
               }
               actions={
-                <button
-                  type="button"
+                <RecordingRowAction
+                  label={t('recordingProcessing.resetSpeaker')}
+                  icon={<TrashIcon size={16} />}
+                  isDestructive
                   onClick={() =>
                     show({
                       operationName: 'RemoveRecordingSpeakerCorrection',
@@ -612,9 +756,7 @@ export function RecordingProcessingPanel({
                       fields: [],
                     })
                   }
-                >
-                  {t('recordingProcessing.resetSpeaker')}
-                </button>
+                />
               }
             />
           ))}
@@ -636,6 +778,11 @@ export function RecordingProcessingPanel({
                     reference.passageEndMS,
                     mediaFiles.find((media) => media.id === reference.recordingMediaId)?.timelineStartMS ?? 0,
                   )}
+                  onClick={(event) => {
+                    if (!onPlayPassage || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                    event.preventDefault()
+                    onPlayPassage(reference.recordingMediaId, reference.passageStartMS, reference.passageEndMS)
+                  }}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -647,8 +794,10 @@ export function RecordingProcessingPanel({
                 </a>
               }
               actions={
-                <button
-                  type="button"
+                <RecordingRowAction
+                  label={t('recordingProcessing.deleteReference')}
+                  icon={<TrashIcon size={16} />}
+                  isDestructive
                   onClick={() =>
                     show({
                       operationName: 'DeleteRecordingVoiceReference',
@@ -662,9 +811,7 @@ export function RecordingProcessingPanel({
                       fields: [],
                     })
                   }
-                >
-                  {t('recordingProcessing.deleteReference')}
-                </button>
+                />
               }
             />
           ))}
@@ -678,6 +825,7 @@ export function RecordingProcessingPanel({
         description={t('recordingProcessing.learningHint')}
       >
         <ErrorMessage error={learning.error} />
+        <ErrorMessage error={resumeReadingError} />
         {learning.data ? (
           <>
             <p>
@@ -704,12 +852,36 @@ export function RecordingProcessingPanel({
                       : 'recordingProcessing.sourcePaused',
                   )
                 }
+                actions={
+                  <RecordingSourceSchedule
+                    sourceId={learning.data.knowledgeSource.id}
+                    sourceCron={learning.data.knowledgeSource.cron}
+                    sourceTitle={owned?.recording.recordingTitle ?? t('recordingProcessing.untitledRecording')}
+                    isIconOnly
+                    onSaved={learning.reload}
+                  />
+                }
               />
             ) : (
               <p>
-                {t(learning.data.hasAgent ? 'recordingProcessing.noPublishedSource' : 'recordingProcessing.noAgent')}
+                {t(
+                  learning.data.hasStoppedReading
+                    ? 'recordingProcessing.sourceStopped'
+                    : learning.data.hasAgent
+                      ? 'recordingProcessing.noPublishedSource'
+                      : 'recordingProcessing.noAgent',
+                )}
               </p>
             )}
+            {learning.data.hasStoppedReading ? (
+              <button
+                type="button"
+                disabled={isResumingReading || generation === undefined}
+                onClick={() => void resumeReading()}
+              >
+                {t('recordingProcessing.resumeReading')}
+              </button>
+            ) : null}
           </>
         ) : null}
       </SettingsSection>
@@ -739,8 +911,9 @@ export function RecordingProcessingPanel({
               {t('recordingProcessing.correctedText')}: {correction.correctedTranscriptText}
             </p>
             {!correction.isRemoved ? (
-              <button
-                type="button"
+              <RecordingRowAction
+                label={t('recordingProcessing.resetText')}
+                icon={<EraserIcon size={16} />}
                 onClick={() =>
                   show({
                     operationName: 'RemoveRecordingTranscriptTextCorrection',
@@ -753,9 +926,7 @@ export function RecordingProcessingPanel({
                     fields: [],
                   })
                 }
-              >
-                {t('recordingProcessing.resetText')}
-              </button>
+              />
             ) : null}
           </details>
         ))}
