@@ -5,6 +5,7 @@ struct RecordingAttachmentImportView: View {
     let connection: Connection
     let attachment: AgentAttachment
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var recordingTitle = ""
     @State private var draft: RecordingAttachmentImportDraft?
     @State private var importedRecording: Recording?
@@ -15,7 +16,14 @@ struct RecordingAttachmentImportView: View {
         NavigationStack {
             Form {
                 Section {
-                    Label(attachment.name, systemImage: "paperclip")
+                    let filenameLayout =
+                        dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                        : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+                    filenameLayout {
+                        Image(systemName: "paperclip").accessibilityHidden(true)
+                        Text(attachment.name)
+                    }.accessibilityElement(children: .combine)
                     TextField("Meeting title (optional)", text: $recordingTitle).disabled(draft != nil || isImporting)
                 } footer: {
                     Text(
@@ -34,6 +42,7 @@ struct RecordingAttachmentImportView: View {
                 if let problemText { Text(problemText).foregroundStyle(.secondary) }
             }
             .navigationTitle("Import recording")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(isImporting) } }
             .onAppear {
                 draft = RecordingAttachmentImportDrafts.read(accountKey: connection.accountKey, attachmentId: attachment.id)

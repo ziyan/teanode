@@ -118,3 +118,9 @@ No physical-device result or actual provider bill has been measured here.
 | Learning and reference invalidations | Existing source controls and provenance warnings; human title from source settings | Integrated reconciliation evidence |
 | Metadata and raw deletion | Native generation-aware title/time, explicit deletion | Account isolation smoke against integrated server |
 | Local capture and lock-screen controls | Rolling originals, durable recovery and recording-specific intents | Physical iPhone lock/interruption/relaunch evidence |
+
+The latest SDK build passed; 27 recording captures passed rendered-content checks.
+The attachment import capture at largest text exposed a truncated large title and
+horizontal filename wrapping. The import sheet now uses an inline navigation title
+and a vertical filename/icon arrangement at accessibility sizes. Its capture and
+source/citation/stopped-learning routes require the next exact-head visual run.
