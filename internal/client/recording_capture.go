@@ -293,7 +293,7 @@ func (self *Client) openRecordingLiveStream(ctx context.Context, recordingId str
 		address.Scheme = "ws"
 	}
 	address.Path = strings.TrimSuffix(address.Path, "/") + strings.Replace(api.PathRecordingLive, "{recordingId}", url.PathEscape(recordingId), 1)
-	conn, response, err := websocket.DefaultDialer.DialContext(ctx, address.String(), http.Header{})
+	conn, response, err := websocket.DefaultDialer.DialContext(ctx, address.String(), http.Header{"Authorization": {"Bearer " + self.token}})
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
