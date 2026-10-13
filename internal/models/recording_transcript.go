@@ -126,7 +126,10 @@ type RecordingTranscriptSegment struct {
 	EffectiveSpeakerIdentityID      string               `json:"effectiveSpeakerIdentityId" gorm:"-"`
 	EffectiveSpeakerName            string               `json:"effectiveSpeakerName" gorm:"-"`
 	HasUserConfirmedSpeaker         bool                 `json:"hasUserConfirmedSpeaker" gorm:"-"`
-	IsAccountOwner                  bool                 `json:"isAccountOwner" gorm:"-"`
-	HasUnalignedSpeakerCorrection   bool                 `json:"hasUnalignedSpeakerCorrection" gorm:"-"`
-	AppliedSpeakerCorrectionID      string               `json:"appliedSpeakerCorrectionId" gorm:"-"`
+	// IsRecognizedSpeaker is a speaker the transcription named after one of
+	// the voice samples it was sent, which the person has not confirmed here.
+	IsRecognizedSpeaker           bool   `json:"isRecognizedSpeaker" gorm:"-"`
+	IsAccountOwner                bool   `json:"isAccountOwner" gorm:"-"`
+	HasUnalignedSpeakerCorrection bool   `json:"hasUnalignedSpeakerCorrection" gorm:"-"`
+	AppliedSpeakerCorrectionID    string `json:"appliedSpeakerCorrectionId" gorm:"-"`
 }

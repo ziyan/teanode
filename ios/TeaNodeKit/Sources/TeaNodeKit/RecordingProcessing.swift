@@ -26,12 +26,15 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     public var effectiveSpeakerIdentityId: String? = nil
     public var effectiveSpeakerName: String? = nil
     public var hasUserConfirmedSpeaker: Bool? = nil
+    /// Whether the transcription named this speaker after one of the person's voice samples, without the person confirming it here.
+    public var isRecognizedSpeaker: Bool? = nil
     /// Whether the confirmed speaker is the person who owns the account, which is the side of the conversation their bubbles sit on.
     public var isAccountOwner: Bool? = nil
     public var hasUnalignedSpeakerCorrection: Bool? = nil
     public var appliedSpeakerCorrectionId: String? = nil
+    /// The speaker's name when the person confirmed it or a voice sample recognized it; nil while it is only a label.
     public var confirmedSpeakerName: String? {
-        guard hasUserConfirmedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
+        guard hasUserConfirmedSpeaker == true || isRecognizedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
             let effectiveSpeakerName, !effectiveSpeakerName.isEmpty
         else { return nil }
         return effectiveSpeakerName
@@ -110,7 +113,7 @@ extension Documents {
         ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize)
         { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId
         localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText appliedTextCorrectionId
-        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isAccountOwner hasUnalignedSpeakerCorrection
+        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker isAccountOwner hasUnalignedSpeakerCorrection
         appliedSpeakerCorrectionId } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount
         actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }
         """

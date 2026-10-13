@@ -229,6 +229,8 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 					confirmedName = segment.EffectiveSpeakerName + " (user confirmed)"
 				} else if segment.HasUnalignedSpeakerCorrection {
 					confirmedName = "speaker correction is partial or cannot be unambiguously aligned; attribution uncertain"
+				} else if segment.IsRecognizedSpeaker && !hasInvalidatedAttribution {
+					confirmedName = segment.EffectiveSpeakerName + " (recognized by voice, not confirmed by the user)"
 				}
 				title := fmt.Sprintf("%s, transcript version %d, %d-%d MS, %s", recordingSource.RecordingTitle, transcriptRun.VersionNumber, segment.SegmentStartMS, segment.SegmentEndMS, confirmedName)
 				meetingTime := "Meeting occurrence time is unknown."

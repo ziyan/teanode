@@ -200,7 +200,7 @@ func recordingTranscriptLines(transaction db.Transaction, userId, recordingId st
 		for _, segment := range segments {
 			if text := strings.TrimSpace(segment.EffectiveTranscriptText); text != "" {
 				speakerLabel := "Speaker " + segment.LocalSpeakerID
-				if segment.HasUserConfirmedSpeaker && segment.EffectiveSpeakerName != "" {
+				if (segment.HasUserConfirmedSpeaker || segment.IsRecognizedSpeaker) && segment.EffectiveSpeakerName != "" {
 					speakerLabel = segment.EffectiveSpeakerName
 				}
 				lines = append(lines, speakerLabel+": "+text)
