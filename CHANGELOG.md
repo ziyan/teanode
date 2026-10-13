@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.146.0] - 2026-10-13
+
+### Added
+
+- Native meeting capture and recording library with recoverable uploads and transcript management. (#435)
+
 ## [0.145.0] - 2026-10-13
 
 ### Added
