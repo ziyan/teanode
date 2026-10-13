@@ -939,6 +939,34 @@ carries its transcript run and range so a click opens the recording at
 that place. Evidence that is a document read from a sent message is shown
 as the mail item it was read from.
 
+A dream makes the links nobody should have to make by hand
+(`dream_record_links.go`, after the pages are divided and before the
+overviews are written). It asks no model and spends none of the dream's
+share. It **states** a link only where the match is certain: an address of a
+person page that is on exactly one card of a granted address book and on no
+other page (the page also takes that card as its contact); a speaker name the
+person confirmed on a recording that is exactly one page's name or alias,
+for each turn of that speaker (the identity that is the person themselves
+goes to the self page); the sender of a message in a granted mailbox's Inbox
+or Archive (`wrote`) and the recipients of a message in its Sent folder
+(`received`), by exact address; the organizer and guests of an event in a
+granted calendar, by exact address (`organized`, `attended`); and, for a
+receipt already matched to a transaction, the receipt link of each page that
+has `paid` or `paid_by` that transaction, with the same status. It
+**proposes** a guess: a card whose full name is exactly the page's and no
+other page's; a project whose name is a whole word run in the title of an
+event or reminder (`about`); an organization whose name is exactly a
+transaction's merchant (`paid`, the page being the one the money went to).
+Each dream makes at most three hundred new links and looks only at the newest
+records of each source (a hundred messages per folder, fifty recordings, two
+hundred transactions), so the cost does not grow with the history and the rest
+is covered by later dreams. A link already there is left alone and a
+statement is never turned into a proposal. Every record is checked with the
+same resolver the agent reads links with before the link is written, so a
+record the agent was not given is not linked. A link the person took off a
+page is kept in `agent_record_link_dismissal` and not made again, until the
+person makes it by hand. There is no separate button: "Dream now" runs it.
+
 The agent reaches all of it through the memory tool: `links` (a page's
 records, each read under the grant), `backlinks` (the pages linked to a
 record), `link` and `unlink` with `record`. `get` of a person's page

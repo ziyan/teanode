@@ -107,6 +107,14 @@ func (self *transaction) PutAgentRecordLink(link *models.AgentRecordLink) (*mode
 		Evidence: evidence, Note: truncateRunes(written.Note, maximumRecordLinkNoteLength),
 		HappenedAt: written.HappenedAt, CreatedAt: now, ModifiedAt: now,
 	}
+	// Making a link by hand takes back an earlier removal. The dream, which
+	// is the one writer that honors removals, never does.
+	if self.actor != models.ActorDream {
+		if err := self.tx.Where(recordLinkKeyWhere, row.AgentID, row.NodeID, row.RecordKind, row.RecordID,
+			row.RecordRelation, row.PassageStartMS, row.PassageEndMS).Delete(&agentRecordLinkDismissalModel{}).Error; err != nil {
+			return nil, err
+		}
+	}
 	var existing []agentRecordLinkModel
 	if err := self.tx.Where(recordLinkKeyWhere, row.AgentID, row.NodeID, row.RecordKind, row.RecordID,
 		row.RecordRelation, row.PassageStartMS, row.PassageEndMS).Limit(1).Find(&existing).Error; err != nil {
@@ -159,6 +167,24 @@ func (self *transaction) DeleteAgentRecordLink(agentId, nodeId string, recordKin
 	if recordKind == models.RecordRecordingPassage && (startMS != 0 || endMS != 0) {
 		query = query.Where(`"passage_start_ms" = ? AND "passage_end_ms" = ?`, startMS, endMS)
 	}
+	// Remembered before the links go, so that the automatic passes do not
+	// make again what somebody just took away.
+	var removed []agentRecordLinkModel
+	if err := query.Session(&gorm.Session{}).Find(&removed).Error; err != nil {
+		return 0, err
+	}
+	now := time.Now().Truncate(time.Microsecond)
+	for index := range removed {
+		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&agentRecordLinkDismissalModel{
+			AgentID: removed[index].AgentID, NodeID: removed[index].NodeID,
+			RecordKind: removed[index].RecordKind, RecordID: removed[index].RecordID,
+			RecordRelation: removed[index].RecordRelation,
+			PassageStartMS: removed[index].PassageStartMS, PassageEndMS: removed[index].PassageEndMS,
+			CreatedAt: now,
+		}).Error; err != nil {
+			return 0, err
+		}
+	}
 	result := query.Delete(&agentRecordLinkModel{})
 	if result.Error != nil {
 		return 0, result.Error
@@ -168,6 +194,34 @@ func (self *transaction) DeleteAgentRecordLink(agentId, nodeId string, recordKin
 			map[string]any{"path": models.FormatRecordReference(recordKind, recordId, startMS, endMS), "relation": string(recordRelation)}, nil, "")
 	}
 	return result.RowsAffected, nil
+}
+
+type agentRecordLinkDismissalModel struct {
+	AgentID        string    `gorm:"column:agent_id;primaryKey"`
+	NodeID         string    `gorm:"column:node_id;primaryKey"`
+	RecordKind     string    `gorm:"column:record_kind;primaryKey"`
+	RecordID       string    `gorm:"column:record_id;primaryKey"`
+	RecordRelation string    `gorm:"column:record_relation;primaryKey"`
+	PassageStartMS int64     `gorm:"column:passage_start_ms;primaryKey"`
+	PassageEndMS   int64     `gorm:"column:passage_end_ms;primaryKey"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+}
+
+func (agentRecordLinkDismissalModel) TableName() string { return "agent_record_link_dismissal" }
+
+// ListAgentRecordLinkDismissals is the links the person took off pages of
+// this agent, as references, for the automatic passes to leave alone.
+func (self *transaction) ListAgentRecordLinkDismissals(agentId string) (map[string]bool, error) {
+	var rows []agentRecordLinkDismissalModel
+	if err := self.tx.Where(`"agent_id" = ?`, agentId).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	dismissed := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		dismissed[models.RecordLinkKey(row.NodeID, models.AgentRecordKind(row.RecordKind), row.RecordID,
+			models.AgentRecordRelation(row.RecordRelation), row.PassageStartMS, row.PassageEndMS)] = true
+	}
+	return dismissed, nil
 }
 
 func (self *transaction) GetAgentRecordLink(agentId, linkId string) (*models.AgentRecordLink, error) {
@@ -275,4 +329,21 @@ func (self *transaction) moveAgentRecordLinks(agentId, fromNodeId, intoNodeId st
 	}
 	// What is left on the merged page went with its twin on the survivor.
 	return self.tx.Exec(`DELETE FROM "agent_record_link" WHERE "agent_id" = ? AND "node_id" = ?`, agentId, fromNodeId).Error
+}
+
+// ListAgentRecordLinkStatuses is every record link of the agent as its key
+// (models.RecordLinkKey) and status, for a pass that must not write what is
+// already there and must not turn a statement into a proposal.
+func (self *transaction) ListAgentRecordLinkStatuses(agentId string) (map[string]models.AgentEdgeStatus, error) {
+	var rows []agentRecordLinkModel
+	if err := self.tx.Select(`"node_id", "record_kind", "record_id", "record_relation", "passage_start_ms", "passage_end_ms", "link_status"`).
+		Where(`"agent_id" = ?`, agentId).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	statuses := make(map[string]models.AgentEdgeStatus, len(rows))
+	for _, row := range rows {
+		statuses[models.RecordLinkKey(row.NodeID, models.AgentRecordKind(row.RecordKind), row.RecordID,
+			models.AgentRecordRelation(row.RecordRelation), row.PassageStartMS, row.PassageEndMS)] = models.AgentEdgeStatus(row.LinkStatus)
+	}
+	return statuses, nil
 }

@@ -14,7 +14,7 @@ To see it working: open a person page on the dashboard and see a Linked records 
 
 - [x] Milestone 1: the link model and API (record links table, typed record references, contact link, page links and record backlinks, fact evidence that names a record). Done 2026-10-13: migration `0176_agent_record_link`, `models.AgentRecordLink`, the DB methods, package `recordlink` (reads a link's record under the reader's access), GraphQL and client documents, and the CLI (see Interfaces and Dependencies). Tests: `internal/db/database_graph_record_test.go`, `internal/recordlink/recordlink_test.go`, `internal/api/v1api/apigraph/agent_graph_record_test.go`, `internal/cmd/agent_graph_record_test.go`.
 - [x] Milestone 2: the agent reads and makes links (memory tool operations, contact card on a person page within grants, prompt context). Done 2026-10-13: `links`, `backlinks`, `link --record`, `unlink --record` on the memory tool, the linked card in `get`, record titles in recalled pages, the self card in the prompt read only from a granted book. Tests: `internal/agent/tools/memory/records_test.go`, `internal/agent/graph_record_prompt_internal_test.go`.
-- [ ] Milestone 3: links made automatically (contacts by address and name, recording speakers and passages, mail participants, calendar attendees, finance merchants and receipts), as stated when sure and proposed when guessed.
+- [x] Milestone 3: links made automatically (contacts by address and name, recording speakers and passages, mail participants, calendar attendees, finance merchants and receipts), as stated when sure and proposed when guessed. Done 2026-10-13: `internal/agent/dream_record_links.go`, run by every dream after the pages are divided; migration `0179_agent_record_link_dismissal`. Tests: `internal/agent/dream_record_links_internal_test.go` (one per source and the bound), `internal/db/database_graph_record_test.go`.
 - [ ] Milestone 4: the dashboard (Linked records on a page, clickable evidence, In memory on records, contact picker, record nodes in the graph view).
 - [ ] Milestone 5: the iPhone app and the CLI, with the same reads and edits.
 
@@ -64,6 +64,21 @@ To see it working: open a person page on the dashboard and see a Linked records 
   Date/Author: 2026-10-13, Claude.
 - Decision: merging two pages moves the first page's record links to the survivor (a twin the survivor already has is kept once) and the survivor takes the first page's `contact_id` when it has none.
   Rationale: a link lost in a merge is a link nobody notices is gone.
+  Date/Author: 2026-10-13, Claude.
+- Decision: a link the person removes is remembered (table `agent_record_link_dismissal`, same key as the link) and the automatic pass skips it; making the link by hand clears it, and a write while dreaming never does.
+  Rationale: the passes are idempotent by the unique key, so without a record of the removal the next dream would put back every link the person took away, a proposal they declined included.
+  Date/Author: 2026-10-13, Claude. Not in the plan; a migration of its own.
+- Decision: `paid` is the page the money went to (a merchant organization), `paid_by` the page it came from; a receipt takes the `receipt_for` link, with the same status, of each page that has `paid` or `paid_by` its matched transaction, rather than being matched to a page by merchant name on its own.
+  Rationale: the plan's "receipts already matched to a transaction" says the match is the certain part; the page comes from the transaction's link, which is what the person or the pass already judged.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the pass looks at the newest records of each source and not at a cursor, writes at most 300 links a dream, and reports its counts in the log and not on the dream's record.
+  Rationale: a cursor and two new counters on `agent_dream` would be a second migration and a change to every client for a number nobody has asked for; the unique key makes repeating the newest records free, and older ones are reached as pages and cards change.
+  Date/Author: 2026-10-13, Claude.
+- Decision: no separate on-demand trigger; "Dream now" runs the pass.
+  Rationale: the task asked for one only if a similar pass has one, and the dream's other no-model passes (the quiet half, the revise pass) have none.
+  Date/Author: 2026-10-13, Claude.
+- Decision: a recording passage link is one speaker's turn: segments of one confirmed speaker with at most two seconds of silence between them.
+  Rationale: a link per segment would make hundreds per recording; a turn is what a person means by "where they spoke", and the backlink query is a range overlap so any bubble inside the turn finds it.
   Date/Author: 2026-10-13, Claude.
 
 ## Outcomes & Retrospective

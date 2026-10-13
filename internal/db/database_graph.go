@@ -222,6 +222,19 @@ type GraphOperation interface {
 	DeleteAgentRecordLink(agentId, nodeId string, recordKind models.AgentRecordKind, recordId string, recordRelation models.AgentRecordRelation, startMS, endMS int64) (int64, error)
 	GetAgentRecordLink(agentId, linkId string) (*models.AgentRecordLink, error)
 
+	// ListAgentRecordLinkDismissals is the links the person took off a
+	// page by hand, keyed as models.RecordLinkKey, which the automatic
+	// passes must not make again. Making the link by hand clears it.
+	ListAgentRecordLinkDismissals(agentId string) (map[string]bool, error)
+
+	// ListAgentRecordLinkStatuses is every link of the agent keyed as
+	// models.RecordLinkKey, with its status.
+	ListAgentRecordLinkStatuses(agentId string) (map[string]models.AgentEdgeStatus, error)
+
+	// ListAgentNodesOfKinds is the live pages of these kinds, most important
+	// first, up to the limit (at most 5000), for a pass that matches names.
+	ListAgentNodesOfKinds(agentId string, kinds []models.AgentNodeKind, limit int) ([]*models.AgentNode, error)
+
 	// ListAgentRecordLinks is everything a page is linked to, grouped by
 	// the kind of record and newest first. ListAgentRecordBacklinks is the
 	// other direction: the pages linked to one record, with their paths
@@ -925,6 +938,18 @@ func (self *transaction) ListAgentNodesOfKind(agentId string, kind models.AgentN
 		query = query.Where(`LOWER("name") LIKE ? OR LOWER("aliases"::text) LIKE ?`, like, like)
 	}
 	return self.nodesFrom(query.Order(`"importance" DESC, "modified_at" DESC`).Limit(limit))
+}
+
+func (self *transaction) ListAgentNodesOfKinds(agentId string, kinds []models.AgentNodeKind, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 5000
+	}
+	names := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		names = append(names, string(kind))
+	}
+	return self.nodesFrom(self.tx.Where(`"agent_id" = ? AND "kind" IN ? AND NOT "dormant"`, agentId, names).
+		Order(`"importance" DESC, "modified_at" DESC, "id" ASC`).Limit(limit))
 }
 
 func (self *transaction) ListAgentIndex(agentId string, limit int) ([]*models.AgentNode, error) {

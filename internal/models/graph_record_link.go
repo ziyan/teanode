@@ -53,8 +53,8 @@ type AgentRecordRelation string
 
 // The relations. IsContact is the page's person being that card; Wrote and
 // Received are mail; Attended and Organized are events; SpokeIn is a
-// passage of a recording; Paid and PaidBy are a transaction, the page being
-// the payer or the payee; ReceiptFor is a receipt standing behind a
+// passage of a recording; Paid and PaidBy are a transaction, Paid being the
+// page the money went to (a merchant) and PaidBy the page it came from; ReceiptFor is a receipt standing behind a
 // transaction; MentionedIn and About are the loose ones.
 const (
 	RecordRelationIsContact   AgentRecordRelation = "is_contact"
@@ -245,4 +245,10 @@ func joinRecordKinds() string {
 		text += string(recordKind)
 	}
 	return text
+}
+
+// RecordLinkKey is the unique key of a link as one string, for a set of
+// links a pass has already seen or the person has dismissed.
+func RecordLinkKey(nodeId string, recordKind AgentRecordKind, recordId string, recordRelation AgentRecordRelation, startMS, endMS int64) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%d|%d", nodeId, recordKind, recordId, recordRelation, startMS, endMS)
 }

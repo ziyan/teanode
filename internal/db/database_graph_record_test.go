@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -251,6 +252,95 @@ func TestSetAgentNodeContactIsScopedToTheAgent(t *testing.T) {
 		}
 		if found, _ := tx.GetAgentNodeByID(mine.ID, page.ID); found.ContactID != "" {
 			t.Errorf("the card was not cleared: %q", found.ContactID)
+		}
+	})
+}
+
+// A link taken away by hand is remembered for the automatic passes, making
+// it by hand again forgets that, and a link made while dreaming does not.
+func TestRemovedRecordLinksAreRememberedUntilMadeByHand(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		page := aPersonPage(t, tx, agent, "people/fixture-one")
+		link := models.AgentRecordLink{AgentID: agent.ID, NodeID: page.ID, RecordKind: models.RecordRecordingPassage, RecordID: "recording-1",
+			PassageStartMS: 1000, PassageEndMS: 2000, RecordRelation: models.RecordRelationSpokeIn, LinkStatus: models.EdgeProposed}
+		key := models.RecordLinkKey(page.ID, link.RecordKind, link.RecordID, link.RecordRelation, 1000, 2000)
+		if _, err := tx.PutAgentRecordLink(&link); err != nil {
+			t.Fatal(err)
+		}
+		if dismissed, err := tx.ListAgentRecordLinkDismissals(agent.ID); err != nil || len(dismissed) != 0 {
+			t.Fatalf("nothing is dismissed by making a link: %v %v", dismissed, err)
+		}
+		if removed, err := tx.DeleteAgentRecordLink(agent.ID, page.ID, link.RecordKind, link.RecordID, "", 0, 0); err != nil || removed != 1 {
+			t.Fatalf("remove: %d %v", removed, err)
+		}
+		if dismissed, _ := tx.ListAgentRecordLinkDismissals(agent.ID); !dismissed[key] {
+			t.Fatalf("the removal is remembered with the link's key: %v", dismissed)
+		}
+
+		dreaming := link
+		tx.AsActor(models.ActorDream)
+		if _, err := tx.PutAgentRecordLink(&dreaming); err != nil {
+			t.Fatal(err)
+		}
+		if dismissed, _ := tx.ListAgentRecordLinkDismissals(agent.ID); !dismissed[key] {
+			t.Fatalf("a dream does not undo a removal: %v", dismissed)
+		}
+
+		tx.AsActor(models.ActorPerson)
+		byHand := link
+		byHand.LinkStatus = models.EdgeStated
+		if _, err := tx.PutAgentRecordLink(&byHand); err != nil {
+			t.Fatal(err)
+		}
+		if dismissed, _ := tx.ListAgentRecordLinkDismissals(agent.ID); len(dismissed) != 0 {
+			t.Fatalf("making it by hand forgets the removal: %v", dismissed)
+		}
+		statuses, err := tx.ListAgentRecordLinkStatuses(agent.ID)
+		if err != nil || statuses[key] != models.EdgeStated {
+			t.Fatalf("statuses: %v %v", statuses, err)
+		}
+	})
+}
+
+// Newest first by the message's own time needs no other option to say so.
+func TestItemsByReceivedTimeNeedNoOtherOption(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "fixture-received", Name: "Fixture Person"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Personal"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || inbox == nil {
+			t.Fatalf("no Inbox: %v", err)
+		}
+		var newest string
+		for _, age := range []time.Duration{3 * time.Hour, time.Hour, 2 * time.Hour} {
+			mail, err := tx.CreateMail(&models.Mail{Subject: "Fixture", Kind: models.MailKindIncoming, ReceivedAt: time.Now().Add(-age)}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			item, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if age == time.Hour {
+				newest = item.ID
+			}
+		}
+		items, err := tx.ListItems(inbox.ID, &db.ItemOptions{ByReceived: true, Limit: 2})
+		if err != nil || len(items) != 2 || items[0].ID != newest {
+			t.Fatalf("the newest message first: %v %v", items, err)
 		}
 	})
 }
