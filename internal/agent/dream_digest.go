@@ -255,6 +255,16 @@ const digestSmallestPart = 2000
 
 // digestShown is digestBatch with the text of some documents given.
 func (self *Agent) digestShown(ctx context.Context, run *Run, documents []*models.AgentDocument, parts map[string]*digestPart, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
+	ctx = withRecordingEvidence(ctx, documents)
+	if complete != nil {
+		originalComplete := complete
+		complete = func(transaction db.Transaction, documents []*models.AgentDocument, filedCount int) error {
+			if err := checkRecordingEvidence(ctx, transaction, run); err != nil {
+				return err
+			}
+			return originalComplete(transaction, documents, filedCount)
+		}
+	}
 	material := self.retrieveDigestParts(ctx, run, documents, parts, coarse)
 	request, err := buildDigestRequest(run.Owner, KnowledgeLanguage(run.Agent, run.Owner), material, coarse)
 	if err != nil {

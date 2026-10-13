@@ -82,6 +82,9 @@ func TestRecordingHTTPUploadReceiptsPlaybackAndCookieProtection(test *testing.T)
 		if err != nil || limits.MaximumMediaBytes != 2<<30 || limits.MaximumAccountBytes != 64<<30 {
 			test.Fatal("recording limits borrowed the chat-file limit", err)
 		}
+		if limits.IsTranscriptionAvailable || limits.TranscriptionUnavailableMessage == "" || limits.TranscriptionProviderModelName != "" {
+			test.Fatal("disabled processing was not visible while raw uploads remained available")
+		}
 	})
 	requestAs := func(username, method string, body io.Reader) *http.Request {
 		request := httptest.NewRequest(method, "/", body)

@@ -30,7 +30,7 @@ func (self *recordingFixtureTranscriber) Transcribe(_ context.Context, request *
 	if self.hasProviderFailure {
 		return nil, errors.New("fixture connection lost after submission")
 	}
-	return &llm.TranscriptionResponse{Model: request.Model, Segments: []llm.TranscriptSegment{{SpeakerID: "local-speaker", StartMS: 100, EndMS: 900, TranscriptText: "Deploy the fixture."}}, ProviderResponseJSON: json.RawMessage("{}"), TranscriptionUsage: llm.TranscriptionUsage{HasProviderUsage: true, InputAudioTokens: 14, Usage: llm.Usage{PromptTokens: 14, CompletionTokens: 4}}}, nil
+	return &llm.TranscriptionResponse{Model: request.Model, Segments: []llm.TranscriptSegment{{SpeakerID: "local-speaker", StartMS: 100, EndMS: min(900, request.MediaDurationMS), TranscriptText: "Deploy the fixture."}}, ProviderResponseJSON: json.RawMessage("{}"), TranscriptionUsage: llm.TranscriptionUsage{HasProviderUsage: true, InputAudioTokens: 14, Usage: llm.Usage{PromptTokens: 14, CompletionTokens: 4}}}, nil
 }
 
 func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *testing.T) {

@@ -29,10 +29,11 @@ type digestPart struct {
 }
 
 type digestMaterial struct {
-	IndexLines []string
-	Documents  []digestDocument
-	SourceName string
-	SourceRoot string
+	HasRecordingEvidence bool
+	IndexLines           []string
+	Documents            []digestDocument
+	SourceName           string
+	SourceRoot           string
 }
 
 func (self *Agent) retrieveDigestMaterial(ctx context.Context, run *Run, documents []*models.AgentDocument, isCoarse bool) *digestMaterial {
@@ -68,6 +69,9 @@ func (self *Agent) retrieveDigestParts(ctx context.Context, run *Run, documents 
 		})
 	}
 	for _, document := range documents {
+		if isRecording, _ := document.Metadata["isUntrustedRecording"].(bool); isRecording {
+			material.HasRecordingEvidence = true
+		}
 		heading := document.Cite()
 		// Where a file is, and whose it is. A file was shown by its name
 		// alone -- "VMPCMac.java" -- and with nothing to say which of the

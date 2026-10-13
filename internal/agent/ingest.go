@@ -195,6 +195,9 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	if !FeatureAllowed(configuration, "knowledge") {
 		return nil
 	}
+	if source.Kind == models.SourceRecording {
+		return self.runRecordingIngest(ctx, run, source)
+	}
 
 	counts := db.SourceCounts{
 		Documents: source.DocumentCount,

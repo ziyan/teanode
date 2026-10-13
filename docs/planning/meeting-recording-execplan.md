@@ -28,9 +28,9 @@ always-on activation and visual video understanding are deferred.
 - [x] Increment 3a implemented locally: authenticated GraphQL library/capture/media
   metadata, bounded part uploads, completion and private byte-range playback.
 - [x] Durable media increment reviewed, full lint and CI passed, squash merged in PR #427.
-- [ ] Deploy merged durable media after confirming preservation of existing deployed work.
-- [ ] Increment 2b: transcript runs/versions and reconciliation jobs.
-- [ ] Increment 3b: background transcription with existing budgets and usage accounting.
+- [x] Deploy merged durable media after confirming preservation of existing deployed work.
+- [x] Increment 2b: transcript runs/versions merged in #433; correction reconciliation follows in #437.
+- [x] Increment 3b: background transcription, existing budgets and usage accounting merged in #434.
 - [ ] Increment 4: recording transcript knowledge source, automatic dreaming
   and corrections/deletion that reconcile dependent memories.
 - [ ] Increment 5: speaker/group/passage correction and automatic voice clips.
@@ -210,7 +210,7 @@ run passed; the quota/settings and Chrome layout review fixes now pass all CI.
 Work covers
 account-owned recording/media manifests, bounded resumable part uploads, verified
 whole-file receipts, streaming playback and durable explicit-deletion cleanup.
-The service work is merged. The original working copy is preserved. No deployment has been performed.
+The service work is merged. The original working copy is preserved. Reviewed recording foundations are now deployed; unfinished integration branches are not deployed.
 Draft PR #433 at d53579d contains the transcript persistence and decoder
 foundation, with local validation complete and CI in progress. The next branch,
 feat/recording-library, starts the provider worker and matching library interfaces.
@@ -318,6 +318,8 @@ request-local speaker IDs never establish identity across files.
 | Import, recoverable upload, browse/play/delete | In progress | In progress | In progress | In progress |
 | Transcript versions, status/cancel/retry/reprocess | Pending integration | Pending integration | Pending integration | Pending integration |
 | Confirmed labels, passage edits, references | Pending integration | Pending integration | Pending integration | Pending integration |
+| Source title/date and transcript text corrections | In progress | In progress | In progress | In progress |
+| Learning progress and reference invalidations | In progress | In progress | In progress | In progress |
 | Capture, interruptions, locked-screen controls | Not applicable | Not applicable | Not applicable | In progress |
 
 No row is complete until shared authorization/error checks and applicable client
@@ -371,3 +373,147 @@ Merged durable storage is deployed from reviewed main. Service version and migra
 were verified; authenticated disposable-media upload, verified receipt, playback,
 idempotent retry and deletion smoke checks passed. Unfinished worker code is not
 included in that deployment.
+The security check flagged WAV-size arithmetic in the local encoder. Decoder
+admission already bounded its callers, but encoding now validates the byte count
+and sample alignment at the allocation itself. A regression rejects oversized
+and incomplete PCM without relying on caller limits; ordinary WAV headers remain
+unchanged. Fresh security analysis and CI must pass before merging this increment.
+
+## Integrated backend review checkpoint
+
+Completed runs publish to the existing knowledge source in the same transaction;
+periodic bounded sweeps resume automatic voice-reference curation. Selection sends
+only receipt-verified, account-owned, currently confirmed reference bytes within model
+limits and rechecks identity names immediately before paid submission. Completed
+chunks reuse their immutable attempts without reading newly curated references.
+
+Same-version retry keeps completed chunks and usage. It is idempotent for an
+active job and refuses stopping workers, unknown paid outcomes and results
+discarded after cancellation. Explicit reprocessing remains a separate paid
+version. Source title and actual occurrence date are free, generation-checked
+metadata edits; a missing date stays unknown.
+
+PostgreSQL race checks cover safe retry, stopping/uncertain/discarded requests,
+foreign accounts and agents, immutable receipts and metadata changes. Focused
+DB, worker, API and local decoder checks pass, including packaged-compatible
+FFmpeg descriptor decoding. Full lint and naming checks pass. These local results
+do not establish production worker execution, provider billing or real-device
+recording behavior.
+
+All new capabilities and settings require web, CLI, LLM tool and iOS parity.
+Transcript text editing is being added as independent immutable corrections,
+with unique passage alignment across reruns and existing memory reconciliation.
+The original generated transcript remains available. No capability row is marked
+complete while a required interface, review or device acceptance check is missing.
+
+## Completed timeline and correction integration
+
+The completed recording timeline joins the latest completed version of each
+original in absolute timestamp order, with bounded pages and explicit run/media
+provenance. A pending rerun does not hide its previous completed version. Version
+history and incomplete originals remain available separately. PostgreSQL tests
+verify pagination, version selection, immutable history and foreign-account refusal.
+
+Text edits use independent immutable correction history. Both per-run and full
+recording reads project effective text while retaining generated text. Source and
+destination interval ambiguity is a review blocker until corrections remain
+independent evidence. Confirmed speaker projection is also being centralized so
+equal-time overlapping speakers cannot inherit another request-local group's name.
+
+A bounded reference-reconciliation sweep runs before the global agent-enabled
+check. Turning model work off cannot prevent stale attribution facts from being
+retired. A regression verifies reconciliation continues without a registry or
+provider call. Integrated recording, dreaming, memory and API PostgreSQL race
+checks and full lint/naming checks pass at the current local checkpoint.
+
+The transcript foundation (#433) and worker (#434) passed review, full lint,
+Server, security and other CI checks and were squash merged. Their release
+v0.142.0, commit 3cf9d4e, is confirmed running with migrations applied, no restart
+loop and no pending restart. The complete private backup archive was validated
+before replacement and the prior running image retained. Authenticated upload,
+verified receipt, exact resume, byte-identical playback, transcript library reads,
+missing-version read/cancel refusal and deletion/read refusal passed. Production
+transcription is Off; refusal is not evidence of provider execution.
+
+Raw dashboard, CLI and grouped tool surfaces (#436) passed review and all checks
+and were squash merged in v0.143.0. That release is confirmed running as commit 4e41d42, with authenticated raw
+upload/receipt/resume/playback/delete and existing agent/mailbox health reads passing. Native and correction/learning
+increments remain in review. The native Server failure was traced to one-line
+shared Swift GraphQL constants; multiline documents now expose their actual
+schema dependency on the correction increment. Do not skip that check.
+
+Review fixed overlapping speaker/text correction projection, media-local playback
+seeks, account-ID upload ownership and model-Off reference reconciliation. Another
+confirmed finding requires stable recording knowledge-source names: generic name
+edits are refused, while human titles use recording metadata. Evidence guards and
+cleanup also check source identity so stale renamed-source documents cannot survive.
+
+A controlled 19.963-second nonprivate synthetic fixture was sent through the
+existing registry to the configured API provider, once without references and once
+with two five-second synthetic named references. Both returned timestamps and
+reported token usage: 199 input/547 output without references, 325 input/585 output
+with references (299 audio and 26 text input tokens). Neither invoice nor actual
+cost is verified. Both outputs collapsed two synthetic voices into one label;
+reference API acceptance is not proof of attribution quality. Representative
+meeting evaluation remains required, and provider names cannot count as user
+confirmation. Production configuration stayed Off throughout this evaluation.
+Native package tests, simulator builds and actual physical-device evidence are
+tracked separately; no real-iPhone capture or lock-screen acceptance is claimed.
+
+The merged worker was also exercised with the real configured provider in an
+isolated disposable database and authenticated HTTP API. A synthetic original
+was uploaded, verified, decoded and processed into one immutable paid attempt
+and five timestamped segments. The attempt reported 199 audio input and 549
+output tokens; original playback remained byte-identical, and anonymous
+transcript reads were refused. This is an isolated real-worker result, not
+production provider activation, representative-meeting quality or invoice evidence.
+
+The configured provider credential returned HTTP 403 from the organization
+costs endpoint. Matching measured token usage to actual billing requires billing
+administration access or invoice evidence; this does not block implementation.
+
+Production transcription was subsequently enabled by explicit operator request
+through the existing settings API, using openai:gpt-4o-transcribe-diarize. Existing
+provider admission and token/cost budgets were preserved. The authenticated
+synthetic upload completed through the deployed worker with five timestamped
+segments and one immutable attempt reporting 199 audio input and 544 output
+tokens. Original playback remained unchanged. The stored configured-price estimate
+is USD 0.00035625; actual cost remains unknown. Correction and learning production
+checks await the reviewed correction increment; the synthetic original is retained
+for that acceptance work. Production remains on reviewed merged v0.143.0.
+
+
+## Attribution evaluation and final integration checkpoint
+
+A licensed, nonprivate 40-second human meeting excerpt with four annotated
+speakers was evaluated through the configured registry, both without references
+and with two isolated reference passages. The provider produced five speaker
+labels in each run, with 18 and 16 timestamped segments respectively. Reported
+usage was 510 input tokens (497 audio, 13 text) and 1190 output without references;
+608 input (558 audio, 50 text) and 1222 output with references. Actual billed cost
+is unavailable. No corpus audio or transcript is committed or added to memory.
+
+Within 32.27 seconds annotated as a single speaker, a one-to-one best label
+mapping matched 74.40 percent without references and 86.86 percent with references.
+This narrow passage comparison excludes annotated overlap and is not a full
+speaker error metric or identity verification. The original two synthetic voices
+still collapsed into one label in both earlier evaluations. Provider labels
+remain unconfirmed until a user assigns them; accepted references are not proof
+of identity. More representative recordings may expose further attribution errors.
+
+Local PostgreSQL and real-storage tests demonstrate splitting a wrongly merged
+label into separate user-confirmed passages, retiring prior attribution evidence,
+and curating only bounded, non-overlapping confirmed audio. Incomplete, uncertain
+or mixed passages cannot become automatic or durable references. Completion
+queues curation transactionally; bounded local maintenance recovers it even when
+global model work is disabled, without constructing a provider. These runtime
+hooks passed focused race tests and full lint, including naming checks. Production
+correction, curation and dreaming checks still await the reviewed backend merge.
+
+The current native simulator job built successfully, but a visual audit found
+recording routes displaying Conversation after service capabilities published
+before recording ownership. Those images do not verify recording screens. The
+publication order and route checks are being corrected before new captures.
+The web Back button and distinct recording icon, historical citations, source
+schedule and explicit stopped-learning resume are undergoing final desktop and
+mobile Chrome checks. The device-setup redesign remains a separate increment.

@@ -791,7 +791,7 @@ func TestGenericSourceCreationRefusesFinance(test *testing.T) {
 	})
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
 		isEnabled := false
-		saved, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Name: "renamed bank", Enabled: &isEnabled, Cron: "0 7 * * *"})
+		saved, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Name: "renamed bank", Enabled: &isEnabled, Cron: new("0 7 * * *")})
 		if err != nil || saved.Name != "renamed bank" || saved.Enabled || saved.Cron != "0 7 * * *" || saved.Kind != models.SourceFinance {
 			test.Errorf("saved %+v %v", saved, err)
 		}

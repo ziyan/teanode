@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -18,11 +19,34 @@ import (
 type Store struct {
 	database db.Database
 	files    storage.StreamFiles
+
+	maintenanceMutex         sync.Mutex
+	lastKnowledgeRecordingId string
+	lastRevokedReferenceId   string
 }
 
 // New requires range-capable storage rather than buffering an entire import.
 func New(database db.Database, files storage.StreamFiles) *Store {
 	return &Store{database: database, files: files}
+}
+
+// ReconcileReferences retires changed attribution even when no agent worker exists.
+func (self *Store) ReconcileReferences(ctx context.Context, pageSize int) error {
+	var sources []*models.Recording
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		sources, err = transaction.ListRecordingsAwaitingReferenceReconciliation(pageSize)
+		return err
+	}); err != nil {
+		return err
+	}
+	for _, source := range sources {
+		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			return transaction.ReconcileRecordingReferenceInvalidations(source.UserID, source.ID)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PutPart publishes a receipt only after the exact bytes are durably stored.

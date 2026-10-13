@@ -44,6 +44,7 @@ type recordingModel struct {
 	UserID                *string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	RecordedAt            *time.Time
 	ClientRecordingID     string
 	RecordingTitle        string
 	RecordingOrigin       models.RecordingOrigin
@@ -66,7 +67,12 @@ type recordingPartModel models.RecordingMediaPart
 func (recordingPartModel) TableName() string { return "recording_media_part" }
 
 func recordingFromModel(row *recordingModel) *models.Recording {
-	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+	recordedAt := row.RecordedAt
+	if recordedAt != nil {
+		recordedAtUTC := recordedAt.UTC()
+		recordedAt = &recordedAtUTC
+	}
+	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
 }
 
 func recordingMediaFromModel(row *recordingMediaModel) *models.RecordingMedia {
@@ -123,7 +129,7 @@ func (self *transaction) CreateRecording(recording *models.Recording) (*models.R
 	if recording.RecordingOrigin == models.RecordingOriginCapture {
 		captureState = models.RecordingCaptureActive
 	}
-	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
+	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}
@@ -421,11 +427,31 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 
 	return media, true, nil
 }
 func (self *transaction) DeleteRecording(userId, recordingId string) error {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return err
+	}
 	recording, err := self.LockRecording(userId, recordingId)
 	if errors.Is(err, ErrRecordingDeleted) {
 		return nil
 	}
 	if err != nil {
+		return err
+	}
+	references, err := self.ListRecordingVoiceReferences(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, references, "The original voice-reference recording was deleted."); err != nil {
+		return err
+	}
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_id = ?", recordingId).Update("is_revoked", true).Error; err != nil {
+		return err
+	}
+	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
@@ -464,6 +490,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND (deleted_at IS NOT NULL OR user_id IS NULL)", recordingId).Take(&row).Error; err != nil {
 		return err
 	}
+	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
+		return err
+	}
 	var incompleteCount int64
 	if err := self.tx.Model(&recordingMediaModel{}).Where("recording_id = ? AND cleanup_next_part_index < part_count", recordingId).Count(&incompleteCount).Error; err != nil {
 		return err
@@ -477,6 +506,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	}
 	if incompleteCount != 0 {
 		return ErrInvalidArguments
+	}
+	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingKnowledgeDocumentModel{}).Error; err != nil {
+		return err
 	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingMediaModel{}).Error; err != nil {
 		return err
