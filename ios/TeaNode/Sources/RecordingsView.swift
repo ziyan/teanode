@@ -339,17 +339,23 @@ struct RecordingDetailScreen: View {
     @State private var isSubmitting = false
     @State private var transcriptionRequestId = UUID().uuidString
     @State private var isEditingMetadata = false
+    @State private var isSavingMetadata = false
     @State private var recordingTitle = ""
     @State private var metadataExpectedGeneration: Int64 = 0
     @State private var hasRecordedAt = false
     @State private var recordedAt = Date()
+
+    private var displayedRecordingTitle: String {
+        let latestTitle = recordingView?.recording.recordingTitle ?? recording.recordingTitle
+        return latestTitle.isEmpty ? String(localized: "Recording") : latestTitle
+    }
 
     var body: some View {
         ScrollViewReader { scrollProxy in
             List {
                 if dynamicTypeSize.isAccessibilitySize {
                     Section {
-                        Text(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle).font(.headline)
+                        Text(displayedRecordingTitle).font(.headline)
                     }
                 }
                 if let recordingView {
@@ -508,7 +514,7 @@ struct RecordingDetailScreen: View {
                 scrollProxy.scrollTo("recording-learning", anchor: .top)
             }
         }
-        .navigationTitle(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
+        .navigationTitle(displayedRecordingTitle)
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await load()
@@ -532,11 +538,16 @@ struct RecordingDetailScreen: View {
                     if let problemText { Text(problemText).foregroundStyle(.secondary) }
                 }
                 .navigationTitle("Recording details")
+                .navigationBarTitleDisplayMode(.inline)
+                .disabled(isSavingMetadata)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { isEditingMetadata = false } }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
                             Task {
+                                guard !isSavingMetadata else { return }
+                                isSavingMetadata = true
+                                defer { isSavingMetadata = false }
                                 do {
                                     _ = try await connection.updateRecordingMetadata(
                                         recordingId: recording.id, expectedSourceGeneration: metadataExpectedGeneration,
