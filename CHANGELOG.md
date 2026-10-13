@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.153.0] - 2026-10-13
+
+### Added
+
+- The agent names and summarizes each recording once it is transcribed. (#460)
+- Mark a speaker as yourself; your passages show on the right of the conversation. (#460)
+
+### Changed
+
+- The recordings page is a table and a recording reads as a conversation, with passage actions in a menu and advanced details in a drawer. (#460)
+
 ## [0.152.3] - 2026-10-13
 
 ### Changed
