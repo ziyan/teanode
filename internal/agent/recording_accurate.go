@@ -334,9 +334,11 @@ func isRecordingSentenceEnd(token string) bool {
 	return strings.HasSuffix(trimmed, ".") || strings.HasSuffix(trimmed, "!") || strings.HasSuffix(trimmed, "?") || strings.HasSuffix(trimmed, "。") || strings.HasSuffix(trimmed, "！") || strings.HasSuffix(trimmed, "？")
 }
 
-// splitRecordingTurnText hands the turn's words back to its passages by their
-// share of the turn's time, moving each cut to a sentence end close by when
-// there is one. A turn of one passage keeps the text whole. It returns nil
+// splitRecordingTurnText hands the turn's words back to its passages. Each
+// passage starts where its first word lines up with the accurate words, found
+// by the longest run of words the two passes share; a passage with no word that
+// lines up is cut by its share of the turn's time instead, moved to a sentence
+// end close by when there is one. A turn of one passage keeps the text whole. It returns nil
 // when the words cannot be shared out, fewer words than passages, so the
 // passages keep their first words.
 func splitRecordingTurnText(accurateText string, segments []*models.RecordingTranscriptSegment) map[string]string {
@@ -351,12 +353,19 @@ func splitRecordingTurnText(accurateText string, segments []*models.RecordingTra
 	if len(tokens) < len(segments) {
 		return nil
 	}
+	alignedCuts := alignedRecordingCuts(tokens, segments)
 	turnStartMS := segments[0].SegmentStartMS
 	turnDurationMS := float64(segments[len(segments)-1].SegmentEndMS - turnStartMS)
 	// cuts[index] is the token index where passage index+1 begins.
 	cuts := make([]int, 0, len(segments)-1)
 	previousCut := 0
 	for index := 0; index < len(segments)-1; index++ {
+		lowestCut, highestCut := previousCut+1, len(tokens)-(len(segments)-1-index)
+		if aligned := alignedCuts[index]; aligned >= lowestCut && aligned <= highestCut {
+			cuts = append(cuts, aligned)
+			previousCut = aligned
+			continue
+		}
 		share := 0.0
 		if turnDurationMS > 0 {
 			share = float64(segments[index].SegmentEndMS-turnStartMS) / turnDurationMS
@@ -393,4 +402,97 @@ func splitRecordingTurnText(accurateText string, segments []*models.RecordingTra
 		start = end
 	}
 	return texts
+}
+
+// recordingWords are the words of a text, lowercase letters and digits only, so
+// "person-our" and "person. Our" both read as person, our. Each word carries
+// the index of the token it came from.
+func recordingWords(tokens []string) ([]string, []int) {
+	var words []string
+	var tokenIndexes []int
+	for tokenIndex, token := range tokens {
+		var current []rune
+		flush := func() {
+			if len(current) > 0 {
+				words = append(words, string(current))
+				tokenIndexes = append(tokenIndexes, tokenIndex)
+				current = nil
+			}
+		}
+		for _, character := range strings.ToLower(token) {
+			if unicode.IsLetter(character) || unicode.IsDigit(character) {
+				current = append(current, character)
+			} else {
+				flush()
+			}
+		}
+		flush()
+	}
+	return words, tokenIndexes
+}
+
+// alignedRecordingCuts says, for each passage after the first, the token of the
+// accurate text where it starts: the token of the accurate word lined up with
+// the passage's first word that lines up at all, by the longest common run of
+// words between the first pass and the accurate one. -1 where none lines up.
+func alignedRecordingCuts(tokens []string, segments []*models.RecordingTranscriptSegment) []int {
+	accurateWords, accurateTokenIndexes := recordingWords(tokens)
+	var firstWords []string
+	passageStarts := make([]int, 0, len(segments))
+	for _, segment := range segments {
+		passageStarts = append(passageStarts, len(firstWords))
+		words, _ := recordingWords(recordingTextTokens(segment.TranscriptText))
+		firstWords = append(firstWords, words...)
+	}
+	cuts := make([]int, len(segments)-1)
+	for index := range cuts {
+		cuts[index] = -1
+	}
+	if len(firstWords) == 0 || len(accurateWords) == 0 || len(firstWords)*len(accurateWords) > 4_000_000 {
+		return cuts
+	}
+	// lengths[first][accurate] is the longest common run of the words from
+	// those positions on.
+	lengths := make([][]int, len(firstWords)+1)
+	for index := range lengths {
+		lengths[index] = make([]int, len(accurateWords)+1)
+	}
+	for first := len(firstWords) - 1; first >= 0; first-- {
+		for accurate := len(accurateWords) - 1; accurate >= 0; accurate-- {
+			if firstWords[first] == accurateWords[accurate] {
+				lengths[first][accurate] = lengths[first+1][accurate+1] + 1
+			} else {
+				lengths[first][accurate] = max(lengths[first+1][accurate], lengths[first][accurate+1])
+			}
+		}
+	}
+	alignedTo := make([]int, len(firstWords))
+	for index := range alignedTo {
+		alignedTo[index] = -1
+	}
+	for first, accurate := 0, 0; first < len(firstWords) && accurate < len(accurateWords); {
+		switch {
+		case firstWords[first] == accurateWords[accurate]:
+			alignedTo[first] = accurate
+			first++
+			accurate++
+		case lengths[first+1][accurate] >= lengths[first][accurate+1]:
+			first++
+		default:
+			accurate++
+		}
+	}
+	for index := range cuts {
+		passageStart, passageEnd := passageStarts[index+1], len(firstWords)
+		if index+2 < len(passageStarts) {
+			passageEnd = passageStarts[index+2]
+		}
+		for first := passageStart; first < passageEnd; first++ {
+			if alignedTo[first] >= 0 {
+				cuts[index] = accurateTokenIndexes[alignedTo[first]]
+				break
+			}
+		}
+	}
+	return cuts
 }

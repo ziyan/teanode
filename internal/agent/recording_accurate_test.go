@@ -261,3 +261,19 @@ func TestTheEndOfTheTurnBeforeStartsAtAWord(test *testing.T) {
 		test.Fatalf("the context is %q", tail)
 	}
 }
+
+// Each passage starts where its own words line up with the accurate text,
+// however long it took to say them.
+func TestSplitFollowsTheWordsNotTheTime(test *testing.T) {
+	passage := func(identifier, transcriptText string, startMS, endMS int64) *models.RecordingTranscriptSegment {
+		return &models.RecordingTranscriptSegment{ID: identifier, TranscriptText: transcriptText, SegmentStartMS: startMS, SegmentEndMS: endMS}
+	}
+	texts := splitRecordingTurnText("Honestly, we need the database person. Our query performance is the biggest risk. I lean the same way.", []*models.RecordingTranscriptSegment{
+		passage("a", "Honestly,", 0, 900),
+		passage("b", "we need the database person-our query performance is the biggest risk", 900, 4000),
+		passage("c", "I lean the same way,", 4000, 9000),
+	})
+	if texts["a"] != "Honestly," || texts["b"] != "we need the database person. Our query performance is the biggest risk." || texts["c"] != "I lean the same way." {
+		test.Fatalf("the words drifted between passages: %q", texts)
+	}
+}
