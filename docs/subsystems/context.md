@@ -87,8 +87,16 @@ One system message after the history, rebuilt each round:
 
 - `<references>` for what they pointed at with Ask: a thread in the reader
   (read it with `mail_read` before answering about it), a page of memory
-  (read it with `memory`, and change it there if asked), or a finance
-  transaction in its details (by id, to read or act on with `finance`).
+  (read it with `memory`, and change it there if asked), a recording on its
+  page (by id, to read with `recording`), or a finance transaction in its
+  details (by id, to read or act on with `finance`).
+- A `<recording>` block for each recording pointed at
+  (`reference_recording.go`), read with the agent's owner in the same
+  transaction: a recording that is not theirs or is deleted is dropped (the
+  API refuses it before that), and the chip's title is taken from the stored
+  row. The block says the id the recording tool takes, the day and the
+  length, with the title and the stored summary fenced as untrusted data,
+  and where to read the words (`versions`, then `transcript`).
 - A `<finance_transaction>` block for each finance transaction pointed at
   (`reference_finance.go`). `keepPersonTurn` reads it with the agent's id
   in the transaction that keeps the turn, so one that is not the agent's is
