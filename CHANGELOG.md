@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.143.1] - 2026-10-13
+
+### Changed
+
+- Updated the dashboard's lint and test tooling to their latest patch releases. (#440)
+
 ## [0.143.0] - 2026-10-12
 
 ### Added
