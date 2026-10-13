@@ -114,10 +114,10 @@ it('groups consecutive passages, names others above and puts the owner on the ri
   expect(within(turns[2]).getByText('Speaker A').className).toContain('muted')
 })
 
-it('plays a passage from its start when clicked', async () => {
+it('does not play when the words are clicked', async () => {
   const { passagePlayback } = show([segment('one')])
   fireEvent.click(await screen.findByText('Text of one'))
-  expect(passagePlayback.play).toHaveBeenCalledWith('fixture-media', 2000, 4000, 1000)
+  expect(passagePlayback.play).not.toHaveBeenCalled()
 })
 
 // jsdom has no PointerEvent: a mouse event that carries the pointer's id and
@@ -160,7 +160,7 @@ it('draws bubbles with the agent chat classes, the owner on the right', async ()
   expect(document.querySelector('.recording-bubble')).toBeNull()
 })
 
-it('plays from the bubble on a swipe to the left', async () => {
+it('plays the whole bubble on a swipe to the left', async () => {
   const { passagePlayback } = show([segment('one'), segment('two', { segmentStartMS: 4000, segmentEndMS: 6000 })])
   await screen.findByText('Text of one')
   swipe(bubbleOf('Text of one'), [
@@ -169,7 +169,7 @@ it('plays from the bubble on a swipe to the left', async () => {
     [-90, 20],
   ])
   expect(passagePlayback.play).toHaveBeenCalledTimes(1)
-  expect(passagePlayback.play).toHaveBeenCalledWith('fixture-media', 2000, 4000, 1000)
+  expect(passagePlayback.play).toHaveBeenCalledWith('fixture-media', 2000, 6000, 1000)
 })
 
 it('copies the whole bubble on a swipe to the right', async () => {
