@@ -5,7 +5,7 @@ import { askAgentAbout, graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PageHeadingActions, useBreadcrumbDetail, useHeadingActionSlot } from '../components/breadcrumb'
-import { MoreIcon, SparkIcon } from '../components/icons'
+import { MoreIcon, RecordIcon, SparkIcon } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Pager } from '../components/pager'
@@ -18,6 +18,7 @@ import { RecordingProcessingPanel } from '../recording/processingPanel'
 import { RecordingPassagePlayback } from '../recording/playback'
 import { RecordingOriginalPlayer } from '../recording/originalPlayer'
 import { RecordingConversation } from '../recording/conversationView'
+import { useCaptureSnapshot } from '../recording/captureSnapshot'
 import { RecordingDetailsDrawer } from '../recording/detailsDrawer'
 import { RecordingEditDialog, type ProcessingDialog } from '../recording/editDialog'
 import { formatRecordingLength, readRecordingStatusEvidence, recordingStatus } from '../recording/library'
@@ -101,6 +102,22 @@ function AccountRecordingsPage() {
     async () => (recordingId ? await readRecording(recordingId) : null),
     [recordingId, session.userId],
   )
+  const captureSnapshot = useCaptureSnapshot()
+  const [isStartingCapture, setIsStartingCapture] = useState(false)
+  const startCapture = async () => {
+    if (!session.userId) return
+    setIsStartingCapture(true)
+    try {
+      const { startRecording } = await import(/* webpackChunkName: "recordings" */ '../recording/capture')
+      const startedRecordingId = await startRecording(session.userId)
+      void library.reload()
+      navigate(`/recordings/${startedRecordingId}`)
+    } catch (caught) {
+      toast.failure(caught, t('recordings.startFailed'))
+    } finally {
+      setIsStartingCapture(false)
+    }
+  }
   const [isImporting, setIsImporting] = useState(false),
     [originalFile, setOriginalFile] = useState<File | null>(null)
   const [resumeMedia, setResumeMedia] = useState<RecordingMedia | null>(null)
@@ -344,8 +361,16 @@ function AccountRecordingsPage() {
       {!recordingId ? (
         <>
           <PageHeadingActions>
-            <button type="button" className="primary" onClick={() => showImport()}>
+            <button type="button" onClick={() => showImport()}>
               {t('recordings.import')}
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={isStartingCapture || captureSnapshot.phase !== 'idle'}
+              onClick={() => void startCapture()}
+            >
+              <RecordIcon size={16} /> {t('recordings.startRecording')}
             </button>
           </PageHeadingActions>
           <div className="list-toolbar">
