@@ -116,7 +116,7 @@
                         connection: connection,
                         attachment: AgentAttachment(id: "attachment-a", name: "meeting.wav", contentType: "audio/wav", size: 120000))
                 case "recording-learning-stopped": RecordingDetailScreen(connection: connection, recording: recording, shouldFocusLearning: true)
-                case "recording-compatible-playback":
+                case "recording-compatible-playback", "recording-original-playback":
                     RecordingPlaybackScreen(
                         connection: connection, media: DemoServer.recordingObject(DemoServer.recordingMediaFixture, as: RecordingMedia.self))
                 case "recording-detail": RecordingDetailScreen(connection: connection, recording: recording)

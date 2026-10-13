@@ -38,12 +38,13 @@ contract. Real schema checks require the matching shared backend implementation;
 missing APIs must remain a visible dependency rather than a skipped schema check.
 
 The typed transport and native fallback are implemented. Original receipt validation
-finishes before probing codec support; unsupported originals may read or prepare
+finishes before probing codec support; unsupported user Play always prepares
 compatible audio, verified independently before using the same bounded player.
 Current account identity, retained profile and cancellation are rechecked across
 awaits. A silent local WAV demo covers the actual preview UI without network access.
-326 portable tests, the real built-schema document check and full lint pass. Native
-SDK and rendered preview captures remain pending.
+327 portable tests, the real built-schema document check and full lint pass. The
+simulator SDK build passed at the preceding checkpoint. Fresh final captures and
+SDK checks include both original-ready and compatible-preview player controls.
 
 Review found that reading cached metadata alone could never reach the server repair
 operation after corrupt preview bytes. Unsupported user Play now always prepares

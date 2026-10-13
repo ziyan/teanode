@@ -725,9 +725,9 @@ struct RecordingPlaybackScreen: View {
                 }
                 do {
                     #if DEBUG
-                        if DemoServer.screen == "recording-compatible-playback" {
+                        if DemoServer.screen == "recording-compatible-playback" || DemoServer.screen == "recording-original-playback" {
                             localURL = try DemoServer.recordingPreviewURL()
-                            isCompatibleAudioPreview = true
+                            isCompatibleAudioPreview = DemoServer.screen == "recording-compatible-playback"
                             player = AVPlayer(url: localURL!)
                             return
                         }
