@@ -520,7 +520,7 @@ struct RecordingPassageSheets: ViewModifier {
             }
             .sheet(isPresented: $model.isNaming) { RecordingSpeakerNamingSheet(model: model) }
             .sheet(item: $model.memorySegment) { segment in
-                RecordingPassageMemorySheet(recordingId: model.recording.id, segment: segment)
+                RecordingPassageMemorySheet(recordingId: model.recordingId, segment: segment)
             }
     }
 }
