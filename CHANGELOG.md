@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.144.3] - 2026-10-13
+
+### Fixed
+
+- The call on the iPhone lock screen shows its name and duration together, with matching mute and hang-up buttons. (#439)
+
 ## [0.144.2] - 2026-10-13
 
 ### Fixed
