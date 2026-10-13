@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +39,10 @@ type fakeTranscriptionRequest struct {
 	KnownSpeakerNames []string
 	// WaveBytes is the whole file the provider was sent.
 	WaveBytes []byte
+	// Model and Prompt are the form fields of the request. Only the plain
+	// model takes a prompt.
+	Model  string
+	Prompt string
 }
 
 // fakeTranscriptionProvider speaks the file-transcription protocol of the
@@ -48,6 +53,11 @@ type fakeTranscriptionProvider struct {
 	requests []fakeTranscriptionRequest
 	// answer decides the passages for the n-th request (counting from zero).
 	answer func(requestIndex int, request fakeTranscriptionRequest) []fakeTranscriptionSegment
+	// plainAnswer decides the words for the n-th request to a plain model
+	// (counting from zero); plainStatus, when set, is the error status
+	// they are refused with instead.
+	plainAnswer func(plainIndex int, request fakeTranscriptionRequest) string
+	plainStatus int
 }
 
 func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
@@ -69,12 +79,32 @@ func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
 			http.Error(writer, err.Error(), http.StatusBadRequest)
 			return
 		}
-		received := fakeTranscriptionRequest{AudioDurationMS: int64(len(waveBytes)-44) / 32, KnownSpeakerNames: request.MultipartForm.Value["known_speaker_names[]"], WaveBytes: waveBytes}
+		received := fakeTranscriptionRequest{AudioDurationMS: int64(len(waveBytes)-44) / 32, KnownSpeakerNames: request.MultipartForm.Value["known_speaker_names[]"], WaveBytes: waveBytes, Model: request.FormValue("model"), Prompt: request.FormValue("prompt")}
 		provider.lock.Lock()
 		requestIndex := len(provider.requests)
+		plainIndex := 0
+		for _, earlier := range provider.requests {
+			if !strings.Contains(earlier.Model, "diarize") {
+				plainIndex++
+			}
+		}
 		provider.requests = append(provider.requests, received)
 		answer := provider.answer
+		plainAnswer, plainStatus := provider.plainAnswer, provider.plainStatus
 		provider.lock.Unlock()
+		if !strings.Contains(received.Model, "diarize") {
+			if plainStatus != 0 {
+				http.Error(writer, "refused", plainStatus)
+				return
+			}
+			words := ""
+			if plainAnswer != nil {
+				words = plainAnswer(plainIndex, received)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(writer).Encode(map[string]any{"text": words, "usage": map[string]any{"type": "tokens", "input_tokens": 100, "output_tokens": 10, "input_token_details": map[string]any{"audio_tokens": 90, "text_tokens": 10}}})
+			return
+		}
 		var segments []fakeTranscriptionSegment
 		if answer != nil {
 			segments = answer(requestIndex, received)
@@ -150,6 +180,9 @@ func newLiveRecordingFixture(test *testing.T) *liveRecordingFixture {
 	configuration.Agent.Enabled = true
 	configuration.Agent.Models.Transcription = "fixture:gpt-4o-transcribe-diarize"
 	configuration.Agent.Models.Default = "fixture:summary-model"
+	// The second pass is a request of its own, so tests that count the
+	// provider's requests start without it and a test turns it on.
+	configuration.Agent.Recording.IsAccurateWordsEnabled = new(false)
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fixture", Kind: "openai", BaseURL: provider.server.URL, APIKey: "fixture-key"}}
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {

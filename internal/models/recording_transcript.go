@@ -117,20 +117,25 @@ type RecordingTranscriptionAttempt struct {
 // RecordingTranscriptSegment is generated evidence with request-local attribution.
 // Manual labels and passage corrections are stored separately from this version.
 type RecordingTranscriptSegment struct {
-	ID                              string               `json:"id"`
-	RecordingTranscriptRunID        string               `json:"recordingTranscriptRunId"`
-	RecordingTranscriptionAttemptID string               `json:"recordingTranscriptionAttemptId"`
-	LocalSpeakerID                  string               `json:"localSpeakerId"`
-	SegmentStartMS                  int64                `json:"segmentStartMS"`
-	SegmentEndMS                    int64                `json:"segmentEndMS"`
-	TranscriptText                  string               `json:"transcriptText"`
-	EffectiveTranscriptText         string               `json:"effectiveTranscriptText" gorm:"-"`
-	AppliedTextCorrectionID         string               `json:"appliedTextCorrectionId" gorm:"-"`
-	AppliedTextCorrectionOrigin     TextCorrectionOrigin `json:"appliedTextCorrectionOrigin" gorm:"-"`
-	HasUnalignedTextCorrection      bool                 `json:"hasUnalignedTextCorrection" gorm:"-"`
-	EffectiveSpeakerIdentityID      string               `json:"effectiveSpeakerIdentityId" gorm:"-"`
-	EffectiveSpeakerName            string               `json:"effectiveSpeakerName" gorm:"-"`
-	HasUserConfirmedSpeaker         bool                 `json:"hasUserConfirmedSpeaker" gorm:"-"`
+	ID                              string `json:"id"`
+	RecordingTranscriptRunID        string `json:"recordingTranscriptRunId"`
+	RecordingTranscriptionAttemptID string `json:"recordingTranscriptionAttemptId"`
+	LocalSpeakerID                  string `json:"localSpeakerId"`
+	SegmentStartMS                  int64  `json:"segmentStartMS"`
+	SegmentEndMS                    int64  `json:"segmentEndMS"`
+	TranscriptText                  string `json:"transcriptText"`
+	// AccurateTranscriptText is what the plain transcription model heard in
+	// this segment's span on a second pass, empty when that pass did not run.
+	// It replaces TranscriptText as the words a person's correction and the
+	// glossary start from; speakers and times are the first pass's.
+	AccurateTranscriptText      string               `json:"accurateTranscriptText"`
+	EffectiveTranscriptText     string               `json:"effectiveTranscriptText" gorm:"-"`
+	AppliedTextCorrectionID     string               `json:"appliedTextCorrectionId" gorm:"-"`
+	AppliedTextCorrectionOrigin TextCorrectionOrigin `json:"appliedTextCorrectionOrigin" gorm:"-"`
+	HasUnalignedTextCorrection  bool                 `json:"hasUnalignedTextCorrection" gorm:"-"`
+	EffectiveSpeakerIdentityID  string               `json:"effectiveSpeakerIdentityId" gorm:"-"`
+	EffectiveSpeakerName        string               `json:"effectiveSpeakerName" gorm:"-"`
+	HasUserConfirmedSpeaker     bool                 `json:"hasUserConfirmedSpeaker" gorm:"-"`
 	// IsRecognizedSpeaker is a speaker the transcription named after one of
 	// the voice samples it was sent, which the person has not confirmed here.
 	IsRecognizedSpeaker           bool   `json:"isRecognizedSpeaker" gorm:"-"`

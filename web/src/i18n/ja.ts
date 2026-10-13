@@ -1695,6 +1695,8 @@ export const ja: Catalog = {
   'agentSettings.recordingCapture': '録音中',
   'agentSettings.recordingLiveTranscription': '録音中のライブ文字起こし',
   'agentSettings.recordingLiveTranscriptionDescription': '録音している間、話した言葉をその場で表示します。音声はこのサーバーを通じて音声プロバイダーのリアルタイム文字起こしにも送られ、利用者のエージェントに分単位で課金されます。文字は、保存された音声の話者分離つき文字起こしが終わるまでだけ保持されます。',
+  'agentSettings.recordingAccurateWords': '録音の言葉をより正確に',
+  'agentSettings.recordingAccurateWordsDescription': '各話者の発言を音声文字起こしモデルでもう一度文字起こしします。利用者自身のデータにある名前や用語を渡すので、綴りがより正確になります。話者と時刻は変わらず、利用者の修正が引き続き優先されます。音声は利用者のエージェントにもう一度課金されます。',
   'agentSettings.limit.maxBodyCharacters': 'モデルに渡すメッセージの文字数',
   'agentSettings.limitsUnattended': '誰も見ていない処理の上限。0 はかっこ内の既定値です。',
   'agentSettings.limit.maxRoundsPerSubagent': 'サブエージェントのラウンド数 (20)',

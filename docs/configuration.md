@@ -1768,6 +1768,18 @@ first provider of kind `openai` when `agent.voice.provider` is empty), whether
 or not voice itself is on. The words are kept only until the saved audio has
 been transcribed. On by default.
 
+**`isAccurateWordsEnabled`**. Whether each speaker's turn, as found by the
+speaker-separating model, is transcribed a second time by the plain
+transcription model of `agent.voice` (`transcriptionModel`, `gpt-4o-transcribe`
+when empty, through the first provider of kind `openai` unless
+`agent.voice.provider` names one). That model takes a prompt, so it is given the
+names and terms the person's own data suggests and the end of the turn before,
+and spells them better than the speaker-separating model, which takes none.
+Speakers and times stay the first pass's, a person's correction still wins over
+the new words, and the glossary pass starts from them. It is a second charge
+for the same audio, recorded in the agent's usage, and a turn whose second pass
+fails keeps the first pass's words. On by default.
+
 ### `agent.mcp`
 
 **`servers`** — The declared servers, one entry each.

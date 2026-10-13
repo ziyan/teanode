@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/models"
 	"gorm.io/gorm"
@@ -46,6 +47,7 @@ type RecordingTranscriptOperation interface {
 	SubmitRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim) error
 	FinishRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim, finished *models.RecordingTranscriptionAttempt, segments []*models.RecordingTranscriptSegment) (bool, error)
 	ListRecordingTranscriptSegments(userId, runId string) ([]*models.RecordingTranscriptSegment, error)
+	SetRecordingAccurateWords(userId, runId string, claim RecordingWorkerClaim, accurateTexts map[string]string) error
 }
 
 // ReadRecordingTranscriptTimelinePage joins the latest completed version of each original.
@@ -780,6 +782,30 @@ func (self *transaction) ListRecordingTranscriptSegments(userId, runId string) (
 		segments = append(segments, &segment)
 	}
 	return segments, nil
+}
+
+// SetRecordingAccurateWords stores the second pass's words on segments of a run
+// that is still being transcribed. Speakers and times are not touched, and a
+// segment that already has accurate words keeps them, so a job that starts over
+// does not change what it published.
+func (self *transaction) SetRecordingAccurateWords(userId, runId string, claim RecordingWorkerClaim, accurateTexts map[string]string) error {
+	transcriptRun, err := self.lockRecordingWorker(userId, runId, claim)
+	if err != nil {
+		return err
+	}
+	if transcriptRun.RecordingProcessingState != models.RecordingProcessingTranscribing {
+		return ErrAlreadyExists
+	}
+	for segmentId, accurateText := range accurateTexts {
+		if strings.TrimSpace(accurateText) == "" || len(accurateText) > 65536 || !utf8.ValidString(accurateText) || strings.ContainsRune(accurateText, 0) {
+			return ErrInvalidArguments
+		}
+		result := self.tx.Model(&recordingSegmentModel{}).Where("id = ? AND recording_transcript_run_id = ? AND accurate_transcript_text = ''", segmentId, runId).Update("accurate_transcript_text", accurateText)
+		if result.Error != nil {
+			return result.Error
+		}
+	}
+	return nil
 }
 
 // RecordingAudioFileID keeps pending derived writes reachable through their ledger.
