@@ -29,6 +29,9 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 	schema := component.(*graph).schema
 
 	documents := map[string]string{
+		"GetDeviceSetupCapabilities": client.DocumentDeviceSetupCapabilities,
+		"CreateDeviceSetupProfile":   client.DocumentCreateDeviceSetupProfile,
+
 		"ListMailboxes":            client.DocumentListMailboxes,
 		"ListAllMailboxes":         client.DocumentListAllMailboxes,
 		"CreateMailboxFolder":      client.DocumentCreateMailboxFolder,

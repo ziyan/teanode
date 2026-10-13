@@ -13,6 +13,7 @@ type Query interface {
 	ServiceQuery
 	ServiceSetupQuery
 	SyncQuery
+	DeviceSetupQuery
 	SendQuery
 	DomainQuery
 	AliasQuery
@@ -85,6 +86,7 @@ var _ Query = &graph{}
 type Mutation interface {
 	ServiceMutation
 	SyncMutation
+	DeviceSetupMutation
 	DomainMutation
 	AliasMutation
 	UserMutation

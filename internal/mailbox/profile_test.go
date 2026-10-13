@@ -163,3 +163,41 @@ func TestCollectionProfileContainsOnlySelectedSyncPayloads(test *testing.T) {
 		test.Fatal("empty profile was accepted")
 	}
 }
+
+func TestDeviceProfileKeepsMailAndCollectionCredentialsSeparate(test *testing.T) {
+	profile := &mailbox.SetupProfile{
+		Address: "device@example.com", Password: "synthetic-mail-password",
+		IMAPHost: "mail.example.com", IMAPPort: 993,
+		SubmissionHost: "mail.example.com", SubmissionPort: 465,
+		DAVHost: "sync.example.com", PrincipalPath: "/dav/device-owner/",
+		DAVUsername: "device-owner", DAVPassword: "synthetic-sync-password",
+		Identifier: "com.example.device", IsCalendarEnabled: new(true), IsContactsEnabled: new(true),
+	}
+	written, err := profile.Plist()
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, payload := range readPlist(test, written)["PayloadContent"].([]any) {
+		payloadFields := payload.(map[string]any)
+		switch payloadFields["PayloadType"] {
+		case "com.apple.mail.managed":
+			if payloadFields["IncomingPassword"] != profile.Password || payloadFields["OutgoingPassword"] != profile.Password || payloadFields["IncomingMailServerUsername"] != profile.Address {
+				test.Fatal("mail did not retain its mailbox credential")
+			}
+		case "com.apple.caldav.account":
+			if payloadFields["CalDAVPassword"] != profile.DAVPassword || payloadFields["CalDAVUsername"] != profile.DAVUsername {
+				test.Fatal("calendar did not use its account-scoped credential")
+			}
+		case "com.apple.carddav.account":
+			if payloadFields["CardDAVPassword"] != profile.DAVPassword || payloadFields["CardDAVUsername"] != profile.DAVUsername {
+				test.Fatal("contacts did not use its account-scoped credential")
+			}
+		default:
+			test.Fatal("unexpected device payload")
+		}
+	}
+	profile.DAVPassword = ""
+	if _, err := profile.Plist(); err == nil {
+		test.Fatal("partial collection credentials fell back to the mail credential")
+	}
+}

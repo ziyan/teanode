@@ -14,8 +14,8 @@ path for collections. Manual credentials remain available as secondary controls.
 
 - [x] Inventory the existing web, native, CLI and tool entry points.
 - [x] Identify existing authorization, service availability and credential boundaries.
-- [ ] Agree one additive shared profile contract and selectable service capabilities.
-- [ ] Implement profile composition, preserving existing credential/revocation handling.
+- [x] Agree one additive shared profile contract and selectable service capabilities.
+- [x] Implement profile composition, preserving existing credential/revocation handling.
 - [ ] Implement one coherent web and native entry point and available-service selector.
 - [ ] Add applicable CLI/tool parity and migrate confusing shortcut copy/navigation.
 - [ ] Review and fix ownership, disabled-service, partial-failure and credential findings.
@@ -55,3 +55,25 @@ Use the repository's navigation, forms, buttons and icon conventions. Inspect bo
 Chrome viewport layouts with actual interactions and native simulator captures;
 report physical-device installation checks separately. Merge only reviewed, green
 increments and verify deployed commit, health and authenticated setup semantics.
+
+
+## Backend checkpoint
+
+GetDeviceSetupCapabilities returns the account's configurable services and usable
+owned mailboxes. CreateDeviceSetupProfile selects Mail, Calendar, Reminders and
+Contacts, with a nullable mailbox identifier for mailbox-free setup. The shared
+client documents expose the same contract. Existing profile APIs remain intact.
+
+Profile composition calls the existing mailbox app-password and scoped sync
+credential operations inside one nested transaction, then uses existing sealed,
+one-download delivery. DAV payloads use their explicit account credential;
+mail payloads retain their own credential. Calendar and Reminders share one
+CalDAV payload with the selected scopes enforced by the existing sync credential.
+
+PostgreSQL race tests passed mail-only, mailbox-free, reminders-only and combined
+profiles, selected payloads, separate authentication and revocation, one-use
+retrieval and rollback of both credentials when profile parking fails. Refusal
+checks passed anonymous and foreign access, impersonated sync, empty and invalid
+selections, disabled or ungranted collections and insecure downloads. The property
+list writer's compatibility and separate-credential tests passed. Frontend, CLI,
+tool and native flows are still pending; nothing from this branch is deployed.
