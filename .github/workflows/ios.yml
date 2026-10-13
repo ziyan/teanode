@@ -100,11 +100,16 @@ jobs:
             sleep 8
             xcrun simctl io "$device" screenshot "screenshots/$name.png"
             case "$name" in
-              recordings-*|recording-*) build/assert-recording-screenshot "$name" "screenshots/$name.png" ;;
-              device-setup-*)
+              recordings-*|recording-*|device-setup-*)
+                # The screen may still be loading its demo answers: look
+                # again a few times before calling it wrong.
+                case "$name" in
+                  device-setup-*) assertion=build/assert-device-setup-screenshot ;;
+                  *) assertion=build/assert-recording-screenshot ;;
+                esac
                 is_setup_ready=false
                 for setup_attempt in {1..10}; do
-                  if build/assert-device-setup-screenshot "$name" "screenshots/$name.png"; then
+                  if "$assertion" "$name" "screenshots/$name.png"; then
                     is_setup_ready=true
                     break
                   fi

@@ -241,6 +241,14 @@ final class RecordingUploads: NSObject {
             }
             recording.uploadErrorMessage = nil
             try await journal.save(recording)
+            // Once the server holds every original, verified, nothing is left
+            // that only the phone has: the recording is the server's from here.
+            if ["stopped", "imported"].contains(recording.recordingCaptureState), !recording.localMedia.isEmpty,
+                recording.localMedia.allSatisfy(\.isDurablyUploaded)
+            {
+                try requireRetainedAccount(connection.accountKey, recordingUserId: recording.recordingUserId)
+                try await journal.removeLocalRecording(recording.id, accountKey: connection.accountKey)
+            }
             return false
         } catch {
             recording.uploadErrorMessage = error.localizedDescription

@@ -139,6 +139,7 @@ struct RecordingDetailScreen: View {
     let recording: Recording
     var shouldFocusLearning = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     @State private var model: RecordingDetailModel
     @State private var conversation: RecordingConversationModel
     @State private var player: RecordingPlayer
@@ -301,6 +302,9 @@ struct RecordingDetailScreen: View {
                     systemImage: "arrow.clockwise")
             }
             .disabled(model.completeMediaFiles.isEmpty || !model.isTranscriptionAvailable || model.isSubmitting)
+            Button("Ask \(app.agentTitle)", systemImage: "bubble.left.and.text.bubble.right") {
+                app.askingAbout = AgentReference(recordingId: model.recording.id, recordingTitle: displayedRecordingTitle)
+            }
             Button {
                 isShowingDetails = true
             } label: {

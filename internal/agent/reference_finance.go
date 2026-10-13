@@ -32,9 +32,10 @@ const (
 // stored row rather than from what the dashboard sent, and what the model
 // is told about it is written beside it. The API refuses another agent's
 // finance transaction before a turn starts; this is the same check for
-// any caller that did not. A message replied to is read the same way, from
+// any caller that did not. A recording is read the same way with the
+// agent's owner (see resolveRecordingReference). A message replied to is read the same way, from
 // the conversation the turn is in (see resolveReply).
-func resolveReferences(tx db.Transaction, agentId, conversationId string, references []models.AgentReference) ([]models.AgentReference, error) {
+func resolveReferences(tx db.Transaction, agentId, userId, conversationId string, references []models.AgentReference) ([]models.AgentReference, error) {
 	if len(references) == 0 {
 		return references, nil
 	}
@@ -42,6 +43,7 @@ func resolveReferences(tx db.Transaction, agentId, conversationId string, refere
 	// One transaction pointed at twice is told once: each costs a block of
 	// context on every round of the run.
 	seenFinanceTransactionIds := map[string]bool{}
+	seenRecordingIds := map[string]bool{}
 	isReplyKept := false
 	for _, reference := range references {
 		if isReplyReference(reference) {
@@ -56,6 +58,20 @@ func resolveReferences(tx db.Transaction, agentId, conversationId string, refere
 			if reply != nil {
 				resolved = append(resolved, *reply)
 				isReplyKept = true
+			}
+			continue
+		}
+		if reference.RecordingID != "" {
+			if seenRecordingIds[reference.RecordingID] {
+				continue
+			}
+			seenRecordingIds[reference.RecordingID] = true
+			recording, err := resolveRecordingReference(tx, agentId, userId, reference)
+			if err != nil {
+				return nil, err
+			}
+			if recording != nil {
+				resolved = append(resolved, *recording)
 			}
 			continue
 		}

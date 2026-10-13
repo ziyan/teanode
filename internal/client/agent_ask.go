@@ -95,13 +95,18 @@ type AgentAttachment struct {
 	Size        int64  `json:"size"`
 }
 
-// AgentReference is what the person pointed at with a turn: a thread, or
-// a message of the conversation they are replying to.
+// AgentReference is what the person pointed at with a turn: a thread, a
+// recording, or a message of the conversation they are replying to.
 type AgentReference struct {
 	ItemID   string `json:"itemId,omitempty"`
 	ThreadID string `json:"threadId,omitempty"`
 	Subject  string `json:"subject,omitempty"`
 	From     string `json:"from,omitempty"`
+
+	// RecordingID is a recording the person asks about; the server reads
+	// its title into RecordingTitle, and refuses one that is not theirs.
+	RecordingID    string `json:"recordingId,omitempty"`
+	RecordingTitle string `json:"recordingTitle,omitempty"`
 
 	// AgentMessageID is the message replied to; the server reads its words
 	// into QuotedRole and QuotedText.
@@ -209,7 +214,7 @@ const (
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
-			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt } }
+			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt } }
 			total
 			todos ` + todoFields + `
 		}

@@ -441,6 +441,15 @@ type AgentReference struct {
 	MerchantName         string `json:"merchantName,omitempty" graphapi:"nullable"`
 	Description          string `json:"description,omitempty" graphapi:"nullable"`
 
+	// RecordingID points at one of the person's recordings instead: the
+	// person pressed Ask on its page. RecordingTitle is what the chip
+	// shows, its typed or generated title or "Untitled recording"; the
+	// server fills it in from the stored row whatever the dashboard sent,
+	// and drops the reference when the recording is not the person's or
+	// has been deleted.
+	RecordingID    string `json:"recordingId,omitempty" graphapi:"nullable"`
+	RecordingTitle string `json:"recordingTitle,omitempty" graphapi:"nullable"`
+
 	// AgentMessageID points at a message earlier in the same conversation
 	// instead: the person swiped it, or picked Reply on it, to say what
 	// they are answering. QuotedRole is whose it was, "user" or
@@ -458,6 +467,12 @@ type AgentReference struct {
 	// database when the turn is kept, and never stored, so an earlier
 	// turn names it by its id alone and the finance tool reads it again.
 	FinanceTransactionContext string `json:"-"`
+
+	// RecordingContext is the same for a recording: what the model is told
+	// about it in the turn it was pointed at, read when the turn is kept
+	// and never stored, so an earlier turn names it by its id alone and the
+	// recording tool reads it again.
+	RecordingContext string `json:"-"`
 }
 
 // AgentToolCall is a tool the model asked for, as recorded.
