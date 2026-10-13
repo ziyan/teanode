@@ -24,6 +24,16 @@ type Store struct {
 	lastKnowledgeRecordingId string
 	lastRevokedReferenceId   string
 	lastImportedMediaId      string
+
+	// containerReads are the imported originals being read for their
+	// length and date after their upload completed.
+	containerReads sync.WaitGroup
+}
+
+// WaitForContainerReads returns once every container read started by
+// Complete has finished.
+func (self *Store) WaitForContainerReads() {
+	self.containerReads.Wait()
 }
 
 // New requires range-capable storage rather than buffering an entire import.
@@ -189,7 +199,16 @@ func (self *Store) Complete(ctx context.Context, userId, mediaId string) (*model
 		return err
 	})
 	if err == nil && isFirstCompletion {
-		self.recordImportedContainer(ctx, userId, mediaId)
+		// Reading the container copies the whole original first, which
+		// must not hold up the upload's last request; the periodic pass
+		// catches an original whose read did not finish.
+		self.containerReads.Add(1)
+		go func() {
+			defer self.containerReads.Done()
+			readContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), containerReadLongest)
+			defer cancel()
+			self.recordImportedContainer(readContext, userId, mediaId)
+		}()
 	}
 	return media, isFirstCompletion, err
 }
