@@ -282,7 +282,7 @@ struct ContactImportView: View {
                 Button("Open Settings") {
                     if let address = URL(string: UIApplication.openSettingsURLString) { openURL(address) }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.borderedProminent)
             }
         case .failed(let problemText):
             ContentUnavailableView(
