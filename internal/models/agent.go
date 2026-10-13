@@ -522,9 +522,15 @@ const (
 	// transcript from the person's own glossary, and then queues the summary
 	// job. Its subject is the recording.
 	AgentJobRecordingTerms AgentJobKind = "recording_terms"
-	AgentJobReply          AgentJobKind = "reply"
-	AgentJobSend           AgentJobKind = "send"
-	AgentJobSchedule       AgentJobKind = "schedule"
+
+	// AgentJobRecordingKnowledge publishes a recording's passages to the
+	// person's knowledge: the documents, and the facts and overviews that cite
+	// documents whose words changed. Its subject is the recording, so a run
+	// of namings queues one. It makes no model call.
+	AgentJobRecordingKnowledge AgentJobKind = "recording_sync"
+	AgentJobReply              AgentJobKind = "reply"
+	AgentJobSend               AgentJobKind = "send"
+	AgentJobSchedule           AgentJobKind = "schedule"
 
 	// AgentJobExtract reads a message triage thought carries an appointment
 	// or somebody's details in its words, and offers what it found. It

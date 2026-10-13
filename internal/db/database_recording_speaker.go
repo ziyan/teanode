@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/lib/pq"
 	"github.com/ziyan/teanode/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -138,6 +139,13 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	if err != nil {
 		return nil, err
 	}
+	return self.correctRecordingSpeakerLocked(userId, source, correction)
+}
+
+// correctRecordingSpeakerLocked is CorrectRecordingSpeaker once the account and
+// the recording are locked and the name is checked, so that naming a speaker in
+// every piece of a recording takes the locks once.
+func (self *transaction) correctRecordingSpeakerLocked(userId string, source *models.Recording, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error) {
 	var attempt recordingAttemptModel
 	if err := self.tx.Where("id = ?", correction.RecordingTranscriptionAttemptID).Take(&attempt).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -229,27 +237,40 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 			return nil, err
 		}
 	}
-	corrected := make([]*models.RecordingSpeakerCorrection, 0, len(intervals))
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	rows := make([]*recordingSpeakerCorrectionModel, 0, len(intervals))
+	intervalStartsMS := make([]int64, 0, len(intervals))
+	intervalEndsMS := make([]int64, 0, len(intervals))
 	for _, interval := range intervals {
-		row := recordingSpeakerCorrectionModel{ID: newID(), RecordingID: source.ID, RecordingMediaID: transcriptRun.RecordingMediaID, RecordingTranscriptionAttemptID: attempt.ID, SpeakerIdentityID: identity.ID, ClientCorrectionID: correction.ClientCorrectionID, LocalSpeakerID: correction.LocalSpeakerID, PassageStartMS: interval[0], PassageEndMS: interval[1], SourceGeneration: source.SourceGeneration + 1, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
-		if err := self.tx.Create(&row).Error; err != nil {
+		rows = append(rows, &recordingSpeakerCorrectionModel{ID: newID(), RecordingID: source.ID, RecordingMediaID: transcriptRun.RecordingMediaID, RecordingTranscriptionAttemptID: attempt.ID, SpeakerIdentityID: identity.ID, ClientCorrectionID: correction.ClientCorrectionID, LocalSpeakerID: correction.LocalSpeakerID, PassageStartMS: interval[0], PassageEndMS: interval[1], SourceGeneration: source.SourceGeneration + 1, CreatedAt: createdAt})
+		intervalStartsMS = append(intervalStartsMS, interval[0])
+		intervalEndsMS = append(intervalEndsMS, interval[1])
+	}
+	if err := self.tx.CreateInBatches(rows, 500).Error; err != nil {
+		return nil, err
+	}
+	// The samples that overlap any of the intervals, found and revoked together:
+	// a group of thousands of passages is one correction request.
+	overlapCondition := "recording_media_id = ? AND EXISTS (SELECT 1 FROM unnest(?::bigint[], ?::bigint[]) AS span(start_ms, end_ms) WHERE recording_voice_reference.passage_start_ms < span.end_ms AND recording_voice_reference.passage_end_ms > span.start_ms)"
+	var affectedReferenceRows []*recordingVoiceReferenceModel
+	if err := self.tx.Where("NOT is_revoked AND "+overlapCondition, transcriptRun.RecordingMediaID, pq.Array(intervalStartsMS), pq.Array(intervalEndsMS)).Find(&affectedReferenceRows).Error; err != nil {
+		return nil, err
+	}
+	affectedReferences := make([]*models.RecordingVoiceReference, 0, len(affectedReferenceRows))
+	for _, referenceRow := range affectedReferenceRows {
+		affectedReferences = append(affectedReferences, (*models.RecordingVoiceReference)(referenceRow))
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The confirmed speaker for this reference was corrected."); err != nil {
+		return nil, err
+	}
+	if len(affectedReferences) > 0 {
+		if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where(overlapCondition, transcriptRun.RecordingMediaID, pq.Array(intervalStartsMS), pq.Array(intervalEndsMS)).Update("is_revoked", true).Error; err != nil {
 			return nil, err
 		}
-		var affectedReferenceRows []*recordingVoiceReferenceModel
-		if err := self.tx.Where("recording_media_id = ? AND passage_start_ms < ? AND passage_end_ms > ? AND NOT is_revoked", row.RecordingMediaID, row.PassageEndMS, row.PassageStartMS).Find(&affectedReferenceRows).Error; err != nil {
-			return nil, err
-		}
-		affectedReferences := make([]*models.RecordingVoiceReference, 0, len(affectedReferenceRows))
-		for _, referenceRow := range affectedReferenceRows {
-			affectedReferences = append(affectedReferences, (*models.RecordingVoiceReference)(referenceRow))
-		}
-		if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The confirmed speaker for this reference was corrected."); err != nil {
-			return nil, err
-		}
-		if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_media_id = ? AND passage_start_ms < ? AND passage_end_ms > ?", row.RecordingMediaID, row.PassageEndMS, row.PassageStartMS).Update("is_revoked", true).Error; err != nil {
-			return nil, err
-		}
-		corrected = append(corrected, (*models.RecordingSpeakerCorrection)(&row))
+	}
+	corrected := make([]*models.RecordingSpeakerCorrection, 0, len(rows))
+	for _, row := range rows {
+		corrected = append(corrected, (*models.RecordingSpeakerCorrection)(row))
 	}
 	if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 		return nil, err
@@ -323,7 +344,8 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 		if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 			return err
 		}
-		if err := self.SyncRecordingKnowledge(userId, source.ID); err != nil {
+		// The memory catches up in the background; the passages read the new name at once.
+		if err := self.QueueRecordingKnowledgeSync(userId, source.ID); err != nil {
 			return err
 		}
 	}

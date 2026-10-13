@@ -1736,6 +1736,7 @@ export const ja: Catalog = {
   'agent.runKinds.recording': '録音の文字起こし',
   'agent.runKinds.recording_brief': '録音の名前付け',
   'agent.runKinds.recording_terms': '録音内の名前の修正',
+  'agent.runKinds.recording_sync': '録音からメモリを更新',
   'agent.runKinds.ingest': 'ソースの読み取り',
   'agent.runKinds.dream': '夢の整理',
   'agent.runKinds.schedule': '予約実行',

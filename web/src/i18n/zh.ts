@@ -1692,6 +1692,7 @@ export const zh: Catalog = {
   'agent.runKinds.recording': '录音转写',
   'agent.runKinds.recording_brief': '为录音命名',
   'agent.runKinds.recording_terms': '校正录音中的名称',
+  'agent.runKinds.recording_sync': '根据录音更新记忆',
   'agent.runKinds.ingest': '读取来源',
   'agent.runKinds.dream': '梦境整理',
   'agent.runKinds.schedule': '计划运行',

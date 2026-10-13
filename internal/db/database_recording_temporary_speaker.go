@@ -251,16 +251,17 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 		return ErrNotFound
 	}
 	nameDigest := sha256.Sum256([]byte(confirmedName))
+	// The account and the recording are locked above, so each piece is corrected
+	// without taking the locks again. Each correction advances the generation.
 	for _, appearance := range appearances {
-		current, err := self.GetRecording(userId, source.ID)
-		if err != nil {
+		if err := self.tx.Raw("SELECT source_generation FROM recording WHERE id = ?", source.ID).Scan(&source.SourceGeneration).Error; err != nil {
 			return err
 		}
-		if _, err := self.CorrectRecordingSpeaker(userId, RecordingSpeakerCorrectionInput{
+		if _, err := self.correctRecordingSpeakerLocked(userId, source, RecordingSpeakerCorrectionInput{
 			RecordingID: source.ID, RecordingTranscriptionAttemptID: appearance.RecordingTranscriptionAttemptID, LocalSpeakerID: appearance.LocalSpeakerID,
 			// The key names the speaker, the piece and the name, so repeating a request is harmless and renaming is a new correction.
 			ClientCorrectionID: temporarySpeakerKeyPrefix + speaker.ID + "-" + appearance.RecordingTranscriptionAttemptID + "-" + hex.EncodeToString(nameDigest[:4]),
-			ConfirmedName:      confirmedName, IsAccountOwner: isAccountOwner, ExpectedSourceGeneration: current.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1,
+			ConfirmedName:      confirmedName, IsAccountOwner: isAccountOwner, ExpectedSourceGeneration: source.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1,
 		}); err != nil {
 			return err
 		}

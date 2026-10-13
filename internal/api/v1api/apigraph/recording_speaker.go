@@ -123,7 +123,7 @@ func (self *graph) CorrectRecordingSpeaker(ctx context.Context, arguments Correc
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -141,7 +141,7 @@ func (self *graph) NameRecordingTemporarySpeaker(ctx context.Context, arguments 
 	if err := self.transaction(ctx).NameRecordingTemporarySpeaker(userId, arguments.RecordingID, arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner); err != nil {
 		return false, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return false, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -160,9 +160,6 @@ func (self *graph) RenameRecordingSpeaker(ctx context.Context, arguments RenameR
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
-		return nil, translateError(err)
-	}
 	self.transaction(ctx).AfterCommit(func() {
 		if worker := self.agentWorker(); worker != nil {
 			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
@@ -179,7 +176,7 @@ func (self *graph) RemoveRecordingSpeakerCorrection(ctx context.Context, argumen
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -200,7 +197,7 @@ func (self *graph) UndoRecordingSpeakerNaming(ctx context.Context, arguments Rem
 	if _, err := self.transaction(ctx).UndoRecordingSpeakerNaming(userId, arguments.RecordingID, arguments.RecordingSpeakerCorrectionID, arguments.ExpectedSourceGeneration); err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -219,7 +216,7 @@ func (self *graph) DeleteRecordingVoiceReference(ctx context.Context, arguments 
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
