@@ -309,6 +309,7 @@ type AgentVoiceSettings struct {
 // is being captured.
 type AgentRecordingSettings struct {
 	IsLiveTranscriptionEnabled bool `json:"isLiveTranscriptionEnabled"`
+	IsAccurateWordsEnabled     bool `json:"isAccurateWordsEnabled"`
 }
 
 // AgentBrowserSettings is the headless browser.
@@ -448,6 +449,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		},
 		Recording: &AgentRecordingSettings{
 			IsLiveTranscriptionEnabled: agent.Recording.IsLiveTranscriptionOn(),
+			IsAccurateWordsEnabled:     agent.Recording.IsAccurateWordsOn(),
 		},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
@@ -757,6 +759,7 @@ type AgentVoiceParameters struct {
 // AgentRecordingParameters change the recording settings.
 type AgentRecordingParameters struct {
 	IsLiveTranscriptionEnabled *bool `json:"isLiveTranscriptionEnabled"`
+	IsAccurateWordsEnabled     *bool `json:"isAccurateWordsEnabled"`
 }
 
 // AgentBrowserParameters change the headless browser.
@@ -1061,6 +1064,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	}
 	if parameters.Recording != nil {
 		applyFeature(&agent.Recording.IsLiveTranscriptionEnabled, parameters.Recording.IsLiveTranscriptionEnabled)
+		applyFeature(&agent.Recording.IsAccurateWordsEnabled, parameters.Recording.IsAccurateWordsEnabled)
 	}
 	if parameters.Browser != nil {
 		browser := &agent.Browser

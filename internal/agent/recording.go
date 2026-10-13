@@ -329,6 +329,12 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 			return nil
 		}
 	}
+	// Before the run completes: completion queues the glossary pass, which
+	// has to correct the accurate words, and a person's correction wins over
+	// them either way.
+	if err := self.transcribeRecordingAccurateWords(ctx, run, transcriptRun, files, chunks, vocabularyPrompt); err != nil {
+		return err
+	}
 	var isCaptureFinished bool
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		if err := transaction.UpdateRecordingTranscriptProgress(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, models.RecordingProcessingComplete, "", transcriptRun.DerivedDurationMS); err != nil {

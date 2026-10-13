@@ -170,6 +170,9 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 			return ErrInvalidArguments
 		}
 		segment.EffectiveTranscriptText = segment.TranscriptText
+		if segment.AccurateTranscriptText != "" {
+			segment.EffectiveTranscriptText = segment.AccurateTranscriptText
+		}
 		segment.AppliedTextCorrectionID = ""
 		segment.AppliedTextCorrectionOrigin = ""
 		segment.HasUnalignedTextCorrection = false

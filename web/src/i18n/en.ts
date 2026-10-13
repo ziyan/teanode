@@ -1704,6 +1704,8 @@ export const en = {
   'agentSettings.recordingCapture': 'Recording while capturing',
   'agentSettings.recordingLiveTranscription': 'Live transcription while recording',
   'agentSettings.recordingLiveTranscriptionDescription': 'Show words as they are spoken while a recording is being captured. The audio is also streamed through this server to the voice provider\'s realtime transcription, billed by the minute to the person\'s agent, and the words are kept only until the saved audio has been transcribed with speakers.',
+  'agentSettings.recordingAccurateWords': 'Accurate words in recordings',
+  'agentSettings.recordingAccurateWordsDescription': 'Transcribe each speaker\'s turn a second time with the voice transcription model, which is given the names and terms from the person\'s own data and spells them better. Speakers and times do not change, and a person\'s corrections still win. The audio is charged a second time to the person\'s agent.',
   'agentSettings.limit.maxBodyCharacters': 'Characters of a message given to a model',
   'agentSettings.limitsUnattended': 'For work nobody is watching. Zero is the default shown in brackets.',
   'agentSettings.limit.maxRoundsPerSubagent': 'Rounds per subagent (20)',
