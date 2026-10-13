@@ -13,6 +13,7 @@ struct TeaNodeWidgets: WidgetBundle {
         WaitingWidget()
         NextWidget()
         CallControl()
+        RecordingControl()
         TurnActivityWidget()
         CallActivityWidget()
         RecordingActivityWidget()
@@ -499,6 +500,19 @@ struct CallControl: ControlWidget {
         }
         .displayName("Call your agent")
         .description("Starts a voice call with your agent.")
+    }
+}
+
+/// RecordingControl starts a recording from Control Center, the Lock Screen or the Action button.
+struct RecordingControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "recording") {
+            ControlWidgetButton(action: StartRecordingIntent()) {
+                Label("Start a recording", systemImage: "mic.fill")
+            }
+        }
+        .displayName("Start a recording")
+        .description("Opens TeaNode and starts recording.")
     }
 }
 
