@@ -85,6 +85,33 @@ func TestAudioDecodePreservesPCMAndAbsoluteTimeline(test *testing.T) {
 		test.Fatal("decoder changed original media")
 	}
 }
+
+func TestAudioDecodeCAFPreservesPCMAndAbsoluteTimeline(test *testing.T) {
+	decoder := requireDecoder(test)
+	waveBytes := syntheticWave(test, 2500)
+	command := exec.CommandContext(test.Context(), decoder.ffmpegPath, "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "wav", "-i", "pipe:0", "-c:a", "pcm_s16le", "-f", "caf", "pipe:1")
+	command.Stdin = bytes.NewReader(waveBytes)
+	cafBytes, err := command.Output()
+	if err != nil {
+		test.Fatal("synthetic CAF conversion failed", err)
+	}
+	original := privateFixture(test, cafBytes)
+	var decodedPCM bytes.Buffer
+	durationMS, err := decoder.Decode(test.Context(), original, 7000, 5000, 1000, func(chunk *DecodedAudioChunk) error {
+		if chunk.TimelineStartMS != 7000+int64(decodedPCM.Len())*1000/(AudioSampleRateHz*audioSampleBytes) {
+			test.Fatal("CAF chunk timeline changed")
+		}
+		_, err := decodedPCM.Write(chunk.WaveBytes[44:])
+		return err
+	})
+	if err != nil || durationMS != 2500 || !bytes.Equal(decodedPCM.Bytes(), waveBytes[44:]) {
+		test.Fatal("CAF normalization changed PCM or duration", durationMS, err)
+	}
+	preserved := make([]byte, len(cafBytes))
+	if _, err := original.ReadAt(preserved, 0); err != nil || !bytes.Equal(preserved, cafBytes) {
+		test.Fatal("CAF decoding changed original bytes", err)
+	}
+}
 func TestAudioDecodeRefusesTooLongMediaExternalPlaylistsAndCancellation(test *testing.T) {
 	decoder := requireDecoder(test)
 	file := privateFixture(test, syntheticWave(test, 2000))

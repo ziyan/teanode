@@ -11,6 +11,14 @@ import (
 func TestRecordingOperationsRefuseAnonymousAndMissingGrant(test *testing.T) {
 	resolver := &graph{}
 	operations := map[string]func(context.Context) error{
+		"read-playback": func(ctx context.Context) error {
+			_, err := resolver.ReadRecordingPlayback(ctx, RecordingPlaybackArguments{})
+			return err
+		},
+		"prepare-playback": func(ctx context.Context) error {
+			_, err := resolver.PrepareRecordingPlayback(ctx, RecordingPlaybackArguments{})
+			return err
+		},
 		"timeline": func(ctx context.Context) error {
 			_, err := resolver.ReadRecordingTranscriptTimeline(ctx, ReadRecordingTranscriptTimelineArguments{})
 			return err

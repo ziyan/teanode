@@ -35,6 +35,7 @@ type RecordingBlobPurpose string
 const (
 	RecordingBlobAudio            RecordingBlobPurpose = "audio"
 	RecordingBlobSpeakerReference RecordingBlobPurpose = "speakerReference"
+	RecordingBlobAudioPreview     RecordingBlobPurpose = "audioPreview"
 )
 
 // RecordingBlob retains a cleanup reference before any derived byte is written.
