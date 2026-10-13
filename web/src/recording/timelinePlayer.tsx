@@ -143,6 +143,9 @@ function RecordingPieceMedia({
   )
   const isMounted = useRef(false)
   const hasUnsupportedOriginalReference = useRef(false)
+  // The same, for drawing: the reference is read by playback, which is not
+  // rendered, and a hint without an error would otherwise not redraw.
+  const [hasUnsupportedOriginal, setHasUnsupportedOriginal] = useState(false)
   const previewPlayer = useRef<HTMLMediaElement | null>(null)
   const preparation = useRef<Promise<HTMLMediaElement> | null>(null)
   const preparationController = useRef<AbortController | null>(null)
@@ -202,13 +205,17 @@ function RecordingPieceMedia({
     },
     [media.id, passagePlayback],
   )
-  const unsupportedOriginal = (errorMessage: string) => {
+  // An original this browser has no decoder for is expected, not an error:
+  // the player offers the audio preview with a quiet hint and plays it when
+  // asked. A video that loads without a picture says so.
+  const unsupportedOriginal = (errorMessage: string | null) => {
     hasUnsupportedOriginalReference.current = true
+    setHasUnsupportedOriginal(true)
     setIsOriginalUnplayable(true)
     setPlaybackError(errorMessage)
   }
   const originalError = (player: HTMLMediaElement) => {
-    if (player.error?.code === 4) unsupportedOriginal(t('recordings.playbackError'))
+    if (player.error?.code === 4) unsupportedOriginal(null)
     else {
       setIsOriginalUnplayable(true)
       setPlaybackError(t('recordings.playbackError'))
@@ -267,7 +274,7 @@ function RecordingPieceMedia({
       )}
       {isActive && playback ? (
         <div className="page-actions">
-          {isUsingPreview && !hasUnsupportedOriginalReference.current ? (
+          {isUsingPreview && !hasUnsupportedOriginal ? (
             <button
               type="button"
               disabled={isPreparing}
@@ -297,7 +304,7 @@ function RecordingPieceMedia({
               {t(
                 isPreparing
                   ? 'recordings.preparingAudio'
-                  : hasUnsupportedOriginalReference.current
+                  : hasUnsupportedOriginal
                     ? 'recordings.playCompatibleAudio'
                     : 'recordings.useAudioPreview',
               )}
