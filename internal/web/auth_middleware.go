@@ -30,7 +30,7 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 		public[path] = true
 	}
 	isPublic := func(path string) bool {
-		if public[path] {
+		if public[path] || api.IsRecordingLivePath(path) {
 			return true
 		}
 		for _, prefix := range api.PublicPrefixes() {
