@@ -10,7 +10,7 @@ import (
 func NewSyncCommand() *cli.Command {
 	credentialFields := "id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess createdAt lastUsedAt"
 	scopeFlags := []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "name", Required: true, Usage: "the device name"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}, &cli.BoolFlag{Name: "profile", Usage: "create an HTTPS setup profile instead of displaying a password"}}
-	return &cli.Command{Name: "sync", Usage: "set up or revoke device calendar and contact sync", Commands: []*cli.Command{
+	return &cli.Command{Name: "sync", Usage: "set up selected device services or revoke collection sync", Commands: append(syncProfileCommands(), []*cli.Command{
 		{Name: "list", Flags: []cli.Flag{JSONFlag()}, Action: func(ctx context.Context, command *cli.Command) error {
 			connection, err := openClient(command)
 			if err != nil {
@@ -55,5 +55,5 @@ func NewSyncCommand() *cli.Command {
 			}
 			return PrintJSON(response["RevokeSyncCredential"])
 		}},
-	}}
+	}...)}
 }

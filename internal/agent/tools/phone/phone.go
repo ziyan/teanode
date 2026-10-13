@@ -2,7 +2,7 @@
 // agent: which there are and whether notifications reach them, naming them,
 // choosing what each is told, a test notification, and removing one. It
 // also takes the person to where they connect a phone or set one up for
-// mail, calendars and contacts, rather than doing either itself: a connect
+// mail, calendars, reminders and contacts, rather than doing either itself: a connect
 // code and a setup profile carry what signs in as the person, and the model
 // never sees either.
 //
@@ -19,15 +19,14 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
 	"github.com/ziyan/teanode/internal/client"
-	"github.com/ziyan/teanode/internal/models"
 )
 
 // Where the person does what the agent may not do for them: the page that
-// shows a code to scan, and the mailbox's tab that makes a setup profile.
+// shows a code to scan, and the account page that makes a setup profile.
 // The dashboard lets the agent take it to both (web/src/components/dashboardPath.ts).
 const (
 	ConnectPath      = "/connect"
-	SetupProfilePath = "/settings/mailbox/devices"
+	SetupProfilePath = "/settings/sync"
 )
 
 // Tools are the phone actions, for the account tool to group.
@@ -54,13 +53,12 @@ func Tools() []*tools.Tool {
 		},
 		{
 			Name: "phone_setup_profile", Family: tools.FamilyAccount, Risk: tools.RiskRead,
-			Services:    []models.Service{models.ServiceMailboxes},
-			Description: "Take them to their mailbox's mail programs tab, where one tap makes a setup profile that adds their mail, calendars and contacts to an iPhone's or a Mac's own apps. You never see the password in it.",
+			Description: "Take them to account device setup, where they choose available Mail, Calendar, Reminders and Contacts for an iPhone or Mac. Mail is optional and collection setup requires no mailbox. They create the private profile themselves; you never receive its link or passwords.",
 			Parameters:  tools.Object(map[string]any{}),
 			Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				return show(ctx, SetupProfilePath,
-					"the mailbox's mail programs tab is open; tell them to press Set up an iPhone or Mac, or on the phone, Add mail, calendars and contacts to this iPhone",
-					"Open Settings, then the mailbox, then Mail programs, and press Set up an iPhone or Mac; in the TeaNode app it is under Settings, the mailbox, Mail programs")
+					"device setup is open; tell them to press Set up an iPhone or Mac, choose the available services, and leave Mail off if they only want Calendar, Reminders or Contacts",
+					"Open Settings, then Device setup, and press Set up an iPhone or Mac. Choose available services; Calendar, Reminders and Contacts do not require a mailbox")
 			},
 		},
 		{
