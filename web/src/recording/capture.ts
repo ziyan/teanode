@@ -5,7 +5,7 @@ import { DashboardCaptureServer } from './captureServer'
 import { updateCaptureSnapshot } from './captureSnapshot'
 import { openCaptureStore, type CaptureGap, type CaptureStore, type StoredCapture } from './captureStore'
 import { CutPolicy } from './cutPolicy'
-import { LIVE_SAMPLE_RATE, LiveTranscriptionStream } from './liveStream'
+import { LIVE_SAMPLE_RATE, LiveTranscriptionStream, liveRetryDelayMS } from './liveStream'
 import { levelDecibels, encodeWav, PIECE_SAMPLE_RATE } from './wav'
 
 // Recording from the dashboard: the microphone through an AudioWorklet (the
@@ -19,8 +19,6 @@ const ELAPSED_INTERVAL_MS = 500
 // A piece shorter than this, the tail of a recording stopped a moment after a
 // cut, is not worth a transcription of its own.
 const SHORTEST_PIECE_MS = 300
-const LIVE_RETRY_MINIMUM_MS = 1_000
-const LIVE_RETRY_MAXIMUM_MS = 30_000
 
 const samplesPerMS = PIECE_SAMPLE_RATE / 1000
 
@@ -228,14 +226,16 @@ class CaptureEngine {
         this.liveRetryCount = 0
         updateCaptureSnapshot({ isLiveConnected: true })
       },
-      onClosed: () => {
+      onClosed: (_reason, isRefused) => {
         if (this.live !== stream) return
         this.isLiveConnected = false
         updateCaptureSnapshot({ isLiveConnected: false })
         if (this.phase !== 'recording') return
         // Words are a convenience: a stream that cannot be had is tried again
-        // later, quietly, and the recording goes on without it.
-        const delayMS = Math.min(LIVE_RETRY_MAXIMUM_MS, LIVE_RETRY_MINIMUM_MS * 2 ** this.liveRetryCount++)
+        // later, quietly, and the recording goes on without it. One the server
+        // refused is not asked for again.
+        const delayMS = liveRetryDelayMS(this.liveRetryCount++, isRefused)
+        if (delayMS === null) return
         this.liveRetryTimer = window.setTimeout(() => {
           if (this.phase === 'recording') this.openLive()
         }, delayMS)
