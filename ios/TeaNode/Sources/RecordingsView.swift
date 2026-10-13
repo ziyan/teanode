@@ -520,8 +520,8 @@ struct RecordingFloatingButton: View {
 }
 
 /// RecordingRowView is one recording in the library, laid out as a mail row
-/// is: a round mark, the name with when it was made on the right, how long
-/// it runs and where it stands, then a line of what was said.
+/// is but without a picture: the name with when it was made on the right,
+/// how long it runs and where it stands, then a line of what was said.
 struct RecordingRowView: View {
     let row: RecordingLibraryRow
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -535,7 +535,6 @@ struct RecordingRowView: View {
                 .frame(width: 8, height: 8)
                 .padding(.top, 16)
                 .accessibilityHidden(true)
-            RecordingMark(origin: row.recording?.recordingOrigin ?? row.localRecording?.recordingOrigin ?? "capture", isLive: isLive)
             VStack(alignment: .leading, spacing: 3) {
                 // At the accessibility sizes there is no room for the time
                 // beside the name: each goes on a line of its own.
@@ -589,33 +588,6 @@ struct RecordingRowView: View {
 
     private var duration: some View {
         Text(RecordingDuration.text(row.timelineDurationMS)).monospacedDigit().lineLimit(1)
-    }
-}
-
-/// RecordingMark stands where a mail row has the sender's logo: what kind of
-/// recording it is, in the accent color, and red while it is being recorded.
-struct RecordingMark: View {
-    let origin: String
-    let isLive: Bool
-
-    var body: some View {
-        // The circle stays the size of a mail row's logo at every text size,
-        // so its glyph does too.
-        Image(systemName: symbolName)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(.white)
-            .symbolEffect(.pulse, isActive: isLive)
-            .frame(width: 40, height: 40)
-            .background(isLive ? AnyShapeStyle(.red) : AnyShapeStyle(.tint), in: .circle)
-            .accessibilityHidden(true)
-    }
-
-    private var symbolName: String {
-        switch origin {
-        case "videoImport": "video.fill"
-        case "audioImport": "waveform"
-        default: "mic.fill"
-        }
     }
 }
 
