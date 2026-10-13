@@ -699,7 +699,7 @@ struct ThreadRow: View {
                             .accessibilityLabel("Starred")
                     }
                     Text(ListTime.label(of: MailTime.date(message?.receivedAt ?? item?.addedAt ?? "")))
-                        .font(.subheadline)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 // The subject, with whether it carries attachments and how
@@ -721,7 +721,7 @@ struct ThreadRow: View {
                     }
                     if thread.count > 1 {
                         Text(verbatim: "\(thread.count)")
-                            .font(.subheadline.monospacedDigit())
+                            .font(.footnote.monospacedDigit())
                             .foregroundStyle(isUnread ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
@@ -731,11 +731,11 @@ struct ThreadRow: View {
                             .accessibilityLabel(Text("\(thread.count) messages"))
                     }
                 }
-                .font(.body)
+                .font(.subheadline)
                 let preview = insight?.summary ?? ""
                 if !preview.isEmpty {
                     Text(preview)
-                        .font(.body)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }

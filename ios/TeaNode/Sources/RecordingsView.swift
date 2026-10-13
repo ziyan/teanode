@@ -549,10 +549,10 @@ struct RecordingRowView: View {
                         if row.status != .ready { RecordingStatusLabel(status: row.status) }
                     }
                 }
-                .font(.body)
+                .font(.subheadline)
                 if !row.recordingSummaryFirstLine.isEmpty {
                     Text(row.recordingSummaryFirstLine)
-                        .font(.body)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
                 }
@@ -569,7 +569,7 @@ struct RecordingRowView: View {
 
     private var recordedTime: some View {
         Text(ListTime.label(of: row.recordedAt))
-            .font(.subheadline)
+            .font(.footnote)
             .foregroundStyle(.secondary)
             .lineLimit(1)
     }
