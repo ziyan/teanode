@@ -83,6 +83,15 @@ func (self *Agent) QueueRecordingTranscription(transaction db.Transaction, userI
 }
 
 func (self *Agent) queueRecordings(ctx context.Context) {
+	// Before the guard below: the words heard live are in the saved
+	// transcript by now, or the saved audio will never be transcribed, and
+	// either way they are not kept.
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		_, err := transaction.DeleteSettledRecordingLiveUtterances(100)
+		return err
+	}); err != nil {
+		log.Warningf("cannot delete the live words of finished recordings: %s", err)
+	}
 	if self.settings.Registry == nil || self.settings.Configuration().Agent.Models.Transcription == "" {
 		return
 	}
