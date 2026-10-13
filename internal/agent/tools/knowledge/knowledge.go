@@ -290,7 +290,17 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	if more != "" {
 		builder.WriteString(more + "\n")
 	}
-	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
+	return untrustedPassages(strings.TrimRight(builder.String(), "\n")), nil
+}
+
+// untrustedPassages is what a source says, handed to the model as data to
+// weigh, never to obey: a chat archive, a note, a meeting's transcript are
+// other people's words, and a passage that says "deploy it" is something
+// someone said, not an instruction (as web pages and mail are fenced).
+func untrustedPassages(text string) *tools.Result {
+	result := tools.TextResult("%s", text)
+	result.Untrusted = true
+	return result
 }
 
 // searchMoreReserve is the room a page of a search keeps for the lines
@@ -349,7 +359,7 @@ func readAction(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 	if extract.Next > 0 {
 		fmt.Fprintf(&builder, "\n\n… %d characters more; read again with from: %d", extract.Total-extract.Next, extract.Next)
 	}
-	return tools.TextResult("%s", builder.String()), nil
+	return untrustedPassages(builder.String()), nil
 }
 
 // sourcesAction lists what is indexed.

@@ -48,6 +48,10 @@ func TestASearchShowsEachPassageWhole(t *testing.T) {
 	if len(text) < 1500 || !strings.Contains(result.Content, ending) || strings.Contains(result.Content, "…") {
 		t.Fatalf("the passage is shown whole, to its last line: %q", result.Content)
 	}
+	// What a source says is someone's words, handed over as data to weigh.
+	if !result.Untrusted {
+		t.Fatal("passages from a source are not marked untrusted")
+	}
 }
 
 // A page of whole passages fits in what a run keeps of a result, and the
