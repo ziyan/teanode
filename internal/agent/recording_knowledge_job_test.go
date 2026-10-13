@@ -76,3 +76,36 @@ func TestRecordingKnowledgeJobReadsAgainWhenTheRecordingChanged(test *testing.T)
 		test.Fatal("the job did not read the recording again after it changed", database.passCount)
 	}
 }
+
+type recordingKnowledgeSweepDatabase struct {
+	db.Database
+	queuedRecordingIds []string
+}
+
+func (self *recordingKnowledgeSweepDatabase) TransactionContext(_ context.Context, callback func(db.Transaction) error) error {
+	return callback(&recordingKnowledgeSweepTransaction{database: self})
+}
+
+type recordingKnowledgeSweepTransaction struct {
+	db.Transaction
+	database *recordingKnowledgeSweepDatabase
+}
+
+func (self *recordingKnowledgeSweepTransaction) ListRecordingsAwaitingKnowledgeSync(pageSize int) ([]*models.Recording, error) {
+	return []*models.Recording{{ID: "fixture-recording-one", UserID: "fixture-owner"}, {ID: "fixture-recording-two", UserID: "fixture-owner"}}, nil
+}
+
+func (self *recordingKnowledgeSweepTransaction) QueueRecordingKnowledgeSync(userId, recordingId string) error {
+	self.database.queuedRecordingIds = append(self.database.queuedRecordingIds, recordingId)
+	return nil
+}
+
+// The sweep queues a sync for every recording whose knowledge is behind.
+func TestRecordingKnowledgeSweepQueuesEveryRecordingThatIsBehind(test *testing.T) {
+	database := &recordingKnowledgeSweepDatabase{}
+	worker := &Agent{settings: &Settings{Database: database}}
+	worker.queueRecordingKnowledgeSync(test.Context())
+	if len(database.queuedRecordingIds) != 2 || database.queuedRecordingIds[0] != "fixture-recording-one" {
+		test.Fatal("recordings that are behind were not queued", database.queuedRecordingIds)
+	}
+}

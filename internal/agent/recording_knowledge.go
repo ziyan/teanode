@@ -71,6 +71,28 @@ func (self *Agent) runRecordingKnowledge(ctx context.Context, run *Run) error {
 	return &Deferral{Until: time.Now().Add(time.Minute), Reason: "the recording changed while its knowledge was being updated"}
 }
 
+// queueRecordingKnowledgeSync asks again for the recordings whose knowledge is
+// behind their generation and have no sync open: a naming that landed in the
+// moment a sync was finishing, or a job that was lost. The marker is on the
+// recording, so this survives a restart.
+func (self *Agent) queueRecordingKnowledgeSync(ctx context.Context) {
+	var sources []*models.Recording
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		sources, err = transaction.ListRecordingsAwaitingKnowledgeSync(25)
+		return err
+	}); err != nil {
+		log.Warningf("cannot find recordings whose knowledge is behind: %s", err)
+		return
+	}
+	for _, source := range sources {
+		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			return transaction.QueueRecordingKnowledgeSync(source.UserID, source.ID)
+		}); err != nil && ctx.Err() == nil {
+			log.Warningf("cannot queue the knowledge sync of recording %q: %s", source.ID, err)
+		}
+	}
+}
+
 // ignoreDeletedRecording lets a job end quietly when its recording is gone,
 // since there is nothing left to publish.
 func ignoreDeletedRecording(err error) error {

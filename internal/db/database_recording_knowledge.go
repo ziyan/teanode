@@ -23,6 +23,7 @@ type RecordingKnowledgeOperation interface {
 	SyncRecordingKnowledge(userId, recordingId string) error
 	SyncRecordingKnowledgeStep(userId, recordingId string, progress *RecordingKnowledgeSyncProgress) (bool, error)
 	QueueRecordingKnowledgeSync(userId, recordingId string) error
+	ListRecordingsAwaitingKnowledgeSync(pageSize int) ([]*models.Recording, error)
 	ResumeRecordingLearning(userId, recordingId string, expectedSourceGeneration int64) (*models.RecordingLearningView, error)
 	CheckRecordingKnowledgeEvidence(userId string, documents []*models.AgentDocument) error
 	ReconcileDeletedRecordingKnowledge(recordingId string) error
@@ -42,6 +43,11 @@ type RecordingKnowledgeSyncProgress struct {
 	IsRunFinished        bool
 	SegmentCursorStartMS int64
 	SegmentCursorID      string
+	// HasStarted is whether the first slice has run, and SourceGeneration the
+	// recording's generation then: the one the finished pass is recorded as
+	// having synced, so a change made during the pass leaves it behind.
+	HasStarted       bool
+	SourceGeneration int64
 	// HasChangedEvidence is whether any slice of the pass wrote a document
 	// that differs from the one before it.
 	HasChangedEvidence bool
@@ -133,6 +139,17 @@ func (self *transaction) SyncRecordingKnowledgeStep(userId, recordingId string, 
 	return self.syncRecordingKnowledgeStep(userId, recordingId, false, progress, 1)
 }
 
+// syncRecordingKnowledgeStep reads slices of a pass and, when the pass is
+// finished, records the generation it started at on the recording.
+func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, shouldResumeReading bool, progress *RecordingKnowledgeSyncProgress, maximumPageCount int) (bool, error) {
+	isFinished, err := self.syncRecordingKnowledgeSlices(userId, recordingId, shouldResumeReading, progress, maximumPageCount)
+	if err != nil || !isFinished || !progress.HasStarted {
+		return isFinished, err
+	}
+	// Never moves the marker back: a pass that started earlier than another finished.
+	return true, self.tx.Model(&recordingModel{}).Where("id = ? AND (knowledge_synced_generation IS NULL OR knowledge_synced_generation < ?)", recordingId, progress.SourceGeneration).Update("knowledge_synced_generation", progress.SourceGeneration).Error
+}
+
 // QueueRecordingKnowledgeSync asks for the recording's knowledge to be synced
 // in the background, after the request's transaction commits. One job is open
 // per recording, so several requests in a row queue one sync, and the sync
@@ -150,8 +167,37 @@ func (self *transaction) QueueRecordingKnowledgeSync(userId, recordingId string)
 	if err != nil || ownerAgent == nil {
 		return err
 	}
+	// From here the sweep watches the recording: a change that lands while the
+	// job runs leaves the generation ahead of the marker and is queued again.
+	if err := self.tx.Model(&recordingModel{}).Where("id = ? AND knowledge_synced_generation IS NULL", recordingId).Update("knowledge_synced_generation", 0).Error; err != nil {
+		return err
+	}
 	_, err = self.EnqueueAgentJob(&models.AgentJob{AgentID: ownerAgent.ID, Kind: models.AgentJobRecordingKnowledge, SubjectID: recordingId})
 	return err
+}
+
+// ListRecordingsAwaitingKnowledgeSync lists recordings whose generation is ahead
+// of the one their knowledge was synced at and that have no sync queued or
+// running, so a sync that missed a change, or a queue that was lost, is asked
+// for again. A recording nothing has asked to sync has no marker and is left alone.
+func (self *transaction) ListRecordingsAwaitingKnowledgeSync(pageSize int) ([]*models.Recording, error) {
+	if pageSize < 1 || pageSize > 100 {
+		return nil, ErrInvalidArguments
+	}
+	var rows []*recordingModel
+	if err := self.tx.Where(`user_id IS NOT NULL AND deleted_at IS NULL AND knowledge_synced_generation IS NOT NULL AND knowledge_synced_generation < source_generation
+		AND (recording_origin <> ? OR recording_capture_state = ?)
+		AND EXISTS (SELECT 1 FROM agent WHERE agent.user_id = recording.user_id)
+		AND NOT EXISTS (SELECT 1 FROM agent_job WHERE agent_job.kind = ? AND agent_job.subject_id = recording.id AND agent_job.status IN ?)`,
+		models.RecordingOriginCapture, models.RecordingCaptureStopped, models.AgentJobRecordingKnowledge, []string{string(models.AgentJobQueued), string(models.AgentJobRunning)}).
+		Order("updated_at, id").Limit(pageSize).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	sources := make([]*models.Recording, 0, len(rows))
+	for _, row := range rows {
+		sources = append(sources, recordingFromModel(row))
+	}
+	return sources, nil
 }
 
 func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shouldResumeReading bool) error {
@@ -164,14 +210,17 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 	}
 }
 
-// syncRecordingKnowledgeStep reads up to maximumPageCount pages of passages
+// syncRecordingKnowledgeSlices reads up to maximumPageCount pages of passages
 // (all of them when it is zero) and, once there are none left, retires what the
 // pass did not see. It repeats everything before the first page on each call,
 // so that a slice sees the corrections and runs as they are now.
-func (self *transaction) syncRecordingKnowledgeStep(userId, recordingId string, shouldResumeReading bool, progress *RecordingKnowledgeSyncProgress, maximumPageCount int) (bool, error) {
+func (self *transaction) syncRecordingKnowledgeSlices(userId, recordingId string, shouldResumeReading bool, progress *RecordingKnowledgeSyncProgress, maximumPageCount int) (bool, error) {
 	recordingSource, err := self.LockRecording(userId, recordingId)
 	if err != nil {
 		return false, err
+	}
+	if !progress.HasStarted {
+		progress.HasStarted, progress.SourceGeneration = true, recordingSource.SourceGeneration
 	}
 	// The transcript of a capture still being recorded is partial and changes
 	// with every piece. Stopping the capture syncs it once.
