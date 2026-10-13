@@ -4,17 +4,9 @@ name: iOS
 # tests run on Linux, and the app is built on GitHub's macOS runners, which
 # are free for a public repository.
 on:
-  # Main, and branches named ios/..., which also go to TestFlight so a
-  # change can be tried on a phone before it merges.
-  push:
-    branches: [main, "ios/**"]
-    paths:
-      - "ios/**"
-      - ".github/workflows/ios.yml"
-  pull_request:
-    paths:
-      - "ios/**"
-      - ".github/workflows/ios.yml"
+  # Started by hand, on the branch that holds every open change together:
+  # a macOS build is long and the runners are few, so one build carries all
+  # the work rather than one for each branch and pull request.
   workflow_dispatch:
 
 concurrency:
