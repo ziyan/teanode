@@ -107,7 +107,7 @@ func (self *transaction) CorrectRecordingTranscriptText(userId string, input Rec
 	}
 	// A person's words win: a fix the glossary made to this passage is
 	// replaced by what they wrote.
-	if err := self.supersedeRecordingGlossaryCorrections(source.ID, transcriptRun.RecordingMediaID, segment.ID, segment.SegmentStartMS, segment.SegmentEndMS); err != nil {
+	if err := self.supersedeRecordingGlossaryCorrections(source.ID, transcriptRun.RecordingMediaID, segment.ID, segment.SegmentStartMS, segment.SegmentEndMS, false); err != nil {
 		return nil, err
 	}
 	if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
@@ -143,6 +143,17 @@ func (self *transaction) RemoveRecordingTranscriptTextCorrection(userId, recordi
 	if err := self.tx.Model(&row).Updates(map[string]any{"is_removed": true, "source_generation": source.SourceGeneration + 1}).Error; err != nil {
 		return err
 	}
+	// Taking a glossary fix away restores the recognized text, and with it
+	// the earlier fixes of the passage that this one had folded into itself.
+	// The person has undone them as well.
+	if row.TextCorrectionOrigin == models.TextCorrectionOriginGlossary {
+		if err := self.tx.Model(&recordingTextCorrectionModel{}).
+			Where("recording_id = ? AND text_correction_origin = ? AND is_folded AND source_generation < ? AND "+recordingTextCorrectionOverlapCondition,
+				append([]any{recordingId, models.TextCorrectionOriginGlossary, row.SourceGeneration}, recordingTextCorrectionOverlapArguments(row.RecordingTranscriptSegmentID, row.RecordingMediaID, row.PassageStartMS, row.PassageEndMS)...)...).
+			Update("is_folded", false).Error; err != nil {
+			return err
+		}
+	}
 	if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 		return err
 	}
@@ -160,6 +171,7 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 		}
 		segment.EffectiveTranscriptText = segment.TranscriptText
 		segment.AppliedTextCorrectionID = ""
+		segment.AppliedTextCorrectionOrigin = ""
 		segment.HasUnalignedTextCorrection = false
 		transcriptRun := transcriptRuns[segment.RecordingTranscriptRunID]
 		if transcriptRun == nil {
@@ -217,6 +229,7 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 		if selected != nil && !selected.IsRemoved {
 			segment.EffectiveTranscriptText = selected.CorrectedTranscriptText
 			segment.AppliedTextCorrectionID = selected.ID
+			segment.AppliedTextCorrectionOrigin = selected.TextCorrectionOrigin
 		}
 	}
 	return nil
@@ -245,16 +258,26 @@ func (self *transaction) canProjectRecordingTextCorrection(correction *models.Re
 	return true, nil
 }
 
+// recordingTextCorrectionOverlapCondition selects the corrections of one
+// passage in any transcript version of the recording: the same segment, or a
+// segment of the same media whose interval overlaps (or equals) the passage's.
+const recordingTextCorrectionOverlapCondition = "(recording_transcript_segment_id = ? OR (recording_media_id = ? AND ((passage_start_ms < ? AND passage_end_ms > ?) OR (passage_start_ms = ? AND passage_end_ms = ?))))"
+
+func recordingTextCorrectionOverlapArguments(segmentId, recordingMediaId string, segmentStartMS, segmentEndMS int64) []any {
+	return []any{segmentId, recordingMediaId, segmentEndMS, segmentStartMS, segmentStartMS, segmentEndMS}
+}
+
 // supersedeRecordingGlossaryCorrections marks the glossary fixes on a passage,
 // by segment or by the same interval of the same media in another version, as
 // removed. Their source generation stays as it was, so the fix or the person's
-// words written next sort newer than they do. A removed glossary fix is also what stops the pass from making the
-// same fix again.
-func (self *transaction) supersedeRecordingGlossaryCorrections(recordingId, recordingMediaId, segmentId string, segmentStartMS, segmentEndMS int64) error {
+// words written next sort newer than they do. A removed glossary fix is also
+// what stops the pass from making the same fix again, unless isFolded says it
+// was removed only because a later fix of the passage took it in.
+func (self *transaction) supersedeRecordingGlossaryCorrections(recordingId, recordingMediaId, segmentId string, segmentStartMS, segmentEndMS int64, isFolded bool) error {
 	return self.tx.Model(&recordingTextCorrectionModel{}).
 		Where("recording_id = ? AND text_correction_origin = ? AND NOT is_removed AND (recording_transcript_segment_id = ? OR (recording_media_id = ? AND passage_start_ms = ? AND passage_end_ms = ?))",
 			recordingId, models.TextCorrectionOriginGlossary, segmentId, recordingMediaId, segmentStartMS, segmentEndMS).
-		Update("is_removed", true).Error
+		Updates(map[string]any{"is_removed": true, "is_folded": isFolded}).Error
 }
 
 // hasRecordingPersonCorrection says whether the person has corrected this
@@ -267,14 +290,18 @@ func (self *transaction) hasRecordingPersonCorrection(recordingId, recordingMedi
 	return count > 0, err
 }
 
-// isRecordingGlossaryCorrectionRejected says whether a glossary fix of this
-// pair of phrases was made on this passage before and then removed, by the
-// person or because they wrote the passage themselves.
-func (self *transaction) isRecordingGlossaryCorrectionRejected(recordingId, recordingMediaId, segmentId string, segmentStartMS, segmentEndMS int64, originalPhrase, correctedPhrase string) (bool, error) {
+// isRecordingGlossaryCorrectionRejected says whether the person undid a
+// glossary fix for this term on this passage before: one removed, not folded
+// into a later fix, with the same glossary term on the same segment or an
+// overlapping interval of the same media. The words of the fix do not matter,
+// so a rerun that reads the misheard words a little differently ("T node is"
+// after "T node") does not bring back what was undone. Removed because the
+// person rewrote the passage counts as undone too.
+func (self *transaction) isRecordingGlossaryCorrectionRejected(recordingId, recordingMediaId, segmentId string, segmentStartMS, segmentEndMS int64, glossaryTerm string) (bool, error) {
 	var count int64
 	err := self.tx.Model(&recordingTextCorrectionModel{}).
-		Where("recording_id = ? AND text_correction_origin = ? AND is_removed AND LOWER(original_phrase) = LOWER(?) AND LOWER(corrected_phrase) = LOWER(?) AND (recording_transcript_segment_id = ? OR (recording_media_id = ? AND passage_start_ms = ? AND passage_end_ms = ?))",
-			recordingId, models.TextCorrectionOriginGlossary, originalPhrase, correctedPhrase, segmentId, recordingMediaId, segmentStartMS, segmentEndMS).Count(&count).Error
+		Where("recording_id = ? AND text_correction_origin = ? AND is_removed AND NOT is_folded AND LOWER(glossary_term) = LOWER(?) AND "+recordingTextCorrectionOverlapCondition,
+			append([]any{recordingId, models.TextCorrectionOriginGlossary, glossaryTerm}, recordingTextCorrectionOverlapArguments(segmentId, recordingMediaId, segmentStartMS, segmentEndMS)...)...).Count(&count).Error
 	return count > 0, err
 }
 
@@ -318,7 +345,7 @@ func (self *transaction) ApplyRecordingGlossaryCorrections(userId, recordingId s
 		if hasPerson {
 			continue
 		}
-		isRejected, err := self.isRecordingGlossaryCorrectionRejected(source.ID, transcriptRun.RecordingMediaID, segment.ID, segment.SegmentStartMS, segment.SegmentEndMS, proposal.OriginalPhrase, proposal.CorrectedPhrase)
+		isRejected, err := self.isRecordingGlossaryCorrectionRejected(source.ID, transcriptRun.RecordingMediaID, segment.ID, segment.SegmentStartMS, segment.SegmentEndMS, proposal.GlossaryTerm)
 		if err != nil {
 			return nil, err
 		}
@@ -332,16 +359,13 @@ func (self *transaction) ApplyRecordingGlossaryCorrections(userId, recordingId s
 			return nil, err
 		}
 		effectiveText := projected[0].EffectiveTranscriptText
-		if !strings.Contains(effectiveText, proposal.OriginalPhrase) {
-			continue
-		}
-		correctedText := strings.Replace(effectiveText, proposal.OriginalPhrase, proposal.CorrectedPhrase, 1)
-		if len(correctedText) > 65536 {
+		correctedText, replacedCount := models.ReplaceWholePhrase(effectiveText, proposal.OriginalPhrase, proposal.CorrectedPhrase)
+		if replacedCount == 0 || len(correctedText) > 65536 {
 			continue
 		}
 		// An earlier fix of this passage is folded into the new one, which
-		// starts from the text that fix produced.
-		if err := self.supersedeRecordingGlossaryCorrections(source.ID, transcriptRun.RecordingMediaID, segment.ID, segment.SegmentStartMS, segment.SegmentEndMS); err != nil {
+		// starts from the text that fix produced. Folded is not undone.
+		if err := self.supersedeRecordingGlossaryCorrections(source.ID, transcriptRun.RecordingMediaID, segment.ID, segment.SegmentStartMS, segment.SegmentEndMS, true); err != nil {
 			return nil, err
 		}
 		row := recordingTextCorrectionModel{ID: newID(), RecordingID: source.ID, RecordingMediaID: transcriptRun.RecordingMediaID, RecordingTranscriptRunID: transcriptRun.ID, RecordingTranscriptSegmentID: segment.ID, ClientCorrectionID: glossaryClientCorrectionID(segment.ID, proposal, generation+1), PassageStartMS: segment.SegmentStartMS, PassageEndMS: segment.SegmentEndMS, OriginalTranscriptText: segment.TranscriptText, CorrectedTranscriptText: correctedText, SourceGeneration: generation + 1, CreatedAt: time.Now().UTC().Truncate(time.Microsecond), TextCorrectionOrigin: models.TextCorrectionOriginGlossary, GlossaryTerm: proposal.GlossaryTerm, OriginalPhrase: proposal.OriginalPhrase, CorrectedPhrase: proposal.CorrectedPhrase}

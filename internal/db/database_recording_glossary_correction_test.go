@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -183,5 +184,180 @@ func TestGlossaryCorrectionMigrationAddsAndDropsTheColumns(test *testing.T) {
 	dbtest.Exec(test, fixture.database, migration.SQL)
 	if columns := dbtest.QueryString(test, fixture.database, `SELECT COUNT(*)::text FROM information_schema.columns WHERE table_name = 'recording_transcript_text_correction' AND column_name IN ('text_correction_origin', 'glossary_term', 'original_phrase', 'corrected_phrase')`); columns != "4" {
 		test.Fatalf("the migration adds four columns: %s", columns)
+	}
+}
+
+func removeGlossaryFix(test *testing.T, fixture *transcriptFixture, correction *models.RecordingTranscriptTextCorrection) {
+	test.Helper()
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.RemoveRecordingTranscriptTextCorrection(fixture.userId, fixture.media.RecordingID, correction.ID, recordingGeneration(test, fixture)); err != nil {
+			test.Fatal(err)
+		}
+	})
+}
+
+func TestUndoneGlossaryFixBlocksTheTermOnThePassageWhateverTheWords(test *testing.T) {
+	fixture, segments := completeGlossaryFixture(test, "Tea node is up.", "Tea node is down.")
+	applied := applyGlossaryFix(test, fixture, segments[0], "Tea node", "TeaNode", "TeaNode")
+	removeGlossaryFix(test, fixture, applied[0])
+	// A rerun that reads one more word of the same misheard term is the same undone fix.
+	if again := applyGlossaryFix(test, fixture, segments[0], "Tea node is", "TeaNode is", "TeaNode"); len(again) != 0 {
+		test.Fatalf("a rerun brought back a fix the person undid: %+v", again)
+	}
+	// The same term on a passage the person did not undo it on is still fixed.
+	if other := applyGlossaryFix(test, fixture, segments[1], "Tea node", "TeaNode", "TeaNode"); len(other) != 1 {
+		test.Fatalf("an undo on one passage does not block the term on another: %+v", other)
+	}
+}
+
+func TestFoldedGlossaryFixIsNotUndoneUntilTheFixThatTookItInIs(test *testing.T) {
+	fixture, segments := completeGlossaryFixture(test, "Fern croft and off line and Ferne croft.")
+	applyGlossaryFix(test, fixture, segments[0], "Fern croft", "Ferncroft", "Ferncroft")
+	second := applyGlossaryFix(test, fixture, segments[0], "off line", "offline", "offline")
+	// The first fix was folded into the second, not undone, so its term is still allowed here.
+	third := applyGlossaryFix(test, fixture, segments[0], "Ferne croft", "Ferncroft", "Ferncroft")
+	if len(second) != 1 || len(third) != 1 {
+		test.Fatalf("a folded fix does not block its term: %+v %+v", second, third)
+	}
+	if texts := effectiveGlossaryTexts(test, fixture); texts[0] != "Ferncroft and offline and Ferncroft." {
+		test.Fatalf("every fix reads through: %v", texts)
+	}
+	// Undoing the last fix restores the recognized text, which undoes all three.
+	removeGlossaryFix(test, fixture, third[0])
+	if texts := effectiveGlossaryTexts(test, fixture); texts[0] != "Fern croft and off line and Ferne croft." {
+		test.Fatalf("removing the fix restores the recognized text: %v", texts)
+	}
+	if again := applyGlossaryFix(test, fixture, segments[0], "Fern croft", "Ferncroft", "Ferncroft"); len(again) != 0 {
+		test.Fatalf("a fix folded into the one the person undid came back: %+v", again)
+	}
+	if again := applyGlossaryFix(test, fixture, segments[0], "off line", "offline", "offline"); len(again) != 0 {
+		test.Fatalf("a fix folded into the one the person undid came back: %+v", again)
+	}
+}
+
+func TestGlossaryFixReplacesEveryWholeWordOccurrence(test *testing.T) {
+	fixture, segments := completeGlossaryFixture(test, "Fern croft, Fern crofts and Fern croft again.")
+	applied := applyGlossaryFix(test, fixture, segments[0], "Fern croft", "Ferncroft", "Ferncroft")
+	if len(applied) != 1 {
+		test.Fatalf("the fix is made: %+v", applied)
+	}
+	if texts := effectiveGlossaryTexts(test, fixture); texts[0] != "Ferncroft, Fern crofts and Ferncroft again." {
+		test.Fatalf("every whole-word occurrence is replaced and a longer word is left alone: %v", texts)
+	}
+	only := []string{"Fern crofts are here."}
+	other, otherSegments := completeGlossaryFixture(test, only...)
+	if applied := applyGlossaryFix(test, other, otherSegments[0], "Fern croft", "Ferncroft", "Ferncroft"); len(applied) != 0 {
+		test.Fatalf("a phrase that only starts a longer word was replaced: %+v", applied)
+	}
+}
+
+func TestGlossaryCorrectionIsLabeledAsAutomaticInTheProjection(test *testing.T) {
+	fixture, segments := completeGlossaryFixture(test, "Tea node is up.", "Off line again.")
+	applyGlossaryFix(test, fixture, segments[0], "Tea node", "TeaNode", "TeaNode")
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.CorrectRecordingTranscriptText(fixture.userId, db.RecordingTranscriptTextCorrectionInput{RecordingID: fixture.media.RecordingID, RecordingTranscriptSegmentID: segments[1].ID, ClientCorrectionID: "person-edit", CorrectedTranscriptText: "Offline again.", ExpectedSourceGeneration: recordingGeneration(test, fixture)}); err != nil {
+			test.Fatal(err)
+		}
+		listed, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.ProjectRecordingTranscriptTextCorrections(fixture.userId, listed); err != nil {
+			test.Fatal(err)
+		}
+		if listed[0].AppliedTextCorrectionOrigin != models.TextCorrectionOriginGlossary || listed[1].AppliedTextCorrectionOrigin != models.TextCorrectionOriginPerson {
+			test.Fatalf("the projection says who made the correction: %q %q", listed[0].AppliedTextCorrectionOrigin, listed[1].AppliedTextCorrectionOrigin)
+		}
+	})
+}
+
+func TestDeletingARecordingDeletesTheRunConversationsThatReadItsTranscript(test *testing.T) {
+	fixture, _ := completeGlossaryFixture(test, "Tea node is up.")
+	recordingId := fixture.media.RecordingID
+	otherRecordingId := "other-recording"
+	create := func(transaction db.Transaction, kind models.AgentConversationKind, jobKind models.AgentJobKind, subjectId string) string {
+		conversation, err := transaction.CreateAgentConversation(&models.AgentConversation{AgentID: fixture.agentId, Kind: kind, Title: "run", JobKind: string(jobKind), SubjectID: subjectId, LastAt: time.Now()})
+		if err != nil {
+			test.Fatal(err)
+		}
+		return conversation.ID
+	}
+	var termsId, summaryId, unrelatedKindId, otherRecordingConversationId, mainId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		termsId = create(transaction, models.AgentConversationRun, models.AgentJobRecordingTerms, recordingId)
+		summaryId = create(transaction, models.AgentConversationRun, models.AgentJobRecordingSummary, recordingId)
+		unrelatedKindId = create(transaction, models.AgentConversationRun, models.AgentJobRecording, recordingId)
+		otherRecordingConversationId = create(transaction, models.AgentConversationRun, models.AgentJobRecordingTerms, otherRecordingId)
+		mainId = create(transaction, models.AgentConversationMain, "", recordingId)
+		if _, err := transaction.AppendAgentMessage(&models.AgentMessage{ConversationID: termsId, Role: "user", Content: "Tea node is up."}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	exists := func(conversationId string) bool {
+		found := false
+		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+			conversation, err := transaction.GetAgentConversation(conversationId)
+			if err != nil {
+				test.Fatal(err)
+			}
+			found = conversation != nil
+		})
+		return found
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if err := transaction.DeleteRecording(fixture.userId, recordingId); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if exists(termsId) || exists(summaryId) {
+		test.Fatal("the run conversations of the terms and naming jobs outlived the recording")
+	}
+	if !exists(unrelatedKindId) || !exists(otherRecordingConversationId) || !exists(mainId) {
+		test.Fatal("a conversation of another kind, job or recording was deleted")
+	}
+	// A job that was still running when the recording was deleted writes its
+	// conversation afterwards; cleanup removes that one too.
+	var lateId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		lateId = create(transaction, models.AgentConversationRun, models.AgentJobRecordingSummary, recordingId)
+		blobs, err := transaction.ListRecordingBlobsForCleanup(recordingId, 10)
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, blob := range blobs {
+			if err := transaction.DeleteRecordingBlobReference(recordingId, blob.ID); err != nil {
+				test.Fatal(err)
+			}
+		}
+		if err := transaction.AdvanceRecordingMediaCleanup(recordingId, fixture.media.ID, 0); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.FinishRecordingCleanup(recordingId); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if exists(lateId) {
+		test.Fatal("cleanup left a run conversation written after the deletion")
+	}
+}
+
+func TestGlossaryFoldedMigrationAddsAndDropsTheColumn(test *testing.T) {
+	fixture, _ := completeGlossaryFixture(test, "Tea node is up.")
+	var migration migrations.Migration
+	for _, candidate := range migrations.Migrations() {
+		if candidate.ID == "0173_recording_glossary_correction_folded" {
+			migration = candidate
+		}
+	}
+	if migration.ID == "" {
+		test.Fatal("there is no migration 0173_recording_glossary_correction_folded")
+	}
+	dbtest.Exec(test, fixture.database, migration.ReverseSQL)
+	if columns := dbtest.QueryString(test, fixture.database, `SELECT COUNT(*)::text FROM information_schema.columns WHERE table_name = 'recording_transcript_text_correction' AND column_name = 'is_folded'`); columns != "0" {
+		test.Fatalf("the reverse removes the column: %s left", columns)
+	}
+	dbtest.Exec(test, fixture.database, migration.SQL)
+	if columns := dbtest.QueryString(test, fixture.database, `SELECT COUNT(*)::text FROM information_schema.columns WHERE table_name = 'recording_transcript_text_correction' AND column_name = 'is_folded'`); columns != "1" {
+		test.Fatalf("the migration adds the column: %s", columns)
 	}
 }
