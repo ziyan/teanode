@@ -17269,6 +17269,22 @@
         }
       }
     },
+    "Leave the username and password out of the address. You sign in on the next page.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレスにユーザー名とパスワードは含めないでください。サインインは次のページで行います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地址中不要包含用户名和密码，请在下一页登录。"
+          }
+        }
+      }
+    },
     "Leave these empty to follow the server name and the ports it listens on. Fill them in when a router or a container takes the usual port on the outside and forwards it to a different one here.": {
       "localizations": {
         "ja": {
@@ -33140,6 +33156,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "纯文本"
+          }
+        }
+      }
+    },
+    "That address is not encrypted. Use an https address.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアドレスは暗号化されていません。https のアドレスを使ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该地址未加密。请使用 https 地址。"
           }
         }
       }
