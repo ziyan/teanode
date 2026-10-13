@@ -108,7 +108,7 @@ func (self *transaction) ReconcileRecordingReferenceInvalidations(userId, record
 	if err := self.advanceRecordingSpeakerGeneration(recordingId); err != nil {
 		return err
 	}
-	if err := self.SyncRecordingKnowledge(userId, recordingId); err != nil {
+	if err := self.QueueRecordingKnowledgeSync(userId, recordingId); err != nil {
 		return err
 	}
 	return self.tx.Model(&recordingReferenceInvalidationModel{}).Where("recording_id = ? AND NOT is_reconciled", recordingId).Update("is_reconciled", true).Error

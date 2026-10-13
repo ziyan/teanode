@@ -83,7 +83,7 @@ func (self *transaction) SetRecordingRecordedAtIfUnset(userId, recordingId strin
 	if err := self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"recorded_at": recordedAt.UTC().Truncate(time.Microsecond), "source_generation": source.SourceGeneration + 1, "updated_at": time.Now().UTC().Truncate(time.Microsecond)}).Error; err != nil {
 		return false, err
 	}
-	return true, self.SyncRecordingKnowledge(userId, recordingId)
+	return true, self.QueueRecordingKnowledgeSync(userId, recordingId)
 }
 
 func (self *transaction) UpdateRecordingMetadata(userId, recordingId string, expectedSourceGeneration int64, recordingTitle *string, recordedAt *time.Time) (*models.Recording, error) {
@@ -115,7 +115,7 @@ func (self *transaction) UpdateRecordingMetadata(userId, recordingId string, exp
 	if err := self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	if err := self.SyncRecordingKnowledge(userId, recordingId); err != nil {
+	if err := self.QueueRecordingKnowledgeSync(userId, recordingId); err != nil {
 		return nil, err
 	}
 	return self.GetRecording(userId, recordingId)
@@ -143,7 +143,7 @@ func (self *transaction) StoreGeneratedRecordingSummary(userId, recordingId, rec
 		return err
 	}
 	if _, isTitled := updates["recording_title"]; isTitled {
-		return self.SyncRecordingKnowledge(userId, recordingId)
+		return self.QueueRecordingKnowledgeSync(userId, recordingId)
 	}
 	return nil
 }

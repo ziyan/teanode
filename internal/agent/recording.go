@@ -386,7 +386,7 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 			isCaptureFinished = false
 			return nil
 		}
-		return transaction.SyncRecordingKnowledge(run.Agent.UserID, transcriptRun.RecordingID)
+		return transaction.QueueRecordingKnowledgeSync(run.Agent.UserID, transcriptRun.RecordingID)
 	}); err != nil {
 		return err
 	}
@@ -425,7 +425,7 @@ func (self *Agent) FinishRecordingCapture(transaction db.Transaction, userId, re
 	if !hasCompletedRun {
 		return nil
 	}
-	if err := transaction.SyncRecordingKnowledge(userId, recordingId); err != nil {
+	if err := transaction.QueueRecordingKnowledgeSync(userId, recordingId); err != nil {
 		return err
 	}
 	// Term correction queues the naming job when it ends; without it the

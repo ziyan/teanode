@@ -24,10 +24,21 @@ func createTextCorrectionRerun(test *testing.T, fixture *transcriptFixture, clie
 		if _, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: fixture.agentId, Kind: models.AgentJobRecording, SubjectID: transcriptRun.ID}); err != nil {
 			test.Fatal(err)
 		}
-		jobs, err := transaction.ClaimAgentJobs("text-rerun-worker", 1, time.Now())
-		if err != nil || len(jobs) != 1 {
-			test.Fatal(err, len(jobs))
+		// Naming and correcting queue memory syncs ahead of this job; the transcription is the one wanted.
+		jobs, err := transaction.ClaimAgentJobs("text-rerun-worker", 10, time.Now())
+		if err != nil {
+			test.Fatal(err)
 		}
+		transcriptionJobs := []*models.AgentJob{}
+		for _, job := range jobs {
+			if job.Kind == models.AgentJobRecording {
+				transcriptionJobs = append(transcriptionJobs, job)
+			}
+		}
+		if len(transcriptionJobs) != 1 {
+			test.Fatal(len(transcriptionJobs))
+		}
+		jobs = transcriptionJobs
 		claim = db.RecordingWorkerClaim{JobID: jobs[0].ID, ClaimID: jobs[0].ClaimID}
 		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, transcriptRun.ID, claim, models.RecordingProcessingPreparing, "", 0); err != nil {
 			test.Fatal(err)
@@ -146,6 +157,10 @@ func TestRecordingTextCorrectionsPreserveVersionsAndReconcileMemory(test *testin
 		repeated, err := transaction.CorrectRecordingTranscriptText(fixture.userId, input)
 		if err != nil || repeated.ID != correction.ID {
 			test.Fatal("lost response duplicated text edit", err)
+		}
+		// The correction queues the memory sync; this is what its job runs.
+		if err := transaction.SyncRecordingKnowledge(fixture.userId, fixture.media.RecordingID); err != nil {
+			test.Fatal(err)
 		}
 		facts, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
 		if err != nil || !facts[0].Dormant {

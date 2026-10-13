@@ -44,6 +44,15 @@ func TestACaptureIsSyncedAndNamedOnceWhenItStops(test *testing.T) {
 			test.Fatal(err)
 		}
 	})
+	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM agent_job WHERE kind = 'recording_sync' AND status = 'queued'") != "1" {
+		test.Fatal("stopping did not queue exactly one memory sync")
+	}
+	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM agent_document") != "0" {
+		test.Fatal("stopping synced the pieces inside the request")
+	}
+	if err := fixture.worker.SyncRecordingKnowledge(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
 	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM agent_document") != "2" {
 		test.Fatal("stopping did not sync the pieces to memory")
 	}
@@ -77,6 +86,9 @@ func TestTheLastPieceUploadedAfterTheStopSyncsAndNames(test *testing.T) {
 		test.Fatal("naming was queued while a piece was still waiting for its transcript")
 	}
 	fixture.transcribe(finalPiece)
+	if err := fixture.worker.SyncRecordingKnowledge(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+		test.Fatal(err)
+	}
 	if dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM agent_job WHERE kind = 'recording_brief'") != "1" || dbtest.QueryString(test, fixture.database, "SELECT COUNT(*)::text FROM agent_document") != "2" {
 		test.Fatal("the last piece did not sync and name the stopped capture")
 	}
