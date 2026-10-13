@@ -290,7 +290,11 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 	if more != "" {
 		builder.WriteString(more + "\n")
 	}
-	return untrustedPassages(strings.TrimRight(builder.String(), "\n")), nil
+	documentIds := make([]string, 0, shown)
+	for _, passage := range found.Passages[:shown] {
+		documentIds = append(documentIds, passage.DocumentID)
+	}
+	return tools.WithRecordingDocumentEvidence(ctx, run, untrustedPassages(strings.TrimRight(builder.String(), "\n")), documentIds)
 }
 
 // untrustedPassages is what a source says, handed to the model as data to
@@ -359,7 +363,7 @@ func readAction(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 	if extract.Next > 0 {
 		fmt.Fprintf(&builder, "\n\n… %d characters more; read again with from: %d", extract.Total-extract.Next, extract.Next)
 	}
-	return untrustedPassages(builder.String()), nil
+	return tools.WithRecordingDocumentEvidence(ctx, run, untrustedPassages(builder.String()), []string{extract.DocumentID})
 }
 
 // sourcesAction lists what is indexed.
@@ -389,6 +393,9 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 		if !source.Kind.IsDocumentKind() {
 			financeSourceCount++
 			continue
+		}
+		if source.Kind == models.SourceRecording {
+			tools.MarkRecordingEvidence(run)
 		}
 		builder.WriteString(source.Name + " (" + string(source.Kind) + ") — " + source.Describe())
 		fmt.Fprintf(&builder, "\n  %d documents, %d passages", source.DocumentCount, source.ChunkCount)

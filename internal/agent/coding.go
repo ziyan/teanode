@@ -387,6 +387,26 @@ func (self *Agent) codingMemory(ctx context.Context, found *models.Agent, owner 
 	if err != nil {
 		return "", err
 	}
+	if recordingEvidenceSafetyOf(ctx) != nil {
+		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			for _, page := range shown.Pages {
+				node, err := transaction.GetAgentNode(found.ID, page.Path)
+				if err != nil || node == nil {
+					recordingEvidenceSafetyOf(ctx).restrict()
+					if err == nil {
+						err = fmt.Errorf("recording checkout provenance is unavailable")
+					}
+					return err
+				}
+				if err := checkRecordingPromptEvidence(ctx, transaction, found.ID, []*models.AgentNode{node}, page.Facts, nil); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return "", err
+		}
+	}
 	return shown.Text, nil
 }
 

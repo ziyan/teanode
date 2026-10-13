@@ -103,6 +103,7 @@ func (self *Agent) dreamThoughtBeyondShare(ctx context.Context, run *Run, budget
 // reserve saying whether the call may be made and claiming its estimate
 // when it may.
 func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool, work config.AgentWork, reserve func() bool) (*thought, error) {
+	ctx = withRecordingEvidenceSafety(ctx)
 	// A call with nothing to look up answers from its prompt, so it keeps
 	// the read-only turn it always had; there is nothing for a tool to do
 	// in it and no reason to offer one.
@@ -114,6 +115,10 @@ func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget,
 		// answered.
 		tools, rounds, think = everyTool, roundsFor(run.Configuration(), models.AgentJobDream), self.thinkAboutFreely
 		prompt = dreamFrame + "\n\n" + prompt
+		if recordingEvidenceSafetyOf(ctx).isRestricted() {
+			tools, think = lookupTools, self.thinkAbout
+			prompt = recordingLearningInstructions + "\n\n" + prompt
+		}
 	}
 	// Claimed before the call and settled after. A check that stands on
 	// its own is a promise made to every batch in flight at once: three

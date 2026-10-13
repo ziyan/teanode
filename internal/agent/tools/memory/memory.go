@@ -399,7 +399,7 @@ func indexAction(ctx context.Context, run tools.Run, arguments *memoryArguments)
 	case isReadCut:
 		lines = append(lines, fmt.Sprintf("\n… there may be more; index again with offset: %d", next))
 	}
-	return tools.TextResult("%s", strings.Join(lines, "\n")), nil
+	return tools.WithRecordingMemoryEvidence(ctx, run, tools.TextResult("%s", strings.Join(lines, "\n")), nodes, nil, nil)
 }
 
 // getAction is one page: what it says, its facts numbered, what it is
@@ -460,7 +460,7 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 	if more != "" {
 		page += "\n\n" + more
 	}
-	return tools.TextResult("%s", page), nil
+	return tools.WithRecordingMemoryEvidence(ctx, run, tools.TextResult("%s", page), append([]*models.AgentNode{node}, children...), facts, nil)
 }
 
 // factsToGet is the facts a get shows of a page's live facts, which are in
@@ -742,7 +742,7 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	}); err != nil {
 		return nil, err
 	}
-	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
+	return tools.WithRecordingMemoryEvidence(ctx, run, tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nodes, facts, nil)
 }
 
 // rankedGraph is what a search of the graph found, best first, and
@@ -960,7 +960,7 @@ func historyAction(ctx context.Context, run tools.Run, arguments *memoryArgument
 			fmt.Fprintf(&builder, "… there may be changes earlier than these %d, which is as many as one history lists\n", limit)
 		}
 	}
-	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
+	return tools.WithRecordingRevisionEvidence(ctx, run, tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), node, revisions)
 }
 
 // --- writing ----------------------------------------------------------
@@ -1490,16 +1490,22 @@ func batchAction(ctx context.Context, run tools.Run, call *tools.Call, arguments
 		return nil, fmt.Errorf("a batch takes up to %d items at a time; send them in several calls", batchItems)
 	}
 	lines := make([]string, 0, len(arguments.Items))
+	hasRecordingEvidence := false
 	for _, item := range arguments.Items {
 		inner := &memoryArguments{memoryItem: item}
 		result, err := runMemoryItem(ctx, run, call, inner)
+		if result != nil {
+			hasRecordingEvidence = hasRecordingEvidence || result.HasRecordingEvidence
+		}
 		if err != nil {
 			lines = append(lines, item.Action+" "+item.Path+": "+err.Error())
 			continue
 		}
 		lines = append(lines, result.Content)
 	}
-	return tools.TextResult("%s", strings.Join(lines, "\n")), nil
+	result := tools.TextResult("%s", strings.Join(lines, "\n"))
+	result.HasRecordingEvidence = hasRecordingEvidence
+	return result, nil
 }
 
 // --- meaning ----------------------------------------------------------

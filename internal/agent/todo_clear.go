@@ -9,7 +9,7 @@ import "github.com/ziyan/teanode/internal/db"
 // on which the drawer reads the list again. A turn held to reading leaves
 // it: it may not change the list with the todo tool either.
 func (self *AskRun) clearFinishedTodos() {
-	if self.settings.ReadOnly {
+	if self.ReadOnly() {
 		return
 	}
 	conversationId := self.settings.Conversation.ID

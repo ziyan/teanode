@@ -176,6 +176,9 @@ type Result struct {
 	// so the loop wraps it as data that never instructs.
 	Untrusted bool
 
+	// HasRecordingEvidence is trusted source provenance, never inferred from model text.
+	HasRecordingEvidence bool
+
 	// ShowVerbatim marks a secret the person asked to see: relayed once,
 	// exactly, never kept.
 	ShowVerbatim bool

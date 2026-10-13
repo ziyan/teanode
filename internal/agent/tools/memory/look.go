@@ -49,6 +49,7 @@ func lookAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	}
 	agentId := run.Agent().ID
 	lines := make([]string, 0, len(documents))
+	var documentIds []string
 	var images []llm.ContentPart
 	for _, document := range documents {
 		// The agent's own, rechecked after the query the way the route
@@ -58,6 +59,7 @@ func lookAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 		}
 		line, picture := lookAtFile(ctx, run.Storage(), document)
 		lines = append(lines, line)
+		documentIds = append(documentIds, document.ID)
 		if picture == nil {
 			continue
 		}
@@ -72,7 +74,7 @@ func lookAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	result := tools.TextResult("%s", strings.Join(lines, "\n"))
 	result.Images = images
 	result.Note = "looked at what " + subject + " came from"
-	return result, nil
+	return tools.WithRecordingDocumentEvidence(ctx, run, result, documentIds)
 }
 
 // lookedAt is the files a look is about, and what to call what was asked
