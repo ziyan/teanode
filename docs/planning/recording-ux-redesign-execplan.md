@@ -13,7 +13,7 @@ To see it working: record a few seconds on the phone with the screen locked, sto
 ## Progress
 
 - [x] Milestone 1, server (2026-10-13): generated title and summary job `recording_brief` (`internal/agent/recording_summary.go`), `isAccountOwner` speaker flag, API fields, CLI and LLM tool parity, container creation time for imported originals, one-time sweep that names existing untitled recordings, optional titles everywhere, tests. Migration `0170_recording_summary`.
-- [ ] Milestone 2, dashboard: one list, simplified detail, conversation transcript, context menu, details drawer; Chrome audit at desktop and phone widths, light and dark.
+- [x] Milestone 2, dashboard: library as a data table (title, recorded date and time, length, summary, status), simplified detail, conversation transcript, context menu, details drawer showing only the latest transcription; Chrome audit at desktop and phone widths, light and dark (2026-10-13).
 - [ ] Milestone 3, iPhone: one list with status, one-tap record button, App Shortcut and Control Center control, conversation transcript with long-press menu, details sheet; simulator screenshots in light, dark and largest text.
 - [ ] Milestone 4: review every diff, run all checks, open draft PRs, update #423.
 

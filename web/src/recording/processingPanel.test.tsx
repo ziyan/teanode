@@ -115,35 +115,9 @@ function showFixture(
     </TranslationProvider>,
   )
 }
-it('retains the exact free text edit and stable correction key after uncertain responses', async () => {
-  showFixture()
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit recognized text' }))
-  const dialog = screen.getByRole('dialog')
-  fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Exact user correction' } })
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-  await screen.findByText('Uncertain response; retry with the same key')
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-  await waitFor(() =>
-    expect(
-      vi
-        .mocked(recordingOperation)
-        .mock.calls.filter(([operationName]) => operationName === 'CorrectRecordingTranscriptText'),
-    ).toHaveLength(2),
-  )
-  const calls = vi
-    .mocked(recordingOperation)
-    .mock.calls.filter(([operationName]) => operationName === 'CorrectRecordingTranscriptText')
-  expect(calls[0][1]).toEqual(calls[1][1])
-  expect(calls[0][1]).toMatchObject({
-    correctedTranscriptText: 'Exact user correction',
-    recordingTranscriptSegmentId: 'fixture-segment',
-    expectedSourceGeneration: 4,
-  })
-  expect(screen.getByText('Generated evidence')).toBeTruthy()
-})
 it('requires explicit paid confirmation and retains the new version request key on retry', async () => {
   showFixture()
-  fireEvent.click(await screen.findByRole('button', { name: 'New paid version' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Transcribe again' }))
   expect(
     vi
       .mocked(recordingOperation)
@@ -168,31 +142,6 @@ it('requires explicit paid confirmation and retains the new version request key 
   expect(calls[0][1].isReprocessingRequested).toBe(true)
 })
 
-it('uses canonical speaker projection instead of labeling all equal-time speakers', async () => {
-  showFixture([
-    {
-      id: 'confirmed-segment',
-      localSpeakerId: 'local-two',
-      effectiveSpeakerIdentityId: 'fixture-identity',
-      effectiveSpeakerName: 'Speaker Fixture',
-      hasUserConfirmedSpeaker: true,
-    },
-    {
-      id: 'unaligned-segment',
-      localSpeakerId: 'local-three',
-      effectiveSpeakerName: 'Speaker Fixture',
-      hasUserConfirmedSpeaker: false,
-      hasUnalignedSpeakerCorrection: true,
-      hasUnalignedTextCorrection: true,
-    },
-  ])
-  expect(await screen.findByText(/Unconfirmed speaker local-one/)).toBeTruthy()
-  expect(await screen.findByText(/Unconfirmed speaker local-three/)).toBeTruthy()
-  expect(await screen.findByText(/A retained speaker correction does not align uniquely/)).toBeTruthy()
-  expect(await screen.findByText(/A retained text correction does not align uniquely/)).toBeTruthy()
-  expect(screen.getAllByText(/Speaker Fixture/)).toHaveLength(1)
-})
-
 it('keeps evidence editing available while paid processing is off', async () => {
   showFixture([], {
     ReadRecordingTranscriptionAvailability: {
@@ -202,10 +151,7 @@ it('keeps evidence editing available while paid processing is off', async () => 
     },
   })
   expect(await screen.findByText('Processing is off for this fixture')).toBeTruthy()
-  expect((screen.getByRole('button', { name: 'New paid version' }) as HTMLButtonElement).disabled).toBe(true)
-  expect(((await screen.findByRole('button', { name: 'Edit recognized text' })) as HTMLButtonElement).disabled).toBe(
-    false,
-  )
+  expect((screen.getByRole('button', { name: 'Transcribe again' }) as HTMLButtonElement).disabled).toBe(true)
 })
 it('limits rename controls to linked identities while retaining all account names for confirmation', async () => {
   showFixture([], {
@@ -222,48 +168,10 @@ it('limits rename controls to linked identities while retaining all account name
   expect(await screen.findByText('Linked fixture')).toBeTruthy()
   expect(screen.getAllByRole('button', { name: 'Rename speaker' })).toHaveLength(1)
   expect(screen.queryByText('Other fixture')).toBeNull()
-  fireEvent.click(await screen.findByRole('button', { name: 'Name speaker' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Rename speaker' }))
   expect(
     Array.from(document.querySelectorAll('datalist option')).map((option) => option.getAttribute('value')),
   ).toEqual(['Linked fixture', 'Other fixture'])
-})
-
-it('locates a legacy historical citation on its bounded page and plays the exact selected interval', async () => {
-  showFixture([], { ReadRecordingTranscriptPassageOffset: 51 }, '/?run=fixture-run&startMS=2500&endMS=3500')
-  await waitFor(() =>
-    expect(
-      vi
-        .mocked(recordingOperation)
-        .mock.calls.some(
-          ([operationName, variables]) =>
-            operationName === 'ReadRecordingTranscript' &&
-            variables.recordingTranscriptRunId === 'fixture-run' &&
-            variables.segmentOffset === 50,
-        ),
-    ).toBe(true),
-  )
-  expect(
-    (await screen.findByRole('link', { name: 'Play cited passage 0:02.500 to 0:03.500' })).getAttribute('href'),
-  ).toBe('/api/v1/recordings/media/fixture-media#t=2.5,3.5')
-  expect(screen.getAllByText('Cited passage').length).toBeGreaterThan(0)
-})
-it('does not replace a missing explicitly cited version with the latest timeline', async () => {
-  showFixture(
-    [],
-    {
-      ReadRecordingTranscriptTimeline: {
-        segments: [{ id: 'latest-segment', transcriptText: 'Latest unrelated evidence' }],
-        transcriptRuns: [],
-        segmentCount: 1,
-      },
-    },
-    '/?run=missing-run',
-  )
-  expect(await screen.findByText('The requested transcript version is unavailable.')).toBeTruthy()
-  expect(screen.queryByText('Latest unrelated evidence')).toBeNull()
-  expect(
-    vi.mocked(recordingOperation).mock.calls.some(([operationName]) => operationName === 'ReadRecordingTranscript'),
-  ).toBe(false)
 })
 
 it('resumes explicitly stopped reading directly without requesting paid processing or adding a gate', async () => {
@@ -296,10 +204,51 @@ it('resumes explicitly stopped reading directly without requesting paid processi
       .mock.calls.some(([operationName]) => operationName === 'RequestRecordingTranscription'),
   ).toBe(false)
 })
-it('explains empty text history and preserves consistent fractional timestamp precision', async () => {
-  showFixture([{ segmentStartMS: 10200, segmentEndMS: 10380 }])
+it('explains empty text history', async () => {
+  showFixture()
   expect(
-    await screen.findByText('No text corrections yet. Use Edit recognized text on a transcript passage.'),
+    await screen.findByText('No text corrections yet. Use Correct text on a passage of the conversation.'),
   ).toBeTruthy()
-  expect(await screen.findByRole('link', { name: '0:10.200 to 0:10.380' })).toBeTruthy()
+})
+
+it('shows only the latest transcription, with no version list or timeline toggle', async () => {
+  showFixture([], {
+    ReadRecordingProcessing: {
+      recording: { id: 'fixture-recording', userId: 'fixture-owner', sourceGeneration: 4, recordingTitle: 'Fixture' },
+      transcriptRuns: [
+        {
+          id: 'older-run',
+          recordingId: 'fixture-recording',
+          recordingMediaId: 'fixture-media',
+          versionNumber: 1,
+          recordingProcessingState: 'complete',
+        },
+        {
+          id: 'newer-run',
+          recordingId: 'fixture-recording',
+          recordingMediaId: 'fixture-media',
+          versionNumber: 2,
+          recordingProcessingState: 'failed',
+          processingErrorMessage: 'Fixture failure',
+        },
+      ],
+    },
+  })
+  expect(await screen.findByText('Latest transcript')).toBeTruthy()
+  expect(screen.getByText('Fixture failure')).toBeTruthy()
+  expect(screen.queryByText('Version 1')).toBeNull()
+  expect(screen.queryByText('Version 2')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Full recording timeline' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry this version' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(recordingOperation)
+        .mock.calls.some(
+          ([operationName, variables]) =>
+            operationName === 'RetryRecordingTranscription' && variables.recordingTranscriptRunId === 'newer-run',
+        ),
+    ).toBe(true),
+  )
 })

@@ -1,5 +1,6 @@
 import { APIError, authorization, graphql } from '../api'
 import { translateNow } from '../i18n/i18n'
+import { graphqlWithOptionalFields } from './optionalFields'
 import { RecordingSha256, recordingDigest } from './sha256'
 
 export interface Recording {
@@ -7,6 +8,10 @@ export interface Recording {
   id: string
   userId: string
   recordingTitle: string
+  recordingTitleSource?: string
+  recordingSummary?: string
+  createdAt: string
+  recordedAt: string | null
   recordingOrigin: string
   recordingCaptureState: string
   sourceGeneration: number
@@ -37,6 +42,7 @@ export interface RecordingPart {
 export interface RecordingView {
   recording: Recording
   mediaFiles: RecordingMedia[]
+  transcriptRuns: { id: string; versionNumber: number; recordingProcessingState: string; recordingMediaId: string }[]
   uploadParts: RecordingPart[]
 }
 export interface RecordingLimits {
@@ -45,12 +51,12 @@ export interface RecordingLimits {
   uploadPartBytes: number
 }
 const recordingFields =
-  'id userId clientRecordingId recordingTitle recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
+  'id userId createdAt recordedAt clientRecordingId recordingTitle recordingTitleSource recordingSummary recordingOrigin recordingCaptureState sourceGeneration timelineDurationMS captureGaps { gapId gapStartMS gapEndMS recordingGapReason }'
 const mediaFields =
   'id recordingId clientMediaId originalFilename originalContentType originalSizeBytes originalSha256 timelineStartMS mediaDurationMS partCount recordingUploadState verifiedAt'
 export const RECORDING_DOCUMENTS = {
   ListRecordings: `query ($beforeRecordingId: String!, $pageSize: Int!) { ListRecordings(beforeRecordingId: $beforeRecordingId, pageSize: $pageSize) { ${recordingFields} } }`,
-  ReadRecording: `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { ${recordingFields} } mediaFiles { ${mediaFields} } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
+  ReadRecording: `query ($recordingId: String!) { ReadRecording(recordingId: $recordingId) { recording { ${recordingFields} } mediaFiles { ${mediaFields} } transcriptRuns { id versionNumber recordingProcessingState recordingMediaId } uploadParts { recordingMediaId partIndex partSizeBytes partSha256 storedAt } } }`,
   ReadRecordingLimits: 'query { ReadRecordingLimits { maximumMediaBytes maximumAccountBytes uploadPartBytes } }',
   CreateRecording: `mutation ($clientRecordingId: String!, $recordingTitle: String!, $recordingOrigin: String!) { CreateRecording(clientRecordingId: $clientRecordingId, recordingTitle: $recordingTitle, recordingOrigin: $recordingOrigin) { ${recordingFields} } }`,
   CreateRecordingMedia: `mutation ($recordingId: String!, $clientMediaId: String!, $originalFilename: String!, $originalContentType: String!, $originalSizeBytes: Int64!, $originalSha256: String!, $timelineStartMS: Int64!, $mediaDurationMS: Int64!) { CreateRecordingMedia(recordingId: $recordingId, clientMediaId: $clientMediaId, originalFilename: $originalFilename, originalContentType: $originalContentType, originalSizeBytes: $originalSizeBytes, originalSha256: $originalSha256, timelineStartMS: $timelineStartMS, mediaDurationMS: $mediaDurationMS) { ${mediaFields} } }`,
@@ -59,7 +65,7 @@ export const RECORDING_DOCUMENTS = {
 export const RECORDING_PART_BYTES = 8 * 1024 * 1024
 export const recordingMediaPath = (mediaId: string) => `/api/v1/recordings/media/${encodeURIComponent(mediaId)}`
 export async function readRecording(recordingId: string, signal?: AbortSignal): Promise<RecordingView> {
-  const response = await graphql<{ ReadRecording: RecordingView }>(
+  const response = await graphqlWithOptionalFields<{ ReadRecording: RecordingView }>(
     RECORDING_DOCUMENTS.ReadRecording,
     { recordingId },
     signal,
