@@ -280,6 +280,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobIngest, self.runIngest)
 	self.Register(models.AgentJobRecording, self.runRecording)
 	self.Register(models.AgentJobRecordingSummary, self.runRecordingSummary)
+	self.Register(models.AgentJobRecordingTerms, self.runRecordingTerms)
 	self.Register(models.AgentJobDream, self.runDream)
 	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)

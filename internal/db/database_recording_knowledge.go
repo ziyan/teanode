@@ -264,7 +264,11 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 					transcriptText += "\nThe generated attribution used a voice reference whose confirmation changed or was revoked. Treat automatic speaker attribution as uncertain. Explicit user passage confirmations remain evidence; no new transcription has been requested."
 				}
 				if segment.AppliedTextCorrectionID != "" {
-					transcriptText += "\nRecognized text corrected by the user; original generated text remains in transcript version history."
+					if segment.AppliedTextCorrectionOrigin == models.TextCorrectionOriginGlossary {
+						transcriptText += "\nRecognized text corrected automatically to match a name or term the user keeps; the user has not reviewed it. Original generated text remains in transcript version history."
+					} else {
+						transcriptText += "\nRecognized text corrected by the user; original generated text remains in transcript version history."
+					}
 				}
 				// A selected interval does not imply word timestamps or ownership of the whole segment.
 				for _, correction := range corrections {
@@ -300,6 +304,7 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 				}
 				metadata := map[string]any{"recordingId": recordingId, "recordingMediaId": transcriptRun.RecordingMediaID, "recordingTranscriptRunId": transcriptRun.ID, "transcriptVersionNumber": transcriptRun.VersionNumber, "passageStartMS": segment.SegmentStartMS, "passageEndMS": segment.SegmentEndMS, "sourceGeneration": recordingSource.SourceGeneration, "isUntrustedRecording": true, "speakerAttribution": confirmedName}
 				metadata["appliedTextCorrectionId"] = segment.AppliedTextCorrectionID
+				metadata["appliedTextCorrectionOrigin"] = string(segment.AppliedTextCorrectionOrigin)
 				metadata["effectiveSpeakerIdentityId"] = segment.EffectiveSpeakerIdentityID
 				metadata["hasUserConfirmedSpeaker"] = segment.HasUserConfirmedSpeaker
 				metadata["hasUnalignedSpeakerCorrection"] = segment.HasUnalignedSpeakerCorrection
@@ -309,6 +314,7 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 					}
 					metadata["sourceGeneration"] = recordingSource.SourceGeneration
 					metadata["appliedTextCorrectionId"] = segment.AppliedTextCorrectionID
+					metadata["appliedTextCorrectionOrigin"] = string(segment.AppliedTextCorrectionOrigin)
 					metadata["effectiveSpeakerIdentityId"] = segment.EffectiveSpeakerIdentityID
 					metadata["hasUserConfirmedSpeaker"] = segment.HasUserConfirmedSpeaker
 					metadata["hasUnalignedSpeakerCorrection"] = segment.HasUnalignedSpeakerCorrection

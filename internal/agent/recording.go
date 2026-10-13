@@ -318,8 +318,10 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
+	// Every chunk of the job gets the same hint, so it is built once.
+	vocabularyPrompt := self.recordingVocabularyHint(ctx, run.Agent, transcriptRun.RecordingID)
 	for _, chunk := range chunks {
-		shouldContinue, err := self.transcribeRecordingChunk(ctx, run, transcriptRun, selection, files, chunk)
+		shouldContinue, err := self.transcribeRecordingChunk(ctx, run, transcriptRun, selection, files, chunk, vocabularyPrompt)
 		if err != nil {
 			return err
 		}
@@ -354,7 +356,8 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 	}
 	self.WakeRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID)
 	if isCaptureFinished {
-		self.queueRecordingSummary(ctx, run.Agent.UserID, transcriptRun.RecordingID)
+		// Term correction runs first and queues the naming job when it ends.
+		self.queueRecordingTerms(ctx, run.Agent.UserID, transcriptRun.RecordingID)
 	}
 	return nil
 }
@@ -389,10 +392,12 @@ func (self *Agent) FinishRecordingCapture(transaction db.Transaction, userId, re
 	if err := transaction.SyncRecordingKnowledge(userId, recordingId); err != nil {
 		return err
 	}
-	return self.QueueRecordingSummary(transaction, userId, recordingId)
+	// Term correction queues the naming job when it ends.
+	_, err = self.QueueRecordingTerms(transaction, userId, recordingId)
+	return err
 }
 
-func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk) (bool, error) {
+func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk, vocabularyPrompt string) (bool, error) {
 	claim := db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}
 	var attempt *models.RecordingTranscriptionAttempt
 	var blob *models.RecordingBlob
@@ -471,7 +476,7 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 		}
 		return false, err
 	}
-	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences})
+	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences, VocabularyPrompt: vocabularyPrompt})
 	finished := &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptUncertain, AttemptErrorMessage: "provider request did not return a verified transcript; it was not repeated"}
 	var segments []*models.RecordingTranscriptSegment
 	var usage llm.Usage

@@ -131,7 +131,7 @@ func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *test
 					test.Fatal(err)
 				}
 			})
-			shouldContinue, budgetError := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk)
+			shouldContinue, budgetError := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk, "")
 			var deferral *Deferral
 			if shouldContinue || !errors.As(budgetError, &deferral) || provider.callCount != 0 {
 				test.Fatal("exhausted budget submitted paid transcription", budgetError)
@@ -144,7 +144,7 @@ func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *test
 					}
 					continue
 				}
-				shouldContinue, err := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk)
+				shouldContinue, err := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk, "")
 				if err != nil || shouldContinue == hasProviderFailure {
 					test.Fatal("unexpected chunk outcome", shouldContinue, err)
 				}

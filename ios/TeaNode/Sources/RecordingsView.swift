@@ -524,6 +524,7 @@ struct RecordingFloatingButton: View {
 /// it runs and where it stands, then a line of what was said.
 struct RecordingRowView: View {
     let row: RecordingLibraryRow
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let isLive = row.status == .recording
@@ -536,20 +537,26 @@ struct RecordingRowView: View {
                 .accessibilityHidden(true)
             RecordingMark(origin: row.recording?.recordingOrigin ?? row.localRecording?.recordingOrigin ?? "capture", isLive: isLive)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(MailTime.short(row.recordedAt))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                // At the accessibility sizes there is no room for the time
+                // beside the name: each goes on a line of its own.
+                if dynamicTypeSize.isAccessibilitySize {
+                    title.lineLimit(3)
+                    recordedTime
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        title.lineLimit(1)
+                        Spacer(minLength: 4)
+                        recordedTime
+                    }
                 }
-                HStack(spacing: 6) {
-                    Text(RecordingDuration.text(row.timelineDurationMS)).monospacedDigit()
-                    if row.status != .ready {
-                        RecordingStatusLabel(status: row.status)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        duration
+                        if row.status != .ready { RecordingStatusLabel(status: row.status) }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        duration
+                        if row.status != .ready { RecordingStatusLabel(status: row.status) }
                     }
                 }
                 .font(.subheadline)
@@ -558,13 +565,30 @@ struct RecordingRowView: View {
                     Text(row.recordingSummaryFirstLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
                 }
             }
         }
         .padding(.vertical, 6)
         .padding(.leading, -12)
         .accessibilityElement(children: .combine)
+    }
+
+    private var title: some View {
+        Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
+    }
+
+    private var recordedTime: some View {
+        Text(MailTime.short(row.recordedAt))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    private var duration: some View {
+        Text(RecordingDuration.text(row.timelineDurationMS)).monospacedDigit().lineLimit(1)
     }
 }
 
@@ -575,8 +599,10 @@ struct RecordingMark: View {
     let isLive: Bool
 
     var body: some View {
+        // The circle stays the size of a mail row's logo at every text size,
+        // so its glyph does too.
         Image(systemName: symbolName)
-            .font(.subheadline.weight(.semibold))
+            .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(.white)
             .symbolEffect(.pulse, isActive: isLive)
             .frame(width: 40, height: 40)
