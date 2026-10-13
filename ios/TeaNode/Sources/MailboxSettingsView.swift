@@ -259,13 +259,8 @@ struct MailAppPasswordsView: View {
             }
 
             Section {
-                ForEach(passwords) { password in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(password.name)
-                        Text(ServerTime.date(password.lastUsedAt).map { String(localized: "Last used \($0.formatted(.relative(presentation: .named)))") } ?? String(localized: "Never used"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                ForEach(passwords.newestFirst()) { password in
+                    DevicePasswordRow(name: password.name, password: password)
                     .swipeActions {
                         Button("Revoke", systemImage: "trash", role: .destructive) { revoking = password }
                     }

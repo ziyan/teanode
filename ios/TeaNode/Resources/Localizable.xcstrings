@@ -19029,6 +19029,22 @@
         }
       }
     },
+    "May be safe to delete": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除しても問題ない可能性があります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能可以安全删除"
+          }
+        }
+      }
+    },
     "Maybe": {
       "localizations": {
         "ja": {

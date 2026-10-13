@@ -113,7 +113,7 @@ extension Documents {
           CreateDeviceSetupProfile(deviceName: $deviceName, mailboxId: $mailboxId, hasMailAccess: $hasMailAccess, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess, isDownloadOnly: $isDownloadOnly) {
             downloadPath downloadLink expiresAt
             mailboxAppPassword { id mailboxId name createdAt lastUsedAt }
-            syncCredential { id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess }
+            syncCredential { id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess createdAt lastUsedAt }
           }
         }
         """
