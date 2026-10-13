@@ -96,20 +96,21 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 	// The tools the parent has, less this one. That is what "the same as
 	// the parent" means, and it is also what keeps the depth at one.
 	allowed := map[string]bool{}
-	for _, tool := range parent.offered {
+	for _, tool := range parent.Offered() {
 		if tool.Name != "subagent" {
 			allowed[tool.Name] = true
 		}
 	}
 
 	turn, err := self.Ask(&AskSettings{
-		Agent:        parent.settings.Agent,
-		Owner:        parent.settings.Owner,
-		Operations:   parent.settings.Operations,
-		Conversation: conversation,
-		Message:      prompt,
-		Surface:      "subagent",
-		ReadOnly:     parent.settings.ReadOnly,
+		Agent:                   parent.settings.Agent,
+		Owner:                   parent.settings.Owner,
+		Operations:              parent.settings.Operations,
+		Conversation:            conversation,
+		Message:                 prompt,
+		Surface:                 "subagent",
+		ReadOnly:                parent.ReadOnly(),
+		recordingEvidenceSafety: parent.settings.recordingEvidenceSafety,
 		// Held to reading wherever the parent is. A night that may only
 		// look in the graph and could hand the writing to a run of its
 		// own would not be held to anything.
@@ -214,7 +215,7 @@ func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wa
 // of this kind, fixed now and kept with the work, so that a run after a
 // restart has the same.
 func (self *Agent) startBackgroundSubagent(ctx context.Context, parent *AskRun, prompt, title string) (*Result, error) {
-	request := models.AgentBackgroundWorkRequest{Prompt: prompt, IsReadOnly: parent.settings.ReadOnly, AllowedToolNames: []string{}}
+	request := models.AgentBackgroundWorkRequest{Prompt: prompt, IsReadOnly: parent.ReadOnly(), AllowedToolNames: []string{}}
 	// What this turn may do, which the subagent is held to when it runs:
 	// its operations are made again then, for the person as they are then.
 	if parent.settings.Operations != nil {
@@ -223,7 +224,7 @@ func (self *Agent) startBackgroundSubagent(ctx context.Context, parent *AskRun, 
 	if request.StartingTurnPermissions == nil {
 		request.StartingTurnPermissions = models.NewEffectivePermissions(nil)
 	}
-	for _, tool := range parent.offered {
+	for _, tool := range parent.Offered() {
 		switch tool.Name {
 		case "subagent", "survey", "background_work":
 			continue

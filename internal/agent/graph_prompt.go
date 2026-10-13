@@ -62,6 +62,10 @@ func (self *Agent) graphIndex(ctx context.Context, agent *models.Agent, owner *m
 		}
 		var carriedNodes []*models.AgentNode
 		lines, carriedNodes = indexLines(listed, budget, len(nodes) >= indexReadPages, true)
+		if err := checkRecordingPromptEvidence(ctx, tx, agent.ID, carriedNodes, nil, nil); err != nil {
+			lines = nil
+			return err
+		}
 		for _, node := range carriedNodes {
 			carried = append(carried, node.ID)
 		}
@@ -190,6 +194,10 @@ func (self *Agent) selfPageLines(ctx context.Context, agent *models.Agent, owner
 			if facts, err = tx.ListAgentFactsLively(agent.ID, node.ID, selfFacts); err != nil {
 				return err
 			}
+		}
+		if err := checkRecordingPromptEvidence(ctx, tx, agent.ID, []*models.AgentNode{node}, facts, nil); err != nil {
+			lines = nil
+			return err
 		}
 		byNumber(facts)
 		for _, fact := range facts {

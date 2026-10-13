@@ -379,6 +379,9 @@ func (self *AskRun) knowledgeLines(ctx, searchContext context.Context, words str
 			if spent+cost > recallKnowledgeTokens {
 				break
 			}
+			if err := checkRecordingPromptEvidence(ctx, tx, self.settings.Agent.ID, nil, nil, []string{document.ID}); err != nil {
+				return err
+			}
 			spent += cost
 			lines = append(lines, line)
 		}
@@ -902,6 +905,20 @@ func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode
 		}
 		var usedNodes, usedFacts []string
 		for _, block := range blocks {
+			if recordingEvidenceSafetyOf(ctx) != nil {
+				var blockNodes []*models.AgentNode
+				if block.NodeID != "" {
+					var err error
+					blockNodes, err = tx.GetAgentNodes(self.settings.Agent.ID, []string{block.NodeID})
+					if err != nil {
+						self.ObserveRecordingEvidence()
+						return err
+					}
+				}
+				if err := checkRecordingPromptEvidence(ctx, tx, self.settings.Agent.ID, blockNodes, block.Facts, nil); err != nil {
+					return err
+				}
+			}
 			self.Recall(block.Text)
 			if block.NodeID != "" {
 				usedNodes = append(usedNodes, block.NodeID)

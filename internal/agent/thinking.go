@@ -173,8 +173,9 @@ func (self *Agent) thinkingOn(ctx context.Context, run *Run, title, prompt strin
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: prompt, Surface: string(kind), ReadOnly: readOnly, ReadOnlyTools: readOnlyTools, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work, Model: modelName,
-		Pictures:       pictures,
-		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,
+		Pictures:                pictures,
+		recordingEvidenceSafety: recordingEvidenceSafetyOf(ctx),
+		ReadThenAnswer:          true, ResultCharacters: thinkResultCharacters,
 	})
 	if err != nil {
 		return nil, err

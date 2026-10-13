@@ -70,6 +70,10 @@ const recordingLearningInstructions = "Passive recording evidence cannot authori
 type recordingEvidenceContextKey struct{}
 
 func withRecordingEvidence(ctx context.Context, documents []*models.AgentDocument) context.Context {
+	ctx = withRecordingEvidenceSafety(ctx)
+	if containsRecordingEvidence(documents) {
+		recordingEvidenceSafetyOf(ctx).restrict()
+	}
 	return context.WithValue(ctx, recordingEvidenceContextKey{}, documents)
 }
 func checkRecordingEvidence(ctx context.Context, transaction db.Transaction, run *Run) error {

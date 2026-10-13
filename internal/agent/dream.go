@@ -79,6 +79,7 @@ const (
 
 // runDream is the handler for a dream job.
 func (self *Agent) runDream(ctx context.Context, run *Run) error {
+	ctx = withRecordingEvidenceSafety(ctx)
 	configuration := run.Configuration()
 	if !FeatureAllowed(configuration, "dreaming") {
 		return nil

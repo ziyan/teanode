@@ -87,6 +87,8 @@ type AskSettings struct {
 	// read-only credential.
 	ReadOnly bool
 
+	recordingEvidenceSafety *recordingEvidenceSafety
+
 	// ReadOnlyTools names the tools this turn may only look with, while
 	// the rest of its kit acts as usual. Each call to one of them is
 	// judged as it is made, so a tool whose actions differ -- memory,
@@ -503,6 +505,9 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 		done:          make(chan struct{}),
 	}
 	run.ctx, run.cancel = context.WithCancel(self.ctx)
+	if settings.recordingEvidenceSafety != nil {
+		run.ctx = context.WithValue(run.ctx, recordingEvidenceSafetyKey{}, settings.recordingEvidenceSafety)
+	}
 	self.runsMutex.Lock()
 	if self.runs == nil {
 		self.runs = map[string]*AskRun{}
@@ -664,15 +669,36 @@ func (self *AskRun) resultCharacters() int {
 	}
 	return askResultCharacters
 }
-func (self *AskRun) ReadOnly() bool { return self.settings.ReadOnly }
+func (self *AskRun) ReadOnly() bool {
+	return self.settings.ReadOnly || self.recordingEvidenceRestricted()
+}
+
+// ObserveRecordingEvidence is called only for trusted, owned recording provenance.
+func (self *AskRun) ObserveRecordingEvidence() { self.settings.recordingEvidenceSafety.restrict() }
+
+// GuardRecordingEvidence enables trusted provenance checks only inside a dream's turns.
+func (self *AskRun) GuardRecordingEvidence() bool {
+	return self.settings.recordingEvidenceSafety != nil
+}
 
 // ResultCharacters is how much of a tool's result this run keeps, for a
 // tool that fits a page to it.
 func (self *AskRun) ResultCharacters() int { return self.resultCharacters() }
 
 // Usage is what the turn has spent so far, every round added up.
-func (self *AskRun) Usage() llm.Usage       { return self.usage }
-func (self *AskRun) Offered() []*tools.Tool { return self.offered }
+func (self *AskRun) Usage() llm.Usage { return self.usage }
+func (self *AskRun) Offered() []*tools.Tool {
+	if !self.recordingEvidenceRestricted() {
+		return self.offered
+	}
+	allowed := make([]*tools.Tool, 0, len(self.offered))
+	for _, tool := range self.offered {
+		if recordingLookupAllowed(tool) {
+			allowed = append(allowed, tool)
+		}
+	}
+	return allowed
+}
 
 // Loaded and Load are under the run's lock, and Loaded is a copy: a round's
 // reads run together, and two tool_search calls among them load at once.
@@ -1254,7 +1280,7 @@ func (self *AskRun) turn() error {
 		}
 		compactedTokens := llm.EstimateTokens(renderHistory(history))
 		compact := settings.Short || compactedTokens > historyLimitFor(compactedTokens)/2
-		sent, deferred := Split(self.offered, self.loaded, compact)
+		sent, deferred := Split(self.Offered(), self.loaded, compact)
 		// Where a round's time goes, said in the log: a turn that feels
 		// slow is the prompt, the recall, or the model, and only this says
 		// which.
@@ -1273,6 +1299,13 @@ func (self *AskRun) turn() error {
 			self.recallForTurn(ctx)
 		}
 		recalledAt := time.Now()
+		if self.recordingEvidenceRestricted() {
+			sent, deferred = Split(self.Offered(), self.loaded, compact)
+			system, err = self.systemPrompt(ctx, configuration, sent, deferred, compact)
+			if err != nil {
+				return err
+			}
+		}
 		messages := make([]llm.ChatMessage, 0, len(history)+2)
 		messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: system, CacheBreakpoint: true})
 		messages = append(messages, history...)
@@ -1806,7 +1839,10 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "there is no tool named %s"}`, toolCall.Name))}
 	}
 	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
-	if self.settings.ReadOnly && tool.RiskFor(call.Arguments) != RiskRead {
+	if self.recordingEvidenceRestricted() && !recordingLookupAllowed(tool) {
+		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "passive recording evidence permits only memory, knowledge and recording lookups"}`)}
+	}
+	if self.ReadOnly() && tool.RiskFor(call.Arguments) != RiskRead {
 		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "this conversation may only read; the call would change something"}`)}
 	}
 	// One named tool held to reading while the rest of the kit acts. The
@@ -1825,7 +1861,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			// Never in a run held to reading or to a few named tools: those
 			// are the runs that read mail from strangers, and what the
 			// person allows the agent to do alone is not theirs to steer.
-			isRestricted := self.settings.ReadOnly || self.settings.Allow != nil
+			isRestricted := self.ReadOnly() || self.settings.Allow != nil
 			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
 				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
 			}
@@ -1852,6 +1888,9 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	if err == nil {
 		result, err = tool.Run(tools.WithRun(ctx, self), call)
+	}
+	if result != nil && result.HasRecordingEvidence {
+		self.ObserveRecordingEvidence()
 	}
 	if err != nil {
 		// A tool's failure often quotes something from outside -- what a

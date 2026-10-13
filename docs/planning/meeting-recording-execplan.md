@@ -517,3 +517,32 @@ publication order and route checks are being corrected before new captures.
 The web Back button and distinct recording icon, historical citations, source
 schedule and explicit stopped-learning resume are undergoing final desktop and
 mobile Chrome checks. The device-setup redesign remains a separate increment.
+
+
+## Recording evidence enforcement checkpoint
+
+The recording speaker, text correction, curation and knowledge reconciliation increment
+is merged. Follow-up knowledge-result fencing and provider timeout/clamp corrections
+are also merged. These repository results do not establish that the official merged
+release is running: the coordinating session is replacing an unpublished server build
+with the exact official release, with backup and rollback verification underway.
+
+Production dreaming is explicitly paused and no dream job is running. The synthetic
+acceptance recording has five retained learning documents; temporary digest markers
+used to hold them are not successful ingestion, useful memories or model quality
+acceptance. Do not trigger a broad dream across the account or change global models
+for validation. Keep this pause until the recording evidence guard is reviewed,
+merged, deployed and verified, then restore only the coordinator's agreed setting.
+
+The additional guard follows trusted raw/derived source provenance into unattended
+model calls. It persists through ideas-before-digest lookups, digestion, nested turns
+and later stages, denying model-requested write/execution tools while preserving
+existing automatic fact application. Its execution plan is
+[recording-evidence-safety.md](recording-evidence-safety.md).
+
+Production acceptance remains source-specific: record automatic source publication,
+current corrected passages and their exact-version/time citations; observe natural
+scheduled digestion separately; prove obsolete dependent facts become dormant only
+when real derived fixture facts exist. Do not create synthetic facts in production
+as a substitute for demonstrated learning. Screened reference acceptance does not
+verify model speaker identity, and actual provider billing remains unavailable.
