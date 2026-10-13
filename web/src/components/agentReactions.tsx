@@ -185,6 +185,7 @@ export function ReactionPicker({
 function EmojiChooser({ current, onPick }: { current: string; onPick: (emoji: string) => void }) {
   const { t } = useTranslation()
   const [entry, setEntry] = useState('')
+  const entryInput = useRef<HTMLInputElement>(null)
   const hintId = useId()
   const problem = reactionEntryProblem(entry)
   const hintKeys: Record<ReactionEntryProblem, Key | null> = {
@@ -195,6 +196,12 @@ function EmojiChooser({ current, onPick }: { current: string; onPick: (emoji: st
   }
   const hintKey = problem ? hintKeys[problem] : null
   const choose = (emoji: string) => onPick(emoji === current ? '' : emoji)
+  // A dialog takes focus when it opens, so a keyboard or screen reader user
+  // lands in it instead of staying on the button behind it. Escape closes it
+  // and the picker gives focus back to that button.
+  useEffect(() => {
+    entryInput.current?.focus()
+  }, [])
   return (
     // A drag across it is not a swipe of the message under it.
     <div
@@ -211,6 +218,7 @@ function EmojiChooser({ current, onPick }: { current: string; onPick: (emoji: st
         }}
       >
         <input
+          ref={entryInput}
           type="text"
           value={entry}
           autoComplete="off"
