@@ -730,7 +730,10 @@ extension AppModel {
         let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
         let verifiedAccount = await connection.account
         let availableServices = await refreshedServices
-        guard self.connection === connection else { return }
+        // A refresh cancelled as the screens are drawn again, right after
+        // signing in, failed to load nothing: counted as a failure, it
+        // flashed "Cannot reach your server" before another refresh landed.
+        guard !Task.isCancelled, self.connection === connection else { return }
         if hasVerifiedRecordingOwner {
             self.account = verifiedAccount
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
