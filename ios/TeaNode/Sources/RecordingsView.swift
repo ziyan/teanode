@@ -335,15 +335,17 @@ struct RecordingsScreen: View {
                     } header: {
                         ListPeriodHeader(title: period.title)
                     }
+                    .listSectionSeparator(.hidden)
                 }
                 if model.isLoadingPage, !shownRows.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity)
+                    ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
                 }
                 if model.hasUnverifiedLocalOwner {
                     Text(
                         "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
                     )
                     .font(.footnote).foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
