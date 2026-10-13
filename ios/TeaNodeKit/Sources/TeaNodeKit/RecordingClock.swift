@@ -32,3 +32,13 @@ public enum RecordingPieceBoundary {
         max(0, startMS - previousEndMS)
     }
 }
+
+/// RecordingStuckChange says when a change of the capture (a pause, a resume, a stop) has taken so long that it is stuck and must
+/// not hold up the next one for ever.
+public enum RecordingStuckChange {
+    public static let limitSeconds: TimeInterval = 30
+
+    public static func isStuck(startedUptime: TimeInterval, nowUptime: TimeInterval) -> Bool {
+        nowUptime - startedUptime > limitSeconds
+    }
+}

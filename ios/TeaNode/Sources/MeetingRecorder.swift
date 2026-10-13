@@ -96,7 +96,9 @@ final class MeetingRecorder: NSObject {
     /// A change of the capture (pause, resume, stop) that has not finished in 30 seconds is taken as stuck, so it cannot stop the
     /// next one for ever.
     private func releaseStuckChange() {
-        if isChangingCapture, ProcessInfo.processInfo.systemUptime - changeStartedUptime > 30 { isChangingCapture = false }
+        if isChangingCapture, RecordingStuckChange.isStuck(startedUptime: changeStartedUptime, nowUptime: ProcessInfo.processInfo.systemUptime) {
+            isChangingCapture = false
+        }
     }
 
     func pause(isInterruption: Bool = false) async {

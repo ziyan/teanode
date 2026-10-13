@@ -373,3 +373,27 @@ final class RecordingPieceBoundaryTests: XCTestCase {
         XCTAssertEqual(stored.localMedia[0].timelineStartMS, 30_040)
     }
 }
+
+final class RecordingStuckChangeTests: XCTestCase {
+    func testAChangeIsStuckOnlyAfterThirtySeconds() {
+        XCTAssertFalse(RecordingStuckChange.isStuck(startedUptime: 100, nowUptime: 129.9))
+        XCTAssertFalse(RecordingStuckChange.isStuck(startedUptime: 100, nowUptime: 130))
+        XCTAssertTrue(RecordingStuckChange.isStuck(startedUptime: 100, nowUptime: 130.1))
+        XCTAssertFalse(RecordingStuckChange.isStuck(startedUptime: 100, nowUptime: 90))
+    }
+
+    func testAPausedCaptureResumesWithoutAGapBeyondTheTimeItWasPausedAndAFailedResumeLeavesOneInterruption() throws {
+        var recording = LocalRecording(accountKey: "account", recordingTitle: "", recordingOrigin: "capture", recordingUserId: "owner")
+        recording.timelineDurationMS = 30_000
+        try recording.pause(at: 30_000)
+        try recording.resume(at: 34_000)
+        XCTAssertEqual(recording.recordingCaptureState, "active")
+        // The microphone could not be started: the capture goes back to interrupted at once, one gap opening where the last closed.
+        try recording.pause(at: 34_000, gapReason: "interrupted")
+        XCTAssertEqual(recording.recordingCaptureState, "interrupted")
+        XCTAssertEqual(recording.captureGaps.map(\.recordingGapReason), ["paused", "interrupted"])
+        XCTAssertEqual(recording.captureGaps[0].gapEndMS, 34_000)
+        XCTAssertEqual(recording.captureGaps[1].gapStartMS, 34_000)
+        XCTAssertNil(recording.captureGaps[1].gapEndMS)
+    }
+}
