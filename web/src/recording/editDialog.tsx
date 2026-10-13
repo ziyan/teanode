@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
@@ -63,6 +63,25 @@ export function RecordingEditDialog({
       setIsSaving(false)
     }
   }
+  // A speaker's name is offered from the voices already named, the people in
+  // the agent's memory and the person's contacts, narrowed as it is typed.
+  const typedName = fields.find((field) => field.fieldName === 'confirmedName')?.fieldValue
+  const [suggestedNames, setSuggestedNames] = useState<string[]>(speakerNames)
+  useEffect(() => {
+    if (typedName === undefined) return
+    let isCurrent = true
+    const timer = window.setTimeout(() => {
+      recordingOperation<{ confirmedName: string }[]>('SuggestRecordingSpeakerNames', { searchText: typedName.trim() })
+        .then((suggestions) => {
+          if (isCurrent) setSuggestedNames(suggestions.map((suggestion) => suggestion.confirmedName))
+        })
+        .catch(() => {})
+    }, 200)
+    return () => {
+      isCurrent = false
+      window.clearTimeout(timer)
+    }
+  }, [typedName])
   const changeField = (fieldIndex: number, fieldValue: string) =>
     setFields((previous) => previous.map((field, index) => (index === fieldIndex ? { ...field, fieldValue } : field)))
   return (
@@ -102,7 +121,7 @@ export function RecordingEditDialog({
         </label>
       ))}
       <datalist id={speakerNamesListId}>
-        {speakerNames.map((speakerName) => (
+        {suggestedNames.map((speakerName) => (
           <option key={speakerName} value={speakerName} />
         ))}
       </datalist>

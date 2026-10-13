@@ -328,19 +328,14 @@ struct RecordingPassageSheets: ViewModifier {
 
 struct RecordingSpeakerNamingSheet: View {
     @Bindable var model: RecordingConversationModel
+    @State private var suggestions: [RecordingSpeakerNameSuggestion] = []
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextField("Confirmed name", text: $model.confirmedName)
-                    if let speakers = model.speakers, !speakers.speakerIdentities.isEmpty {
-                        Menu("Use a confirmed name") {
-                            ForEach(speakers.speakerIdentities) { identity in
-                                Button(identity.confirmedName) { model.confirmedName = identity.confirmedName }
-                            }
-                        }
-                    }
+                        .textContentType(.name)
                     Toggle("Apply to this speaker group", isOn: $model.isWholeGroup)
                     if !model.isWholeGroup {
                         TextField("Passage start (milliseconds)", text: $model.correctionStartMS).keyboardType(.numberPad)
@@ -352,11 +347,32 @@ struct RecordingSpeakerNamingSheet: View {
                     )
                 }
                 .disabled(model.speakerDraft?.hasSubmittedRequest == true)
+                // Names from the voices already named, the agent's memory
+                // and the contacts, narrowed as the name is typed.
+                if !suggestions.isEmpty, model.speakerDraft?.hasSubmittedRequest != true {
+                    Section("Suggestions") {
+                        ForEach(suggestions) { suggestion in
+                            Button {
+                                model.confirmedName = suggestion.confirmedName
+                            } label: {
+                                Label(suggestion.confirmedName, systemImage: Self.symbolName(suggestion.speakerNameSource))
+                            }
+                            .accessibilityHint(Self.sourceText(suggestion.speakerNameSource))
+                        }
+                    }
+                }
                 if model.speakerDraft?.hasSubmittedRequest == true {
                     Text("This label has an unconfirmed response. Retry the same label before changing it.").foregroundStyle(.secondary)
                 }
             }
             .toast(done: .constant(nil), problem: $model.problemText)
+            .task(id: model.confirmedName) {
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                let typed = model.confirmedName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let offered = (try? await model.connection.suggestRecordingSpeakerNames(searchText: typed)) ?? []
+                guard !Task.isCancelled else { return }
+                suggestions = offered.filter { $0.confirmedName != typed }
+            }
             .navigationTitle("Name speaker")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -366,6 +382,24 @@ struct RecordingSpeakerNamingSheet: View {
                         model.isSaving || model.confirmedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+        }
+    }
+}
+
+extension RecordingSpeakerNamingSheet {
+    static func symbolName(_ speakerNameSource: String) -> String {
+        switch speakerNameSource {
+        case "memory": "brain"
+        case "contact": "person.crop.circle"
+        default: "waveform"
+        }
+    }
+
+    static func sourceText(_ speakerNameSource: String) -> String {
+        switch speakerNameSource {
+        case "memory": String(localized: "From your agent's memory")
+        case "contact": String(localized: "From your contacts")
+        default: String(localized: "A voice you named before")
         }
     }
 }

@@ -3669,6 +3669,22 @@
         }
       }
     },
+    "A voice you named before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前名前を付けた声"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你之前命名过的声音"
+          }
+        }
+      }
+    },
     "A year": {
       "localizations": {
         "ja": {
@@ -14113,6 +14129,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "来自对账单"
+          }
+        }
+      }
+    },
+    "From your agent's memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの記憶から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你的助手记忆"
+          }
+        }
+      }
+    },
+    "From your contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你的联系人"
           }
         }
       }
@@ -32609,6 +32657,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "小计"
+          }
+        }
+      }
+    },
+    "Suggestions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候補"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
           }
         }
       }

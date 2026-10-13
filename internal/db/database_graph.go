@@ -82,6 +82,7 @@ type GraphOperation interface {
 	// ListAgentIndex is the top of the graph, pinned first then by
 	// importance: what a prompt carries. Dormant pages are never in it.
 	ListAgentIndex(agentId string, limit int) ([]*models.AgentNode, error)
+	ListAgentNodesOfKind(agentId string, kind models.AgentNodeKind, searchText string, limit int) ([]*models.AgentNode, error)
 
 	// ListAgentNodesUnder is every page at or below a path, oldest first,
 	// for a tree view and for the move above.
@@ -886,6 +887,20 @@ func (self *transaction) FirstAgentFactLines(agentId string, nodeIds []string) (
 func (self *transaction) ListAgentNodeChildren(agentId, nodeId string) ([]*models.AgentNode, error) {
 	return self.nodesFrom(self.tx.Where(`"agent_id" = ? AND "parent_id" = ?`, agentId, nodeId).
 		Order(`"pinned" DESC, "importance" DESC, "path" ASC`))
+}
+
+// ListAgentNodesOfKind are an agent's live pages of one kind whose name or an
+// alias contains the search, case aside, the most important first.
+func (self *transaction) ListAgentNodesOfKind(agentId string, kind models.AgentNodeKind, searchText string, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query := self.tx.Where(`"agent_id" = ? AND "kind" = ? AND NOT "dormant"`, agentId, string(kind))
+	if trimmed := strings.TrimSpace(searchText); trimmed != "" {
+		like := "%" + escapeLike(strings.ToLower(trimmed)) + "%"
+		query = query.Where(`LOWER("name") LIKE ? OR LOWER("aliases"::text) LIKE ?`, like, like)
+	}
+	return self.nodesFrom(query.Order(`"importance" DESC, "modified_at" DESC`).Limit(limit))
 }
 
 func (self *transaction) ListAgentIndex(agentId string, limit int) ([]*models.AgentNode, error) {
