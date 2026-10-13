@@ -256,6 +256,8 @@ it('marks a passage as the account owner, and Not me opens the name form', async
   await waitFor(() => expect(calls('CorrectRecordingSpeakerOwner')).toHaveLength(1))
   expect(calls('CorrectRecordingSpeakerOwner')[0][1]).toMatchObject({ isAccountOwner: true, confirmedName: '' })
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  // Your own bubble offers one way to say who it was: Not me, not Name speaker too.
+  expect(within(bubbleOf('Text of mine')).queryByRole('button', { name: 'Name speaker' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Not me' }))
   // Releasing a passage is confirming it as somebody else: the name form opens.
   expect(within(screen.getByRole('dialog')).getByRole('combobox')).toBeTruthy()
