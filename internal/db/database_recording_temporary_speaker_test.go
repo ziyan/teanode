@@ -219,3 +219,58 @@ func TestATemporarySpeakerWithoutASampleIsLabeledAndNamed(test *testing.T) {
 		}
 	})
 }
+
+// "This is me" without a name is the person's own identity under the name it
+// has, and the same request sent again is answered with the same passages.
+func TestThisIsMeRepeatedIsTheSameRequest(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	recordingId := fixture.media.RecordingID
+	var generation int64
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "A", SegmentStartMS: 2000, SegmentEndMS: 2600, TranscriptText: "A first remark."},
+			{LocalSpeakerID: "B", SegmentStartMS: 2600, SegmentEndMS: 3000, TranscriptText: "A second remark."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, recordingId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: recordingId, RecordingTranscriptionAttemptID: attempt.ID, ClientCorrectionID: "own-name", LocalSpeakerID: "B", ConfirmedName: "Fixture Self", IsAccountOwner: true, ExpectedSourceGeneration: source.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1}); err != nil {
+			test.Fatal(err)
+		}
+		source, err = transaction.GetRecording(fixture.userId, recordingId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		generation = source.SourceGeneration
+	})
+	thisIsMe := func() ([]*models.RecordingSpeakerCorrection, error) {
+		var corrected []*models.RecordingSpeakerCorrection
+		err := fixture.database.Transaction(func(transaction db.Transaction) (err error) {
+			corrected, err = transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: recordingId, RecordingTranscriptionAttemptID: attempt.ID, ClientCorrectionID: "this-is-me", LocalSpeakerID: "A", IsAccountOwner: true, ExpectedSourceGeneration: generation, PassageStartMS: -1, PassageEndMS: -1})
+			return err
+		})
+		return corrected, err
+	}
+	first, err := thisIsMe()
+	if err != nil || len(first) != 1 {
+		test.Fatal("this is me was refused", err)
+	}
+	again, err := thisIsMe()
+	if err != nil || len(again) != 1 || again[0].ID != first[0].ID {
+		test.Fatal("the same request sent again was refused", err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		segments := timelineOf(test, transaction, fixture.userId, recordingId)
+		if !segments[0].IsAccountOwner || segments[0].EffectiveSpeakerName != "Fixture Self" {
+			test.Fatal("the passage did not become the person's own, under their name", segments[0])
+		}
+	})
+}
