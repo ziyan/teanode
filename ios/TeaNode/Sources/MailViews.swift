@@ -398,9 +398,10 @@ struct ThreadList: View {
                 } header: {
                     ListPeriodHeader(title: period.title)
                 }
+                .listSectionSeparator(.hidden)
             }
             if list.isLoading, !list.threads.isEmpty {
-                ProgressView().frame(maxWidth: .infinity)
+                ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             }
         }
         .listStyle(.plain)
