@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var connection: Connection?
 
     private(set) var services: ServiceCapabilities?
+    /// Whether the server could not be asked which services it runs, and
+    /// none are known yet: the app says so rather than calling them off.
+    private(set) var hasServicesFailedToLoad = false
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -733,13 +736,11 @@ extension AppModel {
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
         if let availableServices { self.services = availableServices }
+        hasServicesFailedToLoad = availableServices == nil && services == nil
     }
 
-    /// Whether a part of TeaNode can be opened. Until the server has said
-    /// which services it runs, every part is taken to be on, so the first
-    /// screen at launch is the part itself rather than a moment of "off".
     func isSectionAvailable(_ section: AppSection) -> Bool {
-        guard let services else { return true }
+        let services = services ?? .unavailable
         switch section {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled

@@ -243,7 +243,15 @@ struct MainView: View {
 
     @ViewBuilder
     private var screen: some View {
-        if !app.isSectionAvailable(section) {
+        if app.services == nil, section != .settings, !(section == .recordings && app.isSectionAvailable(.recordings)) {
+            // Which services the server runs is not known yet: neither the
+            // part nor "off" is true until it is. Recordings stay open
+            // offline once the account is known, so a meeting can be recorded.
+            NavigationStack {
+                ServicesLoadingView()
+                    .toolbar { MenuButton() }
+            }
+        } else if !app.isSectionAvailable(section) {
             NavigationStack {
                 ServiceOffView(section: section, connection: connection)
                     .toolbar { MenuButton() }
@@ -443,6 +451,37 @@ struct ServiceOffView: View {
         }
         .task(id: section) {
             canManageServer = (try? await connection.operatorAccess())?.canManageServer ?? false
+        }
+    }
+}
+
+/// ServicesLoadingView is the app asking the server which services it runs,
+/// at launch, and what it says when the server cannot be reached.
+struct ServicesLoadingView: View {
+    @Environment(AppModel.self) private var app
+    @State private var isRetrying = false
+
+    var body: some View {
+        if app.hasServicesFailedToLoad {
+            ContentUnavailableView {
+                Label("Cannot reach your server", systemImage: "wifi.exclamationmark")
+            } description: {
+                Text("TeaNode could not ask your server what it runs. Check the connection and try again.")
+            } actions: {
+                Button {
+                    isRetrying = true
+                    Task {
+                        await app.refreshServices()
+                        isRetrying = false
+                    }
+                } label: {
+                    if isRetrying { ProgressView() } else { Text("Try again") }
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(isRetrying)
+            }
+        } else {
+            ProgressView("Connecting to your server")
         }
     }
 }

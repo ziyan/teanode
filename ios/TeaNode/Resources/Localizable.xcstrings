@@ -7845,6 +7845,22 @@
         }
       }
     },
+    "Cannot reach your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到你的服务器"
+          }
+        }
+      }
+    },
     "Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.": {
       "localizations": {
         "ja": {
@@ -9137,6 +9153,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已连接。"
+          }
+        }
+      }
+    },
+    "Connecting to your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接你的服务器"
           }
         }
       }
@@ -32801,6 +32833,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟随系统"
+          }
+        }
+      }
+    },
+    "TeaNode could not ask your server what it runs. Check the connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はサーバーで動いているサービスを確認できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法向你的服务器查询其运行的服务。请检查网络连接后重试。"
           }
         }
       }
