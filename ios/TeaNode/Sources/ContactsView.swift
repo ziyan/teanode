@@ -75,11 +75,26 @@ struct ContactsScreen: View {
 
     var body: some View {
         NavigationStack {
-            List(model.contacts) { contact in
-                NavigationLink(value: contact.id) {
-                    ContactRow(contact: contact, isMine: contact.id == model.myContactId)
+            // Laid out as the mail and recordings lists are, under a letter
+            // instead of a period: no chevrons, no lines, rows close together.
+            List {
+                ForEach(ContactLetterSection.sections(of: model.contacts)) { section in
+                    Section {
+                        ForEach(section.contacts) { contact in
+                            NavigationLink(value: contact.id) {
+                                ContactRow(contact: contact, isMine: contact.id == model.myContactId)
+                            }
+                            .navigationLinkIndicatorVisibility(.hidden)
+                            .listRowInsets(ListRowSpacing.insets)
+                            .listRowSeparator(.hidden)
+                        }
+                    } header: {
+                        ListPeriodHeader(title: section.letter)
+                    }
+                    .listSectionSeparator(.hidden)
                 }
             }
+            .listStyle(.plain)
             .navigationTitle("Contacts")
             .withoutSwipeBack()
             .navigationDestination(for: String.self) { contactId in
@@ -154,6 +169,8 @@ struct ContactRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(contact.shownName.isEmpty ? String(localized: "No name") : contact.shownName)
+                        .font(.headline)
+                        .lineLimit(1)
                     if isMine {
                         Text("You")
                             .font(.caption)
@@ -168,12 +185,36 @@ struct ContactRow: View {
                     .first(where: { !$0.isEmpty && $0 != contact.shownName })
                 {
                     Text(detail)
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
         }
+    }
+}
+
+/// ContactLetterSection is the contacts under one letter, as an address book
+/// groups them: sorted by name, a section for each first letter, and # for a
+/// name that starts with neither a letter nor a digit.
+struct ContactLetterSection: Identifiable {
+    let letter: String
+    let contacts: [ContactSummary]
+    var id: String { letter }
+
+    static func sections(of contacts: [ContactSummary]) -> [ContactLetterSection] {
+        let sorted = contacts.sorted { $0.shownName.localizedStandardCompare($1.shownName) == .orderedAscending }
+        var sections: [ContactLetterSection] = []
+        for contact in sorted {
+            let monogram = Monogram.letter(of: contact.shownName)
+            let letter = monogram == "?" ? "#" : monogram
+            if let last = sections.last, last.letter == letter {
+                sections[sections.count - 1] = ContactLetterSection(letter: letter, contacts: last.contacts + [contact])
+            } else {
+                sections.append(ContactLetterSection(letter: letter, contacts: [contact]))
+            }
+        }
+        return sections
     }
 }
 
