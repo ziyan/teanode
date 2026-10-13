@@ -7,11 +7,14 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 )
+
+const recordingMediaRequestTimeout = 11 * time.Minute
 
 // NewRecordingCommand manages account-owned recordings through the shared API.
 func NewRecordingCommand() *cli.Command {
@@ -28,6 +31,9 @@ func recordingCall(ctx context.Context, command *cli.Command, operationName stri
 	connection, err := openClient(command)
 	if err != nil {
 		return err
+	}
+	if operationName == "PrepareRecordingPlayback" {
+		connection.SetTimeout(recordingMediaRequestTimeout)
 	}
 	return describeError(command, client.RunRecording(ctx, connection, operationName, variables, answered))
 }
@@ -122,6 +128,7 @@ func runRecordingDownload(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	connection.SetTimeout(recordingMediaRequestTimeout)
 	var view client.RecordingView
 	if err := client.RunRecording(ctx, connection, "ReadRecording", map[string]any{"recordingId": recordingId}, &view); err != nil {
 		return describeError(command, err)
