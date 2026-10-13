@@ -327,9 +327,28 @@ func TestANamingCanBeUndoneWholeOrOnePassage(test *testing.T) {
 		if namedCount(transaction) != 2 {
 			test.Fatal("removing one passage's naming did not leave the others named")
 		}
+		isOffered := func() bool {
+			identities, err := transaction.ListRecordingSpeakerIdentitiesInUse(fixture.userId)
+			if err != nil {
+				test.Fatal(err)
+			}
+			for _, identity := range identities {
+				if identity.ConfirmedName == "Fixture Colleague" {
+					return true
+				}
+			}
+			return false
+		}
+		if !isOffered() {
+			test.Fatal("a name in use was not offered")
+		}
 		undone, err := transaction.UndoRecordingSpeakerNaming(fixture.userId, recordingId, corrected[0].ID, generation(transaction))
 		if err != nil || undone != 2 || namedCount(transaction) != 0 {
 			test.Fatal("undoing the naming left passages named", undone, err)
+		}
+		// Every naming taken back, the name is no longer offered.
+		if isOffered() {
+			test.Fatal("a name no recording uses was still offered")
 		}
 		name(transaction, "second-naming")
 		if namedCount(transaction) != 3 {

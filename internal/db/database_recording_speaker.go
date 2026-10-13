@@ -28,6 +28,7 @@ type RecordingSpeakerOperation interface {
 	LockRevokedRecordingVoiceReferenceForCleanup(userId, recordingId, referenceId string) (*models.RecordingVoiceReference, error)
 	DeleteRevokedRecordingVoiceReference(userId, recordingId, referenceId string) error
 	ListRecordingSpeakerIdentities(userId string) ([]*models.RecordingSpeakerIdentity, error)
+	ListRecordingSpeakerIdentitiesInUse(userId string) ([]*models.RecordingSpeakerIdentity, error)
 	ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error)
 	ListRecordingVoiceReferences(userId, recordingId string) ([]*models.RecordingVoiceReference, error)
 	CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error)
@@ -75,6 +76,29 @@ func (self *transaction) ListRecordingSpeakerIdentities(userId string) ([]*model
 	}
 	return identities, nil
 }
+
+// ListRecordingSpeakerIdentitiesInUse is the names a person's recordings still
+// carry: an identity that names a passage of a recording not deleted, or holds
+// a voice reference not revoked, and the person's own. A name every naming of
+// which was undone, or whose recordings were all deleted, is left out, so it
+// is no longer offered when naming a speaker.
+func (self *transaction) ListRecordingSpeakerIdentitiesInUse(userId string) ([]*models.RecordingSpeakerIdentity, error) {
+	var rows []*recordingSpeakerIdentityModel
+	if err := self.tx.Where(`user_id = ? AND (is_account_owner
+		OR EXISTS (SELECT 1 FROM recording_speaker_correction c JOIN recording r ON r.id = c.recording_id
+			WHERE c.speaker_identity_id = recording_speaker_identity.id AND NOT c.is_removed AND r.deleted_at IS NULL)
+		OR EXISTS (SELECT 1 FROM recording_voice_reference v JOIN recording r ON r.id = v.recording_id
+			WHERE v.speaker_identity_id = recording_speaker_identity.id AND NOT v.is_revoked AND r.deleted_at IS NULL))`, userId).
+		Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	identities := make([]*models.RecordingSpeakerIdentity, 0, len(rows))
+	for _, row := range rows {
+		identities = append(identities, (*models.RecordingSpeakerIdentity)(row))
+	}
+	return identities, nil
+}
+
 func (self *transaction) ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error) {
 	if _, err := self.GetRecording(userId, recordingId); err != nil {
 		return nil, err

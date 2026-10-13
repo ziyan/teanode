@@ -65,7 +65,7 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 		suggestions = append(suggestions, &RecordingSpeakerNameSuggestion{ConfirmedName: name, SpeakerNameSource: speakerNameSource})
 	}
 	transaction := self.transaction(ctx)
-	identities, err := transaction.ListRecordingSpeakerIdentities(userId)
+	identities, err := transaction.ListRecordingSpeakerIdentitiesInUse(userId)
 	if err != nil {
 		return nil, translateError(err)
 	}
