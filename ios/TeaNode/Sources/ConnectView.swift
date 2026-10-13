@@ -2,9 +2,9 @@ import AuthenticationServices
 import SwiftUI
 import TeaNodeKit
 
-/// ConnectView connects the phone to a TeaNode server with a code from the
-/// server's dashboard: scanned from a computer's screen, or the link pasted
-/// on a phone that is the only device at hand.
+/// ConnectView connects the phone to a TeaNode server: its address typed
+/// here and signed in to on the server's own page, or a code from the
+/// server's dashboard, scanned from a computer's screen or its link pasted.
 struct ConnectView: View {
     /// Shown over the signed-in app to add another account, rather than as
     /// the app's only screen.
@@ -14,14 +14,19 @@ struct ConnectView: View {
     @State private var isConnecting = false
     @State private var pending: PendingConnection?
     @State private var problemText: String?
-    @State private var isAskingForServer = false
     @State private var serverText = ""
+    @FocusState private var isServerFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+
+    private var isServerEmpty: Bool {
+        serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 28) {
                     VStack(alignment: .leading, spacing: 8) {
                         Image(systemName: "leaf.fill")
                             .font(.largeTitle)
@@ -30,53 +35,85 @@ struct ConnectView: View {
                         Text("Talk to your agent from your phone.")
                             .font(.title2)
                             .bold()
-                        Text("Connect this phone to your TeaNode server with a code from its dashboard.")
+                        Text("Sign in to your TeaNode server.")
                             .foregroundStyle(.secondary)
                     }
+                    // The address first: it is all a password sign-in needs,
+                    // and the server's own page asks for the rest.
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("On a computer, open your dashboard. In Settings, open Phones and choose Connect a phone.", systemImage: "1.circle")
-                        Label("Scan the code it shows.", systemImage: "2.circle")
+                        TextField("mail.example.com", text: $serverText)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .textContentType(.URL)
+                            .submitLabel(.go)
+                            .focused($isServerFocused)
+                            .onSubmit { if !isServerEmpty { signInWithPassword() } }
+                            .onChange(of: serverText) { problemText = nil }
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 52)
+                            .background(Color(.secondarySystemBackground), in: .capsule)
+                            .accessibilityLabel("Server address")
+                        Button {
+                            signInWithPassword()
+                        } label: {
+                            Text("Sign in").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .disabled(isServerEmpty || isConnecting)
+                        if let text = problemText ?? (isAdding ? nil : app.signedOutText) {
+                            Label(text, systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        } else {
+                            Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .symbolRenderingMode(.hierarchical)
-                    if let text = problemText ?? (isAdding ? nil : app.signedOutText) {
-                        Label(text, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
+                    // A code from the dashboard, for a phone set up from a
+                    // computer, or a link copied on this phone.
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Or connect with a code from your dashboard")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        // Side by side, or one above the other at the
+                        // largest text sizes, where both would not fit.
+                        let codeButtonLayout =
+                            dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                        codeButtonLayout {
+                            Button {
+                                problemText = nil
+                                isScanning = true
+                            } label: {
+                                Label("Scan code", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity)
+                            }
+                            Button {
+                                problemText = nil
+                                if let text = UIPasteboard.general.string {
+                                    Task { await connect(text) }
+                                } else {
+                                    problemText = ConnectProblem.isNotALink.errorDescription
+                                }
+                            } label: {
+                                Label("Paste link", systemImage: "doc.on.clipboard").frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        Text("In the dashboard, open Settings, then Phones, and choose Connect a phone.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
-            }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 12) {
-                    Button {
-                        problemText = nil
-                        isScanning = true
-                    } label: {
-                        Label("Scan code", systemImage: "qrcode.viewfinder")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-                    PasteButton(payloadType: String.self) { pasted in
-                        guard let text = pasted.first else { return }
-                        Task { await connect(text) }
-                    }
-                    .buttonBorderShape(.capsule)
-                    Button("Sign in with a password", systemImage: "key") {
-                        problemText = nil
-                        isAskingForServer = true
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    Text("Only have this phone? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
                 .disabled(isConnecting)
             }
+            .scrollDismissesKeyboard(.interactively)
             .overlay {
                 if isConnecting {
                     ProgressView("Connecting…")
@@ -113,39 +150,41 @@ struct ConnectView: View {
                     }
                 }
             }
-            .sheet(isPresented: $isAskingForServer) {
-                ServerSheet(serverText: $serverText) { server in
-                    isAskingForServer = false
-                    Task { await signInWithPassword(to: server) }
-                }
-            }
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
-            #if DEBUG
-                .task {
-                    // The screenshots photograph the server sheet open.
-                    if DemoServer.screen == "server-address" { isAskingForServer = true }
-                }
-            #endif
-            .task(id: app.openedLink?.url) {
+            // A link opened from Safari or a message. The connection runs in a
+            // task of its own: clearing the link ends any task keyed on it,
+            // which cancelled the request half way (NSURLErrorDomain -999).
+            .onChange(of: app.openedLink?.url, initial: true) {
                 guard let link = app.openedLink else { return }
                 app.openedLink = nil
-                await connect(link.url.absoluteString)
+                Task { await connect(link.url.absoluteString) }
             }
         }
     }
 
     /// Signs in on the server's own page; the person allows the app there,
-    /// so nothing is asked again here.
-    private func signInWithPassword(to server: ServerAddress) async {
-        isConnecting = true
-        defer { isConnecting = false }
+    /// so nothing is asked again here. A bad address is said under the field.
+    private func signInWithPassword() {
+        let server: ServerAddress
         do {
-            let pending = try await app.signIn(to: server, with: webAuthenticationSession)
-            await app.confirm(pending)
-        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
-            return
+            server = try ServerAddress(parsing: serverText)
         } catch {
-            problemText = app.describe(error)
+            problemText = addressProblemText(for: error)
+            return
+        }
+        problemText = nil
+        isServerFocused = false
+        Task {
+            isConnecting = true
+            defer { isConnecting = false }
+            do {
+                let pending = try await app.signIn(to: server, with: webAuthenticationSession)
+                await app.confirm(pending)
+            } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+                return
+            } catch {
+                problemText = app.describe(error)
+            }
         }
     }
 
@@ -161,68 +200,6 @@ struct ConnectView: View {
             problemText = nil
         } catch {
             problemText = app.describe(error)
-        }
-    }
-}
-
-/// ServerSheet asks for the server to sign in to with a password. It is a
-/// sheet rather than an alert: an alert's text field draws past the alert's
-/// edge on iOS 26, and an address wants room to be read as it is typed. The
-/// address is read here, so a bad one is said while the sheet is still open
-/// and the person can correct it, and only a good one is handed on.
-struct ServerSheet: View {
-    @Binding var serverText: String
-    let onContinue: (ServerAddress) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var isFocused: Bool
-    @State private var problemText: String?
-
-    private var isEmpty: Bool {
-        serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("mail.example.com", text: $serverText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .textContentType(.URL)
-                        .submitLabel(.continue)
-                        .focused($isFocused)
-                        .onSubmit { if !isEmpty { continueWithAddress() } }
-                        .onChange(of: serverText) { problemText = nil }
-                } footer: {
-                    if let problemText {
-                        Text(problemText).foregroundStyle(.red)
-                    } else {
-                        Text("The address of your TeaNode dashboard. Its sign-in page opens next.")
-                    }
-                }
-            }
-            .navigationTitle("Your server")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Continue", action: continueWithAddress)
-                        .disabled(isEmpty)
-                }
-            }
-            .onAppear { isFocused = true }
-        }
-        .presentationDetents([.medium])
-    }
-
-    private func continueWithAddress() {
-        do {
-            onContinue(try ServerAddress(parsing: serverText))
-        } catch {
-            problemText = addressProblemText(for: error)
         }
     }
 
