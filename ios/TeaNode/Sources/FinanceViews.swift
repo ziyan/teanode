@@ -379,6 +379,7 @@ struct SpendingView: View {
             .chartForegroundStyleScale(domain: [incomeWord, spendingWord], range: [incomeColor, spendingColor])
             .chartLegend(.hidden)
             .chartXSelection(value: $selectedCashFlowMonth)
+            .keepsSidePanelClosed()
             .chartXAxis {
                 AxisMarks { value in
                     AxisValueLabel {
