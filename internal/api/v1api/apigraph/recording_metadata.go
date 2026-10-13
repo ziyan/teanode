@@ -26,11 +26,18 @@ func (self *graph) UpdateRecordingMetadata(ctx context.Context, arguments Update
 	if err != nil {
 		return nil, err
 	}
+	previous, err := self.transaction(ctx).GetRecording(owner.ID, arguments.RecordingID)
+	if err != nil {
+		return nil, translateError(err)
+	}
 	source, err := self.transaction(ctx).UpdateRecordingMetadata(owner.ID, arguments.RecordingID, arguments.ExpectedSourceGeneration, arguments.RecordingTitle, arguments.RecordedAt)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if arguments.RecordingTitle != nil && source.RecordingTitleSource == models.RecordingTitleSourceNone {
+	// Naming is asked for again only when a title the recording had was
+	// cleared: an empty title sent with a date, which a client may send for
+	// "unchanged", is not a request to rename a recording that has none.
+	if arguments.RecordingTitle != nil && previous.RecordingTitle != "" && source.RecordingTitleSource == models.RecordingTitleSourceNone {
 		if worker := self.agentWorker(); worker != nil {
 			if err := worker.QueueRecordingSummary(self.transaction(ctx), owner.ID, source.ID); err != nil {
 				return nil, translateError(err)
