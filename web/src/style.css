@@ -2440,11 +2440,13 @@ pre.message-text {
     flex-basis: 264px;
     transform: translateX(-100%);
     transition: transform 160ms ease;
-    box-shadow: var(--shadow-floating);
   }
 
+  /* The shadow belongs to the open overlay only: a closed rail sits just past
+     the left edge, and its blur would still fall across the page. */
   .sidebar.open {
     transform: none;
+    box-shadow: var(--shadow-floating);
   }
 
   /* Collapsing is a desktop idea; the overlay is always full width. */
