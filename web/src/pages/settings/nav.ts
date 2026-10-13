@@ -51,8 +51,8 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
   {
     segment: 'sync',
     path: '/settings/sync',
-    label: 'services.sync',
-    description: 'services.syncDescription',
+    label: 'deviceSetup.title',
+    description: 'deviceSetup.description',
     category: 'account',
   },
   {

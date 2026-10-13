@@ -45,7 +45,7 @@ func TestThePagesOpenOnlyWhereTheDashboardIs(t *testing.T) {
 		toolName, path, elsewhere string
 	}{
 		{"phone_pair", phone.ConnectPath, "Connect a phone"},
-		{"phone_setup_profile", phone.SetupProfilePath, "Mail programs"},
+		{"phone_setup_profile", phone.SetupProfilePath, "Device setup"},
 	} {
 		dashboard := &showingRun{canShowPages: true}
 		shown := run(t, dashboard, testCase.toolName)
@@ -65,4 +65,21 @@ func TestThePagesOpenOnlyWhereTheDashboardIs(t *testing.T) {
 			t.Errorf("%s elsewhere notes a page opened: %q", testCase.toolName, told.Note)
 		}
 	}
+}
+
+func TestProfileHandoffDoesNotRequireMailboxServiceOrExposeCredentials(test *testing.T) {
+	for _, tool := range phone.Tools() {
+		if tool.Name != "phone_setup_profile" {
+			continue
+		}
+		if len(tool.Services) != 0 || tool.Risk != tools.RiskRead {
+			test.Fatal("account setup was gated by hosted Mail or changed its read-only handoff")
+		}
+		response := run(test, &showingRun{canShowPages: false}, tool.Name)
+		if !strings.Contains(response.Content, "do not require a mailbox") || strings.Contains(response.Content, "downloadLink") {
+			test.Fatal("handoff lost mailbox-free guidance or returned a private profile link")
+		}
+		return
+	}
+	test.Fatal("profile handoff missing")
 }

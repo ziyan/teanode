@@ -345,6 +345,7 @@ func init() {
 					{Action: "phones", Tool: "phone_list"},
 					{Action: "pair_phone", Tool: "phone_pair"},
 					{Action: "set_up_phone_mail", Tool: "phone_setup_profile"},
+					{Action: "set_up_device", Tool: "phone_setup_profile"},
 					{Action: "rename_phone", Tool: "phone_rename"},
 					{Action: "phone_notifications", Tool: "phone_notify"},
 					{Action: "test_phone", Tool: "phone_test"},
