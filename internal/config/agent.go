@@ -921,6 +921,20 @@ type AgentRecording struct {
 	// the saved audio. It is billed by the minute to the agent, so an
 	// operator who does not want that turns it off. Unset is on.
 	IsLiveTranscriptionEnabled *bool `yaml:"isLiveTranscriptionEnabled,omitempty"`
+
+	// IsAccurateWordsEnabled says whether each speaker's turn found by the
+	// speaker-separating model is transcribed a second time by the plain
+	// transcription model of the voice settings, which takes the person's
+	// vocabulary as a prompt and spells names and terms better. Speakers
+	// and times stay the first pass's. It is a second charge for the same
+	// audio, so an operator who does not want that turns it off. Unset is
+	// on.
+	IsAccurateWordsEnabled *bool `yaml:"isAccurateWordsEnabled,omitempty"`
+}
+
+// IsAccurateWordsOn resolves the unset IsAccurateWordsEnabled to on.
+func (self *AgentRecording) IsAccurateWordsOn() bool {
+	return self.IsAccurateWordsEnabled == nil || *self.IsAccurateWordsEnabled
 }
 
 // IsLiveTranscriptionOn resolves the unset IsLiveTranscriptionEnabled to on.

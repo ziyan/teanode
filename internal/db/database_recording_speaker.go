@@ -32,6 +32,7 @@ type RecordingSpeakerOperation interface {
 	CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error)
 	RenameRecordingSpeaker(userId, recordingId, speakerIdentityId, confirmedName string, expectedSourceGeneration int64) error
 	RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error
+	UndoRecordingSpeakerNaming(userId, recordingId, correctionId string, expectedSourceGeneration int64) (int, error)
 	RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error
 }
 
@@ -369,6 +370,65 @@ func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, c
 	}
 	return self.advanceRecordingSpeakerGeneration(recordingId)
 }
+
+// UndoRecordingSpeakerNaming removes a naming whole: every passage the request
+// that wrote correctionId named goes back to its speaker label, with the voice
+// samples taken from them revoked, as if the name had never been given.
+func (self *transaction) UndoRecordingSpeakerNaming(userId, recordingId, correctionId string, expectedSourceGeneration int64) (int, error) {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return 0, err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return 0, err
+	}
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return 0, err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return 0, ErrAlreadyExists
+	}
+	var named recordingSpeakerCorrectionModel
+	if err := self.tx.Where("id = ? AND recording_id = ?", correctionId, recordingId).Take(&named).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	var correctionIds []string
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND client_correction_id = ? AND NOT is_removed", recordingId, named.ClientCorrectionID).Pluck("id", &correctionIds).Error; err != nil {
+		return 0, err
+	}
+	if len(correctionIds) == 0 {
+		return 0, nil
+	}
+	references, err := self.ListRecordingVoiceReferences(userId, recordingId)
+	if err != nil {
+		return 0, err
+	}
+	isUndone := map[string]bool{}
+	for _, undoneId := range correctionIds {
+		isUndone[undoneId] = true
+	}
+	affectedReferences := []*models.RecordingVoiceReference{}
+	for _, reference := range references {
+		if isUndone[reference.RecordingSpeakerCorrectionID] && !reference.IsRevoked {
+			affectedReferences = append(affectedReferences, reference)
+		}
+	}
+	if err := self.invalidateRecordingVoiceReferences(userId, affectedReferences, "The user undid this speaker naming."); err != nil {
+		return 0, err
+	}
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("id IN ? AND recording_id = ?", correctionIds, recordingId).Update("is_removed", true).Error; err != nil {
+		return 0, err
+	}
+	if err := self.tx.Model(&recordingVoiceReferenceModel{}).Where("recording_speaker_correction_id IN ?", correctionIds).Update("is_revoked", true).Error; err != nil {
+		return 0, err
+	}
+	return len(correctionIds), self.advanceRecordingSpeakerGeneration(recordingId)
+}
+
 func (self *transaction) RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error {
 	var owner userModel
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {

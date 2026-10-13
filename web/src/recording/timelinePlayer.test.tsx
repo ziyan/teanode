@@ -59,6 +59,9 @@ it('does not prepare on mount, metadata loading or unsupported-original detectio
   expect(graphql).not.toHaveBeenCalled()
   unsupportedOriginal(view.container)
   expect(graphql).not.toHaveBeenCalled()
+  // Expected, not an error: a quiet hint and the button, never the red message.
+  expect(screen.queryByText(/Download it to use a compatible player/)).toBeNull()
+  expect(screen.getByText(/An audio preview plays here instead/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Play compatible audio' }))
   await waitFor(() =>
     expect(view.container.querySelector('audio')?.getAttribute('src')).toBe(playbackReceipt.playbackPath),

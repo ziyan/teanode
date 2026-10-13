@@ -23,6 +23,7 @@ type RecordingSpeakerMutation interface {
 	NameRecordingTemporarySpeaker(context.Context, NameRecordingTemporarySpeakerArguments) (bool, error)
 	RenameRecordingSpeaker(context.Context, RenameRecordingSpeakerArguments) (*RecordingSpeakersView, error)
 	RemoveRecordingSpeakerCorrection(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
+	UndoRecordingSpeakerNaming(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
 	DeleteRecordingVoiceReference(context.Context, DeleteRecordingVoiceReferenceArguments) (*RecordingSpeakersView, error)
 }
 
@@ -176,6 +177,27 @@ func (self *graph) RemoveRecordingSpeakerCorrection(ctx context.Context, argumen
 	}
 	err = self.transaction(ctx).RemoveRecordingSpeakerCorrection(userId, arguments.RecordingID, arguments.RecordingSpeakerCorrectionID, arguments.ExpectedSourceGeneration)
 	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
+	self.transaction(ctx).AfterCommit(func() {
+		if worker := self.agentWorker(); worker != nil {
+			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
+		}
+	})
+	return self.ReadRecordingSpeakers(ctx, RecordingArguments{RecordingID: arguments.RecordingID})
+}
+
+// UndoRecordingSpeakerNaming removes the whole naming one correction belongs
+// to: every passage the same request named goes back to its speaker label.
+func (self *graph) UndoRecordingSpeakerNaming(ctx context.Context, arguments RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error) {
+	userId, err := self.recordingSpeakerOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := self.transaction(ctx).UndoRecordingSpeakerNaming(userId, arguments.RecordingID, arguments.RecordingSpeakerCorrectionID, arguments.ExpectedSourceGeneration); err != nil {
 		return nil, translateError(err)
 	}
 	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
