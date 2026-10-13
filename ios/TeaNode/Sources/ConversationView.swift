@@ -1621,6 +1621,13 @@ struct CardView: View {
     /// The answer picked, sent only with Send, as the dashboard's card asks:
     /// one stray tap sends nothing.
     @State private var chosen: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The card's two buttons side by side, or one above the other once the
+    /// text is too large for both words to fit on a line.
+    private var buttonLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1637,7 +1644,7 @@ struct CardView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else if line.kind == .approval {
-                HStack(spacing: 10) {
+                buttonLayout {
                     Button(role: line.risk == "destructive" ? .destructive : nil) {
                         Task { await model.approve(line, isApproved: true) }
                     } label: {
@@ -1663,7 +1670,7 @@ struct CardView: View {
                         }
                     }
                 }
-                HStack(spacing: 10) {
+                buttonLayout {
                     if !line.choices.isEmpty {
                         Button {
                             guard let chosen else { return }
