@@ -92,6 +92,13 @@ func (self *openAI) Transcribe(ctx context.Context, request *TranscriptionReques
 			return nil, err
 		}
 	}
+	// The diarizing model does not accept a prompt, as far as is documented:
+	// sending one there would fail the whole request instead of helping.
+	if request.VocabularyPrompt != "" && !strings.Contains(strings.ToLower(request.Model), "diarize") {
+		if err := writeField("prompt", request.VocabularyPrompt); err != nil {
+			return nil, err
+		}
+	}
 	speakerNames := map[string]bool{}
 	for _, reference := range request.SpeakerReferences {
 		if reference.DurationMS < 2000 || reference.DurationMS > 10000 || len(reference.MediaBytes) == 0 || len(reference.MediaBytes) > 2<<20 || !isTranscriptionContentType(reference.MediaContentType) || strings.TrimSpace(reference.SpeakerName) == "" || len(reference.SpeakerName) > 64 || strings.ContainsAny(reference.SpeakerName, "\r\n") || speakerNames[reference.SpeakerName] {

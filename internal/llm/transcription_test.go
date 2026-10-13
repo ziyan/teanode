@@ -238,3 +238,53 @@ func TestASegmentJustPastTheAudioIsCutToItsEnd(test *testing.T) {
 		test.Fatalf("segments: %+v", answer.Segments)
 	}
 }
+
+// A vocabulary prompt goes to a plain transcription model as the prompt field
+// and is left out for the diarizing model, which does not accept one.
+func TestTranscriptionSendsTheVocabularyPromptOnlyToModelsThatAcceptIt(test *testing.T) {
+	for _, scenario := range []struct {
+		modelName      string
+		isDiarizing    bool
+		expectedPrompt string
+	}{
+		{modelName: "whisper-1", isDiarizing: false, expectedPrompt: "Names and terms: Ferncroft, Plover."},
+		{modelName: "gpt-4o-transcribe-diarize", isDiarizing: true, expectedPrompt: ""},
+	} {
+		test.Run(scenario.modelName, func(test *testing.T) {
+			var hasPrompt bool
+			var promptValue string
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, incoming *http.Request) {
+				if err := incoming.ParseMultipartForm(1 << 20); err != nil {
+					test.Error(err)
+					return
+				}
+				defer func() { _ = incoming.MultipartForm.RemoveAll() }()
+				_, hasPrompt = incoming.MultipartForm.Value["prompt"]
+				promptValue = incoming.FormValue("prompt")
+				_, _ = io.WriteString(writer, `{"duration":5,"text":"An idea.","segments":[{"id":"s1","speaker":"speaker-one","start":0,"end":2,"text":"An idea."}]}`)
+			}))
+			defer server.Close()
+			configuration := config.Default().Agent
+			configuration.Enabled = true
+			configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key"}}
+			registry, err := Open(&configuration)
+			if err != nil {
+				test.Fatal(err)
+			}
+			selected, err := registry.TranscribingFor("transcripts:"+scenario.modelName, scenario.isDiarizing, false)
+			if err != nil {
+				test.Fatal(err)
+			}
+			request := transcriptionFixture()
+			request.Model = scenario.modelName
+			request.IsSpeakerDiarizationRequired = scenario.isDiarizing
+			request.VocabularyPrompt = "Names and terms: Ferncroft, Plover."
+			if _, err := selected.Transcriber.Transcribe(test.Context(), request); err != nil {
+				test.Fatal(err)
+			}
+			if hasPrompt != (scenario.expectedPrompt != "") || promptValue != scenario.expectedPrompt {
+				test.Fatalf("prompt field for %s: present=%v value=%q", scenario.modelName, hasPrompt, promptValue)
+			}
+		})
+	}
+}
