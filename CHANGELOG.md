@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.151.3] - 2026-10-13
+
+### Fixed
+
+- The Preferences hint for your name reads more plainly. (#458)
+
 ## [0.151.2] - 2026-10-13
 
 ### Fixed
