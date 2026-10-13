@@ -176,7 +176,9 @@ func (self *transaction) LockRecording(userId, recordingId string) (*models.Reco
 
 // ListRecordings pages through the account's recordings, newest first. A
 // search keeps those whose title, summary or transcribed or corrected text
-// contains it, ignoring case.
+// contains it, ignoring case. The transcribed text is the words a person reads
+// in the latest completed version of each original: the accurate words where
+// the second pass produced them, else the first pass's.
 func (self *transaction) ListRecordings(userId, beforeId, searchText string, limit int) ([]*models.Recording, error) {
 	if userId == "" {
 		return nil, ErrNotFound
@@ -196,7 +198,10 @@ func (self *transaction) ListRecordings(userId, beforeId, searchText string, lim
 		pattern := "%" + escapeLike(searchText) + "%"
 		query = query.Where(`recording_title ILIKE @pattern OR recording_summary ILIKE @pattern
 			OR EXISTS (SELECT 1 FROM recording_transcript_segment JOIN recording_transcript_run ON recording_transcript_run.id = recording_transcript_segment.recording_transcript_run_id
-				WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = @complete AND recording_transcript_segment.transcript_text ILIKE @pattern)
+				WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = @complete
+					AND recording_transcript_run.id IN (SELECT DISTINCT ON (latest.recording_media_id) latest.id FROM recording_transcript_run latest
+						WHERE latest.recording_id = recording.id AND latest.recording_processing_state = @complete ORDER BY latest.recording_media_id, latest.version_number DESC)
+					AND COALESCE(NULLIF(recording_transcript_segment.accurate_transcript_text, ''), recording_transcript_segment.transcript_text) ILIKE @pattern)
 			OR EXISTS (SELECT 1 FROM recording_transcript_text_correction
 				WHERE recording_transcript_text_correction.recording_id = recording.id AND NOT recording_transcript_text_correction.is_removed AND recording_transcript_text_correction.corrected_transcript_text ILIKE @pattern)`,
 			sql.Named("pattern", pattern), sql.Named("complete", models.RecordingProcessingComplete))
