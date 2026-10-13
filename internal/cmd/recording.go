@@ -94,6 +94,7 @@ func runRecordingImport(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	connection.SetTimeout(recordingMediaRequestTimeout)
 	var view *client.RecordingView
 	if command.String("recording-id") != "" || command.String("media-id") != "" {
 		if command.String("recording-id") == "" || command.String("media-id") == "" {
