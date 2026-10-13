@@ -20101,6 +20101,22 @@
         }
       }
     },
+    "New recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新录音"
+          }
+        }
+      }
+    },
     "New reminder": {
       "localizations": {
         "ja": {
@@ -46656,18 +46672,18 @@
         }
       }
     },
-    "Tap the microphone to start a recording, or import audio or video.": {
+    "Tap + to start a recording or import audio or video.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "マイクをタップして録音を開始するか、音声または動画を読み込んでください。"
+            "value": "＋をタップして録音を開始するか、音声や動画を取り込みます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点按麦克风开始录音，或导入音频或视频。"
+            "value": "轻点 + 开始录音，或导入音频或视频。"
           }
         }
       }
