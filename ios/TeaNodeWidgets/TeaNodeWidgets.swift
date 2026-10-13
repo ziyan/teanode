@@ -412,7 +412,8 @@ struct CallActivityWidget: Widget {
             } compactLeading: {
                 Image(systemName: context.state.isMuted ? "mic.slash.fill" : "waveform").foregroundStyle(.tint)
             } compactTrailing: {
-                CallDuration(startedAt: context.attributes.startedAt, alignment: .trailing).frame(width: 44)
+                // Wide enough for a call past an hour, 1:02:30.
+                CallDuration(startedAt: context.attributes.startedAt, alignment: .trailing).frame(minWidth: 44, maxWidth: 64)
             } minimal: {
                 Image(systemName: "waveform").foregroundStyle(.tint)
             }
@@ -446,13 +447,17 @@ struct CallDuration: View {
 /// CallButtons are a call's mute and hang up, run in the app.
 struct CallButtons: View {
     let isMuted: Bool
-    /// Whether the buttons sit on the Dynamic Island's black, where a dark
-    /// circle would not show, rather than on the lock screen's banner.
+    /// Whether the buttons sit on the Dynamic Island, which is black in
+    /// light and dark alike, rather than on the lock screen's banner, which
+    /// follows the appearance.
     var isOnBlack = false
 
-    private var fill: Color { isOnBlack ? .white.opacity(0.2) : .black.opacity(0.45) }
-    /// Muted reads at a glance: the mute button's circle is filled harder.
-    private var mutedFill: Color { isOnBlack ? .white.opacity(0.35) : .black.opacity(0.75) }
+    /// The circle and the glyph: semantic on the banner, so they read in
+    /// light and dark; light on the island, where a semantic dark would not
+    /// show. Muted fills the mute button's circle harder, to read at a glance.
+    private var circleFill: Color { isOnBlack ? .white.opacity(0.2) : Color.primary.opacity(0.14) }
+    private var mutedCircleFill: Color { isOnBlack ? .white.opacity(0.4) : Color.primary.opacity(0.3) }
+    private var glyphColor: Color { isOnBlack ? .white : .primary }
 
     var body: some View {
         // Two round buttons alike, as a call banner has them: mute, which
@@ -461,18 +466,18 @@ struct CallButtons: View {
             Button(intent: ToggleCallMuteIntent()) {
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
                     .font(.title2)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(glyphColor)
                     .frame(width: 52, height: 52)
-                    .background(isMuted ? mutedFill : fill, in: .circle)
+                    .background(isMuted ? mutedCircleFill : circleFill, in: .circle)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isMuted ? Text("Unmute") : Text("Mute"))
             Button(intent: EndCallIntent()) {
                 Image(systemName: "xmark")
                     .font(.title2.weight(.medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(glyphColor)
                     .frame(width: 52, height: 52)
-                    .background(fill, in: .circle)
+                    .background(circleFill, in: .circle)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Hang up")
