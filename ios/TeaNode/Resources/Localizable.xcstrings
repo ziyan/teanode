@@ -46512,6 +46512,22 @@
         }
       }
     },
+    "Clear name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を消す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除名字"
+          }
+        }
+      }
+    },
     "Copied.": {
       "localizations": {
         "ja": {
@@ -46668,6 +46684,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已标记为你。"
+          }
+        }
+      }
+    },
+    "Name cleared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を消しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除名字。"
           }
         }
       }

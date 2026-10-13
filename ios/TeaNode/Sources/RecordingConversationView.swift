@@ -178,6 +178,34 @@ final class RecordingConversationModel {
         isNaming = true
     }
 
+    /// Takes back what named these passages' speaker, each naming whole: a name given to a speaker leaves every passage it
+    /// named, a name given to one passage leaves that passage. Each undo moves the recording's generation on, so the next
+    /// one reads it again first.
+    func clearName(_ segments: [RecordingTranscriptSegment]) async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        var correctionIds: [String] = []
+        for segment in segments {
+            if let correctionId = segment.appliedSpeakerCorrectionId, !correctionId.isEmpty, !correctionIds.contains(correctionId) {
+                correctionIds.append(correctionId)
+            }
+        }
+        do {
+            for correctionId in correctionIds {
+                let current = try await connection.recordingSpeakers(recordingId: recordingId)
+                speakers = try await connection.undoRecordingSpeakerNaming(
+                    recordingId: recordingId, expectedSourceGeneration: current.sourceGeneration, recordingSpeakerCorrectionId: correctionId)
+            }
+            await loadPage(isAdditional: false)
+            problemText = nil
+            doneText = String(localized: "Name cleared.")
+        } catch {
+            problemText = error.localizedDescription
+            await loadPage(isAdditional: false)
+        }
+    }
+
     /// "This is me": the speaker of this passage, wherever they speak in this request, is the person who owns the account.
     func confirmAsAccountOwner(_ segment: RecordingTranscriptSegment) async {
         if let label = segment.speakerLabelOfTemporarySpeaker {
@@ -282,12 +310,14 @@ struct RecordingPassageActions {
     var nameSpeaker: @MainActor (RecordingTranscriptSegment) -> Void
     var thisIsMe: @MainActor (RecordingTranscriptSegment) -> Void
     var notMe: @MainActor (RecordingTranscriptSegment) -> Void
+    var clearName: @MainActor ([RecordingTranscriptSegment]) -> Void
     /// False on the screen of a capture under way, where there is no finished audio to play and no finished text to correct yet.
     var isPlaybackAvailable = true
 
     static var none: RecordingPassageActions {
         RecordingPassageActions(
-            play: { _ in }, copy: { _ in }, correctText: { _ in }, nameSpeaker: { _ in }, thisIsMe: { _ in }, notMe: { _ in })
+            play: { _ in }, copy: { _ in }, correctText: { _ in }, nameSpeaker: { _ in }, thisIsMe: { _ in }, notMe: { _ in },
+            clearName: { _ in })
     }
 }
 
@@ -318,6 +348,10 @@ struct RecordingBubbleView: View {
         .padding(bubble.isAccountOwner ? .leading : .trailing, bubble.isAccountOwner ? 56 : 40)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+
+    private var hasNaming: Bool {
+        bubble.segments.contains { !($0.appliedSpeakerCorrectionId ?? "").isEmpty }
     }
 
     @ViewBuilder
@@ -359,11 +393,12 @@ struct RecordingBubbleView: View {
                             Label("Correct text", systemImage: "pencil")
                         }
                     }
-                    // Your own bubble has one way to say who it was
-                    // instead: Not me, which asks for the name.
+                    // A name someone gave can be taken back: Not me on your own bubble, Clear name on anyone
+                    // else's. Your voice recognized with no naming has nothing to take back, so Not me there
+                    // asks who it was instead.
                     if bubble.isAccountOwner {
                         Button {
-                            actions.notMe(segment)
+                            if hasNaming { actions.clearName(bubble.segments) } else { actions.notMe(segment) }
                         } label: {
                             Label("Not me", systemImage: "person.crop.circle.badge.xmark")
                         }
@@ -373,10 +408,18 @@ struct RecordingBubbleView: View {
                         } label: {
                             Label("Name speaker", systemImage: "person.text.rectangle")
                         }
-                        Button {
-                            actions.thisIsMe(segment)
-                        } label: {
-                            Label("This is me", systemImage: "person.crop.circle.badge.checkmark")
+                        if hasNaming {
+                            Button {
+                                actions.clearName(bubble.segments)
+                            } label: {
+                                Label("Clear name", systemImage: "person.crop.circle.badge.minus")
+                            }
+                        } else {
+                            Button {
+                                actions.thisIsMe(segment)
+                            } label: {
+                                Label("This is me", systemImage: "person.crop.circle.badge.checkmark")
+                            }
                         }
                     }
                 }
@@ -443,7 +486,8 @@ struct RecordingConversationSection: View {
             correctText: { segment in model.editingSegment = segment },
             nameSpeaker: { segment in model.beginNaming(segment) },
             thisIsMe: { segment in Task { await model.confirmAsAccountOwner(segment) } },
-            notMe: { segment in model.beginNaming(segment, startsBlank: true) })
+            notMe: { segment in model.beginNaming(segment, startsBlank: true) },
+            clearName: { segments in Task { await model.clearName(segments) } })
     }
 }
 
