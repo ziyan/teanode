@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -7,6 +8,7 @@ import { TrashIcon } from '../components/icons'
 import { useQuery } from '../components/useQuery'
 import { useSession } from '../session'
 import { useTranslation } from '../i18n/i18n'
+import { DeviceSetupDialog, DEVICE_SETUP_CAPABILITIES, type DeviceSetupCapabilities } from '../components/deviceSetup'
 
 type Credential = {
   id: string
@@ -20,12 +22,14 @@ const LIST = `{ ListSyncCredentials { ${CREDENTIAL} } }`
 const CREATE = `mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!) {
  CreateSyncCredential(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess) { username password principalPath credential { ${CREDENTIAL} } }
 }`
-const PROFILE = `mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!) {
- CreateSyncSetupProfile(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess) { downloadLink expiresAt credential { ${CREDENTIAL} } }
-}`
 
 const REVOKE = `mutation ($credentialId: String!) { RevokeSyncCredential(credentialId: $credentialId) }`
 export function SyncPage() {
+  const session = useSession()
+  return <AccountDeviceSetupPage key={session.userId ?? ''} />
+}
+
+function AccountDeviceSetupPage() {
   const { t } = useTranslation()
   const session = useSession()
   const { data, error, loading, reload } = useQuery(() => graphql<{ ListSyncCredentials: Credential[] }>(LIST))
@@ -38,26 +42,33 @@ export function SyncPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [revoking, setRevoking] = useState<Credential | null>(null)
   const [created, setCreated] = useState<{ username: string; password: string; principalPath: string } | null>(null)
-  const [downloadLink, setDownloadLink] = useState<string | null>(null)
-  async function create(isProfile: boolean) {
+  const [parameters, setParameters] = useSearchParams()
+  const isSettingUp = parameters.get('setup') === '1'
+  const capabilities = useQuery(
+    () => graphql<{ GetDeviceSetupCapabilities: DeviceSetupCapabilities }>(DEVICE_SETUP_CAPABILITIES),
+    [session.userId],
+  )
+  const availableServices = capabilities.data?.GetDeviceSetupCapabilities
+  const canSetUp =
+    !!availableServices &&
+    (availableServices.canSetUpMail ||
+      availableServices.canSetUpCalendar ||
+      availableServices.canSetUpReminders ||
+      availableServices.canSetUpContacts)
+  async function create() {
     setIsBusy(true)
     setProblem(null)
     const variables = {
       credentialName,
-      hasCalendarAccess: hasCalendarAccess && session.services?.isCalendarEnabled !== false,
-      hasRemindersAccess: hasRemindersAccess && session.services?.isRemindersEnabled !== false,
-      hasContactsAccess: hasContactsAccess && session.services?.isContactsEnabled !== false,
+      hasCalendarAccess: hasCalendarAccess && availableServices?.canSetUpCalendar === true,
+      hasRemindersAccess: hasRemindersAccess && availableServices?.canSetUpReminders === true,
+      hasContactsAccess: hasContactsAccess && availableServices?.canSetUpContacts === true,
     }
     try {
-      if (isProfile) {
-        const response = await graphql<{ CreateSyncSetupProfile: { downloadLink: string } }>(PROFILE, variables)
-        setDownloadLink(response.CreateSyncSetupProfile.downloadLink)
-      } else {
-        const response = await graphql<{
-          CreateSyncCredential: { username: string; password: string; principalPath: string }
-        }>(CREATE, variables)
-        setCreated(response.CreateSyncCredential)
-      }
+      const response = await graphql<{
+        CreateSyncCredential: { username: string; password: string; principalPath: string }
+      }>(CREATE, variables)
+      setCreated(response.CreateSyncCredential)
       setIsCreating(false)
       await reload()
     } catch (caught) {
@@ -80,19 +91,52 @@ export function SyncPage() {
       setIsBusy(false)
     }
   }
-  if (loading) return <Loading />
+  if (loading && !data) return <Loading />
   const canCreate =
     credentialName.trim() !== '' &&
-    ((hasCalendarAccess && session.services?.isCalendarEnabled !== false) ||
-      (hasRemindersAccess && session.services?.isRemindersEnabled !== false) ||
-      (hasContactsAccess && session.services?.isContactsEnabled !== false))
+    ((hasCalendarAccess && availableServices?.canSetUpCalendar === true) ||
+      (hasRemindersAccess && availableServices?.canSetUpReminders === true) ||
+      (hasContactsAccess && availableServices?.canSetUpContacts === true))
   const hasCollections =
-    session.services?.isCalendarEnabled || session.services?.isRemindersEnabled || session.services?.isContactsEnabled
+    availableServices?.canSetUpCalendar || availableServices?.canSetUpReminders || availableServices?.canSetUpContacts
   return (
     <>
       <SettingsSection
         card
-        title={t('services.sync')}
+        title={t('deviceSetup.title')}
+        description={t('deviceSetup.description')}
+        action={
+          <button
+            type="button"
+            className="primary"
+            disabled={!canSetUp}
+            onClick={() => {
+              const nextParameters = new URLSearchParams(parameters)
+              nextParameters.set('setup', '1')
+              nextParameters.delete('mailboxId')
+              setParameters(nextParameters)
+            }}
+          >
+            {t(
+              /iPhone|iPad|iPod/.test(navigator.userAgent)
+                ? 'deviceSetup.setUpThisPhone'
+                : 'mailboxSettings.setUpAppleDevice',
+            )}
+          </button>
+        }
+      >
+        <ErrorMessage error={capabilities.error} />
+        {capabilities.loading && !availableServices ? (
+          <Loading />
+        ) : !canSetUp ? (
+          <SettingsEmpty>{t('deviceSetup.noServices')}</SettingsEmpty>
+        ) : (
+          <p className="muted">{t('deviceSetup.selectionHint')}</p>
+        )}
+      </SettingsSection>
+      <SettingsSection
+        card
+        title={t('deviceSetup.manualSync')}
         description={t('services.syncDescription')}
         action={
           <button
@@ -144,19 +188,10 @@ export function SyncPage() {
           busy={isBusy}
           error={problem}
           canSubmit={canCreate}
-          onSubmit={() => void create(false)}
+          onSubmit={() => void create()}
           onClose={() => {
             if (!isBusy) setIsCreating(false)
           }}
-          otherAction={
-            <button
-              type="button"
-              disabled={!canCreate || isBusy || location.protocol !== 'https:'}
-              onClick={() => void create(true)}
-            >
-              {t('services.createProfile')}
-            </button>
-          }
         >
           <label>
             {t('services.deviceName')}
@@ -167,7 +202,7 @@ export function SyncPage() {
               autoComplete="off"
             />
           </label>
-          {session.services?.isCalendarEnabled && (
+          {availableServices?.canSetUpCalendar && (
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -177,7 +212,7 @@ export function SyncPage() {
               {t('nav.calendar')}
             </label>
           )}
-          {session.services?.isRemindersEnabled && (
+          {availableServices?.canSetUpReminders && (
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -187,7 +222,7 @@ export function SyncPage() {
               {t('services.remindersLabel')}
             </label>
           )}
-          {session.services?.isContactsEnabled && (
+          {availableServices?.canSetUpContacts && (
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -215,13 +250,6 @@ export function SyncPage() {
           onDone={() => setCreated(null)}
         />
       )}
-      {downloadLink && (
-        <ConfirmDialog
-          title={t('services.createProfile')}
-          body={<a href={downloadLink}>{t('services.download')}</a>}
-          onClose={() => setDownloadLink(null)}
-        />
-      )}
       {revoking && (
         <ConfirmDialog
           title={t('services.revoke')}
@@ -235,6 +263,20 @@ export function SyncPage() {
           }}
         />
       )}
+      {isSettingUp && availableServices ? (
+        <DeviceSetupDialog
+          key={parameters.get('mailboxId') ?? 'account'}
+          capabilities={availableServices}
+          selectedMailboxId={parameters.get('mailboxId')}
+          onCreated={reload}
+          onClose={() => {
+            const nextParameters = new URLSearchParams(parameters)
+            nextParameters.delete('setup')
+            nextParameters.delete('mailboxId')
+            setParameters(nextParameters, { replace: true })
+          }}
+        />
+      ) : null}
     </>
   )
 }
