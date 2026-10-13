@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.151.4] - 2026-10-13
+
+### Fixed
+
+- Avoid timing out native compatible audio preparation before the bounded conversion finishes. (#456)
+
 ## [0.151.3] - 2026-10-13
 
 ### Fixed
