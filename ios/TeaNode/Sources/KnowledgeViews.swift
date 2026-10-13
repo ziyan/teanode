@@ -96,6 +96,7 @@ struct KnowledgeFolder: View {
         }
         // Laid out as the mail list is: no chevrons, no lines, rows close together.
         .listStyle(.plain)
+        .listSectionSpacing(.compact)
         .navigationTitle(folderPath.isEmpty ? String(localized: "Knowledge") : title)
         .searchable(text: $searchText, prompt: "Search pages and facts")
         .task(id: searchText) {
