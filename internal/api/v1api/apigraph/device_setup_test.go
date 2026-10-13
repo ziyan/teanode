@@ -81,6 +81,13 @@ func TestDeviceProfileUsesSeparateCredentialsAndSelectedPayloads(test *testing.T
 				if selection.hasMailAccess {
 					arguments.MailboxID = &fixture.mailboxId
 				} else {
+					if err := transaction.DeleteMailbox(fixture.mailboxId); err != nil {
+						test.Fatal(err)
+					}
+					mailboxes, err := transaction.ListMailboxes(user.ID)
+					if err != nil || len(mailboxes) != 0 {
+						test.Fatal("mailbox-free fixture retained a mailbox", err)
+					}
 					if err := fixture.world.config.Update(func(configuration *config.Configuration) error {
 						configuration.Services.Mailboxes.IsEnabled = new(false)
 						return nil
