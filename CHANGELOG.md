@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.152.1] - 2026-10-13
+
+### Fixed
+
+- Correcting a recording's transcript now leads the agent to relearn the corrected point, not just forget the old one. (#461)
+
 ## [0.152.0] - 2026-10-13
 
 ### Added
