@@ -10,7 +10,7 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 
 ## Progress
 
-- [ ] Milestone 1: the server takes pieces of a recording while it is still being captured (no generation bump on capture progress, no summary or memory sync per piece, transcription of each piece as it arrives).
+- [x] Milestone 1 (2026-10-13): the server takes pieces of a recording while it is still being captured (no generation bump on capture progress, no summary or memory sync per piece, transcription of each piece as it arrives).
 - [ ] Milestone 2: sentences that cross a cut between pieces come out whole (held-back last segment, re-read with the next piece).
 - [ ] Milestone 3: speakers keep their label across pieces (recording-scoped temporary voice samples) and naming a speaker during capture applies to the whole recording.
 - [ ] Milestone 4: live words stream through the server (recording mode of the voice relay), stored as live utterances and merged with speaker-separated segments in the timeline.
@@ -19,7 +19,9 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 
 ## Surprises & Discoveries
 
-None yet.
+- The summary sweep `queueRecordingSummaries` (`ListRecordingsAwaitingSummary`) also finds any recording with a completed run, so an active capture would have been named by the sweep within a minute even with the run-completion path fixed. Milestone 1 also filters that query to stopped and imported captures.
+- `CorrectRecordingSpeaker` advances the generation itself, once per call. A client that names several speakers must re-read the generation between calls; stopping the generation bump for capture progress does not change that. Milestone 3's temporary-speaker naming therefore re-reads the generation inside its transaction before each correction.
+- The existing test `TestRecordingCaptureHistoryAndReservedQuota` expected each progress update to advance the generation (it used the stale value 1 after two updates). It now checks a generation from the future and, after the stop, the pre-stop generation.
 
 ## Decision Log
 
@@ -34,6 +36,13 @@ None yet.
   Date/Author: 2026-10-13, Claude.
 - Decision: live words cost a second transcription; it is on by default and can be turned off in the agent's recording settings.
   Rationale: streaming transcription is billed per minute in addition to the file-based pass; both are cents per hour, and the owner asked for live text.
+  Date/Author: 2026-10-13, Claude.
+
+- Decision: stopping a capture queues the memory sync and the naming job from the API handler (`UpdateRecordingCapture` calls `Agent.FinishRecordingCapture` after the move to stopped), and only when no piece is still unfinished (`HasUnfinishedRecordingTranscription`: a run that is queued, preparing or transcribing, or an uploaded original without a run). A piece that finishes after the stop does the same from `runRecording`.
+  Rationale: the phone uploads the last piece after it reports the stop, so either side may come last; the naming job queue is unique per recording, so doing it from both sides is safe, and doing it only from the side that comes last avoids naming from a partial transcript.
+  Date/Author: 2026-10-13, Claude.
+- Decision: `UpdateRecordingCapture` advances the generation only on the first move to stopped (and for an import's own state), not on a repeated stop report.
+  Rationale: every correction compares the generation the client read; a repeated stop report from a retrying phone must not invalidate it.
   Date/Author: 2026-10-13, Claude.
 
 ## Outcomes & Retrospective

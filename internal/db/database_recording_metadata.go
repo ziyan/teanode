@@ -153,11 +153,13 @@ func (self *transaction) StoreGeneratedRecordingSummary(userId, recordingId, rec
 // that names recordings made before the server did. A recording whose title the
 // person typed is offered only when it has no summary yet, and storing keeps
 // that title. Queueing marks them, so each is offered once and never again.
+// A capture still being recorded is not offered: its transcript is partial,
+// and naming it per piece would repeat after every piece.
 func (self *transaction) ListRecordingsAwaitingSummary(afterRecordingId string, limit int) ([]*models.Recording, error) {
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidArguments
 	}
-	query := self.tx.Where("deleted_at IS NULL AND user_id IS NOT NULL AND recording_summary_queued_at IS NULL AND (recording_title_source IN ? OR recording_summary = '')", []models.RecordingTitleSource{models.RecordingTitleSourceNone, models.RecordingTitleSourceGenerated}).
+	query := self.tx.Where("deleted_at IS NULL AND user_id IS NOT NULL AND recording_capture_state IN ? AND recording_summary_queued_at IS NULL AND (recording_title_source IN ? OR recording_summary = '')", []models.RecordingCaptureState{models.RecordingCaptureStopped, models.RecordingCaptureImported}, []models.RecordingTitleSource{models.RecordingTitleSourceNone, models.RecordingTitleSourceGenerated}).
 		Where("EXISTS (SELECT 1 FROM recording_transcript_run WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = ?)", models.RecordingProcessingComplete).
 		Order("id").Limit(limit)
 	if afterRecordingId != "" {

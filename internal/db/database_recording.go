@@ -256,7 +256,17 @@ func (self *transaction) UpdateRecordingCapture(userId, recordingId string, expe
 	if gaps == nil {
 		gaps = []models.RecordingGap{}
 	}
-	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: recording.SourceGeneration + 1, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	// Progress while the capture is still running (duration growing, a gap
+	// extending, active and paused switching) leaves the generation alone: a
+	// phone reports it every few seconds, and every speaker or text correction
+	// refuses a stale generation, so bumping it would make naming a speaker
+	// during capture fail. Only the move to stopped (or an import's own state)
+	// changes what the transcript is built from.
+	sourceGeneration := recording.SourceGeneration
+	if captureState == models.RecordingCaptureImported || (captureState == models.RecordingCaptureStopped && recording.RecordingCaptureState != models.RecordingCaptureStopped) {
+		sourceGeneration++
+	}
+	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: sourceGeneration, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 	if err := self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Select("recording_capture_state", "timeline_duration_ms", "capture_gaps", "source_generation", "updated_at").Updates(&row).Error; err != nil {
 		return nil, err
 	}

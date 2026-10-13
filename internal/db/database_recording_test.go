@@ -32,7 +32,7 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
-		source, err = transaction.UpdateRecordingCapture(ownerId, source.ID, 2, models.RecordingCaptureActive, 3000, []models.RecordingGap{{GapID: "pause-one", GapStartMS: 1000, GapEndMS: 3000, RecordingGapReason: models.RecordingGapPaused}})
+		source, err = transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration, models.RecordingCaptureActive, 3000, []models.RecordingGap{{GapID: "pause-one", GapStartMS: 1000, GapEndMS: 3000, RecordingGapReason: models.RecordingGapPaused}})
 		if err != nil {
 			test.Fatal(err)
 		}
@@ -45,12 +45,13 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 		test.Fatal("an interruption disappeared from history", err)
 	}
 	err = database.Transaction(func(transaction db.Transaction) error {
-		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, 1, models.RecordingCaptureActive, 4000, source.CaptureGaps)
+		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration+1, models.RecordingCaptureActive, 4000, source.CaptureGaps)
 		return err
 	})
 	if !errors.Is(err, db.ErrAlreadyExists) {
-		test.Fatal("an old generation overwrote capture state", err)
+		test.Fatal("a generation from the future overwrote capture state", err)
 	}
+	stoppedFrom := source.SourceGeneration
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		var err error
 		source, err = transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration, models.RecordingCaptureStopped, 4000, source.CaptureGaps)
@@ -66,6 +67,13 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 			test.Fatal("lost initialization response reserved bytes twice", err)
 		}
 	})
+	err = database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, stoppedFrom, models.RecordingCaptureStopped, 4000, source.CaptureGaps)
+		return err
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("an old generation overwrote the stopped capture", err)
+	}
 	err = database.Transaction(func(transaction db.Transaction) error {
 		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration, models.RecordingCaptureActive, 4000, source.CaptureGaps)
 		return err

@@ -284,6 +284,7 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 			return nil
 		}
 	}
+	var isCaptureFinished bool
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		if err := transaction.UpdateRecordingTranscriptProgress(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, models.RecordingProcessingComplete, "", transcriptRun.DerivedDurationMS); err != nil {
 			return err
@@ -291,13 +292,61 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 		if err := transaction.QueueRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID); err != nil {
 			return err
 		}
+		source, err := transaction.GetRecording(run.Agent.UserID, transcriptRun.RecordingID)
+		if err != nil {
+			return err
+		}
+		// A piece of a capture that is still being recorded is partial: the
+		// memory sync re-reads every segment and the naming job reads the
+		// whole transcript, so repeating both after every piece would cost a
+		// model call per piece for text that is about to change. Stopping the
+		// capture does both once (FinishRecordingCapture).
+		isCaptureFinished = isRecordingCaptureFinished(source)
+		if !isCaptureFinished {
+			return nil
+		}
 		return transaction.SyncRecordingKnowledge(run.Agent.UserID, transcriptRun.RecordingID)
 	}); err != nil {
 		return err
 	}
 	self.WakeRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID)
-	self.queueRecordingSummary(ctx, run.Agent.UserID, transcriptRun.RecordingID)
+	if isCaptureFinished {
+		self.queueRecordingSummary(ctx, run.Agent.UserID, transcriptRun.RecordingID)
+	}
 	return nil
+}
+
+// isRecordingCaptureFinished says whether a recording's capture has ended, so
+// its transcript no longer grows: an import, or a capture the person stopped.
+func isRecordingCaptureFinished(source *models.Recording) bool {
+	return source.RecordingCaptureState == models.RecordingCaptureStopped || source.RecordingCaptureState == models.RecordingCaptureImported
+}
+
+// FinishRecordingCapture does, once, the work runs of an unfinished capture
+// skipped: the memory sync and the naming job. The caller has just moved the
+// capture to stopped. When some piece is still being transcribed, nothing is
+// done here, because that piece's own completion sees a stopped capture and
+// does the same.
+func (self *Agent) FinishRecordingCapture(transaction db.Transaction, userId, recordingId string) error {
+	hasUnfinishedPiece, err := transaction.HasUnfinishedRecordingTranscription(userId, recordingId)
+	if err != nil || hasUnfinishedPiece {
+		return err
+	}
+	runs, err := transaction.ListRecordingTranscriptRuns(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	hasCompletedRun := false
+	for _, transcriptRun := range runs {
+		hasCompletedRun = hasCompletedRun || transcriptRun.RecordingProcessingState == models.RecordingProcessingComplete
+	}
+	if !hasCompletedRun {
+		return nil
+	}
+	if err := transaction.SyncRecordingKnowledge(userId, recordingId); err != nil {
+		return err
+	}
+	return self.QueueRecordingSummary(transaction, userId, recordingId)
 }
 
 func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk) (bool, error) {

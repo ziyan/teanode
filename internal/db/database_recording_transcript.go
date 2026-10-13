@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ type RecordingTranscriptOperation interface {
 	GetRecordingTranscriptionAttemptEvidence(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error)
 	CancelRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
 	ReadRecordingTranscriptPage(userId, runId string, segmentOffset, pageSize int) ([]*models.RecordingTranscriptSegment, int64, error)
+	HasUnfinishedRecordingTranscription(userId, recordingId string) (bool, error)
 	ListRecordingMediaAwaitingTranscription(afterMediaId string, limit int) ([]*RecordingMediaCandidate, error)
 	CreateRecordingTranscriptRun(userId, mediaId, agentId, clientRunId, providerModelName string, isReprocessingRequested bool) (*models.RecordingTranscriptRun, error)
 	GetRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
@@ -707,6 +709,20 @@ func (self *transaction) ListRecordingMediaAwaitingTranscription(afterMediaId st
 	}
 	err := query.Scan(&candidates).Error
 	return candidates, err
+}
+
+// HasUnfinishedRecordingTranscription says whether any piece of a recording is
+// still on its way to a transcript: a run that is queued, preparing or
+// transcribing, or an uploaded original no run has been made for yet.
+func (self *transaction) HasUnfinishedRecordingTranscription(userId, recordingId string) (bool, error) {
+	if _, err := self.GetRecording(userId, recordingId); err != nil {
+		return false, err
+	}
+	var unfinishedCount int64
+	err := self.tx.Raw(`SELECT (SELECT COUNT(*) FROM recording_transcript_run WHERE recording_id = @recordingId AND recording_processing_state IN @unfinishedStates)
+		+ (SELECT COUNT(*) FROM recording_media WHERE recording_id = @recordingId AND recording_upload_state = @uploadComplete AND NOT EXISTS (SELECT 1 FROM recording_transcript_run WHERE recording_transcript_run.recording_media_id = recording_media.id))`,
+		sql.Named("recordingId", recordingId), sql.Named("unfinishedStates", []models.RecordingProcessingState{models.RecordingProcessingQueued, models.RecordingProcessingPreparing, models.RecordingProcessingTranscribing}), sql.Named("uploadComplete", models.RecordingUploadComplete)).Scan(&unfinishedCount).Error
+	return unfinishedCount > 0, err
 }
 
 func (self *transaction) CancelRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error) {
