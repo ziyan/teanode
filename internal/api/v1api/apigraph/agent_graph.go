@@ -13,6 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/agent/reading"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -428,15 +429,15 @@ type SetMyContactArguments struct {
 }
 
 type SaveAgentKnowledgeSourceArguments struct {
-	SourceID string `json:"sourceId" graphapi:"nullable"`
-	Kind     string `json:"kind" graphapi:"nullable"`
-	Name     string `json:"name" graphapi:"nullable"`
-	Computer string `json:"computer" graphapi:"nullable"`
-	Path     string `json:"path" graphapi:"nullable"`
-	Format   string `json:"format" graphapi:"nullable"`
-	RootPath string `json:"rootPath" graphapi:"nullable"`
-	Cron     string `json:"cron" graphapi:"nullable"`
-	Enabled  *bool  `json:"enabled" graphapi:"nullable"`
+	SourceID string  `json:"sourceId" graphapi:"nullable"`
+	Kind     string  `json:"kind" graphapi:"nullable"`
+	Name     string  `json:"name" graphapi:"nullable"`
+	Computer string  `json:"computer" graphapi:"nullable"`
+	Path     string  `json:"path" graphapi:"nullable"`
+	Format   string  `json:"format" graphapi:"nullable"`
+	RootPath string  `json:"rootPath" graphapi:"nullable"`
+	Cron     *string `json:"cron" graphapi:"nullable"`
+	Enabled  *bool   `json:"enabled" graphapi:"nullable"`
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId" graphapi:"nullable"`
@@ -2122,7 +2123,7 @@ func (self *graph) SetMyContact(ctx context.Context, arguments SetMyContactArgum
 // --- sources ----------------------------------------------------------
 
 func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveAgentKnowledgeSourceArguments) (*models.AgentKnowledgeSource, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2137,6 +2138,9 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			return nil, fmt.Errorf("there is no source %q", arguments.SourceID)
 		}
 		source = existing
+		if source.Kind == models.SourceRecording && arguments.Name != "" && arguments.Name != source.Name {
+			return nil, fmt.Errorf("%w: a recording source keeps its internal name; change the recording title instead", api.ErrInvalidArguments)
+		}
 		// A finance source was made by its link and is described by it:
 		// what the person may change here is its name, its schedule and
 		// whether it is on. Anything else would leave a source whose
@@ -2229,8 +2233,17 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)
 	}
-	if arguments.Cron != "" {
-		source.Cron = arguments.Cron
+	if arguments.Cron != nil {
+		source.Cron = *arguments.Cron
+		if strings.TrimSpace(source.Cron) == "" {
+			source.NextRunAt = nil
+		} else if source.Kind == models.SourceRecording {
+			nextRun, err := tools.NextCron(source.Cron, time.Now(), agent.Location(principal.User))
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+			}
+			source.NextRunAt = &nextRun
+		}
 	}
 	if arguments.Enabled != nil {
 		source.Enabled = *arguments.Enabled
@@ -2263,6 +2276,9 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	// end of a link, so it is made only by linking: a row without one would
 	// be a source that can never sync. Nor may another source become one.
 	if source.Kind.IsMadeByLinking() && !isExistingLinkedSource {
+		if source.Kind == models.SourceRecording {
+			return nil, fmt.Errorf("%w: a recording source is created automatically from its transcript; change the recording title and metadata instead", api.ErrInvalidArguments)
+		}
 		return nil, fmt.Errorf("%w: a %s source is made by linking an institution, from the Finance tab of the agent page, teanode finance link-plaid or link-simplefin, or the finance tool", api.ErrInvalidArguments, source.Kind)
 	}
 	return tx.PutAgentSource(source)

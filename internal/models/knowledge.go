@@ -45,17 +45,20 @@ const (
 	// reads it; Specification.Type is the provider kind and
 	// Specification.Settings holds FinanceSourceSettings.
 	SourceFinance AgentKnowledgeKind = "finance"
+
+	// SourceRecording is retained passive meeting evidence, created when a transcript completes.
+	SourceRecording AgentKnowledgeKind = "recording"
 )
 
 // AgentKnowledgeKinds is every kind.
-var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance}
+var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance, SourceRecording}
 
 // IsMadeByLinking says a source of this kind is made only by the
 // operations that link it, never by the generic source creation: a finance
 // source needs a credential the provider hands over at the end of a link,
 // and a row without one would be a source that can never sync.
 func (self AgentKnowledgeKind) IsMadeByLinking() bool {
-	return self == SourceFinance
+	return self == SourceFinance || self == SourceRecording
 }
 
 // IsDocumentKind says a source of this kind files documents into the

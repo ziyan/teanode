@@ -38,6 +38,9 @@ func buildDigestRequest(owner *models.User, knowledgeLanguage string, material *
 	if err != nil {
 		return nil, err
 	}
+	if material.HasRecordingEvidence {
+		prompt = recordingLearningInstructions + "\n\n" + prompt
+	}
 	return &digestRequest{Prompt: prompt, Shown: shown}, nil
 }
 

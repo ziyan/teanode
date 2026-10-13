@@ -45,9 +45,12 @@ type RecordingView struct {
 
 // RecordingLimitsView gives clients transport and original-media limits.
 type RecordingLimitsView struct {
-	MaximumMediaBytes   int64 `json:"maximumMediaBytes"`
-	MaximumAccountBytes int64 `json:"maximumAccountBytes"`
-	UploadPartBytes     int64 `json:"uploadPartBytes"`
+	MaximumMediaBytes               int64  `json:"maximumMediaBytes"`
+	MaximumAccountBytes             int64  `json:"maximumAccountBytes"`
+	UploadPartBytes                 int64  `json:"uploadPartBytes"`
+	IsTranscriptionAvailable        bool   `json:"isTranscriptionAvailable"`
+	TranscriptionUnavailableMessage string `json:"transcriptionUnavailableMessage"`
+	TranscriptionProviderModelName  string `json:"transcriptionProviderModelName"`
 }
 
 // CreateRecordingArguments uses a stable local identifier for lost-response retries.
@@ -146,10 +149,23 @@ func (self *graph) ReadRecordingLimits(ctx context.Context) (*RecordingLimitsVie
 	if _, err := self.requirePermission(ctx, models.PermissionAgentUse); err != nil {
 		return nil, err
 	}
-	if _, err := self.requireAccount(ctx); err != nil {
+	owner, err := self.requireAccount(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return self.recordingLimits()
+	limits, err := self.recordingLimits()
+	if err != nil {
+		return nil, err
+	}
+	limits.TranscriptionProviderModelName = self.config.Current().Agent.Models.Transcription
+	limits.TranscriptionUnavailableMessage = "Recording transcription is off. An operator can choose a model with speaker attribution."
+	if worker := self.agentWorker(); worker != nil {
+		limits.IsTranscriptionAvailable, limits.TranscriptionUnavailableMessage, err = worker.RecordingTranscriptionAvailability(self.transaction(ctx), owner.ID)
+		if err != nil {
+			return nil, translateError(err)
+		}
+	}
+	return limits, nil
 }
 
 func (self *graph) CreateRecording(ctx context.Context, arguments CreateRecordingArguments) (*models.Recording, error) {

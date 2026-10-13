@@ -9,11 +9,13 @@ import (
 
 // RecordingTranscriptQuery reads generated evidence without requiring an active agent.
 type RecordingTranscriptQuery interface {
+	ReadRecordingTranscriptTimeline(context.Context, ReadRecordingTranscriptTimelineArguments) (*RecordingTranscriptTimelineView, error)
 	ReadRecordingTranscript(context.Context, ReadRecordingTranscriptArguments) (*RecordingTranscriptView, error)
 }
 
 // RecordingTranscriptMutation requests paid versions or cancels further processing.
 type RecordingTranscriptMutation interface {
+	RetryRecordingTranscription(context.Context, RecordingTranscriptArguments) (*models.RecordingTranscriptRun, error)
 	RequestRecordingTranscription(context.Context, RequestRecordingTranscriptionArguments) (*models.RecordingTranscriptRun, error)
 	CancelRecordingTranscription(context.Context, RecordingTranscriptArguments) (*models.RecordingTranscriptRun, error)
 }
@@ -70,6 +72,12 @@ func (self *graph) ReadRecordingTranscript(ctx context.Context, arguments ReadRe
 	if err != nil {
 		return nil, translateError(err)
 	}
+	if err := transaction.ProjectRecordingTranscriptTextCorrections(owner.ID, segments); err != nil {
+		return nil, translateError(err)
+	}
+	if err := transaction.ProjectRecordingSpeakerCorrections(owner.ID, segments); err != nil {
+		return nil, translateError(err)
+	}
 	attempts, err := transaction.ListRecordingTranscriptionAttempts(owner.ID, transcriptRun.ID)
 	if err != nil {
 		return nil, translateError(err)
@@ -99,5 +107,18 @@ func (self *graph) CancelRecordingTranscription(ctx context.Context, arguments R
 		return transcriptRun, translateError(err)
 	}
 	transcriptRun, err := transaction.CancelRecordingTranscriptRun(owner.ID, arguments.RecordingTranscriptRunID)
+	return transcriptRun, translateError(err)
+}
+
+func (self *graph) RetryRecordingTranscription(ctx context.Context, arguments RecordingTranscriptArguments) (*models.RecordingTranscriptRun, error) {
+	owner, err := self.recordingAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	transcriptRun, err := worker.RetryRecordingTranscription(self.transaction(ctx), owner.ID, arguments.RecordingTranscriptRunID)
 	return transcriptRun, translateError(err)
 }

@@ -22,6 +22,32 @@ import (
 const recordingLongest = 40 * time.Minute
 const recordingMaximumDurationMS int64 = 7 * 24 * 60 * 60 * 1000
 
+// RecordingTranscriptionAvailability checks current admission without creating work or a model call.
+func (self *Agent) RecordingTranscriptionAvailability(transaction db.Transaction, userId string) (bool, string, error) {
+	configuration := self.settings.Configuration()
+	if !configuration.Agent.Enabled || configuration.Agent.Models.Transcription == "" || self.settings.Registry == nil {
+		return false, "Recording transcription is off. An operator can choose a model with speaker attribution.", nil
+	}
+	assistant, err := transaction.GetAgentByUser(userId)
+	if err != nil {
+		return false, "", err
+	}
+	if assistant == nil || !assistant.Active() {
+		return false, "Turn on your personal assistant to process recordings.", nil
+	}
+	if err := self.recordingAuthority(transaction, &Run{Agent: assistant}, configuration.Agent.Models.Transcription, false); err != nil {
+		var deferral *Deferral
+		if errors.As(err, &deferral) {
+			return false, deferral.Reason, nil
+		}
+		return false, "", err
+	}
+	if _, err := self.settings.Registry.TranscribingFor(configuration.Agent.Models.Transcription, true, false); err != nil {
+		return false, "The configured recording model is unavailable or lacks speaker attribution and timestamps.", nil
+	}
+	return true, "", nil
+}
+
 // QueueRecordingTranscription retains the requested version and job atomically.
 // Initial uploads have one stable version; explicit reprocessing names a new key.
 func (self *Agent) QueueRecordingTranscription(transaction db.Transaction, userId, mediaId, clientRunId string, isReprocessingRequested bool) (*models.RecordingTranscriptRun, error) {
@@ -258,7 +284,19 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 			return nil
 		}
 	}
-	return self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingComplete, "", transcriptRun.DerivedDurationMS)
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		if err := transaction.UpdateRecordingTranscriptProgress(run.Agent.UserID, transcriptRun.ID, db.RecordingWorkerClaim{JobID: run.Job.ID, ClaimID: run.Job.ClaimID}, models.RecordingProcessingComplete, "", transcriptRun.DerivedDurationMS); err != nil {
+			return err
+		}
+		if err := transaction.QueueRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID); err != nil {
+			return err
+		}
+		return transaction.SyncRecordingKnowledge(run.Agent.UserID, transcriptRun.RecordingID)
+	}); err != nil {
+		return err
+	}
+	self.WakeRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID)
+	return nil
 }
 
 func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk) (bool, error) {
@@ -267,7 +305,25 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 	var blob *models.RecordingBlob
 	configuration := self.settings.Configuration()
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-		attempt, err = transaction.CreateRecordingTranscriptionAttempt(run.Agent.UserID, transcriptRun.ID, chunk.ID, claim, configuration.Agent.CurrencyOf(), nil)
+		attempt, err = transaction.GetLatestRecordingChunkAttempt(run.Agent.UserID, chunk.ID)
+		return err
+	}); err != nil {
+		return false, err
+	}
+	if attempt != nil {
+		if attempt.RecordingAttemptState == models.RecordingAttemptComplete {
+			return true, nil
+		}
+		if attempt.RecordingAttemptState == models.RecordingAttemptSubmitted || attempt.RecordingAttemptState == models.RecordingAttemptUncertain {
+			return false, self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingUncertain, "a previous provider request has an unknown outcome and was not repeated", transcriptRun.DerivedDurationMS)
+		}
+	}
+	speakerReferences, referenceBlobIds, err := self.recordingSpeakerReferences(ctx, run.Agent.UserID, selection.Capabilities, files)
+	if err != nil {
+		return false, err
+	}
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		attempt, err = transaction.CreateRecordingTranscriptionAttempt(run.Agent.UserID, transcriptRun.ID, chunk.ID, claim, configuration.Agent.CurrencyOf(), referenceBlobIds)
 		if err != nil {
 			return err
 		}
@@ -302,11 +358,27 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 		if err := self.recordingAuthority(transaction, run, transcriptRun.ProviderModelName, true); err != nil {
 			return err
 		}
+		confirmedNames := make([]string, 0, len(speakerReferences))
+		for _, reference := range speakerReferences {
+			confirmedNames = append(confirmedNames, reference.SpeakerName)
+		}
+		if err := transaction.CheckRecordingVoiceReferenceNames(run.Agent.UserID, referenceBlobIds, confirmedNames); err != nil {
+			if errors.Is(err, db.ErrAlreadyExists) {
+				return &Deferral{Until: time.Now().Add(time.Minute), Reason: "speaker references changed before submission"}
+			}
+			return err
+		}
 		return transaction.SubmitRecordingTranscriptionAttempt(run.Agent.UserID, attempt.ID, claim)
 	}); err != nil {
+		var deferral *Deferral
+		if errors.As(err, &deferral) {
+			if progressError := self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingTranscribing, deferral.Reason, transcriptRun.DerivedDurationMS); progressError != nil {
+				return false, progressError
+			}
+		}
 		return false, err
 	}
-	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true})
+	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences})
 	finished := &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptUncertain, AttemptErrorMessage: "provider request did not return a verified transcript; it was not repeated"}
 	var segments []*models.RecordingTranscriptSegment
 	var usage llm.Usage
@@ -372,5 +444,56 @@ func (self *Agent) CancelRecordingTranscription(transaction db.Transaction, user
 		return nil, err
 	}
 	transaction.AfterCommit(func() { self.cancelRunningWork("recording-" + runId) })
+	return transcriptRun, nil
+}
+
+func (self *Agent) queueRecordingSpeakerCuration(ctx context.Context) {
+	var sources []*models.Recording
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		sources, err = transaction.ListRecordingsAwaitingSpeakerCuration(25)
+		return err
+	}); err != nil {
+		log.Warningf("cannot find recording speakers awaiting curation: %s", err)
+		return
+	}
+	for _, source := range sources {
+		self.WakeRecordingSpeakerCuration(source.UserID, source.ID)
+	}
+}
+
+// RetryRecordingTranscription preserves completed chunks and refuses unknown paid outcomes.
+func (self *Agent) RetryRecordingTranscription(transaction db.Transaction, userId, runId string) (*models.RecordingTranscriptRun, error) {
+	configuration := self.settings.Configuration()
+	if !configuration.Agent.Enabled || configuration.Agent.Models.Transcription == "" || self.settings.Registry == nil {
+		return nil, ErrUnavailable
+	}
+	transcriptRun, err := transaction.GetRecordingTranscriptRun(userId, runId)
+	if err != nil {
+		return nil, err
+	}
+	assistant, err := transaction.GetAgentByUser(userId)
+	if err != nil {
+		return nil, err
+	}
+	if assistant == nil || !assistant.Active() {
+		return nil, ErrUnavailable
+	}
+	owner, err := transaction.GetUser(userId)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.recordingAuthority(transaction, &Run{Agent: assistant, Owner: owner}, transcriptRun.ProviderModelName, false); err != nil {
+		return nil, err
+	}
+	if _, err := self.settings.Registry.TranscribingFor(transcriptRun.ProviderModelName, true, false); err != nil {
+		return nil, err
+	}
+	transcriptRun, err = transaction.RetryRecordingTranscriptRun(userId, runId, assistant.ID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := self.Enqueue(transaction, models.AgentJobRecording, assistant.ID, "", transcriptRun.ID); err != nil {
+		return nil, err
+	}
 	return transcriptRun, nil
 }
