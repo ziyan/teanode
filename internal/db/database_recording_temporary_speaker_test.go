@@ -185,3 +185,37 @@ func TestTemporarySpeakersAreBoundedAndBelongToOneRecording(test *testing.T) {
 		test.Fatal("a speaker was made for a recording that is not a capture", err)
 	}
 }
+
+// A voice with no passage clean enough for a sample still gets a label, reads
+// as that label and can be named.
+func TestATemporarySpeakerWithoutASampleIsLabeledAndNamed(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	recordingId := fixture.media.RecordingID
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "C", SegmentStartMS: 2000, SegmentEndMS: 2600, TranscriptText: "A short remark."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		speaker, err := transaction.CreateRecordingTemporarySpeaker(fixture.userId, &models.RecordingTemporarySpeaker{RecordingID: recordingId, SourceAttemptID: attempt.ID, SourceLocalSpeakerID: "C"}, nil, 1<<20)
+		if err != nil || speaker.SpeakerLabel != "Speaker 1" || speaker.RecordingBlobID != "" {
+			test.Fatal("a voice without a sample got no label", speaker, err)
+		}
+		segments := timelineOf(test, transaction, fixture.userId, recordingId)
+		if len(segments) != 1 || segments[0].TemporarySpeakerLabel != "Speaker 1" {
+			test.Fatal("the passage did not read as its label", segments)
+		}
+		if err := transaction.NameRecordingTemporarySpeaker(fixture.userId, recordingId, "Speaker 1", "Fixture Colleague", false); err != nil {
+			test.Fatal("a speaker without a sample could not be named", err)
+		}
+		segments = timelineOf(test, transaction, fixture.userId, recordingId)
+		if segments[0].EffectiveSpeakerName != "Fixture Colleague" {
+			test.Fatal("naming did not reach the passage", segments[0].EffectiveSpeakerName)
+		}
+	})
+}
