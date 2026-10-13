@@ -11539,6 +11539,11 @@ main.content:has(> .knowledge-frame) {
     padding-right: 52px;
   }
 
+  /* Recording passage actions keep the same corner clear as the pager. */
+  .recording-page .settings-row-actions {
+    padding-right: 52px;
+  }
+
   main.content .dialog .table-pagination {
     padding-right: 0;
   }

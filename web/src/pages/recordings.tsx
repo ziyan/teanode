@@ -136,7 +136,7 @@ function AccountRecordingsPage() {
       ? detail.data
       : null
   return (
-    <>
+    <div className="recording-page">
       <ErrorMessage error={recordingId ? detail.error : library.error} />
       {!recordingId ? (
         <SettingsSection
@@ -357,7 +357,7 @@ function AccountRecordingsPage() {
           onClose={() => setIsDeleting(false)}
         />
       )}
-    </>
+    </div>
   )
 }
 

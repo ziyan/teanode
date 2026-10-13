@@ -131,3 +131,9 @@ Real-iPhone capture, background transfer, interruption recovery, lock-screen
 controls and battery behavior need actual device evidence. Actual provider
 billing must be verified from provider evidence and must not be inferred from
 provisional pricing. The separate device-setup redesign is not included here.
+
+## Follow-up review evidence
+
+A phone-width Chrome review reproduced the floating assistant launcher covering a transcript edit action. Recording row actions now reuse the existing pager corner clearance at narrow widths; the same edit control opened its correct dialog with the launcher visible. Desktop row layout remains unchanged. Fractional timestamps consistently retain three millisecond digits, and the text correction history explains an empty history and retained edits whose boundaries do not match a new version. Fresh desktop original-card spacing matched the normal page heading gap, so no speculative spacing change was made.
+
+The recording navigation now uses the shared RecordIcon reviewed separately, retaining the existing icon size and wrapper. Desktop and phone navigation, standard Back button, and the text-history controls were inspected in Chrome. Safety evidence-observer integration is still pending its shared backend checkpoint; CI from the earlier head does not verify these follow-up edits.

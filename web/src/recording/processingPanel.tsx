@@ -56,7 +56,7 @@ type ProcessingView = {
 const caughtText = (caught: unknown) => (caught instanceof Error ? caught.message : String(caught))
 const timelineTime = (milliseconds: number) => {
   const remainderMS = milliseconds % 1000
-  const fractionalSeconds = remainderMS ? `.${String(remainderMS).padStart(3, '0').replace(/0+$/, '')}` : ''
+  const fractionalSeconds = remainderMS ? `.${String(remainderMS).padStart(3, '0')}` : ''
   return `${Math.floor(milliseconds / 60000)}:${String(Math.floor(milliseconds / 1000) % 60).padStart(2, '0')}${fractionalSeconds}`
 }
 
@@ -892,6 +892,9 @@ export function RecordingProcessingPanel({
         description={t('recordingProcessing.textHistoryHint')}
       >
         <ErrorMessage error={textHistory.error} />
+        {!textHistory.loading && !textHistory.error && (textHistory.data ?? []).length === 0 ? (
+          <SettingsEmpty>{t('recordingProcessing.noTextCorrections')}</SettingsEmpty>
+        ) : null}
         {(textHistory.data ?? []).map((correction) => (
           <details key={correction.id}>
             <summary>

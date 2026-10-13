@@ -615,6 +615,18 @@ export function MicrophoneIcon(props: IconProps) {
   )
 }
 
+// RecordIcon is a record button, a ring with a dot: the recordings of
+// meetings. Not the microphone, which means talking to the agent on a call,
+// nor a waveform, which the iPhone app uses for the same.
+export function RecordIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4" fill="currentColor" />
+    </Icon>
+  )
+}
+
 // MicrophoneOffIcon is the microphone struck through: the agent does not
 // hear the person.
 export function MicrophoneOffIcon(props: IconProps) {

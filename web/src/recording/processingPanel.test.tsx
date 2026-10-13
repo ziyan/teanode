@@ -242,9 +242,9 @@ it('locates a legacy historical citation on its bounded page and plays the exact
         ),
     ).toBe(true),
   )
-  expect((await screen.findByRole('link', { name: 'Play cited passage 0:02.5 to 0:03.5' })).getAttribute('href')).toBe(
-    '/api/v1/recordings/media/fixture-media#t=2.5,3.5',
-  )
+  expect(
+    (await screen.findByRole('link', { name: 'Play cited passage 0:02.500 to 0:03.500' })).getAttribute('href'),
+  ).toBe('/api/v1/recordings/media/fixture-media#t=2.5,3.5')
   expect(screen.getAllByText('Cited passage').length).toBeGreaterThan(0)
 })
 it('does not replace a missing explicitly cited version with the latest timeline', async () => {
@@ -295,4 +295,11 @@ it('resumes explicitly stopped reading directly without requesting paid processi
       .mocked(recordingOperation)
       .mock.calls.some(([operationName]) => operationName === 'RequestRecordingTranscription'),
   ).toBe(false)
+})
+it('explains empty text history and preserves consistent fractional timestamp precision', async () => {
+  showFixture([{ segmentStartMS: 10200, segmentEndMS: 10380 }])
+  expect(
+    await screen.findByText('No text corrections yet. Use Edit recognized text on a transcript passage.'),
+  ).toBeTruthy()
+  expect(await screen.findByRole('link', { name: '0:10.200 to 0:10.380' })).toBeTruthy()
 })
