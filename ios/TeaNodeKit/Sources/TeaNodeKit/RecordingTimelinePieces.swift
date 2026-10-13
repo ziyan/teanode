@@ -41,6 +41,26 @@ public enum RecordingTimelinePieces {
         return nil
     }
 
+    /// A stretch of the timeline played on its own, such as a conversation bubble: where it starts, and where it stops.
+    public struct BoundedLocation: Equatable, Sendable {
+        public let start: Location
+        /// How far into the start's original the stretch ends, in milliseconds. A stretch that runs past the end of its
+        /// original stops at that end, and never goes on into the next original.
+        public let endOffsetMS: Int64
+        /// Where on the timeline it really stops.
+        public var endTimelineMS: Int64 { start.media.timelineStartMS + endOffsetMS }
+    }
+
+    /// Where a stretch from `rangeStartMS` to `rangeEndMS` starts and stops. Nil when there is nothing to play, or when it ends
+    /// before it starts.
+    public static func locateRange(rangeStartMS: Int64, rangeEndMS: Int64, in mediaFiles: [RecordingMedia]) -> BoundedLocation? {
+        guard rangeEndMS > rangeStartMS, let start = locate(timelineMS: rangeStartMS, in: mediaFiles) else { return nil }
+        let pieceEndMS = endMS(of: start.media, in: playable(mediaFiles))
+        let boundedEndMS = min(rangeEndMS, pieceEndMS)
+        guard boundedEndMS > start.timelineMS else { return nil }
+        return BoundedLocation(start: start, endOffsetMS: boundedEndMS - start.media.timelineStartMS)
+    }
+
     /// The original that plays when this one ends, if there is one.
     public static func original(after media: RecordingMedia, in mediaFiles: [RecordingMedia]) -> RecordingMedia? {
         let pieces = playable(mediaFiles)

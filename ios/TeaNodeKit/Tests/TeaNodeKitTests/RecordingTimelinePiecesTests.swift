@@ -58,4 +58,33 @@ final class RecordingTimelinePiecesTests: XCTestCase {
         XCTAssertEqual(RecordingTimelinePieces.original(after: first, in: pieces)?.id, "second")
         XCTAssertNil(RecordingTimelinePieces.original(after: second, in: pieces))
     }
+
+    func testARangeStopsAtItsEndInsideTheOriginal() throws {
+        let range = try XCTUnwrap(RecordingTimelinePieces.locateRange(rangeStartMS: 20000, rangeEndMS: 25000, in: pieces))
+        XCTAssertEqual(range.start.media.id, "first")
+        XCTAssertEqual(range.start.offsetMS, 20000)
+        XCTAssertEqual(range.endOffsetMS, 25000)
+        XCTAssertEqual(range.endTimelineMS, 25000)
+    }
+
+    func testARangeRunningPastItsOriginalStopsAtTheEndOfThatOriginal() throws {
+        let range = try XCTUnwrap(RecordingTimelinePieces.locateRange(rangeStartMS: 50000, rangeEndMS: 90000, in: pieces))
+        XCTAssertEqual(range.start.media.id, "first")
+        XCTAssertEqual(range.endOffsetMS, 60000)
+        XCTAssertEqual(range.endTimelineMS, 60000)
+    }
+
+    func testARangeInTheSecondOriginalCountsFromThatOriginalsStart() throws {
+        let range = try XCTUnwrap(RecordingTimelinePieces.locateRange(rangeStartMS: 75000, rangeEndMS: 80000, in: pieces))
+        XCTAssertEqual(range.start.media.id, "second")
+        XCTAssertEqual(range.start.offsetMS, 5000)
+        XCTAssertEqual(range.endOffsetMS, 10000)
+        XCTAssertEqual(range.endTimelineMS, 80000)
+    }
+
+    func testARangeThatEndsBeforeItStartsOrHasNothingToPlayIsRefused() {
+        XCTAssertNil(RecordingTimelinePieces.locateRange(rangeStartMS: 20000, rangeEndMS: 20000, in: pieces))
+        XCTAssertNil(RecordingTimelinePieces.locateRange(rangeStartMS: 20000, rangeEndMS: 10000, in: pieces))
+        XCTAssertNil(RecordingTimelinePieces.locateRange(rangeStartMS: 0, rangeEndMS: 1000, in: []))
+    }
 }
