@@ -43,3 +43,26 @@ type RecordingVoiceReference struct {
 	IsRevoked                    bool      `json:"isRevoked"`
 	CreatedAt                    time.Time `json:"createdAt"`
 }
+
+// RecordingTemporarySpeaker is a speaker of one recording that is still being
+// captured, called "Speaker 1", "Speaker 2" and so on, until the person names
+// it. Its voice sample is sent with later pieces of the same recording so the
+// provider gives the same label again; the sample is never sent for another
+// recording.
+type RecordingTemporarySpeaker struct {
+	ID                   string `json:"-"`
+	RecordingID          string `json:"-"`
+	SpeakerLabel         string `json:"speakerLabel"`
+	RecordingBlobID      string `json:"-"`
+	SourceAttemptID      string `json:"-"`
+	SourceLocalSpeakerID string `json:"-"`
+	PassageStartMS       int64  `json:"-"`
+	PassageEndMS         int64  `json:"-"`
+	// SpeakerIdentityID is the confirmed identity once the person has named this speaker.
+	SpeakerIdentityID string    `json:"speakerIdentityId"`
+	CreatedAt         time.Time `json:"-"`
+	// LastHeardEndMS is the timeline millisecond this speaker was last heard, filled when listed.
+	LastHeardEndMS int64 `json:"-" gorm:"-"`
+	// SpokenMS is how long this speaker has spoken in the recording so far, filled when listed.
+	SpokenMS int64 `json:"-" gorm:"-"`
+}

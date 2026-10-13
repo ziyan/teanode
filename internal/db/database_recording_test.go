@@ -32,7 +32,7 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
-		source, err = transaction.UpdateRecordingCapture(ownerId, source.ID, 2, models.RecordingCaptureActive, 3000, []models.RecordingGap{{GapID: "pause-one", GapStartMS: 1000, GapEndMS: 3000, RecordingGapReason: models.RecordingGapPaused}})
+		source, err = transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration, models.RecordingCaptureActive, 3000, []models.RecordingGap{{GapID: "pause-one", GapStartMS: 1000, GapEndMS: 3000, RecordingGapReason: models.RecordingGapPaused}})
 		if err != nil {
 			test.Fatal(err)
 		}
@@ -45,12 +45,13 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 		test.Fatal("an interruption disappeared from history", err)
 	}
 	err = database.Transaction(func(transaction db.Transaction) error {
-		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, 1, models.RecordingCaptureActive, 4000, source.CaptureGaps)
+		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration+1, models.RecordingCaptureActive, 4000, source.CaptureGaps)
 		return err
 	})
 	if !errors.Is(err, db.ErrAlreadyExists) {
-		test.Fatal("an old generation overwrote capture state", err)
+		test.Fatal("a generation from the future overwrote capture state", err)
 	}
+	stoppedFrom := source.SourceGeneration
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		var err error
 		source, err = transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration, models.RecordingCaptureStopped, 4000, source.CaptureGaps)
@@ -66,6 +67,13 @@ func TestRecordingCaptureHistoryAndReservedQuota(test *testing.T) {
 			test.Fatal("lost initialization response reserved bytes twice", err)
 		}
 	})
+	err = database.Transaction(func(transaction db.Transaction) error {
+		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, stoppedFrom, models.RecordingCaptureStopped, 4000, source.CaptureGaps)
+		return err
+	})
+	if !errors.Is(err, db.ErrAlreadyExists) {
+		test.Fatal("an old generation overwrote the stopped capture", err)
+	}
 	err = database.Transaction(func(transaction db.Transaction) error {
 		_, err := transaction.UpdateRecordingCapture(ownerId, source.ID, source.SourceGeneration, models.RecordingCaptureActive, 4000, source.CaptureGaps)
 		return err
@@ -207,4 +215,43 @@ func TestRecordingSearchMatchesTitleAndSummaryLiterally(test *testing.T) {
 			test.Fatal("an empty search did not list everything, newest first", len(found), err)
 		}
 	})
+}
+
+// The search reads what the person reads: the accurate words where the second
+// pass produced them, not the first pass's words they replaced.
+func TestRecordingSearchFindsTheAccurateWordsOfTheLatestVersion(test *testing.T) {
+	fixture := newTranscriptFixtureOfOrigin(test, models.RecordingOriginCapture)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{
+			{LocalSpeakerID: "A", SegmentStartMS: 2000, SegmentEndMS: 2500, TranscriptText: "The sea bass quarterly was discussed."},
+			{LocalSpeakerID: "A", SegmentStartMS: 2500, SegmentEndMS: 3000, TranscriptText: "Nothing else was said."},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.Exec(test, fixture.database, "UPDATE recording_transcript_segment SET accurate_transcript_text = 'The Zebrafish quarterly was discussed.' WHERE transcript_text LIKE 'The sea bass%'")
+	search := func(searchText string) int {
+		var found []*models.Recording
+		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+			var err error
+			if found, err = transaction.ListRecordings(fixture.userId, "", searchText, 10); err != nil {
+				test.Fatal(err)
+			}
+		})
+		return len(found)
+	}
+	if search("zebrafish") != 1 {
+		test.Fatal("a word only the accurate pass heard was not found")
+	}
+	if search("else was said") != 1 {
+		test.Fatal("a passage the second pass left alone was not found by its first words")
+	}
+	if search("sea bass") != 0 {
+		test.Fatal("words the accurate pass replaced still matched")
+	}
 }

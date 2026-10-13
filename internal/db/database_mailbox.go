@@ -1105,7 +1105,7 @@ func needsMailJoin(options *ItemOptions) bool {
 	}
 	return options.Search != "" || options.ThreadID != "" || options.ListKey != "" || options.From != "" ||
 		options.To != "" || options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() ||
-		options.HasAttachment != nil || len(options.ExcludeMailKinds) > 0
+		options.HasAttachment != nil || len(options.ExcludeMailKinds) > 0 || options.ByReceived
 }
 
 // itemOrder is how a list of items is sorted: within a folder by UID, which is

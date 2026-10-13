@@ -590,6 +590,8 @@ struct RecordingDuration: View {
         Group {
             if state.isRecording {
                 Text(timerInterval: state.updatedAt.addingTimeInterval(-Double(state.elapsedMS) / 1000)...Date.distantFuture, countsDown: false)
+            } else if state.didResumeFail == true {
+                Text("Could not resume. Open TeaNode.").lineLimit(2)
             } else if isShowingPause {
                 Text(verbatim: "\(pauseText) \(elapsedText)")
             } else {
@@ -657,4 +659,5 @@ struct ActivityRoundGlyph: View {
     RecordingActivityAttributes.ContentState(recordingCaptureState: "active", elapsedMS: 754_000, updatedAt: .now)
     RecordingActivityAttributes.ContentState(recordingCaptureState: "paused", elapsedMS: 754_000, updatedAt: .now)
     RecordingActivityAttributes.ContentState(recordingCaptureState: "interrupted", elapsedMS: 3_754_000, updatedAt: .now)
+    RecordingActivityAttributes.ContentState(recordingCaptureState: "interrupted", elapsedMS: 44_000, updatedAt: .now, didResumeFail: true)
 }

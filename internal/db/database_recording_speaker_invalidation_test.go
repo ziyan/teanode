@@ -220,6 +220,10 @@ func TestRecordingReferenceInvalidationReconcilesDependentMemory(test *testing.T
 				if err := transaction.ReconcileRecordingReferenceInvalidations(fixture.userId, dependent.media.RecordingID); err != nil {
 					test.Fatal(err)
 				}
+				// Reconciling queues the memory sync; this is what its job runs.
+				if err := transaction.SyncRecordingKnowledge(fixture.userId, dependent.media.RecordingID); err != nil {
+					test.Fatal(err)
+				}
 				facts, err := transaction.GetAgentFacts(fixture.agentId, []string{fact.ID})
 				if err != nil || len(facts) != 1 || !facts[0].Dormant {
 					test.Fatal("obsolete attribution survived reconciliation", err)

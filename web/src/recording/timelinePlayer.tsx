@@ -1,15 +1,129 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ErrorMessage } from '../components/common'
+import { PauseIcon, PlayIcon } from '../components/icons'
 import { useTranslation } from '../i18n/i18n'
 import { recordingMediaPath, type RecordingMedia } from './api'
+import { formatRecordingLength } from './library'
 import { RecordingPassagePlayback } from './playback'
 import { prepareRecordingPlayback, type RecordingPlayback } from './playbackPreview'
+import { buildTimelinePieces, timelineGaps, timelineLengthMS } from './timeline'
 
-export function RecordingOriginalPlayer({
+// RecordingTimelinePlayer is the one player of a recording. Its time axis is the
+// recording's timeline, however many pieces (recording media) it was made in:
+// the pieces' media elements sit behind it, only the active one is shown (a
+// video), and the controls below are the same whichever piece plays. A piece the
+// browser cannot play shows its audio preview preparation here, not in a player
+// of its own.
+export function RecordingTimelinePlayer({
+  mediaFiles,
+  timelineDurationMS,
+  passagePlayback,
+}: {
+  mediaFiles: RecordingMedia[]
+  timelineDurationMS: number
+  passagePlayback: RecordingPassagePlayback
+}) {
+  const pieces = useMemo(() => buildTimelinePieces(mediaFiles, timelineDurationMS), [mediaFiles, timelineDurationMS])
+  const piecesKey = pieces.map((piece) => `${piece.mediaId}@${piece.startMS}-${piece.endMS}`).join(',')
+  useEffect(() => {
+    passagePlayback.configure(pieces)
+    // pieces is rebuilt on every render of the page; what it says is piecesKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passagePlayback, piecesKey])
+  const activeMediaId = useSyncExternalStore(passagePlayback.subscribe, () => passagePlayback.getState().activeMediaId)
+  const lengthMS = timelineLengthMS(pieces, timelineDurationMS)
+  return (
+    <div className="recording-original">
+      {mediaFiles
+        .filter((media) => pieces.some((piece) => piece.mediaId === media.id))
+        .map((media) => (
+          <RecordingPieceMedia
+            key={media.id}
+            media={media}
+            isActive={media.id === (activeMediaId ?? pieces[0]?.mediaId)}
+            passagePlayback={passagePlayback}
+          />
+        ))}
+      <RecordingTimelineControls pieces={pieces} lengthMS={lengthMS} passagePlayback={passagePlayback} />
+    </div>
+  )
+}
+
+function RecordingTimelineControls({
+  pieces,
+  lengthMS,
+  passagePlayback,
+}: {
+  pieces: ReturnType<typeof buildTimelinePieces>
+  lengthMS: number
+  passagePlayback: RecordingPassagePlayback
+}) {
+  const { t } = useTranslation()
+  const state = useSyncExternalStore(passagePlayback.subscribe, passagePlayback.getState)
+  const [seekError, setSeekError] = useState<string | null>(null)
+  const percent = (valueMS: number) => (lengthMS > 0 ? Math.min(100, Math.max(0, (valueMS / lengthMS) * 100)) : 0)
+  const report = (caught: unknown) => setSeekError(caught instanceof Error ? caught.message : String(caught))
+  return (
+    <>
+      <div className="recording-player-controls">
+        <button
+          type="button"
+          className="icon-action"
+          title={state.isPlaying ? t('recordings.pause') : t('recordings.playFromHere')}
+          aria-label={state.isPlaying ? t('recordings.pause') : t('recordings.playFromHere')}
+          disabled={pieces.length === 0}
+          onClick={() => {
+            setSeekError(null)
+            passagePlayback.toggle(lengthMS).catch(report)
+          }}
+        >
+          {state.isPlaying ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
+        </button>
+        <span className="muted recording-player-time">{formatRecordingLength(state.positionMS)}</span>
+        <div className="recording-scrubber">
+          <div className="recording-scrubber-track">
+            <span className="recording-scrubber-fill" style={{ width: `${percent(state.positionMS)}%` }} />
+            {timelineGaps(pieces).map((gap) => (
+              <span
+                key={gap.gapStartMS}
+                className="recording-scrubber-gap"
+                style={{ left: `${percent(gap.gapStartMS)}%`, width: `${percent(gap.gapEndMS - gap.gapStartMS)}%` }}
+              />
+            ))}
+            <span className="recording-scrubber-thumb" style={{ left: `${percent(state.positionMS)}%` }} />
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={lengthMS}
+            step={100}
+            value={Math.min(state.positionMS, lengthMS)}
+            aria-label={t('recordings.seekPosition')}
+            aria-valuetext={`${formatRecordingLength(state.positionMS)} / ${formatRecordingLength(lengthMS)}`}
+            disabled={pieces.length === 0}
+            onChange={(event) => {
+              setSeekError(null)
+              passagePlayback.seekTo(Number(event.currentTarget.value), state.isPlaying).catch(report)
+            }}
+          />
+        </div>
+        <span className="muted recording-player-time">{formatRecordingLength(lengthMS)}</span>
+      </div>
+      <ErrorMessage error={seekError ?? state.errorMessage} />
+    </>
+  )
+}
+
+// RecordingPieceMedia holds one piece's media element, which the player plays
+// and seeks. It draws nothing of its own but the video of the active piece and,
+// for the active piece, what is needed when the browser cannot play it.
+function RecordingPieceMedia({
   media,
+  isActive,
   passagePlayback,
 }: {
   media: RecordingMedia
+  isActive: boolean
   passagePlayback: RecordingPassagePlayback
 }) {
   const { t } = useTranslation()
@@ -29,6 +143,9 @@ export function RecordingOriginalPlayer({
   )
   const isMounted = useRef(false)
   const hasUnsupportedOriginalReference = useRef(false)
+  // The same, for drawing: the reference is read by playback, which is not
+  // rendered, and a hint without an error would otherwise not redraw.
+  const [hasUnsupportedOriginal, setHasUnsupportedOriginal] = useState(false)
   const previewPlayer = useRef<HTMLMediaElement | null>(null)
   const preparation = useRef<Promise<HTMLMediaElement> | null>(null)
   const preparationController = useRef<AbortController | null>(null)
@@ -88,13 +205,17 @@ export function RecordingOriginalPlayer({
     },
     [media.id, passagePlayback],
   )
-  const unsupportedOriginal = (errorMessage: string) => {
+  // An original this browser has no decoder for is expected, not an error:
+  // the player offers the audio preview with a quiet hint and plays it when
+  // asked. A video that loads without a picture says so.
+  const unsupportedOriginal = (errorMessage: string | null) => {
     hasUnsupportedOriginalReference.current = true
+    setHasUnsupportedOriginal(true)
     setIsOriginalUnplayable(true)
     setPlaybackError(errorMessage)
   }
   const originalError = (player: HTMLMediaElement) => {
-    if (player.error?.code === 4) unsupportedOriginal(t('recordings.playbackError'))
+    if (player.error?.code === 4) unsupportedOriginal(null)
     else {
       setIsOriginalUnplayable(true)
       setPlaybackError(t('recordings.playbackError'))
@@ -111,11 +232,10 @@ export function RecordingOriginalPlayer({
     <>
       {isUsingPreview && playback ? (
         <>
-          <p className="muted">{t('recordings.compatibleAudio')}</p>
+          {isActive ? <p className="muted">{t('recordings.compatibleAudio')}</p> : null}
           <audio
             ref={registerPreview}
-            className="recording-player"
-            controls
+            hidden
             preload="metadata"
             src={playback.playbackPath}
             onLoadedMetadata={(event) => {
@@ -134,7 +254,8 @@ export function RecordingOriginalPlayer({
         <video
           ref={registerPlayer}
           className="recording-player"
-          controls
+          hidden={!isActive}
+          playsInline
           preload="metadata"
           src={recordingMediaPath(media.id)}
           onError={(event) => originalError(event.currentTarget)}
@@ -145,16 +266,15 @@ export function RecordingOriginalPlayer({
       ) : (
         <audio
           ref={registerPlayer}
-          className="recording-player"
-          controls
+          hidden
           preload="metadata"
           src={recordingMediaPath(media.id)}
           onError={(event) => originalError(event.currentTarget)}
         />
       )}
-      {playback ? (
+      {isActive && playback ? (
         <div className="page-actions">
-          {isUsingPreview && !hasUnsupportedOriginalReference.current ? (
+          {isUsingPreview && !hasUnsupportedOriginal ? (
             <button
               type="button"
               disabled={isPreparing}
@@ -176,7 +296,7 @@ export function RecordingOriginalPlayer({
           </a>
         </div>
       ) : null}
-      {isOriginalUnplayable && (!isUsingPreview || playbackError) ? (
+      {isActive && isOriginalUnplayable && (!isUsingPreview || playbackError) ? (
         <>
           {!playbackError ? <p className="muted">{t('recordings.previewHint')}</p> : null}
           <div className="page-actions">
@@ -184,7 +304,7 @@ export function RecordingOriginalPlayer({
               {t(
                 isPreparing
                   ? 'recordings.preparingAudio'
-                  : hasUnsupportedOriginalReference.current
+                  : hasUnsupportedOriginal
                     ? 'recordings.playCompatibleAudio'
                     : 'recordings.useAudioPreview',
               )}
@@ -192,7 +312,7 @@ export function RecordingOriginalPlayer({
           </div>
         </>
       ) : null}
-      <ErrorMessage error={playbackError} />
+      {isActive ? <ErrorMessage error={playbackError} /> : null}
     </>
   )
 }

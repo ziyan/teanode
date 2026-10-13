@@ -113,7 +113,7 @@ func (self *transaction) CorrectRecordingTranscriptText(userId string, input Rec
 	if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 		return nil, err
 	}
-	if err := self.SyncRecordingKnowledge(userId, source.ID); err != nil {
+	if err := self.QueueRecordingKnowledgeSync(userId, source.ID); err != nil {
 		return nil, err
 	}
 	return (*models.RecordingTranscriptTextCorrection)(&row), nil
@@ -157,7 +157,7 @@ func (self *transaction) RemoveRecordingTranscriptTextCorrection(userId, recordi
 	if err := self.advanceRecordingSpeakerGeneration(source.ID); err != nil {
 		return err
 	}
-	return self.SyncRecordingKnowledge(userId, source.ID)
+	return self.QueueRecordingKnowledgeSync(userId, source.ID)
 }
 
 // Exact original IDs preserve edits. A later version requires one exact interval;
@@ -170,6 +170,9 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 			return ErrInvalidArguments
 		}
 		segment.EffectiveTranscriptText = segment.TranscriptText
+		if segment.AccurateTranscriptText != "" {
+			segment.EffectiveTranscriptText = segment.AccurateTranscriptText
+		}
 		segment.AppliedTextCorrectionID = ""
 		segment.AppliedTextCorrectionOrigin = ""
 		segment.HasUnalignedTextCorrection = false
@@ -381,7 +384,7 @@ func (self *transaction) ApplyRecordingGlossaryCorrections(userId, recordingId s
 	if len(applied) == 0 {
 		return nil, nil
 	}
-	if err := self.SyncRecordingKnowledge(userId, source.ID); err != nil {
+	if err := self.QueueRecordingKnowledgeSync(userId, source.ID); err != nil {
 		return nil, err
 	}
 	return applied, nil

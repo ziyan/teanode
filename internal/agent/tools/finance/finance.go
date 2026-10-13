@@ -260,7 +260,7 @@ var operations = map[string]*financeOperation{
 	},
 	"receipts": {
 		graphqlOperation: "FinanceReceipts", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
-		arguments: append([]string{"finance_transaction_id", "is_unmatched", "is_undated", "text", "limit", "offset", "after"}, rangeArguments...),
+		arguments: append([]string{"receipt_id", "finance_transaction_id", "is_unmatched", "is_undated", "text", "limit", "offset", "after"}, rangeArguments...),
 	},
 	"receipt": {graphqlOperation: "FinanceReceipt", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"receipt_id"}, required: []string{"receipt_id"}},
 	"propose_receipt_matches": {

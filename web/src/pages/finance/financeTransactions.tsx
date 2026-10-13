@@ -296,6 +296,46 @@ export function FinanceTransactionsSection() {
     setDetailedId(null)
     openedFrom.current?.focus()
   }
+  // A link from the agent's memory names the transaction in the address: it
+  // opens once, read by its identifier since it may not be on the page shown,
+  // and the address forgets it when the details close.
+  const linkedTransactionId = search.get('transaction') ?? ''
+  const linkedTransaction = useRef({ id: '', wasShown: false })
+  useEffect(() => {
+    if (!linkedTransactionId || linkedTransaction.current.id === linkedTransactionId) return
+    linkedTransaction.current = { id: linkedTransactionId, wasShown: false }
+    void graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
+      financeTransactionIds: [linkedTransactionId],
+      limit: 1,
+    })
+      .then((answer) => {
+        const found = answer.FinanceTransactions.financeTransactions[0]
+        if (!found) {
+          toast.failed(t('memoryLinks.unavailable'))
+          return
+        }
+        setOpened((previous) => ({ ...previous, [found.id]: found }))
+        setDetailedId(found.id)
+      })
+      .catch((caught) => toast.failure(caught, t('finance.failed')))
+    // The toast and the translation are made again on every render; the
+    // transaction is read once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedTransactionId])
+  useEffect(() => {
+    if (detailedId === linkedTransactionId) linkedTransaction.current.wasShown = true
+    if (detailedId === null && linkedTransactionId && linkedTransaction.current.wasShown) {
+      linkedTransaction.current = { id: '', wasShown: false }
+      setSearch(
+        (previous) => {
+          const next = new URLSearchParams(previous)
+          next.delete('transaction')
+          return next
+        },
+        { replace: true },
+      )
+    }
+  }, [detailedId, linkedTransactionId, setSearch])
   useEffect(() => {
     setChanged({})
     setSelectedIds(new Set())

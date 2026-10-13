@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Column, DataTable } from '../components/dataTable'
@@ -9,6 +10,7 @@ import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
+import { InMemory } from '../memoryLinks'
 
 // The address book: the people somebody chose to keep.
 //
@@ -150,6 +152,11 @@ export function AddressBookPage() {
 
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<Contact | null>(null)
+  // A link from the agent's memory names the card in the address: the card
+  // opens, once, as if its row had been chosen.
+  const [parameters, setParameters] = useSearchParams()
+  const linkedContactId = parameters.get('contact') ?? ''
+  const openedLink = useRef('')
   const [busy, setBusy] = useState(false)
   // Which contact's form is being fetched, so its row says so rather than
   // appearing to do nothing.
@@ -214,6 +221,24 @@ export function AddressBookPage() {
     },
     [toast, t],
   )
+
+  useEffect(() => {
+    if (!linkedContactId || openedLink.current === linkedContactId) return
+    openedLink.current = linkedContactId
+    void edit({ id: linkedContactId, uid: '', emails: [], phones: [] })
+  }, [linkedContactId, edit])
+  const closeDraft = () => {
+    setDraft(null)
+    if (linkedContactId)
+      setParameters(
+        (previous) => {
+          const next = new URLSearchParams(previous)
+          next.delete('contact')
+          return next
+        },
+        { replace: true },
+      )
+  }
 
   // Naming the contact that is the person themselves. One at a time:
   // choosing a second clears the first, and choosing the one that is
@@ -372,7 +397,7 @@ export function AddressBookPage() {
           busy={busy}
           error={problem}
           canSubmit={draft.name.trim().length > 0 || lines(draft.emails).length > 0}
-          onClose={() => setDraft(null)}
+          onClose={closeDraft}
           onSubmit={() =>
             void run(
               () =>
@@ -411,7 +436,7 @@ export function AddressBookPage() {
               editing
                 ? t('addressBook.saidSaved', { name: draft.name.trim() || lines(draft.emails)[0] || '' })
                 : t('addressBook.saidAdded', { name: draft.name.trim() || lines(draft.emails)[0] || '' }),
-            ).then((done) => done && setDraft(null))
+            ).then((done) => done && closeDraft())
           }
         >
           <label>
@@ -481,6 +506,7 @@ export function AddressBookPage() {
               onChange={(event) => setDraft({ ...draft, note: event.target.value })}
             />
           </label>
+          {editing ? <InMemory recordKind="contact" recordId={draft.id} /> : null}
         </FormDialog>
       )}
 

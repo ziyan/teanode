@@ -200,6 +200,9 @@ func recordingTranscriptLines(transaction db.Transaction, userId, recordingId st
 		for _, segment := range segments {
 			if text := strings.TrimSpace(segment.EffectiveTranscriptText); text != "" {
 				speakerLabel := "Speaker " + segment.LocalSpeakerID
+				if segment.TemporarySpeakerLabel != "" {
+					speakerLabel = segment.TemporarySpeakerLabel
+				}
 				if (segment.HasUserConfirmedSpeaker || segment.IsRecognizedSpeaker) && segment.EffectiveSpeakerName != "" {
 					speakerLabel = segment.EffectiveSpeakerName
 				}

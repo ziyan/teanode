@@ -247,7 +247,7 @@ func TestRecordingCuratedReferenceSelectionCapsOwnershipAndRevocation(test *test
 		test.Fatal(err)
 	}
 	capabilities := llm.TranscriptionCapabilities{HasSpeakerReferences: true, MaximumSpeakerReferenceCount: 10}
-	selected, blobIds, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	selected, blobIds, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
 	if err != nil || len(selected) != 4 || len(blobIds) != 4 {
 		test.Fatal("reference selection exceeded or missed the four-name cap", err, len(selected))
 	}
@@ -261,24 +261,32 @@ func TestRecordingCuratedReferenceSelectionCapsOwnershipAndRevocation(test *test
 		confirmedNames = append(confirmedNames, reference.SpeakerName)
 	}
 	capabilities.MaximumSpeakerReferenceCount = 2
-	smaller, _, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	smaller, _, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
 	if err != nil || len(smaller) != 2 {
 		test.Fatal("provider reference limit ignored", err, len(smaller))
 	}
 	capabilities.MaximumSpeakerReferenceCount = 0
-	absent, _, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	absent, _, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
 	if err != nil || len(absent) != 0 {
 		test.Fatal("zero model capability admitted references", err)
 	}
 	capabilities.MaximumSpeakerReferenceCount = 4
 	capabilities.HasSpeakerReferences = false
-	absent, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	absent, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
 	if err != nil || len(absent) != 0 {
 		test.Fatal("unsupported model admitted references", err)
 	}
 	capabilities.HasSpeakerReferences = true
 	otherUserId := dbtest.CreateUser(test, fixture.database, "reference-other")
-	absent, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), otherUserId, capabilities, fixture.files)
+	var otherSource *models.Recording
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		otherSource, err = transaction.CreateRecording(&models.Recording{UserID: otherUserId, ClientRecordingID: "reference-other-source", RecordingOrigin: models.RecordingOriginAudioImport})
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	absent, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), otherUserId, otherSource.ID, capabilities, fixture.files)
 	if err != nil || len(absent) != 0 {
 		test.Fatal("other account selected voice evidence", err)
 	}
@@ -344,7 +352,7 @@ func TestRecordingIdentityRenameKeepsCleanSamplesAndExplicitRefusals(test *testi
 		test.Fatal("rename recovery rejected retained clip generation", err)
 	}
 	capabilities := llm.TranscriptionCapabilities{HasSpeakerReferences: true, MaximumSpeakerReferenceCount: 4}
-	selected, blobIds, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	selected, blobIds, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
 	if err != nil || len(selected) != 1 || selected[0].SpeakerName != "Renamed Fixture Participant" || blobIds[0] != originalReference.RecordingBlobID {
 		test.Fatal("renamed identity lost its clean sample", err, len(selected))
 	}
@@ -375,7 +383,7 @@ func TestRecordingIdentityRenameKeepsCleanSamplesAndExplicitRefusals(test *testi
 	if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
 		test.Fatal(err)
 	}
-	selected, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, capabilities, fixture.files)
+	selected, _, err = fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
 	if err != nil || len(selected) != 0 {
 		test.Fatal("renaming revived an explicitly rejected sample", err)
 	}

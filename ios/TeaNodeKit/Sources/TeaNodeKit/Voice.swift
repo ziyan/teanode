@@ -13,6 +13,10 @@ public struct VoiceEvent: Decodable, Sendable, Equatable {
     public var answerSegmentId: String? = nil
     /// Some of a spoken answer: base64 of mono 16-bit PCM at 24000 Hz.
     public var answerAudio: String? = nil
+    /// On the recording live socket (`/api/v1/recordings/{id}/live`), where an utterance began (speechStarted) and ended
+    /// (speechStopped and transcriptFinal), in milliseconds on the recording's timeline.
+    public var utteranceStartMS: Int64? = nil
+    public var utteranceEndMS: Int64? = nil
 }
 
 /// VoiceAvailability is whether the person may call their agent, the rate

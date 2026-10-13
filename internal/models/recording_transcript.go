@@ -67,6 +67,19 @@ type RecordingTranscriptRun struct {
 	ProcessingErrorMessage   string                   `json:"processingErrorMessage"`
 	IsReprocessingRequested  bool                     `json:"isReprocessingRequested"`
 	CompletedAt              *time.Time               `json:"completedAt"`
+	// HandoffStartMS is the timeline millisecond the second look at the end of
+	// the previous piece of a capture starts at, set when speech ran across the
+	// cut between them. That audio is a chunk of this version after the
+	// piece's own, and the previous piece's passages from this millisecond on
+	// are replaced by the ones read there.
+	HandoffStartMS *int64 `json:"handoffStartMS"`
+	// PublishedAt is when this version was stitched to the piece before it
+	// and its passages became final for the piece after it to read. A version
+	// can be published well before it is complete, because the second pass over
+	// its words comes between the two. Empty on a version that has not been
+	// stitched, and on every version from before this was kept; those are final
+	// once complete.
+	PublishedAt *time.Time `json:"-"`
 	// SegmentCount is how many passages the version holds, filled when runs are
 	// listed, so a client can tell a complete version with no speech from one with some.
 	SegmentCount int64 `json:"segmentCount" gorm:"-"`
@@ -112,24 +125,33 @@ type RecordingTranscriptionAttempt struct {
 // RecordingTranscriptSegment is generated evidence with request-local attribution.
 // Manual labels and passage corrections are stored separately from this version.
 type RecordingTranscriptSegment struct {
-	ID                              string               `json:"id"`
-	RecordingTranscriptRunID        string               `json:"recordingTranscriptRunId"`
-	RecordingTranscriptionAttemptID string               `json:"recordingTranscriptionAttemptId"`
-	LocalSpeakerID                  string               `json:"localSpeakerId"`
-	SegmentStartMS                  int64                `json:"segmentStartMS"`
-	SegmentEndMS                    int64                `json:"segmentEndMS"`
-	TranscriptText                  string               `json:"transcriptText"`
-	EffectiveTranscriptText         string               `json:"effectiveTranscriptText" gorm:"-"`
-	AppliedTextCorrectionID         string               `json:"appliedTextCorrectionId" gorm:"-"`
-	AppliedTextCorrectionOrigin     TextCorrectionOrigin `json:"appliedTextCorrectionOrigin" gorm:"-"`
-	HasUnalignedTextCorrection      bool                 `json:"hasUnalignedTextCorrection" gorm:"-"`
-	EffectiveSpeakerIdentityID      string               `json:"effectiveSpeakerIdentityId" gorm:"-"`
-	EffectiveSpeakerName            string               `json:"effectiveSpeakerName" gorm:"-"`
-	HasUserConfirmedSpeaker         bool                 `json:"hasUserConfirmedSpeaker" gorm:"-"`
+	ID                              string `json:"id"`
+	RecordingTranscriptRunID        string `json:"recordingTranscriptRunId"`
+	RecordingTranscriptionAttemptID string `json:"recordingTranscriptionAttemptId"`
+	LocalSpeakerID                  string `json:"localSpeakerId"`
+	SegmentStartMS                  int64  `json:"segmentStartMS"`
+	SegmentEndMS                    int64  `json:"segmentEndMS"`
+	TranscriptText                  string `json:"transcriptText"`
+	// AccurateTranscriptText is what the plain transcription model heard in
+	// this segment's span on a second pass, empty when that pass did not run.
+	// It replaces TranscriptText as the words a person's correction and the
+	// glossary start from; speakers and times are the first pass's.
+	AccurateTranscriptText      string               `json:"accurateTranscriptText"`
+	EffectiveTranscriptText     string               `json:"effectiveTranscriptText" gorm:"-"`
+	AppliedTextCorrectionID     string               `json:"appliedTextCorrectionId" gorm:"-"`
+	AppliedTextCorrectionOrigin TextCorrectionOrigin `json:"appliedTextCorrectionOrigin" gorm:"-"`
+	HasUnalignedTextCorrection  bool                 `json:"hasUnalignedTextCorrection" gorm:"-"`
+	EffectiveSpeakerIdentityID  string               `json:"effectiveSpeakerIdentityId" gorm:"-"`
+	EffectiveSpeakerName        string               `json:"effectiveSpeakerName" gorm:"-"`
+	HasUserConfirmedSpeaker     bool                 `json:"hasUserConfirmedSpeaker" gorm:"-"`
 	// IsRecognizedSpeaker is a speaker the transcription named after one of
 	// the voice samples it was sent, which the person has not confirmed here.
 	IsRecognizedSpeaker           bool   `json:"isRecognizedSpeaker" gorm:"-"`
 	IsAccountOwner                bool   `json:"isAccountOwner" gorm:"-"`
 	HasUnalignedSpeakerCorrection bool   `json:"hasUnalignedSpeakerCorrection" gorm:"-"`
 	AppliedSpeakerCorrectionID    string `json:"appliedSpeakerCorrectionId" gorm:"-"`
+	// TemporarySpeakerLabel is the label ("Speaker 1") of the temporary
+	// speaker of the recording this passage was matched to, for a speaker
+	// nobody has named yet. The same speaker has the same label in every piece.
+	TemporarySpeakerLabel string `json:"temporarySpeakerLabel" gorm:"-"`
 }

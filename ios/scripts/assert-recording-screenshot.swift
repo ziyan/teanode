@@ -21,6 +21,8 @@ let expectedMarkersByScreen: [String: [String]] = [
     "recording-original-preview": ["compatibleaudiopreview", "originalunchanged", "useoriginal", "sharefullaudiopreview"],
     "recording-detail": ["layout"],
     "recording-capture": ["recording", "stop"],
+    // The live words are the newest bubbles, which stay in view at every text size: the last one is still being said.
+    "recording-capture-live": ["recording", "stop", "invitation"],
     "recording-transcript": ["transcript"],
     "recording-version": ["processing"],
     "recording-speakers": ["confirmedspeakers"],

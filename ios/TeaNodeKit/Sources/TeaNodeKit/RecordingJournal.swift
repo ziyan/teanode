@@ -72,12 +72,74 @@ public struct LocalRecording: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+extension LocalRecording {
+    /// Whether this is a capture that can still gain audio: pieces of it are closed one by one while it runs.
+    public var isCaptureUnderWay: Bool {
+        recordingOrigin == "capture" && ["active", "paused", "interrupted"].contains(recordingCaptureState)
+    }
+
+    /// The gaps as the server takes them: one still open (paused or interrupted now) ends at the duration so far, and the
+    /// server lets the end move on at the next report.
+    public var publishedCaptureGaps: [RecordingGap] {
+        captureGaps.map { gap in
+            var published = gap
+            if published.gapEndMS == nil { published.gapEndMS = max(timelineDurationMS, gap.gapStartMS) }
+            return published
+        }
+    }
+
+    /// Two writers share a capture's manifest: the recorder, which owns the state, the duration, the gaps and the pieces with
+    /// their size and digest, and the uploader, which owns what it learned from the server. Each changes the manifest by
+    /// handing over only what it owns, so neither undoes the other with an older copy of the whole.
+    ///
+    /// Takes from `capture` what the recorder owns and keeps what the uploader wrote. A piece the recorder no longer lists
+    /// (its file was never written) goes; a piece only the recorder lists is added.
+    public mutating func adoptCapture(from capture: LocalRecording) {
+        recordingCaptureState = capture.recordingCaptureState
+        timelineDurationMS = capture.timelineDurationMS
+        captureGaps = capture.captureGaps
+        let uploadedPieces = Dictionary(localMedia.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        localMedia = capture.localMedia.map { piece in
+            guard var merged = uploadedPieces[piece.id] else { return piece }
+            merged.timelineStartMS = piece.timelineStartMS
+            merged.mediaDurationMS = piece.mediaDurationMS
+            merged.originalSizeBytes = piece.originalSizeBytes
+            merged.originalSha256 = piece.originalSha256
+            return merged
+        }
+    }
+
+    /// Takes from `upload` what the uploader owns and keeps what the recorder wrote.
+    public mutating func adoptUpload(from upload: LocalRecording) {
+        recordingId = upload.recordingId
+        hasPublishedCapture = upload.hasPublishedCapture
+        uploadErrorMessage = upload.uploadErrorMessage
+        isUploadWaitingForNetwork = upload.isUploadWaitingForNetwork
+        isDeletedRemotely = upload.isDeletedRemotely
+        for uploadedPiece in upload.localMedia {
+            guard let index = localMedia.firstIndex(where: { $0.id == uploadedPiece.id }) else { continue }
+            localMedia[index].mediaManifest = uploadedPiece.mediaManifest
+            localMedia[index].acceptedParts = uploadedPiece.acceptedParts
+            localMedia[index].completionReceipt = uploadedPiece.completionReceipt
+            // A piece of a stopped capture whose digest the recorder never wrote (the app was ended while it was closed) is
+            // measured by the uploader; a piece of a capture under way is not touched by it.
+            if localMedia[index].originalSha256 == nil, uploadedPiece.originalSha256 != nil {
+                localMedia[index].originalSizeBytes = uploadedPiece.originalSizeBytes
+                localMedia[index].originalSha256 = uploadedPiece.originalSha256
+                localMedia[index].mediaDurationMS = uploadedPiece.mediaDurationMS
+            }
+        }
+    }
+}
+
 public struct LocalRecordingMedia: Codable, Hashable, Sendable, Identifiable {
     public let id: UUID
     public var mediaManifest: RecordingMedia?
     public let originalFilename: String
     public let originalContentType: String
-    public let timelineStartMS: Int64
+    /// Where the piece begins on the recording's timeline. A piece still being recorded may have this corrected when the piece
+    /// before it is closed and its exact length is known; once closed, it does not change.
+    public var timelineStartMS: Int64
     public var mediaDurationMS: Int64
     public var originalSizeBytes: Int64
     public var originalSha256: String?
@@ -135,6 +197,16 @@ public actor RecordingJournal {
     public func save(_ recording: LocalRecording) throws {
         _ = try read(recording.id, accountKey: recording.accountKey)
         try write(recording)
+    }
+
+    /// Reads the manifest, lets `change` alter it and writes it back, with nothing else able to write in between, and gives back
+    /// what was written. A writer that shares the manifest with another uses this and `LocalRecording.adoptCapture` or
+    /// `adoptUpload`, rather than saving a copy it read earlier.
+    public func update(_ recordingId: UUID, accountKey: String, _ change: @Sendable (inout LocalRecording) throws -> Void) throws -> LocalRecording {
+        var recording = try read(recordingId, accountKey: accountKey)
+        try change(&recording)
+        try write(recording)
+        return recording
     }
 
     private func write(_ recording: LocalRecording) throws {

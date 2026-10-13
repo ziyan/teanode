@@ -22,12 +22,14 @@
 
         static func conversationSegmentJSON(
             _ id: String, speaker: String, startMS: Int, endMS: Int, text: String, identityId: String? = nil, name: String? = nil,
-            isAccountOwner: Bool = false
+            isAccountOwner: Bool = false, temporaryLabel: String? = nil
         ) -> String {
             let speakerFields =
                 identityId.map {
                     #","hasUserConfirmedSpeaker":true,"effectiveSpeakerIdentityId":"\#($0)","effectiveSpeakerName":"\#(name ?? "")","isAccountOwner":\#(isAccountOwner)"#
-                } ?? #","hasUserConfirmedSpeaker":false,"isAccountOwner":false"#
+                }
+                ?? (#","hasUserConfirmedSpeaker":false,"isAccountOwner":false"#
+                    + (temporaryLabel.map { #","effectiveSpeakerName":"\#($0)","temporarySpeakerLabel":"\#($0)""# } ?? ""))
             return
                 #"{"id":"\#(id)","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"attempt-a","localSpeakerId":"\#(speaker)","segmentStartMS":\#(startMS),"segmentEndMS":\#(endMS),"transcriptText":"\#(text)"\#(speakerFields),"hasUnalignedSpeakerCorrection":false}"#
         }
@@ -54,6 +56,64 @@
                     "segment-6", speaker: "speaker-a", startMS: 52000, endMS: 60000, text: "Of course. I will send the invitation today.",
                     identityId: "identity-b", name: "Priya"),
             ]
+        }
+
+        /// The id of the recording the capture screen's screenshots show as under way.
+        static let liveCaptureRecordingId = "recording-live"
+
+        /// A capture under way: the first piece has been transcribed with its speakers, one of whom nobody has named yet
+        /// ("Speaker 1"), and what was said after it is only live words, heard a moment ago.
+        static var liveCaptureSegmentFixtures: [String] {
+            [
+                conversationSegmentJSON(
+                    "live-segment-1", speaker: "speaker-a", startMS: 0, endMS: 8000,
+                    text: "Thanks for joining. Today we need to pick one of the two layouts for the new home screen.", identityId: "identity-b", name: "Priya"),
+                conversationSegmentJSON(
+                    "live-segment-2", speaker: "speaker-b", startMS: 8000, endMS: 17000,
+                    text: "I prefer the second one. People start from search more than they browse.", identityId: "identity-a", name: "Robin", isAccountOwner: true),
+                conversationSegmentJSON(
+                    "live-segment-3", speaker: "speaker-c", startMS: 17000, endMS: 23000, text: "How many people will test it?",
+                    temporaryLabel: "Speaker 1"),
+                conversationSegmentJSON(
+                    "live-segment-4", speaker: "speaker-a", startMS: 23000, endMS: 27000, text: "Ten people, for one week.", identityId: "identity-b",
+                    name: "Priya"),
+            ]
+        }
+
+        static var liveCaptureUtterances: [RecordingLiveUtterance] {
+            [
+                RecordingLiveUtterance(
+                    utteranceId: "live-utterance-1", utteranceStartMS: 28000, utteranceEndMS: 34000,
+                    transcriptText: "Ten sounds fine, and we can compare how long a task takes them."),
+                RecordingLiveUtterance(
+                    utteranceId: "live-utterance-2", utteranceStartMS: 35000, utteranceEndMS: 38500,
+                    transcriptText: "Could I join the test group as well?"),
+            ]
+        }
+
+        /// The conversation of the capture screen: the passages, the live words, and the words being said now.
+        static var liveCaptureBubbles: [RecordingConversationBubble] {
+            RecordingConversation.bubbles(
+                liveCaptureSegmentFixtures.map { recordingObject($0, as: RecordingTranscriptSegment.self) },
+                liveUtterances: RecordingLiveWords.shown(
+                    serverUtterances: liveCaptureUtterances, heardUtterances: [], partialText: "Of course, I will send the invitation today.",
+                    partialStartMS: 40000, segments: []))
+        }
+
+        /// A graph of levels as speech makes them: bursts and pauses.
+        static var levelBars: [Double] {
+            (0..<RecordingLevelHistory.barCount).map { index in
+                let burst = abs(sin(Double(index) * 0.55)) * (index % 11 < 7 ? 1 : 0.15)
+                return min(1, 0.12 + burst * 0.8)
+            }
+        }
+
+        static var liveCaptureTimelineAnswer: String {
+            let liveWords = liveCaptureUtterances.map {
+                #"{"utteranceId":"\#($0.utteranceId)","utteranceStartMS":\#($0.utteranceStartMS),"utteranceEndMS":\#($0.utteranceEndMS),"transcriptText":"\#($0.transcriptText)"}"#
+            }.joined(separator: ",")
+            return
+                "{\"data\":{\"ReadRecordingTranscriptTimeline\":{\"sourceGeneration\":2,\"segments\":[\(liveCaptureSegmentFixtures.joined(separator: ","))],\"transcriptRuns\":[],\"temporarySpeakers\":[{\"speakerLabel\":\"Speaker 1\",\"speakerIdentityId\":\"\"}],\"segmentCount\":\(liveCaptureSegmentFixtures.count),\"hasMoreSegments\":false,\"liveUtterances\":[\(liveWords)]}}}"
         }
 
         static var conversationSegments: [RecordingTranscriptSegment] {
@@ -191,6 +251,9 @@
                     #"{"data":{"ListAgentModels":[{"name":"demo:transcription","canTranscribe":true,"hasSpeakerDiarization":true,"hasSegmentTimestamps":true,"hasSpeakerReferences":true,"maximumAudioBytes":24000000,"maximumSpeakerReferenceCount":3}]}}"#
             }
 
+            if query.contains("ReadRecordingTranscriptTimeline"), requestedRecordingId(query) == liveCaptureRecordingId {
+                return liveCaptureTimelineAnswer
+            }
             if query.contains("ReadRecordingTranscriptTimeline") {
                 return
                     "{\"data\":{\"ReadRecordingTranscriptTimeline\":{\"sourceGeneration\":4,\"segments\":[\(conversationSegmentsJSON)],\"transcriptRuns\":[\(recordingRunFixture)],\"segmentCount\":\(conversationSegmentFixtures.count),\"hasMoreSegments\":false}}}"
@@ -263,6 +326,7 @@
                 case "recording-capture":
                     RecordingCaptureView(
                         elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, onPauseOrResume: {}, onStop: {})
+                case "recording-capture-live": RecordingLiveCaptureDemoScreen(connection: connection)
                 case "recording-transcript": RecordingTranscriptScreen(connection: connection, recording: recording)
                 case "recording-version":
                     RecordingTranscriptScreen(
@@ -277,6 +341,32 @@
                 default: RecordingsScreen(connection: connection)
                 }
             }
+        }
+    }
+
+    /// The capture screen as it looks a minute and a half into a recording, read through the same model as the real one from
+    /// the demo server's answers: passages with speakers, a speaker nobody has named, and live words after them.
+    struct RecordingLiveCaptureDemoScreen: View {
+        @State private var conversation: RecordingConversationModel
+
+        init(connection: Connection) {
+            let conversation = RecordingConversationModel(connection: connection, capturedRecordingId: DemoServer.liveCaptureRecordingId)
+            conversation.partialText = "Of course, I will send the invitation today."
+            conversation.partialStartMS = 40000
+            _conversation = State(initialValue: conversation)
+        }
+
+        var body: some View {
+            RecordingCaptureView(
+                elapsedMS: 94_000, displayState: .recording, inputLevel: { 0.6 }, recentLevels: { DemoServer.levelBars }, bubbles: conversation.bubbles,
+                actions: RecordingPassageActions(
+                    play: { _ in }, copy: { _ in }, correctText: { _ in }, nameSpeaker: { segment in conversation.beginNaming(segment) },
+                    thisIsMe: { segment in Task { await conversation.confirmAsAccountOwner(segment) } },
+                    notMe: { segment in conversation.beginNaming(segment, startsBlank: true) }, clearName: { segments in Task { await conversation.clearName(segments) } }, isPlaybackAvailable: false),
+                microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {}
+            )
+            .recordingPassageSheets(conversation)
+            .task { await conversation.loadCapture() }
         }
     }
 #endif

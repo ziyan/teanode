@@ -179,6 +179,30 @@ func TestTheOrderHoldsAFailureInPlace(t *testing.T) {
 	}
 }
 
+// The times the provider heard an utterance begin and end are told with it,
+// and an utterance with no times is told with zeros.
+func TestAnUtteranceIsToldWhereItWasHeard(t *testing.T) {
+	var order utteranceOrder
+	var told []*Event
+	for _, event := range []providerEvent{
+		{Type: "input_audio_buffer.speech_started", ItemID: "a", AudioStartMS: 1200},
+		{Type: "input_audio_buffer.speech_stopped", ItemID: "a", AudioEndMS: 3400},
+		{Type: "input_audio_buffer.committed", ItemID: "a"},
+		{Type: "conversation.item.input_audio_transcription.completed", ItemID: "a", Transcript: "Hello there."},
+		{Type: "input_audio_buffer.committed", ItemID: "b", PreviousItemID: "a"},
+		{Type: "conversation.item.input_audio_transcription.completed", ItemID: "b", Transcript: "No times."},
+	} {
+		told = append(told, order.translate(&event)...)
+	}
+	if len(told) != 4 || told[0].UtteranceStartMS != 1200 || told[1].UtteranceEndMS != 3400 ||
+		told[2].UtteranceStartMS != 1200 || told[2].UtteranceEndMS != 3400 || told[3].UtteranceStartMS != 0 || told[3].UtteranceEndMS != 0 {
+		t.Fatalf("told %+v", told)
+	}
+	if len(order.startedMS) != 0 || len(order.stoppedMS) != 0 {
+		t.Fatalf("the times of released utterances are forgotten: %v %v", order.startedMS, order.stoppedMS)
+	}
+}
+
 func TestTheRealtimeAddressFollowsTheProvidersAddress(t *testing.T) {
 	for base, want := range map[string]string{
 		"":                           "wss://api.openai.com/v1/realtime?intent=transcription",

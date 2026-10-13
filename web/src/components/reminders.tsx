@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
+import { InMemory } from '../memoryLinks'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { PlusIcon } from './icons'
 import { SettingsEmpty } from './settingsList'
@@ -87,7 +88,15 @@ function dueVariables(day: string, time: string): Record<string, unknown> {
   return { dueAt: new Date(`${day}T${time}`).toISOString() }
 }
 
-export function RemindersView() {
+export function RemindersView({
+  focusReminderId = '',
+  onFocused,
+}: {
+  // A reminder a link names, which opens once; onFocused is told when the
+  // dialog has been shown and closed so the address can forget it.
+  focusReminderId?: string
+  onFocused?: () => void
+} = {}) {
   const { t, language } = useTranslation()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -104,6 +113,31 @@ export function RemindersView() {
     [isShowingDone],
     { refresh: true },
   )
+
+  // The reminder a link names, found among all of them whether or not it is
+  // done, and opened in the dialog the list opens on a tap.
+  const focused = useRef({ id: '', wasShown: false })
+  useEffect(() => {
+    if (!focusReminderId || focused.current.id === focusReminderId) return
+    focused.current = { id: focusReminderId, wasShown: false }
+    void graphql<{ ListReminders: Reminder[] }>(LIST, { isDone: null })
+      .then((answer) => {
+        const found = answer.ListReminders.find((reminder) => reminder.id === focusReminderId)
+        if (found) setEditing(found)
+        else toast.failed(t('memoryLinks.unavailable'))
+      })
+      .catch((caught) => toast.failure(caught, t('reminders.failed')))
+    // The toast and the translation are made again on every render; the
+    // reminder is looked for once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusReminderId])
+  useEffect(() => {
+    if (editing && editing.id === focusReminderId) focused.current.wasShown = true
+    if (!editing && focusReminderId && focused.current.wasShown) {
+      focused.current = { id: '', wasShown: false }
+      onFocused?.()
+    }
+  }, [editing, focusReminderId, onFocused])
 
   async function act(work: () => Promise<unknown>, said?: string) {
     setBusy(true)
@@ -367,6 +401,7 @@ function ReminderDialog({
           <input type="time" value={time} disabled={!day} onChange={(event) => setTime(event.target.value)} />
         </label>
       </div>
+      <InMemory recordKind="reminder" recordId={reminder.id} />
     </FormDialog>
   )
 }

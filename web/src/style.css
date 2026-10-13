@@ -10941,6 +10941,105 @@ main.content:has(> .knowledge-frame) {
   margin-bottom: 2px;
 }
 
+/* The record a fact's evidence names, opening it: a small mark of the kind
+   and the title, under the fact's quote. */
+.knowledge-record-evidence {
+  display: inline-flex;
+  margin-left: var(--space-3);
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-3);
+  max-width: 100%;
+  font-size: var(--text-label);
+}
+
+.knowledge-record-evidence a {
+  overflow-wrap: anywhere;
+}
+
+/* The records a page is linked to, grouped by kind: the group's heading is a
+   quiet line with the kind's mark and how many, over the rows. */
+.linked-records-group + .linked-records-group {
+  margin-top: var(--space-3);
+}
+
+.linked-records-kind {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+}
+
+/* A record's row keeps its one or two icons beside the title on a phone, as a
+   row of icons does everywhere else, rather than wrapping them to a line of
+   their own under it as a row with a dropdown must. */
+.linked-records-group .settings-row-body {
+  min-width: 0;
+}
+
+.linked-records-group .settings-row-actions {
+  width: auto;
+}
+
+.linked-record-title {
+  font-weight: 600;
+}
+
+/* In memory, on a record: the pages of the agent's memory it is linked to,
+   as a wrapped line of links, with a guess marked. */
+.in-memory {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.in-memory h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.in-memory-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.in-memory-pages li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+}
+
+.in-memory-page {
+  overflow-wrap: anywhere;
+}
+
+/* The cards a page can be linked to, one to choose; a book of hundreds
+   scrolls inside the dialog rather than lengthening it. */
+.contact-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 16rem;
+  overflow-y: auto;
+  margin-top: var(--space-2);
+}
+
+.contact-picker-row {
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+
 /* A picture or a file a fact was read out of, under the fact. Small
    enough that a page of facts is still a page of facts -- the picture
    opens into the lightbox to be looked at closely -- and narrow enough on
@@ -11137,6 +11236,9 @@ main.content:has(> .knowledge-frame) {
   /* A kind the server grew after this was written. It is drawn, quietly,
      rather than left invisible. */
   --graph-other: #9aa0a6;
+  /* The person's own records, which are not pages: one colour for all of
+     them, since their shape and mark already say which kind. */
+  --graph-record: #6b7280;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -11151,6 +11253,7 @@ main.content:has(> .knowledge-frame) {
     --graph-period: #b4c464;
     --graph-folder: #9ba1a9;
     --graph-other: #a0a0a8;
+    --graph-record: #aab0ba;
   }
 }
 
@@ -11165,6 +11268,11 @@ main.content:has(> .knowledge-frame) {
   --graph-period: #b4c464;
   --graph-folder: #9ba1a9;
   --graph-other: #a0a0a8;
+  --graph-record: #aab0ba;
+}
+
+.graph-explore-kind-record {
+  --graph-kind: var(--graph-record);
 }
 
 .graph-explore-kind-self {
@@ -11209,6 +11317,24 @@ main.content:has(> .knowledge-frame) {
 
 /* A ring on a page whose neighbourhood has been fetched, so that the edge of
    what is drawn is visible: everything without one may have more behind it. */
+/* A record of the person's own is a square with its kind's mark, drawn in
+   outline so that it is never mistaken for a page's filled circle. */
+.graph-explore-record > rect {
+  fill: var(--surface);
+  stroke: var(--graph-kind, var(--graph-other));
+  stroke-width: 2px;
+}
+
+.graph-explore-record.selected > rect {
+  stroke: var(--accent);
+  stroke-width: 2.5px;
+}
+
+.graph-explore-record-icon {
+  color: var(--graph-kind, var(--graph-other));
+  pointer-events: none;
+}
+
 .graph-explore-node.expanded > circle {
   stroke: var(--text);
   stroke-opacity: 0.35;
@@ -11413,6 +11539,15 @@ main.content:has(> .knowledge-frame) {
   height: 9px;
   border-radius: var(--radius-round);
   background: var(--graph-kind, var(--graph-other));
+}
+
+.graph-explore-swatch i.square {
+  border-radius: 2px;
+  background: var(--surface);
+  border: 2px solid var(--graph-kind, var(--graph-other));
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
 }
 
 .graph-explore-hint {
@@ -14207,9 +14342,45 @@ button.herdr-question-head {
   -webkit-line-clamp: 2;
 }
 
-.recording-original + .recording-original { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem; }
 .recording-original { display: flex; flex-direction: column; gap: var(--space-2); }
 .recording-player { display: block; width: 100%; max-height: 65vh; }
+.recording-player[hidden] { display: none; }
+/* The one player: a play button, the time, a scrubber along the recording's
+   whole timeline, and its length. The range input lies over the drawn track,
+   invisible, so a drag, a tap and the arrow keys all reach it. */
+.recording-player-controls { display: flex; align-items: center; gap: var(--space-2); }
+.recording-player-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 2.75rem; }
+.recording-player-time:last-child { text-align: right; }
+.recording-scrubber { position: relative; flex: 1; min-width: 0; height: 28px; }
+.recording-scrubber-track {
+  position: absolute;
+  inset: 11px 0;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.recording-scrubber-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+/* Time between two pieces that nobody captured, which the player skips. */
+.recording-scrubber-gap { position: absolute; top: -2px; bottom: -2px; background: var(--surface); }
+.recording-scrubber-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.recording-scrubber:focus-within .recording-scrubber-thumb { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-strong); }
+.recording-scrubber input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
 .recording-progress { width: 100%; }
 
 /* --- a recording as a conversation -----------------------------------------
@@ -14336,4 +14507,130 @@ button.herdr-question-head {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+}
+
+/* The player that floats over the page while the recording plays: a pause
+   button, the position and a close, at the foot of the window above the
+   agent's button. The room after the conversation keeps the last bubble clear. */
+.recording-floating-player {
+  position: fixed;
+  left: 50%;
+  bottom: 76px;
+  z-index: 29;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+.recording-floating-player .recording-player-time:last-child {
+  text-align: left;
+}
+.recording-floating-player-room {
+  height: 72px;
+}
+
+/* --- the recording bar -----------------------------------------------------
+   Fixed at the foot of the dashboard while a recording is made or sent, above
+   the agent's button (44px high, 20px from the corner) so neither covers the
+   other. With the agent's box open it stands beside the box, not under it. */
+.recording-bar {
+  position: fixed;
+  right: 20px;
+  bottom: 76px;
+  z-index: 29;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 40px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--text-body);
+}
+.recording-bar-main {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.recording-bar-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-round);
+  background: var(--bad);
+}
+.recording-bar-dot.paused,
+.recording-bar-dot.idle,
+.recording-bar-dot.starting,
+.recording-bar-dot.stopping {
+  background: var(--muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .recording-bar-dot.recording {
+    animation: recording-bar-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes recording-bar-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.recording-bar-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.recording-bar-words {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recording-bar-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-label);
+}
+.recording-bar .row-actions {
+  flex: none;
+}
+@media (min-width: 721px) {
+  body:has(.agent-drawer:not(.standalone)) .recording-bar {
+    right: 476px;
+    bottom: 20px;
+    width: min(380px, calc(100vw - 496px));
+  }
+}
+/* The page keeps its last lines clear of the bar. */
+body.has-recording-bar .content {
+  padding-bottom: 140px;
+}
+.recording-turn.live {
+  align-items: flex-start;
+}
+.recording-live-line {
+  opacity: 0.85;
+  font-style: italic;
+}
+.recording-live-note {
+  margin: 0;
+}
+.recording-live-line {
+  width: fit-content;
+  max-width: 100%;
 }

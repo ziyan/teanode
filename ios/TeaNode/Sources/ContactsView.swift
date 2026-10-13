@@ -68,13 +68,15 @@ struct ContactsScreen: View {
     @State private var model: ContactsModel
     @State private var isAdding = false
     @State private var isImportingFromPhone = false
+    @State private var path = NavigationPath()
+    @Environment(AppModel.self) private var app
 
     init(connection: Connection) {
         _model = State(initialValue: ContactsModel(connection: connection))
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             // Laid out as the mail and recordings lists are, under a letter
             // instead of a period: no chevrons, no lines, rows close together.
             List {
@@ -145,6 +147,14 @@ struct ContactsScreen: View {
                     .disabled(model.addressBook == nil)
                 }
             }
+        }
+        // A card a link from the agent's memory names opens as if its row
+        // had been chosen.
+        .onChange(of: app.openedContactId, initial: true) { _, contactId in
+            guard let contactId else { return }
+            app.openedContactId = nil
+            path = NavigationPath()
+            path.append(contactId)
         }
         .sheet(isPresented: $isAdding) {
             ContactEditor(model: model, contact: nil) { _ in }
@@ -281,6 +291,7 @@ struct ContactDetailView: View {
     @State private var problemText: String?
     @State private var isEditing = false
     @State private var isConfirmingDelete = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         Group {
@@ -345,6 +356,7 @@ struct ContactDetailView: View {
                             Text(note).textSelection(.enabled)
                         }
                     }
+                    InMemorySection(model: memory)
                     Section {
                         if contact.id == model.myContactId {
                             Button("This is not me") {
@@ -391,6 +403,7 @@ struct ContactDetailView: View {
         } message: {
             Text("It is removed from your address book and from every device that reads it.")
         }
+        .inMemory(memory, recordKind: "contact", recordId: contactId)
         .task { await read() }
     }
 

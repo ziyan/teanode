@@ -58,8 +58,11 @@ type recordingModel struct {
 	TimelineDurationMS       int64
 	CaptureGaps              []models.RecordingGap `gorm:"serializer:json"`
 	SourceGeneration         int64
-	DeletedAt                *time.Time
-	CleanupCompletedAt       *time.Time
+	// KnowledgeSyncedGeneration is the source generation the recording's
+	// knowledge was last synced at. It is null until a change asks for a sync.
+	KnowledgeSyncedGeneration *int64
+	DeletedAt                 *time.Time
+	CleanupCompletedAt        *time.Time
 }
 
 func (recordingModel) TableName() string { return "recording" }
@@ -176,7 +179,9 @@ func (self *transaction) LockRecording(userId, recordingId string) (*models.Reco
 
 // ListRecordings pages through the account's recordings, newest first. A
 // search keeps those whose title, summary or transcribed or corrected text
-// contains it, ignoring case.
+// contains it, ignoring case. The transcribed text is the words a person reads
+// in the latest completed version of each original: the accurate words where
+// the second pass produced them, else the first pass's.
 func (self *transaction) ListRecordings(userId, beforeId, searchText string, limit int) ([]*models.Recording, error) {
 	if userId == "" {
 		return nil, ErrNotFound
@@ -196,7 +201,10 @@ func (self *transaction) ListRecordings(userId, beforeId, searchText string, lim
 		pattern := "%" + escapeLike(searchText) + "%"
 		query = query.Where(`recording_title ILIKE @pattern OR recording_summary ILIKE @pattern
 			OR EXISTS (SELECT 1 FROM recording_transcript_segment JOIN recording_transcript_run ON recording_transcript_run.id = recording_transcript_segment.recording_transcript_run_id
-				WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = @complete AND recording_transcript_segment.transcript_text ILIKE @pattern)
+				WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = @complete
+					AND recording_transcript_run.id IN (SELECT DISTINCT ON (latest.recording_media_id) latest.id FROM recording_transcript_run latest
+						WHERE latest.recording_id = recording.id AND latest.recording_processing_state = @complete ORDER BY latest.recording_media_id, latest.version_number DESC)
+					AND COALESCE(NULLIF(recording_transcript_segment.accurate_transcript_text, ''), recording_transcript_segment.transcript_text) ILIKE @pattern)
 			OR EXISTS (SELECT 1 FROM recording_transcript_text_correction
 				WHERE recording_transcript_text_correction.recording_id = recording.id AND NOT recording_transcript_text_correction.is_removed AND recording_transcript_text_correction.corrected_transcript_text ILIKE @pattern)`,
 			sql.Named("pattern", pattern), sql.Named("complete", models.RecordingProcessingComplete))
@@ -256,7 +264,17 @@ func (self *transaction) UpdateRecordingCapture(userId, recordingId string, expe
 	if gaps == nil {
 		gaps = []models.RecordingGap{}
 	}
-	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: recording.SourceGeneration + 1, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	// Progress while the capture is still running (duration growing, a gap
+	// extending, active and paused switching) leaves the generation alone: a
+	// phone reports it every few seconds, and every speaker or text correction
+	// refuses a stale generation, so bumping it would make naming a speaker
+	// during capture fail. Only the move to stopped (or an import's own state)
+	// changes what the transcript is built from.
+	sourceGeneration := recording.SourceGeneration
+	if captureState == models.RecordingCaptureImported || (captureState == models.RecordingCaptureStopped && recording.RecordingCaptureState != models.RecordingCaptureStopped) {
+		sourceGeneration++
+	}
+	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: sourceGeneration, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 	if err := self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Select("recording_capture_state", "timeline_duration_ms", "capture_gaps", "source_generation", "updated_at").Updates(&row).Error; err != nil {
 		return nil, err
 	}
@@ -504,6 +522,14 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
+	// The speakers are forgotten now; their sample bytes are found by the
+	// recording's blob rows, like every other derived byte.
+	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingTemporarySpeakerModel{}).Error; err != nil {
+		return err
+	}
+	if err := self.deleteRecordingLiveUtterances(recordingId); err != nil {
+		return err
+	}
 	if err := self.deleteRecordingRunConversations(recordingId); err != nil {
 		return err
 	}
@@ -586,6 +612,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 		return ErrInvalidArguments
 	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingKnowledgeDocumentModel{}).Error; err != nil {
+		return err
+	}
+	if err := self.deleteRecordingLiveUtterances(recordingId); err != nil {
 		return err
 	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingMediaModel{}).Error; err != nil {

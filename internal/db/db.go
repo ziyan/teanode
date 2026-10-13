@@ -166,8 +166,10 @@ type Transaction interface {
 	RecordingTextCorrectionOperation
 	RecordingReferenceOperation
 	RecordingSpeakerOperation
+	RecordingTemporarySpeakerOperation
 	RecordingKnowledgeOperation
 	RecordingTranscriptOperation
+	RecordingLiveUtteranceOperation
 	RecordingPreviewOperation
 	RecordingOperation
 	RecordingMetadataOperation

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,92 @@ import (
 // SyncRecordingKnowledge publishes passive evidence to existing source ingestion.
 func (self *Agent) SyncRecordingKnowledge(ctx context.Context, userId, recordingId string) error {
 	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error { return transaction.SyncRecordingKnowledge(userId, recordingId) })
+}
+
+// recordingKnowledgeRoundLimit is how many times in a row one job syncs again
+// because the recording changed while it was being read.
+const recordingKnowledgeRoundLimit = 5
+
+// runRecordingKnowledge is the handler of a recording knowledge job. Naming a
+// speaker only stores the naming and queues this, so a request on a long
+// recording does not wait for its passages to be rewritten.
+//
+// A pass reads the recording in slices, each in a transaction of its own, so
+// that a naming made while it runs is not held up behind the recording's lock.
+// A naming that lands while the job is open finds it still queued or running
+// and queues nothing more, so the job compares the recording's generation
+// before and after and reads again when it moved. Every document is written
+// under a hash of its words, so reading twice leaves what did not change alone.
+func (self *Agent) runRecordingKnowledge(ctx context.Context, run *Run) error {
+	userId, recordingId := run.Agent.UserID, run.Job.SubjectID
+	readGeneration := func() (generation int64, err error) {
+		err = run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
+			recordingSource, err := transaction.GetRecording(userId, recordingId)
+			if err != nil {
+				return err
+			}
+			generation = recordingSource.SourceGeneration
+			return nil
+		})
+		return generation, err
+	}
+	for round := 0; round < recordingKnowledgeRoundLimit; round++ {
+		startGeneration, err := readGeneration()
+		if err != nil {
+			return ignoreDeletedRecording(err)
+		}
+		progress := &db.RecordingKnowledgeSyncProgress{}
+		for isFinished := false; !isFinished; {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+				isFinished, err = transaction.SyncRecordingKnowledgeStep(userId, recordingId, progress)
+				return err
+			}); err != nil {
+				return ignoreDeletedRecording(err)
+			}
+		}
+		endGeneration, err := readGeneration()
+		if err != nil {
+			return ignoreDeletedRecording(err)
+		}
+		if endGeneration == startGeneration {
+			return nil
+		}
+	}
+	return &Deferral{Until: time.Now().Add(time.Minute), Reason: "the recording changed while its knowledge was being updated"}
+}
+
+// queueRecordingKnowledgeSync asks again for the recordings whose knowledge is
+// behind their generation and have no sync open: a naming that landed in the
+// moment a sync was finishing, or a job that was lost. The marker is on the
+// recording, so this survives a restart.
+func (self *Agent) queueRecordingKnowledgeSync(ctx context.Context) {
+	var sources []*models.Recording
+	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		sources, err = transaction.ListRecordingsAwaitingKnowledgeSync(25)
+		return err
+	}); err != nil {
+		log.Warningf("cannot find recordings whose knowledge is behind: %s", err)
+		return
+	}
+	for _, source := range sources {
+		if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			return transaction.QueueRecordingKnowledgeSync(source.UserID, source.ID)
+		}); err != nil && ctx.Err() == nil {
+			log.Warningf("cannot queue the knowledge sync of recording %q: %s", source.ID, err)
+		}
+	}
+}
+
+// ignoreDeletedRecording lets a job end quietly when its recording is gone,
+// since there is nothing left to publish.
+func ignoreDeletedRecording(err error) error {
+	if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrRecordingDeleted) {
+		return nil
+	}
+	return err
 }
 
 // ReconcileRecordingReferenceInvalidations retires memory that used revoked conditioning evidence.

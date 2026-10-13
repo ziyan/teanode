@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
@@ -41,7 +42,11 @@ const CONVERSATIONS = [
 
 it('lists the main chat first, narrows by title or summary, and opens a tile in the drawer', async () => {
   execute.mockResolvedValue({ ListAgentConversations: CONVERSATIONS })
-  render(<AgentConversationsPage />)
+  render(
+    <MemoryRouter>
+      <AgentConversationsPage />
+    </MemoryRouter>,
+  )
 
   // The tile is the button, so its title is the part it is named by.
   const titles = (await screen.findAllByRole('button', { name: /agentDrawer\.main|Garden plans|Trip/ })).map((button) =>
@@ -60,9 +65,26 @@ it('lists the main chat first, narrows by title or summary, and opens a tile in 
 
 it('starts a new conversation in the drawer without asking anything first', async () => {
   execute.mockResolvedValue({ ListAgentConversations: [] })
-  render(<AgentConversationsPage />)
+  render(
+    <MemoryRouter>
+      <AgentConversationsPage />
+    </MemoryRouter>,
+  )
 
   expect(await screen.findByText('agentConversations.empty')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'agentConversations.new' }))
   expect(vi.mocked(startAgentConversation)).toHaveBeenCalledTimes(1)
+})
+
+it('opens the conversation a link from memory names, once, and forgets it', async () => {
+  execute.mockResolvedValue({ ListAgentConversations: CONVERSATIONS })
+  vi.mocked(openAgentConversation).mockClear()
+  render(
+    <MemoryRouter initialEntries={['/agent?conversation=side-2&message=message-9']}>
+      <AgentConversationsPage />
+    </MemoryRouter>,
+  )
+  await screen.findAllByRole('button', { name: /Trip/ })
+  expect(vi.mocked(openAgentConversation)).toHaveBeenCalledTimes(1)
+  expect(vi.mocked(openAgentConversation)).toHaveBeenCalledWith('side-2')
 })

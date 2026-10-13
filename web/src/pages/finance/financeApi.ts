@@ -752,15 +752,16 @@ export type FinanceReceiptPage = {
   totalCount: number
 }
 
-// FINANCE_RECEIPTS is one page of receipts: those matched to one finance
+// FINANCE_RECEIPTS is one page of receipts: one by its id (receiptId, which is
+// how a link from the agent's memory opens it), those matched to one finance
 // transaction, purchased within a range of days, printing no day
 // (isUndated, not with a range), matched to none, or holding words (text)
 // in the merchant, the receipt number or a line. It pages like
 // FinanceTransactions: limit (at most 200), offset, or after with the
 // nextCursor of the page before.
-export const FINANCE_RECEIPTS = `query ($financeTransactionId: String, $from: String, $to: String,
+export const FINANCE_RECEIPTS = `query ($receiptId: String, $financeTransactionId: String, $from: String, $to: String,
   $isUndated: Boolean, $isUnmatched: Boolean, $text: String, $limit: Int, $after: String, $offset: Int) {
-  FinanceReceipts(financeTransactionId: $financeTransactionId, from: $from, to: $to, isUndated: $isUndated,
+  FinanceReceipts(receiptId: $receiptId, financeTransactionId: $financeTransactionId, from: $from, to: $to, isUndated: $isUndated,
     isUnmatched: $isUnmatched, text: $text, limit: $limit, after: $after, offset: $offset) {
     financeReceipts { ${RECEIPT_FIELDS} }
     nextCursor

@@ -27,6 +27,9 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 	if !hasStreaming {
 		return fmt.Errorf("recording reference storage does not support streaming")
 	}
+	if err := self.curateRecordingTemporarySpeakers(ctx, userId, recordingId, files); err != nil {
+		return err
+	}
 	var source *models.Recording
 	var corrections []*models.RecordingSpeakerCorrection
 	var references []*models.RecordingVoiceReference

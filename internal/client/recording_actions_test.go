@@ -34,6 +34,11 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		{RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: new("Fixture"), ExpectedSourceGeneration: &generation}, false, ""},
 		{RecordingActionArguments{Operation: "metadata", RecordingID: "fixture-recording", RecordingTitle: new("Fixture"), RecordedAt: &unknownDate, ExpectedSourceGeneration: &generation}, true, "UpdateRecordingMetadata"},
 		{RecordingActionArguments{Operation: "speaker-confirm", RecordingID: "fixture-recording", RecordingTranscriptionAttemptID: "fixture-attempt", LocalSpeakerID: "local-speaker", ConfirmedName: "Speaker Fixture", ClientCorrectionID: "stable-edit-key", ExpectedSourceGeneration: &generation, PassageStartMS: &groupBound, PassageEndMS: &groupBound}, true, "CorrectRecordingSpeaker"},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", ConfirmedName: "Speaker Fixture"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture"}, true, "NameRecordingTemporarySpeaker"},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", IsAccountOwner: true}, true, "NameRecordingTemporarySpeaker"},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation}, false, ""},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation, ClientCorrectionID: "stable-edit-key"}, true, "CorrectRecordingTranscriptText"},
 		{RecordingActionArguments{Operation: "activate-microphone"}, false, ""},
@@ -107,5 +112,15 @@ func TestSpeakerConfirmAcceptsTheAccountOwnerWithoutAName(test *testing.T) {
 	}
 	if !strings.Contains(RecordingDocuments["CorrectRecordingSpeaker"], "isAccountOwner: $isAccountOwner") {
 		test.Fatal("the mutation document drops the owner flag")
+	}
+}
+
+func TestSpeakerNamesAsksForNamesContainingTheSearch(test *testing.T) {
+	operationName, variables, err := RecordingAction(RecordingActionArguments{Operation: "speaker-names", SearchText: "ali", PageSize: 5})
+	if err != nil || operationName != "SuggestRecordingSpeakerNames" || variables["searchText"] != "ali" || variables["pageSize"] != 5 {
+		test.Fatal("the search was not sent", operationName, variables, err)
+	}
+	if !strings.Contains(RecordingDocuments["SuggestRecordingSpeakerNames"], "speakerNameSource") {
+		test.Fatal("the document does not ask where each name came from")
 	}
 }
