@@ -210,3 +210,31 @@ func TestTranscriptionHonorsCancellationAndProviderErrors(test *testing.T) {
 		test.Fatal("cancelled request kept running")
 	}
 }
+
+// A last segment that ends a little past the audio it was sent is cut to the
+// audio's end, rather than refused: refusing it threw away an answer already
+// paid for, over a rounding at its last word.
+func TestASegmentJustPastTheAudioIsCutToItsEnd(test *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, incoming *http.Request) {
+		_, _ = io.WriteString(writer, `{"duration":5,"text":"Done.","segments":[{"id":"last","speaker":"A","start":4.5,"end":5.4,"text":"Done."}]}`)
+	}))
+	defer server.Close()
+	configuration := config.Default().Agent
+	configuration.Enabled = true
+	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key"}}
+	registry, err := Open(&configuration)
+	if err != nil {
+		test.Fatal(err)
+	}
+	selected, err := registry.TranscribingFor("transcripts:gpt-4o-transcribe-diarize", true, false)
+	if err != nil {
+		test.Fatal(err)
+	}
+	answer, err := selected.Transcriber.Transcribe(test.Context(), transcriptionFixture())
+	if err != nil {
+		test.Fatalf("a segment 400 ms past the audio was refused: %s", err)
+	}
+	if len(answer.Segments) != 1 || answer.Segments[0].StartMS != 4500 || answer.Segments[0].EndMS != 5000 {
+		test.Fatalf("segments: %+v", answer.Segments)
+	}
+}
