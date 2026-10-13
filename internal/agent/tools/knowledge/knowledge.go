@@ -394,6 +394,9 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 			financeSourceCount++
 			continue
 		}
+		if source.Kind == models.SourceRecording {
+			tools.MarkRecordingEvidence(run)
+		}
 		builder.WriteString(source.Name + " (" + string(source.Kind) + ") — " + source.Describe())
 		fmt.Fprintf(&builder, "\n  %d documents, %d passages", source.DocumentCount, source.ChunkCount)
 		if source.RefusedCount > 0 {
