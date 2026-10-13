@@ -65,8 +65,10 @@ func (self *transaction) ListRecordingTemporarySpeakers(userId, recordingId stri
 	var heard []struct {
 		ID             string
 		LastHeardEndMS int64
+		SpokenMS       int64
 	}
-	if err := self.tx.Raw(`SELECT speaker.id, COALESCE(MAX(segment.segment_end_ms), 0) AS last_heard_end_ms
+	if err := self.tx.Raw(`SELECT speaker.id, COALESCE(MAX(segment.segment_end_ms), 0) AS last_heard_end_ms,
+  COALESCE(SUM(segment.segment_end_ms - segment.segment_start_ms), 0) AS spoken_ms
   FROM recording_temporary_speaker speaker
   JOIN recording_transcript_run run ON run.recording_id = speaker.recording_id
   JOIN recording_transcription_attempt attempt ON attempt.recording_transcript_run_id = run.id
@@ -78,11 +80,14 @@ func (self *transaction) ListRecordingTemporarySpeakers(userId, recordingId stri
 		return nil, err
 	}
 	lastHeard := map[string]int64{}
+	spoken := map[string]int64{}
 	for _, row := range heard {
 		lastHeard[row.ID] = row.LastHeardEndMS
+		spoken[row.ID] = row.SpokenMS
 	}
 	for _, speaker := range speakers {
 		speaker.LastHeardEndMS = lastHeard[speaker.ID]
+		speaker.SpokenMS = spoken[speaker.ID]
 	}
 	return speakers, nil
 }
@@ -91,8 +96,14 @@ func (self *transaction) ListRecordingTemporarySpeakers(userId, recordingId stri
 // reference before the sample's bytes are written, and gives the speaker the
 // next label of the recording. The passage and the speaker label in the
 // attempt it came from identify it, so repeating the call returns the same speaker.
+// A speaker with no clean passage to cut a sample from is still given a label,
+// with a nil blob: it reads as "Speaker N" like the others and can be named,
+// but no sample of it is sent with the next pieces.
 func (self *transaction) CreateRecordingTemporarySpeaker(userId string, speaker *models.RecordingTemporarySpeaker, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingTemporarySpeaker, error) {
-	if speaker == nil || blob == nil || speaker.SourceAttemptID == "" || speaker.SourceLocalSpeakerID == "" || len(speaker.SourceLocalSpeakerID) > 255 || speaker.PassageStartMS < 0 || speaker.PassageEndMS-speaker.PassageStartMS < 2000 || speaker.PassageEndMS-speaker.PassageStartMS > 10000 || blob.BlobSizeBytes <= 0 || blob.BlobSizeBytes > 320044 || !validRecordingSHA256(blob.BlobSHA256) {
+	if speaker == nil || speaker.SourceAttemptID == "" || speaker.SourceLocalSpeakerID == "" || len(speaker.SourceLocalSpeakerID) > 255 {
+		return nil, ErrInvalidArguments
+	}
+	if blob != nil && (speaker.PassageStartMS < 0 || speaker.PassageEndMS-speaker.PassageStartMS < 2000 || speaker.PassageEndMS-speaker.PassageStartMS > 10000 || blob.BlobSizeBytes <= 0 || blob.BlobSizeBytes > 320044 || !validRecordingSHA256(blob.BlobSHA256)) {
 		return nil, ErrInvalidArguments
 	}
 	var owner userModel
@@ -142,6 +153,20 @@ func (self *transaction) CreateRecordingTemporarySpeaker(userId string, speaker 
 			highestNumber = max(highestNumber, number)
 		}
 	}
+	created := *speaker
+	created.ID = newID()
+	created.SpeakerLabel = fmt.Sprintf("Speaker %d", highestNumber+1)
+	created.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+	created.SpeakerIdentityID = ""
+	if blob == nil {
+		created.RecordingBlobID = ""
+		created.PassageStartMS, created.PassageEndMS = 0, 0
+		row := recordingTemporarySpeakerModel{ID: created.ID, RecordingID: created.RecordingID, SpeakerLabel: created.SpeakerLabel, SourceAttemptID: created.SourceAttemptID, SourceLocalSpeakerID: created.SourceLocalSpeakerID, CreatedAt: created.CreatedAt}
+		if err := self.tx.Create(&row).Error; err != nil {
+			return nil, err
+		}
+		return &created, nil
+	}
 	var reservedBytes int64
 	if err := self.tx.Raw(`SELECT COALESCE((SELECT SUM(original_size_bytes) FROM recording_media m JOIN recording r ON r.id=m.recording_id WHERE r.user_id = ?),0) + COALESCE((SELECT SUM(blob_size_bytes) FROM recording_blob b JOIN recording r ON r.id=b.recording_id WHERE r.user_id = ?),0)`, userId, userId).Scan(&reservedBytes).Error; err != nil {
 		return nil, err
@@ -149,12 +174,7 @@ func (self *transaction) CreateRecordingTemporarySpeaker(userId string, speaker 
 	if maximumAccountBytes <= 0 || blob.BlobSizeBytes > maximumAccountBytes-reservedBytes {
 		return nil, ErrTooMuchAsked
 	}
-	created := *speaker
-	created.ID = newID()
-	created.SpeakerLabel = fmt.Sprintf("Speaker %d", highestNumber+1)
-	created.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
 	created.RecordingBlobID = "recording-temporary-speaker-" + created.ID
-	created.SpeakerIdentityID = ""
 	derived := *blob
 	derived.ID = created.RecordingBlobID
 	derived.RecordingID = source.ID

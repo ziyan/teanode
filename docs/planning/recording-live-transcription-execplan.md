@@ -113,6 +113,13 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
   Rationale: the person pressed it to see the conversation; two primary buttons are one too many.
   Date/Author: 2026-10-13, Claude (Milestone 7).
 
+- Decision: the provider's sample slots for unnamed temporary speakers go to those who have spoken most, not those heard most recently; a voice with no clean passage still gets a `Speaker N` label without a sample; naming and the memory sync wait until no piece of a stopped capture is still being transcribed.
+  Rationale: a real 16-minute stand-up with nine voices showed four voices left as bare letters (no clean 2.4 second passage), the most talkative unnamed speaker not sent with the second piece (recency chose others), and the recording named twice, once from its first piece.
+  Date/Author: 2026-10-13, Claude, from the owner's real recording.
+- Decision: the iPhone keeps one capture running for the whole recording and never stops and restarts the recorder to cut a piece.
+  Rationale: in the same real recording the 600-second rollover failed while the phone was locked; the app marked the capture interrupted and 87 seconds of the meeting were lost until it was resumed by hand.
+  Date/Author: 2026-10-13, Claude, from the owner's real recording.
+
 ## Outcomes & Retrospective
 
 Not started.

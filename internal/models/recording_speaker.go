@@ -63,4 +63,6 @@ type RecordingTemporarySpeaker struct {
 	CreatedAt         time.Time `json:"-"`
 	// LastHeardEndMS is the timeline millisecond this speaker was last heard, filled when listed.
 	LastHeardEndMS int64 `json:"-" gorm:"-"`
+	// SpokenMS is how long this speaker has spoken in the recording so far, filled when listed.
+	SpokenMS int64 `json:"-" gorm:"-"`
 }
