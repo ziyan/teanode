@@ -392,9 +392,13 @@ func (self *Agent) FinishRecordingCapture(transaction db.Transaction, userId, re
 	if err := transaction.SyncRecordingKnowledge(userId, recordingId); err != nil {
 		return err
 	}
-	// Term correction queues the naming job when it ends.
-	_, err = self.QueueRecordingTerms(transaction, userId, recordingId)
-	return err
+	// Term correction queues the naming job when it ends; without it the
+	// recording is named straight away.
+	isQueued, err := self.QueueRecordingTerms(transaction, userId, recordingId)
+	if err != nil || isQueued {
+		return err
+	}
+	return self.QueueRecordingSummary(transaction, userId, recordingId)
 }
 
 func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, transcriptRun *models.RecordingTranscriptRun, selection *llm.TranscriptionSelection, files storage.StreamFiles, chunk *models.RecordingAudioChunk, vocabularyPrompt string) (bool, error) {
