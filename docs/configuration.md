@@ -1759,7 +1759,7 @@ their own on their agent's settings, which this is the default for.
 
 What the server does for a recording while it is still being captured.
 
-**`isLiveTranscriptionEnabled`** — Whether a phone or browser that is
+**`isLiveTranscriptionEnabled`**. Whether a phone or browser that is
 capturing a recording may stream its audio through this server for words as
 they are spoken. This is a second transcription beside the speaker-separated
 one made of the saved audio, billed by the minute to the person's agent like
