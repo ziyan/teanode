@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -24,9 +25,17 @@ type RecordingSpeakerNameSuggestion struct {
 
 const recordingSpeakerNameSuggestionLimit = 20
 
+// recordingSpeakerNameSearchBytes bounds what is typed to search for, and
+// recordingSpeakerNameBytes is the longest speaker name the database accepts.
+const (
+	recordingSpeakerNameSearchBytes = 100
+	recordingSpeakerNameBytes       = 255
+)
+
 // SuggestRecordingSpeakerNames offers names for a speaker: the voices the
 // person has named, then the people in their agent's memory, then their
-// contacts, each name once. Everything read is the person's own.
+// contacts, each name once. Everything read is the person's own, and for the
+// agent only the address books the person gave it.
 func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments SuggestRecordingSpeakerNamesArguments) ([]*RecordingSpeakerNameSuggestion, error) {
 	userId, err := self.recordingSpeakerOwner(ctx)
 	if err != nil {
@@ -37,8 +46,9 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 		pageSize = recordingSpeakerNameSuggestionLimit
 	}
 	searchText := strings.TrimSpace(arguments.SearchText)
-	if len(searchText) > 100 {
-		searchText = searchText[:100]
+	if len(searchText) > recordingSpeakerNameSearchBytes {
+		// Cut on a rune boundary: half a rune is not valid UTF-8 to the database.
+		searchText = strings.ToValidUTF8(searchText[:recordingSpeakerNameSearchBytes], "")
 	}
 	matches := func(name string) bool {
 		return searchText == "" || strings.Contains(strings.ToLower(name), strings.ToLower(searchText))
@@ -48,7 +58,7 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 	offer := func(name, speakerNameSource string) {
 		name = strings.TrimSpace(name)
 		key := strings.ToLower(name)
-		if name == "" || len(name) > 64 || isOffered[key] || len(suggestions) >= pageSize || !matches(name) {
+		if name == "" || len(name) > recordingSpeakerNameBytes || isOffered[key] || len(suggestions) >= pageSize || !matches(name) {
 			return
 		}
 		isOffered[key] = true
@@ -79,7 +89,13 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 	if err != nil {
 		return nil, translateError(err)
 	}
+	isAgent := db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent
 	for _, addressBook := range addressBooks {
+		// A name from a book the person did not give their agent would let the
+		// agent probe it with search text.
+		if isAgent && !addressBook.AgentGranted {
+			continue
+		}
 		contacts, err := transaction.ListContacts(addressBook.ID, searchText, pageSize*2)
 		if err != nil {
 			return nil, translateError(err)
