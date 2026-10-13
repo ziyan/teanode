@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.144.1] - 2026-10-13
+
+### Changed
+
+- The agent's quick reaction to your message is picked with one small model call, faster and with no leftover run. (#441)
+
+### Fixed
+
+- Two coding-session questions that differ only by a time are no longer taken for the same question. (#441)
+- Notification and title text keeps names such as __init__ intact. (#441)
+
 ## [0.144.0] - 2026-10-13
 
 ### Added
