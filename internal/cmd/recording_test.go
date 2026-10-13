@@ -71,3 +71,50 @@ func TestRecordingDownloadNeverReplacesExistingDestination(test *testing.T) {
 		}
 	}
 }
+
+func TestCompatiblePlaybackDownloadPreservesDestinationOnIntegrityFailure(test *testing.T) {
+	content := []byte("fixture compatible audio")
+	digest := sha256.Sum256(content)
+	playback := &client.RecordingPlayback{RecordingMediaID: "fixture-media", PlaybackPath: client.RecordingPlaybackPath("fixture-media"), PlaybackContentType: "audio/wav", PlaybackSizeBytes: int64(len(content)), PlaybackSHA256: hex.EncodeToString(digest[:]), PlaybackDurationMS: 1000}
+	for _, hasExistingDestination := range []bool{false, true} {
+		for _, isCorrupt := range []bool{false, true} {
+			directory := test.TempDir()
+			destinationPath := filepath.Join(directory, "compatible.wav")
+			existingBytes := []byte("fixture retained destination")
+			if hasExistingDestination {
+				if err := os.WriteFile(destinationPath, existingBytes, 0600); err != nil {
+					test.Fatal(err)
+				}
+			}
+			responseBytes := content
+			if isCorrupt {
+				responseBytes = []byte("fixture corrupt audio")
+			}
+			connection, err := client.New(client.Options{URL: "https://example.com", ReadOnly: true, HTTPClient: &http.Client{Transport: recordingDownloadTransport(func(request *http.Request) (*http.Response, error) {
+				if request.URL.Path != client.RecordingPlaybackPath("fixture-media") {
+					test.Fatal("preview downloaded from original route")
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(responseBytes))}, nil
+			})}})
+			if err != nil {
+				test.Fatal(err)
+			}
+			err = downloadRecordingPlaybackToFile(test.Context(), connection, playback, destinationPath)
+			if (err == nil) != (!hasExistingDestination && !isCorrupt) {
+				test.Fatal("unexpected preview publication outcome", err)
+			}
+			storedBytes, readError := os.ReadFile(destinationPath)
+			if hasExistingDestination {
+				if readError != nil || !bytes.Equal(storedBytes, existingBytes) {
+					test.Fatal("existing destination changed")
+				}
+			} else if isCorrupt {
+				if !os.IsNotExist(readError) {
+					test.Fatal("corrupt compatible audio was published")
+				}
+			} else if readError != nil || !bytes.Equal(storedBytes, content) {
+				test.Fatal("verified compatible audio was not published")
+			}
+		}
+	}
+}

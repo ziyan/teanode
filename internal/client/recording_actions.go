@@ -48,6 +48,15 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 	}
 	operationName := ""
 	switch arguments.Operation {
+	case "read-playback", "prepare-playback":
+		operationName = "ReadRecordingPlayback"
+		if arguments.Operation == "prepare-playback" {
+			operationName = "PrepareRecordingPlayback"
+		}
+		if err := require("media_id", arguments.RecordingMediaID); err != nil {
+			return "", nil, err
+		}
+		variables["recordingMediaId"] = arguments.RecordingMediaID
 	case "passage-offset":
 		operationName = "ReadRecordingTranscriptPassageOffset"
 		if err := require("transcript_run_id", arguments.RecordingTranscriptRunID); err != nil {

@@ -49,7 +49,7 @@ func (self *recordingTestOperations) Execute(ctx context.Context, document strin
 
 func TestSuccessfulOwnedEvidenceReadsNotifyTheTrustedObserver(test *testing.T) {
 	for _, testCase := range []struct{ operation, operationName string }{
-		{"list", "ListRecordings"}, {"read", "ReadRecording"}, {"versions", "ReadRecordingProcessing"},
+		{"read-playback", "ReadRecordingPlayback"}, {"list", "ListRecordings"}, {"read", "ReadRecording"}, {"versions", "ReadRecordingProcessing"},
 		{"timeline", "ReadRecordingTranscriptTimeline"}, {"transcript", "ReadRecordingTranscript"},
 		{"speakers", "ReadRecordingSpeakers"}, {"text-corrections", "ReadRecordingTranscriptTextCorrections"},
 		{"reference-invalidations", "ReadRecordingReferenceInvalidations"}, {"learning", "ReadRecordingLearning"},
@@ -63,7 +63,7 @@ func TestSuccessfulOwnedEvidenceReadsNotifyTheTrustedObserver(test *testing.T) {
 			}
 			operations := &recordingTestOperations{responseJSON: string(responseJSON)}
 			run := &recordingTestRun{operations: operations}
-			arguments, err := json.Marshal(map[string]any{"operation": testCase.operation, "recording_id": "fixture-recording", "transcript_run_id": "fixture-run", "passage_start_ms": 200, "passage_end_ms": 500})
+			arguments, err := json.Marshal(map[string]any{"operation": testCase.operation, "recording_id": "fixture-recording", "media_id": "fixture-media", "transcript_run_id": "fixture-run", "passage_start_ms": 200, "passage_end_ms": 500})
 			if err != nil {
 				test.Fatal(err)
 			}
@@ -99,6 +99,22 @@ func TestRecordingToolUsesAccountAPIAndMarksEvidenceUntrusted(test *testing.T) {
 	for _, arguments := range []string{`{"operation":"activate_microphone"}`, `{"operation":"read"}`, `{"operation":"delete"}`} {
 		if _, err := runRecording(tools.WithRun(context.Background(), run), &tools.Call{Arguments: json.RawMessage(arguments)}); err == nil {
 			test.Fatal("invalid recording action accepted")
+		}
+	}
+}
+
+func TestPlaybackPreparationIsAWriteAndReadyPlaybackIsARead(test *testing.T) {
+	recordingTool := tools.Build().Get("recording")
+	for _, fixture := range []struct {
+		operation    string
+		expectedRisk tools.Risk
+	}{{"prepare-playback", tools.RiskWrite}, {"read-playback", tools.RiskRead}} {
+		arguments, err := json.Marshal(map[string]any{"operation": fixture.operation, "media_id": "fixture-media"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if recordingTool.RiskOf(arguments) != fixture.expectedRisk {
+			test.Fatal("local playback preparation has the wrong risk")
 		}
 	}
 }
