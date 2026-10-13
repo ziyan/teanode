@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.151.0] - 2026-10-13
+
+### Added
+
+- Native compatible audio playback and verified export for recordings. (#452)
+
 ## [0.150.0] - 2026-10-13
 
 ### Added
