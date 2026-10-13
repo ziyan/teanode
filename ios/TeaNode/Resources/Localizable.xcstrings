@@ -337,6 +337,22 @@
         }
       }
     },
+    "%@ is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已关闭"
+          }
+        }
+      }
+    },
     "%@ is offered again": {
       "localizations": {
         "ja": {
@@ -7829,6 +7845,22 @@
         }
       }
     },
+    "Cannot reach your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到你的服务器"
+          }
+        }
+      }
+    },
     "Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.": {
       "localizations": {
         "ja": {
@@ -9121,6 +9153,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已连接。"
+          }
+        }
+      }
+    },
+    "Connecting to your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接你的服务器"
           }
         }
       }
@@ -16277,6 +16325,38 @@
         }
       }
     },
+    "It is turned off for this server. Turn it on in Services.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。「サービス」でオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。可在“服务”中开启。"
+          }
+        }
+      }
+    },
+    "It is turned off for this server. Whoever manages your TeaNode server can turn it on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。TeaNode サーバーの管理者がオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。管理你的 TeaNode 服务器的人可以将其开启。"
+          }
+        }
+      }
+    },
     "It reads this at its next turn.": {
       "localizations": {
         "ja": {
@@ -23425,6 +23505,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开目标"
+          }
+        }
+      }
+    },
+    "Open Services": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サービスを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开服务"
           }
         }
       }
@@ -32737,6 +32833,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟随系统"
+          }
+        }
+      }
+    },
+    "TeaNode could not ask your server what it runs. Check the connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はサーバーで動いているサービスを確認できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法向你的服务器查询其运行的服务。请检查网络连接后重试。"
           }
         }
       }

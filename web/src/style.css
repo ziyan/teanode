@@ -3416,6 +3416,15 @@ label.checkbox input {
   padding: 5px 2px;
 }
 
+/* A page's own search box takes the row's free width, with the table's
+   buttons after it, at their height. */
+.table-tools input[type='search'] {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding-block: 5px;
+  font-size: var(--text-label);
+}
+
 /* The box that chooses a row takes the width of the box and no more. */
 .table-surface .table-choose {
   width: 1%;

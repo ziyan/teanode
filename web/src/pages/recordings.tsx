@@ -328,19 +328,22 @@ function AccountRecordingsPage() {
               {t('recordings.import')}
             </button>
           </PageHeadingActions>
-          <div className="list-toolbar">
-            <input
-              type="search"
-              value={searchInput}
-              placeholder={t('recordings.search')}
-              aria-label={t('recordings.search')}
-              onChange={(event) => setSearchInput(event.target.value)}
-            />
-          </div>
           {library.loading && !library.data ? (
             <Loading />
           ) : (
-            <RecordingLibraryTable recordings={shownRecordings} evidenceByRecordingId={evidence.data ?? {}} />
+            <RecordingLibraryTable
+              recordings={shownRecordings}
+              evidenceByRecordingId={evidence.data ?? {}}
+              search={
+                <input
+                  type="search"
+                  value={searchInput}
+                  placeholder={t('recordings.search')}
+                  aria-label={t('recordings.search')}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                />
+              }
+            />
           )}
           {(pageCursors.length > 1 || recordings.length > 50) && (
             <Pager

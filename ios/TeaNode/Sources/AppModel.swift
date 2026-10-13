@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var connection: Connection?
 
     private(set) var services: ServiceCapabilities?
+    /// Whether the server could not be asked which services it runs, and
+    /// none are known yet: the app says so rather than calling them off.
+    private(set) var hasServicesFailedToLoad = false
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -733,6 +736,7 @@ extension AppModel {
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
         if let availableServices { self.services = availableServices }
+        hasServicesFailedToLoad = availableServices == nil && services == nil
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {
