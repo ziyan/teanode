@@ -294,3 +294,31 @@ func TestRecordingReferenceAdmissionAndDeletionLockOrder(test *testing.T) {
 		test.Fatal("deletion deadlocked with admission", err)
 	}
 }
+
+func TestASpeakerNamedAfterASentVoiceSampleIsRecognized(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	reference := createConfirmedReference(test, fixture)
+	dependent := createReferenceDependent(test, fixture, reference)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		segments, err := transaction.ListRecordingTranscriptSegments(fixture.userId, dependent.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.ProjectRecordingSpeakerCorrections(fixture.userId, segments); err != nil {
+			test.Fatal(err)
+		}
+		if len(segments) != 1 || !segments[0].IsRecognizedSpeaker || segments[0].HasUserConfirmedSpeaker || segments[0].EffectiveSpeakerIdentityID != reference.SpeakerIdentityID || segments[0].EffectiveSpeakerName != "Participant One" {
+			test.Fatalf("the speaker the transcription named after a sent sample was not recognized: %+v", segments)
+		}
+		views, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.ProjectRecordingSpeakerCorrections(fixture.userId, views); err != nil {
+			test.Fatal(err)
+		}
+		if len(views) != 1 || views[0].IsRecognizedSpeaker || !views[0].HasUserConfirmedSpeaker {
+			test.Fatalf("a transcription sent no samples recognized a speaker: %+v", views)
+		}
+	})
+}

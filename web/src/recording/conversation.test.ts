@@ -50,3 +50,18 @@ it('names confirmed speakers by identity and marks only the account owner', () =
   expect(groups.map((group) => group.isAccountOwner)).toEqual([true, false, false])
   expect(groups.map((group) => group.speakerName)).toEqual(['Fixture Person', 'Other Person', null])
 })
+
+it('treats a speaker recognized by a voice sample as that identity', () => {
+  const groups = groupConversation([
+    segmentFixture({
+      id: 'r1',
+      localSpeakerId: 'Fixture Owner',
+      isRecognizedSpeaker: true,
+      effectiveSpeakerIdentityId: 'identity-owner',
+      effectiveSpeakerName: 'Fixture Owner',
+      isAccountOwner: true,
+    }),
+  ])
+  expect(groups[0].isAccountOwner).toBe(true)
+  expect(groups[0].speakerName).toBe('Fixture Owner')
+})

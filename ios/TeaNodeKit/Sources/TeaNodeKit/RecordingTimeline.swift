@@ -13,7 +13,7 @@ extension Documents {
         query ($recordingId: String!, $segmentOffset: Int!, $pageSize: Int!) { ReadRecordingTranscriptTimeline(recordingId:
         $recordingId, segmentOffset: $segmentOffset, pageSize: $pageSize) { sourceGeneration segments { id recordingTranscriptRunId
         recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText
-        appliedTextCorrectionId hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker
+        appliedTextCorrectionId hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker
         isAccountOwner hasUnalignedSpeakerCorrection appliedSpeakerCorrectionId } transcriptRuns { id recordingId recordingMediaId versionNumber
         recordingProcessingState providerModelName processingErrorMessage createdAt } segmentCount hasMoreSegments } }
         """

@@ -32,6 +32,8 @@ export interface TranscriptSegment {
   effectiveSpeakerIdentityId: string
   effectiveSpeakerName: string
   hasUserConfirmedSpeaker: boolean
+  // isRecognizedSpeaker is a speaker the transcription named after a voice sample.
+  isRecognizedSpeaker?: boolean
   hasUnalignedSpeakerCorrection: boolean
   appliedSpeakerCorrectionId: string
   isAccountOwner?: boolean
@@ -146,7 +148,9 @@ export async function recordingOperation<T>(
 // Only the server's canonical projection can confirm a segment speaker.
 // Equal-time overlapping speakers and ambiguous reruns remain unconfirmed.
 export function confirmedSegmentName(segment: TranscriptSegment): string | null {
-  return segment.hasUserConfirmedSpeaker && segment.effectiveSpeakerIdentityId && segment.effectiveSpeakerName
+  return (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) &&
+    segment.effectiveSpeakerIdentityId &&
+    segment.effectiveSpeakerName
     ? segment.effectiveSpeakerName
     : null
 }

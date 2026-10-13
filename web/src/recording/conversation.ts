@@ -13,15 +13,17 @@ export interface ConversationGroup {
 const letterAt = (index: number) =>
   String.fromCharCode(65 + (index % 26)) + (index >= 26 ? String(Math.floor(index / 26)) : '')
 
-// Consecutive passages by one speaker become one bubble. A confirmed speaker is
-// told apart by identity; an unconfirmed one only by the generated label, which
+// Consecutive passages by one speaker become one bubble. A confirmed speaker,
+// or one recognized by a voice sample, is told apart by identity; an unconfirmed one only by the generated label, which
 // is shown as a letter in order of first appearance.
 export function groupConversation(segments: TranscriptSegment[]): ConversationGroup[] {
   const groups: ConversationGroup[] = []
   const letterIndexByLocalSpeaker = new Map<string, number>()
   for (const segment of segments) {
     const isConfirmed = Boolean(
-      segment.hasUserConfirmedSpeaker && segment.effectiveSpeakerIdentityId && segment.effectiveSpeakerName,
+      (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) &&
+      segment.effectiveSpeakerIdentityId &&
+      segment.effectiveSpeakerName,
     )
     const speakerKey = isConfirmed
       ? `identity:${segment.effectiveSpeakerIdentityId}`
@@ -48,7 +50,7 @@ export function groupConversation(segments: TranscriptSegment[]): ConversationGr
 export const distinctSpeakerCount = (segments: TranscriptSegment[]) =>
   new Set(
     segments.map((segment) =>
-      segment.hasUserConfirmedSpeaker && segment.effectiveSpeakerIdentityId
+      (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) && segment.effectiveSpeakerIdentityId
         ? `identity:${segment.effectiveSpeakerIdentityId}`
         : `local:${segment.localSpeakerId}`,
     ),
