@@ -41,7 +41,9 @@ automatic and retain the existing evidence-generation checks.
 - [x] Run full lint including naming and fix review findings.
 - [x] Publish draft PR #448 with architecture and flow diagrams after local review.
 - [ ] Integrate recording tool markers with the surface workstream.
-- [ ] Merge and deploy reviewed green changes through the coordinating session.
+- [x] Merge #448 after review and all required CI checks passed.
+- [ ] Deploy and verify #448 together with #438 direct recording-tool observers
+  before restoring production dreaming.
 
 ## Validation and limits
 
@@ -59,3 +61,10 @@ later phases, connected tools and mixed batches. Owned lookups and controlled fa
 application still complete. Full `make lint` passed, including the project naming checks.
 Review fixed a new ordinary-conversation query by limiting that provenance read to
 guarded dream contexts. These checks do not claim provider resistance or memory quality.
+
+
+The shared guard is merged in #448. The foundation recording tool still needs the
+trusted observer markers in #438 before direct recording reads are covered. Keep
+production learning paused until both reviewed increments are merged and verified
+running; deployment of the guard alone is insufficient. Official v0.144.2 was
+verified separately as the deployed baseline, with no production learning claim.
