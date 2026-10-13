@@ -328,3 +328,48 @@ final class LocalRecordingSharedManifestTests: XCTestCase {
         XCTAssertEqual(reread, merged)
     }
 }
+
+final class RecordingPieceBoundaryTests: XCTestCase {
+    func testPiecesOfOneCaptureFollowEachOtherWithoutAGapOrAnOverlap() {
+        // Three pieces of 16000 hertz audio: 20.5, 31.25 and 60 seconds long.
+        let frames: [Int64] = [328_000, 500_000, 960_000]
+        var startMS: Int64 = 12_000
+        var starts: [Int64] = []
+        for count in frames {
+            starts.append(startMS)
+            startMS = RecordingPieceBoundary.nextStartMS(previousStartMS: startMS, writtenFrames: count, sampleRate: 16000)
+        }
+        XCTAssertEqual(starts, [12_000, 32_500, 63_750])
+        XCTAssertEqual(startMS, 123_750)
+        XCTAssertEqual(RecordingPieceBoundary.gapMS(previousEndMS: starts[1], startMS: starts[1]), 0)
+    }
+
+    func testALengthIsRoundedToTheNearestMillisecondAndEmptyOrInvalidIsZero() {
+        XCTAssertEqual(RecordingPieceBoundary.lengthMS(writtenFrames: 24, sampleRate: 16000), 2)
+        XCTAssertEqual(RecordingPieceBoundary.lengthMS(writtenFrames: 23, sampleRate: 16000), 1)
+        XCTAssertEqual(RecordingPieceBoundary.lengthMS(writtenFrames: 0, sampleRate: 16000), 0)
+        XCTAssertEqual(RecordingPieceBoundary.lengthMS(writtenFrames: -5, sampleRate: 16000), 0)
+        XCTAssertEqual(RecordingPieceBoundary.lengthMS(writtenFrames: 100, sampleRate: 0), 0)
+    }
+
+    func testAPauseLeavesExactlyTheTimeBetweenTheLastPieceAndTheNextOne() throws {
+        var recording = LocalRecording(accountKey: "account", recordingTitle: "", recordingOrigin: "capture", recordingUserId: "owner")
+        let firstEndMS = RecordingPieceBoundary.nextStartMS(previousStartMS: 0, writtenFrames: 480_000, sampleRate: 16000)
+        recording.timelineDurationMS = firstEndMS
+        try recording.pause(at: firstEndMS, gapReason: "interrupted")
+        try recording.resume(at: 45_000)
+        XCTAssertEqual(recording.captureGaps[0].gapStartMS, 30_000)
+        XCTAssertEqual(recording.captureGaps[0].gapEndMS, 45_000)
+        XCTAssertEqual(RecordingPieceBoundary.gapMS(previousEndMS: firstEndMS, startMS: 45_000), 15_000)
+        XCTAssertEqual(RecordingPieceBoundary.gapMS(previousEndMS: 45_000, startMS: 44_990), 0)
+    }
+
+    func testACorrectedStartOfAPieceStillBeingRecordedIsTakenFromTheRecorderNotTheUploadersCopy() {
+        var stored = LocalRecording(accountKey: "account", recordingTitle: "", recordingOrigin: "capture", recordingUserId: "owner")
+        stored.localMedia = [LocalRecordingMedia(originalFilename: "recording.caf", originalContentType: "audio/x-caf", timelineStartMS: 30_000)]
+        var recorderCopy = stored
+        recorderCopy.localMedia[0].timelineStartMS = 30_040
+        stored.adoptCapture(from: recorderCopy)
+        XCTAssertEqual(stored.localMedia[0].timelineStartMS, 30_040)
+    }
+}

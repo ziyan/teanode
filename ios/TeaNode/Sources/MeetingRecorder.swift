@@ -13,7 +13,10 @@ final class MeetingRecorder: NSObject {
     private(set) var localRecording: LocalRecording?
     private(set) var elapsedMS: Int64 = 0
     var problemText: String?
-    private var audioRecorder: AVAudioRecorder?
+    /// The microphone, from the start (or resume) until the next pause or the stop. It writes every piece without stopping.
+    private var capture: RecordingEngineCapture?
+    private var currentMediaId: UUID?
+    private var configurationObserver: (any NSObjectProtocol)?
     private var journal: RecordingJournal?
     private var captureTask: Task<Void, Never>?
     private var interruptionObserver: (any NSObjectProtocol)?
@@ -23,8 +26,7 @@ final class MeetingRecorder: NSObject {
     private var timelineAtStartMS: Int64 = 0
     private var isChangingCapture = false
     private var pendingTransitions = RecordingCaptureTransitions()
-    private var recorderId: UUID?
-    /// The words heard while recording. It runs beside the recorder and never affects it.
+    /// The words heard while recording. It is fed by the capture and never affects it.
     let liveStream = RecordingLiveStream()
     private var cutPolicy = RecordingCutPolicy()
     private var levelTask: Task<Void, Never>?
@@ -96,7 +98,7 @@ final class MeetingRecorder: NSObject {
         stopLiveWords()
         do {
             updateElapsed()
-            try await finishSegment()
+            try await closeCapture()
             guard var recording = localRecording else { return }
             try recording.pause(at: max(elapsedMS, recording.timelineDurationMS), gapReason: isInterruption ? "interrupted" : "paused")
             localRecording = try await persist(recording)
@@ -148,7 +150,7 @@ final class MeetingRecorder: NSObject {
         stopLiveWords()
         do {
             updateElapsed()
-            do { try await finishSegment() } catch { problemText = error.localizedDescription }
+            do { try await closeCapture() } catch { problemText = error.localizedDescription }
             guard var recording = localRecording else { return }
             try recording.stop(at: max(elapsedMS, recording.timelineDurationMS))
             localRecording = try await persist(recording)
@@ -249,33 +251,45 @@ final class MeetingRecorder: NSObject {
             switch command {
             case .stop: await stop(localRecordingId: sessionId?.uuidString)
             case .pause(let isInterruption): await pause(isInterruption: isInterruption)
-            case .rollover(let recorderId, let wasSuccessful): await rollover(recorderId: recorderId, wasSuccessful: wasSuccessful)
+            case .rollover: break
             }
         }
     }
 
-    private func rollover(recorderId expectedRecorderId: UUID, wasSuccessful: Bool) async {
-        guard recorderId == expectedRecorderId, isCapturing else { return }
-        if isChangingCapture {
-            pendingTransitions.enqueue(.rollover(recorderId: expectedRecorderId, wasSuccessful: wasSuccessful))
-            return
-        }
-        if !wasSuccessful {
-            await pause(isInterruption: true)
-            return
-        }
+    /// Closes the piece being written and continues in the next, with the microphone running throughout: the audio session is not
+    /// asked for anything and no recorder is made, which is what failed while the phone was locked.
+    private func cutPiece() async {
+        guard isCapturing, !isChangingCapture, let capture, let previousId = currentMediaId, let journal else { return }
         isChangingCapture = true
         defer { finishChangingCapture() }
         do {
             updateElapsed()
-            try await finishSegment()
-            if pendingTransitions.shouldStartNextSegment {
-                try await startSegment()
-                kickUploads()
+            guard var recording = localRecording else { return }
+            let next = LocalRecordingMedia(originalFilename: "recording.caf", originalContentType: "audio/x-caf", timelineStartMS: elapsedMS)
+            recording.localMedia.append(next)
+            recording = try await persist(recording)
+            localRecording = recording
+            let nextURL = try await journal.originalURL(recordingId: recording.id, mediaId: next.id, accountKey: recording.accountKey)
+            let closedFrames = await capture.switchFile(to: nextURL)
+            currentMediaId = next.id
+            cutPolicy.startPiece(atMS: elapsedMS)
+            // The new piece begins exactly where the closed one ended, by the frames written to it.
+            if var corrected = localRecording,
+                let previousIndex = corrected.localMedia.firstIndex(where: { $0.id == previousId }),
+                let nextIndex = corrected.localMedia.firstIndex(where: { $0.id == next.id })
+            {
+                corrected.localMedia[nextIndex].timelineStartMS = RecordingPieceBoundary.nextStartMS(
+                    previousStartMS: corrected.localMedia[previousIndex].timelineStartMS, writtenFrames: closedFrames,
+                    sampleRate: RecordingEngineCapture.fileSampleRate)
+                localRecording = corrected
             }
+            try await finishSegment()
+            kickUploads()
         } catch { await fail(error) }
     }
 
+    /// Starts the microphone, writing the first piece of this stretch of the recording. The audio session is activated here,
+    /// once, and not again until the next pause.
     private func startSegment() async throws {
         guard var recording = localRecording, let journal else { throw TeaNodeError.unreadableAnswer }
         guard let retained = try KeychainAccountStore().load(accountKey: recording.accountKey),
@@ -292,38 +306,40 @@ final class MeetingRecorder: NSObject {
         localRecording = recording
         let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
         guard pendingTransitions.shouldStartNextSegment else { return }
-        let recorder = try AVAudioRecorder(
-            url: original,
-            settings: [
-                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
-            ])
-        recorder.delegate = self
-        recorder.isMeteringEnabled = true
-        guard recorder.prepareToRecord() else {
-            throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
-        }
-        try FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: original.path)
-        audioRecorder = recorder
-        recorderId = UUID()
-        // Pieces end where the cut policy says (at 60 seconds at the latest); the recorder's own end is only a backstop.
-        guard recorder.record(forDuration: 600) else {
-            throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
-        }
+        let capture = RecordingEngineCapture(liveSender: liveStream.sender)
+        try capture.start(writingTo: original)
+        self.capture = capture
+        currentMediaId = media.id
+        observeConfigurationChanges(of: capture.engine)
     }
 
+    /// Stops the microphone, closes the file being written and records the pieces.
+    private func closeCapture() async throws {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
+        if let capture {
+            _ = await capture.stop()
+            self.capture = nil
+        }
+        currentMediaId = nil
+        try await finishSegment()
+    }
+
+    /// Records the pieces that are closed: their length, size and digest. The piece being written is left alone.
     private func finishSegment() async throws {
-        audioRecorder?.delegate = nil
-        audioRecorder?.stop()
-        audioRecorder = nil
-        recorderId = nil
         guard var recording = localRecording, let journal else { return }
-        let pendingMediaIds = recording.localMedia.filter { $0.originalSha256 == nil }.map(\.id)
+        let pendingMediaIds = recording.localMedia.filter { $0.originalSha256 == nil && $0.id != currentMediaId }.map(\.id)
         for mediaId in pendingMediaIds {
             guard let mediaIndex = recording.localMedia.firstIndex(where: { $0.id == mediaId }) else { continue }
             let media = recording.localMedia[mediaIndex]
             let original = try await journal.originalURL(recordingId: recording.id, mediaId: media.id, accountKey: recording.accountKey)
+            // A piece the app was ended in the middle of is still beside its place, under the name it was written with.
+            let unfinished = original.appendingPathExtension("caf")
+            if !FileManager.default.fileExists(atPath: original.path), FileManager.default.fileExists(atPath: unfinished.path) {
+                try FileManager.default.moveItem(at: unfinished, to: original)
+            }
             guard FileManager.default.fileExists(atPath: original.path) else {
                 recording.localMedia.remove(at: mediaIndex)
                 continue
@@ -352,9 +368,8 @@ final class MeetingRecorder: NSObject {
 
     /// How loud the microphone hears the room now, from 0 to 1; 0 while nothing is being recorded.
     func inputLevel() -> Double {
-        guard isCapturing, let audioRecorder else { return 0 }
-        audioRecorder.updateMeters()
-        return RecordingInputLevel.normalized(decibels: audioRecorder.averagePower(forChannel: 0))
+        guard isCapturing, let capture else { return 0 }
+        return RecordingInputLevel.normalized(decibels: capture.decibels)
     }
 
     private func updateElapsed() {
@@ -389,18 +404,57 @@ final class MeetingRecorder: NSObject {
         }
     }
 
+    /// An interruption (a call, an alarm) pauses the recording, and the end of one that says the audio may go on resumes it, with
+    /// the time in between recorded as a gap. So does a reset of the media services.
     private func observeInterruptions() {
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         if let mediaResetObserver { NotificationCenter.default.removeObserver(mediaResetObserver) }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) {
             [weak self] notification in
-            let isBeginning = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
-            if isBeginning { Task { @MainActor in await self?.pause(isInterruption: true) } }
+            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = AVAudioSession.InterruptionOptions(rawValue: notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+            if type == AVAudioSession.InterruptionType.began.rawValue {
+                Task { @MainActor in await self?.pause(isInterruption: true) }
+            } else if type == AVAudioSession.InterruptionType.ended.rawValue, options.contains(.shouldResume) {
+                Task { @MainActor in await self?.resumeWhenPossible() }
+            }
         }
         mediaResetObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in await self?.pause(isInterruption: true) }
+            Task { @MainActor in
+                await self?.pause(isInterruption: true)
+                await self?.resumeWhenPossible()
+            }
+        }
+    }
+
+    /// The engine stops itself when the route changes (headphones, AirPods, a car): the capture is closed and started again, and
+    /// the moment between is a gap.
+    private func observeConfigurationChanges(of engine: AVAudioEngine) {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isCapturing else { return }
+                await self.pause(isInterruption: true)
+                await self.resumeWhenPossible()
+            }
+        }
+    }
+
+    /// Resumes a recording that was interrupted, once the pause that came with the interruption has finished. A recording the
+    /// person paused is left paused.
+    private func resumeWhenPossible() async {
+        for _ in 0..<20 {
+            if isCapturing { return }
+            if localRecording?.recordingCaptureState == "interrupted", !isChangingCapture {
+                await resume()
+                return
+            }
+            guard localRecording != nil else { return }
+            try? await Task.sleep(for: .milliseconds(500))
         }
     }
 
@@ -499,9 +553,14 @@ final class MeetingRecorder: NSObject {
     }
 
     private func watchLevel() {
-        guard isCapturing, let audioRecorder else { return }
-        audioRecorder.updateMeters()
-        cutPolicy.recordLevel(decibels: audioRecorder.averagePower(forChannel: 0), atMS: timelineNowMS())
+        guard isCapturing, let capture else { return }
+        // The files could not be written (storage is full, say): the recording is paused where it is and says so.
+        if let message = capture.takeFailureMessage() {
+            problemText = message
+            Task { await pause(isInterruption: true) }
+            return
+        }
+        cutPolicy.recordLevel(decibels: capture.decibels, atMS: timelineNowMS())
         cutIfDue()
     }
 
@@ -511,22 +570,23 @@ final class MeetingRecorder: NSObject {
     }
 
     private func cutIfDue() {
-        guard isCapturing, !isChangingCapture, !isCutting, let recorderId,
+        guard isCapturing, !isChangingCapture, !isCutting,
             cutPolicy.cutReason(atMS: timelineNowMS(), isStreamConnected: liveStream.isConnected) != nil
         else { return }
         isCutting = true
         Task {
-            await rollover(recorderId: recorderId, wasSuccessful: true)
+            await cutPiece()
             isCutting = false
         }
     }
 
     private func fail(_ error: Error) async {
         stopLiveWords()
-        audioRecorder?.delegate = nil
-        audioRecorder?.stop()
-        audioRecorder = nil
-        recorderId = nil
+        if let capture {
+            _ = await capture.stop()
+            self.capture = nil
+        }
+        currentMediaId = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         problemText = error.localizedDescription
         if var recording = localRecording, recording.recordingCaptureState == "active" {
@@ -534,14 +594,5 @@ final class MeetingRecorder: NSObject {
             localRecording = (try? await persist(recording)) ?? recording
         }
         await updateActivity()
-    }
-}
-
-extension MeetingRecorder: AVAudioRecorderDelegate {
-    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        Task { @MainActor [weak self] in
-            guard let self, self.audioRecorder === recorder, let recorderId = self.recorderId else { return }
-            await self.rollover(recorderId: recorderId, wasSuccessful: flag)
-        }
     }
 }

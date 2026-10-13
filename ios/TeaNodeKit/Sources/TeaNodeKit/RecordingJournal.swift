@@ -101,6 +101,7 @@ extension LocalRecording {
         let uploadedPieces = Dictionary(localMedia.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         localMedia = capture.localMedia.map { piece in
             guard var merged = uploadedPieces[piece.id] else { return piece }
+            merged.timelineStartMS = piece.timelineStartMS
             merged.mediaDurationMS = piece.mediaDurationMS
             merged.originalSizeBytes = piece.originalSizeBytes
             merged.originalSha256 = piece.originalSha256
@@ -136,7 +137,9 @@ public struct LocalRecordingMedia: Codable, Hashable, Sendable, Identifiable {
     public var mediaManifest: RecordingMedia?
     public let originalFilename: String
     public let originalContentType: String
-    public let timelineStartMS: Int64
+    /// Where the piece begins on the recording's timeline. A piece still being recorded may have this corrected when the piece
+    /// before it is closed and its exact length is known; once closed, it does not change.
+    public var timelineStartMS: Int64
     public var mediaDurationMS: Int64
     public var originalSizeBytes: Int64
     public var originalSha256: String?
