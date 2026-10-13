@@ -32949,6 +32949,22 @@
         }
       }
     },
+    "The answer from the transcription service was lost, so this recording was not transcribed. Transcribing it again is a new paid request.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしサービスからの応答が失われたため、この録音は文字起こしされていません。もう一度文字起こしすると、新たな有料リクエストになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转写服务的响应丢失了，因此这段录音没有转写。重新转写会是一次新的付费请求。"
+          }
+        }
+      }
+    },
     "This Month": {
       "localizations": {
         "ja": {

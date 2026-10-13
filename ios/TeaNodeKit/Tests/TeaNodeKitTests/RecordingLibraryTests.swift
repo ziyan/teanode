@@ -108,6 +108,13 @@ final class RecordingLibraryTests: XCTestCase {
         XCTAssertEqual(status(["failed", "transcribing"]), .transcribing)
         XCTAssertEqual(status(["failed", "complete"]), .ready)
         XCTAssertEqual(status(["failed"]), .failed)
+        // Transcribed again after a lost answer: the summary says it is done,
+        // whatever an earlier version left in the progress.
+        XCTAssertEqual(
+            RecordingLibrary.status(
+                recording: serverRecording("recording-a", clientRecordingId: "a", summary: "They agreed."), localRecording: nil,
+                progress: RecordingServerProgress(isUploadComplete: true, uploadedPercent: 100, transcriptProcessingStates: ["uncertain"])),
+            .ready)
         XCTAssertEqual(status(["canceled"]), .failed)
     }
 
