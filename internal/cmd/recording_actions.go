@@ -14,6 +14,8 @@ func recordingActionCommands() []*cli.Command {
 		operationName, commandUsage string
 		flagNames                   []string
 	}{
+		{"prepare-playback", "prepare compatible audio in owned storage without a provider charge", []string{"media-id"}},
+		{"read-playback", "inspect a ready compatible audio preview without creating one", []string{"media-id"}},
 		{"availability", "show recording processing availability without making a provider call", nil},
 		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
 		{"passage-offset", "locate an exact historical citation without loading the whole transcript", []string{"transcript-run-id", "passage-start-ms", "passage-end-ms"}},

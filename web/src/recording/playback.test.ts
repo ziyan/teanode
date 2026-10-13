@@ -60,3 +60,50 @@ it('refuses unavailable or invalid passages rather than selecting a different or
   playback.register('owned-original', null)
   await expect(playback.play('owned-original', 1000, 2000, 0)).rejects.toThrow()
 })
+
+it('uses a prepared preview for a user-selected passage with the same absolute offset and end boundary', async () => {
+  const playback = new RecordingPassagePlayback()
+  const original = mediaPlayer()
+  const preview = mediaPlayer()
+  const prepare = vi.fn(async () => preview)
+  playback.register('original', original)
+  playback.registerFallback('original', { prepare, isOriginalUnsupported: () => true })
+  await playback.play('original', 6200, 8800, 4000)
+  expect(prepare).toHaveBeenCalledOnce()
+  expect(original.play).not.toHaveBeenCalled()
+  expect(preview.currentTime).toBe(2.2)
+  expect(preview.play).toHaveBeenCalledOnce()
+  preview.currentTime = 5
+  preview.dispatchEvent(new Event('timeupdate'))
+  expect(preview.currentTime).toBe(4.8)
+  expect(preview.pause).toHaveBeenCalled()
+})
+it('does not prepare for a supported original or a network playback failure', async () => {
+  const playback = new RecordingPassagePlayback()
+  const original = mediaPlayer()
+  const prepare = vi.fn(async () => mediaPlayer())
+  playback.register('original', original)
+  playback.registerFallback('original', { prepare, isOriginalUnsupported: () => false })
+  await playback.play('original', 1000, 2000, 0)
+  expect(prepare).not.toHaveBeenCalled()
+  vi.mocked(original.play).mockRejectedValueOnce(new Error('Network failed'))
+  await expect(playback.play('original', 1000, 2000, 0)).rejects.toThrow('Network failed')
+  expect(prepare).not.toHaveBeenCalled()
+})
+it('does not play a prepared preview after another selection or navigation supersedes the user intent', async () => {
+  const playback = new RecordingPassagePlayback()
+  const original = mediaPlayer()
+  const preview = mediaPlayer()
+  let resolvePreparation: (player: HTMLMediaElement) => void = () => {}
+  const prepare = () =>
+    new Promise<HTMLMediaElement>((resolve) => {
+      resolvePreparation = resolve
+    })
+  playback.register('original', original)
+  playback.registerFallback('original', { prepare, isOriginalUnsupported: () => true })
+  const oldIntent = playback.playCompatible('original')
+  playback.stop()
+  resolvePreparation(preview)
+  await oldIntent
+  expect(preview.play).not.toHaveBeenCalled()
+})

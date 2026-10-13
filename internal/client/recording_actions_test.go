@@ -14,6 +14,9 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		isAllowed     bool
 		operationName string
 	}{
+		{RecordingActionArguments{Operation: "prepare-playback"}, false, ""},
+		{RecordingActionArguments{Operation: "prepare-playback", RecordingMediaID: "fixture-media"}, true, "PrepareRecordingPlayback"},
+		{RecordingActionArguments{Operation: "read-playback", RecordingMediaID: "fixture-media"}, true, "ReadRecordingPlayback"},
 		{RecordingActionArguments{Operation: "resume-learning", RecordingID: "fixture-recording"}, false, ""},
 		{RecordingActionArguments{Operation: "resume-learning", RecordingID: "fixture-recording", ExpectedSourceGeneration: &generation}, true, "ResumeRecordingLearning"},
 		{RecordingActionArguments{Operation: "passage-offset", RecordingTranscriptRunID: "fixture-run", PassageStartMS: &passageStartMS, PassageEndMS: &passageEndMS}, true, "ReadRecordingTranscriptPassageOffset"},

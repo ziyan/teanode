@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ func NewRecordingCommand() *cli.Command {
 		{Name: "read", Usage: "inspect metadata, media and upload receipts", ArgsUsage: "<recording-id>", Flags: []cli.Flag{JSONFlag()}, Action: runRecordingRead},
 		{Name: "limits", Usage: "show recording storage and upload bounds", Flags: []cli.Flag{JSONFlag()}, Action: runRecordingLimits},
 		{Name: "import", Usage: "upload an unchanged audio/video file; rerun to resume, your file is always retained", ArgsUsage: "<file>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "recording-id", Usage: "resume this existing recording (requires --media-id)"}, &cli.StringFlag{Name: "media-id", Usage: "exact existing original to resume"}, &cli.StringFlag{Name: "title"}, &cli.StringFlag{Name: "content-type", Usage: "audio or video MIME type if the extension is unknown"}, &cli.StringFlag{Name: "client-recording-id", Usage: "stable import identity; default is the whole-file digest"}}, Action: runRecordingImport},
-		{Name: "download", Usage: "save and verify a recording original", ArgsUsage: "<recording-id> <media-id> <destination>", Action: runRecordingDownload},
+		{Name: "download", Usage: "save and verify a recording original, or explicitly prepare compatible audio with --preview", ArgsUsage: "<recording-id> <media-id> <destination>", Flags: []cli.Flag{&cli.BoolFlag{Name: "preview", Usage: "download compatible audio; prepare locally if absent (requires write access)"}}, Action: runRecordingDownload},
 		{Name: "delete", Usage: "delete a recording, its originals and dependent derived media", ArgsUsage: "<recording-id>", Flags: []cli.Flag{&cli.BoolFlag{Name: "force", Usage: "delete without asking first"}}, Action: runRecordingDelete},
 	}, recordingActionCommands()...)}
 }
@@ -134,19 +135,46 @@ func runRecordingDownload(ctx context.Context, command *cli.Command) error {
 	if media == nil {
 		return fmt.Errorf("recording has no such original")
 	}
-	if err := downloadRecordingToFile(ctx, connection, media, destinationPath); err != nil {
+	if command.Bool("preview") {
+		playback, err := client.ReadRecordingPlayback(ctx, connection, mediaId)
+		if err != nil {
+			return describeError(command, err)
+		}
+		if playback == nil {
+			playback, err = client.PrepareRecordingPlayback(ctx, connection, mediaId)
+			if err != nil {
+				return describeError(command, err)
+			}
+		}
+		if playback.TimelineStartMS != media.TimelineStartMS {
+			return fmt.Errorf("compatible audio timeline does not match the original")
+		}
+		if err := downloadRecordingPlaybackToFile(ctx, connection, playback, destinationPath); err != nil {
+			return describeError(command, err)
+		}
+	} else if err := downloadRecordingToFile(ctx, connection, media, destinationPath); err != nil {
 		return describeError(command, err)
 	}
 	fmt.Println("saved and verified " + destinationPath)
 	return nil
 }
 func downloadRecordingToFile(ctx context.Context, connection *client.Client, media *models.RecordingMedia, destinationPath string) error {
+	return downloadRecordingFile(destinationPath, func(destination io.Writer) error {
+		return connection.DownloadRecordingMedia(ctx, media, destination)
+	})
+}
+func downloadRecordingPlaybackToFile(ctx context.Context, connection *client.Client, playback *client.RecordingPlayback, destinationPath string) error {
+	return downloadRecordingFile(destinationPath, func(destination io.Writer) error {
+		return connection.DownloadRecordingPlayback(ctx, playback, destination)
+	})
+}
+func downloadRecordingFile(destinationPath string, download func(io.Writer) error) error {
 	destination, err := os.CreateTemp(filepath.Dir(destinationPath), ".recording-download-*")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = destination.Close(); _ = os.Remove(destination.Name()) }()
-	if err := connection.DownloadRecordingMedia(ctx, media, destination); err != nil {
+	if err := download(destination); err != nil {
 		return err
 	}
 	if err := destination.Sync(); err != nil {
