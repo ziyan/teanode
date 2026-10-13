@@ -6421,18 +6421,18 @@
         }
       }
     },
-    "Ask your agent or call it.": {
+    "Ask your agent, call it, or start a recording.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントに聞くか、電話します。"
+            "value": "エージェントに質問したり、通話したり、録音を始めたりできます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "问你的助手，或呼叫它。"
+            "value": "向你的助手提问、与它通话，或开始录音。"
           }
         }
       }
