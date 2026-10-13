@@ -12,6 +12,8 @@ struct ConnectView: View {
     @Environment(AppModel.self) private var app
     @State private var isScanning = false
     @State private var isConnecting = false
+    /// The server picked in the server sheet, signed in to once the sheet has closed.
+    @State private var chosenServer: ServerAddress?
     @State private var pending: PendingConnection?
     @State private var problemText: String?
     @State private var isAskingForServer = false
@@ -113,12 +115,23 @@ struct ConnectView: View {
                     }
                 }
             }
-            .sheet(isPresented: $isAskingForServer) {
-                ServerSheet(serverText: $serverText) { server in
-                    isAskingForServer = false
-                    Task { await signInWithPassword(to: server) }
-                }
-            }
+            // The server's sign-in page opens once this sheet has gone: opened
+            // while it was still closing, the page loaded but was never shown,
+            // and the app waited on it, saying Connecting.
+            .sheet(
+                isPresented: $isAskingForServer,
+                onDismiss: {
+                    if let server = chosenServer {
+                        chosenServer = nil
+                        Task { await signInWithPassword(to: server) }
+                    }
+                },
+                content: {
+                    ServerSheet(serverText: $serverText) { server in
+                        chosenServer = server
+                        isAskingForServer = false
+                    }
+                })
             .sensoryFeedback(.warning, trigger: problemText) { _, new in new != nil }
             #if DEBUG
                 .task {
