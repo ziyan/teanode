@@ -36,7 +36,7 @@ function successfulProfile() {
     CreateDeviceSetupProfile: {
       downloadLink: 'https://setup.example.com/profile/fixture-link',
       qrCodeSvg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
-      expiresAt: '2031-01-01T12:00:00Z',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
       mailboxAppPassword: null,
       syncCredential: { id: 'fixture-sync-credential', credentialName: 'Fixture device' },
     },

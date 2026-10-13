@@ -41,7 +41,7 @@ it('retains the one-time setup receipt while refreshing credentials after profil
         CreateDeviceSetupProfile: {
           downloadLink: '/synthetic-receipt',
           qrCodeSvg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
-          expiresAt: '2030-01-01T00:00:00Z',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           mailboxAppPassword: null,
           syncCredential: { id: 'fixture-sync', credentialName: 'Fixture device' },
         },
