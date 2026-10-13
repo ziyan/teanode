@@ -16,6 +16,9 @@ if let appearanceSuffix = appearanceSuffixes.first(where: { recordingScreenName.
 }
 let expectedMarkersByScreen: [String: [String]] = [
     "recordings": ["recordings", "ontheserver"],
+    "recording-compatible-playback": ["compatibleaudiopreview", "originalunchanged"],
+    "recording-original-playback": ["useaudiopreview", "sharefulloriginal"],
+    "recording-original-preview": ["compatibleaudiopreview", "originalunchanged", "useoriginal", "sharefullaudiopreview"],
     "recording-detail": ["originalmedia"],
     "recording-transcript": ["transcript"],
     "recording-version": ["processing"],

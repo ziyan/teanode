@@ -20,6 +20,30 @@
         static let recordingMediaFixture =
             #"{"id":"media-a","recordingId":"recording-a","clientMediaId":"original-a","originalFilename":"meeting.caf","originalContentType":"audio/x-caf","originalSizeBytes":19200000,"originalSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","timelineStartMS":0,"mediaDurationMS":600000,"partCount":3,"recordingUploadState":"complete","verifiedAt":"2030-01-02T03:04:05Z"}"#
 
+        static func recordingPreviewURL() throws -> URL {
+            let sampleRateHz = 16000
+            let sampleByteCount = sampleRateHz * 2
+            var waveBytes = Data()
+            func appendWord(_ wordNumber: UInt32) {
+                var littleEndianNumber = wordNumber.littleEndian
+                withUnsafeBytes(of: &littleEndianNumber) { waveBytes.append(contentsOf: $0) }
+            }
+            waveBytes.append(Data("RIFF".utf8))
+            appendWord(UInt32(sampleByteCount + 36))
+            waveBytes.append(Data("WAVEfmt ".utf8))
+            appendWord(16)
+            waveBytes.append(contentsOf: [1, 0, 1, 0])
+            appendWord(UInt32(sampleRateHz))
+            appendWord(UInt32(sampleRateHz * 2))
+            waveBytes.append(contentsOf: [2, 0, 16, 0])
+            waveBytes.append(Data("data".utf8))
+            appendWord(UInt32(sampleByteCount))
+            waveBytes.append(Data(repeating: 0, count: sampleByteCount))
+            let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
+            try waveBytes.write(to: destination, options: .atomic)
+            return destination
+        }
+
         static func recordingAnswer(query: String) -> String? {
             if query.contains("GetSettings"), query.contains("agent {") {
                 return "{\"data\":{\"GetSettings\":{\"agent\":\(recordingAgentSettingsFixture)}}}"
@@ -92,6 +116,9 @@
                         connection: connection,
                         attachment: AgentAttachment(id: "attachment-a", name: "meeting.wav", contentType: "audio/wav", size: 120000))
                 case "recording-learning-stopped": RecordingDetailScreen(connection: connection, recording: recording, shouldFocusLearning: true)
+                case "recording-compatible-playback", "recording-original-playback", "recording-original-preview":
+                    RecordingPlaybackScreen(
+                        connection: connection, media: DemoServer.recordingObject(DemoServer.recordingMediaFixture, as: RecordingMedia.self))
                 case "recording-detail": RecordingDetailScreen(connection: connection, recording: recording)
                 case "recording-transcript": RecordingTranscriptScreen(connection: connection, recording: recording)
                 case "recording-version":
