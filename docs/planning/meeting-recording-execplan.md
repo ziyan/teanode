@@ -564,12 +564,14 @@ sections match the paused baseline. Transcription remains enabled with the exist
 diarization/reference model and unchanged budgets. A fresh database archive passed
 full parsing before replacement, and previous backups and rollback images remain.
 
-Both #448 and #438 are deployed together. Production dreaming remains disabled
-while isolated source-specific acceptance is prepared. No queued or running dream
-job was observed; five temporarily held passages remain held. Those markers are
-not successful digestion or useful-memory acceptance. Hidden secret ciphertext
-changed during configuration rewriting; plaintext preservation is being verified
-privately before asserting complete stored configuration equality.
+Both #448 and #438 are deployed together. The coordinator restored only the original dreaming flag after verifying the
+combined guard and configuration preservation. Five temporarily held passages
+remain held. Those markers are
+not successful digestion or useful-memory acceptance. Private comparison opened both configuration snapshots through the existing
+configuration loader. All decrypted settings and secrets matched except one
+signed-in provider refresh token; the actual persistence log confirmed its
+rotation. The master secret is unchanged. Other ciphertext differences are
+resealing, not changed plaintext credentials.
 
 Authenticated playback verified retained original bytes. Naming the synthetic
 recording's merged label automatically produced three screened references.
@@ -585,8 +587,10 @@ provider returned four segments instead of five, merging adjacent passages and
 changing an end boundary. Two passages retained aligned confirmation; two were
 explicitly flagged as unaligned instead of receiving false confirmation. This
 establishes preserved corrections and visible uncertainty, not perfect automatic
-speaker projection. Reference curation and memory uncertainty need integrated
-inspection of this production result.
+speaker projection. Integrated inspection found no active reference from the new uncertain
+intervals. Active references still cite original confirmed passages, and
+knowledge projection explicitly represents the new passages as uncertain.
+That source projection is not actual learned-memory quality acceptance.
 
 The native capture/library increment #435 and compatible playback backend #451
 are merged after code review, findings fixes and required CI. They are newer than
@@ -599,9 +603,14 @@ iOS #452 preview companions remain under final parity review, exact-head CI and
 visual validation. Supported video must keep its visual player by default, with
 explicit preview preparation/export and a return to the supported original.
 
-Remaining acceptance requires automatic source ingestion and assessed digestion
-using an isolated synthetic account, actual source-linked facts, correction
-reconciliation and cleanup. Do not fabricate facts, trigger a broad account dream,
+A fresh isolated synthetic account has fixed timezone, limited budgets and no
+mailbox or collection grants. Its real upload and transcription completed and
+automatically published four pending knowledge passages. Its ingestion is queued
+behind unrelated running ingestion jobs; those jobs were not interrupted and
+global concurrency and budgets were not increased. Separate-account recording
+access denial passed. Remaining acceptance requires completed automatic ingestion,
+assessed digestion, actual source-linked facts, correction reconciliation and
+cleanup. Do not fabricate facts, trigger a broad account dream,
 change global models or infer invoice cost from estimates. Learning requires no
 product approval gate; the private validation harness uses a coordinator execution
 checkpoint to prevent accidental production calls before deployment verification.
