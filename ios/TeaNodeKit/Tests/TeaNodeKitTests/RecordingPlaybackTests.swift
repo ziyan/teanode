@@ -3,6 +3,10 @@ import XCTest
 
 @testable import TeaNodeKit
 
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
+
 final class RecordingPlaybackTests: XCTestCase {
     private var media: RecordingMedia {
         RecordingMedia(
@@ -84,6 +88,46 @@ final class RecordingPlaybackTests: XCTestCase {
         XCTAssertNotNil(fallbackSelection)
         XCTAssertEqual(fake.sent.count, 1)
         XCTAssertTrue(String(data: fake.sent[0].httpBody ?? Data(), encoding: .utf8)?.contains("PrepareRecordingPlayback") == true)
+    }
+
+    func testPreparationAllowsBoundedConversionWithoutChangingReadTimeout() async throws {
+        let preparedJSON = playbackJSON
+        let fake = FakeServer { request in
+            let requestBody = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+            if requestBody.contains("PrepareRecordingPlayback") {
+                XCTAssertEqual(request.timeoutInterval, 11 * 60)
+                return (200, "{\"data\":{\"PrepareRecordingPlayback\":\(preparedJSON)}}")
+            }
+            XCTAssertEqual(request.timeoutInterval, URLRequest(url: request.url!).timeoutInterval)
+            return (200, "{\"data\":{\"ReadRecordingPlayback\":\(preparedJSON)}}")
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "node.example.com"), clientId: "test-client", accessToken: "test-token", refreshToken: "",
+            expiresAt: .distantFuture, username: "test-owner")
+        let connection = Connection(account: account, transport: fake)
+        _ = try await connection.compatibleRecordingPlayback(for: media, isOriginalPlayable: false)
+        _ = try await connection.recordingPlayback(for: media)
+        XCTAssertEqual(fake.sent.count, 2)
+    }
+
+    func testAuthenticatedPreparationRetryRetainsBoundedTimeout() async throws {
+        let preparedJSON = playbackJSON
+        let fake = FakeServer { request in
+            XCTAssertEqual(request.timeoutInterval, 11 * 60)
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer original-token" { return (401, "") }
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer renewed-token")
+            return (200, "{\"data\":{\"PrepareRecordingPlayback\":\(preparedJSON)}}")
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "node.example.com"), clientId: "test-client", accessToken: "original-token", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(10 * 24 * 3600), username: "test-owner")
+        var renewedAccount = account
+        renewedAccount.accessToken = "renewed-token"
+        renewedAccount.expiresAt = Date().addingTimeInterval(30 * 24 * 3600)
+        let connection = Connection(account: account, transport: fake, store: MemoryAccountStore([renewedAccount]))
+        _ = try await connection.prepareRecordingPlayback(for: media)
+        XCTAssertEqual(fake.sent.count, 2)
+        XCTAssertEqual(fake.sent[0].httpBody, fake.sent[1].httpBody)
     }
 
 }

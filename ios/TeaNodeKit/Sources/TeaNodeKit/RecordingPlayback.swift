@@ -58,8 +58,9 @@ extension Connection {
     public func prepareRecordingPlayback(for media: RecordingMedia) async throws -> RecordingPlayback {
         guard Self.isRecordingIdentifier(media.id) else { throw TeaNodeError.unreadableAnswer }
         struct Answer: Decodable, Sendable { let PrepareRecordingPlayback: RecordingPlayback }
+        // Local conversion is bounded at ten minutes; allow the response to arrive afterward.
         let playback = try await execute(
-            Documents.prepareRecordingPlayback, variables: ["recordingMediaId": .string(media.id)], as: Answer.self
+            Documents.prepareRecordingPlayback, variables: ["recordingMediaId": .string(media.id)], requestTimeoutInterval: 11 * 60, as: Answer.self
         ).PrepareRecordingPlayback
         guard playback.confirmsMedia(media) else { throw TeaNodeError.unreadableAnswer }
         return playback

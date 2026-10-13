@@ -194,8 +194,11 @@ public actor Connection {
     }
 
     /// Runs a GraphQL document and decodes its data.
-    public func execute<Answer: Decodable & Sendable>(_ document: String, variables: [String: JSONValue] = [:], as answer: Answer.Type) async throws -> Answer {
+    public func execute<Answer: Decodable & Sendable>(
+        _ document: String, variables: [String: JSONValue] = [:], requestTimeoutInterval: TimeInterval? = nil, as answer: Answer.Type
+    ) async throws -> Answer {
         var request = URLRequest(url: account.server.endpoint("/api/v1/graphql"))
+        if let requestTimeoutInterval { request.timeoutInterval = requestTimeoutInterval }
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["query": JSONValue.string(document), "variables": .object(variables)])
