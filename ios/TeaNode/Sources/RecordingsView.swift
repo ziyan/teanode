@@ -144,6 +144,12 @@ final class RecordingsModel {
         let pendingIds = RecordingLibraryProgress.pendingLocalRecordingIds(localRecordings)
         await loadLocalRecordings()
         guard isCurrentOwner(ownerId) else { return }
+        // A recording the uploader finished is removed from the phone; the
+        // server's row takes its place, so the first page is read again.
+        if !pendingIds.isSubset(of: Set(localRecordings.map(\.id))) {
+            await refresh()
+            return
+        }
         for local in localRecordings where pendingIds.contains(local.id) {
             guard isCurrentOwner(ownerId) else { return }
             guard let recordingId = local.recordingId, !recordings.contains(where: { $0.id == recordingId }) else { continue }

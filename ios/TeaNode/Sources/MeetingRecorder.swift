@@ -18,6 +18,7 @@ final class MeetingRecorder: NSObject {
     private var captureTask: Task<Void, Never>?
     private var interruptionObserver: (any NSObjectProtocol)?
     private var mediaResetObserver: (any NSObjectProtocol)?
+    private var becameActiveObserver: (any NSObjectProtocol)?
     private var activityId: String?
     private var startedUptime: TimeInterval = 0
     private var timelineAtStartMS: Int64 = 0
@@ -369,6 +370,16 @@ final class MeetingRecorder: NSObject {
     }
 
     private func observeInterruptions() {
+        if let becameActiveObserver { NotificationCenter.default.removeObserver(becameActiveObserver) }
+        // A recording that has no lock screen controls yet, because it began
+        // before the app was active, gets them as soon as it is.
+        becameActiveObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.hasSession, self.activityId == nil, self.ensureRecordingActivity(canCreate: true) else { return }
+                await self.updateActivity()
+            }
+        }
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         if let mediaResetObserver { NotificationCenter.default.removeObserver(mediaResetObserver) }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) {
@@ -403,7 +414,12 @@ final class MeetingRecorder: NSObject {
             activityId = existing.id
             return true
         }
-        guard canCreate, ActivityAuthorizationInfo().areActivitiesEnabled, UIApplication.shared.applicationState == .active else { return false }
+        // A recording started from the app's icon or from Siri starts while
+        // the app is still coming to the front, which is not yet active:
+        // only the background is refused, and becoming active tries again.
+        guard canCreate, ActivityAuthorizationInfo().areActivitiesEnabled, UIApplication.shared.applicationState != .background else {
+            return false
+        }
         do {
             let activity = try Activity.request(
                 attributes: RecordingActivityAttributes(localRecordingId: localRecording.id.uuidString),

@@ -120,8 +120,10 @@ public enum RecordingLibrary {
         }
         let serverClientIds = Set(recordings.map(\.clientRecordingId))
         for local in localRecordings where !serverClientIds.contains(local.clientRecordingId) {
-            // A fully uploaded original with no server row is on a page not loaded yet, or deleted there.
-            guard !isFullyUploaded(local) else { continue }
+            // A recording deleted on the server is not shown again. One the
+            // phone uploaded keeps its row until the server's row is read, so
+            // a recording never vanishes between the upload and the refresh.
+            guard !local.isDeletedRemotely else { continue }
             rows.append(row(recording: nil, localRecording: local, progress: nil))
         }
         return rows.sorted { first, second in
