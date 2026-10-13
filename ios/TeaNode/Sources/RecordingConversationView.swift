@@ -352,7 +352,12 @@ struct RecordingBubbleView: View {
             header
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(bubble.segments) { segment in
+                    // The passage playing is marked behind it, outside its long-press menu: marked inside, each step
+                    // of the playback redrew the menu's passage and closed an open menu.
                     passage(segment)
+                        .background(
+                            segment.id == playingSegmentId ? Color.accentColor.opacity(0.22) : Color.clear,
+                            in: .rect(cornerRadius: 6, style: .continuous))
                 }
             }
             .padding(.horizontal, 14)
@@ -387,7 +392,6 @@ struct RecordingBubbleView: View {
                 }
         } else {
             Text(segment.displayedTranscriptText)
-                .fontWeight(segment.id == playingSegmentId ? .semibold : .regular)
                 .contentShape(.rect)
                 .onTapGesture { if actions.isPlaybackAvailable { actions.play(segment) } }
                 .accessibilityAddTraits(actions.isPlaybackAvailable ? .isButton : [])
@@ -478,7 +482,12 @@ struct RecordingConversationSection: View {
         let playingSegmentId = player.isPlaying
             ? model.segments.first { $0.segmentStartMS <= player.timelineMS && player.timelineMS < $0.segmentEndMS }?.id : nil
         ForEach(model.bubbles) { bubble in
-            RecordingBubbleView(bubble: bubble, playingSegmentId: playingSegmentId, actions: actions)
+            // Only the bubble holding the passage playing is told which it is, so the others stay as they are while
+            // the playback moves on.
+            RecordingBubbleView(
+                bubble: bubble,
+                playingSegmentId: bubble.segments.contains { $0.id == playingSegmentId } ? playingSegmentId : nil,
+                actions: actions)
         }
         // The row after the last bubble: when it comes into view the next page is read, and again each time a page
         // arrives while it is still in view.
