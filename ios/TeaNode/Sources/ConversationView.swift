@@ -681,9 +681,21 @@ struct MessageActionsView: View {
 
     /// The quick reactions, then a button for any other emoji. The person's
     /// current one is marked, and shown at the end when it is not one of the
-    /// quick ones; choosing it again takes it away. The emoji are allowed to
-    /// narrow a little so all of them and the button fit a narrow phone.
+    /// quick ones; choosing it again takes it away. Each emoji keeps a full
+    /// 44 point target, so on a phone too narrow for all of them the bar
+    /// scrolls sideways instead of squeezing them.
     private var reactionBar: some View {
+        ViewThatFits(in: .horizontal) {
+            reactionButtons
+            ScrollView(.horizontal) {
+                reactionButtons
+            }
+            .scrollIndicators(.hidden)
+        }
+        .glassEffect(.regular, in: .capsule)
+    }
+
+    private var reactionButtons: some View {
         let current = line.reaction(of: "person")
         var choices = ConversationModel.quickReactions
         if let current, !choices.contains(current) { choices.append(current) }
@@ -694,8 +706,7 @@ struct MessageActionsView: View {
                 } label: {
                     Text(verbatim: emoji)
                         .font(.title2)
-                        .frame(minWidth: 28, idealWidth: 40, maxWidth: 40)
-                        .frame(height: 44)
+                        .frame(width: 44, height: 44)
                         .background(current == emoji ? Color.accentColor.opacity(0.3) : .clear, in: .circle)
                 }
                 .buttonStyle(.plain)
@@ -717,7 +728,6 @@ struct MessageActionsView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .glassEffect(.regular, in: .capsule)
     }
 
     /// What the bar becomes while the emoji keyboard is open: a line saying
