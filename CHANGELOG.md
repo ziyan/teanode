@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.148.0] - 2026-10-13
+
+### Added
+
+- Compose one device setup profile for selected Mail, Calendar, Reminders and Contacts with separate scoped credentials. (#447)
+
 ## [0.147.0] - 2026-10-13
 
 ### Added
