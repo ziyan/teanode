@@ -504,8 +504,33 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
+	if err := self.deleteRecordingRunConversations(recordingId); err != nil {
+		return err
+	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
+
+// deleteRecordingRunConversations deletes the run conversations of the model
+// calls that read the recording's transcript: each stores the prompt it was
+// given, and the prompt carries the transcript, which must not outlive the
+// recording. A run conversation names the recording as its subject. Cleanup
+// does this again, for a job that was still running when the recording was
+// deleted and wrote its conversation after.
+func (self *transaction) deleteRecordingRunConversations(recordingId string) error {
+	var conversationIds []string
+	if err := self.tx.Model(&agentConversationModel{}).
+		Where("kind = ? AND subject_id = ? AND job_kind IN ?", string(models.AgentConversationRun), recordingId, []string{string(models.AgentJobRecordingTerms), string(models.AgentJobRecordingSummary)}).
+		Pluck("id", &conversationIds).Error; err != nil {
+		return err
+	}
+	for _, conversationId := range conversationIds {
+		if err := self.DeleteAgentConversation(conversationId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (self *transaction) ListRecordingsForCleanup(limit int) ([]*models.Recording, error) {
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidArguments
@@ -541,6 +566,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 		return err
 	}
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
+		return err
+	}
+	if err := self.deleteRecordingRunConversations(recordingId); err != nil {
 		return err
 	}
 	var incompleteCount int64

@@ -12,6 +12,7 @@ export const RUN_KINDS = [
   'ingest',
   'recording',
   'recording_brief',
+  'recording_terms',
   'dream',
   'schedule',
   'extract',
