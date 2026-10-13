@@ -19,12 +19,38 @@ final class RecordingsModel {
     var isImporting = false
     var hasMoreRecordings = false
     var isLoadingPage = false
+    var searchText = ""
+    /// What the server found for the search, or nil while nothing is searched.
+    var searchResults: [Recording]?
+    var isSearching = false
 
     init(connection: Connection) { self.connection = connection }
 
-    /// The one list: the phone's recordings and the server's, merged by the identifier they share.
+    /// The one list: the phone's recordings and the server's, merged by the identifier they share. While searching it is
+    /// what the server found, which searches the transcripts too.
     var rows: [RecordingLibraryRow] {
-        RecordingLibrary.rows(recordings: recordings, localRecordings: localRecordings, serverProgress: serverProgress)
+        if let searchResults {
+            return RecordingLibrary.rows(recordings: searchResults, localRecordings: [], serverProgress: serverProgress)
+        }
+        return RecordingLibrary.rows(recordings: recordings, localRecordings: localRecordings, serverProgress: serverProgress)
+    }
+
+    /// Asks the server for the recordings whose title, summary or transcript contains the search.
+    func search() async {
+        let searched = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !searched.isEmpty else {
+            searchResults = nil
+            return
+        }
+        isSearching = true
+        defer { isSearching = false }
+        do {
+            let found = try await connection.recordings(searchText: searched)
+            guard searched == searchText.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            searchResults = found
+            problemText = nil
+        } catch is CancellationError {
+        } catch { problemText = error.localizedDescription }
     }
 
     var isStillChanging: Bool { rows.contains { $0.isStillChanging() } }
@@ -132,7 +158,7 @@ final class RecordingsModel {
     }
 
     func loadMore() async {
-        guard hasMoreRecordings, !isLoadingPage, let beforeRecordingId = recordings.last?.id else { return }
+        guard searchResults == nil, hasMoreRecordings, !isLoadingPage, let beforeRecordingId = recordings.last?.id else { return }
         isLoadingPage = true
         defer { isLoadingPage = false }
         do {
@@ -231,15 +257,11 @@ struct RecordingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                let rows = model.rows
-                if rows.isEmpty {
-                    RecordingLibraryPlaceholder(phase: model.phase)
-                    .frame(maxWidth: .infinity)
-                    .listRowBackground(Color.clear)
-                }
-                ForEach(rows) { row in
+                ForEach(shownRows) { row in
                     rowLink(row)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // The first is what a full swipe does, as in Mail:
+                        // delete, which still asks first.
+                        .swipeActions(edge: .trailing) {
                             if let recording = row.recording {
                                 Button(role: .destructive) {
                                     deletedRecording = recording
@@ -290,14 +312,14 @@ struct RecordingsScreen: View {
                                 }
                             }
                         }
+                        .onAppear {
+                            if row.id == shownRows.last?.id, model.hasMoreRecordings, !model.isLoadingPage {
+                                Task { await model.loadMore() }
+                            }
+                        }
                 }
-                if model.hasMoreRecordings {
-                    Button {
-                        Task { await model.loadMore() }
-                    } label: {
-                        Label("Load more recordings", systemImage: "chevron.down")
-                    }
-                    .disabled(model.isLoadingPage)
+                if model.isLoadingPage, !shownRows.isEmpty {
+                    ProgressView().frame(maxWidth: .infinity)
                 }
                 if model.hasUnverifiedLocalOwner {
                     Text(
@@ -306,7 +328,28 @@ struct RecordingsScreen: View {
                     .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            .listStyle(.plain)
             .navigationTitle("Recordings")
+            .searchable(text: $model.searchText, prompt: "Search")
+            .onSubmit(of: .search) { Task { await model.search() } }
+            .task(id: model.searchText) {
+                // Searches once typing pauses, and clears at once.
+                if !model.searchText.isEmpty {
+                    do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                }
+                await model.search()
+            }
+            .overlay {
+                if shownRows.isEmpty {
+                    if model.searchResults != nil {
+                        ContentUnavailableView.search(text: model.searchText)
+                    } else if model.isSearching {
+                        ProgressView()
+                    } else {
+                        RecordingLibraryPlaceholder(phase: model.phase)
+                    }
+                }
+            }
             .navigationDestination(item: $openedCitation) { citation in
                 RecordingCitationScreen(connection: model.connection, citation: citation)
             }
@@ -381,6 +424,8 @@ struct RecordingsScreen: View {
             .withoutSwipeBack()
         }
     }
+
+    private var shownRows: [RecordingLibraryRow] { model.rows }
 
     /// A recording opens whatever it is: a live one on the capture screen, one the server has on its page, and one only the
     /// phone has on its local original.
@@ -474,26 +519,77 @@ struct RecordingFloatingButton: View {
     }
 }
 
-/// RecordingRowView is one recording in the library: its name, a line of what was said, when it was made and where it
-/// stands.
+/// RecordingRowView is one recording in the library, laid out as a mail row
+/// is: a round mark, the name with when it was made on the right, how long
+/// it runs and where it stands, then a line of what was said.
 struct RecordingRowView: View {
     let row: RecordingLibraryRow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
-                .font(.headline)
-                .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
-                .lineLimit(2)
-            if !row.recordingSummaryFirstLine.isEmpty {
-                Text(row.recordingSummaryFirstLine).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+        let isLive = row.status == .recording
+        HStack(alignment: .top, spacing: 12) {
+            // The live mark sits in the margin, where Mail puts unread.
+            Circle()
+                .fill(isLive ? AnyShapeStyle(.red) : AnyShapeStyle(.clear))
+                .frame(width: 8, height: 8)
+                .padding(.top, 16)
+                .accessibilityHidden(true)
+            RecordingMark(origin: row.recording?.recordingOrigin ?? row.localRecording?.recordingOrigin ?? "capture", isLive: isLive)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(MailTime.short(row.recordedAt))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    Text(RecordingDuration.text(row.timelineDurationMS)).monospacedDigit()
+                    if row.status != .ready {
+                        RecordingStatusLabel(status: row.status)
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                if !row.recordingSummaryFirstLine.isEmpty {
+                    Text(row.recordingSummaryFirstLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
-            Text(verbatim: "\(row.recordedAt.formatted(date: .abbreviated, time: .shortened)) · \(RecordingDuration.text(row.timelineDurationMS))")
-                .font(.caption).foregroundStyle(.secondary)
-            RecordingStatusLabel(status: row.status)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .padding(.leading, -12)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// RecordingMark stands where a mail row has the sender's logo: what kind of
+/// recording it is, in the accent color, and red while it is being recorded.
+struct RecordingMark: View {
+    let origin: String
+    let isLive: Bool
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .symbolEffect(.pulse, isActive: isLive)
+            .frame(width: 40, height: 40)
+            .background(isLive ? AnyShapeStyle(.red) : AnyShapeStyle(.tint), in: .circle)
+            .accessibilityHidden(true)
+    }
+
+    private var symbolName: String {
+        switch origin {
+        case "videoImport": "video.fill"
+        case "audioImport": "waveform"
+        default: "mic.fill"
+        }
     }
 }
 
@@ -507,7 +603,7 @@ struct RecordingStatusLabel: View {
         } icon: {
             Image(systemName: symbolName).symbolEffect(.pulse, isActive: status == .recording)
         }
-        .font(.caption)
+        .font(.caption.weight(.medium))
         .foregroundStyle(needsAttention ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
     }
 
@@ -594,10 +690,10 @@ enum RecordingDuration {
     }
 
     #Preview("Library rows, light") {
-        List(RecordingLibraryRow.samples) { RecordingRowView(row: $0) }.preferredColorScheme(.light)
+        List(RecordingLibraryRow.samples) { RecordingRowView(row: $0) }.listStyle(.plain).preferredColorScheme(.light)
     }
     #Preview("Library rows, dark") {
-        List(RecordingLibraryRow.samples) { RecordingRowView(row: $0) }.preferredColorScheme(.dark)
+        List(RecordingLibraryRow.samples) { RecordingRowView(row: $0) }.listStyle(.plain).preferredColorScheme(.dark)
     }
     #Preview("Library loading, light") { RecordingLibraryPlaceholder(phase: .loading).preferredColorScheme(.light) }
     #Preview("Library loading, dark") { RecordingLibraryPlaceholder(phase: .loading).preferredColorScheme(.dark) }

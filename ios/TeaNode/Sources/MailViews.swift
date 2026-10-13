@@ -864,6 +864,11 @@ enum MailTime {
     /// A time today, a weekday this week, else a date.
     static func short(_ text: String) -> String {
         guard let date = ServerTime.date(text) else { return "" }
+        return short(date)
+    }
+
+    /// A time today, a weekday this week, else a date.
+    static func short(_ date: Date) -> String {
         let dates = Calendar.current
         if dates.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
         if dates.isDateInYesterday(date) { return String(localized: "Yesterday") }

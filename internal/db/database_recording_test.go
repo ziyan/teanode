@@ -138,3 +138,73 @@ func TestRecordingMigrationReversesAndReapplies(test *testing.T) {
 		}
 	})
 }
+
+func TestAnImportRetriedAfterItsLengthWasReadIsTheSameMedia(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "import-owner")
+	digest := sha256.Sum256([]byte("imported media"))
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		source, err := transaction.CreateRecording(&models.Recording{UserID: ownerId, ClientRecordingID: "import-stable", RecordingOrigin: models.RecordingOriginAudioImport})
+		if err != nil {
+			test.Fatal(err)
+		}
+		registration := models.RecordingMedia{RecordingID: source.ID, ClientMediaID: "import-one", OriginalFilename: "talk.m4a", OriginalContentType: "audio/mp4", OriginalSizeBytes: 64, OriginalSHA256: hex.EncodeToString(digest[:])}
+		media, err := transaction.CreateRecordingMedia(ownerId, &registration, 128, 1000)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if isSet, err := transaction.SetRecordingMediaDurationIfUnknown(ownerId, media.ID, 1500); err != nil || !isSet {
+			test.Fatal("the length read from the file was not stored", isSet, err)
+		}
+		retryRegistration := registration
+		retry, err := transaction.CreateRecordingMedia(ownerId, &retryRegistration, 128, 1000)
+		if err != nil || retry.ID != media.ID || retry.MediaDurationMS != 1500 {
+			test.Fatal("a retried import was refused after its length was read", err)
+		}
+		conflictingRegistration := registration
+		conflictingRegistration.MediaDurationMS = 900
+		if _, err := transaction.CreateRecordingMedia(ownerId, &conflictingRegistration, 128, 1000); !errors.Is(err, db.ErrAlreadyExists) {
+			test.Fatal("a registration naming another length was accepted", err)
+		}
+	})
+}
+
+func TestRecordingSearchMatchesTitleAndSummaryLiterally(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "search-owner")
+	otherId := dbtest.CreateUser(test, database, "search-other")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		titled, err := transaction.CreateRecording(&models.Recording{UserID: ownerId, ClientRecordingID: "search-titled", RecordingTitle: "Garden Budget Review", RecordingOrigin: models.RecordingOriginCapture})
+		if err != nil {
+			test.Fatal(err)
+		}
+		summarized, err := transaction.CreateRecording(&models.Recording{UserID: ownerId, ClientRecordingID: "search-summarized", RecordingOrigin: models.RecordingOriginCapture})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.StoreGeneratedRecordingSummary(ownerId, summarized.ID, "Weekly sync", "They agreed the budget is 100% spent."); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CreateRecording(&models.Recording{UserID: otherId, ClientRecordingID: "search-foreign", RecordingTitle: "Budget of another account", RecordingOrigin: models.RecordingOriginCapture}); err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.ListRecordings(ownerId, "", "budget", 10)
+		if err != nil || len(found) != 2 {
+			test.Fatal("the search did not find the title and the summary of this account only", len(found), err)
+		}
+		found, err = transaction.ListRecordings(ownerId, "", "100%", 10)
+		if err != nil || len(found) != 1 || found[0].ID != summarized.ID {
+			test.Fatal("a percent sign was read as a wildcard", len(found), err)
+		}
+		found, err = transaction.ListRecordings(ownerId, "", "gar_en", 10)
+		if err != nil || len(found) != 0 {
+			test.Fatal("an underscore was read as a wildcard", len(found), err)
+		}
+		found, err = transaction.ListRecordings(ownerId, "", "", 10)
+		if err != nil || len(found) != 2 || found[1].ID != titled.ID {
+			test.Fatal("an empty search did not list everything, newest first", len(found), err)
+		}
+	})
+}
