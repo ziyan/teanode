@@ -18,6 +18,7 @@ let expectedMarkersByScreen: [String: [String]] = [
     "recordings": ["recordings", "ontheserver"],
     "recording-compatible-playback": ["compatibleaudiopreview", "originalunchanged"],
     "recording-original-playback": ["useaudiopreview", "sharefulloriginal"],
+    "recording-original-preview": ["compatibleaudiopreview", "useoriginal", "sharefullaudiopreview"],
     "recording-detail": ["originalmedia"],
     "recording-transcript": ["transcript"],
     "recording-version": ["processing"],

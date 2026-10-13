@@ -59,3 +59,9 @@ and other supported native formats can export compatible WAV without pretending
 they are unsupported. Default supported video playback stays visual. The action
 retains the original player on failure and uses the same verified download, bounded
 composition, visible-session cancellation and whole-file Share controls.
+
+Review also found that supported video could not return from audio preview without
+reopening playback. Compatible mode now offers Use original only when that original
+was proven playable. It re-downloads and verifies the original, preserving the
+preview on failure and restoring original sharing on success. A separate rendered
+route verifies both return and full-preview sharing controls at all three appearances.

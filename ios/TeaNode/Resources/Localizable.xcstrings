@@ -45775,6 +45775,22 @@
           }
         }
       }
+    },
+    "Use original": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オリジナルを使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用原始文件"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

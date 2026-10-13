@@ -668,10 +668,11 @@ struct RecordingPlaybackScreen: View {
     @State private var localURL: URL?
     @State private var problemText: String?
     @State private var isCompatibleAudioPreview = false
+    @State private var hasPlayableOriginal = false
     @State private var recordingUserId: String?
     @State private var isPlaybackVisible = false
-    @State private var isPreparingPreview = false
-    @State private var previewTask: Task<Void, Never>?
+    @State private var isChangingPlayback = false
+    @State private var playbackTask: Task<Void, Never>?
     @State private var progressText = String(localized: "Downloading original for private playback")
     @Environment(\.dismiss) private var dismiss
 
@@ -686,15 +687,24 @@ struct RecordingPlaybackScreen: View {
                         }
                         VideoPlayer(player: player)
                         if let problemText { Text(problemText).font(.caption).foregroundStyle(.secondary) }
-                        if !isCompatibleAudioPreview {
+                        if isCompatibleAudioPreview && hasPlayableOriginal {
                             Button {
-                                guard !isPreparingPreview else { return }
-                                isPreparingPreview = true
-                                previewTask = Task { await useAudioPreview() }
+                                guard !isChangingPlayback else { return }
+                                isChangingPlayback = true
+                                playbackTask = Task { await useOriginal() }
                             } label: {
-                                if isPreparingPreview { ProgressView() } else { Label("Use audio preview", systemImage: "waveform") }
+                                if isChangingPlayback { ProgressView() } else { Label("Use original", systemImage: "play.rectangle") }
                             }
-                            .disabled(isPreparingPreview || (try? requireCurrentConnection()) == nil)
+                            .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
+                        } else if !isCompatibleAudioPreview {
+                            Button {
+                                guard !isChangingPlayback else { return }
+                                isChangingPlayback = true
+                                playbackTask = Task { await useAudioPreview() }
+                            } label: {
+                                if isChangingPlayback { ProgressView() } else { Label("Use audio preview", systemImage: "waveform") }
+                            }
+                            .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         }
                         if let localURL {
                             ShareLink(item: localURL) {
@@ -703,7 +713,7 @@ struct RecordingPlaybackScreen: View {
                                         ? String(localized: "Share full audio preview") : String(localized: "Share full original"),
                                     systemImage: "square.and.arrow.up")
                             }
-                            .disabled(isPreparingPreview || (try? requireCurrentConnection()) == nil)
+                            .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         }
                     }
                 } else if let problemText {
@@ -725,9 +735,12 @@ struct RecordingPlaybackScreen: View {
                 }
                 do {
                     #if DEBUG
-                        if DemoServer.screen == "recording-compatible-playback" || DemoServer.screen == "recording-original-playback" {
+                        if ["recording-compatible-playback", "recording-original-playback", "recording-original-preview"].contains(
+                            DemoServer.screen ?? "")
+                        {
                             localURL = try DemoServer.recordingPreviewURL()
-                            isCompatibleAudioPreview = DemoServer.screen == "recording-compatible-playback"
+                            isCompatibleAudioPreview = DemoServer.screen != "recording-original-playback"
+                            hasPlayableOriginal = DemoServer.screen != "recording-compatible-playback"
                             player = AVPlayer(url: localURL!)
                             return
                         }
@@ -750,6 +763,7 @@ struct RecordingPlaybackScreen: View {
                         isOriginalPlayable = false
                     }
                     try requireCurrentConnection()
+                    hasPlayableOriginal = isOriginalPlayable
                     if !isOriginalPlayable { progressText = String(localized: "Preparing compatible audio preview") }
                     let compatiblePlayback = try await connection.compatibleRecordingPlayback(for: media, isOriginalPlayable: isOriginalPlayable)
                     try requireCurrentConnection()
@@ -773,8 +787,8 @@ struct RecordingPlaybackScreen: View {
             }
             .onDisappear {
                 isPlaybackVisible = false
-                previewTask?.cancel()
-                previewTask = nil
+                playbackTask?.cancel()
+                playbackTask = nil
                 player?.pause()
                 player = nil
                 if let localURL { try? FileManager.default.removeItem(at: localURL) }
@@ -813,7 +827,7 @@ struct RecordingPlaybackScreen: View {
     }
 
     private func useAudioPreview() async {
-        defer { isPreparingPreview = false }
+        defer { isChangingPlayback = false }
         guard player != nil, !isCompatibleAudioPreview else { return }
         var previewURL: URL?
         do {
@@ -836,6 +850,33 @@ struct RecordingPlaybackScreen: View {
             problemText = nil
         } catch {
             if let previewURL { try? FileManager.default.removeItem(at: previewURL) }
+            if !Task.isCancelled { problemText = error.localizedDescription }
+        }
+    }
+
+    private func useOriginal() async {
+        defer { isChangingPlayback = false }
+        guard player != nil, isCompatibleAudioPreview, hasPlayableOriginal else { return }
+        var originalURL: URL?
+        do {
+            try requireCurrentConnection()
+            let request = try await connection.recordingPlaybackRequest(mediaId: media.id)
+            originalURL = try await downloadVerifiedMedia(
+                request, expectedSizeBytes: media.originalSizeBytes, expectedSha256: media.originalSha256,
+                fileExtension: (media.originalFilename as NSString).pathExtension)
+            guard let originalURL else { throw TeaNodeError.unreadableAnswer }
+            let asset = AVURLAsset(url: originalURL)
+            guard try await asset.load(.isPlayable) else { throw TeaNodeError.unreadableAnswer }
+            let preparedPlayer = try await makePlayer(for: asset)
+            try requireCurrentConnection()
+            player?.pause()
+            if let localURL { try? FileManager.default.removeItem(at: localURL) }
+            localURL = originalURL
+            player = preparedPlayer
+            isCompatibleAudioPreview = false
+            problemText = nil
+        } catch {
+            if let originalURL { try? FileManager.default.removeItem(at: originalURL) }
             if !Task.isCancelled { problemText = error.localizedDescription }
         }
     }
