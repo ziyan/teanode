@@ -271,6 +271,7 @@ struct RecordingsScreen: View {
                     Section {
                         ForEach(period.items) { row in
                             rowLink(row)
+                                .listRowInsets(ListRowSpacing.insets)
                                 .listRowSeparator(.hidden)
                                 // The first is what a full swipe does, as in Mail:
                                 // delete, which still asks first.
@@ -474,6 +475,7 @@ struct RecordingsScreen: View {
             } label: {
                 RecordingRowView(row: row)
             }
+            .navigationLinkIndicatorVisibility(.hidden)
         } else {
             Button {
                 localPlayback = row.localRecording
@@ -520,9 +522,9 @@ struct RecordingRowView: View {
             Circle()
                 .fill(isLive ? AnyShapeStyle(.red) : AnyShapeStyle(.clear))
                 .frame(width: 8, height: 8)
-                .padding(.top, 12)
+                .padding(.top, 8)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 // At the accessibility sizes there is no room for when beside
                 // the name: each goes on a line of its own.
                 if dynamicTypeSize.isAccessibilitySize {
@@ -554,15 +556,13 @@ struct RecordingRowView: View {
                 }
             }
         }
-        .padding(.vertical, 10)
         .padding(.leading, -12)
         .accessibilityElement(children: .combine)
     }
 
     private var title: some View {
         Text(row.recordingTitle.isEmpty ? String(localized: "Untitled recording") : row.recordingTitle)
-            .font(.title3.weight(.semibold))
-            .foregroundStyle(row.recordingTitle.isEmpty ? .secondary : .primary)
+            .font(.headline)
     }
 
     private var recordedTime: some View {

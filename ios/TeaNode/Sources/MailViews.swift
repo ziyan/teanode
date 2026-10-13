@@ -355,6 +355,10 @@ struct ThreadList: View {
                         NavigationLink(value: OpenedThread(itemId: thread.item?.id ?? thread.threadId, folderId: list.isAcrossFolders ? nil : folder?.id)) {
                             ThreadRow(thread: thread, folderName: folderName(of: thread))
                         }
+                        // As Outlook and Mail draw a conversation: no chevron, no
+                        // divider, rows close together.
+                        .navigationLinkIndicatorVisibility(.hidden)
+                        .listRowInsets(ListRowSpacing.insets)
                         .listRowSeparator(.hidden)
                         .swipeActions(edge: .leading) {
                             Button {
@@ -678,15 +682,15 @@ struct ThreadRow: View {
             Circle()
                 .fill(isUnread ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear))
                 .frame(width: 8, height: 8)
-                .padding(.top, 20)
+                .padding(.top, 16)
                 .accessibilityLabel(isUnread ? Text("Unread") : Text(verbatim: ""))
-            SenderLogo(domain: message?.logoDomain ?? "", name: message?.shownSender ?? "", size: 48)
-            VStack(alignment: .leading, spacing: 4) {
+            SenderLogo(domain: message?.logoDomain ?? "", name: message?.shownSender ?? "", size: 40)
+            VStack(alignment: .leading, spacing: 2) {
                 // Who, in bold, with when on the right: the time today and
                 // yesterday, else the weekday or the date.
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(senders)
-                        .font(.title3.weight(isUnread ? .bold : .semibold))
+                        .font(.headline)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     if thread.flagged {
@@ -755,7 +759,6 @@ struct ThreadRow: View {
                 }
             }
         }
-        .padding(.vertical, 10)
         .padding(.leading, -12)
     }
 
@@ -850,11 +853,16 @@ struct ListPeriodHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.title3.weight(.semibold))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
             .textCase(nil)
-            .padding(.top, 8)
     }
+}
+
+/// ListRowSpacing is the room around a row of the mail and recordings lists:
+/// close together, as a mail app has them.
+enum ListRowSpacing {
+    static let insets = EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
 }
 
 /// RowMark is a small mark on a row: a symbol close to its word.
