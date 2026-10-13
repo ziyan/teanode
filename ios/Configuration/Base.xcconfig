@@ -12,6 +12,9 @@ TEANODE_BUNDLE_IDENTIFIER = com.teanode.app
 // sign-in and the key notifications are encrypted with.
 TEANODE_KEYCHAIN_GROUP = $(TEANODE_BUNDLE_IDENTIFIER).shared
 
+// Recording imports must outlive the share extension and reach the app upload queue.
+TEANODE_APP_GROUP = group.$(TEANODE_BUNDLE_IDENTIFIER)
+
 // The app and its extensions carry the same version; CI sets the build
 // number of each upload.
 MARKETING_VERSION = 0.1.0

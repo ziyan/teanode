@@ -15,6 +15,7 @@ struct TeaNodeWidgets: WidgetBundle {
         CallControl()
         TurnActivityWidget()
         CallActivityWidget()
+        RecordingActivityWidget()
     }
 }
 
@@ -505,4 +506,46 @@ struct CallControl: ControlWidget {
     NextWidget()
 } timeline: {
     GlanceEntry.sample
+}
+
+struct RecordingActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: RecordingActivityAttributes.self) { context in
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Recording", systemImage: "waveform").font(.headline)
+                recordingClock(context.state)
+                HStack {
+                    Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId, shouldResume: context.state.recordingCaptureState != "active")) {
+                        Label(context.state.recordingCaptureState == "active" ? String(localized: "Pause recording") : String(localized: "Resume recording"), systemImage: context.state.recordingCaptureState == "active" ? "pause" : "mic")
+                    }.buttonStyle(.glass)
+                    Button(intent: StopRecordingIntent(localRecordingId: context.attributes.localRecordingId)) { Label("Stop recording", systemImage: "stop") }.buttonStyle(.glass)
+                }
+            }.padding()
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) { Label("Recording", systemImage: "waveform") }
+                DynamicIslandExpandedRegion(.trailing) { recordingClock(context.state) }
+                DynamicIslandExpandedRegion(.bottom) {
+                    HStack {
+                        Button(intent: ToggleRecordingPauseIntent(localRecordingId: context.attributes.localRecordingId, shouldResume: context.state.recordingCaptureState != "active")) {
+                            Label(context.state.recordingCaptureState == "active" ? String(localized: "Pause recording") : String(localized: "Resume recording"), systemImage: context.state.recordingCaptureState == "active" ? "pause" : "mic")
+                        }
+                        Button(intent: StopRecordingIntent(localRecordingId: context.attributes.localRecordingId)) { Label("Stop recording", systemImage: "stop") }
+                    }
+                }
+            } compactLeading: { Image(systemName: context.state.recordingCaptureState == "active" ? "waveform" : "pause") }
+            compactTrailing: { recordingClock(context.state).font(.caption) }
+            minimal: { Image(systemName: context.state.recordingCaptureState == "active" ? "waveform" : "pause") }
+        }
+    }
+
+    @ViewBuilder
+    private func recordingClock(_ captureState: RecordingActivityAttributes.ContentState) -> some View {
+        if captureState.recordingCaptureState == "active" {
+            Text(captureState.updatedAt.addingTimeInterval(-Double(captureState.elapsedMS) / 1000), style: .timer).monospacedDigit()
+        } else {
+            Label(captureState.recordingCaptureState == "interrupted" ? String(localized: "Interrupted") : String(localized: "Paused"), systemImage: "pause").foregroundStyle(.secondary)
+            Text(Duration.milliseconds(captureState.elapsedMS).formatted(.time(pattern: .hourMinuteSecond))).monospacedDigit()
+        }
+    }
 }

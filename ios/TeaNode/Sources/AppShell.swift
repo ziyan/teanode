@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode the side menu leads to, as the
 /// dashboard's sidebar does.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, knowledge, finance, settings
+    case agent, goals, ideas, mail, calendar, contacts, knowledge, finance, recordings, settings
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .contacts: String(localized: "Contacts")
         case .knowledge: String(localized: "Knowledge")
         case .finance: String(localized: "Finance")
+        case .recordings: String(localized: "Recordings")
         case .settings: String(localized: "Settings")
         }
     }
@@ -32,6 +33,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .contacts: "person"
         case .knowledge: "brain"
         case .finance: "creditcard"
+        case .recordings: "record.circle"
         case .settings: "gearshape"
         }
     }
@@ -277,6 +279,16 @@ struct MainView: View {
             KnowledgeStack(connection: connection)
         case .finance:
             FinanceScreen(finance: finance, part: financePart)
+        case .recordings:
+            #if DEBUG
+            if DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("recording-") {
+                RecordingDemoScreen(connection: connection, screen: screen)
+            } else {
+                RecordingsScreen(connection: connection)
+            }
+            #else
+            RecordingsScreen(connection: connection)
+            #endif
         case .settings:
             NavigationStack {
                 SettingsForm()

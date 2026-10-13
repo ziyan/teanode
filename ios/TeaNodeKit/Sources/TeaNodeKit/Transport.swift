@@ -41,6 +41,8 @@ public enum TeaNodeError: Error, Equatable, Sendable, LocalizedError {
     case signedOut
     /// The connect code was used, expired, or was made for another server.
     case connectCodeSpent
+    /// A durable recording deletion refuses upload retries.
+    case recordingDeleted
 
     public var errorDescription: String? {
         switch self {
@@ -50,6 +52,8 @@ public enum TeaNodeError: Error, Equatable, Sendable, LocalizedError {
             return reason
         case .signedOut:
             return "This phone is no longer signed in. Connect it again."
+        case .recordingDeleted:
+            return "This recording was deleted. Its upload cannot be resumed."
         case .connectCodeSpent:
             return "That code has been used or has expired. Show a new one on the dashboard."
         }

@@ -1788,6 +1788,7 @@ final class AgentAdminModel {
     private(set) var settings: AgentServerSettings?
     /// The models the enabled providers offer, for the model pickers.
     private(set) var knownModels: [String] = []
+    private(set) var recordingModelCapabilities: [RecordingModelCapability] = []
     private(set) var isLoading = false
     var doneText: String?
     var problemText: String?
@@ -1808,7 +1809,10 @@ final class AgentAdminModel {
             settings = try await connection.agentServerSettings()
             // A provider that cannot be reached contributes nothing; Test on
             // its row says why.
-            if let names = try? await connection.agentModelNames() { knownModels = names }
+            if let capabilities = try? await connection.recordingModelCapabilities() {
+                recordingModelCapabilities = capabilities
+                knownModels = capabilities.map(\.name)
+            }
         } catch {
             problemText = error.localizedDescription
         }
@@ -1821,7 +1825,10 @@ final class AgentAdminModel {
         do {
             settings = try await connection.updateAgentServerSettings(agentParameters)
             doneText = said
-            if agentParameters["providers"] != nil, let names = try? await connection.agentModelNames() { knownModels = names }
+            if agentParameters["providers"] != nil, let capabilities = try? await connection.recordingModelCapabilities() {
+                recordingModelCapabilities = capabilities
+                knownModels = capabilities.map(\.name)
+            }
             return true
         } catch {
             problemText = error.localizedDescription
@@ -2008,6 +2015,8 @@ private enum AgentWords {
         case "maxRoundsPerResearch": "Rounds per research run"
         case "maxRoundsPerReply": "Rounds per reply"
         case "maxToolCallsPerRun": "Tool calls per run"
+        case "maxRecordingMediaBytes": "Original recording file limit"
+        case "maxRecordingAccountBytes": "Recording storage per account"
         case "requestTimeout": "Timeout per call"
         case "concurrency": "Runs at once"
         case "maxRoundsPerDream": "Rounds per dream call"
@@ -2037,6 +2046,7 @@ private enum AgentWords {
         case "synthesize": "Judgment across pages: overviews, reflections, a survey’s pages"
         case "decide": "Deciding between known answers"
         case "categorize": "Categorizing finance transactions"
+        case "transcription": "Recording transcription"
         default: LocalizedStringKey(fieldName)
         }
     }
@@ -2047,6 +2057,7 @@ private enum AgentWords {
         case "default", "fast", "embedding": String(localized: "None")
         case "quick": String(localized: "None: what you type starts on the conversations model")
         case "synthesize": String(localized: "Same as research (the default when research is not set)")
+        case "transcription": String(localized: "Off: choose a model with speaker attribution")
         case "decide": String(localized: "None: a language model decides instead")
         case "categorize": String(localized: "Same as deciding, or the scan model when deciding is not set")
         default: String(localized: "Same as the default (fast for sorting, summaries and compaction)")
@@ -3264,12 +3275,26 @@ private struct AgentModelsFormView: View {
                 Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.")
             }
             Section("Per kind of work") {
-                ForEach(AgentModelAssignments.workFieldNames, id: \.self) { fieldName in
+                ForEach(AgentModelAssignments.workFieldNames.filter { $0 != "transcription" }, id: \.self) { fieldName in
                     modelRow(fieldName, known: choices.forWork, draft: draft)
                 }
                 modelRow("decide", known: choices.forDeciding, draft: draft)
                 modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
             }
+            Section {
+                modelRow("transcription", known: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
+                if let capability = model.recordingModelCapabilities.first(where: { $0.name == draft.wrappedValue.transcription }), capability.canAttributeRecordingSpeakers {
+                    LabeledContent("Voice references", value: capability.hasSpeakerReferences == true ? String(localized: "Supported") : String(localized: "Unavailable"))
+                    if let maximumAudioBytes = capability.maximumAudioBytes, maximumAudioBytes > 0 {
+                        LabeledContent("Audio per provider request", value: ByteCountFormatter.string(fromByteCount: maximumAudioBytes, countStyle: .file))
+                    }
+                    if let maximumSpeakerReferenceCount = capability.maximumSpeakerReferenceCount, maximumSpeakerReferenceCount > 0 {
+                        LabeledContent("Voice references per provider request", value: String(maximumSpeakerReferenceCount))
+                    }
+                }
+            } header: { Text("Recording transcription") } footer: { Text("Empty disables file transcription. Listed choices have confirmed speaker attribution and timestamps. Chat and live-call models are not substitutes. Manually entered models are validated by the server.") }
+            .id("recording-transcription")
+
             Section {
                 ForEach(draft.wrappedValue.choices, id: \.self) { choice in
                     Text(verbatim: choice).font(.body.monospaced())
@@ -3419,10 +3444,14 @@ private struct AgentLimitsFormView: View {
                         }
                     }
                 } footer: {
+                    if limitNames.contains("maxRecordingMediaBytes") {
+                        Text("Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.")
+                    }
                     if limitNames.contains("maxRoundsPerSubagent") {
                         Text("For work nobody is watching. Zero is the default shown in brackets.")
                     }
                 }
+                .id(limitNames.contains("maxRecordingMediaBytes") ? "recording-quotas" : (limitNames.first ?? ""))
             }
         }
     }
@@ -3433,7 +3462,7 @@ private struct AgentLimitsFormView: View {
                 AgentWords.limitLabel(limitName),
                 text: Binding(get: { draft.wrappedValue.limitTexts[limitName] ?? "" }, set: { draft.wrappedValue.limitTexts[limitName] = $0 })
             )
-            .keyboardType(limitName == "requestTimeout" ? .default : .decimalPad)
+            .keyboardType((limitName == "requestTimeout" || limitName.hasPrefix("maxRecording")) ? .default : .decimalPad)
             .multilineTextAlignment(.trailing)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -4496,3 +4525,32 @@ private struct SourceTypeGuideSheet: View {
         }
     }
 }
+
+#if DEBUG
+    struct RecordingOperatorDemoScreen: View {
+        let screen: String
+        @State private var model: AgentAdminModel
+
+        init(connection: Connection, screen: String) {
+            self.screen = screen
+            _model = State(initialValue: AgentAdminModel(connection: connection))
+        }
+
+        var body: some View {
+            ScrollViewReader { proxy in
+                Group {
+                    if screen == "recording-model-settings" {
+                        AgentModelsFormView(model: model)
+                    } else {
+                        AgentLimitsFormView(model: model)
+                    }
+                }
+                .task {
+                    await model.load()
+                    try? await Task.sleep(for: .milliseconds(200))
+                    proxy.scrollTo(screen == "recording-model-settings" ? "recording-transcription" : "recording-quotas", anchor: .top)
+                }
+            }
+        }
+    }
+#endif

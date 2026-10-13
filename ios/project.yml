@@ -43,9 +43,12 @@ targets:
       properties:
         UIBackgroundModes: [audio, voip]
         NSSupportsLiveActivities: true
+        TeaNodeAppGroup: $(TEANODE_APP_GROUP)
     entitlements:
       path: TeaNode/TeaNode.entitlements
       properties:
+        com.apple.security.application-groups:
+          - $(TEANODE_APP_GROUP)
         com.apple.developer.associated-domains:
           - applinks:teanode.com
         aps-environment: development
@@ -74,7 +77,7 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
         INFOPLIST_KEY_NSContactsUsageDescription: "TeaNode reads your iPhone's contacts only when you choose to import them into your address book."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Your agent asks where you are when something you asked depends on it, such as the weather or how long a trip takes."
         # The app encrypts nothing beyond the https the system provides, which
         # export rules exempt; saying so here spares every upload the question.
@@ -127,11 +130,14 @@ targets:
     entitlements:
       path: TeaNodeShare/TeaNodeShare.entitlements
       properties:
+        com.apple.security.application-groups:
+          - $(TEANODE_APP_GROUP)
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
     info:
       path: TeaNodeShare/Info.plist
       properties:
+        TeaNodeAppGroup: $(TEANODE_APP_GROUP)
         CFBundleDisplayName: TeaNode
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)

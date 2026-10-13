@@ -217,6 +217,7 @@ struct ZoomablePicture: UIViewRepresentable {
 /// thumbnail, anything else as its name and size; a tap opens it.
 struct AttachmentView: View {
     let attachment: AgentAttachment
+    @State private var isImportingRecording = false
     @Environment(AppModel.self) private var app
 
     private var path: String { "/api/v1/agent/attachments/\(attachment.id)" }
@@ -240,6 +241,15 @@ struct AttachmentView: View {
                 .background(Color(.tertiarySystemFill), in: .capsule)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                if app.account?.cachedRecordingUserId != nil,
+                    attachment.contentType.hasPrefix("audio/") || attachment.contentType.hasPrefix("video/") {
+                    Button { isImportingRecording = true } label: { Label("Save as recording", systemImage: "waveform") }
+                }
+            }
+            .sheet(isPresented: $isImportingRecording) {
+                if let connection = app.connection { RecordingAttachmentImportView(connection: connection, attachment: attachment) }
+            }
         }
     }
 }

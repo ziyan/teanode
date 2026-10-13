@@ -634,3 +634,21 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(try sentVariables(removed.sent[0]), ["name": .string("notes-folder")])
     }
 }
+
+extension ManageServerTests {
+    func testRecordingSizesRemainByteSizeStringsAndTranscriptionHasNoDefault() throws {
+        let settings = try JSONDecoder().decode(AgentServerSettings.self, from: Data(Self.agentSettingsAnswer.utf8))
+        var models = settings.models
+        models.transcription = "audio-service:speaker-model"
+        var draft = AgentLimitsDraft(settings)
+        draft.limitTexts["maxRecordingMediaBytes"] = "3 GB"
+        draft.limitTexts["maxRecordingAccountBytes"] = "60 GB"
+        let limits = draft.agentParameters["limits"]
+        XCTAssertEqual(limits?["maxRecordingMediaBytes"], .string("3 GB"))
+        XCTAssertEqual(limits?["maxRecordingAccountBytes"], .string("60 GB"))
+        XCTAssertEqual(models[fieldName: "transcription"], "audio-service:speaker-model")
+        XCTAssertEqual(models.renaming(provider: "audio-service", to: "new-audio")[fieldName: "transcription"], "new-audio:speaker-model")
+        XCTAssertEqual(models.agentParameters["models"]?["transcription"], .string("audio-service:speaker-model"))
+        XCTAssertTrue(AgentModelAssignments.workFieldNames.contains("transcription"))
+    }
+}

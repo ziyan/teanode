@@ -27,7 +27,7 @@ extension AccountStore {
 public actor Connection {
     /// The account identity remains the same when its tokens are renewed.
     public nonisolated let accountKey: String
-    public private(set) var account: Account
+    public internal(set) var account: Account
     let transport: any HTTPTransport
     let store: (any AccountStore)?
 
@@ -62,6 +62,7 @@ public actor Connection {
         if account.expiresAt.timeIntervalSince(now) < Self.renewBefore, let stored = try? store?.load(accountKey: account.accountKey),
             stored.expiresAt > account.expiresAt
         {
+            try Self.requireSameRecordingOwner(account, stored)
             account = stored
         }
         if account.expiresAt.timeIntervalSince(now) < Self.renewBefore, !account.refreshToken.isEmpty {
@@ -90,6 +91,7 @@ public actor Connection {
     private func outcome(of renewing: Task<Account, Error>) async throws -> Account {
         do {
             let renewed = try await renewing.value
+            try Self.requireSameRecordingOwner(account, renewed)
             // A caller that wakes late does not put back an older sign-in.
             if renewed.expiresAt >= account.expiresAt {
                 account = renewed
@@ -110,15 +112,33 @@ public actor Connection {
     /// with.
     static func renewed(_ account: Account, transport: any HTTPTransport, store: (any AccountStore)?, now: Date) async throws -> Account {
         do {
-            let renewed = try await SignIn(server: account.server, transport: transport).refresh(account, now: now)
-            try? store?.save(renewed)
+            var renewed = try await SignIn(server: account.server, transport: transport).refresh(account, now: now)
+            renewed.cachedRecordingUserId = account.cachedRecordingUserId
+            if let store, account.cachedRecordingUserId != nil {
+                guard let retained = try store.load(accountKey: account.accountKey) else { throw TeaNodeError.signedOut }
+                try requireSameRecordingOwner(account, retained)
+                if retained.refreshToken != account.refreshToken {
+                    guard retained.expiresAt >= renewed.expiresAt else { throw TeaNodeError.signedOut }
+                    return retained
+                }
+                try store.save(renewed)
+            } else {
+                try? store?.save(renewed)
+            }
             return renewed
         } catch TeaNodeError.signedOut {
             if let stored = try? store?.load(accountKey: account.accountKey), !stored.refreshToken.isEmpty,
                 stored.refreshToken != account.refreshToken
             {
+                try requireSameRecordingOwner(account, stored)
                 return stored
             }
+            throw TeaNodeError.signedOut
+        }
+    }
+
+    private static func requireSameRecordingOwner(_ current: Account, _ replacement: Account) throws {
+        if let ownerId = current.cachedRecordingUserId, replacement.cachedRecordingUserId != ownerId {
             throw TeaNodeError.signedOut
         }
     }
@@ -157,6 +177,7 @@ public actor Connection {
         if let stored = try? store?.load(accountKey: account.accountKey), stored.accessToken != refused,
             stored.expiresAt >= account.expiresAt
         {
+            try Self.requireSameRecordingOwner(account, stored)
             account = stored
             return stored.accessToken
         }

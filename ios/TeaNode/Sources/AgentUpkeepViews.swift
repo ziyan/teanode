@@ -199,6 +199,7 @@ enum UpkeepWords {
 /// cards are on the Finance tab instead.
 struct KnowledgeSourcesView: View {
     let connection: Connection
+    var highlightedSourceId: String? = nil
     @State private var sources: [KnowledgeSource]?
     @State private var attachmentsBySourceId: [String: KnowledgeSourceAttachments] = [:]
     @State private var sourceTypes: [KnowledgeSourceType] = []
@@ -222,7 +223,7 @@ struct KnowledgeSourcesView: View {
                 if let sources, sources.isEmpty {
                     Text("Nothing is indexed yet.").foregroundStyle(.secondary)
                 }
-                ForEach(sources ?? []) { source in
+                ForEach((sources ?? []).filter { highlightedSourceId == nil || $0.id == highlightedSourceId }) { source in
                     row(source)
                 }
             } footer: {
@@ -272,31 +273,53 @@ struct KnowledgeSourcesView: View {
                 Task { await act(saying: String(localized: "Stopped")) { try await connection.deleteKnowledgeSource(source.id) } }
             }
         } message: { source in
-            Text("Stop reading \(source.name) and forget the \(source.documentCount) document(s) it found. What your agent learned from it stays on its pages.")
+            Text("Stop reading \(RecordingWords.sourceName(source)) and forget the \(source.documentCount) document(s) it found. What your agent learned from it stays on its pages.")
         }
         .toast(done: $doneText, problem: $problemText)
     }
 
+    @ViewBuilder
     private func row(_ source: KnowledgeSource) -> some View {
-        Button {
-            editing = SourceEditing(source: source)
-        } label: {
-            KnowledgeSourceRow(
-                source: source, attachments: attachmentsBySourceId[source.id], isLocalType: sourceTypes.contains { $0.name == source.specification.type && $0.isLocal },
-                whereText: source.whereItReads(mailboxNames: mailboxNames))
-        }
-        .swipeActions {
-            Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
-            pauseButton(source).tint(.orange)
-        }
-        .contextMenu {
-            Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
-            syncButton(source)
-            pauseButton(source)
-            if (attachmentsBySourceId[source.id]?.declined ?? 0) > 0 {
-                Button("Files it decided against opening", systemImage: "doc.badge.ellipsis") { declinedSource = source }
+        if source.kind == "recording" {
+            NavigationLink {
+                RecordingsScreen(connection: connection)
+            } label: {
+                KnowledgeSourceRow(
+                    source: source, attachments: attachmentsBySourceId[source.id], isLocalType: false,
+                    whereText: String(localized: "Managed from the recording library"))
             }
-            Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+            .swipeActions {
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                pauseButton(source).tint(.orange)
+            }
+            .contextMenu {
+                Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
+                syncButton(source)
+                pauseButton(source)
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+            }
+        } else {
+            Button {
+                editing = SourceEditing(source: source)
+            } label: {
+                KnowledgeSourceRow(
+                    source: source, attachments: attachmentsBySourceId[source.id],
+                    isLocalType: sourceTypes.contains { $0.name == source.specification.type && $0.isLocal },
+                    whereText: source.whereItReads(mailboxNames: mailboxNames))
+            }
+            .swipeActions {
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                pauseButton(source).tint(.orange)
+            }
+            .contextMenu {
+                Button("Edit this source", systemImage: "pencil") { editing = SourceEditing(source: source) }
+                syncButton(source)
+                pauseButton(source)
+                if (attachmentsBySourceId[source.id]?.declined ?? 0) > 0 {
+                    Button("Files it decided against opening", systemImage: "doc.badge.ellipsis") { declinedSource = source }
+                }
+                Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+            }
         }
     }
 
@@ -357,9 +380,11 @@ struct KnowledgeSourceRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(source.name).foregroundStyle(Color(.label))
+            Text(RecordingWords.sourceName(source)).foregroundStyle(Color(.label))
             HStack(spacing: 8) {
-                if source.specification.type.isEmpty {
+                if source.kind == "recording" {
+                    UpkeepTag(text: String(localized: "Recording"))
+                } else if source.specification.type.isEmpty {
                     UpkeepTag(text: UpkeepWords.shapeName(source.shape))
                 } else {
                     UpkeepTag(text: source.specification.type)
@@ -562,21 +587,27 @@ struct KnowledgeSourceEditor: View {
                     }
                 }
                 Section("What to call it") {
-                    TextField("What to call it", text: $name)
+                    if let source, source.kind == "recording" {
+                        Text(RecordingWords.sourceName(source))
+                    } else {
+                        TextField("What to call it", text: $name)
+                    }
                 }
-                if let chosenType {
-                    typedSections(chosenType)
-                } else {
-                    plainSections
-                }
-                Section {
-                    TextField("Where what it finds is filed", text: $rootPath, prompt: Text(verbatim: "projects"))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Where what it finds is filed")
-                } footer: {
-                    Text("A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.")
+                if source?.kind != "recording" {
+                    if let chosenType {
+                        typedSections(chosenType)
+                    } else {
+                        plainSections
+                    }
+                    Section {
+                        TextField("Where what it finds is filed", text: $rootPath, prompt: Text(verbatim: "projects"))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Where what it finds is filed")
+                    } footer: {
+                        Text("A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.")
+                    }
                 }
                 Section {
                     TextField("How often to read it, as a cron line", text: $cron, prompt: Text(verbatim: "17 3 * * *"))
@@ -587,8 +618,12 @@ struct KnowledgeSourceEditor: View {
                     Text("How often to read it, as a cron line")
                 } footer: {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Five fields, in your own zone. Leave it empty and it is read once a day.")
-                        if isEditing {
+                        if source?.kind != "recording" {
+                            Text("Five fields, in your own zone. Leave it empty and it is read once a day.")
+                        }
+                        if source?.kind == "recording" {
+                            Text("Five fields (minute hour day month weekday). Leave empty for manual reading.")
+                        } else if isEditing {
                             Text("A box you empty keeps what it already says; these can be changed here but not cleared.")
                         }
                     }
@@ -789,6 +824,7 @@ struct KnowledgeSourceEditor: View {
     /// Whether Save can be pressed. A source of a type is saved only through
     /// its type's form, so one opened before the types arrived waits.
     private var canSave: Bool {
+        if source?.kind == "recording" { return true }
         guard !name.trimmed.isEmpty else { return false }
         if isEditing, !(source?.specification.type ?? "").isEmpty, chosenType == nil { return false }
         if chosenType != nil { return true }
@@ -826,6 +862,14 @@ struct KnowledgeSourceEditor: View {
     private func save() async {
         isSaving = true
         defer { isSaving = false }
+        if let source, source.kind == "recording" {
+            do {
+                try await connection.saveRecordingSourceSchedule(source, cron: cron.trimmed)
+                onSaved(String(localized: "Saved"))
+                dismiss()
+            } catch { problemText = error.localizedDescription }
+            return
+        }
         if let chosenType {
             await saveTyped(chosenType)
             return

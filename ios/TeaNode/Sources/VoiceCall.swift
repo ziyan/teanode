@@ -98,9 +98,17 @@ final class VoiceCall: NSObject {
     /// Starts the call: CallKit first, and the audio once CallKit has the
     /// audio session ready; without CallKit, the audio at once.
     func start() {
+        guard !MeetingRecorder.shared.hasSession else {
+            end(problemText: String(localized: "Stop the current recording before starting a live call."))
+            return
+        }
         Task {
             guard await AVAudioApplication.requestRecordPermission() else {
                 end(problemText: String(localized: "TeaNode may not use the microphone. Allow it in Settings, then call again."))
+                return
+            }
+            guard !MeetingRecorder.shared.hasSession else {
+                end(problemText: String(localized: "Stop the current recording before starting a live call."))
                 return
             }
             startWithCallKit()

@@ -64,6 +64,8 @@ final class AppModel {
 
     /// A page of the agent's knowledge a link asks to open.
     var openedKnowledgePath: String?
+    var openedRecordingLink: RecordingLink?
+    private(set) var openedRecordingAccountKey: String?
 
     /// A mail a link asks to open.
     var openedMailItemId: String?
@@ -106,6 +108,12 @@ final class AppModel {
     /// Goes to the dashboard path the agent's open_page names, checked as
     /// the dashboard checks it: the person's own pages, in plain segments.
     func show(path written: String) {
+        if let address = URL(string: written), let account, let citation = RecordingLink(address, server: account.server) {
+            openedRecordingAccountKey = account.accountKey
+            openedRecordingLink = citation
+            openedSection = .recordings
+            return
+        }
         let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
         guard path.hasPrefix("/"), path.count <= 600 else { return }
         let segments = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -158,6 +166,12 @@ final class AppModel {
     /// item or a memory page opens its page on the dashboard; anything else
     /// is not followed, as the dashboard does not follow it.
     func route(_ address: URL) -> OpenURLAction.Result {
+        if let account, let citation = RecordingLink(address, server: account.server) {
+            openedRecordingAccountKey = account.accountKey
+            openedRecordingLink = citation
+            openedSection = .recordings
+            return .handled
+        }
         let written = address.absoluteString
         switch address.scheme?.lowercased() {
         case "http", "https":
@@ -270,11 +284,20 @@ final class AppModel {
     }
 
     private func use(_ account: Account) {
+        if let local = MeetingRecorder.shared.localRecording, local.accountKey == account.accountKey,
+            !local.belongsTo(accountKey: account.accountKey, recordingUserId: account.cachedRecordingUserId) {
+            Task { await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey) }
+        }
         let isChanged = account.accountKey != self.account?.accountKey
-        if isChanged { services = nil }
+        if isChanged {
+            services = nil
+            openedRecordingLink = nil
+            openedRecordingAccountKey = nil
+        }
         self.account = account
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
+        if let connection { RecordingUploads.shared.activate(connection: connection) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
     }
@@ -296,6 +319,12 @@ final class AppModel {
     /// while the phone is signed out: one opened while signed in is left
     /// unspent, and the person is told why.
     func open(_ url: URL) {
+        if let account, let citation = RecordingLink(url, server: account.server) {
+            openedRecordingAccountKey = account.accountKey
+            openedRecordingLink = citation
+            openedSection = .recordings
+            return
+        }
         guard let link = ConnectLink(url) else { return }
         // Signed in already, the code adds an account beside the others; the
         // person is shown whose it is before it is kept.
@@ -560,6 +589,10 @@ final class AppModel {
     /// Signs out of the account in use, forgets the key its notifications
     /// are encrypted with, and puts the next one to use.
     func signOut(signedOutText: String? = nil) async {
+        if let account, MeetingRecorder.shared.localRecording?.accountKey == account.accountKey {
+            await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey)
+        }
+        if let account { await RecordingUploads.shared.cancel(accountKey: account.accountKey) }
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
@@ -601,6 +634,10 @@ final class AppModel {
             await signOut()
             return
         }
+        if MeetingRecorder.shared.localRecording?.accountKey == other.accountKey {
+            await MeetingRecorder.shared.stopForAccountRemoval(accountKey: other.accountKey)
+        }
+        await RecordingUploads.shared.cancel(accountKey: other.accountKey)
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
@@ -683,9 +720,16 @@ struct PressedButton: Sendable {
 extension AppModel {
     func refreshServices() async {
         guard let connection else { return }
-        if let services = try? await connection.serviceCapabilities(), self.connection === connection {
-            self.services = services
+        async let refreshedServices = try? connection.serviceCapabilities()
+        let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
+        let verifiedAccount = await connection.account
+        let availableServices = await refreshedServices
+        guard self.connection === connection else { return }
+        if hasVerifiedRecordingOwner {
+            self.account = verifiedAccount
+            self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
+        if let availableServices { self.services = availableServices }
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {
@@ -694,6 +738,7 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
+        case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
         case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .settings: return true
         }
