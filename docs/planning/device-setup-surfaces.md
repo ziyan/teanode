@@ -33,7 +33,7 @@ wording where applicable. No new catalog noun or permission policy is needed.
 - [x] Route mailbox shortcuts into the account-wide selector and retain manual setup.
 - [x] Extend existing CLI sync commands and tool handoff guidance.
 - [x] Review ownership, unavailable selections, refresh/account isolation and errors.
-- [ ] Run meaningful tests, full naming lint and CI on the exact branch head.
+- [x] Run meaningful tests, full naming lint and CI on the exact branch head.
 - [x] Inspect actual Chrome desktop and phone interactions, including mailbox-free setup.
 - [x] Open a separate draft PR with diagrams and current validation evidence.
 
@@ -75,3 +75,22 @@ Independent review confirmed exact selected scopes and the credential-free LLM h
 Root review found that an expired issued profile still had an active download link. The receipt now schedules its known expiry, checks expiry again on click in case a background timer was delayed, hides the expired QR and disables the download while retaining its link metadata and revocation guidance. An unexpired issued receipt remains downloadable when available services later change; neither expiry nor refresh creates a replacement profile. Valid downloads open a separate tab using the existing safe link pattern so a consumed-link error cannot replace the receipt page.
 
 Actual Chrome reproduced the old expired-link behavior and inspected the fixed receipt at measured desktop and phone widths. A clearly synthetic consumed-link response opened an error tab while the original receipt remained visible on both layouts. Desktop captures and the fixed expired phone capture were inspected; repeated phone capture timeouts prevented an additional consumed-state image, so that interaction is recorded as a DOM observation. These fixtures create no credentials and do not establish profile installation. Three expiry regressions bring the focused selector/receipt checks to 9 and the dashboard suite to 453 tests plus 2 dependency tests. Full naming lint, dashboard lint/types and production/extension builds pass on this checkpoint. Exact-head CI remains required.
+
+## Merged integration checkpoint
+
+The reviewed backend and surface increments are merged into main with all
+exact-head CI checks passing. Integrated review found no confirmed deviation
+in account/mailbox ownership, selected service scopes, errors or read-only
+handling. The tool continues to hand off without credentials or profile links.
+
+The rebased surface head passed 469 dashboard tests plus 2 dependency checks,
+types, production/extension builds and focused Go races. Published main passes
+full lint with zero naming issues, client/CLI/phone/recording-tool races,
+typecheck, 21 focused playback/device regressions and actual built-schema
+validation of 38 complete client/web documents. Existing accepted Chrome
+desktop/phone receipt audits remain rendering evidence from a synthetic fixture
+that creates no credentials.
+
+Merge is verified; deployment of this surface increment is reported separately
+by the root stream. Physical profile installation, device sync and revocation
+remain unrun.

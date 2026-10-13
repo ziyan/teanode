@@ -36,15 +36,18 @@ always-on activation and visual video understanding are deferred.
 - [x] Increment 5 implementation merged in #437: speaker/group/passage correction
   and automatic bounded voice-reference curation.
 - [x] Recording evidence guard reviewed, required CI green and squash merged in #448.
-- [ ] Integrate and deploy #438 direct recording-tool observers with the shared guard
-  before restoring production dreaming or claiming end-to-end learning validation.
-- [ ] Increment 6: dashboard import, playback and transcript correction.
+- [x] Review, merge and officially deploy #438 direct recording-tool observers
+  with the shared guard before restoring production dreaming.
+- [x] Increment 6 implemented and merged: dashboard import, playback and transcript
+  correction. Compatible preview clients await the official image deployment.
 - [ ] Four-surface parity: web, CLI, LLM tools and iOS for every recording capability
   and operator setting, with equivalent account ownership and error semantics.
-- [ ] Chrome visual and interaction audits at desktop and phone widths.
+- [x] Chrome visual and interaction audits of current web increments at desktop
+  and phone widths.
 - [ ] Review every increment, fix findings, and verify its completed CI before merge.
-- [ ] Increment 7: iOS capture, interruption recovery, background upload,
-  import/share and recording Live Activity with local pause/resume.
+- [x] Increment 7 implemented, reviewed and merged: iOS capture, interruption
+  recovery, background upload, import/share and recording Live Activity.
+  Physical-device acceptance remains unchecked.
 - [ ] Increment 8: real-device and representative-meeting evaluation.
 
 ## Surprises & Discoveries
@@ -318,13 +321,14 @@ request-local speaker IDs never establish identity across files.
 
 | Capability | Web | CLI | LLM tools | iOS |
 | --- | --- | --- | --- | --- |
-| Quotas, provider/transcription selection, budgets | Partial | Partial | Partial | In progress |
-| Import, recoverable upload, browse/play/delete | In progress | In progress | In progress | In progress |
-| Transcript versions, status/cancel/retry/reprocess | Pending integration | Pending integration | Pending integration | Pending integration |
-| Confirmed labels, passage edits, references | Pending integration | Pending integration | Pending integration | Pending integration |
-| Source title/date and transcript text corrections | In progress | In progress | In progress | In progress |
-| Learning progress and reference invalidations | In progress | In progress | In progress | In progress |
-| Capture, interruptions, locked-screen controls | Not applicable | Not applicable | Not applicable | In progress |
+| Quotas, provider/transcription selection, budgets | Merged | Merged | Merged | Merged; device checks pending |
+| Import, recoverable upload, browse/play/delete | Merged | Merged | Merged; delivered attachments | Merged; background/device checks pending |
+| Transcript versions, status/cancel/retry/reprocess | Merged | Merged | Merged | Merged |
+| Confirmed labels, passage edits, references | Merged | Merged | Merged | Merged |
+| Source title/date and transcript text corrections | Merged | Merged | Merged | Merged |
+| Learning progress and reference invalidations | Merged | Merged | Merged | Merged |
+| Explicit compatible audio preview/export | Merged in #453 | Merged in #453 | Merged in #453 | #452 caption fix and final CI pending |
+| Capture, interruptions, locked-screen controls | Not applicable | Not applicable | Not applicable | Merged; physical-device checks pending |
 
 No row is complete until shared authorization/error checks and applicable client
 checks pass. Chrome desktop/mobile interaction inspection is required for web
@@ -598,22 +602,44 @@ the current deployment. Native capture has 39 inspected simulator views in light
 dark and largest text; physical-device audio and background behavior are unverified.
 The playback backend has PostgreSQL/race, packaged codec, integrity, retry and
 ownership/range evidence. Actual desktop/mobile Chrome checks demonstrated CAF
-fallback, original retention and bounded citation playback. Web/CLI/LLM #453 and
-iOS #452 preview companions remain under final parity review, exact-head CI and
-visual validation. Supported video must keep its visual player by default, with
+fallback, original retention and bounded citation playback. Web/CLI/LLM #453 is reviewed, CI verified and merged. The integrated published
+main passed full lint/naming, client/CLI/tool race checks, 21 focused UI regressions
+and 38 complete documents against the built API schema. iOS #452 passed SDK/package and required CI at its prior checkpoint; actual
+simulator review found a truncated caption at largest text. The existing wrapping
+pattern is being applied before final validation and merge. Supported video must keep its visual player by default, with
 explicit preview preparation/export and a return to the supported original.
 
-A fresh isolated synthetic account has fixed timezone, limited budgets and no
-mailbox or collection grants. Its real upload and transcription completed and
-automatically published four pending knowledge passages. Its ingestion is queued
-behind unrelated running ingestion jobs; those jobs were not interrupted and
-global concurrency and budgets were not increased. Separate-account recording
-access denial passed. Remaining acceptance requires completed automatic ingestion,
-assessed digestion, actual source-linked facts, correction reconciliation and
-cleanup. Do not fabricate facts, trigger a broad account dream,
-change global models or infer invoice cost from estimates. Learning requires no
-product approval gate; the private validation harness uses a coordinator execution
-checkpoint to prevent accidental production calls before deployment verification.
-Physical-iPhone lock-screen controls, interruptions, background transfers, signed
-sharing, large-import recovery and battery checks still require device evidence.
-The separate device-setup redesign does not block recording implementation.
+An isolated synthetic account with fixed timezone, limited budgets and no mailbox
+or collection grants completed one real transcription and automatic source
+ingestion. Its first fixture-only dream digested four passages and saved three
+facts with exact transcript-version and time citations. Review confirmed that the
+facts preserved the tentative proposal, unknown speakers and meeting date, and
+explicit absence of requested production action. The saved run used only memory
+lookups, and the person conversation remained empty. This validates the narrow
+synthetic learning path, not real-meeting usefulness or speaker quality.
+
+A grounded passage-level speaker correction retired the actual dependent fact
+and updated the same source document with confirmed attribution and its original
+citation. Generated transcript bytes and the single transcription attempt stayed
+unchanged. The second and final dream made no model calls because the existing
+daily dreaming share was spent, so learning a replacement fact with corrected
+attribution remains unverified. No budgets were raised and no third dream was
+requested. Separate-account recording access denial passed.
+
+The fixture was disabled and deleted after no queued or running fixture jobs
+remained; its authentication was refused. Database inspection found no remaining
+raw or derived blob reservations, media rows or voice references for that fixture.
+Independent storage-object/version purge and invoice cost were not verified.
+Synthetic references from the earlier retained-media correction test were also
+revoked so they cannot condition future recordings; originals and version history
+remain available for authenticated deployment smoke checks.
+
+The next official image deployment has a fresh fully parsed database archive,
+preserved Compose and rollback image. Current production still serves v0.145.0;
+newer reviewed merges are not deployment evidence. The separate device-setup
+backend and web/CLI/tool increments are reviewed and merged; its native client
+remains under final CI and visual review. Remaining acceptance includes corrected
+fact re-learning, representative human-meeting quality and real-iPhone capture,
+interruption, background-upload, signed sharing, lock-screen and battery evidence.
+Learning requires no product approval gate. Do not fabricate facts, trigger a
+broad account dream, change global models or infer invoice cost from estimates.
