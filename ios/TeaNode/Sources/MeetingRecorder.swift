@@ -283,7 +283,11 @@ final class MeetingRecorder: NSObject {
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: original.path)
         audioRecorder = recorder
         recorderId = UUID()
-        guard recorder.record(forDuration: 600) else {
+        // One file for as long as the capture runs: starting a new recorder
+        // while the phone is locked can be refused, which lost a minute and
+        // a half of a meeting at a ten-minute boundary. The server cuts long
+        // audio into pieces itself; a new file starts only after a pause.
+        guard recorder.record() else {
             throw TeaNodeError.refused(String(localized: "Recording could not start. Check microphone access and available storage."))
         }
     }
@@ -369,8 +373,20 @@ final class MeetingRecorder: NSObject {
         if let mediaResetObserver { NotificationCenter.default.removeObserver(mediaResetObserver) }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) {
             [weak self] notification in
-            let isBeginning = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
-            if isBeginning { Task { @MainActor in await self?.pause(isInterruption: true) } }
+            let interruptionType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            if interruptionType == AVAudioSession.InterruptionType.began.rawValue {
+                Task { @MainActor in await self?.pause(isInterruption: true) }
+            } else if interruptionType == AVAudioSession.InterruptionType.ended.rawValue {
+                // A call or Siri that ends gives the microphone back: when iOS
+                // says the recording may go on, it does, without a tap.
+                let options = AVAudioSession.InterruptionOptions(rawValue: notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+                if options.contains(.shouldResume) {
+                    Task { @MainActor in
+                        guard let self, self.localRecording?.recordingCaptureState == "interrupted" else { return }
+                        await self.resume()
+                    }
+                }
+            }
         }
         mediaResetObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
