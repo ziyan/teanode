@@ -115,3 +115,37 @@ func TestTheReadingLeavesASlot(t *testing.T) {
 		}
 	})
 }
+
+// Transcribing a recording is waited for: with the reading holding every
+// background slot, it takes the slot kept for what a person waits for.
+func TestATranscriptionDoesNotWaitBehindTheReading(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	var agent *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "fixture-recorder"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if agent, err = tx.CreateAgent(&models.Agent{UserID: user.ID, Name: "Fixture", Enabled: true}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		for index, kind := range []models.AgentJobKind{models.AgentJobIngest, models.AgentJobIngest} {
+			if _, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: agent.ID, Kind: kind, SubjectID: string(kind) + string(rune('a'+index))}); err != nil {
+				t.Fatalf("EnqueueAgentJob %s: %s", kind, err)
+			}
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if claimed, err := tx.ClaimAgentJobsKeepingRoom("instance-a", 2, 2, time.Now()); err != nil || len(claimed) != 2 {
+			t.Fatalf("the reading took both background slots: %v %v", claimed, err)
+		}
+		if _, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: agent.ID, Kind: models.AgentJobRecording, SubjectID: "fixture-run"}); err != nil {
+			t.Fatalf("EnqueueAgentJob: %s", err)
+		}
+		claimed, err := tx.ClaimAgentJobsKeepingRoom("instance-a", 1, 2, time.Now())
+		if err != nil || len(claimed) != 1 || claimed[0].Kind != models.AgentJobRecording {
+			t.Fatalf("the transcription waited behind the reading: %v %v", claimed, err)
+		}
+	})
+}
