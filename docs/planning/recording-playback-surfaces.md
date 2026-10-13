@@ -36,7 +36,7 @@ iOS stream; do not claim physical-device verification from browser playback.
 - [x] Review integrated behavior, run meaningful tests and full naming lint.
 - [x] Inspect actual Chrome desktop and phone preparation/playback/errors.
 - [x] Open a separate draft increment with diagrams.
-- [ ] Verify exact-head CI after the merged backend rebase and final mode controls.
+- [x] Verify exact-head CI after the merged backend rebase and final mode controls.
 
 ## Validation
 
@@ -90,8 +90,8 @@ and production/extension builds. Mode regressions cover original/preview
 switching, ready-download retention and unsupported return controls. Both complete preview selections validated against the integrated
 schema and executed through actual owned requests. The whole dashboard query
 script still reports unrelated interpolation/fragment and disabled-service
-errors on this off fixture, so it is not claimed to pass. Exact-head CI and
-native preview integration remain required before completion. Native implements
+errors on this off fixture, so it is not claimed to pass. Exact-head CI passes and this surface increment is merged. Native preview
+integration remains separate from physical-device completion. Native implements
 explicit audio preview, original return and verified sharing; its portable tests
 and simulator build pass. Physical sharing and playback remain unverified. Browser playback
 is not physical iPhone capture, upload, installation or codec validation.
@@ -108,3 +108,21 @@ is not physical iPhone capture, upload, installation or codec validation.
 Root owns backend merge/deployment and native coordination. This surface
 increment is reviewable independently but does not establish four-surface or
 physical-device completion on its own.
+
+## Merged integration checkpoint
+
+The backend preview increment and this surface increment are merged into main.
+Integrated review of the device setup and recording preview API, client, CLI,
+tool and dashboard found no confirmed ownership, error or read-only deviation.
+Mail and collection credentials remain separate; preparation remains a write,
+ready playback remains owned untrusted evidence, and originals remain unchanged.
+
+Published main passes full lint with zero naming issues, client/CLI/recording and
+phone-tool race tests, typecheck and 21 focused playback/device regressions.
+The actual built GraphQL schema validates 38 complete client and web documents,
+including runtime-registered recording operations. Prior actual desktop and
+phone Chrome mode audits and independent root review remain accepted.
+
+Merge is verified; this checkpoint does not establish deployment of the preview
+surfaces. The root stream reports deployed versions and health separately.
+Physical iPhone playback, capture, upload and sharing remain unrun.
