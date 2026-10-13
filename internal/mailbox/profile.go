@@ -11,9 +11,8 @@ import (
 )
 
 // SetupProfile is what an iPhone or a Mac needs to read a mailbox in its own
-// Mail, Calendar, Contacts and Reminders apps: the hosts, and one app
-// password for all of them, since the calendar and the address book sign in
-// with the same app passwords as a mail program.
+// Mail, Calendar, Contacts and Reminders apps. Collection payloads may use an
+// account-scoped credential separately from the mailbox app password.
 //
 // The profile carries that password in the clear, so it is made for one
 // download and never stored.
@@ -41,6 +40,11 @@ type SetupProfile struct {
 	// and the address book are found at; empty leaves them out.
 	DAVHost string
 
+	// An explicit pair keeps collection credentials out of the mail payload.
+	// Leaving both empty preserves the existing mailbox profile contract.
+	DAVUsername string
+	DAVPassword string
+
 	// PrincipalPath is the person's own address on the DAV server, which a
 	// client otherwise finds by asking.
 	PrincipalPath string
@@ -58,6 +62,13 @@ func (self *SetupProfile) Plist() ([]byte, error) {
 	}
 	if self.Identifier == "" {
 		return nil, fmt.Errorf("a setup profile needs an identifier")
+	}
+	if (self.DAVUsername == "") != (self.DAVPassword == "") {
+		return nil, fmt.Errorf("collection sync needs both its username and password")
+	}
+	davUsername, davPassword := self.DAVUsername, self.DAVPassword
+	if davUsername == "" {
+		davUsername, davPassword = self.Address, self.Password
 	}
 	name := strings.TrimSpace(self.MailboxName)
 	if name == "" {
@@ -102,8 +113,8 @@ func (self *SetupProfile) Plist() ([]byte, error) {
 				{"CalDAVPort", port},
 				{"CalDAVPrincipalURL", principal},
 				{"CalDAVUseSSL", true},
-				{"CalDAVUsername", self.Address},
-				{"CalDAVPassword", self.Password},
+				{"CalDAVUsername", davUsername},
+				{"CalDAVPassword", davPassword},
 			},
 			plistDictionary{
 				{"PayloadType", "com.apple.carddav.account"},
@@ -116,8 +127,8 @@ func (self *SetupProfile) Plist() ([]byte, error) {
 				{"CardDAVPort", port},
 				{"CardDAVPrincipalURL", principal},
 				{"CardDAVUseSSL", true},
-				{"CardDAVUsername", self.Address},
-				{"CardDAVPassword", self.Password},
+				{"CardDAVUsername", davUsername},
+				{"CardDAVPassword", davPassword},
 			},
 		)
 	}
