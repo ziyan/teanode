@@ -296,3 +296,17 @@ func TestRecordingSummaryMigrationBackfillsTitleSourceAndReverses(test *testing.
 		test.Fatalf("titled recordings backfill as user and untitled as none: %s", sources)
 	}
 }
+
+func TestRecordingTranscriptRunsReportTheirSegmentCount(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	completeFixtureTranscript(test, fixture)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		transcriptRuns, err := transaction.ListRecordingTranscriptRuns(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(transcriptRuns) != 1 || transcriptRuns[0].SegmentCount != 2 {
+			test.Fatalf("a listed run reports how many passages it holds: %+v", transcriptRuns)
+		}
+	})
+}

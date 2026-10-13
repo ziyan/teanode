@@ -252,9 +252,22 @@ func (self *transaction) ListRecordingTranscriptRuns(userId, recordingId string)
 	if err := self.tx.Where("recording_id = ?", recordingId).Order("created_at DESC, id DESC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	var counts []struct {
+		RecordingTranscriptRunID string
+		SegmentCount             int64
+	}
+	if err := self.tx.Raw("SELECT recording_transcript_run_id, COUNT(*) AS segment_count FROM recording_transcript_segment WHERE recording_transcript_run_id IN (SELECT id FROM recording_transcript_run WHERE recording_id = ?) GROUP BY recording_transcript_run_id", recordingId).Scan(&counts).Error; err != nil {
+		return nil, err
+	}
+	segmentCounts := make(map[string]int64, len(counts))
+	for _, count := range counts {
+		segmentCounts[count.RecordingTranscriptRunID] = count.SegmentCount
+	}
 	transcriptRuns := make([]*models.RecordingTranscriptRun, 0, len(rows))
 	for index := range rows {
-		transcriptRuns = append(transcriptRuns, recordingRunFromModel(&rows[index]))
+		transcriptRun := recordingRunFromModel(&rows[index])
+		transcriptRun.SegmentCount = segmentCounts[transcriptRun.ID]
+		transcriptRuns = append(transcriptRuns, transcriptRun)
 	}
 	return transcriptRuns, nil
 }
