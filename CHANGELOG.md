@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.144.2] - 2026-10-13
+
+### Fixed
+
+- A meeting transcription is no longer thrown away when its last words run a moment past the audio, and long recordings are no longer cut off by the chat timeout. (#443)
+- Skin-toned emoji such as ✌🏽 are accepted as reactions on the dashboard. (#442)
+- Editing an alias in the iPhone app no longer saves an address under the wrong kind. (#442)
+- Signing in with a password in the iPhone app says why a server address is refused. (#442)
+- Reaction buttons are full-size on phones, in the app and the dashboard. (#442)
+
+### Security
+
+- Passages from your knowledge sources, such as meeting transcripts and chat archives, are handed to the agent as data, never as instructions. (#443)
+
 ## [0.144.1] - 2026-10-13
 
 ### Changed
