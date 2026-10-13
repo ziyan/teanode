@@ -2644,7 +2644,7 @@ private struct AliasForm: View {
         self.editedAlias = editedAlias
         _pattern = State(initialValue: editedAlias?.pattern ?? "")
         _comment = State(initialValue: editedAlias?.comment ?? "")
-        _aliasKind = State(initialValue: editedAlias.map { $0.aliasKind ?? "null" } ?? "email")
+        _aliasKind = State(initialValue: editedAlias?.editorKind ?? "email")
         _destination = State(initialValue: editedAlias?.editableDestination ?? "")
         _mailboxId = State(initialValue: editedAlias?.mailboxId ?? "")
         _isDisabled = State(initialValue: editedAlias?.isDisabled ?? false)
@@ -2673,9 +2673,17 @@ private struct AliasForm: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     Picker("Kind", selection: $aliasKind) {
+                        if aliasKind.isEmpty {
+                            Text("Choose a kind…").tag("")
+                        }
                         ForEach(editedAlias?.selectableKinds ?? DomainAlias.creatableKinds, id: \.self) { kind in
                             Text(kindTitle(kind)).tag(kind)
                         }
+                    }
+                    // An address typed for one kind is not an answer for
+                    // another, so the box starts from what the alias holds.
+                    .onChange(of: aliasKind) { _, newKind in
+                        destination = editedAlias?.editableDestination(forKind: newKind) ?? ""
                     }
                 } footer: {
                     if isPatternMissing {
@@ -2689,6 +2697,9 @@ private struct AliasForm: View {
                             Text(verbatim: mailbox.pickerText).tag(mailbox.id)
                         }
                     }
+                    // The selection cannot match a row before the list
+                    // has loaded, so it would show as blank.
+                    .disabled(mailboxes.isEmpty)
                 } else if aliasKind == "mailServer" {
                     if let mailServer = editedAlias?.mailServer {
                         let relayText = "\(mailServer.host ?? ""):\(mailServer.port ?? 0)"

@@ -438,6 +438,22 @@ final class ManageMailTests: XCTestCase {
         XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "mailbox", destination: "", mailboxId: "mailbox-1"))
         XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "null", destination: "", mailboxId: ""))
         XCTAssertTrue(DomainAlias.isDestinationFilled(aliasKind: "mailServer", destination: "", mailboxId: ""))
+        XCTAssertFalse(DomainAlias.isDestinationFilled(aliasKind: "", destination: "team@example.net", mailboxId: ""))
+    }
+
+    func testStartsAndSwitchesTheAliasEditorKindWithoutCarryingAnAddressOver() throws {
+        let forward = try JSONDecoder().decode(
+            DomainAlias.self, from: Data(#"{"id":"alias-6","pattern":"^sales$","kind":"email","email":"team@example.net"}"#.utf8))
+        let noKind = try JSONDecoder().decode(DomainAlias.self, from: Data(#"{"id":"alias-7","pattern":"^lost$"}"#.utf8))
+        let unknownKind = try JSONDecoder().decode(
+            DomainAlias.self, from: Data(#"{"id":"alias-8","pattern":"^odd$","kind":"carrierPigeon"}"#.utf8))
+        XCTAssertEqual(forward.editorKind, "email")
+        XCTAssertEqual(noKind.editorKind, "")
+        XCTAssertEqual(unknownKind.editorKind, "")
+        XCTAssertEqual(forward.editableDestination(forKind: "email"), "team@example.net")
+        XCTAssertEqual(forward.editableDestination(forKind: "webhook"), "")
+        XCTAssertEqual(forward.editableDestination(forKind: "null"), "")
+        XCTAssertEqual(noKind.editableDestination(forKind: "email"), "")
     }
 
     func testReadsTheServersMailboxesForAnAlias() async throws {
