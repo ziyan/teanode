@@ -496,8 +496,10 @@ struct RecordingDetailScreen: View {
                     Button("Delete recording", role: .destructive) { isDeleting = true }
                 }
             }
-            .onChange(of: learning) { _, learningView in
-                if shouldFocusLearning, learningView != nil { scrollProxy.scrollTo("recording-learning", anchor: .top) }
+            .task(id: learning) {
+                guard shouldFocusLearning, learning != nil else { return }
+                try? await Task.sleep(for: .milliseconds(200))
+                scrollProxy.scrollTo("recording-learning", anchor: .top)
             }
         }
         .navigationTitle(recording.recordingTitle.isEmpty ? String(localized: "Recording") : recording.recordingTitle)
@@ -637,18 +639,34 @@ struct RecordingPlaybackScreen: View {
                         (media.originalFilename as NSString).pathExtension)
                     try FileManager.default.moveItem(at: temporary, to: destination)
                     localURL = destination
-                    let preparedPlayer = AVPlayer(url: destination)
-                    if let passageEndMS {
+                    let preparedPlayer: AVPlayer
+                    if let passageStartMS, let passageEndMS {
+                        let startOffsetMS = media.playbackOffsetMS(for: passageStartMS)
                         let endOffsetMS = media.playbackOffsetMS(for: passageEndMS)
-                        guard endOffsetMS > media.playbackOffsetMS(for: passageStartMS ?? media.timelineStartMS) else {
+                        guard passageStartMS >= media.timelineStartMS, endOffsetMS > startOffsetMS else {
                             throw TeaNodeError.unreadableAnswer
                         }
-                        preparedPlayer.currentItem?.forwardPlaybackEndTime = CMTime(seconds: Double(endOffsetMS) / 1000, preferredTimescale: 1000)
-                    }
-                    if let passageStartMS {
-                        await preparedPlayer.seek(
-                            to: CMTime(seconds: Double(media.playbackOffsetMS(for: passageStartMS)) / 1000, preferredTimescale: 1000),
-                            toleranceBefore: .zero, toleranceAfter: .zero)
+                        // A trimmed in-memory composition bounds the standard player's entire seekable range.
+                        let originalAsset = AVURLAsset(url: destination)
+                        let composition = AVMutableComposition()
+                        let timeRange = CMTimeRange(
+                            start: CMTime(value: startOffsetMS, timescale: 1000),
+                            duration: CMTime(value: endOffsetMS - startOffsetMS, timescale: 1000))
+                        let tracks = try await originalAsset.load(.tracks)
+                        for originalTrack in tracks {
+                            guard originalTrack.mediaType == .audio || originalTrack.mediaType == .video,
+                                let passageTrack = composition.addMutableTrack(
+                                    withMediaType: originalTrack.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)
+                            else { continue }
+                            try passageTrack.insertTimeRange(timeRange, of: originalTrack, at: .zero)
+                            passageTrack.preferredTransform = try await originalTrack.load(.preferredTransform)
+                        }
+                        guard !composition.tracks.isEmpty else { throw TeaNodeError.unreadableAnswer }
+                        preparedPlayer = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+                    } else if passageStartMS != nil || passageEndMS != nil {
+                        throw TeaNodeError.unreadableAnswer
+                    } else {
+                        preparedPlayer = AVPlayer(url: destination)
                     }
                     try Task.checkCancellation()
                     player = preparedPlayer

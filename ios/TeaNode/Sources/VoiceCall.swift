@@ -99,7 +99,7 @@ final class VoiceCall: NSObject {
     /// audio session ready; without CallKit, the audio at once.
     func start() {
         guard !MeetingRecorder.shared.hasSession else {
-            end(problemText: String(localized: "Stop the current recording or call before starting another recording."))
+            end(problemText: String(localized: "Stop the current recording before starting a live call."))
             return
         }
         Task {
@@ -108,7 +108,7 @@ final class VoiceCall: NSObject {
                 return
             }
             guard !MeetingRecorder.shared.hasSession else {
-                end(problemText: String(localized: "Stop the current recording or call before starting another recording."))
+                end(problemText: String(localized: "Stop the current recording before starting a live call."))
                 return
             }
             startWithCallKit()

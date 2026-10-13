@@ -45631,6 +45631,22 @@
           }
         }
       }
+    },
+    "Stop the current recording before starting a live call.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話を始める前に現在の録音を停止してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始实时通话前，请先停止当前录音。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

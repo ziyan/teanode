@@ -720,15 +720,16 @@ struct PressedButton: Sendable {
 extension AppModel {
     func refreshServices() async {
         guard let connection else { return }
-        if let services = try? await connection.serviceCapabilities(), self.connection === connection {
-            self.services = services
-        }
-        if (try? await connection.recordingOwnerId()) != nil {
-            let verifiedAccount = await connection.account
-            guard self.connection === connection else { return }
+        async let refreshedServices = try? connection.serviceCapabilities()
+        let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
+        let verifiedAccount = await connection.account
+        let availableServices = await refreshedServices
+        guard self.connection === connection else { return }
+        if hasVerifiedRecordingOwner {
             self.account = verifiedAccount
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
+        if let availableServices { self.services = availableServices }
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {

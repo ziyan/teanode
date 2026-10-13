@@ -41,7 +41,12 @@ Capture is explicit and silent. No recording activates a tool or grants permissi
   Reference invalidation warnings and explicit raw deletion remain separate native operations.
 - Deferred capture transitions retain recorder identity across journal saves. Pending
   stop or interruption wins over rollover; stale callbacks cannot start another segment.
-- Upload owners are queued across retained profiles. Signout cancels their file tasks
+- Upload owners are queued across retained profiles. Verified receipts continue uploads;
+  failed parts retain originals and wait for an explicit retry rather than loop. Transport
+  copies are removed on every refusal before background-task ownership transfers.
+  Selected passage players use a trimmed in-memory asset so scrubbing stays inside
+  the cited interval while the original bytes remain unchanged.
+  Signout cancels their file tasks
   and prevents a suspended metadata operation from scheduling another upload.
 - Live Activity elapsed time and explicit pause/resume/stop intents bind to the local
   session ID so an old activity cannot control a new session.
@@ -60,11 +65,15 @@ The initial increment and the subsequent text/timeline/recovery checkpoint passe
 macOS CI builds of the app, widget and share targets. Actual simulator artifacts were
 inspected for the library and six deep recording screens in light, dark and largest
 text. The speaker/time header needed vertical layout at accessibility sizes. That
-fix and the owner/import/availability checkpoint passed a subsequent native SDK build;
-its nine-route captures are collecting. Source schedule controls need another native
-build and ten-route visual checks.
+fix and the owner/import/availability checkpoint passed a subsequent native SDK build.
+Actual inspection found all thirty subsequent recording captures showed the conversation
+screen: capabilities reached navigation before owner verification, so the selected
+recording section was replaced. Owner and capabilities now publish in the correct
+order; rendered-content assertions reject that fallback and retain failed artifacts.
+The latest source/citation/resume/navigation changes need fresh SDK and twelve-route
+visual checks. No layout verification is claimed for the incorrect captures.
 The unsigned simulator reported an unavailable shared container, so signed capture
-and share-container behavior is not verified. The package suite passed 316 tests,
+and share-container behavior is not verified. The package suite passed 318 tests,
 including recreated-username ownership refusal and concurrent credential replacement.
 Full project lint passed again after integration, including the local naming check,
 catalog agreement and tracked secret scanning.

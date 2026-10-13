@@ -88,6 +88,7 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
+          swiftc scripts/assert-recording-screenshot.swift -o build/assert-recording-screenshot
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
@@ -97,12 +98,19 @@ jobs:
             xcrun simctl launch "$device" "$bundle" "$@"
             sleep 8
             xcrun simctl io "$device" screenshot "screenshots/$name.png"
+            case "$name" in
+              recordings-*|recording-*) build/assert-recording-screenshot "$name" "screenshots/$name.png" ;;
+            esac
           }
           shoot connect-light light large
           shoot connect-dark dark large
           shoot server-address-dark dark large -TeaNodeScreen server-address
           shoot server-address-light light large -TeaNodeScreen server-address
           shoot conversation-light light large -TeaNodeDemo
+          if build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
+            echo "Recording content assertion accepted the conversation screen."
+            exit 1
+          fi
           shoot conversation-dark dark large -TeaNodeDemo
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
           shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
@@ -116,7 +124,7 @@ jobs:
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
-          for recording_screen in recording-detail recording-transcript recording-version recording-speakers recording-text-history recording-text-editor recording-model-settings recording-quota-settings recording-attachment-import recording-source-settings recording-citation; do
+          for recording_screen in recording-detail recording-transcript recording-version recording-speakers recording-text-history recording-text-editor recording-model-settings recording-quota-settings recording-attachment-import recording-source-settings recording-citation recording-learning-stopped; do
             shoot "$recording_screen-light" light large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-dark" dark large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
@@ -179,6 +187,7 @@ jobs:
           shoot store/6-conversation-dark dark large -TeaNodeDemo
 
       - name: Keep the screenshots
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots
