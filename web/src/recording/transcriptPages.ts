@@ -96,8 +96,11 @@ export function useTranscriptPages({
         if (mine === generation.current) setIsLoading(false)
       }
     })()
+    // The counter itself, not its value: the cleanup moves it on so a read
+    // still in flight drops its answer.
+    const readCounter = generation
     return () => {
-      generation.current++
+      readCounter.current++
     }
     // The token and the transcript's identity are what make a new read.
   }, [recordingId, olderRunId, userId, reloadToken])

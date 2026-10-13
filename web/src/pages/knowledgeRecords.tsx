@@ -66,7 +66,11 @@ export function LinkedRecords({
   const { t } = useTranslation()
   const kindLabel = useRecordKindLabel()
   const relationLabel = useRecordRelationLabel()
-  const listing = usePageInAddress({ pageParameter: 'links', pageSizeParameter: 'linkRows', defaultPageSize: LINKS_PER_PAGE })
+  const listing = usePageInAddress({
+    pageParameter: 'links',
+    pageSizeParameter: 'linkRows',
+    defaultPageSize: LINKS_PER_PAGE,
+  })
   const [removing, setRemoving] = useState<RecordLink | null>(null)
   const [isLinkingContact, setIsLinkingContact] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
@@ -87,7 +91,11 @@ export function LinkedRecords({
     [path, isLaterPart, listing.offset, linkCount, initialLinks.map((link) => link.id).join(',')],
     { refresh: false },
   )
-  const links = isLaterPart ? (laterPart.data?.ListAgentRecordLinks.recordLinks ?? []) : initialLinks
+  const laterLinks = laterPart.data?.ListAgentRecordLinks.recordLinks
+  const links = useMemo(
+    () => (isLaterPart ? (laterLinks ?? []) : initialLinks),
+    [isLaterPart, laterLinks, initialLinks],
+  )
   const groups = useMemo(() => groupLinksByKind(links), [links])
   const canLinkContact = kind === 'person'
 
@@ -126,7 +134,10 @@ export function LinkedRecords({
       t('memoryLinks.confirmed'),
     )
   const remove = (link: RecordLink) =>
-    act(() => graphql(UNLINK_RECORD, { ...reference(link), recordRelation: link.recordRelation }), t('memoryLinks.removed'))
+    act(
+      () => graphql(UNLINK_RECORD, { ...reference(link), recordRelation: link.recordRelation }),
+      t('memoryLinks.removed'),
+    )
 
   // A page with nothing linked and no card to name has nothing to say here.
   if (linkCount === 0 && !canLinkContact) return null
@@ -154,7 +165,9 @@ export function LinkedRecords({
           </h4>
           {group.links.map((link) => {
             const date = recordLinkDate(link)
-            const title = link.isUnavailable ? t('memoryLinks.unavailable') : link.recordTitle || t('memoryLinks.untitled')
+            const title = link.isUnavailable
+              ? t('memoryLinks.unavailable')
+              : link.recordTitle || t('memoryLinks.untitled')
             return (
               <SettingsRow
                 key={link.id}
