@@ -479,7 +479,7 @@ struct SettingsForm: View {
             if let connection = app.connection {
                 switch DemoServer.screen ?? "" {
                 case "device-setup", "device-setup-collections", "device-setup-unavailable": DeviceSetupView(connection: connection)
-                case "device-setup-mail", "device-setup-profile": DeviceSetupView(connection: connection, preselectedMailboxId: "mailbox-demo")
+                case "device-setup-mail", "device-setup-profile", "device-setup-expired", "device-setup-receipt-unavailable": DeviceSetupView(connection: connection, preselectedMailboxId: "mailbox-demo")
                 case "agent-settings": AgentSettingsView(connection: connection)
                 case "manage": ManageOverviewView(connection: connection)
                 case "domain": DemoDomainScreen(connection: connection, isShowingRecords: false)

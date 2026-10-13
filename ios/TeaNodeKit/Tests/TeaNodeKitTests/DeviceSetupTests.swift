@@ -88,4 +88,37 @@ final class DeviceSetupTests: XCTestCase {
             XCTFail("refusal became availability")
         } catch {}
     }
+    func testRefreshPrunesUnavailableChoicesWithoutSelectingNewServices() throws {
+        let available = try capabilities()
+        var selection = DeviceSetupSelection(deviceName: "Phone", capabilities: available, preselectedMailboxId: "mailbox-a")
+        selection.hasContactsAccess = false
+        let refreshed = try JSONDecoder().decode(
+            DeviceSetupCapabilities.self,
+            from: Data(
+                #"{"canSetUpMail":false,"canSetUpCalendar":false,"canSetUpReminders":true,"canSetUpContacts":true,"mailboxes":[]}"#.utf8))
+        let retained = selection.retainingAvailableServices(capabilities: refreshed)
+        XCTAssertFalse(retained.hasMailAccess)
+        XCTAssertNil(retained.mailboxId)
+        XCTAssertFalse(retained.hasCalendarAccess)
+        XCTAssertFalse(retained.hasContactsAccess)
+        XCTAssertFalse(retained.hasRemindersAccess)
+        selection.hasContactsAccess = true
+        XCTAssertTrue(selection.retainingAvailableServices(capabilities: refreshed).canCreateProfile(capabilities: refreshed))
+    }
+
+    func testExpiredProfileRetainsRevocationReceipt() throws {
+        let profile = try JSONDecoder().decode(
+            CreatedDeviceSetupProfile.self,
+            from: Data(
+                #"{"downloadPath":"/api/v1/mailbox/profile/test.mobileconfig","downloadLink":"https://node.example.com/api/v1/mailbox/profile/test.mobileconfig","expiresAt":"2000-01-01T00:00:00Z","mailboxAppPassword":{"id":"password-a","mailboxId":"mailbox-a","name":"Phone","createdAt":"2000-01-01T00:00:00Z"},"syncCredential":{"id":"sync-a","credentialName":"Phone","hasCalendarAccess":true,"hasRemindersAccess":false,"hasContactsAccess":true}}"#
+                    .utf8))
+        let earlierDate = try XCTUnwrap(ServerTime.date("1999-01-01T00:00:00Z"))
+        let laterDate = try XCTUnwrap(ServerTime.date("2001-01-01T00:00:00Z"))
+        XCTAssertFalse(profile.hasExpired(at: earlierDate))
+        XCTAssertTrue(profile.hasExpired(at: laterDate))
+        XCTAssertTrue(profile.hasExpired(at: laterDate))
+        XCTAssertEqual(profile.mailboxAppPassword?.mailboxId, "mailbox-a")
+        XCTAssertEqual(profile.syncCredential?.id, "sync-a")
+    }
+
 }

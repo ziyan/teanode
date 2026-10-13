@@ -46048,22 +46048,6 @@
         }
       }
     },
-    "The profile expired. Create a new one.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロファイルの有効期限が切れました。新しく作成してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "描述文件已过期。请创建一个新的描述文件。"
-          }
-        }
-      }
-    },
     "Install the profile": {
       "localizations": {
         "ja": {
@@ -46140,6 +46124,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理邮件密码"
+          }
+        }
+      }
+    },
+    "Download profile": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルをダウンロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载描述文件"
+          }
+        }
+      }
+    },
+    "The profile expired. Its passwords remain active until you revoke them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルの有効期限が切れました。パスワードは取り消すまで有効です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置描述文件已过期。其密码在您撤销前仍然有效。"
           }
         }
       }

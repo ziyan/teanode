@@ -57,7 +57,7 @@ validation gaps until evidence exists.
 
 This increment depends on the shared device-setup backend contract and does not
 change existing APIs. A failed profile request retains the choices and displays the
-server error. Expired links require a new profile; never reuse an expired receipt.
+server error. Expired links cannot be downloaded; retain the receipt and its separate password-management links. A new credential pair is never created implicitly.
 Parent integration owns merge and deployment after review and required checks.
 Recording work remains on its own branch. No device installation or deployed outcome
 is currently claimed.
@@ -73,3 +73,17 @@ link; the system Share action remains available until download starts.
 The first native SDK run rejected a titled Section initializer combined with a
 footer. Both service-selection and installation sections now use the existing
 content/header/footer initializer. Fresh SDK validation is pending.
+
+The corrected native Section forms built successfully with the real simulator SDK.
+Fifteen actual setup images were inspected across light, dark and largest text;
+selection and receipt content remained readable. The largest-text Download label
+was shortened to avoid splitting the verb. No physical-device installation is claimed.
+
+Independent review found expired receipt removal, receipt hiding when all services
+turn off, and stale unavailable selections. Receipt rendering now precedes capability
+checks and retains the returned mailbox/sync identities; expired links
+are disabled without creating new passwords. An issued unexpired profile keeps its
+existing secure download behavior when services are later disabled. Capability
+refresh prunes unavailable choices only before creation without selecting newly available services. Two regressions bring the portable
+suite to 293 passing tests. Fresh SDK and expired/unavailable receipt captures remain
+pending for the updated code.

@@ -29,7 +29,7 @@
             } else if query.contains("ReadRecordingLimits") {
                 answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608,"isTranscriptionAvailable":true,"transcriptionUnavailableMessage":"","transcriptionProviderModelName":"demo:transcription"}}}"#
             } else if query.contains("GetDeviceSetupCapabilities") {
-                if Self.screen == "device-setup-unavailable" {
+                if ["device-setup-unavailable", "device-setup-receipt-unavailable"].contains(Self.screen) {
                     answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":false,"canSetUpCalendar":false,"canSetUpReminders":false,"canSetUpContacts":false,"mailboxes":[]}}}"#
                 } else if Self.screen == "device-setup-collections" {
                     answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":false,"canSetUpCalendar":true,"canSetUpReminders":true,"canSetUpContacts":true,"mailboxes":[]}}}"#

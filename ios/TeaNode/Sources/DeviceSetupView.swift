@@ -16,87 +16,92 @@ struct DeviceSetupView: View {
 
     var body: some View {
         Form {
-            if let capabilities, capabilities.hasAvailableService, let selection {
-                if let profile {
-                    Section {
-                        Label("Your setup profile is ready", systemImage: "checkmark.circle")
-                        if hasOpenedProfile {
-                            Text("Profile download started").foregroundStyle(.secondary)
-                        } else {
-                            Button {
-                                Task { await download(profile) }
-                            } label: {
-                                Label("Download setup profile", systemImage: "arrow.down.circle")
-                            }.buttonStyle(.glassProminent)
-                            if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
-                        }
-                        if let expiration = ServerTime.date(profile.expiresAt) {
-                            Text("Expires \(expiration, style: .relative)").foregroundStyle(.secondary)
-                        }
-                    } header: {
-                        Text("Install the profile")
-                    } footer: {
-                        Text("Safari downloads the profile. Open Settings, tap Profile Downloaded, then install it. The download link works once.")
-                    }
-                    Section("Access for this device") {
-                        if profile.mailboxAppPassword != nil {
-                            Label("Mail uses a mailbox app password", systemImage: "envelope")
-                            if let mailboxId = selection.mailboxId {
-                                NavigationLink {
-                                    DeviceMailPasswordsScreen(connection: connection, username: app.account?.username ?? "", mailboxId: mailboxId)
+            if let profile {
+                Section {
+                    Label("Your setup profile is ready", systemImage: "checkmark.circle")
+                    if hasOpenedProfile {
+                        Text("Profile download started").foregroundStyle(.secondary)
+                    } else {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if profile.hasExpired(at: context.date) {
+                                Text("The profile expired. Its passwords remain active until you revoke them.").foregroundStyle(.secondary)
+                            } else {
+                                Button {
+                                    Task { await download(profile) }
                                 } label: {
-                                    Label("Manage mail passwords", systemImage: "key")
-                                }
+                                    Label("Download profile", systemImage: "arrow.down.circle")
+                                }.buttonStyle(.glassProminent)
+                                if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
+
                             }
                         }
-                        if profile.syncCredential != nil {
-                            Label("Collections use an account sync password", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    if let expiration = ServerTime.date(profile.expiresAt) {
+                        Text("Expires \(expiration, style: .relative)").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Install the profile")
+                } footer: {
+                    Text("Safari downloads the profile. Open Settings, tap Profile Downloaded, then install it. The download link works once.")
+                }
+                Section("Access for this device") {
+                    if profile.mailboxAppPassword != nil {
+                        Label("Mail uses a mailbox app password", systemImage: "envelope")
+                        if let mailboxId = profile.mailboxAppPassword?.mailboxId {
                             NavigationLink {
-                                SyncCredentialsView(connection: connection)
+                                DeviceMailPasswordsScreen(connection: connection, username: app.account?.username ?? "", mailboxId: mailboxId)
                             } label: {
-                                Label("Manage sync passwords", systemImage: "key")
+                                Label("Manage mail passwords", systemImage: "key")
                             }
                         }
                     }
-                } else {
-                    Section("This iPhone") {
-                        TextField("Device name", text: binding(\.deviceName, fallback: ""))
-                            .textInputAutocapitalization(.words)
+                    if profile.syncCredential != nil {
+                        Label("Collections use an account sync password", systemImage: "arrow.triangle.2.circlepath")
+                        NavigationLink {
+                            SyncCredentialsView(connection: connection)
+                        } label: {
+                            Label("Manage sync passwords", systemImage: "key")
+                        }
                     }
-                    Section {
-                        if capabilities.canSetUpMail {
-                            Toggle("Mail", isOn: binding(\.hasMailAccess, fallback: false))
-                            if selection.hasMailAccess {
-                                Picker("Mailbox", selection: binding(\.mailboxId, fallback: nil)) {
-                                    Text("Choose a mailbox").tag(String?.none)
-                                    ForEach(capabilities.mailboxes) { mailbox in
-                                        Text(mailbox.name.isEmpty ? mailbox.addresses.first?.address ?? String(localized: "Mailbox") : mailbox.name)
-                                            .tag(Optional(mailbox.id))
-                                    }
+                }
+            } else if let capabilities, capabilities.hasAvailableService, let selection {
+                Section("This iPhone") {
+                    TextField("Device name", text: binding(\.deviceName, fallback: ""))
+                        .textInputAutocapitalization(.words)
+                }
+                Section {
+                    if capabilities.canSetUpMail {
+                        Toggle("Mail", isOn: binding(\.hasMailAccess, fallback: false))
+                        if selection.hasMailAccess {
+                            Picker("Mailbox", selection: binding(\.mailboxId, fallback: nil)) {
+                                Text("Choose a mailbox").tag(String?.none)
+                                ForEach(capabilities.mailboxes) { mailbox in
+                                    Text(mailbox.name.isEmpty ? mailbox.addresses.first?.address ?? String(localized: "Mailbox") : mailbox.name)
+                                        .tag(Optional(mailbox.id))
                                 }
                             }
                         }
-                        if capabilities.canSetUpCalendar { Toggle("Calendar", isOn: binding(\.hasCalendarAccess, fallback: false)) }
-                        if capabilities.canSetUpReminders { Toggle("Reminders", isOn: binding(\.hasRemindersAccess, fallback: false)) }
-                        if capabilities.canSetUpContacts { Toggle("Contacts", isOn: binding(\.hasContactsAccess, fallback: false)) }
-                    } header: {
-                        Text("Choose what to add")
-                    } footer: {
-                        Text("Choose only the services you want on this iPhone. Calendar, Reminders and Contacts do not need a mailbox.")
                     }
-                    Section {
-                        Button {
-                            Task { await create() }
-                        } label: {
-                            if isCreating { ProgressView() } else { Label("Create setup profile", systemImage: "iphone.badge.plus") }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .disabled(isCreating || !selection.canCreateProfile(capabilities: capabilities))
-                    } footer: {
-                        Text(
-                            "The profile signs in with separate mail and sync passwords. You can revoke either without changing your account password."
-                        )
+                    if capabilities.canSetUpCalendar { Toggle("Calendar", isOn: binding(\.hasCalendarAccess, fallback: false)) }
+                    if capabilities.canSetUpReminders { Toggle("Reminders", isOn: binding(\.hasRemindersAccess, fallback: false)) }
+                    if capabilities.canSetUpContacts { Toggle("Contacts", isOn: binding(\.hasContactsAccess, fallback: false)) }
+                } header: {
+                    Text("Choose what to add")
+                } footer: {
+                    Text("Choose only the services you want on this iPhone. Calendar, Reminders and Contacts do not need a mailbox.")
+                }
+                Section {
+                    Button {
+                        Task { await create() }
+                    } label: {
+                        if isCreating { ProgressView() } else { Label("Create setup profile", systemImage: "iphone.badge.plus") }
                     }
+                    .buttonStyle(.glassProminent)
+                    .disabled(isCreating || !selection.canCreateProfile(capabilities: capabilities))
+                } footer: {
+                    Text(
+                        "The profile signs in with separate mail and sync passwords. You can revoke either without changing your account password."
+                    )
                 }
             } else if capabilities != nil {
                 ContentUnavailableView(
@@ -126,17 +131,22 @@ struct DeviceSetupView: View {
         do {
             let available = try await connection.deviceSetupCapabilities()
             capabilities = available
-            if selection == nil {
+            if profile == nil, let currentSelection = selection {
+                selection = currentSelection.retainingAvailableServices(capabilities: available)
+            } else if selection == nil {
                 selection = DeviceSetupSelection(
                     deviceName: UIDevice.current.name, capabilities: available, preselectedMailboxId: preselectedMailboxId)
             }
             #if DEBUG
-                if DemoServer.screen == "device-setup-profile", profile == nil {
+                if ["device-setup-profile", "device-setup-expired", "device-setup-receipt-unavailable"].contains(DemoServer.screen), profile == nil {
                     profile = try JSONDecoder().decode(
                         CreatedDeviceSetupProfile.self,
                         from: Data(
                             #"{"downloadPath":"/api/v1/mailbox/profile/demo.mobileconfig","downloadLink":"https://demo.example.com/api/v1/mailbox/profile/demo.mobileconfig","expiresAt":"2099-01-01T00:00:00Z","mailboxAppPassword":{"id":"password-demo","mailboxId":"mailbox-demo","name":"Phone","createdAt":"2000-01-01T00:00:00Z","lastUsedAt":null},"syncCredential":{"id":"sync-demo","credentialName":"Phone","hasCalendarAccess":true,"hasRemindersAccess":true,"hasContactsAccess":true}}"#
-                                .replacingOccurrences(of: "2099-01-01T00:00:00Z", with: Date().addingTimeInterval(300).formatted(.iso8601)).utf8))
+                                .replacingOccurrences(
+                                    of: "2099-01-01T00:00:00Z",
+                                    with: Date().addingTimeInterval(DemoServer.screen == "device-setup-expired" ? -300 : 300).formatted(.iso8601)
+                                ).utf8))
                 }
             #endif
             problemText = nil
@@ -163,9 +173,7 @@ struct DeviceSetupView: View {
             }
         } catch {
             if let expiration = ServerTime.date(profile.expiresAt), expiration <= Date() {
-                self.profile = nil
-                hasOpenedProfile = false
-                problemText = String(localized: "The profile expired. Create a new one.")
+                problemText = String(localized: "The profile expired. Its passwords remain active until you revoke them.")
             } else {
                 problemText = app.describe(error)
             }

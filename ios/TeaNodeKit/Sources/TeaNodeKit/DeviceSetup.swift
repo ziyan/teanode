@@ -35,6 +35,18 @@ public struct DeviceSetupSelection: Sendable {
         hasContactsAccess = capabilities.canSetUpContacts
     }
 
+    public func retainingAvailableServices(capabilities: DeviceSetupCapabilities) -> Self {
+        var retained = self
+        retained.hasCalendarAccess = hasCalendarAccess && capabilities.canSetUpCalendar
+        retained.hasRemindersAccess = hasRemindersAccess && capabilities.canSetUpReminders
+        retained.hasContactsAccess = hasContactsAccess && capabilities.canSetUpContacts
+        if !capabilities.canSetUpMail || !capabilities.mailboxes.contains(where: { $0.id == mailboxId }) {
+            retained.mailboxId = nil
+            retained.hasMailAccess = false
+        }
+        return retained
+    }
+
     public func canCreateProfile(capabilities: DeviceSetupCapabilities) -> Bool {
         let trimmedName = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, trimmedName.utf8.count <= 128,
@@ -64,6 +76,11 @@ public struct CreatedDeviceSetupProfile: Codable, Sendable {
     public let expiresAt: String
     public let mailboxAppPassword: MailAppPassword?
     public let syncCredential: SyncCredential?
+
+    public func hasExpired(at currentDate: Date = Date()) -> Bool {
+        guard let expiration = ServerTime.date(expiresAt) else { return true }
+        return expiration <= currentDate
+    }
 
     public func downloadURL(server: ServerAddress) throws -> URL {
         guard let downloadURL = URL(string: downloadLink), downloadURL.user == nil, downloadURL.password == nil,
