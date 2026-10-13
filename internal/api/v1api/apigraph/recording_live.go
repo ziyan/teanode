@@ -96,26 +96,26 @@ func (self *graph) recordingLiveView(response http.ResponseWriter, request *http
 	isFromThisServer := request.Header.Get("Origin") != "" && fromThisServer(request)
 	sessionUsername := api.UsernameFromRequest(request)
 	upgrader := websocket.Upgrader{CheckOrigin: fromThisServer}
-	conn, err := upgrader.Upgrade(response, request, nil)
+	connection, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
 		return
 	}
-	defer func() { _ = conn.Close() }()
-	conn.SetReadLimit(voice.MaximumFrameBytes + 1024)
-	socket := &voiceSocket{conn: conn}
+	defer func() { _ = connection.Close() }()
+	connection.SetReadLimit(voice.MaximumFrameBytes + 1024)
+	socket := &voiceSocket{conn: connection}
 	refuse := func(reason string) {
 		_ = socket.say(&voice.Event{VoiceEvent: voice.EventRefused, ErrorMessage: reason})
 	}
 
 	// Who this is, and where on the timeline the stream begins, come with
 	// the first message.
-	_ = conn.SetReadDeadline(time.Now().Add(helloWait))
+	_ = connection.SetReadDeadline(time.Now().Add(helloWait))
 	var hello struct {
 		VoiceEvent    string `json:"voiceEvent"`
 		Authorization string `json:"authorization"`
 		StreamStartMS int64  `json:"streamStartMS"`
 	}
-	if messageType, helloBytes, err := conn.ReadMessage(); err != nil || messageType != websocket.TextMessage || json.Unmarshal(helloBytes, &hello) != nil || hello.VoiceEvent != "hello" {
+	if messageType, helloBytes, err := connection.ReadMessage(); err != nil || messageType != websocket.TextMessage || json.Unmarshal(helloBytes, &hello) != nil || hello.VoiceEvent != "hello" {
 		refuse("the first message says hello")
 		return
 	}
@@ -232,13 +232,13 @@ func (self *graph) recordingLiveView(response http.ResponseWriter, request *http
 			_ = socket.say(&voice.Event{VoiceEvent: voice.EventError, ErrorMessage: "the session reached its end; stream again"})
 		}
 		// Either way the socket ends with it, which ends the loop below.
-		_ = conn.Close()
+		_ = connection.Close()
 	}()
 
 	checkedAt := time.Now()
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(voiceSilenceLongest))
-		messageType, messageBytes, err := conn.ReadMessage()
+		_ = connection.SetReadDeadline(time.Now().Add(voiceSilenceLongest))
+		messageType, messageBytes, err := connection.ReadMessage()
 		if err != nil {
 			return
 		}
