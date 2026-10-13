@@ -15,8 +15,8 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - [x] Milestone 3 (2026-10-13): speakers keep their label across pieces (recording-scoped temporary voice samples) and naming a speaker during capture applies to the whole recording.
 - [x] Milestone 4 (2026-10-13): live words stream through the server (recording mode of the voice relay), stored as live utterances and merged with speaker-separated segments in the timeline. Built on `feat/recording-live-stream` and merged into this branch.
 - [ ] Milestone 5: the iPhone cuts pieces at utterance ends, uploads them while recording, streams the microphone, and shows live bubbles with naming on the recording screen.
-- [ ] Milestone 6: the dashboard shows a capture in progress live; settings, CLI and tool parity; deploy and real-device check.
-- [ ] Milestone 7: the dashboard records from the browser's microphone, with a recording bar that stays while the person moves around the dashboard and a live recording page.
+- [ ] Milestone 6: the dashboard shows a capture in progress live; settings, CLI and tool parity; deploy and real-device check. Done on `feat/recording-live-web` (2026-10-13): the dashboard part (the recording page polls every 3 seconds while the capture is not stopped, draws live words as neutral bubbles and temporary speakers as "Speaker N", and the bubble menu names them or marks This is me). The setting and the command line's live marking were built in Milestone 4. Still open: deploying, and the real-iPhone test.
+- [x] Milestone 7 (2026-10-13, `feat/recording-live-web`): the dashboard records from the browser's microphone (`web/src/recording/capture.ts`), with a recording bar that stays while the person moves around the dashboard and a live recording page. Checked against a local server with a fake microphone: 90 seconds recorded with a pause, six pieces uploaded and verified, the recording stopped with its pause gap. The live socket was not exercised there (no transcription provider); it is covered by unit tests with a fake socket.
 - [ ] Milestone 8: the agent's recording tool imports a recording straight from a message attachment, a file on an attached computer or a chat attachment, and the CLI records from a microphone or standard input and watches a capture in progress.
 
 ## Surprises & Discoveries
@@ -32,6 +32,18 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - Naming a temporary speaker a second time with a different name works (a new correction under a new key), but naming it back to a name it already had is answered by the first correction, which an intermediate name's later generation still outranks. This is the same as the existing `speaker-confirm` behavior for a repeated client correction key and is left alone.
 - `isRecognizedSpeaker` was missing from the command line and tool timeline document, so a speaker recognized by voice could not be told from an unnamed one there. Added with the new fields.
 - The existing test `TestRecordingCaptureHistoryAndReservedQuota` expected each progress update to advance the generation (it used the stale value 1 after two updates). It now checks a generation from the future and, after the stop, the pre-stop generation.
+- The timeline carries `liveUtterances` on its first page only, but a long capture is paged by 50 passages, so a reader on a later page would never see them. The page therefore reads them with a one-passage query of the first page (`ReadRecordingLiveTail`) and draws each page the words that belong to it: the first page from the start, a later page from its first passage, and a page that is not the last up to its last passage (`liveRangeOfPage`).
+- Live words are not always at the end. A later piece can finish transcribing before an earlier one that is still queued, so words of the earlier piece are still live while passages after them exist. They are therefore placed among the passages by the time they began, not appended.
+- `recordingStatus` counts only `active` and `paused` as recording, not `interrupted`, so the page decides "is this capture still going" with its own check of the three live states, the same as the server's `IsRecordingCaptureLive`.
+- Naming a temporary speaker takes no source generation, unlike `CorrectRecordingSpeaker`, so its menu items work even before the speakers have been read.
+- While a capture is going, the pieces uploaded so far are complete media items, and the page would have drawn a player for each, and the "reselect the original" prompt for the one still uploading. Both are hidden until the capture is stopped.
+- `fake-indexeddb` is not a dependency, so the queue is tested against an in-memory store behind the same `CaptureStore` interface (`MemoryCaptureStore`); the IndexedDB implementation itself is exercised only in the real browser check.
+- The voice capture worklet already converts to a requested rate, so the same file serves both rates: it is instantiated twice, once at 16 kHz for the pieces and once at 24 kHz for the live socket.
+- The live socket places words by counting the audio it was given, from the `streamStartMS` in its hello. A frame dropped or sent late would shift every later word, so the client holds frames until the server says ready, and closes and reopens the stream (at the new timeline position) rather than ever skipping a frame.
+- `CreateRecordingMedia` is idempotent by `clientMediaId` and refuses the same id with a different start, so a piece's id is made of its index, its start and the start of its digest; two silent pieces with the same digest cannot collide.
+- Progress and pause reports obey the server's gap rules: a gap may only grow while the capture is paused and its end equals the reported duration, so a pause reports a gap of zero length at the pause time and the resume extends it.
+- A refused report is usually a stale generation (naming a speaker moves it), so the report is tried once more with the generation read again.
+- Local check: with no transcription provider the live socket is refused (403), and the capture falls back to the level pause rule; pieces were cut at 21 to 22 seconds, as the policy says for a talker with 0.7 second pauses.
 
 ## Decision Log
 
@@ -83,6 +95,23 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - Decision: the recording tool imports from the same sources as `share_file` (mail, computer, conversation), and still cannot turn on a microphone; the CLI may record, because the person runs it on their own machine.
   Rationale: the owner asked for tool and CLI parity, for example creating a recording from a file. The agent recording someone without the person starting it would be covert recording, which the tool has always refused.
   Date/Author: 2026-10-13, Claude, asked by the owner.
+
+- Decision: the recording page of a capture in progress follows the end like a chat: while the reader is within a screen of the bottom it keeps the newest bubble in view, and when the live words are on a page other than the one shown it offers "Jump to the latest words".
+  Rationale: a page that reloads every 3 seconds and moves under the reader is worse than one that does not follow, and a reader who scrolled up to read is left alone.
+  Date/Author: 2026-10-13, Claude (Milestone 6).
+- Decision: the live bubbles are drawn from what the server stores (read every 3 seconds), not from the words this tab's own socket hears.
+  Rationale: the page may be open on another device from the one recording, and one source means one behavior; the recording bar (Milestone 7) shows the words of the local socket.
+  Date/Author: 2026-10-13, Claude (Milestone 6).
+
+- Decision: a capture that a tab leaves unfinished (reload, closed tab, crash) is stopped by the next visit, at the end of the last piece it holds, after that visit uploads the pieces. A second tab never stops a capture the first still records: the recording holds a Web Lock named after it, which recovery checks.
+  Rationale: otherwise the recording would stay active for ever, its live words never deleted and its title and summary never made. The stop is written to IndexedDB (`captures` store) before the server is told, so a failed report is repeated.
+  Date/Author: 2026-10-13, Claude (Milestone 7).
+- Decision: the microphone is opened with echo cancellation and noise suppression off and automatic gain on; pieces older than 14 days are dropped from IndexedDB; a piece the browser refuses to store is kept in memory instead.
+  Rationale: nothing is played back so there is no echo to cancel, and suppression removes the quiet voice in a room that the recording is for; a piece the server refuses would otherwise be retried for ever; a full disk should cost the reload safety, not the audio.
+  Date/Author: 2026-10-13, Claude (Milestone 7).
+- Decision: Start recording opens the new recording's page, the bar is above the agent's button and, while the agent's box is open on a wide screen, moves to its left. Import is no longer the primary button; Start recording is.
+  Rationale: the person pressed it to see the conversation; two primary buttons are one too many.
+  Date/Author: 2026-10-13, Claude (Milestone 7).
 
 ## Outcomes & Retrospective
 

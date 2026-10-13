@@ -5,7 +5,7 @@ import { askAgentAbout, graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PageHeadingActions, useBreadcrumbDetail, useHeadingActionSlot } from '../components/breadcrumb'
-import { MoreIcon, SparkIcon } from '../components/icons'
+import { MoreIcon, RecordIcon, SparkIcon } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Pager } from '../components/pager'
@@ -18,6 +18,7 @@ import { RecordingProcessingPanel } from '../recording/processingPanel'
 import { RecordingPassagePlayback } from '../recording/playback'
 import { RecordingOriginalPlayer } from '../recording/originalPlayer'
 import { RecordingConversation } from '../recording/conversationView'
+import { useCaptureSnapshot } from '../recording/captureSnapshot'
 import { RecordingDetailsDrawer } from '../recording/detailsDrawer'
 import { RecordingEditDialog, type ProcessingDialog } from '../recording/editDialog'
 import { formatRecordingLength, readRecordingStatusEvidence, recordingStatus } from '../recording/library'
@@ -30,6 +31,13 @@ import {
   type Recording,
   type RecordingMedia,
 } from '../recording/api'
+
+// How often the page of a recording that is still being captured is read again.
+const LIVE_POLL_MS = 3000
+const isCaptureOngoing = (recording: Recording) =>
+  recording.recordingCaptureState === 'active' ||
+  recording.recordingCaptureState === 'paused' ||
+  recording.recordingCaptureState === 'interrupted'
 
 const errorText = (caught: unknown) => (caught instanceof Error ? caught.message : String(caught))
 
@@ -94,6 +102,22 @@ function AccountRecordingsPage() {
     async () => (recordingId ? await readRecording(recordingId) : null),
     [recordingId, session.userId],
   )
+  const captureSnapshot = useCaptureSnapshot()
+  const [isStartingCapture, setIsStartingCapture] = useState(false)
+  const startCapture = async () => {
+    if (!session.userId) return
+    setIsStartingCapture(true)
+    try {
+      const { startRecording } = await import(/* webpackChunkName: "recordings" */ '../recording/capture')
+      const startedRecordingId = await startRecording(session.userId)
+      void library.reload()
+      navigate(`/recordings/${startedRecordingId}`)
+    } catch (caught) {
+      toast.failure(caught, t('recordings.startFailed'))
+    } finally {
+      setIsStartingCapture(false)
+    }
+  }
   const [isImporting, setIsImporting] = useState(false),
     [originalFile, setOriginalFile] = useState<File | null>(null)
   const [resumeMedia, setResumeMedia] = useState<RecordingMedia | null>(null)
@@ -192,6 +216,19 @@ function AccountRecordingsPage() {
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailStatus, recordingId])
+  // A capture in progress is read again every few seconds, which is how its
+  // words and its speakers arrive on the page; the recording's own state is
+  // read with it, so the page notices when the capture is stopped.
+  const isLive = view ? isCaptureOngoing(view.recording) : false
+  useEffect(() => {
+    if (!isLive) return
+    const timer = window.setInterval(() => {
+      void detail.reload()
+      setConversationReloadToken((previous) => previous + 1)
+    }, LIVE_POLL_MS)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive, recordingId])
   const changed = () => {
     void detail.reload()
     setConversationReloadToken((previous) => previous + 1)
@@ -324,8 +361,16 @@ function AccountRecordingsPage() {
       {!recordingId ? (
         <>
           <PageHeadingActions>
-            <button type="button" className="primary" onClick={() => showImport()}>
+            <button type="button" onClick={() => showImport()}>
               {t('recordings.import')}
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={isStartingCapture || captureSnapshot.phase !== 'idle'}
+              onClick={() => void startCapture()}
+            >
+              <RecordIcon size={16} /> {t('recordings.startRecording')}
             </button>
           </PageHeadingActions>
           {library.loading && !library.data ? (
@@ -396,18 +441,21 @@ function AccountRecordingsPage() {
               </div>
               {headingActionSlot ? createPortal(recordingActions, headingActionSlot) : recordingActions}
             </div>
+            {isLive ? <p className="muted recording-live-note">{t('recordings.liveHint')}</p> : null}
             {view.recording.recordingSummary ? (
               <section className="recording-summary">
                 <h3>{t('recordings.summary')}</h3>
                 <p>{view.recording.recordingSummary}</p>
               </section>
             ) : null}
-            {completeMedia.map((media) => (
+            {/* The pieces of a capture in progress are not offered as originals
+                until it is stopped: there would be a player for each. */}
+            {(isLive ? [] : completeMedia).map((media) => (
               <div className="recording-original" key={media.id}>
                 <RecordingOriginalPlayer media={media} passagePlayback={passagePlayback.current} />
               </div>
             ))}
-            {incompleteMedia.map((media) => (
+            {(isLive ? [] : incompleteMedia).map((media) => (
               <div className="recording-original" key={media.id}>
                 <p className="muted">
                   {media.originalFilename}: {t('recordings.resumeHint')}
@@ -424,6 +472,7 @@ function AccountRecordingsPage() {
               mediaFiles={view.mediaFiles}
               passagePlayback={passagePlayback.current}
               reloadToken={conversationReloadToken}
+              isLive={isLive}
               onChanged={changed}
               onSpeakerCount={setSpeakerCount}
             />

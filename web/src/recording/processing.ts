@@ -37,6 +37,14 @@ export interface TranscriptSegment {
   hasUnalignedSpeakerCorrection: boolean
   appliedSpeakerCorrectionId: string
   isAccountOwner?: boolean
+  // temporarySpeakerLabel ("Speaker 1") is a speaker of a capture in progress that nobody has named yet.
+  temporarySpeakerLabel?: string
+}
+export interface LiveUtterance {
+  utteranceId: string
+  utteranceStartMS: number
+  utteranceEndMS: number
+  transcriptText: string
 }
 export interface TranscriptionAttempt {
   id: string
@@ -64,6 +72,7 @@ export interface TranscriptTimeline {
   sourceGeneration: number
   segments: TranscriptSegment[]
   transcriptRuns: TranscriptRun[]
+  temporarySpeakers?: { speakerLabel: string; speakerIdentityId: string }[]
   segmentCount: number
   hasMoreSegments: boolean
 }

@@ -14337,3 +14337,104 @@ button.herdr-question-head {
   overflow-y: auto;
   padding: 16px;
 }
+
+/* --- the recording bar -----------------------------------------------------
+   Fixed at the foot of the dashboard while a recording is made or sent, above
+   the agent's button (44px high, 20px from the corner) so neither covers the
+   other. With the agent's box open it stands beside the box, not under it. */
+.recording-bar {
+  position: fixed;
+  right: 20px;
+  bottom: 76px;
+  z-index: 29;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 40px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--text-body);
+}
+.recording-bar-main {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.recording-bar-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-round);
+  background: var(--bad);
+}
+.recording-bar-dot.paused,
+.recording-bar-dot.idle,
+.recording-bar-dot.starting,
+.recording-bar-dot.stopping {
+  background: var(--muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .recording-bar-dot.recording {
+    animation: recording-bar-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes recording-bar-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.recording-bar-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.recording-bar-words {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recording-bar-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-label);
+}
+.recording-bar .row-actions {
+  flex: none;
+}
+@media (min-width: 721px) {
+  body:has(.agent-drawer:not(.standalone)) .recording-bar {
+    right: 476px;
+    bottom: 20px;
+    width: min(380px, calc(100vw - 496px));
+  }
+}
+/* The page keeps its last lines clear of the bar. */
+body.has-recording-bar .content {
+  padding-bottom: 140px;
+}
+.recording-turn.live {
+  align-items: flex-start;
+}
+.recording-live-line {
+  opacity: 0.85;
+  font-style: italic;
+}
+.recording-live-note {
+  margin: 0;
+}
+.recording-live-line {
+  width: fit-content;
+  max-width: 100%;
+}

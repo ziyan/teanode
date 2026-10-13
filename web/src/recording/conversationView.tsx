@@ -12,13 +12,20 @@ import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { type RecordingMedia } from './api'
 import { overlapsRecordingCitation, readRecordingCitation } from './citation'
-import { distinctSpeakerCount, groupConversation, type ConversationGroup } from './conversation'
+import {
+  distinctSpeakerCount,
+  groupConversation,
+  liveRangeOfPage,
+  temporarySpeakerNumber,
+  type ConversationGroup,
+} from './conversation'
 import { BubbleTextDialog } from './bubbleTextDialog'
 import { RecordingEditDialog, type ProcessingDialog } from './editDialog'
 import { formatRecordingLength } from './library'
 import { type RecordingPassagePlayback } from './playback'
 import {
   recordingOperation,
+  type LiveUtterance,
   type SpeakersView,
   type TranscriptSegment,
   type TranscriptTimeline,
@@ -39,6 +46,7 @@ export function RecordingConversation({
   mediaFiles,
   passagePlayback,
   reloadToken,
+  isLive = false,
   onChanged,
   onSpeakerCount,
 }: {
@@ -47,6 +55,9 @@ export function RecordingConversation({
   mediaFiles: RecordingMedia[]
   passagePlayback: RecordingPassagePlayback
   reloadToken: number
+  // isLive is a capture still in progress: the words heard so far are drawn
+  // at the end, without a speaker, until the transcript with speakers covers them.
+  isLive?: boolean
   onChanged: () => void
   onSpeakerCount?: (speakerCount: number) => void
 }) {
@@ -99,6 +110,15 @@ export function RecordingConversation({
           }),
     [recordingId, olderRunId, page.pageIndex, userId, reloadToken],
   )
+  // Only the first page of the timeline carries the words heard live, so a
+  // later page asks for them on their own.
+  const liveTail = useQuery(
+    () =>
+      isLive
+        ? recordingOperation<{ liveUtterances: LiveUtterance[] }>('ReadRecordingLiveTail', { recordingId })
+        : Promise.resolve(null),
+    [recordingId, isLive, userId, reloadToken],
+  )
   const speakers = useQuery(
     () => recordingOperation<SpeakersView>('ReadRecordingSpeakers', { recordingId }),
     [recordingId, userId, reloadToken],
@@ -106,7 +126,13 @@ export function RecordingConversation({
   const generation = speakers.data?.sourceGeneration
   const isReadOnly = Boolean(olderRunId)
   const segments = timeline.data?.segments ?? []
-  const groups = groupConversation(segments)
+  const liveUtterances = isLive && !isReadOnly ? (liveTail.data?.liveUtterances ?? []) : []
+  const isLastPage = timeline.data ? !timeline.data.hasMoreSegments : false
+  const groups = groupConversation(
+    segments,
+    liveUtterances,
+    liveRangeOfPage(segments, page.pageIndex === 0, isLastPage),
+  )
   const speakerCount = distinctSpeakerCount(segments)
   useEffect(() => onSpeakerCount?.(speakerCount), [speakerCount, onSpeakerCount])
   const citedSegmentId =
@@ -121,6 +147,22 @@ export function RecordingConversation({
   const [dialog, setDialog] = useState<ProcessingDialog | null>(null)
   const [actingOnGroupKey, setActingOnGroupKey] = useState<string | null>(null)
   const [editingGroup, setEditingGroup] = useState<ConversationGroup | null>(null)
+
+  // A capture in progress grows at the end. A reader who is looking at the
+  // end is kept there as it grows; one who has scrolled up is left alone.
+  const endOfConversation = useRef<HTMLDivElement>(null)
+  const wasAtEnd = useRef(true)
+  useEffect(() => {
+    const keepTrack = () => {
+      wasAtEnd.current = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160
+    }
+    window.addEventListener('scroll', keepTrack, { passive: true })
+    return () => window.removeEventListener('scroll', keepTrack)
+  }, [])
+  const liveSignature = `${groups.length}/${liveUtterances.length}/${segments.length}`
+  useEffect(() => {
+    if (isLive && wasAtEnd.current) endOfConversation.current?.scrollIntoView?.({ block: 'end' })
+  }, [isLive, liveSignature])
 
   const runs = timeline.data?.transcriptRuns ?? []
   // play plays a whole bubble: from its first passage to the last one taken
@@ -184,6 +226,28 @@ export function RecordingConversation({
         },
       ],
     })
+  const nameTemporarySpeaker = (speakerLabel: string) =>
+    setDialog({
+      operationName: 'NameRecordingTemporarySpeaker',
+      titleKey: 'nameSpeaker',
+      variables: { recordingId, speakerLabel, isAccountOwner: false },
+      fields: [{ fieldName: 'confirmedName', labelKey: 'confirmedName', fieldValue: '' }],
+    })
+  const setTemporaryOwnership = async (speakerLabel: string) => {
+    try {
+      // Left empty so the server names the speaker after the person.
+      await recordingOperation('NameRecordingTemporarySpeaker', {
+        recordingId,
+        speakerLabel,
+        confirmedName: '',
+        isAccountOwner: true,
+      })
+      toast.done(t('recordingProcessing.saved'))
+      onChanged()
+    } catch (caught) {
+      toast.failure(caught, t('recordingProcessing.saved'))
+    }
+  }
   const setOwnership = async (segment: TranscriptSegment, passageEndMS: number) => {
     try {
       await recordingOperation('CorrectRecordingSpeakerOwner', {
@@ -207,9 +271,10 @@ export function RecordingConversation({
   // citation, correct its words and say who spoke it, over the whole bubble.
   const bubbleActions = (group: ConversationGroup): LineAction[] => {
     const firstSegment = group.segments[0]
+    const temporarySpeakerLabel = group.temporarySpeakerLabel
     const groupEndMS = Math.max(...group.segments.map((segment) => segment.segmentEndMS))
     const canEdit = !isReadOnly && generation !== undefined
-    const canName = canEdit && Boolean(firstSegment.localSpeakerId)
+    const canName = canEdit && Boolean(firstSegment.localSpeakerId) && !temporarySpeakerLabel
     const actions: LineAction[] = [
       {
         actionKey: 'play',
@@ -234,6 +299,23 @@ export function RecordingConversation({
         icon: <PencilIcon size={16} />,
         onAct: () => setEditingGroup(group),
       })
+    // A speaker heard while the recording is still going, not yet named, is
+    // named for the whole recording at once.
+    if (!isReadOnly && temporarySpeakerLabel)
+      actions.push(
+        {
+          actionKey: 'name',
+          label: t('recordingProcessing.nameSpeaker'),
+          icon: <PeopleIcon size={16} />,
+          onAct: () => nameTemporarySpeaker(temporarySpeakerLabel),
+        },
+        {
+          actionKey: 'owner',
+          label: t('recordings.thisIsMe'),
+          icon: <UserIcon size={16} />,
+          onAct: () => void setTemporaryOwnership(temporarySpeakerLabel),
+        },
+      )
     // Your own bubble has one way to say who it was instead: Not me, which
     // opens the name form, since there is no call that unsets the owner.
     if (canName && firstSegment.isAccountOwner)
@@ -262,7 +344,26 @@ export function RecordingConversation({
   }
 
   const bubble = (group: ConversationGroup) => {
-    const speakerLabel = group.speakerName ?? t('recordings.speakerLabel', { speakerLetter: group.speakerLetter })
+    // Words heard live have no speaker yet: a bubble on the left with no name,
+    // which turns into the speakers' own when the transcript covers it.
+    if (group.isLive)
+      return (
+        <div key={group.groupKey} className="recording-turn live">
+          <Tooltip label={formatRecordingLength(group.groupStartMS)}>
+            <div className="agent-line assistant recording-live-line">
+              {group.liveUtterances.map((utterance) => utterance.transcriptText).join(' ')}
+            </div>
+          </Tooltip>
+        </div>
+      )
+    const temporaryNumber = group.temporarySpeakerLabel ? temporarySpeakerNumber(group.temporarySpeakerLabel) : null
+    const speakerLabel =
+      group.speakerName ??
+      (group.temporarySpeakerLabel
+        ? temporaryNumber
+          ? t('recordings.temporarySpeakerLabel', { speakerNumber: temporaryNumber })
+          : group.temporarySpeakerLabel
+        : t('recordings.speakerLabel', { speakerLetter: group.speakerLetter }))
     const actions = bubbleActions(group)
     // Play and Copy are the swipe's own buttons in the corner; the rest follow.
     const cornerActions = actions.filter((action) => action.actionKey !== 'play' && action.actionKey !== 'copy')
@@ -337,8 +438,21 @@ export function RecordingConversation({
         </div>
       ) : null}
       {timeline.loading && !timeline.data ? <Loading /> : null}
-      {timeline.data && groups.length === 0 ? <SettingsEmpty>{t('recordings.noTranscript')}</SettingsEmpty> : null}
+      {timeline.data && groups.length === 0 ? (
+        <SettingsEmpty>{t(isLive ? 'recordings.noWordsYet' : 'recordings.noTranscript')}</SettingsEmpty>
+      ) : null}
+      {isLive && timeline.data?.hasMoreSegments ? (
+        <div className="recording-earlier-notice muted">
+          <button
+            type="button"
+            onClick={() => page.setPageIndex(Math.floor((timeline.data!.segmentCount - 1) / PAGE_SIZE))}
+          >
+            {t('recordings.showLatestWords')}
+          </button>
+        </div>
+      ) : null}
       {groups.map(bubble)}
+      <div ref={endOfConversation} />
       {timeline.data && groups.length > 0 ? (
         <Pager
           pageIndex={page.pageIndex}
