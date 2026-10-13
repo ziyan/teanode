@@ -12,8 +12,8 @@ To see it working: open a person page on the dashboard and see a Linked records 
 
 ## Progress
 
-- [ ] Milestone 1: the link model and API (record links table, typed record references, contact link, page links and record backlinks, fact evidence that names a record).
-- [ ] Milestone 2: the agent reads and makes links (memory tool operations, contact card on a person page within grants, prompt context).
+- [x] Milestone 1: the link model and API (record links table, typed record references, contact link, page links and record backlinks, fact evidence that names a record). Done 2026-10-13: migration `0176_agent_record_link`, `models.AgentRecordLink`, the DB methods, package `recordlink` (reads a link's record under the reader's access), GraphQL and client documents, and the CLI (see Interfaces and Dependencies). Tests: `internal/db/database_graph_record_test.go`, `internal/recordlink/recordlink_test.go`, `internal/api/v1api/apigraph/agent_graph_record_test.go`, `internal/cmd/agent_graph_record_test.go`.
+- [x] Milestone 2: the agent reads and makes links (memory tool operations, contact card on a person page within grants, prompt context). Done 2026-10-13: `links`, `backlinks`, `link --record`, `unlink --record` on the memory tool, the linked card in `get`, record titles in recalled pages, the self card in the prompt read only from a granted book. Tests: `internal/agent/tools/memory/records_test.go`, `internal/agent/graph_record_prompt_internal_test.go`.
 - [ ] Milestone 3: links made automatically (contacts by address and name, recording speakers and passages, mail participants, calendar attendees, finance merchants and receipts), as stated when sure and proposed when guessed.
 - [ ] Milestone 4: the dashboard (Linked records on a page, clickable evidence, In memory on records, contact picker, record nodes in the graph view).
 - [ ] Milestone 5: the iPhone app and the CLI, with the same reads and edits.
@@ -22,6 +22,11 @@ To see it working: open a person page on the dashboard and see a Linked records 
 
 - Person pages already have `AgentNode.ContactID` (`internal/models/graph.go`, column from migration `0066_agent_graph.sql`), read live by `AgentGraphPage` (`internal/api/v1api/apigraph/agent_graph.go`), and shown as one line on the dashboard and the iPhone, but nothing ever sets it except the person's own self card (`SetMyContact`).
 - Evidence kinds `mail`, `commit`, `chat` and `contact` are declared in `internal/models/graph.go` but never written. Received mail is not in memory at all; only sent mail is ingested (`internal/agent/ingest_sent.go`) and cited as `document` evidence.
+- The memory tool already had `link` and `unlink` for joining two pages (and the person's `LinkAgentNodes` and `UnlinkAgentNodes` and `teanode agent memory link|unlink` for the same). The record operations extend the same verbs with a `record` argument rather than adding rival names, and `links` and `backlinks` are new.
+- The CLI group is `teanode agent memory ...`, not `teanode memory ...`; the commands are added there.
+- A recording has many passages, so the unique key the plan first named, (agent, page, kind, id, relation), would have allowed one passage per recording per relation. The range is in the key (see the Decision Log).
+- `GetAgentMessage` finds a conversation message by identifier alone, and `FirstOwnedItemIDsByMail` maps a mail id to the person's mailbox item, so a record's owner is checked after the lookup, not by the query. The resolver (`internal/recordlink`) does that check per kind, which is why it is one package that both the API and the agent use.
+- Address books and calendars are created closed; `AgentGranted` is set only by `UpdateAddressBook` and `UpdateCalendar`, so a test that passes it to `Create...` gets a closed one without an error.
 - `internal/agent/remember_apply.go` explains why pages must not create contact cards (it once created hundreds of empty cards); this plan keeps that rule: links point at existing cards and never create one.
 
 ## Decision Log
@@ -36,9 +41,34 @@ To see it working: open a person page on the dashboard and see a Linked records 
   Rationale: a link must never widen access; the research for this plan found two places that read the person's own card without the grant (the page view, which is the person's own and fine, and the prompt's self card), and the agent-facing reads added here check the grant.
   Date/Author: 2026-10-13, Claude.
 
+- Decision: the unique key of a record link includes the passage range (columns `passage_start_ms` and `passage_end_ms`, zero for every other kind), and `record_detail` holds only the transcript run of a passage and the mailbox of a mail.
+  Rationale: the range has to be a column to be indexed for overlap queries and to be part of uniqueness; with it in jsonb, two passages of one recording by one speaker could not both be linked. Deviation from the unique key written in the plan.
+  Date/Author: 2026-10-13, Claude.
+- Decision: a mail record is named by the mailbox item identifier (the identifier the dashboard opens at `/mailbox/starred/<id>`), not by the mail's own identifier.
+  Rationale: a message can be in several mailboxes, and the item says which person's and which mailbox's, which is what the grant check needs.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the agent's reads of a finance transaction check the source the transaction's account came from (switched off withholds that institution only), and of a receipt check that any finance source of the agent is switched on.
+  Rationale: a receipt belongs to no source; a transaction does.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the agent states a link only when `link_status` is `stated` and `quote` is in the person's last message of the conversation of a run with somebody present; the default is a proposal. Removing a stated link needs the same. A proposal made again never turns a statement back into a proposal.
+  Rationale: "never stated without the person's words" has to be something the tool checks and not only something the guidance says. The check is mechanical (a quote in their last message), which is the most the server can verify.
+  Date/Author: 2026-10-13, Claude.
+- Decision: every result of the memory tool that carries a record's title or card is marked untrusted (`Result.Untrusted`), so the loop fences it; a recalled page in a prompt carries kind and title inside the same fence (`fenced`), and leaves recording passages out of the prompt, since a recording's title is written from what was said and recorded words reach a prompt only as marked evidence. Reading a recording passage link through `links` marks the run as having read recording evidence, and evidence of kind `recording_passage` counts as recording evidence.
+  Rationale: the plan's rule that titles from mail, calendar and receipts are untrusted data, and the existing rule about recorded words.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the dashboard paths a link returns for records with no deep link yet (`/contacts?contact=`, `/calendar?event=`, `/reminders?reminder=`, `/agent?conversation=&message=`, `/finance/transactions?transaction=`, `/finance/receipts?receipt=`) are the intended addresses; the pages ignore the parameter until Milestone 4 reads it. Mail (`/mailbox/starred/<id>`) and recordings (`/recordings/<id>?version=&startMS=&endMS=`) already open.
+  Rationale: the API has to be complete before the dashboard is; the address is part of the contract.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the CLI is `teanode agent memory links|backlinks|link --record|unlink --record|contact`, and the memory tool's existing `link` and `unlink` take `record` for a record; `relation` in the tool is the union of both vocabularies (`about` is in both).
+  Rationale: the existing group and verbs; two sets of verbs for one idea is a trap.
+  Date/Author: 2026-10-13, Claude.
+- Decision: merging two pages moves the first page's record links to the survivor (a twin the survivor already has is kept once) and the survivor takes the first page's `contact_id` when it has none.
+  Rationale: a link lost in a merge is a link nobody notices is gone.
+  Date/Author: 2026-10-13, Claude.
+
 ## Outcomes & Retrospective
 
-Not started.
+Milestones 1 and 2 are built and tested; Milestones 3 to 5 are not started. The links are made by the person (GraphQL, CLI) and by the agent (memory tool, proposed unless the person's words are quoted), and every read of a linked record by the agent checks the grant when it reads. Nothing writes links automatically yet; that is Milestone 3, which can call `PutAgentRecordLink` with `LinkStatus` stated or proposed.
 
 ## Context and Orientation
 
@@ -78,4 +108,21 @@ None yet.
 
 ## Interfaces and Dependencies
 
-New: table `agent_record_link`; `models.AgentRecordLink`, `models.AgentRecordKind`, `models.AgentRecordRelation`; GraphQL `AgentGraphPage.recordLinks`, `ReadRecordMemoryLinks(recordKind, recordId)`, mutations `LinkAgentRecord`, `UnlinkAgentRecord`, `SetAgentNodeContact`; memory tool operations `links`, `backlinks`, `link`, `unlink`; CLI `teanode memory links|backlinks|link|unlink`.
+The reference for Milestones 3 to 5. Naming follows `CONTRIBUTING.md`.
+
+Table `agent_record_link` (migration 0176): `id`, `agent_id`, `node_id` (cascade with the agent and the page), `record_kind`, `record_id` (up to 128 characters, no foreign key), `record_detail` (jsonb `{transcriptRunId, mailboxId}`), `passage_start_ms`, `passage_end_ms`, `record_relation`, `link_status`, `evidence` (jsonb, the shape of fact evidence), `note`, `happened_at`, `created_at`, `modified_at`. Unique on (agent, page, kind, id, relation, passage start, passage end).
+
+Go: `models.AgentRecordLink` (`Validate`, `Reference`, `Proposed`), `models.AgentRecordKind` (`contact`, `mail`, `calendar_event`, `reminder`, `conversation_message`, `finance_transaction`, `finance_receipt`, `recording_passage`), `models.AgentRecordRelation` (`is_contact`, `wrote`, `received`, `attended`, `organized`, `spoke_in`, `mentioned_in`, `paid`, `paid_by`, `receipt_for`, `about`), `models.RecordRelationsOf(kind)` (which relations fit a kind), `models.FormatRecordReference` and `ParseRecordReference` (`kind:id`, and `recording_passage:ID@START-END`). `models.Evidence` gains `TranscriptRunID`, `StartMS`, `EndMS` and the evidence kinds `calendar_event`, `reminder`, `conversation_message`, `finance_transaction`, `finance_receipt`, `recording_passage` (`mail` and `contact` existed). Database: `PutAgentRecordLink` (upsert by the unique key; a stated link is never turned into a proposal), `DeleteAgentRecordLink` (by page, kind, id, optional relation and range), `GetAgentRecordLink`, `ListAgentRecordLinks(agent, page)`, `ListAgentRecordBacklinks(agent, kind, id, startMS, endMS, limit)` (range overlap for passages), `SetAgentNodeContact(agent, page, contactId)`. Package `internal/recordlink`: `Reader{UserID, AgentID, IsAgent}`, `Resolve` and `ResolveRecord` returning `Resolved{Title, HappenedAt, DashboardPath, IsUnavailable, IsWithheld, Contact}`; Milestone 3 passes should use it to confirm a record before linking it.
+
+GraphQL (all need `agent:use`, all scoped to the caller's own agent):
+- `AgentGraphPage` gains `recordLinks` (the first 50, each an `AgentRecordLinkView`), `recordLinkCount` and `evidenceRecords` (`AgentEvidenceRecordView`: `factId`, `evidenceIndex`, `recordKind`, `recordId`, `passageStartMS`, `passageEndMS`, `transcriptRunId`, `recordTitle`, `dashboardPath`, `isUnavailable`; evidence of a document read from a sent message is mapped to its mail item).
+- Query `ListAgentRecordLinks(path, first, offset)` returns `{recordLinks, recordLinkCount, nextOffset}`, at most 200 at a time.
+- Query `ReadRecordMemoryLinks(recordKind, recordId, passageStartMS, passageEndMS)` returns `[AgentRecordLinkView]` with `nodePath`, `nodeName`, `nodeKind` of each linking page; for a passage the range narrows it to overlapping passages.
+- Mutation `LinkAgentRecord(path, recordKind, recordId, recordRelation, passageStartMS, passageEndMS, transcriptRunId, note)` states a link and returns the view; the record must be the person's and exist, linking again confirms a proposal.
+- Mutation `UnlinkAgentRecord(path, recordKind, recordId, recordRelation, passageStartMS, passageEndMS)` returns whether there was a link; no relation is all of them.
+- Mutation `SetAgentNodeContact(path, contactId)` for a person page (not self, which keeps `SetMyContact`): the card has to be in one of the person's own address books; writes `contact_id` and a stated `is_contact` link, moves the link when the card changes, and clears both on an empty `contactId`. It never creates a card.
+- `AgentRecordLinkView`: `id`, `nodePath`, `nodeName`, `nodeKind`, `recordKind`, `recordId`, `recordRelation`, `linkStatus`, `passageStartMS`, `passageEndMS`, `transcriptRunId`, `note`, `evidence`, `happenedAt`, `createdAt`, and found at read time `recordTitle`, `recordHappenedAt`, `dashboardPath`, `isUnavailable`. The person's views are never withheld; the agent's are (see the memory tool).
+
+Memory tool (`internal/agent/tools/memory`): `links` (`path`, `link_offset`; 40 at a time, each link as `- <relation> <kind>:<id>  <title>  (<date>)`, with a card's name, organization, addresses and telephone for a readable contact, and `[the person has not shared this with you...]` or `[no longer there]` otherwise), `backlinks` (`record`), `link` and `unlink` with `record`, `relation`, `text` (the link's note), `link_status` (`proposed` by default), `quote`, `transcript_run`. `get` of a person page includes the linked card when its book is granted. Reads are `RiskRead`; link and unlink are writes.
+
+CLI (`docs/reference/command-line.md`): `teanode agent memory links <path>`, `backlinks --record <kind>:<id>`, `link <path> --record <kind>:<id> --relation <relation> [--note] [--transcript-run]`, `unlink <path> --record <kind>:<id> [--relation]`, `contact <path> <contact-id> | --clear`; `--json` on the reads. Client: `client.ListAgentRecordLinks`, `ReadRecordMemoryLinks`, `LinkAgentRecord`, `UnlinkAgentRecord`, `SetAgentNodeContact` and their `Document...` strings (checked against the schema by `TestClientDocumentsMatchTheSchema`).
