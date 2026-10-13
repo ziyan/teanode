@@ -2208,6 +2208,7 @@ export const en = {
   'connect.openHere': 'On this phone? Open the TeaNode app',
   'connect.expired': 'That code has expired.',
   'connect.newCode': 'Make a new code',
+  'connect.back': 'Back to Phones',
   'connect.making': 'Making a code…',
   'connect.failed': 'The code could not be made.',
   'authorize.askedFor': 'It asked to be sent to',

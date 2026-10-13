@@ -109,6 +109,11 @@ export function ConnectPage() {
           </button>
         </div>
       )}
+
+      {/* The page is a card of its own, outside the dashboard's frame: the way back is here. */}
+      <a className="connect-back" href="/settings/phones">
+        {t('connect.back')}
+      </a>
     </AuthCard>
   )
 }
