@@ -83,9 +83,11 @@ function graphemesOf(text: string): string[] {
 // One emoji: a flag, a keycap, or pictographs drawn in color (by default,
 // or by the selector that asks for it) joined by zero width joiners, each
 // with an optional skin tone, and the tags that name a regional flag. A
-// regional indicator alone is a letter in a box, not an emoji.
+// regional indicator alone is a letter in a box, not an emoji. A skin tone
+// may follow a text-presentation base directly (a victory hand written
+// without the selector), as the server's validator and the iPhone app allow.
 const PICTOGRAPH =
-  '(?:(?!\\p{Regional_Indicator})\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F)\\p{Emoji_Modifier}?'
+  '(?:(?!\\p{Regional_Indicator})\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F|\\p{Extended_Pictographic}(?=\\p{Emoji_Modifier}))\\p{Emoji_Modifier}?'
 const ONE_EMOJI = new RegExp(
   `^(?:\\p{Regional_Indicator}{2}|[0-9#*]\\uFE0F?\\u20E3|${PICTOGRAPH}(?:\\u200D${PICTOGRAPH})*[\\u{E0020}-\\u{E007F}]*)$`,
   'u',

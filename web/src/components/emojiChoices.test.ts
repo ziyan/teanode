@@ -25,7 +25,24 @@ it('offers only single emoji, each once', () => {
 // One or two emoji pass, whatever they are made of: a flag, a skin tone, a
 // family joined by zero width joiners, a keycap.
 it('accepts one or two emoji of any make', () => {
-  for (const entry of ['👍', ' 👍 ', '👍🏽', '🇯🇵', '👨‍👩‍👧‍👦', '1️⃣', '❤️‍🔥', '🏳️‍🌈', '🔥🎉']) {
+  for (const entry of [
+    '👍',
+    ' 👍 ',
+    '👍🏽',
+    '🇯🇵',
+    '👨‍👩‍👧‍👦',
+    '1️⃣',
+    '❤️‍🔥',
+    '🏳️‍🌈',
+    '🔥🎉',
+    '\u270C\u{1F3FD}',
+    '\u261D\u{1F3FD}',
+    '\u{1F575}\u{1F3FD}',
+    '\u{1F3CB}\u{1F3FD}',
+    '\u270D\u{1F3FD}',
+    '\u{1F590}\u{1F3FD}',
+    '\u26F9\u{1F3FD}',
+  ]) {
     expect(reactionEntryProblem(entry), entry).toBeNull()
   }
 })
