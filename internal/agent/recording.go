@@ -296,7 +296,7 @@ func (self *Agent) runRecording(ctx context.Context, run *Run) error {
 		return err
 	}
 	self.WakeRecordingSpeakerCuration(run.Agent.UserID, transcriptRun.RecordingID)
-	self.queueRecordingSummary(ctx, run.Agent.UserID, transcriptRun.RecordingID)
+	self.queueRecordingTerms(ctx, run.Agent.UserID, transcriptRun.RecordingID)
 	return nil
 }
 
@@ -379,7 +379,7 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 		}
 		return false, err
 	}
-	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences})
+	response, providerError := selection.Transcriber.Transcribe(ctx, &llm.TranscriptionRequest{Model: selection.Model, MediaFilename: "recording.wav", MediaContentType: "audio/wav", MediaBytes: audioBytes, MediaDurationMS: chunk.AudioDurationMS, IsSpeakerDiarizationRequired: true, SpeakerReferences: speakerReferences, VocabularyPrompt: self.recordingVocabularyHint(ctx, run.Agent, transcriptRun.RecordingID)})
 	finished := &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptUncertain, AttemptErrorMessage: "provider request did not return a verified transcript; it was not repeated"}
 	var segments []*models.RecordingTranscriptSegment
 	var usage llm.Usage
