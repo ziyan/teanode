@@ -16,9 +16,9 @@ export function RecordingOriginalPlayer({
   const mediaId = media.id
   const timelineStartMS = media.timelineStartMS
   const [playback, setPlayback] = useState<RecordingPlayback | null>(null)
+  const [isUsingPreview, setIsUsingPreview] = useState(false)
   const [isPreparing, setIsPreparing] = useState(false)
   const [playbackError, setPlaybackError] = useState<string | null>(null)
-  const [hasUnsupportedOriginal, setHasUnsupportedOriginal] = useState(false)
   const isMounted = useRef(false)
   const hasUnsupportedOriginalReference = useRef(false)
   const previewPlayer = useRef<HTMLMediaElement | null>(null)
@@ -37,6 +37,7 @@ export function RecordingOriginalPlayer({
     setIsPreparing(true)
     setPlaybackError(null)
     setPlayback(null)
+    setIsUsingPreview(false)
     const pendingPreparation = prepareRecordingPlayback({ id: mediaId, timelineStartMS }, controller.signal)
       .then(async (compatiblePlayback) => {
         if (!isMounted.current || controller.signal.aborted) throw new DOMException('Playback canceled', 'AbortError')
@@ -44,6 +45,7 @@ export function RecordingOriginalPlayer({
           previewReady.current = { resolve, reject }
         })
         setPlayback(compatiblePlayback)
+        setIsUsingPreview(true)
         return readyPlayer
       })
       .finally(() => {
@@ -80,7 +82,6 @@ export function RecordingOriginalPlayer({
   )
   const unsupportedOriginal = (errorMessage: string) => {
     hasUnsupportedOriginalReference.current = true
-    setHasUnsupportedOriginal(true)
     setPlaybackError(errorMessage)
   }
   const originalError = (player: HTMLMediaElement) => {
@@ -96,7 +97,7 @@ export function RecordingOriginalPlayer({
   }
   return (
     <>
-      {playback ? (
+      {isUsingPreview && playback ? (
         <>
           <p className="muted">{t('recordings.compatibleAudio')}</p>
           <audio
@@ -139,17 +140,36 @@ export function RecordingOriginalPlayer({
           onError={(event) => originalError(event.currentTarget)}
         />
       )}
-      {hasUnsupportedOriginal && (!playback || playbackError) ? (
+      {!isUsingPreview || playbackError ? (
         <>
           <p className="muted">{t('recordings.previewHint')}</p>
           <div className="page-actions">
             <button type="button" disabled={isPreparing} onClick={() => void playCompatible()}>
-              {t(isPreparing ? 'recordings.preparingAudio' : 'recordings.playCompatibleAudio')}
+              {t(
+                isPreparing
+                  ? 'recordings.preparingAudio'
+                  : hasUnsupportedOriginalReference.current
+                    ? 'recordings.playCompatibleAudio'
+                    : 'recordings.useAudioPreview',
+              )}
             </button>
           </div>
         </>
       ) : null}
       <div className="page-actions">
+        {isUsingPreview && playback && !hasUnsupportedOriginalReference.current ? (
+          <button
+            type="button"
+            disabled={isPreparing}
+            onClick={() => {
+              passagePlayback.stop()
+              setIsUsingPreview(false)
+              setPlaybackError(null)
+            }}
+          >
+            {t('recordings.useOriginal')}
+          </button>
+        ) : null}
         <a className="button" href={recordingMediaPath(media.id)} download={media.originalFilename}>
           {t('recordings.download')}
         </a>

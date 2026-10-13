@@ -66,6 +66,7 @@ it('does not prepare on mount, metadata loading or unsupported-original detectio
   fireEvent.loadedMetadata(view.container.querySelector('audio')!)
   await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce())
   expect(graphql).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('button', { name: 'Use original' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Download original' }).getAttribute('href')).toBe(
     '/api/v1/recordings/media/fixture-media',
   )
@@ -118,7 +119,7 @@ it('aborts pending preparation on account or recording navigation without playin
   })
   expect(play).not.toHaveBeenCalled()
 })
-it('keeps a supported video original and does not offer an audio-only conversion', () => {
+it('keeps a supported video original by default and offers only an explicit audio-only conversion', () => {
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   const view = render(player(new RecordingPassagePlayback(), { ...media, originalContentType: 'video/mp4' }))
   const original = view.container.querySelector('video')!
@@ -126,5 +127,35 @@ it('keeps a supported video original and does not offer an audio-only conversion
   fireEvent.loadedMetadata(original)
   expect(view.container.querySelector('audio')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Play compatible audio' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Use audio preview' })).toBeTruthy()
   expect(graphql).not.toHaveBeenCalled()
+})
+
+it('switches supported video to explicit audio preview and returns to the original without another preparation', async () => {
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  vi.mocked(graphql).mockResolvedValue({ PrepareRecordingPlayback: playbackReceipt })
+  const view = render(player(new RecordingPassagePlayback(), { ...media, originalContentType: 'video/mp4' }))
+  const original = view.container.querySelector('video')!
+  Object.defineProperty(original, 'videoWidth', { value: 1920 })
+  fireEvent.loadedMetadata(original)
+  expect(graphql).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Use audio preview' }))
+  await waitFor(() =>
+    expect(view.container.querySelector('audio')?.getAttribute('src')).toBe(playbackReceipt.playbackPath),
+  )
+  const returnButton = screen.getByRole('button', { name: 'Use original' }) as HTMLButtonElement
+  expect(returnButton.disabled).toBe(true)
+  fireEvent.loadedMetadata(view.container.querySelector('audio')!)
+  await waitFor(() => expect(returnButton.disabled).toBe(false))
+  expect(play).toHaveBeenCalledOnce()
+  fireEvent.click(returnButton)
+  expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/api/v1/recordings/media/fixture-media')
+  expect(view.container.querySelector('audio')).toBeNull()
+  expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
+    playbackReceipt.playbackPath,
+  )
+  expect(screen.getByRole('link', { name: 'Download original' })).toBeTruthy()
+  expect(pause).toHaveBeenCalled()
+  expect(graphql).toHaveBeenCalledOnce()
 })

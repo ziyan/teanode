@@ -4,12 +4,16 @@ This is the client execution companion for the passive meeting recording plan.
 The [shared recording plan](meeting-recording-execplan.md) and
 [backend preview lifecycle](recording-playback-execplan.md) remain in their own
 stream. Originals stay retained and unchanged; unsupported browser containers
-can have a locally prepared audio preview without a provider request.
+can have a locally prepared audio preview without a provider request. Supported
+originals also offer an explicit audio-only choice without changing their default player.
 
 ## Behavior and boundaries
 
-Keep a supported original video or audio player. A browser playback error offers
-an explicit user action to prepare compatible audio. Preparing writes owned
+Keep a supported original video or audio player by default. Offer an explicit
+Use audio preview action for supported originals; a browser playback error offers
+Play compatible audio instead. Use original returns to a supported player without
+preparing again and retains ready preview metadata and download. Do not offer
+return to an original already known to be unsupported. Preparing writes owned
 blob storage and counts against existing storage bounds; it is not a read-only
 operation, and it incurs no transcription/provider charge. Never prepare a
 preview during metadata loading. Ready previews use the owned media playback
@@ -31,7 +35,8 @@ iOS stream; do not claim physical-device verification from browser playback.
 - [x] Add explicit compatible audio controls with safe lifecycle and passage alignment.
 - [x] Review integrated behavior, run meaningful tests and full naming lint.
 - [x] Inspect actual Chrome desktop and phone preparation/playback/errors.
-- [ ] Open a separate draft increment with diagrams and exact-head CI evidence.
+- [x] Open a separate draft increment with diagrams.
+- [ ] Verify exact-head CI after the merged backend rebase and final mode controls.
 
 ## Validation
 
@@ -66,6 +71,12 @@ original download. Supported historical WAV and video stayed on their original
 routes and stopped at their selected end times. Settled screenshots were
 inspected; captures taken during viewport transitions were rejected.
 
+Final actual Chrome desktop and phone checks also switched supported video to
+optional audio and back. The visual original returned paused, ready preview
+download remained available, and known unsupported CAF had no unusable return
+action. Review fixes separated playback mode from ready metadata and disabled
+return while preview metadata was loading.
+
 The CLI refused preparation in read-only mode before transport. Ready preview
 metadata and download worked in read-only mode and matched the receipt digest
 and byte size. An actual Chrome preview download matched the same receipt.
@@ -73,23 +84,26 @@ Original bytes, digest and source generation remained unchanged. Existing
 synthetic correction/reference/citation fixtures were retained. No model or paid
 provider call was made by these checks, and no live server was changed.
 
-Full naming lint, dashboard lint/types, 468 dashboard tests plus 2 dependency
-regressions, 11 focused player/controller checks, Go races and production/extension
-builds pass. Both complete preview selections validated against the integrated
+The final increment passes full naming lint, dashboard lint/types, 469 dashboard
+tests plus 2 dependency regressions, 12 focused player/controller checks, Go races
+and production/extension builds. Mode regressions cover original/preview
+switching, ready-download retention and unsupported return controls. Both complete preview selections validated against the integrated
 schema and executed through actual owned requests. The whole dashboard query
 script still reports unrelated interpolation/fragment and disabled-service
 errors on this off fixture, so it is not claimed to pass. Exact-head CI and
-native preview integration remain required before completion. Browser playback
+native preview integration remain required before completion. Native implements
+explicit audio preview, original return and verified sharing; its portable tests
+and simulator build pass. Physical sharing and playback remain unverified. Browser playback
 is not physical iPhone capture, upload, installation or codec validation.
 
 ## Surface parity
 
 | Capability | Dashboard | CLI | LLM tool | iOS |
 | --- | --- | --- | --- | --- |
-| Explicit local preparation | User Play on unsupported original or selected passage | prepare-playback or explicit download --preview | prepare-playback, write risk | Native stream |
-| Ready owned preview | Labeled compatible player | read-playback | read-playback, evidence read | Native stream |
-| Ready preview download | Separate ready audio download | Bounded digest-verified download --preview | Returns owned ready path, existing handoff | Native stream |
-| Original and timeline preservation | Original downloads, supported video, offset/end pause | Original default unchanged | Existing owned IDs and absolute timestamps | Native stream |
+| Explicit local preparation | Optional audio choice or unsupported original/passage Play | prepare-playback or explicit download --preview | prepare-playback, write risk | Optional audio choice or unsupported original Play |
+| Ready owned preview | Labeled audio player, supported original return | read-playback | read-playback, evidence read | Labeled audio player, supported original return |
+| Ready preview download | Separate ready audio download retained on return | Bounded digest-verified download --preview | Returns owned ready path, existing handoff | Verified original/audio sharing |
+| Original and timeline preservation | Original downloads, supported video, offset/end pause | Original default unchanged | Existing owned IDs and absolute timestamps | Original downloads, video, offset/end pause |
 
 Root owns backend merge/deployment and native coordination. This surface
 increment is reviewable independently but does not establish four-surface or
