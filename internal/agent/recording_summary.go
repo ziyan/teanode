@@ -10,7 +10,6 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -118,22 +117,16 @@ func splitRecordingPieces(lines []string, characters int) []string {
 
 // summarizeRecordingLines asks the model for the title and summary of a
 // transcript given as lines of "speaker: words". It reads a long transcript
-// in pieces and combines the notes. The answer is nil when the model's reply
-// could not be read; an error means the call itself failed.
-func summarizeRecordingLines(ctx context.Context, provider llm.Provider, modelName string, lines []string, recordUsage func(llm.Usage)) (*recordingSummaryAnswer, error) {
-	ask := func(instructions, content string) (string, error) {
-		response, err := provider.Chat(ctx, &llm.ChatRequest{
-			Model: modelName, MaxTokens: 2000,
-			Messages: []llm.ChatMessage{
-				{Role: llm.RoleSystem, Content: instructions},
-				{Role: llm.RoleUser, Content: content},
-			},
-		})
+// in pieces and combines the notes. Every call is a run of the agent, with a
+// transcript, its usage and its budget accounting like any other. The answer is
+// nil when the model's reply could not be read; an error means the call itself failed.
+func (self *Agent) summarizeRecordingLines(ctx context.Context, run *Run, lines []string) (*recordingSummaryAnswer, error) {
+	ask := func(title, instructions, content string) (string, error) {
+		thinking, err := self.oneShot(ctx, run, title, instructions+"\n\n"+content, models.AgentJobRecordingSummary, config.AgentWorkSummarize)
 		if err != nil {
 			return "", err
 		}
-		recordUsage(response.Usage)
-		return response.Message.Content, nil
+		return thinking.Text, nil
 	}
 	pieces := splitRecordingPieces(lines, recordingSummaryPieceCharacters)
 	if len(pieces) == 0 {
@@ -144,7 +137,7 @@ func summarizeRecordingLines(ctx context.Context, provider llm.Provider, modelNa
 	if len(pieces) > 1 {
 		notes := make([]string, 0, len(pieces))
 		for index, piece := range pieces {
-			said, err := ask(recordingSummaryInstructions+recordingPieceInstructions, fmt.Sprintf("Part %d of %d.\n\n%s", index+1, len(pieces), fenced(piece)))
+			said, err := ask(fmt.Sprintf("Read part %d of %d of a recording", index+1, len(pieces)), recordingSummaryInstructions+recordingPieceInstructions, fmt.Sprintf("Part %d of %d.\n\n%s", index+1, len(pieces), fenced(piece)))
 			if err != nil {
 				return nil, err
 			}
@@ -153,7 +146,7 @@ func summarizeRecordingLines(ctx context.Context, provider llm.Provider, modelNa
 		// The notes were written by a model that read the speech, so they are fenced too.
 		content = "Notes on the parts of one recording, in order.\n\n" + fenced(strings.Join(notes, "\n\n"))
 	}
-	said, err := ask(instructions, content)
+	said, err := ask("Named a recording", instructions, content)
 	if err != nil {
 		return nil, err
 	}
@@ -265,12 +258,7 @@ func (self *Agent) queueRecordingSummaries(ctx context.Context) {
 // runRecordingSummary is the handler for a recording summary job.
 func (self *Agent) runRecordingSummary(ctx context.Context, run *Run) error {
 	configuration := self.settings.Configuration()
-	if self.settings.Registry == nil {
-		return nil
-	}
-	provider, modelName, err := self.settings.Registry.ForWork(config.AgentWorkSummarize)
-	if err != nil {
-		log.Infof("no model is available to summarize recording %q: %s", run.Job.SubjectID, err)
+	if self.settings.Registry == nil || configuration.Agent.Models.ForWork(config.AgentWorkSummarize) == "" {
 		return nil
 	}
 	var lines []string
@@ -290,10 +278,7 @@ func (self *Agent) runRecordingSummary(ctx context.Context, run *Run) error {
 	if len(lines) == 0 {
 		return nil
 	}
-	usageModelName := configuration.Agent.Models.ForWork(config.AgentWorkSummarize)
-	answer, err := summarizeRecordingLines(ctx, provider, modelName, lines, func(usage llm.Usage) {
-		RecordUsage(self.settings.Database, run.Agent.ID, "", usageModelName, string(models.AgentJobRecordingSummary), usage)
-	})
+	answer, err := self.summarizeRecordingLines(ctx, run, lines)
 	if err != nil {
 		return err
 	}
