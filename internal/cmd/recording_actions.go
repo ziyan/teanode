@@ -28,6 +28,7 @@ func recordingActionCommands() []*cli.Command {
 		{"retry", "resume this version when the server can safely continue its work", []string{"transcript-run-id"}},
 		{"speakers", "inspect confirmed identities, correction intervals and voice references", []string{"recording-id"}},
 		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group; --me says the speaker is you", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "me", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
+		{"temporary-speaker-name", "name a speaker of a recording still being captured (label such as \"Speaker 1\" from the timeline) using the name supplied by the user; the name applies to every piece; --me says the speaker is you", []string{"recording-id", "speaker-label", "confirmed-name", "me"}},
 		{"speaker-rename", "rename an identity linked to this recording using the name supplied by the user", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "confirmed-name"}},
 		{"speaker-reset", "remove a manual speaker correction", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
 		{"reference-delete", "revoke a curated voice reference without deleting the original", []string{"recording-id", "expected-source-generation", "voice-reference-id", "force"}},

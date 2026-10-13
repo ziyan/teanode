@@ -137,6 +137,13 @@ func TestRecordingToolReadsTheSummaryAndOffersTheOwnerFlag(test *testing.T) {
 	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(arguments)}); err != nil || operations.variables["isAccountOwner"] != true {
 		test.Fatal("the owner flag did not reach the mutation", err)
 	}
+	operations.responseJSON = `{"NameRecordingTemporarySpeaker":true}`
+	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(`{"operation":"temporary-speaker-name","recording_id":"fixture-recording","speaker_label":"Speaker 2","confirmed_name":"Participant Two"}`)}); err != nil || operations.variables["speakerLabel"] != "Speaker 2" || operations.variables["confirmedName"] != "Participant Two" {
+		test.Fatal("naming a temporary speaker did not reach the mutation", err, operations.variables)
+	}
+	if tools.Build().Get("recording").RiskOf(json.RawMessage(`{"operation":"temporary-speaker-name"}`)) != tools.RiskWrite {
+		test.Fatal("naming a speaker is not a write")
+	}
 	operations.responseJSON = `{"UpdateRecordingMetadata":{}}`
 	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(`{"operation":"metadata","recording_id":"fixture-recording","expected_source_generation":2,"recorded_at":"2031-03-04T05:06:00Z"}`)}); err != nil {
 		test.Fatal("the tool requires a title to change the date", err)

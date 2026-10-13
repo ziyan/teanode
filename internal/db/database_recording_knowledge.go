@@ -105,6 +105,11 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 	if err != nil {
 		return err
 	}
+	// The transcript of a capture still being recorded is partial and changes
+	// with every piece. Stopping the capture syncs it once.
+	if recordingSource.RecordingOrigin == models.RecordingOriginCapture && recordingSource.RecordingCaptureState != models.RecordingCaptureStopped {
+		return nil
+	}
 	ownerAgent, err := self.GetAgentByUser(userId)
 	if err != nil || ownerAgent == nil {
 		return err
@@ -231,6 +236,9 @@ func (self *transaction) syncRecordingKnowledge(userId, recordingId string, shou
 			for _, segmentRow := range segmentRows {
 				segment := (*models.RecordingTranscriptSegment)(segmentRow)
 				confirmedName := "unconfirmed speaker " + segment.LocalSpeakerID + " (request " + segment.RecordingTranscriptionAttemptID + ")"
+				if segment.TemporarySpeakerLabel != "" {
+					confirmedName = "unconfirmed speaker " + segment.TemporarySpeakerLabel + " (the same voice across this recording, name not confirmed)"
+				}
 				hasInvalidatedAttribution := false
 				for _, invalidation := range invalidations {
 					if invalidation.RecordingTranscriptionAttemptID == segment.RecordingTranscriptionAttemptID {

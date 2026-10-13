@@ -136,4 +136,8 @@ type RecordingTranscriptSegment struct {
 	IsAccountOwner                bool   `json:"isAccountOwner" gorm:"-"`
 	HasUnalignedSpeakerCorrection bool   `json:"hasUnalignedSpeakerCorrection" gorm:"-"`
 	AppliedSpeakerCorrectionID    string `json:"appliedSpeakerCorrectionId" gorm:"-"`
+	// TemporarySpeakerLabel is the label ("Speaker 1") of the temporary
+	// speaker of the recording this passage was matched to, for a speaker
+	// nobody has named yet. The same speaker has the same label in every piece.
+	TemporarySpeakerLabel string `json:"temporarySpeakerLabel" gorm:"-"`
 }

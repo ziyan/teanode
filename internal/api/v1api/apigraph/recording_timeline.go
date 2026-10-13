@@ -18,8 +18,10 @@ type RecordingTranscriptTimelineView struct {
 	SourceGeneration int64                                `json:"sourceGeneration"`
 	Segments         []*models.RecordingTranscriptSegment `json:"segments"`
 	TranscriptRuns   []*models.RecordingTranscriptRun     `json:"transcriptRuns"`
-	SegmentCount     int64                                `json:"segmentCount"`
-	HasMoreSegments  bool                                 `json:"hasMoreSegments"`
+	// TemporarySpeakers are the speakers of a capture still being recorded that nobody has named yet, or has named since.
+	TemporarySpeakers []*models.RecordingTemporarySpeaker `json:"temporarySpeakers"`
+	SegmentCount      int64                               `json:"segmentCount"`
+	HasMoreSegments   bool                                `json:"hasMoreSegments"`
 }
 
 func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, arguments ReadRecordingTranscriptTimelineArguments) (*RecordingTranscriptTimelineView, error) {
@@ -42,5 +44,9 @@ func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, argument
 	if err := transaction.ProjectRecordingSpeakerCorrections(owner.ID, segments); err != nil {
 		return nil, translateError(err)
 	}
-	return &RecordingTranscriptTimelineView{SourceGeneration: source.SourceGeneration, Segments: segments, TranscriptRuns: transcriptRuns, SegmentCount: segmentCount, HasMoreSegments: int64(arguments.SegmentOffset)+int64(len(segments)) < segmentCount}, nil
+	temporarySpeakers, err := transaction.ListRecordingTemporarySpeakers(owner.ID, source.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return &RecordingTranscriptTimelineView{SourceGeneration: source.SourceGeneration, Segments: segments, TranscriptRuns: transcriptRuns, TemporarySpeakers: temporarySpeakers, SegmentCount: segmentCount, HasMoreSegments: int64(arguments.SegmentOffset)+int64(len(segments)) < segmentCount}, nil
 }

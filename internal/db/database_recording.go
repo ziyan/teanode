@@ -514,6 +514,11 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
+	// The speakers are forgotten now; their sample bytes are found by the
+	// recording's blob rows, like every other derived byte.
+	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingTemporarySpeakerModel{}).Error; err != nil {
+		return err
+	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
 func (self *transaction) ListRecordingsForCleanup(limit int) ([]*models.Recording, error) {

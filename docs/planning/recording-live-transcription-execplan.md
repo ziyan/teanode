@@ -12,7 +12,7 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 
 - [x] Milestone 1 (2026-10-13): the server takes pieces of a recording while it is still being captured (no generation bump on capture progress, no summary or memory sync per piece, transcription of each piece as it arrives).
 - [x] Milestone 2 (2026-10-13): sentences that cross a cut between pieces come out whole (held-back last segment, re-read with the next piece).
-- [ ] Milestone 3: speakers keep their label across pieces (recording-scoped temporary voice samples) and naming a speaker during capture applies to the whole recording.
+- [x] Milestone 3 (2026-10-13): speakers keep their label across pieces (recording-scoped temporary voice samples) and naming a speaker during capture applies to the whole recording.
 - [ ] Milestone 4: live words stream through the server (recording mode of the voice relay), stored as live utterances and merged with speaker-separated segments in the timeline.
 - [ ] Milestone 5: the iPhone cuts pieces at utterance ends, uploads them while recording, streams the microphone, and shows live bubbles with naming on the recording screen.
 - [ ] Milestone 6: the dashboard shows a capture in progress live; settings, CLI and tool parity; deploy and real-device check.
@@ -25,6 +25,10 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 - `CreateRecordingAudioChunk` required the first chunk to start at the media's own timeline start. A piece with a handoff starts earlier, so the check now expects `handoff_start_ms` when the run has one; `SetRecordingTranscriptRunHandoff` records it before any audio is derived and refuses a different value later.
 - The memory sync (`syncRecordingKnowledge`) reads every run's passages directly instead of the timeline, so the hidden passage would have been filed as evidence beside the whole sentence. It applies the same cutoff as the timeline read.
 - The previous piece's tail is cut from its own derived audio chunks (kept as `recording_blob` rows), not by decoding the original again.
+- The memory sync is also reached from places other than a piece finishing: naming a speaker (`CorrectRecordingSpeaker` and the new mutation call `SyncRecordingKnowledge`), renaming an identity, and the reference reconciliation. With only the run-completion path gated, naming a speaker during capture would have filed the partial transcript to memory. The gate therefore sits in `syncRecordingKnowledge` itself: a capture that is not stopped is not synced.
+- A speaker label means something inside one transcription request only, so "Speaker 1" in a later piece is stable only because that piece was sent the sample under that name; the piece the sample was cut from has its own label ("A"). The table therefore keeps the attempt and the label the sample was cut from (`source_attempt_id`, `source_local_speaker_id`) beside the label, and the projection matches a passage either way.
+- Naming a temporary speaker a second time with a different name works (a new correction under a new key), but naming it back to a name it already had is answered by the first correction, which an intermediate name's later generation still outranks. This is the same as the existing `speaker-confirm` behavior for a repeated client correction key and is left alone.
+- `isRecognizedSpeaker` was missing from the command line and tool timeline document, so a speaker recognized by voice could not be told from an unnamed one there. Added with the new fields.
 - The existing test `TestRecordingCaptureHistoryAndReservedQuota` expected each progress update to advance the generation (it used the stale value 1 after two updates). It now checks a generation from the future and, after the stop, the pre-stop generation.
 
 ## Decision Log
@@ -51,6 +55,19 @@ To see it working: start a recording on the iPhone (Recordings tab, microphone b
 
 - Decision: a handoff is skipped when the previous piece's last passage began more than 15 seconds before the cut, when the two pieces are more than 1 second apart on the timeline (a pause), and when that last passage ended more than 500 ms before the previous piece's end.
   Rationale: replacing only the tail of a longer passage would show its beginning twice (the timeline hides previous-piece passages that start at or after `handoff_start_ms`, so a passage starting earlier is not hidden); a pause is not a sentence running over. A long turn is then split at the cut into two bubbles, which is wrong in layout but never wrong or repeated in words.
+  Date/Author: 2026-10-13, Claude.
+
+- Decision: the table `recording_temporary_speaker` has more columns than the plan listed: `source_attempt_id`, `source_local_speaker_id` and the clip's `passage_start_ms`/`passage_end_ms` (the sample's length is checked before it is sent). The GraphQL type exposes only `speakerLabel` and `speakerIdentityId`, as planned.
+  Rationale: see the label discovery above; without the source attempt the first piece's own passages could not be shown under the temporary label.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the command line and the tool use the same name for naming a temporary speaker, `temporary-speaker-name`, not `speaker-name-temporary` for the command line.
+  Rationale: the command line's recording commands are generated from the tool's operation names (`speaker-confirm` is both), and one thing should have one name. `docs/reference/command-line.md` says so.
+  Date/Author: 2026-10-13, Claude.
+- Decision: temporary-speaker curation looks at the latest 6 completed transcripts of a capture, runs for every capture (stopped or not), and the speaker curation sweep now also offers captures, so a restart between a piece finishing and its curation is recovered.
+  Rationale: it runs after every piece, so earlier pieces were looked at already; looking at all of them makes a long capture slower with every piece.
+  Date/Author: 2026-10-13, Claude.
+- Decision: the provider's four sample slots go, in order, to people already named in this recording, the person themselves, the recording's unnamed temporary speakers (most recently heard first), then the account's other known voices, newest first. This order applies to every recording, not only captures.
+  Rationale: the plan gave the first three; keeping the account's other voices last preserves what imports did before for the remaining slots.
   Date/Author: 2026-10-13, Claude.
 
 ## Outcomes & Retrospective

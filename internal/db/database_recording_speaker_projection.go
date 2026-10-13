@@ -19,6 +19,8 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 	}
 	transcriptRuns := map[string]*models.RecordingTranscriptRun{}
 	recognizedByAttemptID := map[string]map[string]string{}
+	sentBlobIdsByAttemptID := map[string]map[string]bool{}
+	temporarySpeakersByRecordingID := map[string][]*recordingTemporarySpeakerModel{}
 	correctionsByRecording := map[string][]*models.RecordingSpeakerCorrection{}
 	for _, segment := range segments {
 		if segment == nil {
@@ -31,13 +33,19 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 		segment.IsAccountOwner = false
 		segment.HasUnalignedSpeakerCorrection = false
 		segment.AppliedSpeakerCorrectionID = ""
+		segment.TemporarySpeakerLabel = ""
 		recognized, isRead := recognizedByAttemptID[segment.RecordingTranscriptionAttemptID]
 		if !isRead {
 			var err error
-			if recognized, err = self.recognizedRecordingSpeakers(userId, segment.RecordingTranscriptionAttemptID, confirmedNames); err != nil {
+			var sentBlobIds []string
+			if recognized, sentBlobIds, err = self.recognizedRecordingSpeakers(userId, segment.RecordingTranscriptionAttemptID, confirmedNames); err != nil {
 				return err
 			}
 			recognizedByAttemptID[segment.RecordingTranscriptionAttemptID] = recognized
+			sentBlobIdsByAttemptID[segment.RecordingTranscriptionAttemptID] = map[string]bool{}
+			for _, sentBlobId := range sentBlobIds {
+				sentBlobIdsByAttemptID[segment.RecordingTranscriptionAttemptID][sentBlobId] = true
+			}
 		}
 		// A speaker the transcription named after a voice sample it was sent
 		// is that sample's identity, until the person says otherwise below.
@@ -55,6 +63,35 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 				return err
 			}
 			transcriptRuns[transcriptRun.ID] = transcriptRun
+		}
+		// A speaker of a recording still being captured has the same label in
+		// every piece: the piece its sample was cut from, under the label that
+		// piece gave it, and the pieces it was sent to, under its own label.
+		// Once named, its identity takes over (sent under the name, a piece is
+		// recognized above; a piece sent before the naming is matched here).
+		temporarySpeakers, hasTemporarySpeakers := temporarySpeakersByRecordingID[transcriptRun.RecordingID]
+		if !hasTemporarySpeakers {
+			if err := self.tx.Where("recording_id = ?", transcriptRun.RecordingID).Order("created_at, id").Find(&temporarySpeakers).Error; err != nil {
+				return err
+			}
+			temporarySpeakersByRecordingID[transcriptRun.RecordingID] = temporarySpeakers
+		}
+		for _, temporarySpeaker := range temporarySpeakers {
+			isSourcePassage := segment.RecordingTranscriptionAttemptID == temporarySpeaker.SourceAttemptID && segment.LocalSpeakerID == temporarySpeaker.SourceLocalSpeakerID
+			isSentSample := temporarySpeaker.RecordingBlobID != nil && segment.LocalSpeakerID == temporarySpeaker.SpeakerLabel && sentBlobIdsByAttemptID[segment.RecordingTranscriptionAttemptID][*temporarySpeaker.RecordingBlobID]
+			if !isSourcePassage && !isSentSample {
+				continue
+			}
+			if identityId := optionalString(temporarySpeaker.SpeakerIdentityID); identityId != "" {
+				segment.EffectiveSpeakerIdentityID = identityId
+				segment.EffectiveSpeakerName = confirmedNames[identityId]
+				segment.IsRecognizedSpeaker = true
+				segment.IsAccountOwner = isOwnerByIdentityID[identityId]
+			} else {
+				segment.TemporarySpeakerLabel = temporarySpeaker.SpeakerLabel
+				segment.EffectiveSpeakerName = temporarySpeaker.SpeakerLabel
+			}
+			break
 		}
 		corrections, hasCorrections := correctionsByRecording[transcriptRun.RecordingID]
 		if !hasCorrections {
@@ -87,6 +124,7 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 			segment.IsRecognizedSpeaker = false
 			segment.IsAccountOwner = false
 			segment.AppliedSpeakerCorrectionID = ""
+			segment.TemporarySpeakerLabel = ""
 			if correction.PassageStartMS > segment.SegmentStartMS || correction.PassageEndMS < segment.SegmentEndMS {
 				segment.HasUnalignedSpeakerCorrection = true
 				continue
@@ -156,26 +194,34 @@ func hasCompetingRecordingSpeakerCorrections(correction *models.RecordingSpeaker
 // attempt to the identities whose voice samples that attempt sent: the
 // provider labels a speaker it matched to a sample with the name the sample
 // was sent under, which is the identity's confirmed name.
-func (self *transaction) recognizedRecordingSpeakers(userId, attemptId string, confirmedNames map[string]string) (map[string]string, error) {
+func (self *transaction) recognizedRecordingSpeakers(userId, attemptId string, confirmedNames map[string]string) (map[string]string, []string, error) {
 	var attempt recordingAttemptModel
 	if err := self.tx.Select("id,reference_blob_ids").Where("id = ?", attemptId).Take(&attempt).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(attempt.ReferenceBlobIDs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var identityIds []string
 	if err := self.tx.Model(&recordingVoiceReferenceModel{}).
 		Joins("JOIN recording ON recording.id = recording_voice_reference.recording_id").
 		Where("recording.user_id = ? AND recording_voice_reference.recording_blob_id IN ?", userId, attempt.ReferenceBlobIDs).
 		Distinct().Pluck("recording_voice_reference.speaker_identity_id", &identityIds).Error; err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	// A named temporary speaker's sample is sent under the confirmed name, like any identity's.
+	var temporaryIdentityIds []string
+	if err := self.tx.Model(&recordingTemporarySpeakerModel{}).
+		Joins("JOIN recording ON recording.id = recording_temporary_speaker.recording_id").
+		Where("recording.user_id = ? AND recording_temporary_speaker.speaker_identity_id IS NOT NULL AND recording_temporary_speaker.recording_blob_id IN ?", userId, attempt.ReferenceBlobIDs).
+		Distinct().Pluck("recording_temporary_speaker.speaker_identity_id", &temporaryIdentityIds).Error; err != nil {
+		return nil, nil, err
 	}
 	recognized := map[string]string{}
-	for _, identityId := range identityIds {
+	for _, identityId := range append(identityIds, temporaryIdentityIds...) {
 		if name := confirmedNames[identityId]; name != "" {
 			recognized[name] = identityId
 		}
 	}
-	return recognized, nil
+	return recognized, attempt.ReferenceBlobIDs, nil
 }

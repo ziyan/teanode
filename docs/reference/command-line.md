@@ -433,6 +433,19 @@ Every command sends the shell's time zone and language with the request,
 the way the dashboard sends the browser's, so a person who lives in the
 terminal is placed as well as one who lives in the browser.
 
+### teanode recording
+
+Your retained meeting recordings: the same operations as the Recordings page
+and the agent's `recording` tool, and named after them (the tool's
+`temporary-speaker-name` is `teanode recording temporary-speaker-name`). Each
+takes `--json`.
+
+| Command | What it does |
+| --- | --- |
+| `teanode recording timeline --recording-id ID` | the whole transcript in time order, the latest completed version of each piece of the recording. While a recording is still being captured the phone uploads it in pieces of up to a minute, and each piece shows up here once it is transcribed. A passage from a speaker nobody has named yet carries a label such as `Speaker 1` (`temporarySpeakerLabel`), the same label in every piece of that recording, and the view lists these speakers under `temporarySpeakers`. A sentence that crossed the cut between two pieces appears once, whole: the later piece's run records where it started reading (`handoffStartMS`) and the earlier piece's copy is left out |
+| `teanode recording temporary-speaker-name --recording-id ID --speaker-label "Speaker 1" --confirmed-name NAME` | name a speaker of a recording that is still being captured, by the label the timeline shows. The name applies to every piece heard so far and to the ones that follow, and a named speaker is recognized by voice in later recordings as any confirmed speaker is. It takes no generation, since the capture keeps going. `--me` says the speaker is you, and the name then defaults to your display name |
+| `teanode recording speaker-confirm\|speaker-rename\|speaker-reset` | the same for a finished recording, by a passage or by a speaker of one transcription request; these check `--expected-source-generation` |
+
 ### teanode hook
 
 What Claude Code and Codex run, so a coding session on this computer sees

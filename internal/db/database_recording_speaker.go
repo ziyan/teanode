@@ -594,7 +594,7 @@ func (self *transaction) ListRecordingsAwaitingSpeakerCuration(pageSize int) ([]
 		return nil, ErrInvalidArguments
 	}
 	var rows []*recordingModel
-	if err := self.tx.Where("user_id IS NOT NULL AND deleted_at IS NULL AND speaker_curated_generation < source_generation AND EXISTS (SELECT 1 FROM recording_speaker_correction c WHERE c.recording_id=recording.id)").Order("updated_at,id").Limit(pageSize).Find(&rows).Error; err != nil {
+	if err := self.tx.Where("user_id IS NOT NULL AND deleted_at IS NULL AND speaker_curated_generation < source_generation AND (recording_origin = 'capture' OR EXISTS (SELECT 1 FROM recording_speaker_correction c WHERE c.recording_id=recording.id))").Order("updated_at,id").Limit(pageSize).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	sources := make([]*models.Recording, 0, len(rows))
@@ -695,6 +695,40 @@ func (self *transaction) CheckRecordingVoiceReferenceNames(userId string, refere
    AND b.recording_media_id = v.recording_media_id AND v.recording_blob_id IN ?
   FOR SHARE OF v,i,c,b`, userId, userId, models.RecordingBlobSpeakerReference, referenceBlobIds).Scan(&rows).Error; err != nil {
 		return err
+	}
+	// A sample of a temporary speaker is sent under its label, or under the
+	// confirmed name once the person has named it.
+	foundBlobIds := map[string]bool{}
+	for _, row := range rows {
+		foundBlobIds[row.RecordingBlobID] = true
+	}
+	var remainingBlobIds []string
+	for _, blobId := range referenceBlobIds {
+		if !foundBlobIds[blobId] {
+			remainingBlobIds = append(remainingBlobIds, blobId)
+		}
+	}
+	if len(remainingBlobIds) > 0 {
+		var temporaryRows []struct {
+			RecordingBlobID string
+			ConfirmedName   string
+		}
+		if err := self.tx.Raw(`SELECT t.recording_blob_id,COALESCE(i.confirmed_name,t.speaker_label) AS confirmed_name
+  FROM recording_temporary_speaker t
+  JOIN recording r ON r.id=t.recording_id
+  JOIN recording_blob b ON b.id=t.recording_blob_id
+  LEFT JOIN recording_speaker_identity i ON i.id=t.speaker_identity_id
+  WHERE r.user_id = ? AND r.deleted_at IS NULL AND b.is_stored_verified
+   AND b.recording_blob_purpose = ? AND b.recording_id = t.recording_id AND t.recording_blob_id IN ?
+  FOR SHARE OF t,b`, userId, models.RecordingBlobSpeakerReference, remainingBlobIds).Scan(&temporaryRows).Error; err != nil {
+			return err
+		}
+		for _, temporaryRow := range temporaryRows {
+			rows = append(rows, struct {
+				RecordingBlobID string
+				ConfirmedName   string
+			}{temporaryRow.RecordingBlobID, temporaryRow.ConfirmedName})
+		}
 	}
 	if len(rows) != len(referenceBlobIds) {
 		return ErrAlreadyExists

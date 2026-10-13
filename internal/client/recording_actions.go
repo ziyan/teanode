@@ -26,6 +26,7 @@ type RecordingActionArguments struct {
 	ConfirmedName                       string  `json:"confirmed_name"`
 	IsAccountOwner                      bool    `json:"is_account_owner"`
 	LocalSpeakerID                      string  `json:"local_speaker_id"`
+	SpeakerLabel                        string  `json:"speaker_label"`
 	CorrectedTranscriptText             string  `json:"corrected_transcript_text"`
 	RecordingTitle                      *string `json:"recording_title"`
 	RecordedAt                          *string `json:"recorded_at"`
@@ -204,6 +205,18 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		variables["isAccountOwner"] = arguments.IsAccountOwner
 		variables["confirmedName"], variables["recordingTranscriptionAttemptId"], variables["localSpeakerId"] = arguments.ConfirmedName, arguments.RecordingTranscriptionAttemptID, arguments.LocalSpeakerID
 		variables["clientCorrectionId"], variables["passageStartMS"], variables["passageEndMS"] = arguments.ClientCorrectionID, *arguments.PassageStartMS, *arguments.PassageEndMS
+	case "temporary-speaker-name":
+		operationName = "NameRecordingTemporarySpeaker"
+		// The person's own name is the default when they say the speaker is them.
+		if !arguments.IsAccountOwner {
+			if err := require("confirmed_name supplied by the user", arguments.ConfirmedName); err != nil {
+				return "", nil, err
+			}
+		}
+		if err := require("speaker_label (\"Speaker 1\" and so on, from the timeline's temporarySpeakers)", arguments.SpeakerLabel); err != nil {
+			return "", nil, err
+		}
+		variables["speakerLabel"], variables["confirmedName"], variables["isAccountOwner"] = arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner
 	case "speaker-rename":
 		operationName = "RenameRecordingSpeaker"
 		if err := require("speaker_identity_id", arguments.SpeakerIdentityID); err != nil {
@@ -247,7 +260,7 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return "", nil, fmt.Errorf("unknown recording operation %q", arguments.Operation)
 	}
 	switch arguments.Operation {
-	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-rename", "speaker-reset", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if err := require("recording_id", arguments.RecordingID); err != nil {
 			return "", nil, err
 		}

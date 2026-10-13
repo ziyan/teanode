@@ -402,7 +402,7 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 			return false, self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingUncertain, "a previous provider request has an unknown outcome and was not repeated", transcriptRun.DerivedDurationMS)
 		}
 	}
-	speakerReferences, referenceBlobIds, err := self.recordingSpeakerReferences(ctx, run.Agent.UserID, selection.Capabilities, files)
+	speakerReferences, referenceBlobIds, err := self.recordingSpeakerReferences(ctx, run.Agent.UserID, transcriptRun.RecordingID, selection.Capabilities, files)
 	if err != nil {
 		return false, err
 	}
