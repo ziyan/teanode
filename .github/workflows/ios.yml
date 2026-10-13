@@ -101,7 +101,12 @@ jobs:
             xcrun simctl io "$device" screenshot "screenshots/$name.png"
             case "$name" in
               recordings-*|recording-*) build/assert-recording-screenshot "$name" "screenshots/$name.png" ;;
-              device-setup-*) build/assert-device-setup-screenshot "$name" "screenshots/$name.png" ;;
+              device-setup-*)
+                if ! build/assert-device-setup-screenshot "$name" "screenshots/$name.png"; then
+                  xcrun simctl spawn "$device" log show --last 2m --style compact --predicate 'process == "TeaNode"' || true
+                  exit 1
+                fi
+                ;;
             esac
           }
           shoot connect-light light large

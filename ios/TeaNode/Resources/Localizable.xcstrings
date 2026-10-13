@@ -46159,6 +46159,22 @@
           }
         }
       }
+    },
+    "Profile expiration": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロファイルの有効期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述文件到期时间"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -32,11 +32,11 @@ struct DeviceSetupView: View {
                                     Label("Download profile", systemImage: "arrow.down.circle")
                                 }.buttonStyle(.glassProminent)
                                 if let profileURL = URL(string: profile.downloadLink) { ShareLink(item: profileURL) }
-                                if let expiration = ServerTime.date(profile.expiresAt) {
-                                    Text("Expires \(expiration, style: .relative)").foregroundStyle(.secondary)
-                                }
                             }
                         }
+                    }
+                    if let expiration = ServerTime.date(profile.expiresAt) {
+                        LabeledContent("Profile expiration", value: expiration.formatted(date: .abbreviated, time: .shortened))
                     }
                 } header: {
                     Text("Install the profile")

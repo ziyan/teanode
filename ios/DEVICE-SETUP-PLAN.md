@@ -100,3 +100,12 @@ The late-response Connection regression passes with the full 294-test portable
 suite. Independent rereview found no remaining confirmed issue in the response
 validation and retained receipt changes. Fresh SDK and screenshot evidence remains
 pending for this final focused fix.
+
+The late-response build and portable checks passed, but the first ready-profile
+simulator capture rendered blank and correctly failed its content assertion. The
+preceding nine selector images passed. The expiry date now uses the existing static
+LabeledContent date/time pattern outside the action timer; the timer still prevents
+expired downloads and sharing. Screenshot failures now retain app runtime logs to
+distinguish a rendering failure from an initial launch problem. Fresh exact-head
+SDK/capture verification remains required; the blank screen is not marked resolved
+without that evidence.
