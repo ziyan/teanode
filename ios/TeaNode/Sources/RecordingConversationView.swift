@@ -236,13 +236,14 @@ struct RecordingBubbleView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .foregroundStyle(bubble.isAccountOwner ? Color(.systemBackground) : Color.primary)
+            // The same look as the agent chat (PersonBubble and AgentBubble): the person's side in the accent's tint,
+            // everyone else's in grey, 20 point corners, 14 by 10 padding.
             .background(
-                bubble.isAccountOwner ? Color.accentColor : Color(.secondarySystemBackground),
-                in: .rect(cornerRadius: 18, style: .continuous))
+                bubble.isAccountOwner ? Color.accentColor.opacity(0.2) : Color(.secondarySystemBackground),
+                in: .rect(cornerRadius: 20, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: bubble.isAccountOwner ? .trailing : .leading)
-        .padding(bubble.isAccountOwner ? .leading : .trailing, 40)
+        .padding(bubble.isAccountOwner ? .leading : .trailing, bubble.isAccountOwner ? 56 : 40)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }
@@ -261,7 +262,6 @@ struct RecordingBubbleView: View {
             Text(Duration.milliseconds(bubble.startMS).formatted(.time(pattern: .hourMinuteSecond)))
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
-        .padding(.horizontal, 6)
     }
 }
 

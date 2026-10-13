@@ -331,6 +331,7 @@ struct RecordingsScreen: View {
                     }
                 }
             }
+            .contentMargins(.bottom, 96, for: .scrollContent)
             .refreshable { await model.load() }
             .task {
                 await recorder.recover(accountKey: model.connection.accountKey)

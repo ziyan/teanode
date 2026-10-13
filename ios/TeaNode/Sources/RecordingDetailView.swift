@@ -147,6 +147,7 @@ struct RecordingDetailScreen: View {
     @State private var isDeleting = false
     @State private var isRenaming = false
     @State private var sharedMedia: RecordingMedia?
+    @State private var isTitleScrolledAway = false
 
     init(connection: Connection, recording: Recording, shouldFocusLearning: Bool = false) {
         self.connection = connection
@@ -173,6 +174,7 @@ struct RecordingDetailScreen: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
+                Text(displayedRecordingTitle).font(.title.bold()).fixedSize(horizontal: false, vertical: true)
                 Text(metaLine).font(.subheadline).foregroundStyle(.secondary)
                 let summary = model.recording.recordingSummary ?? ""
                 if !summary.isEmpty { Text(summary).font(.body) }
@@ -186,8 +188,12 @@ struct RecordingDetailScreen: View {
             }
             .padding(.horizontal)
         }
-        .navigationTitle(displayedRecordingTitle)
-        .navigationBarTitleDisplayMode(.large)
+        .onScrollGeometryChange(for: Bool.self) { geometry in geometry.contentOffset.y > 40 } action: { _, isScrolled in
+            isTitleScrolledAway = isScrolled
+        }
+        // The full title is the first thing in the content; the bar shows it only once that has scrolled away.
+        .navigationTitle(isTitleScrolledAway ? displayedRecordingTitle : "")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .primaryAction) { actionsMenu } }
         .toast(
             done: Binding(get: { model.doneText ?? conversation.doneText }, set: { _ in model.doneText = nil; conversation.doneText = nil }),

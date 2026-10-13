@@ -20,7 +20,7 @@ let expectedMarkersByScreen: [String: [String]] = [
     "recording-original-playback": ["useaudiopreview", "sharefulloriginal"],
     "recording-original-preview": ["compatibleaudiopreview", "originalunchanged", "useoriginal", "sharefullaudiopreview"],
     "recording-detail": ["layout"],
-    "recording-capture": ["stoprecording"],
+    "recording-capture": ["recording", "stop"],
     "recording-transcript": ["transcript"],
     "recording-version": ["processing"],
     "recording-speakers": ["confirmedspeakers"],

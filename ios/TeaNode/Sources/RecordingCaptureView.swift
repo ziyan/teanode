@@ -53,62 +53,69 @@ struct RecordingCaptureView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            Label {
-                Text(stateText)
-            } icon: {
-                Image(systemName: stateSymbol).symbolEffect(.pulse, isActive: displayState == .recording)
-            }
-            .font(.headline)
-            .foregroundStyle(displayState == .recording ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-            Text(Duration.milliseconds(elapsedMS).formatted(.time(pattern: .hourMinuteSecond)))
-                .font(.largeTitle.bold())
-                .fontDesign(.rounded)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-            TimelineView(.animation(minimumInterval: 0.1, paused: displayState != .recording)) { _ in
-                Gauge(value: displayState == .recording ? inputLevel() : 0) {
-                    Text("Input level")
-                }
-                .gaugeStyle(.accessoryLinearCapacity)
-                .labelsHidden()
-                .tint(.accentColor)
-            }
-            .accessibilityLabel("Input level")
-            Spacer()
-            GlassEffectContainer(spacing: 16) {
-                let layout =
-                    dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(spacing: 16))
-                layout {
-                    Button(action: onPauseOrResume) {
-                        Label(
-                            displayState == .recording ? String(localized: "Pause recording") : String(localized: "Resume recording"),
-                            systemImage: displayState == .recording ? "pause.fill" : "mic.fill"
-                        )
-                        .frame(maxWidth: .infinity)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Spacer(minLength: 0)
+                    Label {
+                        Text(stateText)
+                    } icon: {
+                        Image(systemName: stateSymbol).symbolEffect(.pulse, isActive: displayState == .recording)
                     }
-                    .buttonStyle(.glassProminent)
-                    Button(role: .destructive, action: onStop) {
-                        Label("Stop recording", systemImage: "stop.fill").frame(maxWidth: .infinity)
+                    .font(.headline)
+                    .foregroundStyle(displayState == .recording ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    Text(Duration.milliseconds(elapsedMS).formatted(.time(pattern: .hourMinuteSecond)))
+                        .font(.largeTitle.bold())
+                        .fontDesign(.rounded)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    TimelineView(.animation(minimumInterval: 0.1, paused: displayState != .recording)) { _ in
+                        Gauge(value: displayState == .recording ? inputLevel() : 0) {
+                            Text("Input level")
+                        }
+                        .gaugeStyle(.accessoryLinearCapacity)
+                        .labelsHidden()
+                        .tint(.accentColor)
                     }
-                    .buttonStyle(.glass)
+                    .accessibilityLabel("Input level")
+                    Spacer(minLength: 0)
+                    GlassEffectContainer(spacing: 16) {
+                        let layout =
+                            dynamicTypeSize.isAccessibilitySize
+                            ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(spacing: 16))
+                        layout {
+                            Button(action: onPauseOrResume) {
+                                Label(
+                                    displayState == .recording ? String(localized: "Pause") : String(localized: "Resume"),
+                                    systemImage: displayState == .recording ? "pause.fill" : "mic.fill"
+                                )
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.glassProminent)
+                            .accessibilityLabel(
+                                displayState == .recording ? String(localized: "Pause recording") : String(localized: "Resume recording"))
+                            Button(role: .destructive, action: onStop) {
+                                Label("Stop", systemImage: "stop.fill").lineLimit(1).frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.glass)
+                            .accessibilityLabel("Stop recording")
+                        }
+                        .controlSize(.large)
+                    }
+                    Text(
+                        "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 }
-                .controlSize(.large)
+                .padding()
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
             }
-            Text(
-                "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload."
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("Recording")
         .navigationBarTitleDisplayMode(.inline)
     }
 
