@@ -355,7 +355,7 @@
                     play: { _ in }, copy: { _ in }, correctText: { _ in }, nameSpeaker: { segment in conversation.beginNaming(segment) },
                     thisIsMe: { segment in Task { await conversation.confirmAsAccountOwner(segment) } },
                     notMe: { segment in conversation.beginNaming(segment, startsBlank: true) }, isPlaybackAvailable: false),
-                onPauseOrResume: {}, onStop: {}
+                microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {}
             )
             .recordingPassageSheets(conversation)
             .task { await conversation.loadCapture() }

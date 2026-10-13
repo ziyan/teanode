@@ -52,8 +52,40 @@ final class RecordingEngineCapture: @unchecked Sendable {
     }
 
     /// Opens `url` for the first piece, then starts the microphone. The audio session is already active.
+    ///
+    /// The input goes through Apple's voice processing (noise suppression and automatic gain), which also lets the person choose
+    /// Voice Isolation or Wide Spectrum for the microphone from the system's menu. A real capture without it was far too quiet.
+    /// If it cannot be turned on, or the engine will not start with it, the recording is made without it: it never fails the
+    /// capture.
     func start(writingTo url: URL) throws {
+        do {
+            try begin(writingTo: url, isVoiceProcessingWanted: true)
+        } catch {
+            NSLog("Recording: starting with voice processing failed (%@); recording without it", error.localizedDescription)
+            _ = stopSynchronously()
+            try begin(writingTo: url, isVoiceProcessingWanted: false)
+        }
+    }
+
+    private func begin(writingTo url: URL, isVoiceProcessingWanted: Bool) throws {
         let input = engine.inputNode
+        if isVoiceProcessingWanted {
+            do {
+                try AudioExceptions.run {
+                    try input.setVoiceProcessingEnabled(true)
+                    input.isVoiceProcessingBypassed = false
+                    // Other audio the phone plays is not turned down for a recording.
+                    input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                        enableAdvancedDucking: false, duckingLevel: .min)
+                }
+            } catch {
+                NSLog("Recording: voice processing could not be turned on (%@)", error.localizedDescription)
+                try? AudioExceptions.run { try input.setVoiceProcessingEnabled(false) }
+            }
+        } else if input.isVoiceProcessingEnabled {
+            try? AudioExceptions.run { try input.setVoiceProcessingEnabled(false) }
+        }
+        // Voice processing changes the format the tap gives; both outputs are converted from whatever it is.
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
             let fileFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: Self.fileSampleRate, channels: 1, interleaved: true),

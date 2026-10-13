@@ -297,7 +297,8 @@ final class MeetingRecorder: NSObject {
             recording.belongsTo(accountKey: retained.accountKey, recordingUserId: retained.cachedRecordingUserId)
         else { throw TeaNodeError.signedOut }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default, options: [.allowBluetoothHFP])
+        // Voice processing, which the capture asks the input for, needs the session to play as well as record.
+        try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothHFP])
         try session.setActive(true)
         updateElapsed()
         cutPolicy.startPiece(atMS: elapsedMS)

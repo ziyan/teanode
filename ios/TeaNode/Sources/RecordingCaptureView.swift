@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import TeaNodeKit
 
@@ -14,6 +15,7 @@ struct RecordingCaptureScreen: View {
     let didStop: () async -> Void
     @State private var recorder = MeetingRecorder.shared
     @State private var conversation: RecordingConversationModel
+    @State private var microphoneMode = AVCaptureDevice.activeMicrophoneMode
     @Environment(\.dismiss) private var dismiss
 
     init(connection: Connection, didStop: @escaping () async -> Void) {
@@ -30,7 +32,8 @@ struct RecordingCaptureScreen: View {
         NavigationStack {
             RecordingCaptureView(
                 elapsedMS: recorder.elapsedMS, displayState: displayState, inputLevel: { recorder.inputLevel() },
-                bubbles: conversation.bubbles, actions: passageActions,
+                bubbles: conversation.bubbles, actions: passageActions, microphoneModeText: microphoneMode.displayedName,
+                onMicrophoneModes: { AVCaptureDevice.showSystemUserInterface(.microphoneModes) },
                 onPauseOrResume: {
                     Task { if recorder.isCapturing { await recorder.pause() } else { await recorder.resume() } }
                 },
@@ -53,6 +56,13 @@ struct RecordingCaptureScreen: View {
             .onChange(of: recorder.liveStream.partialText) { _, text in
                 conversation.partialText = text
                 conversation.partialStartMS = recorder.liveStream.partialStartMS
+            }
+            // The person chooses the mode in the system's menu; it is read again while this screen is up.
+            .task {
+                while !Task.isCancelled {
+                    microphoneMode = AVCaptureDevice.activeMicrophoneMode
+                    try? await Task.sleep(for: .seconds(1))
+                }
             }
             .task {
                 conversation.heardUtterances = recorder.liveStream.heardUtterances
@@ -92,6 +102,10 @@ struct RecordingCaptureView: View {
     /// The conversation so far, oldest first: transcript passages with their speakers, and after them the words just heard.
     var bubbles: [RecordingConversationBubble] = []
     var actions: RecordingPassageActions = .none
+    /// The microphone mode now in use (Standard, Voice Isolation or Wide Spectrum), and what opens the system's menu to choose
+    /// one; without them the row is not drawn.
+    var microphoneModeText: String?
+    var onMicrophoneModes: (@MainActor () -> Void)?
     let onPauseOrResume: @MainActor () -> Void
     let onStop: @MainActor () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -125,6 +139,22 @@ struct RecordingCaptureView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
+            if let microphoneModeText, let onMicrophoneModes {
+                Button(action: onMicrophoneModes) {
+                    HStack {
+                        Label("Mic mode", systemImage: "mic")
+                        Spacer(minLength: 8)
+                        Text(microphoneModeText).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .accessibilityLabel("Mic mode")
+                .accessibilityValue(microphoneModeText)
+            }
             ScrollView {
                 VStack(spacing: 12) {
                     Text(
@@ -252,3 +282,15 @@ struct RecordingCaptureView: View {
         }.preferredColorScheme(.dark)
     }
 #endif
+
+extension AVCaptureDevice.MicrophoneMode {
+    /// The mode's name as the system's menu shows it.
+    var displayedName: String {
+        switch self {
+        case .standard: String(localized: "Standard")
+        case .wideSpectrum: String(localized: "Wide Spectrum")
+        case .voiceIsolation: String(localized: "Voice Isolation")
+        @unknown default: String(localized: "Standard")
+        }
+    }
+}
