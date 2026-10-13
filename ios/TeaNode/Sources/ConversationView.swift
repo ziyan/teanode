@@ -580,7 +580,7 @@ struct ConversationItemView: View {
                     CardView(line: line, model: model)
                 }
             case .codingQuestion:
-                CardSurface {
+                CardSurface(paddingPoints: line.isDone ? 12 : 16) {
                     CodingQuestionCard(line: line, model: model)
                 }
             }
@@ -1092,11 +1092,14 @@ struct ReactionBadge: View {
 /// CardSurface is something that waits for the person, or a file: one quiet
 /// surface with a hairline edge, the same for every card.
 struct CardSurface<Content: View>: View {
+    /// The room around what the card says: less for a card that is only a
+    /// record of something already answered.
+    var paddingPoints: CGFloat = 16
     @ViewBuilder let content: Content
 
     var body: some View {
         content
-            .padding(16)
+            .padding(paddingPoints)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
             .overlay {
@@ -1709,78 +1712,108 @@ struct CodingQuestionCard: View {
     /// answer most of them.
     @State private var isShowingDetails = false
 
+    /// Which agent, which session and on which computer, as the dashboard's
+    /// card names them: one person may have sessions of the same name on
+    /// several machines.
+    private func sessionTitle(_ question: CodingQuestion) -> String {
+        [question.codingAgentName, question.sessionName, question.computer].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// An answered question is a record, so it takes two lines: the session,
+    /// then what it asked with what was answered. A tap opens the rest.
+    @ViewBuilder
+    private func answered(_ question: CodingQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation { isShowingDetails.toggle() }
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "terminal")
+                        Text(verbatim: sessionTitle(question)).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Image(systemName: isShowingDetails ? "chevron.up" : "chevron.down").imageScale(.small)
+                    }
+                    .font(.footnote.weight(.semibold))
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle")
+                        Text(verbatim: question.headline).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(line.resolution.isEmpty ? String(localized: "Answered") : line.resolution).lineLimit(1)
+                    }
+                    .font(.subheadline)
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(isShowingDetails ? Text("Hides the details") : Text("Shows the details"))
+            if isShowingDetails {
+                MarkdownView(text: question.shownText)
+                    .font(.footnote)
+            }
+        }
+    }
+
     var body: some View {
-        if let question = line.codingQuestion {
+        if let question = line.codingQuestion, line.isDone {
+            answered(question)
+        } else if let question = line.codingQuestion {
             VStack(alignment: .leading, spacing: 12) {
-                // Which agent, which session and on which computer, as the
-                // dashboard's card names them: one person may have sessions
-                // of the same name on several machines.
-                CardHeader(
-                    systemImage: "terminal",
-                    title: [question.codingAgentName, question.sessionName, question.computer].filter { !$0.isEmpty }.joined(separator: " · "))
+                // The session, with the details beside it rather than on a
+                // row of their own.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    CardHeader(systemImage: "terminal", title: sessionTitle(question))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Button(isShowingDetails ? "Hide details" : "Details") {
+                        withAnimation { isShowingDetails.toggle() }
+                    }
+                    .font(.footnote)
+                    .buttonStyle(.borderless)
+                }
                 Text(verbatim: question.headline)
-                    .font(line.isDone ? .subheadline : .body)
-                    .foregroundStyle(line.isDone ? .secondary : .primary)
-                    .lineLimit(line.isDone ? 2 : 3)
+                    .lineLimit(3)
                 if isShowingDetails {
                     MarkdownView(text: question.shownText)
                         .font(.footnote)
                 }
-                Button(isShowingDetails ? "Hide details" : "Show details") {
-                    withAnimation { isShowingDetails.toggle() }
-                }
-                .font(.footnote)
-                .buttonStyle(.borderless)
-                .frame(minHeight: 44)
-                if line.isDone {
-                    Label {
-                        if line.resolution.isEmpty {
-                            Text("Answered")
-                        } else {
-                            Text("Answered: \(line.resolution)")
-                        }
-                    } icon: {
-                        Image(systemName: "checkmark.circle")
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in
-                            if index > 0 { Divider() }
-                            ChoiceRow(
-                                title: option.optionLabel, detail: option.optionDescription, isChosen: chosen.contains(option.optionNumber),
-                                isMultiple: question.isMultipleChoice
-                            ) {
-                                if question.isMultipleChoice {
-                                    if chosen.contains(option.optionNumber) {
-                                        chosen.remove(option.optionNumber)
-                                    } else {
-                                        chosen.insert(option.optionNumber)
-                                    }
+                VStack(spacing: 0) {
+                    ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in
+                        if index > 0 { Divider() }
+                        ChoiceRow(
+                            title: option.optionLabel, detail: option.optionDescription, isChosen: chosen.contains(option.optionNumber),
+                            isMultiple: question.isMultipleChoice
+                        ) {
+                            if question.isMultipleChoice {
+                                if chosen.contains(option.optionNumber) {
+                                    chosen.remove(option.optionNumber)
                                 } else {
-                                    Task { await model.answerCodingQuestion(line, options: [option], freeText: nil) }
+                                    chosen.insert(option.optionNumber)
                                 }
+                            } else {
+                                Task { await model.answerCodingQuestion(line, options: [option], freeText: nil) }
                             }
                         }
                     }
-                    if question.isMultipleChoice {
-                        Button {
-                            let options = question.choices.filter { chosen.contains($0.optionNumber) }
-                            Task { await model.answerCodingQuestion(line, options: options, freeText: nil) }
-                        } label: {
-                            Text("Send").frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.large)
-                        .disabled(chosen.isEmpty)
+                }
+                if question.isMultipleChoice {
+                    Button {
+                        let options = question.choices.filter { chosen.contains($0.optionNumber) }
+                        Task { await model.answerCodingQuestion(line, options: options, freeText: nil) }
+                    } label: {
+                        Text("Send").frame(maxWidth: .infinity)
                     }
-                    if question.options.contains(where: { $0.herdrOptionKind != "choice" }) {
-                        Text("Or type your answer below.")
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
-                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .disabled(chosen.isEmpty)
+                }
+                if question.options.contains(where: { $0.herdrOptionKind != "choice" }) {
+                    Text("Or type your answer below.")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
