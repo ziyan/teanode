@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
@@ -12,10 +12,10 @@ import { useTranslation } from '../i18n/i18n'
 import { useSession } from '../session'
 import { RecordingProcessingPanel } from '../recording/processingPanel'
 import { RecordingPassagePlayback } from '../recording/playback'
+import { RecordingOriginalPlayer } from '../recording/originalPlayer'
 import {
   importRecording,
   readRecording,
-  recordingMediaPath,
   RECORDING_DOCUMENTS,
   type Recording,
   type RecordingMedia,
@@ -235,9 +235,6 @@ function AccountRecordingsPage() {
                     {media.recordingUploadState === 'complete' ? (
                       <>
                         <RecordingOriginalPlayer media={media} passagePlayback={passagePlayback.current} />
-                        <a className="button" href={recordingMediaPath(media.id)} download={media.originalFilename}>
-                          {t('recordings.download')}
-                        </a>
                       </>
                     ) : (
                       <>
@@ -358,48 +355,5 @@ function AccountRecordingsPage() {
         />
       )}
     </div>
-  )
-}
-
-function RecordingOriginalPlayer({
-  media,
-  passagePlayback,
-}: {
-  media: RecordingMedia
-  passagePlayback: RecordingPassagePlayback
-}) {
-  const { t } = useTranslation()
-  const registerPlayer = useCallback(
-    (player: HTMLMediaElement | null) => passagePlayback.register(media.id, player),
-    [media.id, passagePlayback],
-  )
-  const [playbackError, setPlaybackError] = useState<string | null>(null)
-  const onError = () => setPlaybackError(t('recordings.playbackError'))
-  return (
-    <>
-      {media.originalContentType.startsWith('video/') ? (
-        <video
-          ref={registerPlayer}
-          className="recording-player"
-          controls
-          preload="metadata"
-          src={recordingMediaPath(media.id)}
-          onError={onError}
-          onLoadedMetadata={(event) => {
-            if (event.currentTarget.videoWidth === 0) setPlaybackError(t('recordings.videoUnavailable'))
-          }}
-        />
-      ) : (
-        <audio
-          ref={registerPlayer}
-          className="recording-player"
-          controls
-          preload="metadata"
-          src={recordingMediaPath(media.id)}
-          onError={onError}
-        />
-      )}
-      <ErrorMessage error={playbackError} />
-    </>
   )
 }
