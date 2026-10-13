@@ -21,7 +21,7 @@ func syncProfileCommands() []*cli.Command {
 			}
 			return PrintJSON(capabilities)
 		}},
-		{Name: "profile", Usage: "create one setup profile for explicitly selected Mail, Calendar, Reminders and Contacts", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "name", Required: true, Usage: "the device name"}, &cli.BoolFlag{Name: "mail", Usage: "include Mail, using the explicit owned mailbox ID"}, &cli.StringFlag{Name: "mailbox-id", Usage: "owned mailbox ID from sync capabilities; requires --mail"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}, &cli.BoolFlag{Name: "download-only", Usage: "return only the one-use profile download path instead of a scannable link"}}, Action: func(ctx context.Context, command *cli.Command) error {
+		{Name: "profile", Usage: "create one setup profile for explicitly selected Mail, Calendar, Reminders and Contacts", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "name", Required: true, Usage: "the device name"}, &cli.BoolFlag{Name: "mail", Usage: "include Mail, using the explicit owned mailbox ID"}, &cli.StringFlag{Name: "mailbox-id", Usage: "owned mailbox ID from sync capabilities; requires --mail"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}, &cli.BoolFlag{Name: "download-only", Usage: "allow a local profile download when no device-reachable server name is configured"}}, Action: func(ctx context.Context, command *cli.Command) error {
 			selectedServices, err := syncProfileSelections(command)
 			if err != nil {
 				return usage(err.Error())

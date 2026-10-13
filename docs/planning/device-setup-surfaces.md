@@ -35,7 +35,7 @@ wording where applicable. No new catalog noun or permission policy is needed.
 - [x] Review ownership, unavailable selections, refresh/account isolation and errors.
 - [ ] Run meaningful tests, full naming lint and CI on the exact branch head.
 - [x] Inspect actual Chrome desktop and phone interactions, including mailbox-free setup.
-- [ ] Open a separate draft PR with diagrams and current validation evidence.
+- [x] Open a separate draft PR with diagrams and current validation evidence.
 
 ## Validation and acceptance
 
@@ -69,3 +69,5 @@ An isolated collection-only account showed Calendar, Reminders and Contacts sele
 Profile receipt and error interactions used a clearly synthetic loopback fixture that refuses real credential creation and returns a nonfunctional receipt. These checks establish rendering and selection behavior, not actual credential issuance or physical installation. A direct authenticated request against the real isolated backend refused collection profile creation over plain HTTP and left the credential list unchanged. Backend HTTPS, selected-payload, one-use, ownership and rollback evidence belongs to the separately reviewed backend tests.
 
 Final full naming lint, zero-warning dashboard lint, typecheck, all 450 dashboard tests plus 2 dependency tests, 6 focused selector/receipt regressions, production/extension builds and focused Go race/catalog tests passed. A transient shared temporary-filesystem exhaustion interrupted one build; a successful rerun completed after capacity returned without deleting shared artifacts. Exact-head CI remains pending; no merged/deployed or physical-device claim is made.
+
+Independent review confirmed exact selected scopes and the credential-free LLM handoff. It found that the CLI download-only help overstated the response shape; the wording now matches the existing local-origin allowance without claiming fields are omitted. The built CLI read owned available capabilities and refused collection-only profile creation over plain HTTP through the real isolated API. No credential was created by either check. The draft remains stacked on the backend increment until integration and exact-head CI are complete.
