@@ -14,8 +14,10 @@ import (
 )
 
 // recordingTemporarySpeakerLimit bounds the speakers one recording can have, so
-// a long capture with a noisy room cannot create them without end.
-const recordingTemporarySpeakerLimit = 12
+// a long capture with a noisy room cannot create them without end. Each piece
+// can add the voices it did not recognize, so a sixteen-minute meeting of nine
+// people already needed more than twelve.
+const recordingTemporarySpeakerLimit = 100
 
 // RecordingTemporarySpeakerOperation keeps the speakers of a recording that is
 // still being captured, until the person names them.

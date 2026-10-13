@@ -141,7 +141,7 @@ func TestTemporarySpeakersAreBoundedAndBelongToOneRecording(test *testing.T) {
 	chunk, blob := fixture.createChunk(test)
 	attempt := fixture.beginAttempt(test, chunk, blob)
 	segments := []*models.RecordingTranscriptSegment{}
-	for index := 0; index < 13; index++ {
+	for index := 0; index < 101; index++ {
 		segments = append(segments, &models.RecordingTranscriptSegment{LocalSpeakerID: string(rune('A' + index)), SegmentStartMS: 2000, SegmentEndMS: 2100, TranscriptText: "Words."})
 	}
 	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
@@ -153,7 +153,7 @@ func TestTemporarySpeakersAreBoundedAndBelongToOneRecording(test *testing.T) {
 		}
 	})
 	var limitError error
-	for index := 0; index < 13; index++ {
+	for index := 0; index < 101; index++ {
 		limitError = fixture.database.Transaction(func(transaction db.Transaction) error {
 			_, err := transaction.CreateRecordingTemporarySpeaker(fixture.userId, &models.RecordingTemporarySpeaker{RecordingID: fixture.media.RecordingID, SourceAttemptID: attempt.ID, SourceLocalSpeakerID: string(rune('A' + index)), PassageStartMS: 2000, PassageEndMS: 4000}, temporarySpeakerSample(string(rune('a'+index))), 1<<30)
 			return err
