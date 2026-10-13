@@ -114,30 +114,18 @@ export function ReactionPicker({
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
     }
   }, [])
-  useEffect(() => {
-    // A press on the message it belongs to is left to the message, whose
-    // tap opens and closes the picker on a phone.
-    const closeOutside = (event: PointerEvent) => {
-      const line = picker.current?.closest('.agent-line')
-      if (picker.current && !picker.current.contains(event.target as Node) && !line?.contains(event.target as Node))
-        onClose()
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+  useLinePillDismissal(
+    picker,
+    () => {
       if (isMoreOpen) {
         setIsMoreOpen(false)
         moreButton.current?.focus()
         return
       }
       onClose()
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [onClose, isMoreOpen])
+    },
+    onClose,
+  )
   return (
     <div className="agent-reaction-picker-group" ref={picker}>
       <div className="agent-reaction-picker" role="menu" aria-label={t('agentDrawer.react')}>
@@ -263,6 +251,85 @@ function EmojiChooser({ current, onPick }: { current: string; onPick: (emoji: st
               })}
             </div>
           </section>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// useLinePillDismissal closes a pill over a message: a press outside it, or
+// Escape (onEscape, which may close something inside it first). A press on
+// the message it belongs to is left to the message, whose tap opens and
+// closes the pill on a phone.
+export function useLinePillDismissal(
+  pill: React.RefObject<HTMLElement | null>,
+  onEscape: () => void,
+  onClose: () => void,
+) {
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      const line = pill.current?.closest('.agent-line')
+      if (pill.current && !pill.current.contains(event.target as Node) && !line?.contains(event.target as Node))
+        onClose()
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onEscape()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [pill, onEscape, onClose])
+}
+
+export interface LineAction {
+  actionKey: string
+  label: string
+  icon: React.ReactNode
+  onAct: () => void
+}
+
+// LineActionPill is the pill a tap opens over a message that is acted on
+// rather than reacted to, drawn as the reactions are: the same row, the same
+// place, the same way to close it.
+export function LineActionPill({
+  label,
+  actions,
+  onClose,
+}: {
+  label: string
+  actions: LineAction[]
+  onClose: () => void
+}) {
+  const pill = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const opener = document.activeElement
+    pill.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+    }
+  }, [])
+  useLinePillDismissal(pill, onClose, onClose)
+  return (
+    <div className="agent-reaction-picker-group" ref={pill}>
+      <div className="agent-reaction-picker" role="menu" aria-label={label}>
+        {actions.map((action) => (
+          <button
+            key={action.actionKey}
+            type="button"
+            role="menuitem"
+            className="agent-reaction-choice"
+            title={action.label}
+            aria-label={action.label}
+            onClick={() => {
+              onClose()
+              action.onAct()
+            }}
+          >
+            {action.icon}
+          </button>
         ))}
       </div>
     </div>

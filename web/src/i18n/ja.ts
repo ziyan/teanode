@@ -4448,7 +4448,7 @@ export const ja: Catalog = {
   'recordings.speakerLabel': "話者 {speakerLetter}",
   'recordings.passageActions': "この箇所の操作",
   'recordings.playFromHere': "再生",
-  'recordings.correctPassage': "「{passageStart}」を修正",
+  'recordings.passageNumber': "{passageNumber} 番目の文",
   'recordings.correctText': "テキストを修正",
   'recordings.thisIsMe': "これは自分です",
   'recordings.notMe': "自分ではありません",

@@ -7215,6 +7215,22 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   color: var(--text);
 }
 
+/* A finger's tap focuses the bubble and opens its reactions; the corner,
+   which would sit on the text under the picker, stays shut on a touch
+   screen, where a tap and the swipes do what its buttons do. */
+@media (hover: none) {
+  .agent-line-swipeable:focus-within .agent-line-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* The picker opens where the corner is: with it open, the corner goes. */
+.agent-line-swipeable:has(.agent-reaction-picker) .agent-line-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Reactions on a message: small badges on the bubble's lower corner, the
    outer one, as a chat app draws them. A bubble with any keeps room under
    it so the badges do not sit on the next message. */
@@ -14273,30 +14289,6 @@ button.herdr-question-head {
 }
 .recording-passage.cited {
   background: color-mix(in srgb, currentColor 22%, transparent);
-}
-/* On a touch screen the corner holds only the More button, always shown and
-   small and in the bubble's foot, since the swipes stand in for Copy and Play
-   there. */
-@media (hover: none) {
-  .recording-conversation .agent-line-actions {
-    position: static;
-    justify-content: flex-end;
-    margin-top: 2px;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: inherit;
-    opacity: 0.75;
-    pointer-events: auto;
-  }
-  .recording-conversation .agent-line-actions .icon-action {
-    width: 24px;
-    height: 24px;
-    color: inherit;
-  }
-  .recording-conversation .agent-line-actions > .icon-action {
-    display: none;
-  }
 }
 .recording-earlier-notice {
   display: flex;
