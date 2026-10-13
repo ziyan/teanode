@@ -84,6 +84,7 @@ struct KnowledgeFolder: View {
                         NavigationLink(value: node.isFolder ? KnowledgePlace.folder(node.path) : KnowledgePlace.page(node.path)) {
                             KnowledgeRowView(row: row, selfName: app.account?.username)
                         }
+                        .knowledgeListRow()
                         .onAppear {
                             if node.path == rows.last?.node?.path, rows.count < total {
                                 Task { await load(isMore: true) }
@@ -93,6 +94,8 @@ struct KnowledgeFolder: View {
                 }
             }
         }
+        // Laid out as the mail list is: no chevrons, no lines, rows close together.
+        .listStyle(.plain)
         .navigationTitle(folderPath.isEmpty ? String(localized: "Knowledge") : title)
         .searchable(text: $searchText, prompt: "Search pages and facts")
         .task(id: searchText) {
@@ -121,28 +124,36 @@ struct KnowledgeFolder: View {
     private var searchResults: some View {
         let groups = Dictionary(grouping: foundNodes) { String($0.path.split(separator: "/").first ?? "") }
         ForEach(groups.keys.sorted(), id: \.self) { root in
-            Section(root) {
+            Section {
                 ForEach(groups[root] ?? []) { node in
                     NavigationLink(value: KnowledgePlace.page(node.path)) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(node.shownName)
-                            Text(node.path).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            Text(node.shownName).font(.headline).lineLimit(1)
+                            Text(node.path).font(.footnote.monospaced()).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
+                    .knowledgeListRow()
                 }
+            } header: {
+                ListPeriodHeader(title: root)
             }
+            .listSectionSeparator(.hidden)
         }
         if !foundFacts.isEmpty {
-            Section("Facts") {
+            Section {
                 ForEach(Array(foundFacts.enumerated()), id: \.offset) { _, found in
                     NavigationLink(value: KnowledgePlace.page(found.path)) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("#\(found.fact?.number ?? 0) \(found.fact?.text ?? "")").lineLimit(3)
-                            Text(found.name.isEmpty ? found.path : found.name).font(.caption).foregroundStyle(.secondary)
+                            Text(found.name.isEmpty ? found.path : found.name).font(.headline).lineLimit(1)
+                            Text("#\(found.fact?.number ?? 0) \(found.fact?.text ?? "")").font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
                         }
                     }
+                    .knowledgeListRow()
                 }
+            } header: {
+                ListPeriodHeader(title: String(localized: "Facts"))
             }
+            .listSectionSeparator(.hidden)
         }
         if let found {
             if found.nextOffset > 0 {
@@ -197,6 +208,8 @@ struct KnowledgeRowView: View {
                     Image(systemName: KnowledgeSymbols.symbol(row.node?.kind ?? ""))
                         .foregroundStyle(.secondary)
                     Text(row.node?.isSelf == true ? (selfName ?? String(localized: "You")) : row.node?.shownName ?? "")
+                        .font(.headline)
+                        .lineLimit(1)
                     if row.node?.pinned == true {
                         Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary)
                             .accessibilityLabel("Always in its prompt")
@@ -204,7 +217,7 @@ struct KnowledgeRowView: View {
                 }
                 let line = row.line
                 if !line.isEmpty {
-                    Text(line).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                    Text(line).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             Spacer()
@@ -212,6 +225,15 @@ struct KnowledgeRowView: View {
                 Text("\(row.children)").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+extension View {
+    /// A row of a knowledge list, as the mail list draws its rows: no chevron, no line, close to the next.
+    func knowledgeListRow() -> some View {
+        navigationLinkIndicatorVisibility(.hidden)
+            .listRowInsets(ListRowSpacing.insets)
+            .listRowSeparator(.hidden)
     }
 }
 
