@@ -45663,6 +45663,70 @@
           }
         }
       }
+    },
+    "Compatible audio preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性のある音声プレビュー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兼容音频预览"
+          }
+        }
+      }
+    },
+    "Preparing compatible audio preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性のある音声プレビューを準備中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备兼容音频预览"
+          }
+        }
+      }
+    },
+    "Downloading compatible audio preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性のある音声プレビューをダウンロード中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载兼容音频预览"
+          }
+        }
+      }
+    },
+    "Audio preview prepared locally; original unchanged.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声プレビューはローカルで作成され、元のファイルは変更されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频预览在本地生成；原文件保持不变。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
