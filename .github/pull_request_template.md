@@ -39,3 +39,4 @@ block as it came.
 - [ ] `make` passes: formatted, builds, tests
 - [ ] `make lint` passes, including the local naming checks if installed
 - [ ] A decision record in `docs/decisions/` if this makes a choice worth explaining later
+- [ ] Optional, for a change to `ios/`: the iPhone app built by hand (`gh workflow run ios.yml --ref <branch>`), its screenshots looked at
