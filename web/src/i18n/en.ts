@@ -551,7 +551,7 @@ export const en = {
   'agent.addSchedule': 'Add a schedule',
   'profile.name': 'Name',
   'profile.namePlaceholder': 'how you would like to be greeted',
-  'profile.nameHint': 'Shown in this dashboard. Optional \u2014 without one, your username is used.',
+  'profile.nameHint': 'Shown in this dashboard. Optional: without one, your username is used.',
   'profile.username': 'Username',
   'profile.usernameHint':
     'What you sign in with. Changing it takes your sessions and API tokens with it, so nothing has to be signed in again.',
