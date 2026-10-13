@@ -230,3 +230,29 @@ func TestQueueRecordingSummaryQueuesOneJobAndMarksTheRecording(test *testing.T) 
 		}
 	})
 }
+
+func TestRecordingTranscriptLinesNameOnlyConfirmedSpeakers(test *testing.T) {
+	fixture := newRecordingCurationFixtureWithPassages(test, 2, []*models.RecordingTranscriptSegment{
+		{LocalSpeakerID: "A", SegmentStartMS: 0, SegmentEndMS: 6000, TranscriptText: "I will send the notes."},
+		{LocalSpeakerID: "B", SegmentStartMS: 6000, SegmentEndMS: 12000, TranscriptText: "Thanks."},
+	})
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		current, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: fixture.source.ID, RecordingTranscriptionAttemptID: fixture.attempt.ID, LocalSpeakerID: "A", ConfirmedName: "Confirmed Fixture", ClientCorrectionID: "fixture-name", PassageStartMS: -1, PassageEndMS: -1, ExpectedSourceGeneration: current.SourceGeneration}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	var lines []string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		if lines, err = recordingTranscriptLines(transaction, fixture.userId, fixture.source.ID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if len(lines) != 2 || lines[0] != "Confirmed Fixture: I will send the notes." || lines[1] != "Speaker B: Thanks." {
+		test.Fatalf("a confirmed speaker is named and an unconfirmed one is labeled Speaker plus its letter: %q", lines)
+	}
+}

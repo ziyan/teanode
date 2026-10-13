@@ -97,14 +97,16 @@ func (self *transaction) StoreGeneratedRecordingSummary(userId, recordingId, rec
 	return nil
 }
 
-// ListRecordingsAwaitingSummary finds untitled recordings with a completed transcript
-// whose generation was never queued, for the sweep that names recordings made before
-// the server did. Queueing marks them, so each is offered once and never again.
+// ListRecordingsAwaitingSummary finds recordings with a completed transcript
+// whose generation was never queued (or was cleared to run again), for the sweep
+// that names recordings made before the server did. Only titles the agent wrote,
+// or none, are offered: a title the person typed is never replaced, so a user
+// title is never offered. Queueing marks them, so each is offered once and never again.
 func (self *transaction) ListRecordingsAwaitingSummary(afterRecordingId string, limit int) ([]*models.Recording, error) {
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidArguments
 	}
-	query := self.tx.Where("deleted_at IS NULL AND user_id IS NOT NULL AND recording_title_source = ? AND recording_summary_queued_at IS NULL", models.RecordingTitleSourceNone).
+	query := self.tx.Where("deleted_at IS NULL AND user_id IS NOT NULL AND recording_title_source IN ? AND recording_summary_queued_at IS NULL", []models.RecordingTitleSource{models.RecordingTitleSourceNone, models.RecordingTitleSourceGenerated}).
 		Where("EXISTS (SELECT 1 FROM recording_transcript_run WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = ?)", models.RecordingProcessingComplete).
 		Order("id").Limit(limit)
 	if afterRecordingId != "" {

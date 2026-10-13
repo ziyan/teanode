@@ -403,7 +403,8 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 
 	if err != nil {
 		return nil, false, err
 	}
-	if _, err := self.LockRecording(userId, media.RecordingID); err != nil {
+	source, err := self.LockRecording(userId, media.RecordingID)
+	if err != nil {
 		return nil, false, err
 	}
 	media, err = self.GetRecordingMedia(userId, mediaId)
@@ -434,7 +435,28 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 
 	}
 	media.RecordingUploadState = models.RecordingUploadComplete
 	media.VerifiedAt = &verifiedAt
+	if err := self.extendImportedRecordingDuration(source); err != nil {
+		return nil, false, err
+	}
 	return media, true, nil
+}
+
+// extendImportedRecordingDuration sets an imported recording's length to the
+// end of its last verified original on the timeline, when that is longer than
+// the stored length. Only a capture reports its own length, so without this an
+// import would show no length at all. A capture is left alone.
+func (self *transaction) extendImportedRecordingDuration(source *models.Recording) error {
+	if source.RecordingOrigin == models.RecordingOriginCapture {
+		return nil
+	}
+	var endMS int64
+	if err := self.tx.Model(&recordingMediaModel{}).Where("recording_id = ? AND recording_upload_state = ?", source.ID, models.RecordingUploadComplete).Select("COALESCE(MAX(timeline_start_ms + media_duration_ms), 0)").Scan(&endMS).Error; err != nil {
+		return err
+	}
+	if endMS <= source.TimelineDurationMS {
+		return nil
+	}
+	return self.tx.Model(&recordingModel{}).Where("id = ?", source.ID).Updates(map[string]any{"timeline_duration_ms": endMS, "source_generation": source.SourceGeneration + 1, "updated_at": time.Now().UTC().Truncate(time.Microsecond)}).Error
 }
 func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	var owner userModel
