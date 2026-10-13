@@ -170,7 +170,7 @@ final class RecordingConversationModel {
             isNaming = true
             return
         }
-        let retained = RecordingSpeakerDrafts.read(accountKey: connection.accountKey, segmentId: segment.id)
+        let retained = settledDraft(for: segment)
         selectedSegment = retained?.segment ?? segment
         speakerDraft = retained
         confirmedName = retained?.confirmedName ?? (startsBlank ? "" : segment.confirmedSpeakerName ?? "")
@@ -208,13 +208,29 @@ final class RecordingConversationModel {
         }
     }
 
+    /// The naming kept for a passage, settled first if it was sent without an answer (a timeout, say) from what the
+    /// recording now holds: saved, it is done and nothing is kept; not saved, it was rolled back, and it opens as a form
+    /// again rather than locked on a request that can only be refused for its old generation.
+    private func settledDraft(for segment: RecordingTranscriptSegment) -> RecordingSpeakerDraft? {
+        guard var retained = RecordingSpeakerDrafts.read(accountKey: connection.accountKey, segmentId: segment.id) else { return nil }
+        guard retained.hasSubmittedRequest, let speakers else { return retained }
+        if speakers.speakerCorrections.contains(where: { $0.clientCorrectionId == retained.clientCorrectionId && !$0.isRemoved }) {
+            RecordingSpeakerDrafts.finish(retained)
+            return nil
+        }
+        retained.hasSubmittedRequest = false
+        retained.expectedSourceGeneration = speakers.sourceGeneration
+        try? RecordingSpeakerDrafts.save(retained)
+        return retained
+    }
+
     /// "This is me": the speaker of this passage, wherever they speak in this request, is the person who owns the account.
     func confirmAsAccountOwner(_ segment: RecordingTranscriptSegment) async {
         if let label = segment.speakerLabelOfTemporarySpeaker {
             await nameTemporarySpeaker(label: label, confirmedName: "", isAccountOwner: true)
             return
         }
-        let retained = RecordingSpeakerDrafts.read(accountKey: connection.accountKey, segmentId: segment.id)
+        let retained = settledDraft(for: segment)
         if let retained, retained.hasSubmittedRequest, retained.isAccountOwner != true {
             problemText = String(localized: "This label has an unconfirmed response. Retry the same label before changing it.")
             return
