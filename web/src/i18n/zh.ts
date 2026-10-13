@@ -4354,6 +4354,8 @@ export const zh: Catalog = {
   'recordings.speakerLabel': "说话人 {speakerLetter}",
   'recordings.passageActions': "此段落的操作",
   'recordings.playFromHere': "播放",
+  'recordings.pause': "暂停",
+  'recordings.seekPosition': "录音中的位置",
   'recordings.passageNumber': "第 {passageNumber} 段",
   'recordings.correctText': "修正文字",
   'recordings.thisIsMe': "这是我",

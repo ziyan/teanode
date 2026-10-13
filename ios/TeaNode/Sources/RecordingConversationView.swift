@@ -19,6 +19,8 @@ final class RecordingConversationModel {
     var problemText: String?
     var doneText: String?
     var isLoaded = false
+    var isLoadingMore = false
+    var isLoadingMoreFailed = false
     var editingSegment: RecordingTranscriptSegment?
     var selectedSegment: RecordingTranscriptSegment?
     var confirmedName = ""
@@ -40,6 +42,17 @@ final class RecordingConversationModel {
     var bubbles: [RecordingConversationBubble] { RecordingConversation.bubbles(visibleSegments) }
     var speakerCount: Int { RecordingConversation.speakerCount(segments) }
     var hasMoreSegments: Bool { transcriptView?.hasMoreSegments == true || timelineView?.hasMoreSegments == true }
+
+    /// Reads the next page of passages as the person scrolls to the end of what is shown. A page that fails is not read again
+    /// until the person asks, so a failure does not turn into a loop.
+    func loadMoreSegments() async {
+        guard hasMoreSegments, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        problemText = nil
+        await loadPage(isAdditional: true)
+        isLoadingMoreFailed = problemText != nil
+    }
 
     func loadPage(isAdditional: Bool) async {
         defer { isLoaded = true }
@@ -77,9 +90,12 @@ final class RecordingConversationModel {
                 timelineView = page
                 if isAdditional { segments.append(contentsOf: page.segments) } else { segments = page.segments }
             }
-            speakers = try await connection.recordingSpeakers(recordingId: recording.id)
-            invalidations = try await connection.recordingReferenceInvalidations(recordingId: recording.id).filter {
-                transcriptRun == nil || $0.recordingTranscriptRunId == transcriptRun?.id
+            // The speakers and what invalidated a reference do not change with the page, so a later page keeps them.
+            if !isAdditional || speakers == nil {
+                speakers = try await connection.recordingSpeakers(recordingId: recording.id)
+                invalidations = try await connection.recordingReferenceInvalidations(recordingId: recording.id).filter {
+                    transcriptRun == nil || $0.recordingTranscriptRunId == transcriptRun?.id
+                }
             }
             problemText = nil
         } catch { problemText = error.localizedDescription }
@@ -278,11 +294,19 @@ struct RecordingConversationSection: View {
         ForEach(model.bubbles) { bubble in
             RecordingBubbleView(bubble: bubble, playingSegmentId: playingSegmentId, actions: actions)
         }
+        // The row after the last bubble: when it comes into view the next page is read, and again each time a page
+        // arrives while it is still in view.
         if model.hasMoreSegments, model.citation == nil {
-            Button {
-                Task { await model.loadPage(isAdditional: true) }
-            } label: {
-                Label("Load more passages", systemImage: "chevron.down")
+            if model.isLoadingMoreFailed {
+                Button {
+                    Task { await model.loadMoreSegments() }
+                } label: {
+                    Label("Load more passages", systemImage: "chevron.down")
+                }
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .task(id: model.segments.count) { await model.loadMoreSegments() }
             }
         }
         if model.isLoaded && model.segments.isEmpty {
