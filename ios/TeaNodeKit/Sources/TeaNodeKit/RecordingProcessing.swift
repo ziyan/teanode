@@ -150,6 +150,11 @@ extension Documents {
         RemoveRecordingSpeakerCorrection(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
         recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
         """
+    public static let undoRecordingSpeakerNaming = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
+        UndoRecordingSpeakerNaming(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
+        recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
+        """
     public static let deleteRecordingVoiceReference = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingVoiceReferenceId: String!) {
         DeleteRecordingVoiceReference(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
@@ -253,6 +258,19 @@ extension Connection {
                 "recordingSpeakerCorrectionId": .string(recordingSpeakerCorrectionId),
             ], as: Answer.self
         ).RemoveRecordingSpeakerCorrection
+    }
+    /// Takes back the naming a correction belongs to, whole: every passage that naming named returns to its speaker's label.
+    public func undoRecordingSpeakerNaming(recordingId: String, expectedSourceGeneration: Int64, recordingSpeakerCorrectionId: String)
+        async throws -> RecordingSpeakersView
+    {
+        struct Answer: Decodable, Sendable { let UndoRecordingSpeakerNaming: RecordingSpeakersView }
+        return try await execute(
+            Documents.undoRecordingSpeakerNaming,
+            variables: [
+                "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
+                "recordingSpeakerCorrectionId": .string(recordingSpeakerCorrectionId),
+            ], as: Answer.self
+        ).UndoRecordingSpeakerNaming
     }
     public func deleteRecordingVoiceReference(recordingId: String, expectedSourceGeneration: Int64, recordingVoiceReferenceId: String) async throws
         -> RecordingSpeakersView
