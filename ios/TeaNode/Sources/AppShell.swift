@@ -462,7 +462,7 @@ struct ServiceOffView: View {
                 } label: {
                     Label("Open Services", systemImage: "switch.2")
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
             }
         }
         .task(id: section) {
@@ -493,7 +493,7 @@ struct ServicesLoadingView: View {
                 } label: {
                     if isRetrying { ProgressView() } else { Text("Try again") }
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .disabled(isRetrying)
             }
         } else {

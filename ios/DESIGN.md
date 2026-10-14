@@ -27,8 +27,14 @@ its pull request is opened.
   controls, a floating action. Use `.glassEffect()` on them, group neighbors in
   a `GlassEffectContainer` so they blend and morph together, and give
   interactive ones `.interactive()`.
-- Buttons use `.buttonStyle(.glass)`, and `.glassProminent` for the one primary
-  action of a screen. A screen has at most one prominent button.
+- Buttons go by where they sit. In a Form or List an action is a plain row
+  button (it takes the tint; `role: .destructive` when it deletes), a row that
+  opens a screen is a `NavigationLink`, and sharing is a `ShareLink`: never a
+  capsule inside a row. A screen's one primary action outside a list is a
+  full-width `.borderedProminent` capsule, `.controlSize(.large)`, beside a
+  `.bordered` one when there is a second. Toolbar actions are toolbar items.
+  `.glass` and `.glassProminent` only on controls floating over content.
+  A screen has at most one prominent button.
 - Never put glass on content: a message, a card, a list row. Content sits on
   the plain background; glass sits on top of it.
 - Let a tab bar get out of the way while reading

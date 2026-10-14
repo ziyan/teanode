@@ -2502,8 +2502,8 @@ private struct DNSRecordView: View {
             } label: {
                 Label("Copy", systemImage: "doc.on.doc").labelStyle(.iconOnly)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
+            // Borderless, not bordered: in a list row a bordered icon button reads as a stray disc.
+            .buttonStyle(.borderless)
         }
     }
 }

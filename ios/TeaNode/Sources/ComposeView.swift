@@ -355,15 +355,11 @@ struct ComposeView: View {
                     Section {
                         Label(warningText, systemImage: "exclamationmark.triangle")
                         if model.pending != nil {
-                            HStack {
-                                Button("Try again") { send() }
-                                    .buttonStyle(.glassProminent)
-                                Button("Back to editing") {
-                                    Task {
-                                        if await model.returnToEditing() { dismiss() }
-                                    }
+                            Button("Try again") { send() }
+                            Button("Back to editing") {
+                                Task {
+                                    if await model.returnToEditing() { dismiss() }
                                 }
-                                .buttonStyle(.glass)
                             }
                         }
                     }

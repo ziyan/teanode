@@ -276,7 +276,8 @@ struct FileCard: View {
                     Button("Open") {
                         Task { await app.preview(file.path, name: file.name) }
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 }
                 if file.isImage {
                     RemotePicture(path: file.path, name: file.name)
@@ -325,7 +326,8 @@ struct ArtifactCard: View {
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Button("Open") { isOpen = true }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                         .disabled(address == nil && markdown == nil)
                 }
                 Group {

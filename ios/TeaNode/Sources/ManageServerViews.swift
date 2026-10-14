@@ -3140,9 +3140,7 @@ private struct ProviderSignInSection: View {
                         UIPasteboard.general.string = waiting.userCode
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.circle)
-                    .controlSize(.large)
+                    .buttonStyle(.borderless)
                 }
                 HStack(spacing: 8) {
                     ProgressView()
