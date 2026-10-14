@@ -7205,11 +7205,17 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 }
 
 /* With a mouse, Copy and Reply in the message's corner on hover; reached
-   by keyboard as well. Never on a touch screen, where the swipes are. */
+   by keyboard as well. Never on a touch screen, where the swipes are. The
+   corner sits above the bubble, over its top edge only, so it never covers
+   the words of the message it acts on. */
 .agent-line-actions {
   position: absolute;
-  top: -10px;
+  bottom: calc(100% - 6px);
   right: 6px;
+  align-items: center;
+  /* Its own width: a short message would otherwise squeeze it to its own. */
+  width: max-content;
+  white-space: nowrap;
   display: inline-flex;
   gap: 2px;
   padding: 2px;
@@ -7223,6 +7229,21 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 .agent-line-actions .icon-action {
   padding: 2px;
+}
+
+/* A recording's passage on the left keeps the corner at its left end, over
+   the speaker's name: a short passage with many buttons grows the corner into
+   the empty space beside it rather than past the conversation's edge, where
+   it was cut off. */
+.recording-turn:not(.own) .agent-line-actions {
+  right: auto;
+  left: 6px;
+}
+
+.agent-line-actions-label {
+  padding: 0 4px;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
 }
 
 .agent-line-swipeable:focus-within .agent-line-actions {
@@ -14558,8 +14579,9 @@ button.herdr-question-head {
   background: var(--surface);
   box-shadow: var(--shadow-floating);
 }
-.recording-floating-player .recording-player-time:last-child {
-  text-align: left;
+/* The time keeps its width as it counts, centered between the two buttons. */
+.recording-floating-player .recording-player-time {
+  text-align: center;
 }
 .recording-floating-player-room {
   height: 72px;

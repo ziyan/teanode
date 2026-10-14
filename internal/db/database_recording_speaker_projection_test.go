@@ -288,3 +288,37 @@ func TestRecordingRenamedSourceCannotReviveOrRetainEvidence(test *testing.T) {
 		}
 	})
 }
+
+func TestNamingASpeakerNamesEachOfItsPassagesThatOverlapANeighbor(test *testing.T) {
+	fixture := newTranscriptFixture(test)
+	chunk, blob := fixture.createChunk(test)
+	attempt := fixture.beginAttempt(test, chunk, blob)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		// The provider's passages of one speaker can overlap by a moment.
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 2600, TranscriptText: "The first half of a long thought."}, {LocalSpeakerID: "speaker-one", SegmentStartMS: 2500, SegmentEndMS: 3000, TranscriptText: "The second half of it."}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
+			test.Fatal(err)
+		}
+		source, err := transaction.GetRecording(fixture.userId, fixture.media.RecordingID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CorrectRecordingSpeaker(fixture.userId, db.RecordingSpeakerCorrectionInput{RecordingID: source.ID, RecordingTranscriptionAttemptID: attempt.ID, LocalSpeakerID: "speaker-one", ConfirmedName: "Participant One", ClientCorrectionID: "overlapping-passages", PassageStartMS: -1, PassageEndMS: -1, ExpectedSourceGeneration: source.SourceGeneration}); err != nil {
+			test.Fatal(err)
+		}
+		segments, err := transaction.ListRecordingTranscriptSegments(fixture.userId, fixture.transcriptRun.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.ProjectRecordingSpeakerCorrections(fixture.userId, segments); err != nil {
+			test.Fatal(err)
+		}
+		for _, segment := range segments {
+			if !segment.HasUserConfirmedSpeaker || segment.EffectiveSpeakerName != "Participant One" || segment.HasUnalignedSpeakerCorrection {
+				test.Fatalf("the passage at %d lost the name: %q", segment.SegmentStartMS, segment.EffectiveSpeakerName)
+			}
+		}
+	})
+}

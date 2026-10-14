@@ -71,13 +71,9 @@ it('does not prepare on mount, metadata loading or unsupported-original detectio
   expect(graphql).toHaveBeenCalledOnce()
   expect(screen.queryByRole('button', { name: 'Use original' })).toBeNull()
   expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
-  expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
-    playbackReceipt.playbackPath,
-  )
-  expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('download')).toBe(
-    'fixture.preview.wav',
-  )
-  expect(screen.getByText(/original remains unchanged; video images are not included/)).toBeTruthy()
+  // The preview only plays: nothing to download, and no note about it.
+  expect(screen.queryByRole('link', { name: 'Download audio preview' })).toBeNull()
+  expect(screen.queryByText(/video images are not included/)).toBeNull()
 })
 it('keeps the original and explicit retry after a refused preparation, without guessing a paid transcription', async () => {
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
@@ -170,9 +166,6 @@ it('switches video the browser cannot play to explicit audio preview and returns
   fireEvent.click(returnButton)
   expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/api/v1/recordings/media/fixture-media')
   expect(view.container.querySelector('audio')).toBeNull()
-  expect(screen.getByRole('link', { name: 'Download audio preview' }).getAttribute('href')).toBe(
-    playbackReceipt.playbackPath,
-  )
   expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
   expect(pause).toHaveBeenCalled()
   expect(graphql).toHaveBeenCalledOnce()
@@ -206,4 +199,26 @@ it('shows one player for a recording made in pieces, with no divider, and seeks 
   await waitFor(() => expect(playback.getState()).toMatchObject({ activeMediaId: 'piece-two', positionMS: 75000 }))
   fireEvent.click(screen.getByRole('button', { name: 'Play' }))
   await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce())
+})
+
+it('loads only the active piece ahead of time', () => {
+  const second: RecordingMedia = {
+    ...media,
+    id: 'fixture-media-2',
+    clientMediaId: 'fixture-original-2',
+    timelineStartMS: 6000,
+  }
+  const view = render(
+    <TranslationProvider>
+      <ToastProvider>
+        <RecordingTimelinePlayer
+          mediaFiles={[media, second]}
+          timelineDurationMS={8000}
+          passagePlayback={new RecordingPassagePlayback()}
+        />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const preloads = [...view.container.querySelectorAll('audio')].map((element) => element.getAttribute('preload'))
+  expect(preloads).toEqual(['metadata', 'none'])
 })

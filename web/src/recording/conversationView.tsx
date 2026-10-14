@@ -395,47 +395,46 @@ export function RecordingConversation({
         {!group.isAccountOwner ? (
           <div className={group.speakerName ? 'recording-turn-name' : 'recording-turn-name muted'}>{speakerLabel}</div>
         ) : null}
-        <Tooltip label={formatRecordingLength(group.groupStartMS)}>
-          <SwipeableLine
-            className={group.isAccountOwner ? 'agent-line user' : 'agent-line assistant'}
-            replyLabel={t('recordings.playFromHere')}
-            copyLabel={t('common.copy')}
-            replyIcon={PlayIcon}
-            onReply={() => play(group.segments)}
-            onCopy={() => copyText(group.segments.map(passageText).join(' '))}
-            onCopyFailed={() => toast.failed(t('common.copyFailed'))}
-            onTap={() => setActingOnGroupKey((previous) => (previous === group.groupKey ? null : group.groupKey))}
-            extraActions={cornerActions.map((action) => (
-              <button
-                key={action.actionKey}
-                type="button"
-                className="icon-action"
-                title={action.label}
-                aria-label={action.label}
-                onClick={action.onAct}
-              >
-                {action.icon}
-              </button>
-            ))}
-          >
-            {group.segments.map((segment) => (
-              <span
-                key={segment.id}
-                className={segment.id === citedSegmentId ? 'recording-passage cited' : 'recording-passage'}
-              >
-                {segment.id === citedSegmentId ? <span ref={citedElement} /> : null}
-                {passageText(segment)}{' '}
-              </span>
-            ))}
-            {actingOnGroupKey === group.groupKey ? (
-              <LineActionPill
-                label={t('recordings.passageActions')}
-                actions={actions}
-                onClose={() => setActingOnGroupKey(null)}
-              />
-            ) : null}
-          </SwipeableLine>
-        </Tooltip>
+        <SwipeableLine
+          className={group.isAccountOwner ? 'agent-line user' : 'agent-line assistant'}
+          actionsLabel={formatRecordingLength(group.groupStartMS)}
+          replyLabel={t('recordings.playFromHere')}
+          copyLabel={t('common.copy')}
+          replyIcon={PlayIcon}
+          onReply={() => play(group.segments)}
+          onCopy={() => copyText(group.segments.map(passageText).join(' '))}
+          onCopyFailed={() => toast.failed(t('common.copyFailed'))}
+          onTap={() => setActingOnGroupKey((previous) => (previous === group.groupKey ? null : group.groupKey))}
+          extraActions={cornerActions.map((action) => (
+            <button
+              key={action.actionKey}
+              type="button"
+              className="icon-action"
+              title={action.label}
+              aria-label={action.label}
+              onClick={action.onAct}
+            >
+              {action.icon}
+            </button>
+          ))}
+        >
+          {group.segments.map((segment) => (
+            <span
+              key={segment.id}
+              className={segment.id === citedSegmentId ? 'recording-passage cited' : 'recording-passage'}
+            >
+              {segment.id === citedSegmentId ? <span ref={citedElement} /> : null}
+              {passageText(segment)}{' '}
+            </span>
+          ))}
+          {actingOnGroupKey === group.groupKey ? (
+            <LineActionPill
+              label={t('recordings.passageActions')}
+              actions={actions}
+              onClose={() => setActingOnGroupKey(null)}
+            />
+          ) : null}
+        </SwipeableLine>
       </div>
     )
   }

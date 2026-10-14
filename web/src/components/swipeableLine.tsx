@@ -35,6 +35,7 @@ export function SwipeableLine({
   onTap,
   replyIcon: ReplyActionIcon = ReplyIcon,
   extraActions,
+  actionsLabel,
   children,
 }: {
   className: string
@@ -50,9 +51,11 @@ export function SwipeableLine({
   onTap?: () => void
   // replyIcon draws the action of the swipe to the left and of its button,
   // for a line whose action is not a reply (playing a passage). extraActions
-  // are more buttons in the same corner, beside Copy.
+  // are more buttons in the same corner, beside Copy. actionsLabel is words
+  // the corner shows before its buttons (when a passage was said).
   replyIcon?: (props: { size?: number }) => ReactNode
   extraActions?: ReactNode
+  actionsLabel?: ReactNode
   // onCopy copies the line and says whether it took; onCopyFailed is told
   // when a tap or a click could not copy it either.
   onCopy: () => Promise<boolean>
@@ -227,6 +230,7 @@ export function SwipeableLine({
           </span>
         ))}
       <span className="agent-line-actions">
+        {actionsLabel ? <span className="agent-line-actions-label">{actionsLabel}</span> : null}
         {onReact && (
           <button type="button" className="icon-action" title={reactLabel} aria-label={reactLabel} onClick={onReact}>
             <SmileIcon size={14} />

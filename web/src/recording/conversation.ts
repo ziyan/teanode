@@ -34,6 +34,11 @@ const isConfirmedSegment = (segment: TranscriptSegment) =>
     segment.effectiveSpeakerName,
   )
 
+// A passage with no words (a breath or a click a provider gave its own time)
+// is not drawn: it would be an empty bubble.
+const hasWords = (segment: TranscriptSegment) =>
+  (segment.effectiveTranscriptText || segment.transcriptText).trim() !== ''
+
 // Whether this is a passage of a speaker nobody has named that is only a few
 // words and a moment long.
 const isShortUnnamedPassage = (segment: TranscriptSegment) => {
@@ -86,7 +91,7 @@ export function groupConversation(
   const letterIndexByLocalSpeaker = new Map<string, number>()
   type Item = { startMS: number; segment?: TranscriptSegment; utterance?: LiveUtterance }
   const items: Item[] = [
-    ...segments.map((segment) => ({ startMS: segment.segmentStartMS, segment })),
+    ...segments.filter(hasWords).map((segment) => ({ startMS: segment.segmentStartMS, segment })),
     ...liveUtterances
       .filter(
         (utterance) => utterance.utteranceStartMS >= liveRange.fromMS && utterance.utteranceStartMS < liveRange.toMS,
@@ -159,13 +164,15 @@ export function groupConversation(
 
 export const distinctSpeakerCount = (segments: TranscriptSegment[]) =>
   new Set(
-    segments.map((segment) =>
-      (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) && segment.effectiveSpeakerIdentityId
-        ? `identity:${segment.effectiveSpeakerIdentityId}`
-        : segment.temporarySpeakerLabel
-          ? `temporary:${segment.temporarySpeakerLabel}`
-          : `local:${segment.localSpeakerId}`,
-    ),
+    segments
+      .filter(hasWords)
+      .map((segment) =>
+        (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) && segment.effectiveSpeakerIdentityId
+          ? `identity:${segment.effectiveSpeakerIdentityId}`
+          : segment.temporarySpeakerLabel
+            ? `temporary:${segment.temporarySpeakerLabel}`
+            : `local:${segment.localSpeakerId}`,
+      ),
   ).size
 
 // temporarySpeakerNumber is the 1 of "Speaker 1", so the label can be said in

@@ -2306,6 +2306,13 @@ async function readConversationOnce(conversationId: string, signal: AbortSignal)
 // and read back is drawn once. A card's key is its call's with "-card"
 // after it: the tool line for the same call has the call's own, and a
 // card that shared it was taken for that line and never drawn.
+// toolWords is a tool's name as words, as the iPhone shows it: "mail_draft" is
+// "Mail draft", and a skill's or a server's tool is named by its own last part.
+export function toolWords(tool: string): string {
+  const words = (tool.split('__').pop() ?? tool).replace(/[_-]/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 function cardsOf(interactions: OpenInteraction[]): Line[] {
   return interactions.map((interaction): Line => {
     const key = `${interaction.runId}-${interaction.callId}-card`
@@ -4145,7 +4152,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               .join(' ')}
           >
             <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
-              {line.done ? '✓' : '…'} {line.tool}
+              {line.done ? '✓' : '…'} {toolWords(line.tool)}
               {line.note ? <span className="muted"> · {line.note}</span> : null}
             </button>
             {isToolOpen(line.key) && (

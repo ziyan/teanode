@@ -495,8 +495,21 @@ function AccountRecordingsPage() {
               view.mediaFiles.map((media) => (
                 <SettingsRow
                   key={media.id}
-                  title={media.originalFilename}
-                  subtitle={t('recordings.size', { byteCount: media.originalSizeBytes.toLocaleString() })}
+                  // A recording made in pieces has one original per piece, all
+                  // with the same file name: each is told by where it sits.
+                  title={
+                    view.mediaFiles.length > 1
+                      ? t('recordings.pieceRange', {
+                          start: formatRecordingLength(media.timelineStartMS),
+                          end: formatRecordingLength(media.timelineStartMS + media.mediaDurationMS),
+                        })
+                      : media.originalFilename
+                  }
+                  subtitle={
+                    view.mediaFiles.length > 1
+                      ? `${media.originalFilename} · ${t('recordings.size', { byteCount: media.originalSizeBytes.toLocaleString() })}`
+                      : t('recordings.size', { byteCount: media.originalSizeBytes.toLocaleString() })
+                  }
                   actions={
                     media.recordingUploadState === 'complete' ? (
                       <div className="row-actions">

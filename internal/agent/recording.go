@@ -542,6 +542,11 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 			}
 		}
 		for _, segment := range response.Segments {
+			// A provider can return a passage with no words, a breath or a click
+			// given its own time; it would be drawn as an empty bubble.
+			if strings.TrimSpace(segment.TranscriptText) == "" {
+				continue
+			}
 			segments = append(segments, &models.RecordingTranscriptSegment{LocalSpeakerID: segment.SpeakerID, SegmentStartMS: chunk.TimelineStartMS + segment.StartMS, SegmentEndMS: chunk.TimelineStartMS + segment.EndMS, TranscriptText: segment.TranscriptText})
 		}
 	}

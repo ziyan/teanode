@@ -243,16 +243,18 @@ func TestASegmentJustPastTheAudioIsCutToItsEnd(test *testing.T) {
 // and is left out for the diarizing model, which does not accept one.
 func TestTranscriptionSendsTheVocabularyPromptOnlyToModelsThatAcceptIt(test *testing.T) {
 	for _, scenario := range []struct {
-		modelName      string
-		isDiarizing    bool
-		expectedPrompt string
+		modelName        string
+		isDiarizing      bool
+		expectedPrompt   string
+		expectedChunking string
 	}{
-		{modelName: "whisper-1", isDiarizing: false, expectedPrompt: "Names and terms: Ferncroft, Plover."},
-		{modelName: "gpt-4o-transcribe-diarize", isDiarizing: true, expectedPrompt: ""},
+		{modelName: "whisper-1", isDiarizing: false, expectedPrompt: "Names and terms: Ferncroft, Plover.", expectedChunking: ""},
+		{modelName: "gpt-4o-transcribe", isDiarizing: false, expectedPrompt: "Names and terms: Ferncroft, Plover.", expectedChunking: "auto"},
+		{modelName: "gpt-4o-transcribe-diarize", isDiarizing: true, expectedPrompt: "", expectedChunking: "auto"},
 	} {
 		test.Run(scenario.modelName, func(test *testing.T) {
 			var hasPrompt bool
-			var promptValue string
+			var promptValue, chunkingValue string
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, incoming *http.Request) {
 				if err := incoming.ParseMultipartForm(1 << 20); err != nil {
 					test.Error(err)
@@ -261,6 +263,7 @@ func TestTranscriptionSendsTheVocabularyPromptOnlyToModelsThatAcceptIt(test *tes
 				defer func() { _ = incoming.MultipartForm.RemoveAll() }()
 				_, hasPrompt = incoming.MultipartForm.Value["prompt"]
 				promptValue = incoming.FormValue("prompt")
+				chunkingValue = incoming.FormValue("chunking_strategy")
 				_, _ = io.WriteString(writer, `{"duration":5,"text":"An idea.","segments":[{"id":"s1","speaker":"speaker-one","start":0,"end":2,"text":"An idea."}]}`)
 			}))
 			defer server.Close()
@@ -284,6 +287,10 @@ func TestTranscriptionSendsTheVocabularyPromptOnlyToModelsThatAcceptIt(test *tes
 			}
 			if hasPrompt != (scenario.expectedPrompt != "") || promptValue != scenario.expectedPrompt {
 				test.Fatalf("prompt field for %s: present=%v value=%q", scenario.modelName, hasPrompt, promptValue)
+			}
+			// A model that may stop at a pause is asked to cut the audio at its pauses instead.
+			if chunkingValue != scenario.expectedChunking {
+				test.Fatalf("chunking_strategy for %s: %q", scenario.modelName, chunkingValue)
 			}
 		})
 	}
