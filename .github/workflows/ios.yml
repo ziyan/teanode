@@ -204,6 +204,9 @@ jobs:
           # Settings, and the screens it pushes, named by -TeaNodeScreen.
           shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
           shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
+          # A confirmation points at the button that asked for it.
+          shoot settings-sign-out-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings-sign-out
+          shoot settings-sign-out-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings-sign-out
           for setup_screen in device-setup device-setup-mail device-setup-collections device-setup-profile device-setup-unavailable device-setup-expired device-setup-receipt-unavailable; do
             shoot "$setup_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$setup_screen"
             shoot "$setup_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$setup_screen"

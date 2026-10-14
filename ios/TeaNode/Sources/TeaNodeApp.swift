@@ -460,10 +460,20 @@ struct SettingsForm: View {
         #if DEBUG
             .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
             .onAppear {
+                // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
+                if DemoServer.screen == "settings-sign-out", !hasShownDemoScreen {
+                    hasShownDemoScreen = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        isConfirmingSignOut = true
+                    }
+                    return
+                }
                 guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings" else { return }
                 hasShownDemoScreen = true
                 isShowingDemoScreen = true
             }
+            .defaultScrollAnchor(DemoServer.screen == "settings-sign-out" ? .bottom : .top)
         #endif
     }
 
