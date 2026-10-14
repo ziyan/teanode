@@ -278,10 +278,10 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 // piece's attempt ID, then the first bytes of the name's digest in hex.
 const temporarySpeakerKeyPrefix = "temporary-speaker-"
 
-// temporarySpeakerNamingOf reads the temporary speaker's ID and the name digest
+// TemporarySpeakerNamingOf reads the temporary speaker's ID and the name digest
 // out of a client correction ID, or returns empty strings when the key did not
 // come from naming a temporary speaker.
-func temporarySpeakerNamingOf(clientCorrectionId string) (string, string) {
+func TemporarySpeakerNamingOf(clientCorrectionId string) (string, string) {
 	rest, isTemporary := strings.CutPrefix(clientCorrectionId, temporarySpeakerKeyPrefix)
 	if !isTemporary {
 		return "", ""
