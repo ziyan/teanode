@@ -29,7 +29,7 @@ public enum RecordingConversation {
     /// The passages of a transcript with words just heard between them in time. A live utterance has no speaker yet, so each
     /// one is a bubble of its own.
     public static func bubbles(_ segments: [RecordingTranscriptSegment], liveUtterances: [RecordingLiveUtterance]) -> [RecordingConversationBubble] {
-        let passages = (segments + liveUtterances.map(RecordingTranscriptSegment.init(liveUtterance:))).enumerated()
+        let passages = (segments.filter(hasWords) + liveUtterances.map(RecordingTranscriptSegment.init(liveUtterance:))).enumerated()
             .sorted { ($0.element.segmentStartMS, $0.offset) < ($1.element.segmentStartMS, $1.offset) }.map(\.element)
         var bubbles: [RecordingConversationBubble] = []
         var currentKey: String?
@@ -76,7 +76,12 @@ public enum RecordingConversation {
 
     /// How many people spoke, counting a confirmed person once however many requests they spoke in.
     public static func speakerCount(_ segments: [RecordingTranscriptSegment]) -> Int {
-        Set(segments.map(speakerKey)).count
+        Set(segments.filter(hasWords).map(speakerKey)).count
+    }
+
+    /// A passage with no words (a breath or a click a provider gave its own time) is not drawn: it would be an empty bubble.
+    static func hasWords(_ segment: RecordingTranscriptSegment) -> Bool {
+        !segment.displayedTranscriptText.allSatisfy(\.isWhitespace)
     }
 
     /// "A" for the first unconfirmed speaker, then "B", and so on; past "Z" the number.

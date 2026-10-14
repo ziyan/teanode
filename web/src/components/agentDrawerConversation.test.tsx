@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../api'
-import { readConversationSnapshot } from './agentDrawer'
+import { readConversationSnapshot, toolWords } from './agentDrawer'
 
 // The drawer asks the window about the screen when it loads, which jsdom
 // does not answer.
@@ -52,4 +52,10 @@ describe('readConversationSnapshot', () => {
     await expect(readConversationSnapshot('', new AbortController().signal)).rejects.toThrow('not found')
     expect(graphql).toHaveBeenCalledTimes(1)
   })
+})
+
+it('names a tool call in words, as the iPhone does', () => {
+  expect(toolWords('tool_search')).toBe('Tool search')
+  expect(toolWords('skill__weather__get_weather')).toBe('Get weather')
+  expect(toolWords('mail-draft')).toBe('Mail draft')
 })

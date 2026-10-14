@@ -217,6 +217,16 @@ final class RecordingConversationTests: XCTestCase {
             ]), 2)
     }
 
+    func testAPassageWithNoWordsDrawsNoBubble() {
+        let passages = [
+            segment("s1", start: 0, speaker: "x", text: "Hello."),
+            segment("s2", start: 1000, speaker: "y", text: " "),
+            segment("s3", start: 2000, speaker: "x", text: "Shall we begin?"),
+        ]
+        XCTAssertEqual(RecordingConversation.bubbles(passages).map(\.id), ["s1"])
+        XCTAssertEqual(RecordingConversation.speakerCount(passages), 1)
+    }
+
     func testSpeakerLettersRunPastTheAlphabetIntoNumbers() {
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 0), "A")
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 25), "Z")

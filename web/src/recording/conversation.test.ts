@@ -233,3 +233,21 @@ it('gives a short passage beginning the conversation a bubble of its own', () =>
   ])
   expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['s1']])
 })
+
+it('draws no bubble for a passage with no words', () => {
+  const groups = groupConversation([
+    segmentFixture({ id: 'a1', segmentStartMS: 1000 }),
+    segmentFixture({
+      id: 'empty',
+      localSpeakerId: 'local-two',
+      segmentStartMS: 5000,
+      segmentEndMS: 9000,
+      transcriptText: ' ',
+    }),
+    segmentFixture({ id: 'a2', segmentStartMS: 12000 }),
+  ])
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['a1', 'a2']])
+  expect(
+    distinctSpeakerCount([segmentFixture({}), segmentFixture({ localSpeakerId: 'local-two', transcriptText: '' })]),
+  ).toBe(1)
+})

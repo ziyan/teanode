@@ -207,3 +207,25 @@ it('shows one player for a recording made in pieces, with no divider, and seeks 
   fireEvent.click(screen.getByRole('button', { name: 'Play' }))
   await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce())
 })
+
+it('loads only the active piece ahead of time', () => {
+  const second: RecordingMedia = {
+    ...media,
+    id: 'fixture-media-2',
+    clientMediaId: 'fixture-original-2',
+    timelineStartMS: 6000,
+  }
+  const view = render(
+    <TranslationProvider>
+      <ToastProvider>
+        <RecordingTimelinePlayer
+          mediaFiles={[media, second]}
+          timelineDurationMS={8000}
+          passagePlayback={new RecordingPassagePlayback()}
+        />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const preloads = [...view.container.querySelectorAll('audio')].map((element) => element.getAttribute('preload'))
+  expect(preloads).toEqual(['metadata', 'none'])
+})

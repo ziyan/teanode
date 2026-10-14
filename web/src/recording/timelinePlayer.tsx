@@ -228,6 +228,10 @@ function RecordingPieceMedia({
       if (isMounted.current) setPlaybackError(caught instanceof Error ? caught.message : String(caught))
     }
   }
+  // Only the active piece loads ahead of time. A long recording is made of many
+  // pieces, and loading each one's metadata up front sent a request per piece
+  // when the page opened; another piece loads when it is played.
+  const preload = isActive ? 'metadata' : 'none'
   return (
     <>
       {isUsingPreview && playback ? (
@@ -256,7 +260,7 @@ function RecordingPieceMedia({
           className="recording-player"
           hidden={!isActive}
           playsInline
-          preload="metadata"
+          preload={preload}
           src={recordingMediaPath(media.id)}
           onError={(event) => originalError(event.currentTarget)}
           onLoadedMetadata={(event) => {
@@ -267,7 +271,7 @@ function RecordingPieceMedia({
         <audio
           ref={registerPlayer}
           hidden
-          preload="metadata"
+          preload={preload}
           src={recordingMediaPath(media.id)}
           onError={(event) => originalError(event.currentTarget)}
         />
