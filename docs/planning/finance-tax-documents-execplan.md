@@ -21,8 +21,9 @@ Estimating the tax owed or the refund, and 1099 forms (interest, dividends, brok
 - [x] Milestone 2 (2026-10-13): migration 0181 (four tables and `agent_attachment.is_tax_document`), models in internal/models/finance_tax.go, checks and the year summary in internal/finance (paystub.go, tax_form.go, tax_year.go, taxpayer_number.go, tax_test.go), database layer internal/db/database_finance_tax.go with tests, the sweep and conversation deletion keep tax uploads. Note: the year summary landed here rather than in Milestone 4, since it is pure; Milestone 4 only exposes it.
 - [x] Milestone 3 (2026-10-13): reading job `tax_document` (internal/agent/tax_document_job.go, prompt read_tax_document.txt), agent operations (internal/agent/finance_tax.go), GraphQL (internal/api/v1api/apigraph/agent_finance_tax.go), client documents, CLI (internal/cmd/finance_tax.go) and finance tool (internal/agent/tools/finance/tax.go), with tests on every layer; uploads take `?isTaxDocument=true`.
 - [x] Milestone 4 (2026-10-13): the tax year on every surface: GraphQL `TaxYear`, CLI `tax-year`, tool `tax_year` (the summary itself landed in Milestone 2).
-- [ ] Milestone 5: dashboard Taxes tab, upload, document dialog, mailbox "Read as paystub or W-2", with web tests.
-- [ ] Milestone 6: docs, visual audit, review, pull request, deploy, and the owner's documents imported on the server and checked.
+- [x] Milestone 5 (2026-10-13): dashboard Taxes tab (web/src/pages/finance/financeTaxes.tsx), upload, dialogs, mailbox "Read as paystub or W-2", with web tests; iPhone Taxes section (ios/TeaNode/Sources/FinanceTaxViews.swift, TeaNodeKit FinanceTax.swift) and its message menu item.
+- [x] Milestone 6 (2026-10-13): docs, a code review round (13 findings, all fixed), visual audit at desktop and phone in light and dark (paystub dialog width, finding sentences fixed), draft PR #472, deployed, the owner's three paystubs and two W-2s read on the server: each paystub adds up, both W-2s agree with themselves, no nine-digit number stored.
+- [ ] Remaining: the iPhone screens compile only on CI's macOS job; projections ignore the yearly 401(k) limit; matching take-home pay to the bank deposit.
 
 
 ## Surprises & Discoveries
@@ -57,7 +58,7 @@ Estimating the tax owed or the refund, and 1099 forms (interest, dividends, brok
 
 ## Outcomes & Retrospective
 
-(To be written at each milestone.)
+2026-10-13: paystubs and W-2s are read from PDFs or photos on every surface and put together as a tax year. On the owner's real documents every paystub added up and both W-2s agreed with themselves on the first reading. Two things the real documents found that invented ones had not: a handful of paystubs out of a year made the median gap between pay dates months long (the cadence now comes from the printed pay period), and one payroll service prints the taxpayer number as nine bare digits (masking covers bare runs in a text that reads like a tax document). A deploy of this branch applied migration 0181 while another session deployed main without it, and the server refused to open its database until the branch was merged into that deploy too; every deploy script now refuses a build that lacks a migration the database has, and branches with migrations are announced to the other deploying sessions.
 
 
 ## Context and Orientation
