@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading } from '../components/common'
 import { LineActionPill, type LineAction } from '../components/agentReactions'
-import { CloseIcon, CopyIcon, GraphIcon, PencilIcon, PeopleIcon, PlayIcon, UserIcon } from '../components/icons'
+import { CloseIcon, CopyIcon, GraphIcon, PencilIcon, PeopleIcon, PlayIcon, UnlinkIcon, UserIcon } from '../components/icons'
 import { SettingsEmpty } from '../components/settingsList'
 import { SwipeableLine } from '../components/swipeableLine'
 import { useToast } from '../components/toast'
@@ -412,7 +412,7 @@ export function RecordingConversation({
       actions.push({
         actionKey: 'separate',
         label: t('recordings.separateSpeaker', { speakerName: shownSpeakerLabel(group) }),
-        icon: <PeopleIcon size={16} />,
+        icon: <UnlinkIcon size={16} />,
         onAct: () => void separateSpeaker(mergedLabels),
       })
     return actions
