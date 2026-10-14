@@ -118,11 +118,11 @@ func TestTaxDocumentJobReadsAW2AndLeavesTheRest(t *testing.T) {
 	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub or a W-2") {
 		t.Fatalf("the runs say what they read: %q", titles)
 	}
-	summary, err := fixture.worker.TaxYear(t.Context(), fixture.agent, 2025)
+	summary, err := fixture.worker.TaxYear(t.Context(), fixture.agent, 2025, "")
 	if err != nil || len(summary.TaxYearEmployments) != 1 || summary.Figures.WagesAmount != "21600.00" {
 		t.Fatalf("the tax year takes the W-2's figures: %+v %v", summary, err)
 	}
-	if _, err := fixture.worker.TaxYear(t.Context(), fixture.agent, time.Now().Year()); err != nil {
+	if _, err := fixture.worker.TaxYear(t.Context(), fixture.agent, time.Now().Year(), ""); err != nil {
 		t.Fatalf("a year with nothing in it is an empty year: %v", err)
 	}
 }

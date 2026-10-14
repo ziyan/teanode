@@ -351,7 +351,7 @@ var operations = map[string]*financeOperation{
 			return "Delete the W-2 " + text(call, "tax_form_id") + ", its boxes and the file it was read from"
 		},
 	},
-	"tax_year": {graphqlOperation: "TaxYear", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"tax_year"}, required: []string{"tax_year"}},
+	"tax_year": {graphqlOperation: "TaxYear", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"tax_year", "tax_filing_status"}, required: []string{"tax_year"}},
 	"budgets":  {graphqlOperation: "Budgets", risk: tools.RiskRead},
 	"set_budget": {
 		graphqlOperation: "SetBudget", risk: tools.RiskWrite,
@@ -744,7 +744,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- Paystubs and W-2s, to get ready for a tax return: when the person hands over a paystub or a W-2 (a PDF or a photo in the chat, by the agent_attachment_id the conversation names the file with, or a message by mailbox_item_id), `read_tax_document` has the reading job read it in the background and record it, as a paystub or a W-2, whichever it is; that is the way to record one, rather than reading it yourself. " +
 	"Only the last four digits of a taxpayer number (a Social Security number) are ever kept: never write more of one anywhere, in a call or an answer. " +
 	"`paystubs` (tax_year, or from and to) lists them with their check (paystubCheckState: gross less taxes and deductions is take-home pay); `paystub` reads one line by line; `tax_forms` and `tax_form` list and read W-2s with taxFormFindings (Social Security tax 6.2% of its wages, Medicare 1.45% plus 0.9% above 200,000, wages within the year's wage base). " +
-	"`tax_year` puts a year together per person and employer: figures from the W-2 when there is one (taxYearFigureSource w2), else the latest paystub's year to date, projectedFigures to December 31 at the latest paystub's amounts, taxYearComparisons setting each W-2 box beside the paystubs, and taxYearFindings (a paystub missing between two others, a W-2 not yet in, Social Security withheld beyond the year's maximum across employers, which comes back as a credit). " +
+	"`tax_year` puts a year together per person and employer: figures from the W-2 when there is one (taxYearFigureSource w2), else the latest paystub's year to date, projectedFigures to December 31 at the latest paystub's amounts, taxYearComparisons setting each W-2 box beside the paystubs, and taxYearFindings (a paystub missing between two others, a W-2 not yet in, Social Security withheld beyond the year's maximum across employers, which comes back as a credit). Projected retirement contributions stop at the year's limit (retirementDeferralLimitAmount; isRetirementDeferralCapped), the rest counted as wages. taxYearEstimate sets the tax owed beside what was withheld: federal income tax on wages less the standard deduction by tax_filing_status (married filing jointly for two people, single otherwise, unless the person says), Social Security and Medicare as owed, state and local as withheld, then paidTaxAmount, upcomingWithheldTaxAmount, owingTaxAmount or refundAmount, and remainingIncomeAmount; it counts wages only, so say so and ask about other income, deductions and credits before calling it what the return will say. " +
 	"Quote those figures rather than adding paystubs up yourself. They are what was earned and withheld, not the tax owed or a refund, so say so when asked what will be owed. " +
 	"`record_paystub` and `record_tax_form` record one you read yourself, from the file it was read out of (agent_attachment_id), one line per printed line with an amount or one entry per box that prints something; `delete_paystub` and `delete_tax_form` delete one with its file."
 
@@ -786,6 +786,7 @@ func init() {
 					"paystub_id":                tools.StringProperty("a paystub, by the id paystubs gives"),
 					"tax_form_id":               tools.StringProperty("a W-2, by the id tax_forms gives"),
 					"tax_year":                  tools.IntegerProperty("for tax_year, paystubs and tax_forms: the tax year, 2026; for record_tax_form: the year the W-2 is for"),
+					"tax_filing_status":         tools.EnumProperty("for tax_year: how the person files, when they have said; the estimate assumes one otherwise", "single", "married_filing_jointly", "married_filing_separately", "head_of_household"),
 					"employer_name":             tools.StringProperty("for record_paystub: the employer as the paystub names it"),
 					"employer_tax_id":           tools.StringProperty("for record_paystub: the employer's identification number as printed, 12-3456789"),
 					"employee_name":             tools.StringProperty("for record_paystub: the employee as the paystub names them"),

@@ -18,6 +18,9 @@ export type RingSlice = {
   // The slice the smaller categories were folded into, and how many.
   isOther: boolean
   foldedCount: number
+  // A colour that means something, where the slice's place does not: the
+  // tax ring's owing is the page's bad.
+  sliceClass?: string
 }
 
 // foldIntoOther keeps the largest keepCount slices, largest first, and adds
@@ -98,6 +101,7 @@ const RING_TOTAL_LETTER = 10
 // slice and for the swatch that names it elsewhere: the table under the
 // ring is its legend.
 export function ringSliceClass(slice: RingSlice, index: number): string {
+  if (slice.sliceClass) return slice.sliceClass
   return slice.isOther ? 'other' : `tone-${index % RING_SLICE_COUNT}`
 }
 

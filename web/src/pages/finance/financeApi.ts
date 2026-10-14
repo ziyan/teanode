@@ -1002,6 +1002,8 @@ export type TaxYearEmployment = {
   payCadenceDayCount?: number | null
   isPaystubYearComplete: boolean
   remainingPayCount: number
+  // The projection stops retirement contributions at the year's limit.
+  isRetirementDeferralCapped: boolean
   figures: TaxYearFigures
   paystubFigures?: TaxYearFigures | null
   projectedFigures?: TaxYearFigures | null
@@ -1025,9 +1027,41 @@ export type TaxYearFinding = {
   paystubIds: string[]
 }
 
+export type TaxFilingStatus = 'single' | 'married_filing_jointly' | 'married_filing_separately' | 'head_of_household'
+
+export const TAX_FILING_STATUSES: TaxFilingStatus[] = [
+  'single',
+  'married_filing_jointly',
+  'married_filing_separately',
+  'head_of_household',
+]
+
+// The year's tax on its wages beside what was withheld, the household's,
+// to December 31 when the year is projected. paid, upcoming withheld,
+// owing and remaining add up to pay; a refund is inside what was withheld.
+export type TaxYearEstimate = {
+  taxFilingStatus: TaxFilingStatus
+  isProjected: boolean
+  payAmount: string
+  standardDeductionAmount: string
+  taxableIncomeAmount: string
+  federalIncomeTaxAmount: string
+  socialSecurityTaxAmount: string
+  medicareTaxAmount: string
+  stateIncomeTaxAmount: string
+  localIncomeTaxAmount: string
+  totalTaxAmount: string
+  paidTaxAmount: string
+  upcomingWithheldTaxAmount: string
+  owingTaxAmount: string
+  refundAmount: string
+  remainingIncomeAmount: string
+}
+
 export type TaxYearSummary = {
   taxYear: number
   socialSecurityWageBaseAmount?: string | null
+  retirementDeferralLimitAmount?: string | null
   isYearOver: boolean
   paystubCount: number
   taxFormCount: number
@@ -1036,23 +1070,27 @@ export type TaxYearSummary = {
   taxYearEmployments: TaxYearEmployment[]
   taxYearPeople: TaxYearPerson[]
   taxYearFindings: TaxYearFinding[]
+  taxYearEstimate?: TaxYearEstimate | null
 }
 
 const TAX_YEAR_FIGURES_FIELDS = `wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount
   medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount
   healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount }`
 
-export const TAX_YEAR = `query ($taxYear: Int!) {
-  TaxYear(taxYear: $taxYear) {
-    taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
+export const TAX_YEAR = `query ($taxYear: Int!, $taxFilingStatus: String) {
+  TaxYear(taxYear: $taxYear, taxFilingStatus: $taxFilingStatus) {
+    taxYear socialSecurityWageBaseAmount retirementDeferralLimitAmount isYearOver paystubCount taxFormCount
     figures { ${TAX_YEAR_FIGURES_FIELDS} } projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} }
     taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate
-      paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount
+      paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount isRetirementDeferralCapped
       figures { ${TAX_YEAR_FIGURES_FIELDS} } paystubFigures { ${TAX_YEAR_FIGURES_FIELDS} } projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} }
       taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { ${TAX_YEAR_FIGURES_FIELDS} }
       projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} } }
     taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+    taxYearEstimate { taxFilingStatus isProjected payAmount standardDeductionAmount taxableIncomeAmount
+      federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
+      totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
   }
 }`
 

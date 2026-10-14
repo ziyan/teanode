@@ -1,3 +1,4 @@
+import Charts
 import PhotosUI
 import QuickLook
 import SwiftUI
@@ -13,6 +14,9 @@ import UniformTypeIdentifiers
 struct TaxesView: View {
     @Environment(FinanceModel.self) private var finance
     @State private var taxYear = Calendar.current.component(.year, from: Date())
+    /// The filing status picked, or nil for the server's guess from the
+    /// number of people.
+    @State private var filingStatus: TaxFilingStatus?
     @State private var summary: TaxYearSummary?
     @State private var paystubs: [FinancePaystub] = []
     @State private var taxForms: [FinanceTaxFormView] = []
@@ -65,6 +69,11 @@ struct TaxesView: View {
                 .listRowBackground(Color.clear)
             }
             if let summary {
+                if let estimate = summary.taxYearEstimate {
+                    TaxEstimateSection(estimate: estimate, taxYear: taxYear) { picked in
+                        filingStatus = picked
+                    }
+                }
                 findingsSection(summary)
                 ForEach(Array(summary.employments.enumerated()), id: \.offset) { _, employment in
                     employmentSection(employment)
@@ -127,7 +136,7 @@ struct TaxesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { addMenu }
         }
-        .task(id: taxYear) {
+        .task(id: TaxYearChoice(taxYear: taxYear, filingStatus: filingStatus)) {
             // Another year's figures are cleared rather than shown under this
             // one; coming back from a document keeps the year on screen.
             if summary?.taxYear != taxYear {
@@ -221,7 +230,12 @@ struct TaxesView: View {
             Text("\(employment.employeeName ?? "") at \(employment.employerName ?? "")")
         } footer: {
             if employment.projectedFigures != nil {
-                Text("Projected to December 31 with \(employment.remainingPayCount ?? 0) more paychecks like the latest.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Projected to December 31 with \(employment.remainingPayCount ?? 0) more paychecks like the latest.")
+                    if employment.isRetirementDeferralCapped == true, let limit = summary?.retirementDeferralLimitAmount {
+                        Text("Retirement contributions stop at the year's limit of \(FinanceMoney.shown(limit, currencyCode: TaxWords.currencyCode)), and the pay that would have gone in counts as wages.")
+                    }
+                }
             }
         }
     }
@@ -257,7 +271,7 @@ struct TaxesView: View {
     private func load() async {
         let connection = finance.connection
         let chosenYear = taxYear
-        async let summaryRead = connection.taxYear(chosenYear)
+        async let summaryRead = connection.taxYear(chosenYear, filingStatus: filingStatus)
         async let paystubRead = connection.financePaystubs(taxYear: chosenYear)
         async let taxFormRead = connection.financeTaxForms(taxYear: chosenYear)
         do {
@@ -371,6 +385,161 @@ struct TaxDocumentUploadRow: View {
 
 /// TaxFigureRow is one figure of a year, with where it is heading by
 /// December 31 under it when there is a projection.
+/// TaxYearChoice is what the year on screen is read for: the year and the
+/// filing status, either of which reads it again.
+private struct TaxYearChoice: Equatable {
+    let taxYear: Int
+    let filingStatus: TaxFilingStatus?
+}
+
+/// TaxEstimateSection is the year's pay as a ring, as the dashboard draws
+/// it: the tax already withheld, what the rest of the year's paychecks will
+/// withhold, what will be owed at filing, and what is left, the year's tax
+/// in the middle. Under it each slice and each tax in figures, and the
+/// filing status the federal tax is worked out for.
+struct TaxEstimateSection: View {
+    let estimate: TaxYearSummary.Estimate
+    let taxYear: Int
+    let onFilingStatus: (TaxFilingStatus) -> Void
+    @State private var selectedRunningTotal: Double?
+    @State private var selectedSliceKind: TaxEstimateSliceKind?
+
+    var body: some View {
+        let slices = estimate.slices
+        Section {
+            if !slices.isEmpty { ring(slices) }
+            ForEach(slices) { slice in
+                LabeledContent {
+                    Text(money(slice.amount)).monospacedDigit()
+                } label: {
+                    HStack(spacing: 8) {
+                        ChartSwatch(color: Self.color(slice.sliceKind))
+                        Text(Self.title(slice.sliceKind))
+                    }
+                }
+            }
+            if (Double(estimate.refundAmount ?? "") ?? 0) > 0 {
+                LabeledContent("Refund at filing") {
+                    Text(money(estimate.refundAmount)).monospacedDigit().foregroundStyle(.green)
+                }
+            }
+            LabeledContent("Pay") { Text(money(estimate.payAmount)).monospacedDigit().bold() }
+            Picker("Filing status", selection: Binding(
+                get: { estimate.filingStatus ?? .single },
+                set: { onFilingStatus($0) }
+            )) {
+                ForEach(TaxFilingStatus.allCases) { status in
+                    Text(Self.title(status)).tag(status)
+                }
+            }
+            LabeledContent("Federal income tax") { Text(money(estimate.federalIncomeTaxAmount)).monospacedDigit() }
+            LabeledContent("Social Security") { Text(money(estimate.socialSecurityTaxAmount)).monospacedDigit() }
+            LabeledContent("Medicare") { Text(money(estimate.medicareTaxAmount)).monospacedDigit() }
+            if (Double(estimate.stateIncomeTaxAmount ?? "") ?? 0) > 0 {
+                LabeledContent("State income tax, as withheld") { Text(money(estimate.stateIncomeTaxAmount)).monospacedDigit() }
+            }
+            if (Double(estimate.localIncomeTaxAmount ?? "") ?? 0) > 0 {
+                LabeledContent("Local income tax, as withheld") { Text(money(estimate.localIncomeTaxAmount)).monospacedDigit() }
+            }
+            LabeledContent("Tax for the year") { Text(money(estimate.totalTaxAmount)).monospacedDigit().bold() }
+        } header: {
+            if estimate.isProjected == true {
+                Text("Tax for \(String(taxYear)), by December 31")
+            } else {
+                Text("Tax for \(String(taxYear))")
+            }
+        } footer: {
+            Text("An estimate from wages only: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. Other income, itemized deductions and credits are not counted.")
+        }
+    }
+
+    /// The slices as a donut. Touching one chooses it: it stays full, the
+    /// others step back, and the middle says what it is; with none chosen
+    /// the middle says the year's tax.
+    private func ring(_ slices: [TaxEstimateSlice]) -> some View {
+        let selectedSlice = slices.first { $0.sliceKind == selectedSliceKind }
+        return Chart(slices) { slice in
+            let isChosen = slice.sliceKind == selectedSlice?.sliceKind
+            SectorMark(
+                angle: .value("Amount", slice.amountValue),
+                innerRadius: .ratio(0.62),
+                outerRadius: .ratio(isChosen || selectedSlice == nil ? 1 : 0.94),
+                angularInset: 1
+            )
+            .foregroundStyle(Self.color(slice.sliceKind))
+            .opacity(ChartPalette.markOpacity(isChosen: isChosen, isAnyChosen: selectedSlice != nil))
+            .accessibilityLabel(Text(Self.title(slice.sliceKind)))
+            .accessibilityValue(Text(verbatim: money(slice.amount)))
+        }
+        .chartLegend(.hidden)
+        .chartAngleSelection(value: $selectedRunningTotal)
+        .onChange(of: selectedRunningTotal) { previousTotal, runningTotal in
+            guard let runningTotal, let index = ChartShares.sliceIndex(atRunningTotal: runningTotal, amounts: slices.map(\.amountValue)) else { return }
+            let touchedKind = slices[index].sliceKind
+            selectedSliceKind = previousTotal == nil && touchedKind == selectedSliceKind ? nil : touchedKind
+        }
+        .chartBackground { chartProxy in
+            GeometryReader { geometry in
+                if let plotFrame = chartProxy.plotFrame {
+                    let frame = geometry[plotFrame]
+                    let holeWidth = min(frame.width, frame.height) * 0.62
+                    VStack(spacing: 2) {
+                        Text(selectedSlice.map { Self.title($0.sliceKind) } ?? String(localized: "Tax for the year"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text(verbatim: money(selectedSlice?.amount ?? estimate.totalTaxAmount))
+                            .font(.headline)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .contentTransition(.numericText())
+                    }
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.4)
+                    .frame(width: holeWidth * 0.82)
+                    .position(x: frame.midX, y: frame.midY)
+                    .accessibilityHidden(true)
+                }
+            }
+        }
+        .frame(height: 220)
+        .padding(.vertical, 4)
+    }
+
+    private func money(_ amount: String?) -> String {
+        FinanceMoney.shown(amount, currencyCode: TaxWords.currencyCode)
+    }
+
+    /// Tax withheld in orange, the part still to come paler, what is owed
+    /// in red, and what is left in the app's green.
+    static func color(_ sliceKind: TaxEstimateSliceKind) -> Color {
+        switch sliceKind {
+        case .paid: .orange
+        case .upcomingWithheld: .orange.opacity(0.45)
+        case .owing: .red
+        case .remainingIncome: .accentColor
+        }
+    }
+
+    static func title(_ sliceKind: TaxEstimateSliceKind) -> String {
+        switch sliceKind {
+        case .paid: String(localized: "Paid so far")
+        case .upcomingWithheld: String(localized: "Still to be withheld")
+        case .owing: String(localized: "Owing at filing")
+        case .remainingIncome: String(localized: "Remaining income")
+        }
+    }
+
+    static func title(_ filingStatus: TaxFilingStatus) -> String {
+        switch filingStatus {
+        case .single: String(localized: "Single")
+        case .marriedFilingJointly: String(localized: "Married filing jointly")
+        case .marriedFilingSeparately: String(localized: "Married filing separately")
+        case .headOfHousehold: String(localized: "Head of household")
+        }
+    }
+}
+
 struct TaxFigureRow: View {
     let row: TaxYearFigureRow
 

@@ -778,13 +778,14 @@ const (
 
 	taxYearFiguresFields = `{ wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount } }`
 
-	taxYearFields = `{ taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
+	taxYearFields = `{ taxYear socialSecurityWageBaseAmount retirementDeferralLimitAmount isYearOver paystubCount taxFormCount
     figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + `
-    taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount
+    taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount isRetirementDeferralCapped
       figures ` + taxYearFiguresFields + ` paystubFigures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + `
       taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + ` }
-    taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds } }`
+    taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+    taxYearEstimate { taxFilingStatus isProjected payAmount standardDeductionAmount taxableIncomeAmount federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount } }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -1080,7 +1081,7 @@ const (
 
 	DocumentFinanceTaxForm = `query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) ` + taxFormViewFields + ` }`
 
-	DocumentTaxYear = `query ($taxYear: Int!) { TaxYear(taxYear: $taxYear) ` + taxYearFields + ` }`
+	DocumentTaxYear = `query ($taxYear: Int!, $taxFilingStatus: String) { TaxYear(taxYear: $taxYear, taxFilingStatus: $taxFilingStatus) ` + taxYearFields + ` }`
 
 	DocumentRecordPaystub = `mutation ($agentAttachmentId: String!, $employerName: String!, $employerTaxId: String, $employeeName: String!, $employeeTaxIdMask: String, $payDate: String!, $periodStartOn: String, $periodEndOn: String, $currencyCode: String, $grossAmount: String!, $yearToDateGrossAmount: String, $totalTaxAmount: String, $totalDeductionAmount: String, $netAmount: String!, $paystubLines: [PaystubLineInput!]!, $isUnbalancedAccepted: Boolean) {
   RecordPaystub(agentAttachmentId: $agentAttachmentId, employerName: $employerName, employerTaxId: $employerTaxId, employeeName: $employeeName, employeeTaxIdMask: $employeeTaxIdMask, payDate: $payDate, periodStartOn: $periodStartOn, periodEndOn: $periodEndOn, currencyCode: $currencyCode, grossAmount: $grossAmount, yearToDateGrossAmount: $yearToDateGrossAmount, totalTaxAmount: $totalTaxAmount, totalDeductionAmount: $totalDeductionAmount, netAmount: $netAmount, paystubLines: $paystubLines, isUnbalancedAccepted: $isUnbalancedAccepted) ` + financePaystubFields + `

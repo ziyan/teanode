@@ -724,8 +724,37 @@ is not the earlier one's plus this period), a gap of more than one and a
 half pay periods, two copies of one paystub, a W-2 not yet in once the year
 is over, a W-2 that differs from the year's last paystub, and Social
 Security withheld beyond the year's maximum across several employers, which
-comes back as a credit on the return. These are what was earned and
-withheld, not the tax owed.
+comes back as a credit on the return.
+
+A projection stops a person's retirement contributions (traditional and
+Roth together) at the year's limit, `retirementDeferralLimitByYear` in
+`internal/finance/tax_estimate.go`: the base limit, or with the catch-up
+from age 50 once the year to date is already past it, or with the one from
+60 to 63 once past that, since the paystubs then know the person's age and
+TeaNode does not. A traditional contribution that stops is counted as wages
+(box 1 and the state's) for the rest of the year; a Roth one was taxed
+already. The employment says so (`isRetirementDeferralCapped`).
+
+The tax owed sits beside what was withheld in `taxYearEstimate`
+(`finance.estimateTaxYear`), the household's, to December 31 when anything
+is projected. It counts wages only, since nothing else is on a paystub or a
+W-2: federal income tax on box 1 less the standard deduction, by the year's
+brackets (`federalTaxTableByYear`, from the IRS revenue procedure each
+autumn; a year not in it has no estimate); Social Security at 6.2% of each
+person's wages up to the wage base, so tax withheld beyond it across
+employers comes back; Medicare at 1.45% plus 0.9% above the filing
+status's threshold (250,000 jointly, 125,000 separately, 200,000
+otherwise); state and local income tax as withheld, since each state's
+rules are its own. The filing status is the person's to say
+(`taxFilingStatus`); without it, married filing jointly when the documents
+name two people and single otherwise, and a status other than jointly with
+two people is a return each. The estimate splits pay (Medicare wages) into
+tax paid so far, tax the rest of the year's paychecks will withhold at the
+same pace, tax owing at filing, and the income remaining; a refund is
+inside what was withheld. The dashboard and the app draw those four as a
+ring. Interest, dividends, gains, itemized deductions and credits are not
+counted, so the estimate is a floor to start a return from, not the
+return.
 
 ## Mirrored copies
 

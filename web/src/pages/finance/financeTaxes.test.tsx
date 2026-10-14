@@ -196,6 +196,7 @@ const sampleWorksW2: TaxFormView = {
 const yearSummary: TaxYearSummary = {
   taxYear: 2026,
   socialSecurityWageBaseAmount: '184500.00',
+  retirementDeferralLimitAmount: '24500.00',
   isYearOver: false,
   paystubCount: 2,
   taxFormCount: 1,
@@ -211,6 +212,7 @@ const yearSummary: TaxYearSummary = {
       payCadenceDayCount: 14,
       isPaystubYearComplete: false,
       remainingPayCount: 16,
+      isRetirementDeferralCapped: true,
       figures: figures(10),
       paystubFigures: figures(10),
       projectedFigures: figures(26),
@@ -225,6 +227,7 @@ const yearSummary: TaxYearSummary = {
       paystubCount: 26,
       isPaystubYearComplete: true,
       remainingPayCount: 0,
+      isRetirementDeferralCapped: false,
       figures: figures(10),
       taxYearComparisons: [
         {
@@ -259,6 +262,25 @@ const yearSummary: TaxYearSummary = {
       paystubIds: ['paystub-september'],
     },
   ],
+  // Invented, and adding up: paid, upcoming, owing and remaining are pay.
+  taxYearEstimate: {
+    taxFilingStatus: 'married_filing_jointly',
+    isProjected: true,
+    payAmount: '110000.00',
+    standardDeductionAmount: '32200.00',
+    taxableIncomeAmount: '67800.00',
+    federalIncomeTaxAmount: '7618.00',
+    socialSecurityTaxAmount: '6820.00',
+    medicareTaxAmount: '1595.00',
+    stateIncomeTaxAmount: '5000.00',
+    localIncomeTaxAmount: '0.00',
+    totalTaxAmount: '21033.00',
+    paidTaxAmount: '9000.00',
+    upcomingWithheldTaxAmount: '11000.00',
+    owingTaxAmount: '1033.00',
+    refundAmount: '0.00',
+    remainingIncomeAmount: '88967.00',
+  },
 }
 
 // answer plays the server: the document says which operation is asked.
@@ -334,7 +356,7 @@ describe('the Taxes section', () => {
     const projected = await waitFor(() =>
       panel('finance.taxEmploymentTitle {"employee":"Pat Example","employer":"Example Employer LLC"}'),
     )
-    expect(calledWith('TaxYear')).toContainEqual({ taxYear: 2026 })
+    expect(calledWith('TaxYear')).toContainEqual({ taxYear: 2026, taxFilingStatus: null })
     // Where the figures come from, from how many paystubs through which day.
     expect(within(projected).getByText(/^finance\.taxFromPaystubsOther .*"count":"10"/)).toBeTruthy()
     // So far and by December 31, side by side, with how many paychecks.
@@ -343,6 +365,8 @@ describe('the Taxes section', () => {
     expect(within(wagesRow).getByText('$36,000.00')).toBeTruthy()
     expect(within(wagesRow).getByText('$93,600.00')).toBeTruthy()
     expect(within(projected).getByText(/finance\.taxProjectedPayCountOther .*"count":"16"/)).toBeTruthy()
+    // Retirement contributions stop at the year's limit.
+    expect(within(projected).getByText(/finance\.taxRetirementCapped .*\$24,500\.00/)).toBeTruthy()
     // A state's lines are named for it; a figure that is zero is left out.
     expect(within(projected).getByText('finance.taxStateIncomeTax {"state":"CA"}')).toBeTruthy()
     expect(within(projected).queryByText('finance.taxRetirementRoth')).toBeNull()
@@ -374,6 +398,26 @@ describe('the Taxes section', () => {
     expect(within(paystubRow).getByText('finance.receiptBalanced')).toBeTruthy()
     expect(within(paystubRow).getByText('$2,720.00')).toBeTruthy()
     expect(calledWith('FinancePaystubs')[0]).toEqual({ taxYear: 2026, limit: 50, offset: 0 })
+  })
+
+  it("rings the year's pay by tax paid, still to pay and remaining, and asks again for another filing status", async () => {
+    answer()
+    renderSection()
+    const estimate = await waitFor(() => panel('finance.taxEstimateTitleProjected {"year":"2026"}'))
+    const ring = within(estimate).getByRole('img')
+    expect(ring.getAttribute('aria-label')).toContain('finance.taxPaid: $9,000.00')
+    expect(ring.getAttribute('aria-label')).toContain('finance.taxOwing: $1,033.00')
+    expect(ring.getAttribute('aria-label')).toContain('finance.taxRemainingIncome: $88,967.00')
+    expect(within(estimate).getByText('finance.taxUpcomingWithheld')).toBeTruthy()
+    // Each tax on its own, a local tax of nothing left out, no refund.
+    expect(within(estimate).getByText('finance.taxEstimateFederal')).toBeTruthy()
+    expect(within(estimate).queryByText('finance.taxEstimateLocal')).toBeNull()
+    expect(within(estimate).queryByText('finance.taxRefund')).toBeNull()
+
+    fireEvent.click(within(estimate).getByRole('combobox', { name: 'finance.taxFilingStatus' }))
+    fireEvent.click(screen.getByRole('option', { name: 'finance.taxFilingSingle' }))
+    await waitFor(() => expect(calledWith('TaxYear')).toContainEqual({ taxYear: 2026, taxFilingStatus: 'single' }))
+    expect(shownSearch).toContain('filing=single')
   })
 
   it('says to add paystubs or W-2s when the year has none, and nothing else', async () => {

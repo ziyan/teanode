@@ -222,6 +222,9 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
         public let payCadenceDayCount: Int?
         public let isPaystubYearComplete: Bool?
         public let remainingPayCount: Int?
+        /// Whether the projection stops retirement contributions at the
+        /// year's limit, the rest counted as wages.
+        public let isRetirementDeferralCapped: Bool?
         public let figures: TaxYearFigures?
         public let paystubFigures: TaxYearFigures?
         public let projectedFigures: TaxYearFigures?
@@ -247,8 +250,47 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
         public let paystubIds: [String]?
     }
 
+    /// Estimate is the year's tax on its wages beside what was withheld,
+    /// the household's, to December 31 when the year is projected. Paid,
+    /// upcoming withheld, owing and remaining add up to pay; a refund is
+    /// inside what was withheld.
+    public struct Estimate: Codable, Hashable, Sendable {
+        public let taxFilingStatus: String?
+        public let isProjected: Bool?
+        public let payAmount: String?
+        public let standardDeductionAmount: String?
+        public let taxableIncomeAmount: String?
+        public let federalIncomeTaxAmount: String?
+        public let socialSecurityTaxAmount: String?
+        public let medicareTaxAmount: String?
+        public let stateIncomeTaxAmount: String?
+        public let localIncomeTaxAmount: String?
+        public let totalTaxAmount: String?
+        public let paidTaxAmount: String?
+        public let upcomingWithheldTaxAmount: String?
+        public let owingTaxAmount: String?
+        public let refundAmount: String?
+        public let remainingIncomeAmount: String?
+
+        /// The ring's slices in the order they are drawn, the ones of
+        /// nothing left out.
+        public var slices: [TaxEstimateSlice] {
+            [
+                TaxEstimateSlice(sliceKind: .paid, amount: paidTaxAmount),
+                TaxEstimateSlice(sliceKind: .upcomingWithheld, amount: upcomingWithheldTaxAmount),
+                TaxEstimateSlice(sliceKind: .owing, amount: owingTaxAmount),
+                TaxEstimateSlice(sliceKind: .remainingIncome, amount: remainingIncomeAmount),
+            ].filter { $0.amountValue > 0 }
+        }
+
+        public var filingStatus: TaxFilingStatus? { taxFilingStatus.flatMap(TaxFilingStatus.init(rawValue:)) }
+    }
+
     public let taxYear: Int?
     public let socialSecurityWageBaseAmount: String?
+    /// The year's limit on a person's retirement plan contributions from
+    /// pay before catch-up, when TeaNode knows it.
+    public let retirementDeferralLimitAmount: String?
     public let isYearOver: Bool?
     public let paystubCount: Int?
     public let taxFormCount: Int?
@@ -257,9 +299,36 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
     public let taxYearEmployments: [Employment?]?
     public let taxYearPeople: [Person?]?
     public let taxYearFindings: [Finding?]?
+    public let taxYearEstimate: Estimate?
 
     public var employments: [Employment] { (taxYearEmployments ?? []).compactMap { $0 } }
     public var findings: [Finding] { (taxYearFindings ?? []).compactMap { $0 } }
+}
+
+/// TaxFilingStatus is how a return is filed, which the estimate's federal
+/// tax depends on.
+public enum TaxFilingStatus: String, CaseIterable, Hashable, Sendable, Identifiable {
+    case single
+    case marriedFilingJointly = "married_filing_jointly"
+    case marriedFilingSeparately = "married_filing_separately"
+    case headOfHousehold = "head_of_household"
+
+    public var id: String { rawValue }
+}
+
+/// TaxEstimateSliceKind is which part of a year's pay a slice of the tax
+/// ring is.
+public enum TaxEstimateSliceKind: String, Hashable, Sendable {
+    case paid, upcomingWithheld, owing, remainingIncome
+}
+
+/// TaxEstimateSlice is one slice of the tax ring.
+public struct TaxEstimateSlice: Hashable, Sendable, Identifiable {
+    public let sliceKind: TaxEstimateSliceKind
+    public let amount: String?
+
+    public var id: TaxEstimateSliceKind { sliceKind }
+    public var amountValue: Double { Double(amount ?? "") ?? 0 }
 }
 
 /// TaxDocumentReading is the uploads queued to be read as paystubs or tax
@@ -307,17 +376,20 @@ extension Documents {
         query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) { \(taxFormViewFields) } }
         """
     public static let taxYear = """
-        query ($taxYear: Int!) {
-          TaxYear(taxYear: $taxYear) {
-            taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
+        query ($taxYear: Int!, $taxFilingStatus: String) {
+          TaxYear(taxYear: $taxYear, taxFilingStatus: $taxFilingStatus) {
+            taxYear socialSecurityWageBaseAmount retirementDeferralLimitAmount isYearOver paystubCount taxFormCount
             figures { \(taxYearFiguresFields) } projectedFigures { \(taxYearFiguresFields) }
             taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount
-              payCadenceDayCount isPaystubYearComplete remainingPayCount
+              payCadenceDayCount isPaystubYearComplete remainingPayCount isRetirementDeferralCapped
               figures { \(taxYearFiguresFields) } paystubFigures { \(taxYearFiguresFields) } projectedFigures { \(taxYearFiguresFields) }
               taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
             taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { \(taxYearFiguresFields) }
               projectedFigures { \(taxYearFiguresFields) } }
             taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+            taxYearEstimate { taxFilingStatus isProjected payAmount standardDeductionAmount taxableIncomeAmount
+              federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
+              totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
           }
         }
         """
@@ -335,9 +407,13 @@ extension Documents {
 }
 
 extension Connection {
-    public func taxYear(_ year: Int) async throws -> TaxYearSummary? {
+    /// A tax year, its tax estimated as filed with filingStatus, or as the
+    /// server guesses from the number of people when it is nil.
+    public func taxYear(_ year: Int, filingStatus: TaxFilingStatus? = nil) async throws -> TaxYearSummary? {
         struct Answer: Decodable, Sendable { let TaxYear: TaxYearSummary? }
-        return try await execute(Documents.taxYear, variables: ["taxYear": .number(Double(year))], as: Answer.self).TaxYear
+        var variables: [String: JSONValue] = ["taxYear": .number(Double(year))]
+        if let filingStatus { variables["taxFilingStatus"] = .string(filingStatus.rawValue) }
+        return try await execute(Documents.taxYear, variables: variables, as: Answer.self).TaxYear
     }
 
     public func financePaystubs(taxYear year: Int, limit: Int = 200, offset: Int = 0) async throws -> FinancePaystubPage {

@@ -13049,7 +13049,8 @@ button.idea-history-title {
 .spending-ring,
 .finance-summary-table,
 .finance-assets-table,
-.finance-credit-table {
+.finance-credit-table,
+.finance-tax-estimate {
   --ring-tone-0: var(--leaf);
   --ring-tone-1: var(--warn);
   --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
@@ -13192,6 +13193,15 @@ button.idea-history-title {
 
 .spending-ring-swatch.other {
   background: var(--ring-other);
+}
+
+/* The tax ring's tax still owing at filing. */
+.spending-ring-slice.owing {
+  fill: var(--bad);
+}
+
+.spending-ring-swatch.owing {
+  background: var(--bad);
 }
 
 /* Credit usage, on Accounts: the share in the ring's middle and in each
@@ -13548,6 +13558,17 @@ button.idea-history-title {
 .finance-worth-line dd {
   margin: 0;
   text-align: right;
+}
+
+/* The tax ring's figures: the slices and pay, then each tax and the
+   year's, each list closed by its total over a rule. */
+.finance-worth-line .finance-tax-estimate-total {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.finance-tax-refund {
+  color: var(--good);
 }
 
 .finance-asset-name {

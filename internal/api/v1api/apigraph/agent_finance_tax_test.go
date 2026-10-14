@@ -95,6 +95,15 @@ func TestPaystubsAndTaxFormsOnTheAPI(test *testing.T) {
 			summary.Figures.WagesAmount != "18000.00" || summary.Figures.RetirementTraditionalAmount != "2000.00" {
 			test.Fatalf("the year from the paystub's year to date: %+v %v", summary, err)
 		}
+		single := "single"
+		if summary, err := resolver.TaxYear(ctx, TaxYearArguments{TaxYear: 2026, TaxFilingStatus: &single}); err != nil || summary.TaxYearEstimate == nil ||
+			summary.TaxYearEstimate.TaxFilingStatus != finance.TaxFilingStatusSingle {
+			test.Fatalf("the year's tax is estimated for the filing status asked: %+v %v", summary, err)
+		}
+		unknown := "jointly"
+		if _, err := resolver.TaxYear(ctx, TaxYearArguments{TaxYear: 2026, TaxFilingStatus: &unknown}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Fatalf("a filing status that is none of them is refused: %v", err)
+		}
 		reading, err := resolver.ReadTaxDocument(ctx, ReadTaxDocumentArguments{AgentAttachmentID: form.ID})
 		if err != nil || len(reading.AgentJobIDs) != 1 || reading.AgentAttachmentIDs[0] != form.ID {
 			test.Fatalf("reading a file queues one job: %+v %v", reading, err)

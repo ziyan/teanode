@@ -121,9 +121,13 @@ type TaxFormsArguments struct {
 	Offset  *int `json:"offset" graphapi:"nullable"`
 }
 
-// TaxYearArguments name a tax year.
+// TaxYearArguments name a tax year, and the filing status to estimate its
+// tax with (single, married_filing_jointly, married_filing_separately,
+// head_of_household); without one, married filing jointly for two
+// people's documents and single otherwise.
 type TaxYearArguments struct {
-	TaxYear int `json:"taxYear"`
+	TaxYear         int     `json:"taxYear"`
+	TaxFilingStatus *string `json:"taxFilingStatus,omitempty"`
 }
 
 // ReadTaxDocumentArguments name what to read a paystub or a tax form out
@@ -445,7 +449,11 @@ func (self *graph) TaxYear(ctx context.Context, arguments TaxYearArguments) (*fi
 	if err != nil {
 		return nil, err
 	}
-	summary, err := worker.TaxYear(ctx, found, arguments.TaxYear)
+	var filingStatus finance.TaxFilingStatus
+	if arguments.TaxFilingStatus != nil {
+		filingStatus = finance.TaxFilingStatus(strings.TrimSpace(*arguments.TaxFilingStatus))
+	}
+	summary, err := worker.TaxYear(ctx, found, arguments.TaxYear, filingStatus)
 	if err != nil {
 		return nil, financeError(err)
 	}

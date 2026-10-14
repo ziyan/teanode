@@ -144,6 +144,10 @@ type TaxYearEmployment struct {
 	// RemainingPayCount more paychecks like it.
 	ProjectedFigures  *TaxYearFigures `json:"projectedFigures,omitempty" graphapi:"nullable"`
 	RemainingPayCount int             `json:"remainingPayCount"`
+	// IsRetirementDeferralCapped says the projection stops retirement
+	// contributions at the year's limit before December 31, the pay that
+	// would have gone in counted as wages instead.
+	IsRetirementDeferralCapped bool `json:"isRetirementDeferralCapped"`
 
 	// TaxYearComparisons set each W-2 box beside the paystubs' figure,
 	// when both exist.
@@ -169,17 +173,24 @@ type TaxYearSummary struct {
 	TaxYear int `json:"taxYear"`
 	// SocialSecurityWageBaseAmount is empty when TeaNode does not know
 	// the year's.
-	SocialSecurityWageBaseAmount string               `json:"socialSecurityWageBaseAmount,omitempty" graphapi:"nullable"`
-	IsYearOver                   bool                 `json:"isYearOver"`
-	TaxYearEmployments           []*TaxYearEmployment `json:"taxYearEmployments"`
-	TaxYearPeople                []*TaxYearPerson     `json:"taxYearPeople"`
+	SocialSecurityWageBaseAmount string `json:"socialSecurityWageBaseAmount,omitempty" graphapi:"nullable"`
+	// RetirementDeferralLimitAmount is the year's limit on a person's
+	// retirement plan contributions from pay before catch-up, empty when
+	// TeaNode does not know it.
+	RetirementDeferralLimitAmount string               `json:"retirementDeferralLimitAmount,omitempty" graphapi:"nullable"`
+	IsYearOver                    bool                 `json:"isYearOver"`
+	TaxYearEmployments            []*TaxYearEmployment `json:"taxYearEmployments"`
+	TaxYearPeople                 []*TaxYearPerson     `json:"taxYearPeople"`
 	// Figures are the household's totals; ProjectedFigures to December
 	// 31 when anything is projected.
 	Figures          *TaxYearFigures   `json:"figures"`
 	ProjectedFigures *TaxYearFigures   `json:"projectedFigures,omitempty" graphapi:"nullable"`
 	TaxYearFindings  []*TaxYearFinding `json:"taxYearFindings"`
-	PaystubCount     int               `json:"paystubCount"`
-	TaxFormCount     int               `json:"taxFormCount"`
+	// TaxYearEstimate sets the year's tax on its wages beside what was
+	// withheld; nil when TeaNode does not know the year's brackets.
+	TaxYearEstimate *TaxYearEstimate `json:"taxYearEstimate,omitempty" graphapi:"nullable"`
+	PaystubCount    int              `json:"paystubCount"`
+	TaxFormCount    int              `json:"taxFormCount"`
 }
 
 // figureSums is TaxYearFigures while being added up.
@@ -515,8 +526,10 @@ type employmentGroup struct {
 }
 
 // SummarizeTaxYear puts a tax year together from the paystubs paid in it
-// and the W-2s for it (others are left out), as of today.
-func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms []*models.FinanceTaxForm, today time.Time) *TaxYearSummary {
+// and the W-2s for it (others are left out), as of today, its tax
+// estimated as filed with filingStatus, or the default for the number of
+// people when it is empty.
+func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms []*models.FinanceTaxForm, today time.Time, filingStatus TaxFilingStatus) *TaxYearSummary {
 	summary := &TaxYearSummary{
 		TaxYear: taxYear, IsYearOver: today.Year() > taxYear,
 		TaxYearEmployments: []*TaxYearEmployment{}, TaxYearPeople: []*TaxYearPerson{}, TaxYearFindings: []*TaxYearFinding{},
@@ -524,6 +537,9 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	wageBase, isWageBaseKnown := SocialSecurityWageBase(taxYear)
 	if isWageBaseKnown {
 		summary.SocialSecurityWageBaseAmount = formatDollars(wageBase)
+	}
+	if deferralLimit, isKnown := RetirementDeferralLimit(taxYear); isKnown {
+		summary.RetirementDeferralLimitAmount = formatDollars(deferralLimit)
 	}
 	groups := map[string]*employmentGroup{}
 	var order []string
@@ -654,7 +670,8 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 					FindingText: fmt.Sprintf("No W-2 from %s for %d yet; employers send them by January 31", employment.EmployerName, taxYear), PaystubIDs: []string{},
 				})
 			} else if employment.RemainingPayCount > 0 {
-				group.projected = projectPaystubs(paystubYear, paystubSums(group.paystubs[len(group.paystubs)-1], true, wageBase), employment.RemainingPayCount, wageBase, isWageBaseKnown)
+				group.projected, employment.IsRetirementDeferralCapped = projectPaystubs(taxYear, paystubYear, paystubSums(group.paystubs[len(group.paystubs)-1], true, wageBase),
+					employment.RemainingPayCount, wageBase, isWageBaseKnown)
 				employment.ProjectedFigures = group.projected.figures()
 				group.hasProjection = true
 				isAnythingProjected = true
@@ -676,6 +693,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		}
 		byEmployee[group.employeeKey] = append(byEmployee[group.employeeKey], group)
 	}
+	var everyoneSums []*personSums
 	for _, employeeKey := range employeeOrder {
 		personGroups := byEmployee[employeeKey]
 		figures, projected := newFigureSums(), newFigureSums()
@@ -689,6 +707,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		if hasProjection {
 			person.ProjectedFigures = projected.figures()
 		}
+		everyoneSums = append(everyoneSums, &personSums{figures: figures, projected: projected})
 		if isWageBaseKnown && len(personGroups) > 1 {
 			maximumTax := roundToCents(new(big.Rat).Mul(wageBase, socialSecurityRate))
 			if excess := new(big.Rat).Sub(figures.socialSecurityTax, maximumTax); excess.Sign() > 0 {
@@ -707,6 +726,10 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	if isAnythingProjected {
 		summary.ProjectedFigures = householdProjected.figures()
 	}
+	if !filingStatus.IsValid() {
+		filingStatus = DefaultTaxFilingStatus(len(everyoneSums))
+	}
+	summary.TaxYearEstimate = estimateTaxYear(taxYear, filingStatus, everyoneSums, isAnythingProjected)
 	return summary
 }
 
@@ -885,8 +908,11 @@ func brokenChainLine(previous, current *models.FinancePaystub) string {
 
 // projectPaystubs is the year to December 31: the year to date plus
 // remainingPayCount paychecks like the latest, Social Security stopping at
-// the year's wage base when TeaNode knows it.
-func projectPaystubs(yearToDate, current *figureSums, remainingPayCount int, wageBase *big.Rat, isWageBaseKnown bool) *figureSums {
+// the year's wage base when TeaNode knows it, and retirement contributions
+// at the year's limit (see retirementDeferralCeiling), which it says when
+// they do. A traditional contribution that stops is pay taxed as wages
+// from then on; a Roth one was taxed already.
+func projectPaystubs(taxYear int, yearToDate, current *figureSums, remainingPayCount int, wageBase *big.Rat, isWageBaseKnown bool) (*figureSums, bool) {
 	projected := newFigureSums()
 	count := big.NewRat(int64(remainingPayCount), 1)
 	currentFields := current.fields()
@@ -913,7 +939,28 @@ func projectPaystubs(yearToDate, current *figureSums, remainingPayCount int, wag
 			projected.socialSecurityTax = maximumTax
 		}
 	}
-	return projected
+	isCapped := false
+	deferredSoFar := new(big.Rat).Add(yearToDate.retirementTraditional, yearToDate.retirementRoth)
+	deferredEach := new(big.Rat).Add(current.retirementTraditional, current.retirementRoth)
+	deferredAhead := new(big.Rat).Mul(deferredEach, count)
+	if ceiling := retirementDeferralCeiling(taxYear, deferredSoFar); ceiling != nil && deferredAhead.Sign() > 0 &&
+		new(big.Rat).Add(deferredSoFar, deferredAhead).Cmp(ceiling) > 0 {
+		// The room left is shared between traditional and Roth as each
+		// paycheck shares it.
+		share := new(big.Rat).Quo(new(big.Rat).Sub(ceiling, deferredSoFar), deferredAhead)
+		traditionalAhead := new(big.Rat).Mul(current.retirementTraditional, count)
+		traditionalKept := roundToCents(new(big.Rat).Mul(traditionalAhead, share))
+		rothKept := roundToCents(new(big.Rat).Mul(new(big.Rat).Mul(current.retirementRoth, count), share))
+		projected.retirementTraditional = new(big.Rat).Add(yearToDate.retirementTraditional, traditionalKept)
+		projected.retirementRoth = new(big.Rat).Add(yearToDate.retirementRoth, rothKept)
+		nowWages := new(big.Rat).Sub(traditionalAhead, traditionalKept)
+		projected.wages.Add(projected.wages, nowWages)
+		for code := range projected.stateWagesByCode {
+			projected.stateWagesByCode[code].Add(projected.stateWagesByCode[code], nowWages)
+		}
+		isCapped = true
+	}
+	return projected, isCapped
 }
 
 // compareW2WithPaystubs sets each W-2 figure beside the paystubs', for the

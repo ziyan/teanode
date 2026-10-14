@@ -49,6 +49,19 @@ final class FinanceTaxTests: XCTestCase {
         XCTAssertEqual(rows.first?.projectedAmount, "104000.00")
     }
 
+    func testTheEstimateIsAskedForAFilingStatusAndRingsWhatIsNotNothing() async throws {
+        let body = #"{"data":{"TaxYear":{"taxYear":2026,"retirementDeferralLimitAmount":"24500.00","taxYearEstimate":{"taxFilingStatus":"head_of_household","isProjected":true,"payAmount":"110000.00","paidTaxAmount":"9000.00","upcomingWithheldTaxAmount":"12033.00","owingTaxAmount":"0.00","refundAmount":"0.00","remainingIncomeAmount":"88967.00","totalTaxAmount":"21033.00"}}}}"#
+        let (connection, fake) = try connection(answering: body)
+        let read = try await connection.taxYear(2026, filingStatus: .headOfHousehold)
+        let estimate = try XCTUnwrap(read?.taxYearEstimate)
+        XCTAssertEqual(estimate.filingStatus, .headOfHousehold)
+        XCTAssertEqual(estimate.slices.map(\.sliceKind), [.paid, .upcomingWithheld, .remainingIncome])
+        XCTAssertEqual(read?.retirementDeferralLimitAmount, "24500.00")
+        let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.first?.httpBody)) as? [String: Any]
+        let variables = sent?["variables"] as? [String: Any]
+        XCTAssertEqual(variables?["taxFilingStatus"] as? String, "head_of_household")
+    }
+
     func testZeroRowsAreLeftOutExceptWagesAndFederalTax() throws {
         let figures = try JSONDecoder().decode(TaxYearFigures.self, from: Data(#"{"wagesAmount":"0.00","federalIncomeTaxAmount":"0.00","medicareTaxAmount":"0.00"}"#.utf8))
         let rows = figures.rows()

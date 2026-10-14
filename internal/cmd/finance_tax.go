@@ -100,8 +100,16 @@ func financeTaxCommands() []*cli.Command {
 			ArgsUsage: "<tax-form-id>", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runFinanceDeleteTaxForm,
 		},
 		{
-			Name: "tax-year", Usage: "a tax year from your paystubs and W-2s: wages and withholding, projected to December 31, each W-2 box beside your paystubs, and what is missing",
-			ArgsUsage: "[year]", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxYear,
+			Name: "tax-year", Usage: "a tax year from your paystubs and W-2s: wages and withholding, projected to December 31, each W-2 box beside your paystubs, the tax owed beside what was withheld, and what is missing",
+			ArgsUsage: "[year]",
+			Description: "The estimate counts wages only: the tax on them less the standard deduction, Social Security\n" +
+				"and Medicare as owed, state and local income tax as withheld. --filing-status says how you file;\n" +
+				"without it, married filing jointly when the documents name two people and single otherwise.",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.StringFlag{Name: "filing-status", Usage: "single, married_filing_jointly, married_filing_separately or head_of_household"},
+			},
+			Action: runFinanceTaxYear,
 		},
 	}
 }
@@ -449,8 +457,12 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 		}
 		taxYear = parsed
 	}
+	variables := map[string]any{"taxYear": taxYear}
+	if filingStatus := strings.TrimSpace(command.String("filing-status")); filingStatus != "" {
+		variables["taxFilingStatus"] = filingStatus
+	}
 	var summary *finance.TaxYearSummary
-	if err := financeCall(ctx, command, operationOf(command), map[string]any{"taxYear": taxYear}, &summary); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &summary); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -492,6 +504,39 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 		if err := printTaxYearFigures(summary.Figures, summary.ProjectedFigures); err != nil {
 			return err
 		}
+	}
+	if estimate := summary.TaxYearEstimate; estimate != nil {
+		heading := "tax owed beside withheld, filing " + strings.ReplaceAll(string(estimate.TaxFilingStatus), "_", " ")
+		if estimate.IsProjected {
+			heading += ", by December 31"
+		}
+		_, _ = fmt.Fprintln(command.Writer, heading)
+		rows := [][]string{
+			{"pay (Medicare wages)", estimate.PayAmount},
+			{"standard deduction", estimate.StandardDeductionAmount},
+			{"taxable income", estimate.TaxableIncomeAmount},
+			{"federal income tax", estimate.FederalIncomeTaxAmount},
+			{"Social Security tax", estimate.SocialSecurityTaxAmount},
+			{"Medicare tax", estimate.MedicareTaxAmount},
+			{"state income tax, as withheld", estimate.StateIncomeTaxAmount},
+		}
+		if estimate.LocalIncomeTaxAmount != "0.00" {
+			rows = append(rows, []string{"local income tax, as withheld", estimate.LocalIncomeTaxAmount})
+		}
+		rows = append(rows, []string{"tax for the year", estimate.TotalTaxAmount}, []string{"paid so far", estimate.PaidTaxAmount})
+		if estimate.IsProjected {
+			rows = append(rows, []string{"still to be withheld", estimate.UpcomingWithheldTaxAmount})
+		}
+		if estimate.RefundAmount != "0.00" {
+			rows = append(rows, []string{"refund at filing", estimate.RefundAmount})
+		} else {
+			rows = append(rows, []string{"owing at filing", estimate.OwingTaxAmount})
+		}
+		rows = append(rows, []string{"remaining income", estimate.RemainingIncomeAmount})
+		if err := printTable([]string{"", ""}, rows); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(command.Writer, "wages only: other income, itemized deductions and credits are not counted")
 	}
 	for _, finding := range summary.TaxYearFindings {
 		_, _ = fmt.Fprintln(command.Writer, "- "+forTerminal(finding.FindingText))

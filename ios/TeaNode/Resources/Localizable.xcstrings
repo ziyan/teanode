@@ -3765,6 +3765,22 @@
         }
       }
     },
+    "An estimate from wages only: %@ taxable after the %@ standard deduction. Other income, itemized deductions and credits are not counted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与だけからの見積もりです。標準控除 %2$@ を引いた課税所得は %1$@ です。その他の収入、項目別控除、税額控除は含みません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅根据工资估算：减去 %2$@ 标准扣除额后应税收入为 %1$@。未计入其他收入、分项扣除和税收抵免。"
+          }
+        }
+      }
+    },
     "API key": {
       "localizations": {
         "ja": {
@@ -13270,6 +13286,22 @@
         }
       }
     },
+    "Federal income tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連邦所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联邦所得税"
+          }
+        }
+      }
+    },
     "Fees": {
       "localizations": {
         "ja": {
@@ -13570,6 +13602,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "决定不打开的文件"
+          }
+        }
+      }
+    },
+    "Filing status": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告区分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税身份"
           }
         }
       }
@@ -14882,6 +14930,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有附件"
+          }
+        }
+      }
+    },
+    "Head of household": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "世帯主"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "户主"
           }
         }
       }
@@ -18182,6 +18246,22 @@
         }
       }
     },
+    "Local income tax, as withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税（源泉徴収額）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税（按预扣额）"
+          }
+        }
+      }
+    },
     "Location": {
       "localizations": {
         "ja": {
@@ -19030,6 +19110,38 @@
         }
       }
     },
+    "Married filing jointly": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夫婦合算申告"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已婚合并申报"
+          }
+        }
+      }
+    },
+    "Married filing separately": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夫婦個別申告"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已婚分开申报"
+          }
+        }
+      }
+    },
     "Matched to %lld charges": {
       "localizations": {
         "ja": {
@@ -19138,6 +19250,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "依据最近一次梦境估算，其花费为 %@。"
+          }
+        }
+      }
+    },
+    "Medicare": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディケア税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联邦医疗保险税"
           }
         }
       }
@@ -24630,6 +24758,22 @@
         }
       }
     },
+    "Owing at filing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告時に納付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税时补缴"
+          }
+        }
+      }
+    },
     "Page actions": {
       "localizations": {
         "ja": {
@@ -24706,6 +24850,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "付款方"
+          }
+        }
+      }
+    },
+    "Paid so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "納付済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已缴"
           }
         }
       }
@@ -25026,6 +25186,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已暂停；它读到的内容都还在，恢复后会重新读一遍。"
+          }
+        }
+      }
+    },
+    "Pay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资"
           }
         }
       }
@@ -26854,6 +27030,22 @@
         }
       }
     },
+    "Refund at filing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告時に還付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税时退税"
+          }
+        }
+      }
+    },
     "Refused on arrival": {
       "localizations": {
         "ja": {
@@ -27106,6 +27298,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "发布页面"
+          }
+        }
+      }
+    },
+    "Remaining income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残る収入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩余收入"
           }
         }
       }
@@ -28486,6 +28694,22 @@
         }
       }
     },
+    "Retirement contributions stop at the year's limit of %@, and the pay that would have gone in counts as wages.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退職積立は年間上限の %@ で止まり、積み立てられなかった分は給与として数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退休金缴款在全年上限 %@ 处停止，本应缴入的部分计为工资。"
+          }
+        }
+      }
+    },
     "Retry": {
       "localizations": {
         "ja": {
@@ -28994,6 +29218,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "并发运行数"
+          }
+        }
+      }
+    },
+    "Single": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "独身"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单身"
+          }
+        }
+      }
+    },
+    "Social Security": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税"
           }
         }
       }
@@ -32774,6 +33030,22 @@
         }
       }
     },
+    "State income tax, as withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税（源泉徴収額）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税（按预扣额）"
+          }
+        }
+      }
+    },
     "State or region": {
       "localizations": {
         "ja": {
@@ -32850,6 +33122,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍在读取，完成后会显示在这里。"
+          }
+        }
+      }
+    },
+    "Still to be withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これから源泉徴収"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还会预扣"
           }
         }
       }
@@ -33602,6 +33890,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟随系统"
+          }
+        }
+      }
+    },
+    "Tax for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年の税金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年的税"
+          }
+        }
+      }
+    },
+    "Tax for %@, by December 31": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年の税金（12 月 31 日までの見込み）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年的税（预计到 12 月 31 日）"
+          }
+        }
+      }
+    },
+    "Tax for the year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年間の税金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全年税额"
           }
         }
       }
