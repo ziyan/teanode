@@ -21,6 +21,7 @@ type RecordingSpeakerMutation interface {
 	ResumeRecordingLearning(context.Context, ResumeRecordingLearningArguments) (*models.RecordingLearningView, error)
 	CorrectRecordingSpeaker(context.Context, CorrectRecordingSpeakerArguments) (*RecordingSpeakersView, error)
 	NameRecordingTemporarySpeaker(context.Context, NameRecordingTemporarySpeakerArguments) (bool, error)
+	SeparateRecordingTemporarySpeaker(context.Context, SeparateRecordingTemporarySpeakerArguments) (bool, error)
 	RenameRecordingSpeaker(context.Context, RenameRecordingSpeakerArguments) (*RecordingSpeakersView, error)
 	RemoveRecordingSpeakerCorrection(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
 	UndoRecordingSpeakerNaming(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
@@ -56,6 +57,13 @@ type NameRecordingTemporarySpeakerArguments struct {
 	SpeakerLabel   string `json:"speakerLabel"`
 	ConfirmedName  string `json:"confirmedName"`
 	IsAccountOwner bool   `json:"isAccountOwner" graphapi:"nullable"`
+}
+
+// SeparateRecordingTemporarySpeakerArguments undoes the merge of a label of a
+// recording that is still being captured into an earlier one.
+type SeparateRecordingTemporarySpeakerArguments struct {
+	RecordingID  string `json:"recordingId"`
+	SpeakerLabel string `json:"speakerLabel"`
 }
 
 // RenameRecordingSpeakerArguments renames an existing confirmed identity.
@@ -142,6 +150,31 @@ func (self *graph) NameRecordingTemporarySpeaker(ctx context.Context, arguments 
 		return false, err
 	}
 	if err := self.transaction(ctx).NameRecordingTemporarySpeaker(userId, arguments.RecordingID, arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner); err != nil {
+		return false, translateError(err)
+	}
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
+		return false, translateError(err)
+	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return false, translateError(err)
+	}
+	self.transaction(ctx).AfterCommit(func() {
+		if worker := self.agentWorker(); worker != nil {
+			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
+		}
+	})
+	return true, nil
+}
+
+// SeparateRecordingTemporarySpeaker gives a label that was found to be an
+// earlier speaker's voice back to itself: its passages read as its own label
+// again, and anything naming the earlier speaker wrote for it is taken off.
+func (self *graph) SeparateRecordingTemporarySpeaker(ctx context.Context, arguments SeparateRecordingTemporarySpeakerArguments) (bool, error) {
+	userId, err := self.recordingSpeakerOwner(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).SeparateRecordingTemporarySpeaker(userId, arguments.RecordingID, arguments.SpeakerLabel); err != nil {
 		return false, translateError(err)
 	}
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {

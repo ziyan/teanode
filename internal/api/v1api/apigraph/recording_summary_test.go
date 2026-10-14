@@ -31,6 +31,8 @@ func TestRecordingClientDocumentsMatchTheBuiltSchema(test *testing.T) {
 		`{ ReadRecordingSpeakers(recordingId: "a") { speakerIdentities { isAccountOwner } } }`,
 		`{ ReadRecordingTranscriptTimeline(recordingId: "a", segmentOffset: 0, pageSize: 1) { segments { temporarySpeakerLabel isRecognizedSpeaker } temporarySpeakers { speakerLabel speakerIdentityId } transcriptRuns { handoffStartMS } } }`,
 		`mutation { NameRecordingTemporarySpeaker(recordingId: "a", speakerLabel: "Speaker 1", confirmedName: "Participant One", isAccountOwner: false) }`,
+		`mutation { SeparateRecordingTemporarySpeaker(recordingId: "a", speakerLabel: "Speaker 9") }`,
+		`{ ReadRecordingTranscriptTimeline(recordingId: "a", segmentOffset: 0, pageSize: 1) { segments { temporarySpeakerLabel mergedTemporarySpeakerLabel } } }`,
 	} {
 		document, err := gqlparser.Parse(gqlparser.ParseParams{Source: source})
 		if err != nil {

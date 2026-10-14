@@ -144,6 +144,13 @@ func TestRecordingToolReadsTheSummaryAndOffersTheOwnerFlag(test *testing.T) {
 	if tools.Build().Get("recording").RiskOf(json.RawMessage(`{"operation":"temporary-speaker-name"}`)) != tools.RiskWrite {
 		test.Fatal("naming a speaker is not a write")
 	}
+	operations.responseJSON = `{"SeparateRecordingTemporarySpeaker":true}`
+	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(`{"operation":"speaker-separate","recording_id":"fixture-recording","speaker_label":"Speaker 9"}`)}); err != nil || operations.variables["speakerLabel"] != "Speaker 9" || operations.variables["recordingId"] != "fixture-recording" {
+		test.Fatal("separating a merged speaker did not reach the mutation", err, operations.variables)
+	}
+	if tools.Build().Get("recording").RiskOf(json.RawMessage(`{"operation":"speaker-separate"}`)) != tools.RiskWrite {
+		test.Fatal("separating a speaker is not a write")
+	}
 	operations.responseJSON = `{"UpdateRecordingMetadata":{}}`
 	if _, err := runRecording(tools.WithRun(test.Context(), run), &tools.Call{Arguments: json.RawMessage(`{"operation":"metadata","recording_id":"fixture-recording","expected_source_generation":2,"recorded_at":"2031-03-04T05:06:00Z"}`)}); err != nil {
 		test.Fatal("the tool requires a title to change the date", err)

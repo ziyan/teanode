@@ -232,6 +232,12 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return "", nil, err
 		}
 		variables["speakerLabel"], variables["confirmedName"], variables["isAccountOwner"] = arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner
+	case "speaker-separate":
+		operationName = "SeparateRecordingTemporarySpeaker"
+		if err := require("speaker_label (the \"Speaker 9\" that was merged into an earlier one, from the passage's mergedTemporarySpeakerLabel)", arguments.SpeakerLabel); err != nil {
+			return "", nil, err
+		}
+		variables["speakerLabel"] = arguments.SpeakerLabel
 	case "speaker-rename":
 		operationName = "RenameRecordingSpeaker"
 		if err := require("speaker_identity_id", arguments.SpeakerIdentityID); err != nil {
@@ -281,7 +287,7 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return "", nil, fmt.Errorf("unknown recording operation %q", arguments.Operation)
 	}
 	switch arguments.Operation {
-	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-separate", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if err := require("recording_id", arguments.RecordingID); err != nil {
 			return "", nil, err
 		}
