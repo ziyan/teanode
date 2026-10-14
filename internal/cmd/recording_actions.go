@@ -19,7 +19,7 @@ func recordingActionCommands() []*cli.Command {
 		{"availability", "show recording processing availability without making a provider call", nil},
 		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
 		{"passage-offset", "locate an exact historical citation without loading the whole transcript", []string{"transcript-run-id", "passage-start-ms", "passage-end-ms"}},
-		{"timeline", "read the latest completed original versions in absolute chronological order; liveUtterances are words heard during a capture that no completed version covers yet", []string{"recording-id", "segment-offset", "page-size"}},
+		{"timeline", "read the latest completed original versions in absolute chronological order (--unnamed-only: only the passages whose speaker nobody has named, what is left to label); liveUtterances are words heard during a capture that no completed version covers yet", []string{"recording-id", "segment-offset", "page-size", "unnamed-only"}},
 		{"versions", "inspect immutable transcript versions and processing status", []string{"recording-id"}},
 		{"transcript", "read a transcript page, request-local speakers and provider usage evidence", []string{"transcript-run-id", "segment-offset", "page-size"}},
 		{"process", "request initial paid transcription using the configured audio model", []string{"media-id", "client-run-id"}},
@@ -51,6 +51,8 @@ func recordingActionCommands() []*cli.Command {
 			switch flagName {
 			case "force":
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "perform this explicit operation without asking first"})
+			case "unnamed-only":
+				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "only the passages whose speaker nobody has named yet; the offset and the count are of those"})
 			case "me":
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "this speaker is you; the name defaults to your display name and no other speaker stays marked as you"})
 			case "expected-source-generation", "passage-start-ms", "passage-end-ms":
@@ -80,6 +82,8 @@ func runRecordingAction(ctx context.Context, command *cli.Command) error {
 			inputFields[fieldName] = command.Int64(flagName)
 		case "me":
 			inputFields["is_account_owner"] = command.Bool(flagName)
+		case "unnamed-only":
+			inputFields["is_unnamed_only"] = command.Bool(flagName)
 		case "segment-offset", "page-size":
 			inputFields[fieldName] = command.Int(flagName)
 		default:

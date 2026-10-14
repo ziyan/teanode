@@ -255,8 +255,12 @@
                 return liveCaptureTimelineAnswer
             }
             if query.contains("ReadRecordingTranscriptTimeline") {
+                // Asked for the unnamed speakers alone, the passages nobody has named.
+                let segments =
+                    query.contains(#""isUnnamedOnly":true"#)
+                    ? conversationSegmentFixtures.filter { !$0.contains("effectiveSpeakerIdentityId") } : conversationSegmentFixtures
                 return
-                    "{\"data\":{\"ReadRecordingTranscriptTimeline\":{\"sourceGeneration\":4,\"segments\":[\(conversationSegmentsJSON)],\"transcriptRuns\":[\(recordingRunFixture)],\"segmentCount\":\(conversationSegmentFixtures.count),\"hasMoreSegments\":false}}}"
+                    "{\"data\":{\"ReadRecordingTranscriptTimeline\":{\"sourceGeneration\":4,\"segments\":[\(segments.joined(separator: ","))],\"transcriptRuns\":[\(recordingRunFixture)],\"segmentCount\":\(segments.count),\"hasMoreSegments\":false}}}"
             }
             if query.contains("ReadRecordingTranscriptTextCorrections") {
                 return "{\"data\":{\"ReadRecordingTranscriptTextCorrections\":[\(recordingTextCorrectionFixture)]}}"
@@ -323,6 +327,7 @@
                     RecordingPlaybackScreen(
                         connection: connection, media: DemoServer.recordingObject(DemoServer.recordingMediaFixture, as: RecordingMedia.self))
                 case "recording-detail": RecordingDetailScreen(connection: connection, recording: recording)
+                case "recording-unnamed": RecordingDetailScreen(connection: connection, recording: recording, startsUnnamedOnly: true)
                 case "recording-capture":
                     RecordingCaptureView(
                         elapsedMS: 754_000, displayState: .recording, inputLevel: { 0.6 }, onPauseOrResume: {}, onStop: {})

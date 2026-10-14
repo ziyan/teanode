@@ -147,6 +147,8 @@ struct RecordingDetailScreen: View {
     let connection: Connection
     let recording: Recording
     var shouldFocusLearning = false
+    /// Opens with only the passages whose speaker nobody has named.
+    var startsUnnamedOnly = false
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @State private var model: RecordingDetailModel
@@ -159,10 +161,11 @@ struct RecordingDetailScreen: View {
     @State private var sharedMedia: RecordingMedia?
     @State private var isTitleScrolledAway = false
 
-    init(connection: Connection, recording: Recording, shouldFocusLearning: Bool = false) {
+    init(connection: Connection, recording: Recording, shouldFocusLearning: Bool = false, startsUnnamedOnly: Bool = false) {
         self.connection = connection
         self.recording = recording
         self.shouldFocusLearning = shouldFocusLearning
+        self.startsUnnamedOnly = startsUnnamedOnly
         _model = State(initialValue: RecordingDetailModel(connection: connection, recording: recording))
         _conversation = State(initialValue: RecordingConversationModel(connection: connection, recording: recording))
         _player = State(initialValue: RecordingPlayer(connection: connection, durationMS: recording.timelineDurationMS))
@@ -221,6 +224,7 @@ struct RecordingDetailScreen: View {
         )
         .task {
             await load()
+            if startsUnnamedOnly { await conversation.showUnnamedOnly(true) }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }

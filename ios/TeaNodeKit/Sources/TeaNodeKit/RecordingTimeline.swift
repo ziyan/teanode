@@ -21,8 +21,9 @@ public struct RecordingTemporarySpeaker: Codable, Hashable, Sendable {
 
 extension Documents {
     public static let readRecordingTranscriptTimeline = """
-        query ($recordingId: String!, $segmentOffset: Int!, $pageSize: Int!) { ReadRecordingTranscriptTimeline(recordingId:
-        $recordingId, segmentOffset: $segmentOffset, pageSize: $pageSize) { sourceGeneration segments { id recordingTranscriptRunId
+        query ($recordingId: String!, $segmentOffset: Int!, $pageSize: Int!, $isUnnamedOnly: Boolean) {
+        ReadRecordingTranscriptTimeline(recordingId: $recordingId, segmentOffset: $segmentOffset, pageSize: $pageSize,
+        isUnnamedOnly: $isUnnamedOnly) { sourceGeneration segments { id recordingTranscriptRunId
         recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText
         appliedTextCorrectionId hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker
         isAccountOwner hasUnalignedSpeakerCorrection appliedSpeakerCorrectionId temporarySpeakerLabel } transcriptRuns { id recordingId recordingMediaId versionNumber
@@ -32,14 +33,17 @@ extension Documents {
 }
 
 extension Connection {
-    public func recordingTranscriptTimeline(recordingId: String, segmentOffset: Int = 0, pageSize: Int = 100) async throws
-        -> RecordingTranscriptTimeline
+    /// `isUnnamedOnly` reads only the passages whose speaker nobody has named, what is left to label; the offset and the count
+    /// are then of those passages alone.
+    public func recordingTranscriptTimeline(recordingId: String, segmentOffset: Int = 0, pageSize: Int = 100, isUnnamedOnly: Bool = false)
+        async throws -> RecordingTranscriptTimeline
     {
         struct Answer: Decodable, Sendable { let ReadRecordingTranscriptTimeline: RecordingTranscriptTimeline }
-        return try await execute(
-            Documents.readRecordingTranscriptTimeline,
-            variables: ["recordingId": .string(recordingId), "segmentOffset": .number(Double(segmentOffset)), "pageSize": .number(Double(pageSize))],
-            as: Answer.self
-        ).ReadRecordingTranscriptTimeline
+        var variables: [String: JSONValue] = [
+            "recordingId": .string(recordingId), "segmentOffset": .number(Double(segmentOffset)), "pageSize": .number(Double(pageSize)),
+        ]
+        if isUnnamedOnly { variables["isUnnamedOnly"] = .bool(true) }
+        return try await execute(Documents.readRecordingTranscriptTimeline, variables: variables, as: Answer.self)
+            .ReadRecordingTranscriptTimeline
     }
 }

@@ -148,6 +148,7 @@ func recordingParameters(parameters map[string]any) map[string]any {
 	parameters["passage_start_ms"] = tools.IntegerProperty("absolute timeline interval start in milliseconds; -1 with end -1 means request-local group")
 	parameters["passage_end_ms"] = tools.IntegerProperty("absolute timeline interval end in milliseconds")
 	parameters["segment_offset"] = tools.IntegerProperty("zero-based transcript segment offset")
+	parameters["is_unnamed_only"] = tools.BooleanProperty("for timeline: only the passages whose speaker nobody has named yet, to find what is left to label; segment_offset and segmentCount are then of those passages")
 	return parameters
 }
 func recordingPreview(arguments json.RawMessage) string {

@@ -25,6 +25,7 @@ type RecordingWorkerClaim struct {
 // RecordingTranscriptOperation versions generated evidence and tracks derived blobs.
 type RecordingTranscriptOperation interface {
 	ReadRecordingTranscriptTimelinePage(userId, recordingId string, segmentOffset, pageSize int) ([]*models.RecordingTranscriptSegment, []*models.RecordingTranscriptRun, int64, error)
+	ReadUnnamedRecordingTranscriptSegments(userId, recordingId string) ([]*models.RecordingTranscriptSegment, []*models.RecordingTranscriptRun, error)
 	GetLatestRecordingChunkAttempt(userId, chunkId string) (*models.RecordingTranscriptionAttempt, error)
 	GetRecordingTranscriptionAttemptEvidence(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error)
 	CancelRecordingTranscriptRun(userId, runId string) (*models.RecordingTranscriptRun, error)
@@ -97,6 +98,43 @@ func (self *transaction) ReadRecordingTranscriptTimelinePage(userId, recordingId
 		segments = append(segments, (*models.RecordingTranscriptSegment)(&row))
 	}
 	return segments, transcriptRuns, segmentCount, nil
+}
+
+// ReadUnnamedRecordingTranscriptSegments reads the whole timeline and keeps
+// the passages with words whose speaker nobody has named (no confirmed name,
+// no voice sample matched): what is left to label. Who spoke is worked out
+// passage by passage from the corrections, so the filter is applied after
+// that rather than in the query. The passages come with their corrections
+// projected.
+func (self *transaction) ReadUnnamedRecordingTranscriptSegments(userId, recordingId string) ([]*models.RecordingTranscriptSegment, []*models.RecordingTranscriptRun, error) {
+	const readSize = 250
+	unnamed := []*models.RecordingTranscriptSegment{}
+	var transcriptRuns []*models.RecordingTranscriptRun
+	for offset := 0; ; offset += readSize {
+		page, runs, segmentCount, err := self.ReadRecordingTranscriptTimelinePage(userId, recordingId, offset, readSize)
+		if err != nil {
+			return nil, nil, err
+		}
+		transcriptRuns = runs
+		if err := self.ProjectRecordingTranscriptTextCorrections(userId, page); err != nil {
+			return nil, nil, err
+		}
+		if err := self.ProjectRecordingSpeakerCorrections(userId, page); err != nil {
+			return nil, nil, err
+		}
+		for _, segment := range page {
+			text := segment.EffectiveTranscriptText
+			if text == "" {
+				text = segment.TranscriptText
+			}
+			if segment.EffectiveSpeakerIdentityID == "" && strings.TrimSpace(text) != "" {
+				unnamed = append(unnamed, segment)
+			}
+		}
+		if len(page) == 0 || int64(offset+len(page)) >= segmentCount {
+			return unnamed, transcriptRuns, nil
+		}
+	}
 }
 
 // recordingHandoffCutoffs says, for the runs that are the latest of their

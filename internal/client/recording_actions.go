@@ -40,6 +40,9 @@ type RecordingActionArguments struct {
 	// SearchText narrows a list of recordings, or the names offered for a
 	// speaker, to those containing it.
 	SearchText string `json:"search_text"`
+	// IsUnnamedOnly narrows the timeline to the passages whose speaker
+	// nobody has named yet.
+	IsUnnamedOnly bool `json:"is_unnamed_only"`
 }
 
 // RecordingAction resolves one reviewed operation and refuses incomplete edits.
@@ -115,6 +118,9 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return "", nil, fmt.Errorf("segment_offset must be nonnegative and page_size must be 1 to 100")
 		}
 		variables["recordingId"], variables["segmentOffset"], variables["pageSize"] = arguments.RecordingID, arguments.SegmentOffset, pageSize
+		if arguments.IsUnnamedOnly {
+			variables["isUnnamedOnly"] = true
+		}
 	case "transcript":
 		operationName = "ReadRecordingTranscript"
 		if err := require("transcript_run_id", arguments.RecordingTranscriptRunID); err != nil {
