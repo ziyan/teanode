@@ -107,6 +107,10 @@ public struct PairedPhone: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let phoneName: String
     public let phoneModel: String
+    /// The model as people say it, such as "iPhone 17 Pro Max"; the
+    /// identifier itself when the server does not know it. Absent from a
+    /// server that predates it.
+    public let phoneModelName: String?
     /// The kinds it is told about; the server lists every kind when it chose
     /// none.
     public let notificationKinds: [String]
@@ -114,6 +118,12 @@ public struct PairedPhone: Codable, Hashable, Sendable, Identifiable {
     public let lastSeenAt: String?
     public let lastDeliveredAt: String?
     public let lastDeliveryError: String
+
+    /// ModelDisplayName is what the Phones list shows for the model.
+    public var modelDisplayName: String {
+        if let phoneModelName, !phoneModelName.isEmpty { return phoneModelName }
+        return phoneModel
+    }
 
     /// NotificationState is whether notifications reach the phone.
     public enum NotificationState: Hashable, Sendable {
@@ -223,7 +233,7 @@ extension Documents {
     public static let pairedPhones = """
         query {
           ListAgentPhones {
-            phones { id phoneName phoneModel notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError }
+            phones { id phoneName phoneModel phoneModelName notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError }
             isPushEnabled notificationKinds
           }
         }

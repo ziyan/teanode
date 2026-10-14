@@ -157,9 +157,9 @@ final class AccountProfileTests: XCTestCase {
 
     private let phones = #"""
         {"data":{"ListAgentPhones":{"phones":[
-          {"id":"phone-1","phoneName":"Work phone","phoneModel":"iPhone","notificationKinds":["approval","message"],"canBeNotified":true,"lastSeenAt":"2026-01-02T03:04:05.123456789Z","lastDeliveredAt":null,"lastDeliveryError":""},
-          {"id":"phone-2","phoneName":"","phoneModel":"iPad","notificationKinds":["message","approval","question","answer"],"canBeNotified":false,"lastSeenAt":null,"lastDeliveredAt":null,"lastDeliveryError":""},
-          {"id":"phone-3","phoneName":"Old phone","phoneModel":"iPhone","notificationKinds":["message"],"canBeNotified":true,"lastSeenAt":null,"lastDeliveredAt":null,"lastDeliveryError":"the token is no longer valid"}
+          {"id":"phone-1","phoneName":"Work phone","phoneModel":"iPhone18,2","phoneModelName":"iPhone 17 Pro Max","notificationKinds":["approval","message"],"canBeNotified":true,"lastSeenAt":"2026-01-02T03:04:05.123456789Z","lastDeliveredAt":null,"lastDeliveryError":""},
+          {"id":"phone-2","phoneName":"","phoneModel":"iPad16,3","phoneModelName":"iPad Pro 11-inch (M4)","notificationKinds":["message","approval","question","answer"],"canBeNotified":false,"lastSeenAt":null,"lastDeliveredAt":null,"lastDeliveryError":""},
+          {"id":"phone-3","phoneName":"Old phone","phoneModel":"iPhone99,9","phoneModelName":"iPhone99,9","notificationKinds":["message"],"canBeNotified":true,"lastSeenAt":null,"lastDeliveredAt":null,"lastDeliveryError":"the token is no longer valid"}
         ],"isPushEnabled":true,"notificationKinds":["message","approval","question","answer"]}}}
         """#
 
@@ -170,6 +170,17 @@ final class AccountProfileTests: XCTestCase {
         XCTAssertEqual(list.notificationKinds, ["message", "approval", "question", "answer"])
         XCTAssertEqual(list.phones.map(\.id), ["phone-1", "phone-2", "phone-3"])
         XCTAssertEqual(list.phones.map(\.notificationState), [.notified, .notRegistered, .lastFailed])
+        // The identifier is kept, and the name beside it is what the list shows;
+        // a model the server does not know comes back as its identifier.
+        XCTAssertEqual(list.phones.map(\.phoneModel), ["iPhone18,2", "iPad16,3", "iPhone99,9"])
+        XCTAssertEqual(list.phones.map(\.modelDisplayName), ["iPhone 17 Pro Max", "iPad Pro 11-inch (M4)", "iPhone99,9"])
+    }
+
+    func testAServerWithoutModelNamesShowsTheIdentifier() throws {
+        let json = #"{"id":"phone-1","phoneName":"","phoneModel":"iPhone18,2","notificationKinds":[],"canBeNotified":true,"lastSeenAt":null,"lastDeliveredAt":null,"lastDeliveryError":""}"#
+        let phone = try JSONDecoder().decode(PairedPhone.self, from: Data(json.utf8))
+        XCTAssertNil(phone.phoneModelName)
+        XCTAssertEqual(phone.modelDisplayName, "iPhone18,2")
     }
 
     func testAPhoneDraftSendsOnlyWhatChanged() async throws {
