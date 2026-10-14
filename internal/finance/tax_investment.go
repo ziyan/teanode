@@ -54,8 +54,9 @@ type investmentSums struct {
 	shortTermGain, longTermGain, withheld, foreignTaxPaid                                        *big.Rat
 	isCostBasisMissing                                                                           bool
 	taxFormIds                                                                                   []string
-	// recipientName is the name the first 1099 added is made out to.
-	recipientName string
+	// recipientName and recipientTaxIDMask are whom the first 1099 added
+	// is made out to.
+	recipientName, recipientTaxIDMask string
 }
 
 func newInvestmentSums() *investmentSums {
@@ -122,8 +123,8 @@ func (self *investmentSums) addTaxForm(taxForm *models.FinanceTaxForm) {
 		return
 	}
 	self.taxFormIds = append(self.taxFormIds, taxForm.ID)
-	if self.recipientName == "" {
-		self.recipientName = taxForm.RecipientName
+	if self.recipientName == "" && self.recipientTaxIDMask == "" {
+		self.recipientName, self.recipientTaxIDMask = taxForm.RecipientName, taxForm.RecipientTaxIDMask
 	}
 }
 

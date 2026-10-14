@@ -276,6 +276,16 @@ const yearSummary: TaxYearSummary = {
     capitalLossDeductionAmount: '0.00',
     foreignTaxCreditAmount: '0.00',
     netInvestmentIncomeTaxAmount: '0.00',
+    isInvestmentIncomePreviewed: false,
+    otherIncomeAmount: '0.00',
+    deductionAmount: '32200.00',
+    isItemized: false,
+    itemizedDeductionAmount: '0.00',
+    mortgageInterestAmount: '0.00',
+    stateAndLocalTaxDeductionAmount: '0.00',
+    charitableContributionAmount: '0.00',
+    childTaxCreditAmount: '0.00',
+    dependentCareCreditAmount: '0.00',
     standardDeductionAmount: '32200.00',
     taxableIncomeAmount: '67800.00',
     federalIncomeTaxAmount: '7618.00',
@@ -338,6 +348,7 @@ function answer({
     if (document.includes('TaxDocumentAddress')) {
       return { TaxDocumentAddress: { taxDocumentAddress: `pat+taxes-${taxDocumentToken}@example.com`, canReadPdfs: true } }
     }
+    if (document.includes('SetTaxYearSetting(')) return { SetTaxYearSetting: { taxYear: variables?.taxYear } }
     if (document.includes('SetTaxFilingStatus(')) return { SetTaxFilingStatus: variables?.taxFilingStatus }
     if (document.includes('DeletePaystub(')) return { DeletePaystub: true }
     if (document.includes('DeleteTaxForm(')) return { DeleteTaxForm: true }
@@ -483,6 +494,51 @@ describe('the Taxes section', () => {
     expect(within(estimate).getByText('$121,600.00')).toBeTruthy()
     expect(within(estimate).getByText('finance.taxEstimatePreferential')).toBeTruthy()
     expect(within(estimate).queryByText('finance.taxEstimateNetInvestment')).toBeNull()
+  })
+
+  it("previews the accounts' interest and dividends, and keeps the year's settings", async () => {
+    answer({
+      summary: () => ({
+        ...yearSummary,
+        taxYearInvestmentPreview: {
+          interestAmount: '91.00',
+          dividendsAmount: '182.00',
+          projectedInterestAmount: '365.00',
+          projectedDividendsAmount: '730.00',
+          isInterestCounted: true,
+          isDividendsCounted: true,
+          taxAdvantagedAmount: '500.00',
+          taxYearAccountIncomes: [
+            { financeAccountId: 'account-savings', accountName: 'Example Savings', incomeKind: 'interest', amount: '91.00', isTaxAdvantaged: false },
+            { financeAccountId: 'account-ira', accountName: 'Example IRA', incomeKind: 'dividend', amount: '500.00', isTaxAdvantaged: true },
+          ],
+        },
+        taxYearSetting: {
+          taxYear: 2026,
+          childCount: 1,
+          otherDependentCount: 0,
+          dependentCareExpenseAmount: '0.0000',
+          otherIncomeAmount: '0.0000',
+          charitableContributionAmount: '0.0000',
+          propertyTaxAmount: '0.0000',
+          stateIncomeTaxPaidAmount: '0.0000',
+          estimatedGainNote: '',
+        },
+      }),
+    })
+    renderSection()
+    const preview = await waitFor(() => panel('finance.taxPreviewTitle'))
+    const ira = within(preview).getByText('Example IRA').closest('tr')!
+    expect(within(ira).getByText('finance.taxPreviewNotTaxed')).toBeTruthy()
+    expect(within(preview).getByText(/finance\.taxPreviewTotals .*"projectedInterest":"\$365\.00"/)).toBeTruthy()
+
+    fireEvent.click(within(panel('finance.taxEstimateTitle {"year":"2026"}')).getByRole('button', { name: 'finance.taxYearSettings' }))
+    const dialog = await screen.findByRole('dialog', { name: 'finance.taxYearSettingsTitle {"year":"2026"}' })
+    fireEvent.change(within(dialog).getByLabelText('finance.taxSettingChildren'), { target: { value: '2' } })
+    fireEvent.change(within(dialog).getByLabelText('finance.taxSettingOtherIncome'), { target: { value: '4500' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'common.save' }))
+    // Only what changed is sent.
+    await waitFor(() => expect(calledWith('SetTaxYearSetting')).toEqual([{ taxYear: 2026, childCount: 2, otherIncomeAmount: '4500' }]))
   })
 
   it('shows the address to mail paystubs and W-2s to, and makes a new one after asking', async () => {

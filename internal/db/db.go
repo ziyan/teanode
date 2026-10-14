@@ -199,6 +199,7 @@ type Transaction interface {
 	FinanceOperation
 	FinanceReceiptOperation
 	FinanceTaxOperation
+	TaxYearOperation
 	ExchangeRateOperation
 	NetWorthOperation
 	BudgetOperation

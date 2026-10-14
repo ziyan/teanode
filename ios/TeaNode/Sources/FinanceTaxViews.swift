@@ -70,7 +70,7 @@ struct TaxesView: View {
             }
             if let summary {
                 if let estimate = summary.taxYearEstimate {
-                    TaxEstimateSection(estimate: estimate, taxYear: taxYear) { picked in
+                    TaxEstimateSection(estimate: estimate, taxYear: taxYear, setting: summary.taxYearSetting, onSettingsSaved: { Task { await load() } }) { picked in
                         Task {
                             // The person's setting, kept on the server; the year
                             // is read again for it.
@@ -79,6 +79,9 @@ struct TaxesView: View {
                             }
                         }
                     }
+                }
+                if let preview = summary.taxYearInvestmentPreview {
+                    TaxInvestmentPreviewSection(preview: preview)
                 }
                 findingsSection(summary)
                 ForEach(Array(summary.employments.enumerated()), id: \.offset) { _, employment in
@@ -451,6 +454,8 @@ struct TaxDocumentUploadRow: View {
 struct TaxEstimateSection: View {
     let estimate: TaxYearSummary.Estimate
     let taxYear: Int
+    let setting: TaxYearSetting?
+    let onSettingsSaved: () -> Void
     let onFilingStatus: (TaxFilingStatus) -> Void
     @State private var selectedRunningTotal: Double?
     @State private var selectedSliceKind: TaxEstimateSliceKind?
@@ -496,7 +501,18 @@ struct TaxEstimateSection: View {
             if (Double(estimate.localIncomeTaxAmount ?? "") ?? 0) > 0 {
                 figureRow(String(localized: "Local income tax, as withheld"), estimate.localIncomeTaxAmount)
             }
+            if (Double(estimate.childTaxCreditAmount ?? "") ?? 0) > 0 {
+                figureRow(String(localized: "Child tax credit"), "-" + (estimate.childTaxCreditAmount ?? ""))
+            }
+            if (Double(estimate.dependentCareCreditAmount ?? "") ?? 0) > 0 {
+                figureRow(String(localized: "Child and dependent care credit"), "-" + (estimate.dependentCareCreditAmount ?? ""))
+            }
             figureRow(String(localized: "Tax for the year"), estimate.totalTaxAmount, isTotal: true)
+            NavigationLink {
+                TaxYearSettingView(taxYear: taxYear, setting: setting, onSaved: onSettingsSaved)
+            } label: {
+                Label("Year settings", systemImage: "slider.horizontal.3")
+            }
         } header: {
             if estimate.isProjected == true {
                 Text("Tax for \(String(taxYear)), by December 31")
@@ -508,7 +524,16 @@ struct TaxEstimateSection: View {
                 if estimate.isTaxFilingStatusAssumed == true {
                     Text("The filing status is assumed from the number of people; pick yours above and it is kept.")
                 }
-                Text("An estimate from wages and 1099s: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. Other income, itemized deductions, credits and a state's tax on investment income are not counted.")
+                if (Double(estimate.otherIncomeAmount ?? "") ?? 0) > 0 {
+                    Text("Includes \(money(estimate.otherIncomeAmount)) of other household income.")
+                }
+                if estimate.isItemized == true {
+                    Text("An estimate from your documents and this year's settings: \(money(estimate.taxableIncomeAmount)) taxable after \(money(estimate.deductionAmount)) of itemized deductions (mortgage interest \(money(estimate.mortgageInterestAmount)), state and local taxes \(money(estimate.stateAndLocalTaxDeductionAmount)), gifts \(money(estimate.charitableContributionAmount))). A state's tax on investment income is not counted.")
+                } else if (Double(estimate.charitableContributionAmount ?? "") ?? 0) > 0 {
+                    Text("An estimate from your documents and this year's settings: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction and \(money(estimate.charitableContributionAmount)) of charitable gifts. A state's tax on investment income is not counted.")
+                } else {
+                    Text("An estimate from your documents and this year's settings: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. A state's tax on investment income is not counted.")
+                }
             }
         }
     }
@@ -621,6 +646,150 @@ struct TaxEstimateSection: View {
         case .marriedFilingJointly: String(localized: "Married filing jointly")
         case .marriedFilingSeparately: String(localized: "Married filing separately")
         case .headOfHousehold: String(localized: "Head of household")
+        }
+    }
+}
+
+/// TaxInvestmentPreviewSection is the year's interest and dividends as the
+/// linked accounts were paid them, as the dashboard's card shows them: an
+/// account a row, those whose income is not taxed marked, and what is
+/// counted, projected to December 31, until the 1099s come.
+struct TaxInvestmentPreviewSection: View {
+    let preview: TaxYearSummary.InvestmentPreview
+
+    var body: some View {
+        Section {
+            ForEach(Array(preview.accountIncomes.enumerated()), id: \.offset) { _, income in
+                LabeledContent {
+                    Text(FinanceMoney.shown(income.amount, currencyCode: TaxWords.currencyCode)).monospacedDigit()
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: income.accountName ?? "")
+                        HStack(spacing: 6) {
+                            Text(income.incomeKind == "dividend" ? String(localized: "Dividends") : String(localized: "Interest"))
+                            if income.isTaxAdvantaged == true { Text("Not taxed") }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Interest and dividends from your accounts")
+        } footer: {
+            Text("Taxed interest \(money(preview.interestAmount)) so far, \(money(preview.projectedInterestAmount)) by December 31; taxed dividends \(money(preview.dividendsAmount)) so far, \(money(preview.projectedDividendsAmount)) by December 31. Counted until the 1099s come; dividends count as ordinary until a 1099-DIV says which are qualified. Accounts whose income isn't taxed, such as IRAs and HSAs, are left out.")
+        }
+    }
+
+    private func money(_ amount: String?) -> String {
+        FinanceMoney.shown(amount, currencyCode: TaxWords.currencyCode)
+    }
+}
+
+/// TaxYearSettingView is what a year's estimate takes that no document
+/// says, as the dashboard's dialog asks it: children and the care paid for
+/// them, other household income, taxes and gifts for itemizing, and the
+/// gains realized so far. Saving sends only what changed.
+struct TaxYearSettingView: View {
+    @Environment(FinanceModel.self) private var finance
+    @Environment(\.dismiss) private var dismiss
+    let taxYear: Int
+    let setting: TaxYearSetting?
+    let onSaved: () -> Void
+    @State private var childCount = ""
+    @State private var otherDependentCount = ""
+    @State private var dependentCare = ""
+    @State private var otherIncome = ""
+    @State private var propertyTax = ""
+    @State private var stateTaxPaid = ""
+    @State private var charitable = ""
+    @State private var shortTermGain = ""
+    @State private var longTermGain = ""
+    @State private var gainNote = ""
+    @State private var isLoaded = false
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Children under 17", text: $childCount).keyboardType(.numberPad)
+                TextField("Other dependents", text: $otherDependentCount).keyboardType(.numberPad)
+                TextField("Child care paid while you worked (children under 13)", text: $dependentCare).keyboardType(.decimalPad)
+            } header: {
+                Text("Family")
+            }
+            Section {
+                TextField("Other household income, such as a spouse's pay", text: $otherIncome).keyboardType(.decimalPad)
+                TextField("Property tax paid", text: $propertyTax).keyboardType(.decimalPad)
+                TextField("State income tax paid besides withholding", text: $stateTaxPaid).keyboardType(.decimalPad)
+                TextField("Charitable gifts", text: $charitable).keyboardType(.decimalPad)
+            } header: {
+                Text("Income and deductions")
+            }
+            Section {
+                TextField("Short-term gain so far", text: $shortTermGain).keyboardType(.numbersAndPunctuation)
+                TextField("Long-term gain so far", text: $longTermGain).keyboardType(.numbersAndPunctuation)
+                TextField("Where the gains come from", text: $gainNote)
+            } header: {
+                Text("Gains so far")
+            } footer: {
+                Text("Gains realized this year before the 1099-Bs come, negative for a loss. Your agent can read them from your brokerage. A 1099-B for the year takes their place.")
+            }
+        }
+        .navigationTitle(Text("\(String(taxYear)) settings"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { Task { await save() } }
+            }
+        }
+        .onAppear {
+            guard !isLoaded else { return }
+            isLoaded = true
+            childCount = String(setting?.childCount ?? 0)
+            otherDependentCount = String(setting?.otherDependentCount ?? 0)
+            dependentCare = Self.plain(setting?.dependentCareExpenseAmount)
+            otherIncome = Self.plain(setting?.otherIncomeAmount)
+            propertyTax = Self.plain(setting?.propertyTaxAmount)
+            stateTaxPaid = Self.plain(setting?.stateIncomeTaxPaidAmount)
+            charitable = Self.plain(setting?.charitableContributionAmount)
+            shortTermGain = Self.plain(setting?.estimatedShortTermGainAmount)
+            longTermGain = Self.plain(setting?.estimatedLongTermGainAmount)
+            gainNote = setting?.estimatedGainNote ?? ""
+        }
+    }
+
+    /// An amount as the person types it: no trailing zeros, empty for none.
+    static func plain(_ amount: String?) -> String {
+        guard let value = Decimal(string: amount ?? ""), value != 0 else { return "" }
+        return "\(value)"
+    }
+
+    private func save() async {
+        var change = TaxYearSettingChange()
+        let trimmed = { (text: String) in text.trimmingCharacters(in: .whitespaces) }
+        if trimmed(childCount) != String(setting?.childCount ?? 0) { change.childCount = Int(trimmed(childCount)) ?? 0 }
+        if trimmed(otherDependentCount) != String(setting?.otherDependentCount ?? 0) { change.otherDependentCount = Int(trimmed(otherDependentCount)) ?? 0 }
+        // An amount changed is sent, an emptied one as nothing.
+        let changed = { (text: String, before: String?) -> String? in
+            trimmed(text) == Self.plain(before) ? nil : (trimmed(text).isEmpty ? "0" : trimmed(text))
+        }
+        change.dependentCareExpenseAmount = changed(dependentCare, setting?.dependentCareExpenseAmount)
+        change.otherIncomeAmount = changed(otherIncome, setting?.otherIncomeAmount)
+        change.propertyTaxAmount = changed(propertyTax, setting?.propertyTaxAmount)
+        change.stateIncomeTaxPaidAmount = changed(stateTaxPaid, setting?.stateIncomeTaxPaidAmount)
+        change.charitableContributionAmount = changed(charitable, setting?.charitableContributionAmount)
+        let gainsBefore = (Self.plain(setting?.estimatedShortTermGainAmount), Self.plain(setting?.estimatedLongTermGainAmount))
+        if trimmed(shortTermGain).isEmpty && trimmed(longTermGain).isEmpty && (gainsBefore.0 != "" || gainsBefore.1 != "") {
+            change.isEstimatedGainCleared = true
+        } else {
+            if trimmed(shortTermGain) != gainsBefore.0 { change.estimatedShortTermGainAmount = trimmed(shortTermGain) }
+            if trimmed(longTermGain) != gainsBefore.1 { change.estimatedLongTermGainAmount = trimmed(longTermGain) }
+        }
+        if trimmed(gainNote) != (setting?.estimatedGainNote ?? "") { change.estimatedGainNote = trimmed(gainNote) }
+        let saved = String(localized: "Saved the \(String(taxYear)) settings")
+        if await finance.act(saying: saved, { _ = try await finance.connection.setTaxYearSetting(taxYear, change: change) }) {
+            onSaved()
+            dismiss()
         }
     }
 }
@@ -1249,6 +1418,20 @@ enum TaxWords {
             case "13": String(localized: "Private activity bond dividends")
             case "15": String(localized: "State identification number")
             case "16": String(localized: "State tax withheld")
+            default: nil
+            }
+        case "1098":
+            switch boxCode {
+            case "1": String(localized: "Mortgage interest received")
+            case "2": String(localized: "Outstanding mortgage principal")
+            case "3": String(localized: "Mortgage origination date")
+            case "4": String(localized: "Refund of overpaid interest")
+            case "5": String(localized: "Mortgage insurance premiums")
+            case "6": String(localized: "Points paid")
+            case "8": String(localized: "Property address")
+            case "9": String(localized: "Number of properties")
+            case "10": String(localized: "Other")
+            case "11": String(localized: "Mortgage acquisition date")
             default: nil
             }
         case "1099_b":

@@ -115,7 +115,7 @@ func TestTaxDocumentJobReadsAW2AndLeavesTheRest(t *testing.T) {
 		t.Fatalf("box 12 D is normalized: %+v", entry)
 	}
 	titles := strings.Join(fixture.taxDocumentRunTitles(t), "\n")
-	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub, a W-2 or a 1099") {
+	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub, a W-2, a 1099 or a 1098") {
 		t.Fatalf("the runs say what they read: %q", titles)
 	}
 	summary, err := fixture.worker.TaxYear(t.Context(), fixture.agent, 2025, "")

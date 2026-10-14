@@ -233,7 +233,21 @@ func (self *Agent) TaxYear(ctx context.Context, agentRow *models.Agent, taxYear 
 	}
 	var paystubs []*models.FinancePaystub
 	var taxForms []*models.FinanceTaxForm
+	inputs := &finance.TaxYearInputs{}
+	now := time.Now()
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		var err error
+		if inputs.Setting, err = tx.GetTaxYearSetting(agentRow.ID, taxYear); err != nil {
+			return err
+		}
+		// What the linked accounts were paid, the year so far.
+		through := fmt.Sprintf("%04d-12-31", taxYear)
+		if today := now.Format(time.DateOnly); today < through {
+			through = today
+		}
+		if inputs.AccountIncomes, err = tx.ListAccountInvestmentIncome(agentRow.ID, fmt.Sprintf("%04d-01-01", taxYear), through); err != nil {
+			return err
+		}
 		filter := &db.FinancePaystubFilter{From: fmt.Sprintf("%04d-01-01", taxYear), To: fmt.Sprintf("%04d-12-31", taxYear), Limit: db.FinanceTaxDocumentLimitMost}
 		for {
 			page, err := tx.ListFinancePaystubs(agentRow.ID, filter)
@@ -266,5 +280,5 @@ func (self *Agent) TaxYear(ctx context.Context, agentRow *models.Agent, taxYear 
 	if filingStatus == "" {
 		filingStatus = finance.TaxFilingStatus(agentRow.TaxFilingStatus)
 	}
-	return finance.SummarizeTaxYear(taxYear, paystubs, taxForms, time.Now(), filingStatus), nil
+	return finance.SummarizeTaxYear(taxYear, paystubs, taxForms, now, filingStatus, inputs), nil
 }

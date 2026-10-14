@@ -199,7 +199,7 @@ func TestSummarizeTaxYearComparesTheW2WithTheLastPaystub(t *testing.T) {
 	if err := CheckTaxForm(taxForm); err != nil {
 		t.Fatal(err)
 	}
-	summary := SummarizeTaxYear(2025, paystubs, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2025, paystubs, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if len(summary.TaxYearEmployments) != 1 || len(summary.TaxYearPeople) != 1 {
 		t.Fatalf("one person, one employer, however the names are written: %+v", summary.TaxYearEmployments)
 	}
@@ -223,7 +223,7 @@ func TestSummarizeTaxYearComparesTheW2WithTheLastPaystub(t *testing.T) {
 	}
 
 	taxForm.TaxFormEntries[1].Amount = "2900.0000"
-	summary = SummarizeTaxYear(2025, paystubs, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "")
+	summary = SummarizeTaxYear(2025, paystubs, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if len(summary.TaxYearFindings) != 1 || summary.TaxYearFindings[0].TaxYearFindingCode != TaxYearFindingW2DiffersFromPaystubs {
 		t.Fatalf("a box that differs is pointed out: %+v", summary.TaxYearFindings)
 	}
@@ -231,7 +231,7 @@ func TestSummarizeTaxYearComparesTheW2WithTheLastPaystub(t *testing.T) {
 
 func TestSummarizeTaxYearProjectsTheYear(t *testing.T) {
 	paystubs := []*models.FinancePaystub{checkedPaystub(t, "paystub-1", "2026-03-06", 5), checkedPaystub(t, "paystub-2", "2026-03-20", 6)}
-	summary := SummarizeTaxYear(2026, paystubs, nil, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2026, paystubs, nil, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	employment := summary.TaxYearEmployments[0]
 	if employment.TaxYearFigureSource != TaxYearFigureSourcePaystubs || employment.PayCadenceDayCount != 14 || employment.RemainingPayCount != 20 {
 		t.Fatalf("paystubs every 14 days, 20 more to December 31: %+v", employment)
@@ -250,7 +250,7 @@ func TestSummarizeTaxYearProjectsTheYear(t *testing.T) {
 func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 	broken := checkedPaystub(t, "paystub-2", "2026-03-20", 6)
 	broken.PaystubLines[1].YearToDateAmount = "3100.0000"
-	summary := SummarizeTaxYear(2026, []*models.FinancePaystub{checkedPaystub(t, "paystub-1", "2026-03-06", 5), broken}, nil, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2026, []*models.FinancePaystub{checkedPaystub(t, "paystub-1", "2026-03-06", 5), broken}, nil, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if len(summary.TaxYearFindings) != 1 || summary.TaxYearFindings[0].TaxYearFindingCode != TaxYearFindingBrokenChain || !strings.Contains(summary.TaxYearFindings[0].FindingText, "$3,000.00") {
 		t.Fatalf("a year to date that does not follow on is pointed out: %+v", summary.TaxYearFindings)
 	}
@@ -259,7 +259,7 @@ func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 		checkedPaystub(t, "paystub-1", "2026-02-20", 4), checkedPaystub(t, "paystub-2", "2026-03-06", 5),
 		checkedPaystub(t, "paystub-3", "2026-03-20", 6), checkedPaystub(t, "paystub-4", "2026-04-17", 8),
 	}
-	summary = SummarizeTaxYear(2026, paystubs, nil, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), "")
+	summary = SummarizeTaxYear(2026, paystubs, nil, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if len(summary.TaxYearFindings) != 1 || summary.TaxYearFindings[0].TaxYearFindingCode != TaxYearFindingPayDateGap {
 		t.Fatalf("four weeks between paychecks every two is a gap: %+v", summary.TaxYearFindings)
 	}
@@ -269,7 +269,7 @@ func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 	// months between are a gap, and the year is projected from October.
 	spring, september, october := checkedPaystub(t, "paystub-a", "2026-04-03", 7), checkedPaystub(t, "paystub-b", "2026-09-18", 18), checkedPaystub(t, "paystub-c", "2026-10-02", 19)
 	october.PeriodStartOn, october.PeriodEndOn = "2026-09-20", "2026-10-03"
-	summary = SummarizeTaxYear(2026, []*models.FinancePaystub{spring, september, october}, nil, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC), "")
+	summary = SummarizeTaxYear(2026, []*models.FinancePaystub{spring, september, october}, nil, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC), "", nil)
 	if employment := summary.TaxYearEmployments[0]; employment.PayCadenceDayCount != 14 || employment.RemainingPayCount != 6 || employment.ProjectedFigures == nil {
 		t.Fatalf("paid every two weeks, six more paychecks to December 31: %+v", employment)
 	}
@@ -277,7 +277,7 @@ func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 		t.Fatalf("the months between spring and autumn are a gap, not a broken chain: %v", codes)
 	}
 
-	summary = SummarizeTaxYear(2026, paystubs[:2], nil, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC), "")
+	summary = SummarizeTaxYear(2026, paystubs[:2], nil, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if codes := findingCodes(summary); len(codes) != 1 || codes[0] != TaxYearFindingW2Missing {
 		t.Fatalf("after the year, paystubs without a W-2 are pointed out: %v", codes)
 	}
@@ -293,7 +293,7 @@ func TestSummarizeTaxYearMatchesByNumberOverName(t *testing.T) {
 	if err := CheckTaxForm(taxForm); err != nil {
 		t.Fatal(err)
 	}
-	summary := SummarizeTaxYear(2025, []*models.FinancePaystub{paystub}, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2025, []*models.FinancePaystub{paystub}, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if len(summary.TaxYearEmployments) != 1 || len(summary.TaxYearPeople) != 1 || summary.Figures.WagesAmount != "21600.00" {
 		t.Fatalf("one employment, counted once: %d employments, wages %s", len(summary.TaxYearEmployments), summary.Figures.WagesAmount)
 	}
@@ -314,7 +314,7 @@ func TestSummarizeTaxYearLaysACorrectionOverTheOriginal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	summary := SummarizeTaxYear(2025, nil, []*models.FinanceTaxForm{correction, original}, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2025, nil, []*models.FinanceTaxForm{correction, original}, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	employment := summary.TaxYearEmployments[0]
 	if employment.TaxFormID != "form-2" || employment.Figures.FederalIncomeTaxAmount != "3100.00" || employment.Figures.WagesAmount != "21600.00" || len(summary.TaxYearFindings) != 0 {
 		t.Fatalf("box 2 is the correction's and the rest the original's: %+v %+v", employment.Figures, summary.TaxYearFindings)
@@ -327,7 +327,7 @@ func TestSummarizeTaxYearFindsExcessSocialSecurity(t *testing.T) {
 	for _, taxForm := range []*models.FinanceTaxForm{first, second} {
 		taxForm.TaxFormEntries[2].Amount, taxForm.TaxFormEntries[3].Amount = "100000.00", "6200.00"
 	}
-	summary := SummarizeTaxYear(2025, nil, []*models.FinanceTaxForm{first, second}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2025, nil, []*models.FinanceTaxForm{first, second}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), "", nil)
 	if len(summary.TaxYearPeople) != 1 || summary.TaxYearPeople[0].ExcessSocialSecurityTaxAmount != "1481.80" {
 		t.Fatalf("12,400.00 withheld against 2025's maximum of 10,918.20: %+v", summary.TaxYearPeople)
 	}
@@ -358,7 +358,7 @@ func TestDollarsText(t *testing.T) {
 func TestSummarizeTaxYearCapsRetirementAtTheLimit(t *testing.T) {
 	paystub := inventedPaystub("paystub-1", "2026-03-06", 5)
 	paystub.PaystubLines[5].CurrentAmount, paystub.PaystubLines[5].YearToDateAmount = "2000.00", "10000.00"
-	summary := SummarizeTaxYear(2026, []*models.FinancePaystub{paystub}, nil, time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), "")
+	summary := SummarizeTaxYear(2026, []*models.FinancePaystub{paystub}, nil, time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), "", nil)
 	employment := summary.TaxYearEmployments[0]
 	if employment.RemainingPayCount != 21 || !employment.IsRetirementDeferralCapped || summary.RetirementDeferralLimitAmount != "24500.00" {
 		t.Fatalf("21 more paychecks would put in 52,000.00, past the limit: %+v", employment)
@@ -371,7 +371,7 @@ func TestSummarizeTaxYearCapsRetirementAtTheLimit(t *testing.T) {
 	}
 
 	paystub.PaystubLines[5].YearToDateAmount = "26000.00"
-	summary = SummarizeTaxYear(2026, []*models.FinancePaystub{paystub}, nil, time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), "")
+	summary = SummarizeTaxYear(2026, []*models.FinancePaystub{paystub}, nil, time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), "", nil)
 	if projected := summary.TaxYearEmployments[0].ProjectedFigures; projected.RetirementTraditionalAmount != "32500.00" {
 		t.Fatalf("past the limit already, the person is catching up from age 50: %+v", projected)
 	}
@@ -388,7 +388,7 @@ func TestEstimateTaxYear(t *testing.T) {
 		return figures
 	}
 	person := &personSums{figures: sums(50000, 55000, 5000, 2500), projected: sums(100000, 110000, 10000, 5000)}
-	estimate := estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{person}, true)
+	estimate := estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{person}, true, nil)
 	// 100,000.00 less 16,100.00 is 83,900.00 taxable: 1,240.00 at 10%,
 	// 4,560.00 at 12% and 7,370.00 at 22%.
 	if estimate.TaxableIncomeAmount != "83900.00" || estimate.FederalIncomeTaxAmount != "13170.00" || estimate.TotalTaxAmount != "26585.00" {
@@ -399,7 +399,7 @@ func TestEstimateTaxYear(t *testing.T) {
 		t.Fatalf("paid, upcoming, owing and remaining add up to pay: %+v", estimate)
 	}
 	person.projected.federalIncomeTax = ratOf(14170)
-	if estimate := estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{person}, true); estimate.RefundAmount != "1000.00" || estimate.OwingTaxAmount != "0.00" ||
+	if estimate := estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{person}, true, nil); estimate.RefundAmount != "1000.00" || estimate.OwingTaxAmount != "0.00" ||
 		estimate.RemainingIncomeAmount != "82415.00" {
 		t.Fatalf("withholding more than is owed comes back: %+v", estimate)
 	}
@@ -408,13 +408,13 @@ func TestEstimateTaxYear(t *testing.T) {
 		{figures: sums(150000, 150000, 0, 0), projected: sums(150000, 150000, 0, 0)},
 		{figures: sums(150000, 150000, 0, 0), projected: sums(150000, 150000, 0, 0)},
 	}
-	if estimate := estimateTaxYear(2026, TaxFilingStatusMarriedFilingJointly, couple, false); estimate.MedicareTaxAmount != "4800.00" || estimate.StandardDeductionAmount != "32200.00" {
+	if estimate := estimateTaxYear(2026, TaxFilingStatusMarriedFilingJointly, couple, false, nil); estimate.MedicareTaxAmount != "4800.00" || estimate.StandardDeductionAmount != "32200.00" {
 		t.Fatalf("a joint return owes additional Medicare above 250,000.00 together: %+v", estimate)
 	}
-	if estimate := estimateTaxYear(2026, TaxFilingStatusMarriedFilingSeparately, couple, false); estimate.MedicareTaxAmount != "4800.00" || estimate.StandardDeductionAmount != "32200.00" {
+	if estimate := estimateTaxYear(2026, TaxFilingStatusMarriedFilingSeparately, couple, false, nil); estimate.MedicareTaxAmount != "4800.00" || estimate.StandardDeductionAmount != "32200.00" {
 		t.Fatalf("separate returns owe it above 125,000.00 each: %+v", estimate)
 	}
-	if estimateTaxYear(2019, TaxFilingStatusSingle, couple, false) != nil {
+	if estimateTaxYear(2019, TaxFilingStatusSingle, couple, false, nil) != nil {
 		t.Fatalf("a year whose brackets TeaNode does not know has no estimate")
 	}
 	if DefaultTaxFilingStatus(2) != TaxFilingStatusMarriedFilingJointly || DefaultTaxFilingStatus(1) != TaxFilingStatusSingle {

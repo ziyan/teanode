@@ -777,6 +777,41 @@ credit; and counts a 1099's withholding as paid. A loss carried over from
 an earlier year is not known. A person's HSA contributions above the
 year's family limit are a finding (`hsaFamilyLimitByYear`).
 
+Before a year's 1099s come, `taxYearInvestmentPreview`
+(`internal/finance/tax_inputs.go`) takes the year's interest and dividends
+from the linked accounts (`ListAccountInvestmentIncome`: money in that the
+provider calls interest earned or dividends, or whose description says so
+when it names no category, USD only), leaves out accounts whose provider
+subtype says their income is not taxed (IRA, Roth, 401(k), HSA, 529), and
+projects the rest to December 31 at the same pace. The estimate counts it
+where no 1099 of the kind has been read; dividends count as ordinary.
+
+A year's settings (`agent_tax_year_setting`, migrations 0186 and 0187,
+`TaxYearSetting` and `SetTaxYearSetting`) hold what no document says:
+children under 17 and other dependents, dependent care paid, other
+household income (a spouse's pay no W-2 here shows), charitable gifts,
+property tax, state income tax paid besides withholding, and the gains
+realized so far in a year whose 1099-Bs have not come, which the agent
+reads from a brokerage when asked. Form 1098 (mortgage interest) is read
+like a 1099, with its loan number's last four; co-borrowers' copies of one
+loan (one lender, loan number and principal) count once (`sumMortgages`).
+The estimate itemizes when mortgage interest and points, state and local
+taxes up to the year's cap (`saltCap`: 10,000 until 2024, then 40,000 and
+40,400 phasing down above 500,000 and 505,000, half filing separately)
+and gifts beat the standard deduction. Interest counts in the share of
+the loans' principal (box 2) under the debt limit, 750,000, or up to
+1,000,000 of debt taken out before December 16, 2017 (half of each filing
+separately), with a `mortgage_over_limit` finding when it is cut; a
+refund of interest overpaid in an earlier year (box 4) is income. From
+2026 itemized gifts are those above 0.5% of adjusted gross income, and a
+return that does not itemize deducts up to 1,000 of gifts (2,000 jointly)
+beside the standard deduction. It takes the child tax credit (phased out
+by 50 for each 1,000 or part above 400,000 jointly, 200,000 otherwise)
+and the child and dependent care credit (care paid less an employer
+plan's, up to the lower earner's pay, at the year's rate), both against
+the tax only: the refundable part of the child tax credit is not counted.
+Other income is added to adjusted gross income.
+
 The tax owed sits beside what was withheld in `taxYearEstimate`
 (`finance.estimateTaxYear`), the household's, to December 31 when anything
 is projected. It counts wages only, since nothing else is on a paystub or a
@@ -797,9 +832,9 @@ tax paid so far, tax the rest of the year's paychecks will withhold at the
 same pace, tax owing at filing, and the income remaining; a refund is
 inside what was withheld. The dashboard and the app draw those four as a
 ring, every figure beside its share of pay, the year's tax's being the
-effective rate. Interest, dividends, gains, itemized deductions and credits are not
-counted, so the estimate is a floor to start a return from, not the
-return.
+effective rate. Taxes the documents do not show (a foreign tax beyond the
+simple credit, an excise tax) and credits other than those above are not
+counted, so the estimate is a start for a return, not the return.
 
 ## Mirrored copies
 

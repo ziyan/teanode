@@ -170,7 +170,7 @@ type FinanceQuery interface {
 	// One paystub with its lines.
 	FinancePaystub(ctx context.Context, arguments PaystubArguments) (*models.FinancePaystub, error)
 
-	// One page of the caller's tax forms (W-2s and 1099s), each with its boxes and
+	// One page of the caller's tax forms (W-2s, 1099s and 1098s), each with its boxes and
 	// what it says about itself, the latest tax year first.
 	FinanceTaxForms(ctx context.Context, arguments TaxFormsArguments) (*TaxFormPageView, error)
 
@@ -192,6 +192,12 @@ type FinanceQuery interface {
 	// in is read as a paystub or a W-2: their mailbox address with +taxes-
 	// and a token, made the first time this is asked.
 	TaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error)
+
+	// A tax year's settings: what its estimate needs that no document
+	// says (children, dependent care paid, other household income,
+	// charitable gifts, property tax, and the gains realized so far in a
+	// year whose 1099-Bs have not come). Nothing given yet is zeros.
+	TaxYearSetting(ctx context.Context, arguments TaxYearSettingArguments) (*models.TaxYearSetting, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -232,6 +238,9 @@ type FinanceMutation interface {
 	// Give the tax document address a new token. The old address stops
 	// taking mail at once.
 	RegenerateTaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error)
+
+	// Change a tax year's settings; what is not given stays as it was.
+	SetTaxYearSetting(ctx context.Context, arguments SetTaxYearSettingArguments) (*models.TaxYearSetting, error)
 
 	// Import an OFX statement (.ofx, .qfx or .qbo): a file uploaded to the
 	// agent's attachments, or every OFX attachment of a message in the
@@ -377,7 +386,7 @@ type FinanceMutation interface {
 	// file, in place of the form of the same kind read from the same file.
 	RecordTaxForm(ctx context.Context, arguments RecordTaxFormArguments) (*TaxFormView, error)
 
-	// Queue the job that reads a paystub, a W-2 or 1099s out of a file uploaded
+	// Queue the job that reads a paystub, a W-2, 1099s or a 1098 out of a file uploaded
 	// to the agent's attachments, or out of each PDF and picture a message
 	// in the person's mailbox carries, and records it.
 	ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumentArguments) (*TaxDocumentReadingView, error)

@@ -358,6 +358,7 @@ var financeSubcommandOperations = map[string]string{
 	"sources": "FinanceSources", "accounts": "FinanceAccounts", "credit-usage": "CreditUsage", "transactions": "FinanceTransactions", "trades": "FinanceTrades", "spending-summary": "FinanceSpendingSummary",
 	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
 	"set-reporting-currency": "SetReportingCurrency", "set-tax-filing-status": "SetTaxFilingStatus",
+	"tax-year-setting": "TaxYearSetting", "set-tax-year-setting": "SetTaxYearSetting",
 	"tax-document-address": "TaxDocumentAddress", "regenerate-tax-document-address": "RegenerateTaxDocumentAddress", "net-worth": "NetWorth", "assets": "Assets",
 	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
 	"close-asset": "CloseAsset", "delete-asset": "DeleteAsset", "record-valuation": "RecordValuation",

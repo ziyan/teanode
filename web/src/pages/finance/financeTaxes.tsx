@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { graphql } from '../../api'
 import { CopyIconButton, ErrorMessage, Loading, Tag, formatMoney } from '../../components/common'
 import { Column, DataTable, Range } from '../../components/dataTable'
-import { ConfirmDialog } from '../../components/dialog'
+import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PictureIcon, RefreshIcon } from '../../components/icons'
 import { ZoomablePicture } from '../../components/lightbox'
 import { usePageInAddress } from '../../components/pager'
@@ -30,6 +30,7 @@ import {
   READ_TAX_DOCUMENT,
   REGENERATE_TAX_DOCUMENT_ADDRESS,
   SET_TAX_FILING_STATUS,
+  SET_TAX_YEAR_SETTING,
   TAX_DOCUMENT_UPLOAD_PATH,
   TAX_DOCUMENT_ADDRESS,
   TAX_FILING_STATUSES,
@@ -43,6 +44,8 @@ import {
   TaxYearEmployment,
   TaxYearEstimate,
   TaxYearInvestment,
+  TaxYearInvestmentPreview,
+  TaxYearSetting,
   TaxYearFigures,
   TaxYearSummary,
   amountOf,
@@ -512,11 +515,13 @@ function TaxEstimatePanel({
   year,
   isSaving,
   onFilingStatus,
+  onEditSettings,
 }: {
   estimate: TaxYearEstimate
   year: number
   isSaving: boolean
   onFilingStatus: (status: TaxFilingStatus) => void
+  onEditSettings: () => void
 }) {
   const { t } = useTranslation()
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
@@ -595,8 +600,10 @@ function TaxEstimatePanel({
     {
       key: 'foreignTaxCredit',
       label: t('finance.taxEstimateForeignTaxCredit'),
-      amount: estimate.foreignTaxCreditAmount ? `-${estimate.foreignTaxCreditAmount}` : '0',
+      amount: `-${estimate.foreignTaxCreditAmount}`,
     },
+    { key: 'childCredit', label: t('finance.taxEstimateChildCredit'), amount: `-${estimate.childTaxCreditAmount}` },
+    { key: 'careCredit', label: t('finance.taxEstimateCareCredit'), amount: `-${estimate.dependentCareCreditAmount}` },
     { key: 'socialSecurity', label: t('finance.taxEstimateSocialSecurity'), amount: estimate.socialSecurityTaxAmount },
     { key: 'medicare', label: t('finance.taxEstimateMedicare'), amount: estimate.medicareTaxAmount },
     {
@@ -613,14 +620,19 @@ function TaxEstimatePanel({
       title={t('finance.taxEstimateTitle', { year: String(year) })}
       description={t(estimate.isProjected ? 'finance.taxEstimateHint' : 'finance.taxEstimateHintOver')}
       action={
-        <Select
-          className="finance-tax-filing-select"
-          value={estimate.taxFilingStatus}
-          label={t('finance.taxFilingStatus')}
-          disabled={isSaving}
-          options={TAX_FILING_STATUSES.map((status) => ({ value: status, label: t(FILING_STATUS_LABELS[status]) }))}
-          onChange={(value) => onFilingStatus(value as TaxFilingStatus)}
-        />
+        <div className="finance-taxes-actions">
+          <Select
+            className="finance-tax-filing-select"
+            value={estimate.taxFilingStatus}
+            label={t('finance.taxFilingStatus')}
+            disabled={isSaving}
+            options={TAX_FILING_STATUSES.map((status) => ({ value: status, label: t(FILING_STATUS_LABELS[status]) }))}
+            onChange={(value) => onFilingStatus(value as TaxFilingStatus)}
+          />
+          <button type="button" onClick={onEditSettings}>
+            {t('finance.taxYearSettings')}
+          </button>
+        </div>
       }
     >
       <div className="finance-worth-summary finance-tax-estimate">
@@ -647,7 +659,7 @@ function TaxEstimatePanel({
               {figureLine({ key: 'pay', label: t('finance.taxPay'), amount: payAmount, isTotal: true })}
               {figureLine({
                 key: 'investment',
-                label: t('finance.taxEstimateInvestmentIncome'),
+                label: t(estimate.isInvestmentIncomePreviewed ? 'finance.taxEstimateInvestmentPreviewed' : 'finance.taxEstimateInvestmentIncome'),
                 amount: amountOf(estimate.investmentIncomeAmount),
               })}
               {figureLine({ key: 'income', label: t('finance.taxIncome'), amount: incomeAmount, isTotal: true })}
@@ -671,12 +683,176 @@ function TaxEstimatePanel({
         {!isZero(estimate.capitalLossDeductionAmount)
           ? `${t('finance.taxEstimateCapitalLoss', { amount: formatDollars(estimate.capitalLossDeductionAmount) })} `
           : null}
-        {t('finance.taxEstimateNote', {
-          deduction: formatDollars(estimate.standardDeductionAmount),
-          taxable: formatDollars(estimate.taxableIncomeAmount),
+        {!isZero(estimate.otherIncomeAmount)
+          ? `${t('finance.taxEstimateOtherIncome', { amount: formatDollars(estimate.otherIncomeAmount) })} `
+          : null}
+        {estimate.isItemized
+          ? t('finance.taxEstimateItemizedNote', {
+              deduction: formatDollars(estimate.deductionAmount),
+              mortgage: formatDollars(estimate.mortgageInterestAmount),
+              taxes: formatDollars(estimate.stateAndLocalTaxDeductionAmount),
+              gifts: formatDollars(estimate.charitableContributionAmount),
+              taxable: formatDollars(estimate.taxableIncomeAmount),
+            })
+          : isZero(estimate.charitableContributionAmount)
+            ? t('finance.taxEstimateNote', {
+                deduction: formatDollars(estimate.standardDeductionAmount),
+                taxable: formatDollars(estimate.taxableIncomeAmount),
+              })
+            : t('finance.taxEstimateNoteGifts', {
+                deduction: formatDollars(estimate.standardDeductionAmount),
+                gifts: formatDollars(estimate.charitableContributionAmount),
+                taxable: formatDollars(estimate.taxableIncomeAmount),
+              })}
+      </p>
+    </SettingsSection>
+  )
+}
+
+// TaxInvestmentPreviewPanel is the year's interest and dividends as the
+// linked accounts were paid them, an account a line, those whose income is
+// not taxed marked; what the estimate counts of it, projected to December
+// 31, until the 1099s come.
+function TaxInvestmentPreviewPanel({ preview }: { preview: TaxYearInvestmentPreview }) {
+  const { t } = useTranslation()
+  const countedWords = (isCounted: boolean) =>
+    t(isCounted ? 'finance.taxPreviewCounted' : 'finance.taxPreviewReplaced')
+  return (
+    <SettingsSection card title={t('finance.taxPreviewTitle')} description={t('finance.taxPreviewHint')}>
+      <div className="finance-receipt-lines-scroll">
+        <table className="finance-receipt-lines finance-tax-figures">
+          <thead>
+            <tr>
+              <th scope="col">{t('finance.taxPreviewAccount')}</th>
+              <th scope="col">{t('finance.taxPreviewKind')}</th>
+              <th scope="col" className="numeric">
+                {t('finance.taxSoFar')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {preview.taxYearAccountIncomes.map((income) => (
+              <tr key={`${income.financeAccountId}|${income.incomeKind}`}>
+                <td title={income.accountName}>
+                  <span className="finance-tax-preview-account">
+                    <span>{income.accountName}</span>
+                    {income.isTaxAdvantaged ? <Tag value={t('finance.taxPreviewNotTaxed')} /> : null}
+                  </span>
+                </td>
+                <td className="muted">
+                  {t(income.incomeKind === 'dividend' ? 'finance.taxPreviewDividend' : 'finance.taxPreviewInterest')}
+                </td>
+                <td className="numeric">{formatDollars(income.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted finance-receipt-detail finance-tax-note">
+        {t('finance.taxPreviewTotals', {
+          interest: formatDollars(preview.interestAmount),
+          projectedInterest: formatDollars(preview.projectedInterestAmount),
+          interestCounted: countedWords(preview.isInterestCounted),
+          dividends: formatDollars(preview.dividendsAmount),
+          projectedDividends: formatDollars(preview.projectedDividendsAmount),
+          dividendsCounted: countedWords(preview.isDividendsCounted),
         })}
       </p>
     </SettingsSection>
+  )
+}
+
+// TaxYearSettingDialog is what a year's estimate takes that no document
+// says: children and the care paid for them, a spouse's or other household
+// income, gifts and taxes for itemizing, and the gains realized so far in
+// a year whose 1099-Bs have not come. Saving sends only the fields
+// changed.
+function TaxYearSettingDialog({
+  year,
+  setting,
+  onClose,
+  onSaved,
+}: {
+  year: number
+  setting?: TaxYearSetting | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const plain = (amount?: string | null) => (amount && amountOf(amount) !== 0 ? String(amountOf(amount)) : '')
+  const initial = {
+    childCount: String(setting?.childCount ?? 0),
+    otherDependentCount: String(setting?.otherDependentCount ?? 0),
+    dependentCareExpenseAmount: plain(setting?.dependentCareExpenseAmount),
+    otherIncomeAmount: plain(setting?.otherIncomeAmount),
+    charitableContributionAmount: plain(setting?.charitableContributionAmount),
+    propertyTaxAmount: plain(setting?.propertyTaxAmount),
+    stateIncomeTaxPaidAmount: plain(setting?.stateIncomeTaxPaidAmount),
+    estimatedShortTermGainAmount: setting?.estimatedShortTermGainAmount ? String(amountOf(setting.estimatedShortTermGainAmount)) : '',
+    estimatedLongTermGainAmount: setting?.estimatedLongTermGainAmount ? String(amountOf(setting.estimatedLongTermGainAmount)) : '',
+    estimatedGainNote: setting?.estimatedGainNote ?? '',
+  }
+  const [fields, setFields] = useState(initial)
+  const [isBusy, setIsBusy] = useState(false)
+  const field = (key: keyof typeof initial, label: Key, isCount = false) => (
+    <label>
+      <span>{t(label)}</span>
+      <input
+        inputMode={isCount ? 'numeric' : 'decimal'}
+        value={fields[key]}
+        onChange={(event) => setFields({ ...fields, [key]: event.target.value })}
+      />
+    </label>
+  )
+  const save = async () => {
+    const variables: Record<string, unknown> = { taxYear: year }
+    for (const key of Object.keys(initial) as (keyof typeof initial)[]) {
+      if (fields[key] === initial[key]) continue
+      if (key === 'childCount' || key === 'otherDependentCount') variables[key] = Number(fields[key] || 0)
+      else if ((key === 'estimatedShortTermGainAmount' || key === 'estimatedLongTermGainAmount') && fields[key].trim() === '')
+        variables.isEstimatedGainCleared = true
+      else variables[key] = fields[key].trim() || (key === 'estimatedGainNote' ? '' : '0')
+    }
+    setIsBusy(true)
+    try {
+      await graphql(SET_TAX_YEAR_SETTING, variables)
+      toast.done(t('finance.taxYearSettingsSaved', { year: String(year) }))
+      onSaved()
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+  return (
+    <FormDialog
+      title={t('finance.taxYearSettingsTitle', { year: String(year) })}
+      submitLabel={t('common.save')}
+      busy={isBusy}
+      canSubmit={!isBusy}
+      onClose={onClose}
+      onSubmit={() => void save()}
+    >
+      <p className="muted">{t('finance.taxYearSettingsHint')}</p>
+      {field('childCount', 'finance.taxSettingChildren', true)}
+      {field('otherDependentCount', 'finance.taxSettingOtherDependents', true)}
+      {field('dependentCareExpenseAmount', 'finance.taxSettingDependentCare')}
+      {field('otherIncomeAmount', 'finance.taxSettingOtherIncome')}
+      {field('propertyTaxAmount', 'finance.taxSettingPropertyTax')}
+      {field('stateIncomeTaxPaidAmount', 'finance.taxSettingStateTaxPaid')}
+      {field('charitableContributionAmount', 'finance.taxSettingCharitable')}
+      {field('estimatedShortTermGainAmount', 'finance.taxSettingShortTermGain')}
+      {field('estimatedLongTermGainAmount', 'finance.taxSettingLongTermGain')}
+      <label>
+        <span>{t('finance.taxSettingGainNote')}</span>
+        <input
+          value={fields.estimatedGainNote}
+          onChange={(event) => setFields({ ...fields, estimatedGainNote: event.target.value })}
+        />
+      </label>
+      <p className="muted field-hint">{t('finance.taxSettingGainHint')}</p>
+    </FormDialog>
   )
 }
 
@@ -690,6 +866,8 @@ const FINDING_KIND_LABELS: Record<string, Key> = {
   excess_social_security: 'finance.taxFindingExcessSocialSecurity',
   hsa_over_limit: 'finance.taxFindingHSAOverLimit',
   cost_basis_missing: 'finance.taxFindingCostBasisMissing',
+  investment_recipient_assumed: 'finance.taxFindingRecipientAssumed',
+  mortgage_over_limit: 'finance.taxFindingMortgageOverLimit',
 }
 
 // TaxInvestmentPanel is the year's investment income from its 1099s: each
@@ -1121,6 +1299,9 @@ export function FinanceTaxesSection() {
     }
   }
 
+  // The year's settings, in a dialog of their own.
+  const [isEditingSettings, setIsEditingSettings] = useState(false)
+
   // The filing status is the person's setting: kept on the server, the
   // year read again for it.
   const [isSavingFilingStatus, setIsSavingFilingStatus] = useState(false)
@@ -1339,7 +1520,11 @@ export function FinanceTaxesSection() {
               year={year}
               isSaving={isSavingFilingStatus}
               onFilingStatus={(status) => void saveFilingStatus(status)}
+              onEditSettings={() => setIsEditingSettings(true)}
             />
+          ) : null}
+          {summary.taxYearInvestmentPreview ? (
+            <TaxInvestmentPreviewPanel preview={summary.taxYearInvestmentPreview} />
           ) : null}
           {summary.taxYearEmployments.map((employment) => (
             <EmploymentPanel
@@ -1462,6 +1647,17 @@ export function FinanceTaxesSection() {
         </>
       ) : null}
       {dialog}
+      {isEditingSettings ? (
+        <TaxYearSettingDialog
+          year={year}
+          setting={summary?.taxYearSetting}
+          onClose={() => setIsEditingSettings(false)}
+          onSaved={() => {
+            setIsEditingSettings(false)
+            void taxYearQuery.reload(true)
+          }}
+        />
+      ) : null}
     </>
   )
 }
@@ -1721,6 +1917,7 @@ const TAX_FORM_KIND_NAMES: Record<string, string> = {
   '1099_int': '1099-INT',
   '1099_div': '1099-DIV',
   '1099_b': '1099-B',
+  '1098': '1098',
 }
 
 // BOX_LABELS name each kind's boxes, by box as printed.
@@ -1782,6 +1979,18 @@ const BOX_LABELS: Record<string, Record<string, Key>> = {
     '13': 'finance.div1099Box13',
     '15': 'finance.div1099Box15',
     '16': 'finance.div1099Box16',
+  },
+  '1098': {
+    '1': 'finance.mortgage1098Box1',
+    '2': 'finance.mortgage1098Box2',
+    '3': 'finance.mortgage1098Box3',
+    '4': 'finance.mortgage1098Box4',
+    '5': 'finance.mortgage1098Box5',
+    '6': 'finance.mortgage1098Box6',
+    '8': 'finance.mortgage1098Box8',
+    '9': 'finance.mortgage1098Box9',
+    '10': 'finance.mortgage1098Box10',
+    '11': 'finance.mortgage1098Box11',
   },
   '1099_b': {
     '1d': 'finance.b1099Box1d',

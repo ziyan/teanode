@@ -737,6 +737,22 @@
         }
       }
     },
+    "%@ settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年の設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年的设置"
+          }
+        }
+      }
+    },
     "%@ stops being able to sign in. Your password still works, so this does not lock you out.": {
       "localizations": {
         "ja": {
@@ -3829,18 +3845,50 @@
         }
       }
     },
-    "An estimate from wages and 1099s: %@ taxable after the %@ standard deduction. Other income, itemized deductions, credits and a state's tax on investment income are not counted.": {
+    "An estimate from your documents and this year's settings: %@ taxable after %@ of itemized deductions (mortgage interest %@, state and local taxes %@, gifts %@). A state's tax on investment income is not counted.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与と 1099 からの見積もりです。標準控除 %2$@ を引いた課税所得は %1$@ です。その他の収入、項目別控除、税額控除、投資所得への州税は含みません。"
+            "value": "書類とこの年の設定からの見積もりです。項目別控除 %2$@（住宅ローン利子 %3$@、州・地方税 %4$@、寄付 %5$@）を引いた課税所得は %1$@ です。投資所得への州税は含みません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "根据工资和 1099 估算：减去 %2$@ 标准扣除额后应税收入为 %1$@。未计入其他收入、分项扣除、税收抵免以及州对投资收入征的税。"
+            "value": "根据你的文件和本年度设置估算：减去分项扣除 %2$@（房贷利息 %3$@、州和地方税 %4$@、捐赠 %5$@）后应税收入为 %1$@。未计入州对投资收入征的税。"
+          }
+        }
+      }
+    },
+    "An estimate from your documents and this year's settings: %@ taxable after the %@ standard deduction and %@ of charitable gifts. A state's tax on investment income is not counted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書類とこの年の設定からの見積もりです。標準控除 %2$@ と寄付 %3$@ を引いた課税所得は %1$@ です。投資所得への州税は含みません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "根据你的文件和本年度设置估算：减去 %2$@ 标准扣除额和 %3$@ 慈善捐款后应税收入为 %1$@。未计入州对投资收入征的税。"
+          }
+        }
+      }
+    },
+    "An estimate from your documents and this year's settings: %@ taxable after the %@ standard deduction. A state's tax on investment income is not counted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書類とこの年の設定からの見積もりです。標準控除 %2$@ を引いた課税所得は %1$@ です。投資所得への州税は含みません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "根据你的文件和本年度设置估算：减去 %2$@ 标准扣除额后应税收入为 %1$@。未计入州对投资收入征的税。"
           }
         }
       }
@@ -8581,6 +8629,22 @@
         }
       }
     },
+    "Charitable gifts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "寄付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "慈善捐赠"
+          }
+        }
+      }
+    },
     "Chat about it": {
       "localizations": {
         "ja": {
@@ -8817,6 +8881,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "验证"
+          }
+        }
+      }
+    },
+    "Child and dependent care credit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子ども・扶養家族の保育費控除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子女和受抚养人照护抵免"
+          }
+        }
+      }
+    },
+    "Child care paid while you worked (children under 13)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "働いている間の保育費（13 歳未満の子ども）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作期间支付的托儿费（13 岁以下子女）"
+          }
+        }
+      }
+    },
+    "Child tax credit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "児童税額控除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子女税收抵免"
+          }
+        }
+      }
+    },
+    "Children under 17": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "17 歳未満の子ども"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "17 岁以下子女"
           }
         }
       }
@@ -10401,6 +10529,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "要删除这份表格吗？"
+          }
+        }
+      }
+    },
+    "Dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "股息"
           }
         }
       }
@@ -13093,6 +13237,70 @@
         }
       }
     },
+    "Gains realized this year before the 1099-Bs come, negative for a loss. Your agent can read them from your brokerage. A 1099-B for the year takes their place.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1099-B が届く前にこの年に確定した譲渡益です。損失はマイナスで入力します。エージェントが証券会社から読み取れます。その年の 1099-B が届くとそちらに置き換わります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1099-B 到来之前今年已实现的利得，亏损填负数。你的助手可以从券商读取。当年的 1099-B 会取而代之。"
+          }
+        }
+      }
+    },
+    "Gains so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これまでの譲渡益"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至今的利得"
+          }
+        }
+      }
+    },
+    "Includes %@ of other household income.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の世帯収入 %@ を含みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含其他家庭收入 %@。"
+          }
+        }
+      }
+    },
+    "Income and deductions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収入と控除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入和扣除"
+          }
+        }
+      }
+    },
     "Interest": {
       "localizations": {
         "ja": {
@@ -13105,6 +13313,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "利息"
+          }
+        }
+      }
+    },
+    "Interest and dividends from your accounts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座の利子と配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账户的利息和股息"
           }
         }
       }
@@ -13221,6 +13445,22 @@
         }
       }
     },
+    "Long-term gain so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これまでの長期譲渡益"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至今的长期利得"
+          }
+        }
+      }
+    },
     "Market discount": {
       "localizations": {
         "ja": {
@@ -13233,6 +13473,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "市场折价"
+          }
+        }
+      }
+    },
+    "Mortgage acquisition date": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローン取得日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "贷款取得日期"
+          }
+        }
+      }
+    },
+    "Mortgage insurance premiums": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住宅ローン保険料"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "房贷保险费"
+          }
+        }
+      }
+    },
+    "Mortgage interest received": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受け取った住宅ローン利子"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到的房贷利息"
+          }
+        }
+      }
+    },
+    "Mortgage origination date": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローン開始日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "贷款发放日期"
           }
         }
       }
@@ -13285,6 +13589,38 @@
         }
       }
     },
+    "Not taxed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非課税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不征税"
+          }
+        }
+      }
+    },
+    "Number of properties": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "物件数"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "房产数量"
+          }
+        }
+      }
+    },
     "Of it, on qualified dividends and long-term gain": {
       "localizations": {
         "ja": {
@@ -13313,6 +13649,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "普通股息"
+          }
+        }
+      }
+    },
+    "Other dependents": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の扶養家族"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他受抚养人"
+          }
+        }
+      }
+    },
+    "Other household income, such as a spouse's pay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配偶者の給与などその他の世帯収入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他家庭收入，例如配偶的工资"
+          }
+        }
+      }
+    },
+    "Outstanding mortgage principal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住宅ローン残高"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未偿还房贷本金"
           }
         }
       }
@@ -26613,6 +26997,22 @@
         }
       }
     },
+    "Points paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払ったポイント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已付点数"
+          }
+        }
+      }
+    },
     "Policy": {
       "localizations": {
         "ja": {
@@ -26961,6 +27361,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "房产"
+          }
+        }
+      }
+    },
+    "Property address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "物件の住所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "房产地址"
+          }
+        }
+      }
+    },
+    "Property tax paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払った固定資産税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已付房产税"
           }
         }
       }
@@ -28193,6 +28625,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "报税时退税"
+          }
+        }
+      }
+    },
+    "Refund of overpaid interest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過払い利子の返金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多付利息退款"
           }
         }
       }
@@ -30389,6 +30837,22 @@
         }
       }
     },
+    "Saved the %@ settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年の設定を保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 %@ 年的设置"
+          }
+        }
+      }
+    },
     "Section 1202 gain": {
       "localizations": {
         "ja": {
@@ -30513,6 +30977,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "短期盈亏"
+          }
+        }
+      }
+    },
+    "Short-term gain so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これまでの短期譲渡益"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至今的短期利得"
           }
         }
       }
@@ -34341,6 +34821,22 @@
         }
       }
     },
+    "State income tax paid besides withholding": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収以外に支払った州所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预扣之外已付的州所得税"
+          }
+        }
+      }
+    },
     "State income tax, as withheld": {
       "localizations": {
         "ja": {
@@ -35297,6 +35793,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "免税利息"
+          }
+        }
+      }
+    },
+    "Taxed interest %@ so far, %@ by December 31; taxed dividends %@ so far, %@ by December 31. Counted until the 1099s come; dividends count as ordinary until a 1099-DIV says which are qualified. Accounts whose income isn't taxed, such as IRAs and HSAs, are left out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "課税される利子は今まで %1$@、12 月 31 日までに %2$@。課税される配当は今まで %3$@、12 月 31 日までに %4$@。1099 が届くまで計上し、1099-DIV が適格配当を示すまで配当は普通配当として数えます。IRA や HSA など非課税の口座は除きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应税利息至今 %1$@，到 12 月 31 日 %2$@；应税股息至今 %3$@，到 12 月 31 日 %4$@。在 1099 到来之前计入；在 1099-DIV 注明合格股息之前，股息按普通股息计算。IRA、HSA 等收入不征税的账户不计入。"
           }
         }
       }
@@ -42168,6 +42680,22 @@
         }
       }
     },
+    "Where the gains come from": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "譲渡益の出所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利得的来源"
+          }
+        }
+      }
+    },
     "Where these are": {
       "localizations": {
         "ja": {
@@ -42836,6 +43364,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "撰写"
+          }
+        }
+      }
+    },
+    "Year settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年の設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年度设置"
           }
         }
       }

@@ -113,6 +113,11 @@ const (
 	// name no W-2 or paystub names, so it is counted as the first
 	// person's.
 	TaxYearFindingInvestmentRecipientAssumed TaxYearFindingCode = "investment_recipient_assumed"
+	// TaxYearFindingMortgageOverLimit: the 1098s' outstanding principal is
+	// more than the debt whose interest a return deducts (750,000, or
+	// 1,000,000 taken out before December 16, 2017), so only the share of
+	// the interest under the limit counts.
+	TaxYearFindingMortgageOverLimit TaxYearFindingCode = "mortgage_over_limit"
 )
 
 // TaxYearFinding is one thing worth knowing about a tax year, in a
@@ -205,6 +210,13 @@ type TaxYearSummary struct {
 	// TaxYearInvestment is the year's investment income from its 1099s,
 	// the household's; nil when there are none.
 	TaxYearInvestment *TaxYearInvestmentFigures `json:"taxYearInvestment,omitempty" graphapi:"nullable"`
+	// TaxYearInvestmentPreview is the year's interest and dividends as
+	// the linked accounts were paid them, which the estimate counts where
+	// no 1099 of the kind has been read; nil when the accounts were paid
+	// none.
+	TaxYearInvestmentPreview *TaxYearInvestmentPreview `json:"taxYearInvestmentPreview,omitempty" graphapi:"nullable"`
+	// TaxYearSetting is the year's settings, nil when none were given.
+	TaxYearSetting *models.TaxYearSetting `json:"taxYearSetting,omitempty" graphapi:"nullable"`
 }
 
 // figureSums is TaxYearFigures while being added up.
@@ -540,10 +552,13 @@ type employmentGroup struct {
 }
 
 // SummarizeTaxYear puts a tax year together from the paystubs paid in it
-// and the W-2s for it (others are left out), as of today, its tax
+// and the tax forms for it (others are left out), as of today, its tax
 // estimated as filed with filingStatus, or the default for the number of
-// people when it is empty.
-func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms []*models.FinanceTaxForm, today time.Time, filingStatus TaxFilingStatus) *TaxYearSummary {
+// people when it is empty, with what inputs add (nil adds nothing).
+func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms []*models.FinanceTaxForm, today time.Time, filingStatus TaxFilingStatus, inputs *TaxYearInputs) *TaxYearSummary {
+	if inputs == nil {
+		inputs = &TaxYearInputs{}
+	}
 	summary := &TaxYearSummary{
 		TaxYear: taxYear, IsYearOver: today.Year() > taxYear,
 		TaxYearEmployments: []*TaxYearEmployment{}, TaxYearPeople: []*TaxYearPerson{}, TaxYearFindings: []*TaxYearFinding{},
@@ -759,6 +774,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	}
 	// 1099s made out to nobody the W-2s and paystubs name: to the first
 	// person when there is one, else a person of their own.
+	var assumedRecipients []*investmentSums
 	for _, employeeKey := range investmentOrder {
 		sums := investmentByEmployee[employeeKey]
 		if sums == nil {
@@ -769,15 +785,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 				everyoneSums[0].investment = newInvestmentSums()
 			}
 			everyoneSums[0].investment.add(sums)
-			recipient := sums.recipientName
-			if strings.TrimSpace(recipient) == "" {
-				recipient = "no name"
-			}
-			summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
-				TaxYearFindingCode: TaxYearFindingInvestmentRecipientAssumed, EmployeeName: summary.TaxYearPeople[0].EmployeeName,
-				FindingText: fmt.Sprintf("%d 1099s made out to %s, whom no W-2 or paystub names, are counted as %s's", len(sums.taxFormIds), recipient, summary.TaxYearPeople[0].EmployeeName),
-				PaystubIDs:  []string{},
-			})
+			assumedRecipients = append(assumedRecipients, sums)
 			continue
 		}
 		empty := newFigureSums()
@@ -789,6 +797,52 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		if person.investment != nil {
 			householdInvestment.add(person.investment)
 		}
+	}
+	// What the linked accounts were paid, and the gains the settings give,
+	// for the kinds no 1099 has been read for.
+	hasKind := map[models.TaxFormKind]bool{}
+	for _, taxForm := range taxForms {
+		if taxForm != nil && taxForm.TaxYear == taxYear {
+			hasKind[taxForm.TaxFormKind] = true
+		}
+	}
+	previewed := newInvestmentSums()
+	isPreviewed := false
+	if accountSums := sumAccountIncomes(inputs.AccountIncomes); len(accountSums.accountIncomes) > 0 {
+		projection := yearProjection(taxYear, today)
+		projectedInterest := roundToCents(new(big.Rat).Mul(accountSums.interest, projection))
+		projectedDividends := roundToCents(new(big.Rat).Mul(accountSums.dividends, projection))
+		summary.TaxYearInvestmentPreview = &TaxYearInvestmentPreview{
+			InterestAmount: formatDollars(accountSums.interest), DividendsAmount: formatDollars(accountSums.dividends),
+			ProjectedInterestAmount: formatDollars(projectedInterest), ProjectedDividendsAmount: formatDollars(projectedDividends),
+			IsInterestCounted: !hasKind[models.TaxFormKind1099Int], IsDividendsCounted: !hasKind[models.TaxFormKind1099Div],
+			TaxAdvantagedAmount: formatDollars(accountSums.taxAdvantaged), TaxYearAccountIncomes: accountSums.accountIncomes,
+		}
+		if !hasKind[models.TaxFormKind1099Int] && projectedInterest.Sign() > 0 {
+			previewed.interest.Add(previewed.interest, projectedInterest)
+			isPreviewed = true
+		}
+		if !hasKind[models.TaxFormKind1099Div] && projectedDividends.Sign() > 0 {
+			previewed.ordinaryDividends.Add(previewed.ordinaryDividends, projectedDividends)
+			isPreviewed = true
+		}
+	}
+	summary.TaxYearSetting = inputs.Setting
+	if setting := inputs.Setting; setting != nil && !hasKind[models.TaxFormKind1099B] &&
+		(setting.EstimatedShortTermGainAmount != "" || setting.EstimatedLongTermGainAmount != "") {
+		previewed.shortTermGain.Add(previewed.shortTermGain, settingAmount(setting.EstimatedShortTermGainAmount))
+		previewed.longTermGain.Add(previewed.longTermGain, settingAmount(setting.EstimatedLongTermGainAmount))
+		isPreviewed = true
+	}
+	if isPreviewed {
+		if len(everyoneSums) == 0 {
+			empty := newFigureSums()
+			everyoneSums = append(everyoneSums, &personSums{figures: empty, projected: empty})
+		}
+		if everyoneSums[0].investment == nil {
+			everyoneSums[0].investment = newInvestmentSums()
+		}
+		everyoneSums[0].investment.add(previewed)
 	}
 	if len(householdInvestment.taxFormIds) > 0 {
 		summary.TaxYearInvestment = householdInvestment.figures()
@@ -806,7 +860,39 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	if isAssumed {
 		filingStatus = DefaultTaxFilingStatus(len(everyoneSums))
 	}
-	summary.TaxYearEstimate = estimateTaxYear(taxYear, filingStatus, everyoneSums, isAnythingProjected)
+	// Whose a 1099 is matters only on separate returns: a joint return
+	// counts the household's together.
+	if filingStatus != TaxFilingStatusMarriedFilingJointly {
+		for _, sums := range assumedRecipients {
+			recipient := strings.TrimSpace(sums.recipientName)
+			if recipient == "" && sums.recipientTaxIDMask != "" {
+				recipient = "the taxpayer whose number ends in " + sums.recipientTaxIDMask
+			} else if recipient == "" {
+				recipient = "nobody by name"
+			}
+			summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
+				TaxYearFindingCode: TaxYearFindingInvestmentRecipientAssumed, EmployeeName: summary.TaxYearPeople[0].EmployeeName,
+				FindingText: fmt.Sprintf("%s made out to %s, whom no W-2 or paystub names, %s counted as %s's", countOf(len(sums.taxFormIds), "1099", "1099s"),
+					recipient, pluralize(len(sums.taxFormIds), "is", "are"), summary.TaxYearPeople[0].EmployeeName),
+				PaystubIDs: []string{},
+			})
+		}
+	}
+	mortgage := sumMortgages(taxYear, filingStatus, taxForms)
+	summary.TaxFormCount += len(mortgage.taxFormIds)
+	if mortgage.isOverLimit() {
+		findingText := fmt.Sprintf("the mortgages' principal of %s is more than the %s whose interest is deducted, so %s of the %s interest counts",
+			formatDollars(mortgage.principal), formatDollars(mortgage.debtLimit), formatDollars(mortgage.interest), formatDollars(mortgage.printedInterest))
+		if mortgage.isOriginationUnknown {
+			findingText += "; a 1098 prints no origination date, so its loan is taken to be from after 2017"
+		}
+		summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
+			TaxYearFindingCode: TaxYearFindingMortgageOverLimit, FindingText: findingText, PaystubIDs: []string{},
+		})
+	}
+	summary.TaxYearEstimate = estimateTaxYear(taxYear, filingStatus, everyoneSums, isAnythingProjected, &estimateExtras{
+		setting: inputs.Setting, mortgage: mortgage, isPreviewed: isPreviewed,
+	})
 	if summary.TaxYearEstimate != nil {
 		summary.TaxYearEstimate.IsTaxFilingStatusAssumed = isAssumed
 	}
@@ -1095,4 +1181,9 @@ func compareW2WithPaystubs(w2, paystubs *figureSums) []*TaxYearComparison {
 	}
 	add("19", "", "Local income tax", w2.localIncomeTax, paystubs.localIncomeTax)
 	return comparisons
+}
+
+// countOf is a count with the word it counts, singular or plural.
+func countOf(count int, one, many string) string {
+	return fmt.Sprintf("%d %s", count, pluralize(count, one, many))
 }

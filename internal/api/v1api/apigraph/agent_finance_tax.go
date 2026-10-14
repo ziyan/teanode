@@ -440,6 +440,112 @@ func (self *graph) FinanceTaxForms(ctx context.Context, arguments TaxFormsArgume
 	return view, nil
 }
 
+// TaxYearSettingArguments name a tax year.
+type TaxYearSettingArguments struct {
+	TaxYear int `json:"taxYear"`
+}
+
+// SetTaxYearSettingArguments change a tax year's settings: each given
+// field takes the place of the one kept, each left out stays. Amounts are
+// decimals; IsEstimatedGainCleared forgets the estimated gains.
+type SetTaxYearSettingArguments struct {
+	TaxYear                      int     `json:"taxYear"`
+	ChildCount                   *int    `json:"childCount,omitempty"`
+	OtherDependentCount          *int    `json:"otherDependentCount,omitempty"`
+	DependentCareExpenseAmount   *string `json:"dependentCareExpenseAmount,omitempty"`
+	OtherIncomeAmount            *string `json:"otherIncomeAmount,omitempty"`
+	CharitableContributionAmount *string `json:"charitableContributionAmount,omitempty"`
+	PropertyTaxAmount            *string `json:"propertyTaxAmount,omitempty"`
+	StateIncomeTaxPaidAmount     *string `json:"stateIncomeTaxPaidAmount,omitempty"`
+	EstimatedShortTermGainAmount *string `json:"estimatedShortTermGainAmount,omitempty"`
+	EstimatedLongTermGainAmount  *string `json:"estimatedLongTermGainAmount,omitempty"`
+	EstimatedGainNote            *string `json:"estimatedGainNote,omitempty"`
+	IsEstimatedGainCleared       *bool   `json:"isEstimatedGainCleared,omitempty"`
+}
+
+func (self *graph) TaxYearSetting(ctx context.Context, arguments TaxYearSettingArguments) (*models.TaxYearSetting, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if arguments.TaxYear < 1900 || arguments.TaxYear > 2999 {
+		return nil, fmt.Errorf("%w: %d is not a tax year", api.ErrInvalidArguments, arguments.TaxYear)
+	}
+	setting, err := self.transaction(ctx).GetTaxYearSetting(found.ID, arguments.TaxYear)
+	if err != nil {
+		return nil, err
+	}
+	if setting == nil {
+		setting = emptyTaxYearSetting(arguments.TaxYear)
+	}
+	return setting, nil
+}
+
+func emptyTaxYearSetting(taxYear int) *models.TaxYearSetting {
+	return &models.TaxYearSetting{TaxYear: taxYear, DependentCareExpenseAmount: "0", OtherIncomeAmount: "0", CharitableContributionAmount: "0", PropertyTaxAmount: "0", StateIncomeTaxPaidAmount: "0"}
+}
+
+func (self *graph) SetTaxYearSetting(ctx context.Context, arguments SetTaxYearSettingArguments) (*models.TaxYearSetting, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if arguments.TaxYear < 1900 || arguments.TaxYear > 2999 {
+		return nil, fmt.Errorf("%w: %d is not a tax year", api.ErrInvalidArguments, arguments.TaxYear)
+	}
+	tx := self.writing(ctx)
+	setting, err := tx.GetTaxYearSetting(found.ID, arguments.TaxYear)
+	if err != nil {
+		return nil, err
+	}
+	if setting == nil {
+		setting = emptyTaxYearSetting(arguments.TaxYear)
+	}
+	setting.AgentID = found.ID
+	if arguments.ChildCount != nil {
+		setting.ChildCount = *arguments.ChildCount
+	}
+	if arguments.OtherDependentCount != nil {
+		setting.OtherDependentCount = *arguments.OtherDependentCount
+	}
+	for _, field := range []struct {
+		given  *string
+		target *string
+	}{
+		{arguments.DependentCareExpenseAmount, &setting.DependentCareExpenseAmount},
+		{arguments.OtherIncomeAmount, &setting.OtherIncomeAmount},
+		{arguments.CharitableContributionAmount, &setting.CharitableContributionAmount},
+		{arguments.PropertyTaxAmount, &setting.PropertyTaxAmount},
+		{arguments.StateIncomeTaxPaidAmount, &setting.StateIncomeTaxPaidAmount},
+		{arguments.EstimatedShortTermGainAmount, &setting.EstimatedShortTermGainAmount},
+		{arguments.EstimatedLongTermGainAmount, &setting.EstimatedLongTermGainAmount},
+		{arguments.EstimatedGainNote, &setting.EstimatedGainNote},
+	} {
+		if field.given != nil {
+			*field.target = strings.TrimSpace(*field.given)
+		}
+	}
+	if arguments.IsEstimatedGainCleared != nil && *arguments.IsEstimatedGainCleared {
+		setting.EstimatedShortTermGainAmount, setting.EstimatedLongTermGainAmount, setting.EstimatedGainNote = "", "", ""
+	}
+	if err := cleanTaxText("the note", &setting.EstimatedGainNote); err != nil {
+		return nil, err
+	}
+	saved, err := tx.PutTaxYearSetting(setting)
+	if err != nil {
+		return nil, financeError(err)
+	}
+	return saved, nil
+}
+
+// cleanTaxText refuses text holding a person's taxpayer number.
+func cleanTaxText(what string, text *string) error {
+	if finance.HasDashedTaxpayerNumber(*text) || finance.HasTaxpayerNumber(*text) {
+		return fmt.Errorf("%w: %s holds a number shaped like a taxpayer number; leave it out", api.ErrInvalidArguments, what)
+	}
+	return nil
+}
+
 // TaxDocumentAddressView is the caller's tax document address.
 type TaxDocumentAddressView struct {
 	// TaxDocumentAddress is empty when the caller has no mailbox with an

@@ -99,6 +99,16 @@ var operations = map[string]*financeOperation{
 		arguments: []string{"amount", "from_currency_code", "to_currency_code", "rate_on"}, required: []string{"amount", "from_currency_code", "to_currency_code"},
 	},
 	"tax_document_address": {graphqlOperation: "TaxDocumentAddress", risk: tools.RiskRead},
+	"tax_year_setting":     {graphqlOperation: "TaxYearSetting", risk: tools.RiskRead, arguments: []string{"tax_year"}, required: []string{"tax_year"}},
+	"set_tax_year_setting": {
+		graphqlOperation: "SetTaxYearSetting", risk: tools.RiskWrite, required: []string{"tax_year"},
+		arguments: []string{"tax_year", "child_count", "other_dependent_count", "dependent_care_expense_amount", "other_income_amount",
+			"charitable_contribution_amount", "property_tax_amount", "state_income_tax_paid_amount", "estimated_short_term_gain_amount", "estimated_long_term_gain_amount",
+			"estimated_gain_note", "is_estimated_gain_cleared"},
+		preview: func(_ *previewLookup, call map[string]any) string {
+			return fmt.Sprintf("Change the %d tax year settings", wholeNumber(call["tax_year"]))
+		},
+	},
 	"regenerate_tax_document_address": {
 		graphqlOperation: "RegenerateTaxDocumentAddress", risk: tools.RiskWrite,
 		preview: func(_ *previewLookup, _ map[string]any) string {
@@ -333,9 +343,9 @@ var operations = map[string]*financeOperation{
 		graphqlOperation: "ReadTaxDocument", risk: tools.RiskWrite, arguments: []string{"agent_attachment_id", "mailbox_item_id"},
 		preview: func(_ *previewLookup, call map[string]any) string {
 			if text(call, "mailbox_item_id") != "" {
-				return "Have the reading job read the paystubs, W-2s or 1099s a message carries and record them"
+				return "Have the reading job read the paystubs, W-2s, 1099s or 1098s a message carries and record them"
 			}
-			return "Have the reading job read the paystub, W-2 or 1099s in the file and record them"
+			return "Have the reading job read the paystub, W-2, 1099s or 1098 in the file and record them"
 		},
 	},
 	"paystubs": {
@@ -757,11 +767,11 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A receipt recorded before its charge arrives waits, and the sync that brings the charge matches it by the same rule, so say so rather than ask when there is no candidate yet. " +
 	"`receipts` pages like `transactions` (limit, offset or after, and totalCount); with no range it lists every receipt, those that print no day last, and is_undated lists only those; text finds receipts by merchant, receipt number or a word of what was bought on any line. " +
 	"`preview_record_receipt` says what recording would do, writing nothing; `receipt` reads one line by line; `propose_receipt_matches` lists the charges a stored one could explain; `unmatch_receipt` takes one off a charge, and nothing matches that receipt on its own again, neither a sync nor reading it again; `delete_receipt` deletes it.\n" +
-	"- Paystubs, W-2s and 1099s (1099-INT, 1099-DIV and 1099-B, often one brokerage statement holding all three), to get ready for a tax return: read_tax_document reads 1099s too, recording each form a statement holds. When the person hands over a paystub or a W-2 (a PDF or a photo in the chat, by the agent_attachment_id the conversation names the file with, or a message by mailbox_item_id), `read_tax_document` has the reading job read it in the background and record it, as a paystub or a W-2, whichever it is; that is the way to record one, rather than reading it yourself. " +
+	"- Paystubs, W-2s, 1099s (1099-INT, 1099-DIV and 1099-B, often one brokerage statement holding all three) and 1098s (mortgage interest), to get ready for a tax return: read_tax_document reads 1099s and 1098s too, recording each form a statement holds. When the person hands over a paystub or a W-2 (a PDF or a photo in the chat, by the agent_attachment_id the conversation names the file with, or a message by mailbox_item_id), `read_tax_document` has the reading job read it in the background and record it, as a paystub or a W-2, whichever it is; that is the way to record one, rather than reading it yourself. " +
 	"Only the last four digits of a taxpayer number (a Social Security number) are ever kept: never write more of one anywhere, in a call or an answer. " +
-	"`paystubs` (tax_year, or from and to) lists them with their check (paystubCheckState: gross less taxes and deductions is take-home pay); `paystub` reads one line by line; `tax_forms` and `tax_form` list and read W-2s and 1099s with taxFormFindings (a 1099-DIV's qualified dividends within its ordinary, a 1099-B's cost basis beside its proceeds) (Social Security tax 6.2% of its wages, Medicare 1.45% plus 0.9% above 200,000, wages within the year's wage base). " +
-	"`tax_year` puts a year together per person and employer: figures from the W-2 when there is one (taxYearFigureSource w2), else the latest paystub's year to date, projectedFigures to December 31 at the latest paystub's amounts, taxYearComparisons setting each W-2 box beside the paystubs, and taxYearFindings (a paystub missing between two others, a W-2 not yet in, Social Security withheld beyond the year's maximum across employers, which comes back as a credit). `tax_document_address` gives the person's tax document address, where each PDF or picture mailed (or forwarded from a payroll email) is read as a paystub, a W-2 or a 1099 on its own; `regenerate_tax_document_address` ends the old address and makes a new one, only when the person asks. Projected retirement contributions stop at the year's limit (retirementDeferralLimitAmount; isRetirementDeferralCapped), the rest counted as wages. taxYearEstimate sets the tax owed beside what was withheld: federal income tax on wages and the 1099s' investment income less the standard deduction by the filing status the person keeps (set_tax_filing_status when they say how they file; isTaxFilingStatusAssumed when they have not, married filing jointly for two people and single otherwise), or tax_filing_status to try another, Social Security and Medicare as owed, state and local as withheld, then paidTaxAmount, upcomingWithheldTaxAmount, owingTaxAmount or refundAmount, and remainingIncomeAmount; it counts the documents read, so say so and ask about other income, itemized deductions and credits before calling it what the return will say. " +
-	"taxYearInvestment adds the year's 1099s up (interest, dividends, qualified dividends, capital gain distributions, short- and long-term gain or loss), and the estimate taxes them: qualified dividends and net long-term gain at 0%, 15% or 20% (preferentialIncomeTaxAmount), a net loss against at most 3,000 of other income, the 3.8% net investment income tax above the threshold. Quote those figures rather than adding paystubs up yourself; the estimate leaves out itemized deductions, credits (such as the child tax credit) and a state's tax on investment income, so say so when asked what will be owed. " +
+	"`paystubs` (tax_year, or from and to) lists them with their check (paystubCheckState: gross less taxes and deductions is take-home pay); `paystub` reads one line by line; `tax_forms` and `tax_form` list and read W-2s, 1099s and 1098s with taxFormFindings (a 1099-DIV's qualified dividends within its ordinary, a 1099-B's cost basis beside its proceeds) (Social Security tax 6.2% of its wages, Medicare 1.45% plus 0.9% above 200,000, wages within the year's wage base). " +
+	"`tax_year` puts a year together per person and employer: figures from the W-2 when there is one (taxYearFigureSource w2), else the latest paystub's year to date, projectedFigures to December 31 at the latest paystub's amounts, taxYearComparisons setting each W-2 box beside the paystubs, and taxYearFindings (a paystub missing between two others, a W-2 not yet in, Social Security withheld beyond the year's maximum across employers, which comes back as a credit). `tax_document_address` gives the person's tax document address, where each PDF or picture mailed (or forwarded from a payroll email) is read as a paystub, a W-2, a 1099 or a 1098 on its own; `regenerate_tax_document_address` ends the old address and makes a new one, only when the person asks. `tax_year_setting` and `set_tax_year_setting` hold what a year's estimate needs that no document says: child_count (under 17), other_dependent_count, dependent_care_expense_amount (care for children under 13 paid so the parents could work), other_income_amount (household income no paystub or form shows, such as a spouse's pay), charitable_contribution_amount, property_tax_amount and state_income_tax_paid_amount (for itemizing, beside 1098s' mortgage interest and the state tax withheld), and for a year whose 1099-Bs have not come estimated_short_term_gain_amount and estimated_long_term_gain_amount (the gains realized so far, negative for a loss) with estimated_gain_note: when the person asks to count gains so far, read them from their brokerage (such as a Robinhood connection's realized profit and loss, split short and long term) and set them, saying where they came from; set only what the person said or a source gave, never a guess. The estimate also previews interest and dividends from the linked accounts (taxYearInvestmentPreview), leaving out IRAs, HSAs and other accounts whose income is not taxed, until 1099s come; it itemizes when itemizing beats the standard deduction (mortgage interest on debt up to the limit, 750,000 or 1,000,000 taken out before December 16, 2017; state and local taxes up to the year's cap; gifts, from 2026 those above 0.5% of income, or up to 1,000 or 2,000 beside the standard deduction), and takes the child tax credit and the dependent care credit, both only against the tax (the refundable part of the child tax credit is not counted). Projected retirement contributions stop at the year's limit (retirementDeferralLimitAmount; isRetirementDeferralCapped), the rest counted as wages. taxYearEstimate sets the tax owed beside what was withheld: federal income tax on wages and the 1099s' investment income less the standard deduction by the filing status the person keeps (set_tax_filing_status when they say how they file; isTaxFilingStatusAssumed when they have not, married filing jointly for two people and single otherwise), or tax_filing_status to try another, Social Security and Medicare as owed, state and local as withheld, then paidTaxAmount, upcomingWithheldTaxAmount, owingTaxAmount or refundAmount, and remainingIncomeAmount; it counts the documents read and the year's settings, so say so and ask about other income, itemized deductions and credits before calling it what the return will say. " +
+	"taxYearInvestment adds the year's 1099s up (interest, dividends, qualified dividends, capital gain distributions, short- and long-term gain or loss), and the estimate taxes them: qualified dividends and net long-term gain at 0%, 15% or 20% (preferentialIncomeTaxAmount), a net loss against at most 3,000 of other income, the 3.8% net investment income tax above the threshold. Quote those figures rather than adding paystubs up yourself; the estimate leaves out a state's tax on investment income, credits other than those above and taxes the documents do not show, so say so when asked what will be owed. " +
 	"`record_paystub` and `record_tax_form` record one you read yourself, from the file it was read out of (agent_attachment_id), one line per printed line with an amount or one entry per box that prints something; `delete_paystub` and `delete_tax_form` delete one with its file."
 
 func init() {
@@ -798,23 +808,34 @@ func init() {
 						"tax_class_code":         tools.StringProperty("the receipt's tax mark: on an item or discount the tax it falls under, on a tax line the mark it covers"),
 						"discounted_line_number": tools.IntegerProperty("for a discount: the line_number of the item it is printed under"),
 					}, "receipt_line_kind", "line_amount")),
-					"is_unbalanced_accepted":    tools.BooleanProperty("for record_receipt and record_paystub: true only when the person said to record one whose lines do not add up, as it is"),
-					"paystub_id":                tools.StringProperty("a paystub, by the id paystubs gives"),
-					"tax_form_id":               tools.StringProperty("a W-2, by the id tax_forms gives"),
-					"tax_year":                  tools.IntegerProperty("for tax_year, paystubs and tax_forms: the tax year, 2026; for record_tax_form: the year the W-2 is for"),
-					"tax_filing_status":         tools.EnumProperty("for set_tax_filing_status: how the person files, to keep (empty clears it); for tax_year: another filing status to estimate for instead of the one kept", "", "single", "married_filing_jointly", "married_filing_separately", "head_of_household"),
-					"employer_name":             tools.StringProperty("for record_paystub: the employer as the paystub names it"),
-					"employer_tax_id":           tools.StringProperty("for record_paystub: the employer's identification number as printed, 12-3456789"),
-					"employee_name":             tools.StringProperty("for record_paystub: the employee as the paystub names them"),
-					"employee_tax_id_mask":      tools.StringProperty("for record_paystub: the last four digits of the employee's taxpayer number, never more"),
-					"pay_date":                  tools.StringProperty("for record_paystub: the day paid, 2026-09-30, not the end of the period"),
-					"period_start_on":           tools.StringProperty("for record_paystub: the first day of the pay period"),
-					"period_end_on":             tools.StringProperty("for record_paystub: the last day of the pay period"),
-					"gross_amount":              tools.StringProperty("for record_paystub: gross pay this period, as printed"),
-					"year_to_date_gross_amount": tools.StringProperty("for record_paystub: gross pay for the year to date, as printed"),
-					"total_tax_amount":          tools.StringProperty("for record_paystub: the taxes' total this period, as printed"),
-					"total_deduction_amount":    tools.StringProperty("for record_paystub: the deductions' total this period (the employee's), as printed"),
-					"net_amount":                tools.StringProperty("for record_paystub: take-home pay this period, as printed"),
+					"is_unbalanced_accepted":           tools.BooleanProperty("for record_receipt and record_paystub: true only when the person said to record one whose lines do not add up, as it is"),
+					"paystub_id":                       tools.StringProperty("a paystub, by the id paystubs gives"),
+					"tax_form_id":                      tools.StringProperty("a W-2, by the id tax_forms gives"),
+					"tax_year":                         tools.IntegerProperty("for tax_year, paystubs and tax_forms: the tax year, 2026; for record_tax_form: the year the W-2 is for"),
+					"child_count":                      tools.IntegerProperty("for set_tax_year_setting: children under 17 at the year's end"),
+					"other_dependent_count":            tools.IntegerProperty("for set_tax_year_setting: other dependents"),
+					"dependent_care_expense_amount":    tools.StringProperty("for set_tax_year_setting: what was paid for the care of children under 13 so the parents could work"),
+					"other_income_amount":              tools.StringProperty("for set_tax_year_setting: household income no paystub or form shows, such as a spouse's pay"),
+					"charitable_contribution_amount":   tools.StringProperty("for set_tax_year_setting: charitable gifts, for itemizing"),
+					"property_tax_amount":              tools.StringProperty("for set_tax_year_setting: property tax paid that no 1098 shows, for itemizing"),
+					"state_income_tax_paid_amount":     tools.StringProperty("for set_tax_year_setting: state and local income tax paid besides withholding (an estimated payment, last year's balance due), for itemizing"),
+					"estimated_short_term_gain_amount": tools.StringProperty("for set_tax_year_setting: short-term gain realized so far (negative for a loss), from a brokerage, for a year whose 1099-Bs have not come"),
+					"estimated_long_term_gain_amount":  tools.StringProperty("for set_tax_year_setting: long-term gain realized so far, likewise"),
+					"estimated_gain_note":              tools.StringProperty("for set_tax_year_setting: where the gains came from and as of when"),
+					"is_estimated_gain_cleared":        tools.BooleanProperty("for set_tax_year_setting: true forgets the gains given"),
+					"tax_filing_status":                tools.EnumProperty("for set_tax_filing_status: how the person files, to keep (empty clears it); for tax_year: another filing status to estimate for instead of the one kept", "", "single", "married_filing_jointly", "married_filing_separately", "head_of_household"),
+					"employer_name":                    tools.StringProperty("for record_paystub: the employer as the paystub names it"),
+					"employer_tax_id":                  tools.StringProperty("for record_paystub: the employer's identification number as printed, 12-3456789"),
+					"employee_name":                    tools.StringProperty("for record_paystub: the employee as the paystub names them"),
+					"employee_tax_id_mask":             tools.StringProperty("for record_paystub: the last four digits of the employee's taxpayer number, never more"),
+					"pay_date":                         tools.StringProperty("for record_paystub: the day paid, 2026-09-30, not the end of the period"),
+					"period_start_on":                  tools.StringProperty("for record_paystub: the first day of the pay period"),
+					"period_end_on":                    tools.StringProperty("for record_paystub: the last day of the pay period"),
+					"gross_amount":                     tools.StringProperty("for record_paystub: gross pay this period, as printed"),
+					"year_to_date_gross_amount":        tools.StringProperty("for record_paystub: gross pay for the year to date, as printed"),
+					"total_tax_amount":                 tools.StringProperty("for record_paystub: the taxes' total this period, as printed"),
+					"total_deduction_amount":           tools.StringProperty("for record_paystub: the deductions' total this period (the employee's), as printed"),
+					"net_amount":                       tools.StringProperty("for record_paystub: take-home pay this period, as printed"),
 					"paystub_lines": tools.ArrayProperty("for record_paystub: every printed line with an amount, one each, in order: earnings, taxes, deductions; not totals, not hours alone", tools.Object(map[string]any{
 						"paystub_line_kind":            tools.EnumProperty("what the line is: a reimbursement is money paid back outside gross pay, printed as a non-taxable earning", "earning", "tax", "deduction", "reimbursement"),
 						"description":                  tools.StringProperty("what the line says, as printed"),
@@ -830,17 +851,17 @@ func init() {
 						"employer_current_amount":      tools.StringProperty("for a deduction: the employer's part this period, when printed"),
 						"employer_year_to_date_amount": tools.StringProperty("for a deduction: the employer's part for the year to date, when printed"),
 					}, "paystub_line_kind")),
-					"tax_form_kind":         tools.EnumProperty("for record_tax_form: the form; a statement holding several is one call per form", "w2", "1099_int", "1099_div", "1099_b"),
+					"tax_form_kind":         tools.EnumProperty("for record_tax_form: the form; a statement holding several is one call per form", "w2", "1099_int", "1099_div", "1099_b", "1098"),
 					"is_corrected":          tools.BooleanProperty("for record_tax_form: true for a corrected form (a W-2c, a 1099 marked CORRECTED)"),
-					"payer_name":            tools.StringProperty("for record_tax_form: the employer (box c), or the bank or broker that sent the 1099"),
+					"payer_name":            tools.StringProperty("for record_tax_form: the employer (box c), the bank or broker that sent the 1099, or the lender that sent the 1098"),
 					"payer_tax_id":          tools.StringProperty("for record_tax_form: the employer's identification number (box b)"),
 					"recipient_name":        tools.StringProperty("for record_tax_form: the employee (box e)"),
 					"recipient_tax_id_mask": tools.StringProperty("for record_tax_form: the last four digits of the employee's taxpayer number (box a), never more"),
 					"tax_form_entries": tools.ArrayProperty("for record_tax_form: every box that prints something, once, though the file repeats the form", tools.Object(map[string]any{
-						"box_code":      tools.StringProperty("the box as printed: 1 to 20 on a W-2; 1a, 1b, 2a on a 1099-DIV; 1d proceeds, 1e cost basis, 1f, 1g wash sale on a 1099-B"),
-						"box_qualifier": tools.StringProperty("box 12's code letter, box 13's checkbox (statutory_employee, retirement_plan, third_party_sick_pay), box 14's label, the state's two-letter code in a state box, the locality in 18 to 20; on a 1099-B the total a box belongs to: short_covered, short_noncovered, long_covered, long_noncovered or unknown_term"),
+						"box_code":      tools.StringProperty("the box as printed: 1 to 20 on a W-2; 1a, 1b, 2a on a 1099-DIV; 1d proceeds, 1e cost basis, 1f, 1g wash sale on a 1099-B; 1 interest, 2 principal, 3 origination date (text), 4 refunded interest, 6 points, 10 other on a 1098; account for the account or loan number's last four (text)"),
+						"box_qualifier": tools.StringProperty("box 12's code letter, box 13's checkbox (statutory_employee, retirement_plan, third_party_sick_pay), box 14's label or a 1098's box 10 label (such as Real estate taxes), the state's two-letter code in a state box, the locality in 18 to 20; on a 1099-B the total a box belongs to: short_covered, short_noncovered, long_covered, long_noncovered or unknown_term"),
 						"amount":        tools.StringProperty("the box's amount, a decimal without separators"),
-						"text_value":    tools.StringProperty("the box's text, as box 15's employer state id"),
+						"text_value":    tools.StringProperty("the box's text, as box 15's employer state id or a 1098's origination date (YYYY-MM-DD)"),
 						"is_checked":    tools.BooleanProperty("for box 13: true for a checked box"),
 					}, "box_code")),
 					"matched_amount":              tools.StringProperty("for match_receipt: how much of the charge the receipt explains, for an order charged in parts; the charge or the receipt's total, whichever is less, when left out"),
