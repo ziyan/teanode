@@ -13958,6 +13958,22 @@
         }
       }
     },
+    "For an account no provider reaches. From a phone's wallet: open the card's statement, choose Export Transactions, pick OFX, then share the file to Mail and send it to this address. A transaction imported twice is kept once, and your agent tells you what was imported.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーが接続できない口座のためのものです。スマートフォンのウォレットから：カードの明細を開き、「取引を書き出す」で OFX を選び、ファイルをメールで共有してこのアドレスに送ります。2 回取り込んだ取引は 1 件だけ残り、何を取り込んだかはエージェントが知らせます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适用于服务商无法连接的账户。在手机钱包中：打开卡片的账单，选择“导出交易”，选 OFX，然后把文件分享到邮件并发送到这个地址。重复导入的交易只保留一笔，你的助手会告诉你导入了什么。"
+          }
+        }
+      }
+    },
     "For sending mail through this server as %@, from a mail client or a script.": {
       "localizations": {
         "ja": {
@@ -15974,6 +15990,22 @@
         }
       }
     },
+    "Import address changed. The old one no longer takes mail.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込みアドレスを変更しました。古いアドレスではもうメールを受け付けません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入地址已更换，旧地址不再接收邮件。"
+          }
+        }
+      }
+    },
     "Import from iPhone": {
       "localizations": {
         "ja": {
@@ -15986,6 +16018,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "从 iPhone 导入"
+          }
+        }
+      }
+    },
+    "Import statements": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細の取り込み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入对账单"
           }
         }
       }
@@ -16038,6 +16086,22 @@
         }
       }
     },
+    "Imported into %@: %lld added, %lld updated, %lld already here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ に取り込みました：追加 %2$lld 件、更新 %3$lld 件、既存 %4$lld 件。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入到 %1$@：新增 %2$lld 笔，更新 %3$lld 笔，%4$lld 笔已存在。"
+          }
+        }
+      }
+    },
     "Importing %lld of %lld…": {
       "localizations": {
         "ja": {
@@ -16050,6 +16114,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在导入 %lld / %lld…"
+          }
+        }
+      }
+    },
+    "Importing is off. Turn the Imported statements source on to import again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込みはオフです。取り込んだ明細のソースをオンにすると、また取り込めます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入已关闭。打开“已导入的对账单”来源即可重新导入。"
           }
         }
       }
@@ -17506,6 +17586,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "上次评分 %1$@ · 问题：%2$lld · 花费 %3$@"
+          }
+        }
+      }
+    },
+    "Last import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の取り込み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次导入"
           }
         }
       }
@@ -20806,6 +20902,22 @@
         }
       }
     },
+    "New import address?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい取り込みアドレスにしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要换新的导入地址吗？"
+          }
+        }
+      }
+    },
     "New message": {
       "localizations": {
         "ja": {
@@ -22454,6 +22566,22 @@
         }
       }
     },
+    "Not imported: %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込めなかったもの：%@。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未导入：%@。"
+          }
+        }
+      }
+    },
     "Not junk": {
       "localizations": {
         "ja": {
@@ -22966,6 +23094,22 @@
         }
       }
     },
+    "Nothing imported yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ何も取り込んでいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有导入任何内容。"
+          }
+        }
+      }
+    },
     "Nothing in memory answers that.": {
       "localizations": {
         "ja": {
@@ -23362,6 +23506,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有进行检查。发出的邮件不会对自身做认证。"
+          }
+        }
+      }
+    },
+    "Nothing was imported: %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何も取り込めませんでした：%@。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有导入任何内容：%@。"
           }
         }
       }
@@ -34198,6 +34358,22 @@
         }
       }
     },
+    "the file held no account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルに口座がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件中没有账户"
+          }
+        }
+      }
+    },
     "The filing status is assumed from the number of people; pick yours above and it is kept.": {
       "localizations": {
         "ja": {
@@ -41621,6 +41797,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "你"
+          }
+        }
+      }
+    },
+    "You get a new import address, and mail to the old one is refused from now on. What was already imported stays.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい取り込みアドレスになり、古いアドレスへのメールは今後受け付けません。取り込み済みのものはそのまま残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你会得到新的导入地址，从现在起发往旧地址的邮件都会被拒收。已导入的内容会保留。"
+          }
+        }
+      }
+    },
+    "You have no mailbox address to receive statements at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細を受け取れるメールボックスのアドレスがありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你没有可接收对账单的邮箱地址。"
           }
         }
       }

@@ -1207,6 +1207,8 @@ struct AccountsView: View {
     @Environment(FinanceModel.self) private var finance
     @State private var usage: CreditUsage?
     @State private var accounts: [FinanceAccount] = []
+    @State private var statementImport: StatementImport?
+    @State private var isRegeneratingStatementAddress = false
 
     var body: some View {
         List {
@@ -1272,6 +1274,7 @@ struct AccountsView: View {
                     }
                 }
             }
+            statementImportSection
         }
         .navigationTitle("Accounts")
         .task {
@@ -1280,7 +1283,74 @@ struct AccountsView: View {
                 try? await Task.sleep(for: .seconds(10))
             }
         }
-        .refreshable { await load() }
+        .task { statementImport = try? await finance.connection.statementImport() }
+        .refreshable {
+            await load()
+            statementImport = try? await finance.connection.statementImport()
+        }
+        .confirmationDialog("New import address?", isPresented: $isRegeneratingStatementAddress, titleVisibility: .visible) {
+            Button("Make a new address", role: .destructive) {
+                Task {
+                    var renewed: StatementImport?
+                    if await finance.act(saying: String(localized: "Import address changed. The old one no longer takes mail."), { renewed = try await finance.connection.regenerateStatementImportAddress() }) {
+                        statementImport = renewed
+                    }
+                }
+            }
+        } message: {
+            Text("You get a new import address, and mail to the old one is refused from now on. What was already imported stays.")
+        }
+    }
+
+    /// The statement import, as the dashboard's Accounts tab shows it: the
+    /// address to mail OFX statements to, with copying it and making a new
+    /// one, whether importing is on, and what the last import did.
+    @ViewBuilder
+    private var statementImportSection: some View {
+        if let statementImport {
+            Section {
+                if let address = statementImport.importAddress, !address.isEmpty {
+                    Text(verbatim: address)
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                    Button("Copy address", systemImage: "doc.on.doc") { UIPasteboard.general.string = address }
+                } else {
+                    Text("You have no mailbox address to receive statements at.")
+                        .foregroundStyle(.secondary)
+                }
+                Button("New address", systemImage: "arrow.clockwise") { isRegeneratingStatementAddress = true }
+                if statementImport.isEnabled == false {
+                    Text("Importing is off. Turn the Imported statements source on to import again.")
+                        .foregroundStyle(.orange)
+                }
+                LabeledContent("Last import") {
+                    Text(statementImportSummary(statementImport.lastStatementImport))
+                        .multilineTextAlignment(.trailing)
+                }
+            } header: {
+                Text("Import statements")
+            } footer: {
+                Text("For an account no provider reaches. From a phone's wallet: open the card's statement, choose Export Transactions, pick OFX, then share the file to Mail and send it to this address. A transaction imported twice is kept once, and your agent tells you what was imported.")
+            }
+        }
+    }
+
+    /// What the last import did, in a sentence, as the dashboard says it.
+    private func statementImportSummary(_ last: StatementImport.LastImport?) -> String {
+        guard let last else { return String(localized: "Nothing imported yet.") }
+        guard last.isImported else {
+            let reason = last.importErrorMessage.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "the file held no account")
+            return String(localized: "Nothing was imported: \(reason).")
+        }
+        let accountNames = (last.financeAccountNames ?? []).joined(separator: ", ")
+        var said = String(localized: "Imported into \(accountNames): \(last.addedTransactionCount ?? 0) added, \(last.updatedTransactionCount ?? 0) updated, \(last.unchangedTransactionCount ?? 0) already here.")
+        if let reason = last.importErrorMessage, !reason.isEmpty {
+            said += " " + String(localized: "Not imported: \(reason).")
+        }
+        if let day = ServerTime.date(last.importedAt) {
+            said = "\(day.formatted(date: .abbreviated, time: .shortened)) · " + said
+        }
+        return said
     }
 
     private func load() async {
