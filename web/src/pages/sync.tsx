@@ -133,9 +133,7 @@ function AccountDeviceSetupPage() {
           <Loading />
         ) : !canSetUp ? (
           <SettingsEmpty>{t('deviceSetup.noServices')}</SettingsEmpty>
-        ) : (
-          <p className="muted">{t('deviceSetup.selectionHint')}</p>
-        )}
+        ) : null}
       </SettingsSection>
       <SettingsSection
         card

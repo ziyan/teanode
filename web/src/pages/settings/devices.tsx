@@ -14,12 +14,10 @@ export function DevicesPage() {
     <>
       <section className="devices-group" aria-labelledby="devices-app-title">
         <h2 id="devices-app-title">{t('devices.appTitle')}</h2>
-        <p className="muted">{t('devices.appDescription')}</p>
         <PhonesPage />
       </section>
       <section className="devices-group" aria-labelledby="devices-built-in-title">
         <h2 id="devices-built-in-title">{t('devices.builtInTitle')}</h2>
-        <p className="muted">{t('devices.builtInDescription')}</p>
         <SyncPage />
       </section>
     </>

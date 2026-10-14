@@ -2472,8 +2472,10 @@ pre.message-text {
     padding-right: max(8px, env(safe-area-inset-right));
   }
 
+  /* The bottom keeps 84 pixels free, as the toasts do, so the last row's
+     buttons can scroll clear of the agent's button instead of under it. */
   .content {
-    padding: var(--space-4) max(14px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom))
+    padding: var(--space-4) max(14px, env(safe-area-inset-right)) calc(84px + env(safe-area-inset-bottom))
       max(14px, env(safe-area-inset-left));
   }
 
