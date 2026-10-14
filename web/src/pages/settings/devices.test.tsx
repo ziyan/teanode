@@ -17,10 +17,10 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-function answerEverything() {
+function answerEverything(phones: unknown[] = []) {
   vi.mocked(graphql).mockImplementation(async (document) => {
     if (document.includes('ListAgentPhones'))
-      return { ListAgentPhones: { phones: [], isPushEnabled: true, notificationKinds: [] } } as never
+      return { ListAgentPhones: { phones, isPushEnabled: true, notificationKinds: [] } } as never
     if (document.includes('ListSyncCredentials')) return { ListSyncCredentials: [] } as never
     if (document.includes('GetDeviceSetupCapabilities'))
       return {
@@ -73,6 +73,25 @@ it('shows the TeaNode app and Built-in apps sections on one page', async () => {
   expect(screen.getByRole('heading', { name: 'Built-in apps' })).toBeTruthy()
   expect(await screen.findByRole('link', { name: 'Connect a phone' })).toBeTruthy()
   expect(await screen.findByRole('button', { name: /Set up an? (iPhone or Mac|phone)|Set up this/i })).toBeTruthy()
+})
+
+it('names a phone by its model as people say it, not by the identifier the phone reports', async () => {
+  answerEverything([
+    {
+      id: 'fixture-phone',
+      phoneName: 'Fixture phone',
+      phoneModel: 'iPhone18,2',
+      phoneModelName: 'iPhone 17 Pro Max',
+      notificationKinds: [],
+      canBeNotified: true,
+      lastSeenAt: null,
+      lastDeliveredAt: null,
+      lastDeliveryError: '',
+    },
+  ])
+  renderAt('/settings/devices')
+  expect(await screen.findByText('iPhone 17 Pro Max · Notifications: all')).toBeTruthy()
+  expect(screen.queryByText(/iPhone18,2/)).toBeNull()
 })
 
 it('opens the setup dialog from ?setup=1 on the Devices path', async () => {

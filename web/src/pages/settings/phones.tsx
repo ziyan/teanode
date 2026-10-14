@@ -16,6 +16,7 @@ type Phone = {
   id: string
   phoneName: string
   phoneModel: string
+  phoneModelName: string
   notificationKinds: string[]
   canBeNotified: boolean
   lastSeenAt?: string | null
@@ -24,7 +25,7 @@ type Phone = {
 }
 
 const PHONE_FIELDS =
-  'id phoneName phoneModel notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError'
+  'id phoneName phoneModel phoneModelName notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError'
 
 // The documents the Phones section of Devices sends, by operation, which TestPhoneParity
 // reads to check the dashboard offers what the command line does.
@@ -109,7 +110,7 @@ export function PhonesPage() {
             phone.notificationKinds.length === 0 || phone.notificationKinds.length === kinds.length
               ? t('phones.notificationsAll')
               : t('phones.notificationsSome', { kinds: phone.notificationKinds.map(kindName).join(', ') })
-          const detail = [phone.phoneModel, phone.canBeNotified ? told : '']
+          const detail = [phone.phoneModelName, phone.canBeNotified ? told : '']
           if (phone.lastDeliveryError) detail.push(phone.lastDeliveryError)
           return (
             <SettingsRow
