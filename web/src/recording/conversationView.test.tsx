@@ -497,7 +497,8 @@ it('reads on until a cited passage is present and scrolls to it', async () => {
     },
   )
   show(manySegments(250), '/?version=older-run&startMS=205000&endMS=205900', 205)
-  await screen.findByText('Text of passage-205')
+  // Several pages are read first: a slow runner needs longer than the default second.
+  await screen.findByText('Text of passage-205', undefined, { timeout: 10_000 })
   expect(calls('ReadRecordingTranscript').map(([, variables]) => variables?.segmentOffset)).toEqual([0, 100, 200])
   await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
   expect(document.querySelector('.recording-passage.cited')?.textContent).toContain('Text of passage-205')

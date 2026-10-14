@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.1] - 2026-10-14
+
+### Changed
+
+- On the iPhone, actions in settings lists look like standard rows, and the sign-in and empty screens use standard buttons. (#467)
+
 ## [0.154.0] - 2026-10-13
 
 ### Added

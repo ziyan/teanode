@@ -59,7 +59,7 @@ struct ConnectView: View {
                         } label: {
                             Text("Sign in").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                         .disabled(isServerEmpty || isConnecting)
@@ -101,7 +101,7 @@ struct ConnectView: View {
                                 Label("Paste link", systemImage: "doc.on.clipboard").frame(maxWidth: .infinity)
                             }
                         }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                         Text("In the dashboard, open Settings, then Devices, and choose Connect a phone.")
@@ -271,14 +271,16 @@ struct ConfirmConnectionSheet: View {
             } label: {
                 Text("Connect").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
             .controlSize(.large)
             Button(role: .cancel) {
                 onAnswer(false)
             } label: {
                 Text("Not this one").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
             .controlSize(.large)
         }
         .padding(24)
