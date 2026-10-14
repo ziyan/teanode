@@ -92,6 +92,19 @@ final class FinanceTaxTests: XCTestCase {
         XCTAssertFalse(form.isW2)
     }
 
+    func testOnlyTheChangedSettingsAreSent() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"SetTaxYearSetting":{"taxYear":2026,"childCount":2,"otherIncomeAmount":"4500.0000"}}}"#)
+        var change = TaxYearSettingChange()
+        change.childCount = 2
+        change.otherIncomeAmount = "4500"
+        let saved = try await connection.setTaxYearSetting(2026, change: change)
+        XCTAssertEqual(saved?.childCount, 2)
+        let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
+        let variables = try XCTUnwrap(sent?["variables"] as? [String: Any])
+        XCTAssertEqual(Set(variables.keys), ["taxYear", "childCount", "otherIncomeAmount"])
+        XCTAssertEqual(variables["otherIncomeAmount"] as? String, "4500")
+    }
+
     func testZeroRowsAreLeftOutExceptWagesAndFederalTax() throws {
         let figures = try JSONDecoder().decode(TaxYearFigures.self, from: Data(#"{"wagesAmount":"0.00","federalIncomeTaxAmount":"0.00","medicareTaxAmount":"0.00"}"#.utf8))
         let rows = figures.rows()

@@ -96,6 +96,7 @@ public struct FinanceTaxForm: Codable, Hashable, Sendable, Identifiable {
         case "1099_int": "1099-INT"
         case "1099_div": "1099-DIV"
         case "1099_b": "1099-B"
+        case "1098": "1098"
         default: "W-2"
         }
     }
@@ -286,6 +287,19 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
         public let capitalLossDeductionAmount: String?
         public let foreignTaxCreditAmount: String?
         public let netInvestmentIncomeTaxAmount: String?
+        /// Investment income counted from the accounts or the gains given,
+        /// until the 1099s come.
+        public let isInvestmentIncomePreviewed: Bool?
+        public let otherIncomeAmount: String?
+        /// The deduction taken: itemized when that is larger.
+        public let deductionAmount: String?
+        public let isItemized: Bool?
+        public let itemizedDeductionAmount: String?
+        public let mortgageInterestAmount: String?
+        public let stateAndLocalTaxDeductionAmount: String?
+        public let charitableContributionAmount: String?
+        public let childTaxCreditAmount: String?
+        public let dependentCareCreditAmount: String?
         public let standardDeductionAmount: String?
         public let taxableIncomeAmount: String?
         public let federalIncomeTaxAmount: String?
@@ -337,6 +351,31 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
     public let taxYearFindings: [Finding?]?
     public let taxYearEstimate: Estimate?
     public let taxYearInvestment: Investment?
+    public let taxYearInvestmentPreview: InvestmentPreview?
+    public let taxYearSetting: TaxYearSetting?
+
+    /// InvestmentPreview is the year's interest and dividends as the linked
+    /// accounts were paid them, projected to December 31.
+    public struct InvestmentPreview: Codable, Hashable, Sendable {
+        public struct AccountIncome: Codable, Hashable, Sendable {
+            public let financeAccountId: String?
+            public let accountName: String?
+            public let incomeKind: String?
+            public let amount: String?
+            public let isTaxAdvantaged: Bool?
+        }
+
+        public let interestAmount: String?
+        public let dividendsAmount: String?
+        public let projectedInterestAmount: String?
+        public let projectedDividendsAmount: String?
+        public let isInterestCounted: Bool?
+        public let isDividendsCounted: Bool?
+        public let taxAdvantagedAmount: String?
+        public let taxYearAccountIncomes: [AccountIncome?]?
+
+        public var accountIncomes: [AccountIncome] { (taxYearAccountIncomes ?? []).compactMap { $0 } }
+    }
 
     /// Investment is the year's investment income from its 1099s, the
     /// household's.
@@ -363,6 +402,56 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
 public struct TaxDocumentAddress: Codable, Hashable, Sendable {
     public let taxDocumentAddress: String?
     public let canReadPdfs: Bool?
+}
+
+/// TaxYearSetting is what a tax year's estimate takes that no document
+/// says.
+public struct TaxYearSetting: Codable, Hashable, Sendable {
+    public let taxYear: Int?
+    public let childCount: Int?
+    public let otherDependentCount: Int?
+    public let dependentCareExpenseAmount: String?
+    public let otherIncomeAmount: String?
+    public let charitableContributionAmount: String?
+    public let propertyTaxAmount: String?
+    public let stateIncomeTaxPaidAmount: String?
+    public let estimatedShortTermGainAmount: String?
+    public let estimatedLongTermGainAmount: String?
+    public let estimatedGainNote: String?
+}
+
+/// TaxYearSettingChange is the fields of a year's settings to change; nil
+/// keeps one as it is.
+public struct TaxYearSettingChange: Sendable {
+    public var childCount: Int?
+    public var otherDependentCount: Int?
+    public var dependentCareExpenseAmount: String?
+    public var otherIncomeAmount: String?
+    public var charitableContributionAmount: String?
+    public var propertyTaxAmount: String?
+    public var stateIncomeTaxPaidAmount: String?
+    public var estimatedShortTermGainAmount: String?
+    public var estimatedLongTermGainAmount: String?
+    public var estimatedGainNote: String?
+    public var isEstimatedGainCleared = false
+
+    public init() {}
+
+    var variables: [String: JSONValue] {
+        var variables: [String: JSONValue] = [:]
+        if let childCount { variables["childCount"] = .number(Double(childCount)) }
+        if let otherDependentCount { variables["otherDependentCount"] = .number(Double(otherDependentCount)) }
+        for (key, value) in [
+            ("dependentCareExpenseAmount", dependentCareExpenseAmount), ("otherIncomeAmount", otherIncomeAmount),
+            ("charitableContributionAmount", charitableContributionAmount), ("propertyTaxAmount", propertyTaxAmount),
+            ("stateIncomeTaxPaidAmount", stateIncomeTaxPaidAmount), ("estimatedShortTermGainAmount", estimatedShortTermGainAmount),
+            ("estimatedLongTermGainAmount", estimatedLongTermGainAmount), ("estimatedGainNote", estimatedGainNote),
+        ] {
+            if let value { variables[key] = .string(value) }
+        }
+        if isEstimatedGainCleared { variables["isEstimatedGainCleared"] = .bool(true) }
+        return variables
+    }
 }
 
 /// TaxFilingStatus is how a return is filed, which the estimate's federal
@@ -447,14 +536,38 @@ extension Documents {
             taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { \(taxYearFiguresFields) }
               projectedFigures { \(taxYearFiguresFields) } }
             taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+            taxYearInvestmentPreview { interestAmount dividendsAmount projectedInterestAmount projectedDividendsAmount
+              isInterestCounted isDividendsCounted taxAdvantagedAmount
+              taxYearAccountIncomes { financeAccountId accountName incomeKind amount isTaxAdvantaged } }
+            taxYearSetting { taxYear childCount otherDependentCount dependentCareExpenseAmount otherIncomeAmount
+              charitableContributionAmount propertyTaxAmount stateIncomeTaxPaidAmount estimatedShortTermGainAmount
+              estimatedLongTermGainAmount estimatedGainNote }
             taxYearInvestment { interestAmount taxExemptInterestAmount ordinaryDividendsAmount qualifiedDividendsAmount
               capitalGainDistributionsAmount shortTermGainAmount longTermGainAmount federalIncomeTaxWithheldAmount
               foreignTaxPaidAmount isCostBasisMissing taxFormIds }
             taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount
               adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount
-              foreignTaxCreditAmount netInvestmentIncomeTaxAmount standardDeductionAmount taxableIncomeAmount
+              foreignTaxCreditAmount netInvestmentIncomeTaxAmount isInvestmentIncomePreviewed otherIncomeAmount deductionAmount
+              isItemized itemizedDeductionAmount mortgageInterestAmount stateAndLocalTaxDeductionAmount
+              charitableContributionAmount childTaxCreditAmount dependentCareCreditAmount standardDeductionAmount taxableIncomeAmount
               federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
               totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
+          }
+        }
+        """
+    public static let setTaxYearSetting = """
+        mutation ($taxYear: Int!, $childCount: Int, $otherDependentCount: Int, $dependentCareExpenseAmount: String,
+          $otherIncomeAmount: String, $charitableContributionAmount: String, $propertyTaxAmount: String,
+          $stateIncomeTaxPaidAmount: String, $estimatedShortTermGainAmount: String, $estimatedLongTermGainAmount: String,
+          $estimatedGainNote: String, $isEstimatedGainCleared: Boolean) {
+          SetTaxYearSetting(taxYear: $taxYear, childCount: $childCount, otherDependentCount: $otherDependentCount,
+            dependentCareExpenseAmount: $dependentCareExpenseAmount, otherIncomeAmount: $otherIncomeAmount,
+            charitableContributionAmount: $charitableContributionAmount, propertyTaxAmount: $propertyTaxAmount,
+            stateIncomeTaxPaidAmount: $stateIncomeTaxPaidAmount, estimatedShortTermGainAmount: $estimatedShortTermGainAmount,
+            estimatedLongTermGainAmount: $estimatedLongTermGainAmount, estimatedGainNote: $estimatedGainNote,
+            isEstimatedGainCleared: $isEstimatedGainCleared) {
+            taxYear childCount otherDependentCount dependentCareExpenseAmount otherIncomeAmount charitableContributionAmount
+            propertyTaxAmount stateIncomeTaxPaidAmount estimatedShortTermGainAmount estimatedLongTermGainAmount estimatedGainNote
           }
         }
         """
@@ -488,6 +601,14 @@ extension Connection {
         var variables: [String: JSONValue] = ["taxYear": .number(Double(year))]
         if let filingStatus { variables["taxFilingStatus"] = .string(filingStatus.rawValue) }
         return try await execute(Documents.taxYear, variables: variables, as: Answer.self).TaxYear
+    }
+
+    /// Changes a year's settings; what the change leaves nil stays.
+    public func setTaxYearSetting(_ taxYear: Int, change: TaxYearSettingChange) async throws -> TaxYearSetting? {
+        struct Answer: Decodable, Sendable { let SetTaxYearSetting: TaxYearSetting? }
+        var variables = change.variables
+        variables["taxYear"] = .number(Double(taxYear))
+        return try await execute(Documents.setTaxYearSetting, variables: variables, as: Answer.self).SetTaxYearSetting
     }
 
     /// The address to mail paystubs and W-2s to, made the first time.

@@ -905,7 +905,7 @@ export type FinanceTaxFormEntry = {
 export type FinanceTaxForm = {
   id: string
   agentAttachmentId: string
-  taxFormKind: 'w2' | '1099_int' | '1099_div' | '1099_b'
+  taxFormKind: 'w2' | '1099_int' | '1099_div' | '1099_b' | '1098'
   taxYear: number
   isCorrected: boolean
   payerName: string
@@ -1057,6 +1057,19 @@ export type TaxYearEstimate = {
   capitalLossDeductionAmount: string
   foreignTaxCreditAmount: string
   netInvestmentIncomeTaxAmount: string
+  // Investment income counted from the accounts or the gains given, until
+  // the 1099s come.
+  isInvestmentIncomePreviewed: boolean
+  otherIncomeAmount: string
+  // The deduction taken, the larger of the standard and the itemized.
+  deductionAmount: string
+  isItemized: boolean
+  itemizedDeductionAmount: string
+  mortgageInterestAmount: string
+  stateAndLocalTaxDeductionAmount: string
+  charitableContributionAmount: string
+  childTaxCreditAmount: string
+  dependentCareCreditAmount: string
   standardDeductionAmount: string
   taxableIncomeAmount: string
   federalIncomeTaxAmount: string
@@ -1086,7 +1099,61 @@ export type TaxYearSummary = {
   taxYearFindings: TaxYearFinding[]
   taxYearEstimate?: TaxYearEstimate | null
   taxYearInvestment?: TaxYearInvestment | null
+  taxYearInvestmentPreview?: TaxYearInvestmentPreview | null
+  taxYearSetting?: TaxYearSetting | null
 }
+
+// The year's interest and dividends as the linked accounts were paid them,
+// projected to December 31; counted where no 1099 of the kind is read.
+export type TaxYearInvestmentPreview = {
+  interestAmount: string
+  dividendsAmount: string
+  projectedInterestAmount: string
+  projectedDividendsAmount: string
+  isInterestCounted: boolean
+  isDividendsCounted: boolean
+  taxAdvantagedAmount: string
+  taxYearAccountIncomes: {
+    financeAccountId: string
+    accountName: string
+    incomeKind: 'interest' | 'dividend'
+    amount: string
+    isTaxAdvantaged: boolean
+  }[]
+}
+
+// What a year's estimate takes that no document says.
+export type TaxYearSetting = {
+  taxYear: number
+  childCount: number
+  otherDependentCount: number
+  dependentCareExpenseAmount: string
+  otherIncomeAmount: string
+  charitableContributionAmount: string
+  propertyTaxAmount: string
+  stateIncomeTaxPaidAmount: string
+  estimatedShortTermGainAmount?: string | null
+  estimatedLongTermGainAmount?: string | null
+  estimatedGainNote: string
+  modifiedAt?: string | null
+}
+
+const TAX_YEAR_SETTING_FIELDS = `taxYear childCount otherDependentCount dependentCareExpenseAmount otherIncomeAmount
+  charitableContributionAmount propertyTaxAmount stateIncomeTaxPaidAmount estimatedShortTermGainAmount
+  estimatedLongTermGainAmount estimatedGainNote modifiedAt`
+
+// SET_TAX_YEAR_SETTING changes a year's settings; what is left out stays.
+export const SET_TAX_YEAR_SETTING = `mutation ($taxYear: Int!, $childCount: Int, $otherDependentCount: Int,
+  $dependentCareExpenseAmount: String, $otherIncomeAmount: String, $charitableContributionAmount: String,
+  $propertyTaxAmount: String, $stateIncomeTaxPaidAmount: String, $estimatedShortTermGainAmount: String,
+  $estimatedLongTermGainAmount: String, $estimatedGainNote: String, $isEstimatedGainCleared: Boolean) {
+  SetTaxYearSetting(taxYear: $taxYear, childCount: $childCount, otherDependentCount: $otherDependentCount,
+    dependentCareExpenseAmount: $dependentCareExpenseAmount, otherIncomeAmount: $otherIncomeAmount,
+    charitableContributionAmount: $charitableContributionAmount, propertyTaxAmount: $propertyTaxAmount,
+    stateIncomeTaxPaidAmount: $stateIncomeTaxPaidAmount, estimatedShortTermGainAmount: $estimatedShortTermGainAmount,
+    estimatedLongTermGainAmount: $estimatedLongTermGainAmount, estimatedGainNote: $estimatedGainNote,
+    isEstimatedGainCleared: $isEstimatedGainCleared) { ${TAX_YEAR_SETTING_FIELDS} }
+}`
 
 // The year's investment income from its 1099s, the household's.
 export type TaxYearInvestment = {
@@ -1118,12 +1185,18 @@ export const TAX_YEAR = `query ($taxYear: Int!) {
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { ${TAX_YEAR_FIGURES_FIELDS} }
       projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} } }
     taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+    taxYearInvestmentPreview { interestAmount dividendsAmount projectedInterestAmount projectedDividendsAmount
+      isInterestCounted isDividendsCounted taxAdvantagedAmount
+      taxYearAccountIncomes { financeAccountId accountName incomeKind amount isTaxAdvantaged } }
+    taxYearSetting { ${TAX_YEAR_SETTING_FIELDS} }
     taxYearInvestment { interestAmount taxExemptInterestAmount ordinaryDividendsAmount qualifiedDividendsAmount
       capitalGainDistributionsAmount shortTermGainAmount longTermGainAmount federalIncomeTaxWithheldAmount
       foreignTaxPaidAmount isCostBasisMissing taxFormIds }
     taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount
       adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount
-      foreignTaxCreditAmount netInvestmentIncomeTaxAmount standardDeductionAmount taxableIncomeAmount
+      foreignTaxCreditAmount netInvestmentIncomeTaxAmount isInvestmentIncomePreviewed otherIncomeAmount deductionAmount
+      isItemized itemizedDeductionAmount mortgageInterestAmount stateAndLocalTaxDeductionAmount
+      charitableContributionAmount childTaxCreditAmount dependentCareCreditAmount standardDeductionAmount taxableIncomeAmount
       federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
       totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
   }
