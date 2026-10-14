@@ -3075,7 +3075,7 @@ private struct AgentProviderForm: View {
                 priceField("Out", text: price.outputText)
                 priceField("Cached", text: price.cacheReadText)
                 priceField("Caching", text: price.cacheWriteText)
-                priceField("Audio input", text: price.audioInputText)
+                priceField("Audio", text: price.audioInputText)
                 Button("Remove", systemImage: "trash", role: .destructive) {
                     draft.modelPrices.removeAll { $0.id == shown.id }
                 }
