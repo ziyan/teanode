@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.4] - 2026-10-14
+
+### Fixed
+
+- On the iPhone, a call's card on the Lock Screen goes away when the call ends. (#491)
+
 ## [0.159.3] - 2026-10-14
 
 ### Fixed
