@@ -71,7 +71,26 @@ final class RecordingConversationModel {
             segments: segments, windowStartMS: timelineView?.hasMoreSegments == true ? (segments.first?.segmentStartMS ?? 0) : 0)
         return RecordingConversation.bubbles(visibleSegments, liveUtterances: liveWords)
     }
-    var speakerCount: Int { RecordingConversation.speakerCount(segments) }
+    var speakerCount: Int { isUnnamedOnly ? speakerCountOfAll : RecordingConversation.speakerCount(segments) }
+    /// Whether only the passages whose speaker nobody has named are read: what is left to label.
+    private(set) var isUnnamedOnly = false
+    /// How many people spoke in the whole recording, kept while the unnamed passages alone are shown.
+    private var speakerCountOfAll = 0
+    /// The latest transcript of a finished recording can be narrowed; a capture or an older version cannot.
+    var canFilterUnnamed: Bool { !isCapture && transcriptRun == nil && citation == nil }
+    /// How many passages are left to name, while only those are shown.
+    var unnamedPassageCount: Int? { isUnnamedOnly ? timelineView?.segmentCount : nil }
+
+    /// Shows only the passages whose speaker nobody has named, or all of them again, from the start.
+    func showUnnamedOnly(_ isOnlyUnnamed: Bool) async {
+        guard canFilterUnnamed, isOnlyUnnamed != isUnnamedOnly else { return }
+        if isOnlyUnnamed { speakerCountOfAll = RecordingConversation.speakerCount(segments) }
+        isUnnamedOnly = isOnlyUnnamed
+        segments = []
+        timelineView = nil
+        isLoaded = false
+        await loadPage(isAdditional: false)
+    }
     var hasMoreSegments: Bool { transcriptView?.hasMoreSegments == true || timelineView?.hasMoreSegments == true }
 
     /// Reads the latest passages of a capture, with the words just heard. A failed read is not shown: the next one, a few seconds
@@ -137,7 +156,9 @@ final class RecordingConversationModel {
                 }
             } else {
                 let page = try await connection.recordingTranscriptTimeline(
-                    recordingId: recordingId, segmentOffset: isAdditional ? segments.count : 0)
+                    recordingId: recordingId, segmentOffset: isAdditional ? segments.count : 0,
+                    // The server reads the whole timeline to find the unnamed passages, so they come in fewer, larger pages.
+                    pageSize: isUnnamedOnly ? 500 : 100, isUnnamedOnly: isUnnamedOnly)
                 if isAdditional, let current = timelineView, current.sourceGeneration != page.sourceGeneration {
                     // A new publication invalidates page offsets; refresh rather than duplicate or skip evidence.
                     await loadPage(isAdditional: false)
@@ -481,6 +502,22 @@ struct RecordingConversationSection: View {
     var body: some View {
         let playingSegmentId = player.isPlaying
             ? model.segments.first { $0.segmentStartMS <= player.timelineMS && player.timelineMS < $0.segmentEndMS }?.id : nil
+        // All the passages, or only those whose speaker nobody has named, to find what is left to label.
+        if model.canFilterUnnamed, model.isUnnamedOnly || !model.segments.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Picker(
+                    "Speakers",
+                    selection: Binding(get: { model.isUnnamedOnly }, set: { isOnly in Task { await model.showUnnamedOnly(isOnly) } })
+                ) {
+                    Text("All").tag(false)
+                    Text("Unnamed").tag(true)
+                }
+                .pickerStyle(.segmented)
+                if let unnamedPassageCount = model.unnamedPassageCount {
+                    Text("Passages left to name: \(unnamedPassageCount)").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
         ForEach(model.bubbles) { bubble in
             // Only the bubble holding the passage playing is told which it is, so the others stay as they are while
             // the playback moves on.
@@ -505,7 +542,11 @@ struct RecordingConversationSection: View {
             }
         }
         if model.isLoaded && model.segments.isEmpty {
-            Text("No completed transcript passages yet").foregroundStyle(.secondary)
+            if model.isUnnamedOnly {
+                Text("Every speaker is named.").foregroundStyle(.secondary)
+            } else {
+                Text("No completed transcript passages yet").foregroundStyle(.secondary)
+            }
         }
     }
 

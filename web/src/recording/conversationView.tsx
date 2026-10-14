@@ -72,7 +72,17 @@ export function RecordingConversation({
   // The transcript is read a hundred passages at a time as the reader scrolls.
   // A citation to a passage further down is not scrolled to until it is read, so
   // pages are read one after another until the passage's offset is among them.
-  const transcript = useTranscriptPages({ recordingId, olderRunId: olderRunId ?? '', userId, reloadToken })
+  // The unnamed speakers alone, for finding what is left to label. It is in the
+  // address, so it stays when the page is reloaded or a passage is named.
+  const canFilterUnnamed = !olderRunId && !isLive
+  const isUnnamedOnly = canFilterUnnamed && parameters.get('speakers') === 'unnamed'
+  const transcript = useTranscriptPages({
+    recordingId,
+    olderRunId: olderRunId ?? '',
+    userId,
+    reloadToken,
+    isUnnamedOnly,
+  })
   const timeline = { data: transcript.timeline, error: transcript.error, loading: transcript.isLoading }
   const { loadMore, loadAll } = transcript
   const loadedCount = transcript.timeline?.segments.length ?? 0
@@ -105,7 +115,10 @@ export function RecordingConversation({
   // stop where the last passage read does until the rest is read.
   const groups = groupConversation(segments, liveUtterances, liveRangeOfPage(segments, true, isLastPage))
   const speakerCount = distinctSpeakerCount(segments)
-  useEffect(() => onSpeakerCount?.(speakerCount), [speakerCount, onSpeakerCount])
+  // Counted from the unnamed passages alone, the header would say too few.
+  useEffect(() => {
+    if (!isUnnamedOnly) onSpeakerCount?.(speakerCount)
+  }, [speakerCount, onSpeakerCount, isUnnamedOnly])
   const citedSegmentId =
     olderRunId && citationOffset.data !== null
       ? segments.find((segment) => overlapsRecordingCitation(segment.segmentStartMS, segment.segmentEndMS, citation))
@@ -459,9 +472,45 @@ export function RecordingConversation({
           </button>
         </div>
       ) : null}
+      {canFilterUnnamed && (isUnnamedOnly || segments.length > 0) ? (
+        <div className="recording-conversation-filter">
+          <div className="segmented" role="group">
+            <button
+              type="button"
+              className={isUnnamedOnly ? 'active' : ''}
+              aria-pressed={isUnnamedOnly}
+              onClick={() =>
+                setParameters((previous) => {
+                  const next = new URLSearchParams(previous)
+                  if (isUnnamedOnly) next.delete('speakers')
+                  else next.set('speakers', 'unnamed')
+                  return next
+                })
+              }
+            >
+              {t('recordings.unnamedOnly')}
+            </button>
+          </div>
+          {isUnnamedOnly && timeline.data ? (
+            <span className="muted">
+              {timeline.data.segmentCount === 1
+                ? t('recordings.unnamedPassageCountOne')
+                : t('recordings.unnamedPassageCount', { passageCount: String(timeline.data.segmentCount) })}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {timeline.loading && !timeline.data ? <Loading /> : null}
       {timeline.data && groups.length === 0 ? (
-        <SettingsEmpty>{t(isLive ? 'recordings.noWordsYet' : 'recordings.noTranscript')}</SettingsEmpty>
+        <SettingsEmpty>
+          {t(
+            isUnnamedOnly
+              ? 'recordings.everySpeakerNamed'
+              : isLive
+                ? 'recordings.noWordsYet'
+                : 'recordings.noTranscript',
+          )}
+        </SettingsEmpty>
       ) : null}
       {isLive && timeline.data?.hasMoreSegments ? (
         <div className="recording-earlier-notice muted">

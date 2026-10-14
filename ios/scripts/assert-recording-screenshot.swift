@@ -20,6 +20,8 @@ let expectedMarkersByScreen: [String: [String]] = [
     "recording-original-playback": ["useaudiopreview", "sharefulloriginal"],
     "recording-original-preview": ["compatibleaudiopreview", "originalunchanged", "useoriginal", "sharefullaudiopreview"],
     "recording-detail": ["layout"],
+    // The same recording narrowed to the passage nobody has named; the title is what every text size shows.
+    "recording-unnamed": ["layout"],
     "recording-capture": ["recording", "stop"],
     // The live words are the newest bubbles, which stay in view at every text size: the last one is still being said.
     "recording-capture-live": ["recording", "stop", "invitation"],

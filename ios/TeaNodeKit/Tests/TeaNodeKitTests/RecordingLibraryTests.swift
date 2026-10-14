@@ -227,6 +227,37 @@ final class RecordingConversationTests: XCTestCase {
         XCTAssertEqual(RecordingConversation.speakerCount(passages), 1)
     }
 
+    func testAPassageOfOnlyFillerDrawsNoBubble() {
+        var filler = segment("s2", start: 1000, speaker: "y", text: "Mm-hmm. Okay.")
+        filler.isFiller = true
+        let passages = [segment("s1", start: 0, speaker: "x", text: "Hello."), filler, segment("s3", start: 2000, speaker: "x", text: "Shall we begin?")]
+        XCTAssertEqual(RecordingConversation.bubbles(passages).map(\.id), ["s1"])
+    }
+
+    func testANamedPersonsWordInAnothersSentenceFoldsButAnAnswerStands() {
+        func at(_ id: String, _ start: Int64, _ end: Int64, _ name: String, _ text: String) -> RecordingTranscriptSegment {
+            RecordingTranscriptSegment(
+                id: id, recordingTranscriptRunId: "run-a", recordingTranscriptionAttemptId: "attempt-a", localSpeakerId: name,
+                segmentStartMS: start, segmentEndMS: end, transcriptText: text, effectiveSpeakerIdentityId: "identity-" + name,
+                effectiveSpeakerName: name, hasUserConfirmedSpeaker: true, isAccountOwner: false)
+        }
+        let bubbles = RecordingConversation.bubbles([
+            at("f1", 0, 3000, "First", "Did the crates come in from the"),
+            at("f2", 3000, 3400, "Second", "Wait,"),
+            at("f3", 3400, 5000, "First", "second dock this morning?"),
+            at("f4", 5000, 5400, "Second", "Yes."),
+            at("f5", 5400, 9000, "First", "Good, then we can start the count."),
+        ])
+        XCTAssertEqual(bubbles.map { $0.segments.map(\.id) }, [["f1", "f2", "f3"], ["f4"], ["f5"]])
+    }
+
+    func testAStopBeforeAClosingQuoteOrAnEllipsisEndsASentence() {
+        for text in ["He said \"go.\"", "We wait…", "Ready (all of it).", "Done?"] {
+            XCTAssertTrue(RecordingConversation.endsSentence(text), text)
+        }
+        XCTAssertFalse(RecordingConversation.endsSentence("Did the crates come in from the"))
+    }
+
     func testSpeakerLettersRunPastTheAlphabetIntoNumbers() {
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 0), "A")
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 25), "Z")

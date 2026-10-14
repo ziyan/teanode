@@ -12806,6 +12806,38 @@
         }
       }
     },
+    "Every speaker is named.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての話者に名前が付いています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有说话人都已命名。"
+          }
+        }
+      }
+    },
+    "Passages left to name: %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を付ける発言の残り：%lld 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待命名的段落：%lld"
+          }
+        }
+      }
+    },
     "Every administrative change: who made it, from where, and the row before and after. What people do in their own mailboxes is not recorded.": {
       "localizations": {
         "ja": {

@@ -4,12 +4,19 @@ import { recordingOperation, type TranscriptSegment, type TranscriptTimeline, ty
 // How many passages are read at a time as the reader scrolls.
 export const TRANSCRIPT_PAGE_SIZE = 100
 
+// How many of the unnamed passages are read at a time: the server reads the
+// whole timeline to find them, so they come in fewer, larger pages.
+export const UNNAMED_PAGE_SIZE = 500
+
 // readTranscriptPage reads the passages from an offset: the latest transcript of
 // the recording, or one earlier version of it that a citation points at.
+// isUnnamedOnly reads only the passages whose speaker nobody has named, and
+// counts and pages through those alone.
 export async function readTranscriptPage(
   recordingId: string,
   olderRunId: string,
   segmentOffset: number,
+  isUnnamedOnly = false,
 ): Promise<TranscriptTimeline> {
   if (olderRunId) {
     const view = await recordingOperation<TranscriptView>('ReadRecordingTranscript', {
@@ -22,7 +29,8 @@ export async function readTranscriptPage(
   return recordingOperation<TranscriptTimeline>('ReadRecordingTranscriptTimeline', {
     recordingId,
     segmentOffset,
-    pageSize: TRANSCRIPT_PAGE_SIZE,
+    pageSize: isUnnamedOnly ? UNNAMED_PAGE_SIZE : TRANSCRIPT_PAGE_SIZE,
+    ...(isUnnamedOnly ? { isUnnamedOnly: true } : {}),
   })
 }
 
@@ -44,11 +52,13 @@ export function useTranscriptPages({
   olderRunId,
   userId,
   reloadToken,
+  isUnnamedOnly = false,
 }: {
   recordingId: string
   olderRunId: string
   userId: string
   reloadToken: number
+  isUnnamedOnly?: boolean
 }) {
   const [timeline, setTimeline] = useState<TranscriptTimeline | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -65,7 +75,7 @@ export function useTranscriptPages({
   }
 
   useEffect(() => {
-    const key = `${recordingId}/${olderRunId}/${userId}`
+    const key = `${recordingId}/${olderRunId}/${userId}/${isUnnamedOnly}`
     const isSameTranscript = lastKey.current === key
     lastKey.current = key
     const mine = ++generation.current
@@ -80,7 +90,7 @@ export function useTranscriptPages({
         let result: TranscriptTimeline | null = null
         let segments: TranscriptSegment[] = []
         do {
-          const page = await readTranscriptPage(recordingId, olderRunId, segments.length)
+          const page = await readTranscriptPage(recordingId, olderRunId, segments.length, isUnnamedOnly)
           if (mine !== generation.current) return
           const readCount = segments.length
           segments = appendSegments(segments, page.segments)
@@ -103,7 +113,7 @@ export function useTranscriptPages({
       readCounter.current++
     }
     // The token and the transcript's identity are what make a new read.
-  }, [recordingId, olderRunId, userId, reloadToken])
+  }, [recordingId, olderRunId, userId, reloadToken, isUnnamedOnly])
 
   // loadMore reads the page after the last passage read. It does nothing while
   // another page is being read or when the transcript has no more.
@@ -114,7 +124,7 @@ export function useTranscriptPages({
     isLoadingMore.current = true
     setIsLoading(true)
     try {
-      const page = await readTranscriptPage(recordingId, olderRunId, current.segments.length)
+      const page = await readTranscriptPage(recordingId, olderRunId, current.segments.length, isUnnamedOnly)
       if (mine !== generation.current) return
       const segments = appendSegments(current.segments, page.segments)
       publish({
@@ -131,7 +141,7 @@ export function useTranscriptPages({
         setIsLoading(false)
       }
     }
-  }, [recordingId, olderRunId])
+  }, [recordingId, olderRunId, isUnnamedOnly])
 
   // loadAll reads every page that is left, for the reader who asks for the end.
   const loadAll = useCallback(async () => {

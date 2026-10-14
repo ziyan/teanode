@@ -251,3 +251,86 @@ it('draws no bubble for a passage with no words', () => {
     distinctSpeakerCount([segmentFixture({}), segmentFixture({ localSpeakerId: 'local-two', transcriptText: '' })]),
   ).toBe(1)
 })
+
+it('draws no bubble for a passage of only filler', () => {
+  const groups = groupConversation([
+    segmentFixture({ id: 'a1', segmentStartMS: 1000 }),
+    segmentFixture({
+      id: 'filler',
+      localSpeakerId: 'local-two',
+      segmentStartMS: 5000,
+      transcriptText: 'Mm-hmm. Okay.',
+      isFiller: true,
+    }),
+    segmentFixture({ id: 'a2', segmentStartMS: 12000 }),
+  ])
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['a1', 'a2']])
+})
+
+it("folds a named person's word thrown into the middle of another's sentence", () => {
+  const named = (name: string) => ({
+    hasUserConfirmedSpeaker: true,
+    effectiveSpeakerIdentityId: `identity-${name}`,
+    effectiveSpeakerName: name,
+  })
+  const groups = groupConversation([
+    segmentFixture({
+      id: 'f1',
+      ...named('First'),
+      segmentStartMS: 0,
+      segmentEndMS: 3000,
+      transcriptText: 'Did the crates come in from the',
+    }),
+    segmentFixture({ id: 'f2', ...named('Second'), segmentStartMS: 3000, segmentEndMS: 3400, transcriptText: 'Wait,' }),
+    segmentFixture({
+      id: 'f3',
+      ...named('First'),
+      segmentStartMS: 3400,
+      segmentEndMS: 5000,
+      transcriptText: 'second dock this morning?',
+    }),
+    segmentFixture({ id: 'f4', ...named('Second'), segmentStartMS: 5000, segmentEndMS: 5400, transcriptText: 'Yes.' }),
+    segmentFixture({
+      id: 'f5',
+      ...named('First'),
+      segmentStartMS: 5400,
+      segmentEndMS: 9000,
+      transcriptText: 'Good, then we can start the count.',
+    }),
+  ])
+  // The word thrown into an unfinished sentence stays in it; the answer to a
+  // finished question stays an answer.
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([
+    ['f1', 'f2', 'f3'],
+    ['f4'],
+    ['f5'],
+  ])
+})
+
+it('takes a stop before a closing quote or an ellipsis as the end of a sentence', () => {
+  const named = (name: string) => ({
+    hasUserConfirmedSpeaker: true,
+    effectiveSpeakerIdentityId: `identity-${name}`,
+    effectiveSpeakerName: name,
+  })
+  for (const ending of ['He said "go."', 'We wait…', 'Ready (all of it).']) {
+    const groups = groupConversation([
+      segmentFixture({ id: 'g1', ...named('First'), segmentStartMS: 0, segmentEndMS: 3000, transcriptText: ending }),
+      segmentFixture({
+        id: 'g2',
+        ...named('Second'),
+        segmentStartMS: 3000,
+        segmentEndMS: 3400,
+        transcriptText: 'Yes.',
+      }),
+      segmentFixture({
+        id: 'g3',
+        ...named('First'),
+        segmentStartMS: 3400,
+        segmentEndMS: 6000,
+        transcriptText: 'Then the count starts.',
+      }),
+    ])
+    expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['g1'], ['g2'], ['g3']])
+  }
+})

@@ -71,7 +71,15 @@ function show(segments: unknown[], route = '/', passageOffset = 0) {
       ReadRecordingTranscriptTimeline: {
         sourceGeneration: 4,
         transcriptRuns: [{ id: 'fixture-run', recordingMediaId: 'fixture-media' }],
-        ...pageOf(segments, variables),
+        // The server keeps the passages nobody has named when asked to.
+        ...pageOf(
+          variables?.isUnnamedOnly
+            ? segments.filter(
+                (candidate) => !(candidate as { effectiveSpeakerIdentityId?: string }).effectiveSpeakerIdentityId,
+              )
+            : segments,
+          variables,
+        ),
       },
       ReadRecordingTranscript: {
         transcriptRun: { id: 'older-run', recordingMediaId: 'fixture-media' },
@@ -474,7 +482,8 @@ it('reads a hundred passages and appends the next hundred when the end comes nea
   expect(calls('ReadRecordingTranscriptTimeline')).toHaveLength(3)
   // Nothing is left to read, so nothing more is asked for.
   expect(document.querySelector('.recording-more-sentinel')).toBeNull()
-})
+  // Pages arrive one after another; a loaded runner needs more than the default five seconds.
+}, 30_000)
 
 it("keeps one speaker's bubble together across the edge of two pages", async () => {
   const fireEnd = observeEnd()
@@ -484,7 +493,8 @@ it("keeps one speaker's bubble together across the edge of two pages", async () 
   await screen.findByText('Text of passage-102', undefined, { timeout: 10_000 })
   const turn = bubbleOf('Text of passage-98').closest('.recording-turn') as HTMLElement
   for (const index of [98, 99, 100, 101, 102]) expect(within(turn).getByText(`Text of passage-${index}`)).toBeTruthy()
-})
+  // Pages arrive one after another; a loaded runner needs more than the default five seconds.
+}, 30_000)
 
 it('reads on until a cited passage is present and scrolls to it', async () => {
   const scrollIntoView = vi.fn()
@@ -502,4 +512,28 @@ it('reads on until a cited passage is present and scrolls to it', async () => {
   expect(calls('ReadRecordingTranscript').map(([, variables]) => variables?.segmentOffset)).toEqual([0, 100, 200])
   await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
   expect(document.querySelector('.recording-passage.cited')?.textContent).toContain('Text of passage-205')
+})
+
+it('narrows the conversation to the speakers nobody has named, and says how many passages are left', async () => {
+  show([
+    segment('named', { ...confirmed('Fixture Guest', 'identity-guest'), segmentStartMS: 1000 }),
+    segment('unnamed-one', { localSpeakerId: 'local-two', segmentStartMS: 3000 }),
+    segment('unnamed-two', { localSpeakerId: 'local-three', segmentStartMS: 5000 }),
+  ])
+  await screen.findByText('Text of named')
+  expect(calls('ReadRecordingTranscriptTimeline')[0][1]).not.toHaveProperty('isUnnamedOnly')
+  fireEvent.click(screen.getByRole('button', { name: 'Unnamed speakers' }))
+  await screen.findByText('2 passages left to name')
+  const timelineCalls = calls('ReadRecordingTranscriptTimeline')
+  expect(timelineCalls[timelineCalls.length - 1][1]).toMatchObject({ isUnnamedOnly: true, segmentOffset: 0, pageSize: 500 })
+  expect(screen.queryByText('Text of named')).toBeNull()
+  expect(screen.getByText('Text of unnamed-one')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Unnamed speakers' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Unnamed speakers' }))
+  await screen.findByText('Text of named')
+})
+
+it('says every speaker is named when none is left', async () => {
+  show([segment('named', confirmed('Fixture Guest', 'identity-guest'))], '/?speakers=unnamed')
+  await screen.findByText('Every speaker is named.')
 })

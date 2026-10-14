@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -11,6 +12,10 @@ type ReadRecordingTranscriptTimelineArguments struct {
 	RecordingID   string `json:"recordingId"`
 	SegmentOffset int    `json:"segmentOffset"`
 	PageSize      int    `json:"pageSize"`
+	// IsUnnamedOnly reads only the passages whose speaker nobody has named
+	// (no confirmed name, no voice sample matched): what is left to label.
+	// The offset and the count are then of those passages alone.
+	IsUnnamedOnly *bool `json:"isUnnamedOnly" graphapi:"nullable"`
 }
 
 // RecordingTranscriptTimelineView retains original and immutable version provenance.
@@ -39,22 +44,40 @@ func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, argument
 	if err != nil {
 		return nil, translateError(err)
 	}
-	segments, transcriptRuns, segmentCount, err := transaction.ReadRecordingTranscriptTimelinePage(owner.ID, source.ID, arguments.SegmentOffset, arguments.PageSize)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := transaction.ProjectRecordingTranscriptTextCorrections(owner.ID, segments); err != nil {
-		return nil, translateError(err)
-	}
-	if err := transaction.ProjectRecordingSpeakerCorrections(owner.ID, segments); err != nil {
-		return nil, translateError(err)
+	isUnnamedOnly := arguments.IsUnnamedOnly != nil && *arguments.IsUnnamedOnly
+	var segments []*models.RecordingTranscriptSegment
+	var transcriptRuns []*models.RecordingTranscriptRun
+	var segmentCount int64
+	if isUnnamedOnly {
+		// The whole timeline is read for each page of unnamed passages, so a
+		// page may be larger: the list is usually read in one or two.
+		if arguments.SegmentOffset < 0 || arguments.PageSize < 1 || arguments.PageSize > 1000 {
+			return nil, translateError(db.ErrInvalidArguments)
+		}
+		var unnamed []*models.RecordingTranscriptSegment
+		if unnamed, transcriptRuns, err = transaction.ReadUnnamedRecordingTranscriptSegments(owner.ID, source.ID); err != nil {
+			return nil, translateError(err)
+		}
+		segmentCount = int64(len(unnamed))
+		start := min(arguments.SegmentOffset, len(unnamed))
+		segments = unnamed[start:min(start+arguments.PageSize, len(unnamed))]
+	} else {
+		if segments, transcriptRuns, segmentCount, err = transaction.ReadRecordingTranscriptTimelinePage(owner.ID, source.ID, arguments.SegmentOffset, arguments.PageSize); err != nil {
+			return nil, translateError(err)
+		}
+		if err := transaction.ProjectRecordingTranscriptTextCorrections(owner.ID, segments); err != nil {
+			return nil, translateError(err)
+		}
+		if err := transaction.ProjectRecordingSpeakerCorrections(owner.ID, segments); err != nil {
+			return nil, translateError(err)
+		}
 	}
 	temporarySpeakers, err := transaction.ListRecordingTemporarySpeakers(owner.ID, source.ID)
 	if err != nil {
 		return nil, translateError(err)
 	}
 	liveUtterances := []*models.RecordingLiveUtterance{}
-	if arguments.SegmentOffset == 0 {
+	if arguments.SegmentOffset == 0 && !isUnnamedOnly {
 		if liveUtterances, err = transaction.ListRecordingLiveUtterances(owner.ID, source.ID); err != nil {
 			return nil, translateError(err)
 		}

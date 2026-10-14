@@ -45,12 +45,17 @@ public enum RecordingConversation {
                     isLive: first.isLiveUtterance))
             currentSegments = []
         }
-        for segment in passages {
+        for (passageIndex, segment) in passages.enumerated() {
             var key = speakerKey(segment)
-            // A word or two the diarization gave to a speaker nobody has named would otherwise become a bubble of its own, and
-            // two such speakers answering in turn at the same second make a bubble for each word: it stays in the bubble that
-            // is being built.
-            if let currentKey, key != currentKey, isBackchannel(segment) { key = currentKey }
+            // A word or two the diarization split off would otherwise become a bubble of its own, and two speakers answering in
+            // turn at the same second make a bubble for each word: it stays in the bubble that is being built. A named person's
+            // few words stand as their answer, unless they came in the middle of someone's sentence (it has not ended) and that
+            // person goes straight on.
+            if let currentKey, key != currentKey, isBackchannel(segment) {
+                let following = passageIndex + 1 < passages.count ? passages[passageIndex + 1] : nil
+                let isMidSentence = !(currentSegments.last.map { endsSentence($0.displayedTranscriptText) } ?? true)
+                if segment.confirmedSpeakerName == nil || (isMidSentence && following.map(speakerKey) == currentKey) { key = currentKey }
+            }
             if key.hasPrefix("local:"), ordinalByKey[key] == nil {
                 ordinalByKey[key] = ordinalByKey.count
             }
@@ -62,16 +67,24 @@ public enum RecordingConversation {
         return bubbles
     }
 
-    /// How many words and how long a passage of an unnamed speaker can be and still be taken as a word thrown in (diarization splits a few words spoken together into passages under a second), which stays in the
+    /// How many words and how long a passage can be and still be taken as a word thrown in (diarization splits a few words spoken together into passages under a second), which stays in the
     /// bubble it came in the middle of.
     static let backchannelWordsMaximum = 3
     static let backchannelMillisecondsMaximum: Int64 = 800
 
-    /// Whether this is a passage of a speaker nobody has named that is only a few words and a moment long.
+    /// Whether this is a passage that is only a few words and a moment long.
     static func isBackchannel(_ segment: RecordingTranscriptSegment) -> Bool {
-        guard !segment.isLiveUtterance, segment.confirmedSpeakerName == nil, segment.effectiveSpeakerIdentityId?.isEmpty ?? true else { return false }
+        guard !segment.isLiveUtterance else { return false }
         let wordCount = segment.displayedTranscriptText.split(whereSeparator: \.isWhitespace).count
         return wordCount <= backchannelWordsMaximum && segment.segmentEndMS - segment.segmentStartMS <= backchannelMillisecondsMaximum
+    }
+
+    /// Whether a passage's words end a sentence.
+    static func endsSentence(_ text: String) -> Bool {
+        // A closing quote or bracket after the stop still ends the sentence.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'”’»」』)]）"))
+        guard let last = trimmed.last else { return true }
+        return ".?!。？！…‥".contains(last)
     }
 
     /// How many people spoke, counting a confirmed person once however many requests they spoke in.
@@ -79,9 +92,10 @@ public enum RecordingConversation {
         Set(segments.filter(hasWords).map(speakerKey)).count
     }
 
-    /// A passage with no words (a breath or a click a provider gave its own time) is not drawn: it would be an empty bubble.
+    /// A passage with no words (a breath or a click a provider gave its own time) is not drawn: it would be an empty bubble. Nor
+    /// is one of only filler ("Mm-hmm. Okay."), which the server marks: it says nothing a reader needs.
     static func hasWords(_ segment: RecordingTranscriptSegment) -> Bool {
-        !segment.displayedTranscriptText.allSatisfy(\.isWhitespace)
+        segment.isFiller != true && !segment.displayedTranscriptText.allSatisfy(\.isWhitespace)
     }
 
     /// "A" for the first unconfirmed speaker, then "B", and so on; past "Z" the number.
