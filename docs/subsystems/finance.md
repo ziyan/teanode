@@ -648,6 +648,85 @@ server cannot read PDFs. `agent.ReadAttachmentText` reads a stored file's
 text on demand from storage, for files whose text is not kept in the
 database.
 
+## Paystubs and W-2s
+
+A paystub is one paycheck's statement: what was earned, the taxes withheld
+and the deductions, this period and year to date. A W-2 is an employer's
+statement of a year's wages and taxes. Both are read out of a file the
+person hands in, a PDF or a photo, and kept to get ready for a tax return;
+the plan is `docs/planning/finance-tax-documents-execplan.md`.
+
+Every document is an upload (`agent_attachment`) marked `is_tax_document`.
+An upload made with `?isTaxDocument=true` never keeps its text, and marking
+one later (a file sent in a conversation, then read as a paystub) forgets
+the text kept of it: the text holds the person's taxpayer number. A marked
+upload is kept from the sweep of unclaimed uploads and is detached from a conversation that
+is deleted, like a receipt's file. A message is read by copying each PDF
+and picture it carries into such an upload (`CopyMailTaxDocuments`), so
+the original file is always there to open beside what was read. A marked
+upload nothing was read out of goes with the sweep after 30 days
+(`db.TaxDocumentUnreadRetention`).
+
+The `tax_document` job (`internal/agent/tax_document_job.go`, prompt
+`read_tax_document.txt`) reads the file out of storage: a PDF's text, or
+its first four pages as pictures when it has none, or the picture. Before
+the model sees text, every number shaped like a taxpayer number
+(`123-45-6789`, `123 45 6789`, nine digits standing alone) is masked to its
+last four digits (`finance.MaskTaxpayerNumbers`). The model says which
+document it is (`paystub`, `w2`, or `none` with why) and reads it into the
+shape `RecordPaystub` or `RecordTaxForm` takes, the operations the
+dashboard, the command line and the tool use too. Reading an upload again
+replaces what was read out of it, and reading it as the other kind deletes
+the first. Only the last four digits of a taxpayer number are stored
+(`employee_tax_id_mask`, `recipient_tax_id_mask`), and every text field
+written is refused when it holds a number shaped like one; an employer's
+identification number is a business's and is kept as printed.
+
+A paystub is stored line by line as printed (`agent_finance_paystub`,
+`agent_finance_paystub_line`): each earning, each tax with its kind
+(`federal_income`, `social_security`, `medicare`, `medicare_additional`,
+`state_income`, `local_income`, `state_disability`, `other`), its state or
+locality and the wages it was figured on when printed, and each deduction
+with its kind (`retirement_traditional`, `retirement_roth`, `hsa`,
+`health_premium`, `fsa_health`, `fsa_dependent_care`, `commuter`,
+`insurance`, `other`) and the employer's part beside the employee's. Lines of
+hours only are not kept. `finance.CheckPaystub` says it is `balanced` when
+gross pay less the taxes and the employee's deductions is take-home pay and
+the earnings, taxes and deductions come to their printed totals; otherwise
+it is `unbalanced` with the difference, refused unless the person says to
+record it (the job, with nobody to ask, keeps it marked).
+
+A tax form (`agent_finance_tax_form`, kind `w2` for now) keeps its boxes as
+rows (`agent_finance_tax_form_entry`): box 12's letter, box 14's label, the
+state of boxes 15 to 17, the locality of 18 to 20 and box 13's checkboxes
+are the box's qualifier. `finance.TaxFormFindings` works out, each time a
+form is read, what it says about itself, within a dollar since payroll
+rounds each paycheck: Social Security tax is 6.2% of boxes 3 and 7, those
+wages are within the year's wage base (a table by year in
+`internal/finance/tax_form.go`; a year not in it skips the check), and
+Medicare tax is 1.45% of box 5 plus 0.9% of what it holds above 200,000.
+
+`TaxYear` (`finance.SummarizeTaxYear`) puts a year together from the
+paystubs paid in it and the W-2s for it, per person and employer (told
+apart by name, case, punctuation and suffixes such as Inc or LLC aside):
+the W-2's figures when there is one, the latest corrected one first, else
+the latest paystub's year to date, with a projection to December 31 at the
+latest paystub's amounts and the pay cadence (the median gap between pay
+dates), Social Security stopping at the wage base. A paystub's federal
+taxable wages are box 1, its Social Security and Medicare wages boxes 3 and
+5, additional Medicare goes into box 6, a traditional retirement deduction
+is box 12 D, an HSA's employee and employer parts box 12 W, and dependent
+care box 10. When there are both, each W-2 box is set beside the paystubs'
+figure (box 12 DD is left out: the W-2 counts medical coverage only, while
+a paystub's premiums often include dental and vision). Findings point out
+a paystub that does not follow on from the one before it (its year to date
+is not the earlier one's plus this period), a gap of more than one and a
+half pay periods, two copies of one paystub, a W-2 not yet in once the year
+is over, a W-2 that differs from the year's last paystub, and Social
+Security withheld beyond the year's maximum across several employers, which
+comes back as a credit on the return. These are what was earned and
+withheld, not the tax owed.
+
 ## Mirrored copies
 
 Some providers report one charge on every account of a connection: an
@@ -1233,10 +1312,12 @@ stay in the transcript and go to the model provider; `link_simplefin` and
 alone: deleting an account of imported statements, which the tool's
 `delete_statement_account` only says where to do. The tool's
 `import_statement` takes a message (`mailbox_item_id`) in a mailbox the
-person granted the agent, as `mail_read` reads, and never an uploaded file,
-whose id the model is not shown; `import_transactions` takes the rows the
-agent read off pictures, with the rows' and totals' fields in snake case
-like every argument.
+person granted the agent, as `mail_read` reads, and never an uploaded file;
+`import_transactions` takes the rows the agent read off pictures, with the
+rows' and totals' fields in snake case like every argument. A file handed
+over in a conversation is named to the model with its
+`agent_attachment_id`, which `record_receipt` and `read_tax_document`
+take; the server checks it is the person's.
 
 ## In the dashboard
 

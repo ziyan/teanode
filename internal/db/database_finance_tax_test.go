@@ -162,6 +162,41 @@ func TestFinanceTaxFormsTakeTheirUploadsPlace(t *testing.T) {
 	})
 }
 
+// A file handed in as a tax document that nothing was read out of goes
+// with the sweep once TaxDocumentUnreadRetention has passed; one a paystub
+// was read out of stays.
+func TestUnreadTaxDocumentIsSweptAfterItsRetention(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "robin")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		unread, read := createTaxUpload(t, tx, fixture.agentId, "card.png"), createTaxUpload(t, tx, fixture.agentId, "stub.pdf")
+		if _, err := tx.PutFinancePaystub(inventedTaxPaystub(fixture.agentId, read.ID, "2026-03-06")); err != nil {
+			t.Fatalf("PutFinancePaystub: %s", err)
+		}
+		isSwept := func(when time.Time, attachmentId string) bool {
+			orphans, err := tx.ListOrphanAgentAttachments(when)
+			if err != nil {
+				t.Fatalf("ListOrphanAgentAttachments: %s", err)
+			}
+			for _, orphan := range orphans {
+				if orphan.ID == attachmentId {
+					return true
+				}
+			}
+			return false
+		}
+		if isSwept(time.Now().Add(time.Hour), unread.ID) {
+			t.Fatal("an unread tax document is kept while it may still be read")
+		}
+		later := time.Now().Add(db.TaxDocumentUnreadRetention + time.Hour)
+		if !isSwept(later, unread.ID) || isSwept(later, read.ID) {
+			t.Fatal("after its retention an unread tax document goes, and one with a paystub stays")
+		}
+	})
+}
+
 // An upload handed in as a tax document forgets the text kept of it.
 func TestMarkAgentAttachmentTaxDocumentForgetsItsText(t *testing.T) {
 	t.Parallel()

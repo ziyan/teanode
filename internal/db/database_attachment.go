@@ -30,7 +30,8 @@ type AttachmentOperation interface {
 	// finance receipt was read from is not an orphan: the receipt holds
 	// it. Nor is one uploaded to a finance transaction as its receipt,
 	// waiting to be read, while that finance transaction exists, nor one
-	// handed in as a paystub or a tax form.
+	// handed in as a paystub or a tax form, until TaxDocumentUnreadRetention
+	// has passed with nothing read out of it.
 	ListOrphanAgentAttachments(before time.Time) ([]*models.AgentAttachment, error)
 
 	// DetachReceiptAttachments takes a conversation's files that a finance
@@ -52,6 +53,11 @@ type AttachmentOperation interface {
 	// of it. ErrNotFound when the agent has no such upload.
 	MarkAgentAttachmentTaxDocument(agentId, attachmentId string) error
 }
+
+// TaxDocumentUnreadRetention is how long a file handed in as a paystub or
+// a tax form is kept when nothing was read out of it: time enough for the
+// reading job's retries and for the person to notice and read it again.
+const TaxDocumentUnreadRetention = 30 * 24 * time.Hour
 
 type agentAttachmentModel struct {
 	ID             string    `gorm:"column:id;primaryKey"`
@@ -161,9 +167,14 @@ func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models
 	// The finance transaction id is set null when its finance transaction
 	// is deleted, so a set one names a charge that still exists.
 	// A tax document is kept while it waits to be read, and after, by the
-	// paystub or tax form read out of it.
-	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL AND NOT "is_tax_document"
-		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before).
+	// paystub or tax form read out of it; one nothing was read out of in
+	// TaxDocumentUnreadRetention (not a paystub or a W-2 after all, or never
+	// readable) goes, since it holds the person's taxpayer number.
+	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL
+		AND (NOT "is_tax_document" OR ("created_at" < ?
+			AND NOT EXISTS (SELECT 1 FROM "agent_finance_paystub" WHERE "agent_attachment_id" = "agent_attachment"."id")
+			AND NOT EXISTS (SELECT 1 FROM "agent_finance_tax_form" WHERE "agent_attachment_id" = "agent_attachment"."id")))
+		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before, before.Add(-TaxDocumentUnreadRetention)).
 		Limit(500).Find(&found).Error; err != nil {
 		return nil, err
 	}
