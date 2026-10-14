@@ -39,6 +39,8 @@ export interface TranscriptSegment {
   isAccountOwner?: boolean
   // temporarySpeakerLabel ("Speaker 1") is a speaker of a capture in progress that nobody has named yet.
   temporarySpeakerLabel?: string
+  // mergedTemporarySpeakerLabel is this passage's own label when it was found to be the voice of another speaker and reads as that one; the person separates from it.
+  mergedTemporarySpeakerLabel?: string
   // A passage of only filler ("Mm-hmm. Okay."), which the conversation leaves out.
   isFiller?: boolean
 }

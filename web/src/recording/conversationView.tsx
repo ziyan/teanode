@@ -276,6 +276,33 @@ export function RecordingConversation({
     onChanged()
   }
 
+  // The name a bubble shows over it: the confirmed name, or the speaker's
+  // label said in the reader's language, or a letter.
+  const shownSpeakerLabel = (group: ConversationGroup) => {
+    const temporaryNumber = group.temporarySpeakerLabel ? temporarySpeakerNumber(group.temporarySpeakerLabel) : null
+    return (
+      group.speakerName ??
+      (group.temporarySpeakerLabel
+        ? temporaryNumber
+          ? t('recordings.temporarySpeakerLabel', { speakerNumber: temporaryNumber })
+          : group.temporarySpeakerLabel
+        : t('recordings.speakerLabel', { speakerLetter: group.speakerLetter }))
+    )
+  }
+
+  // separateSpeaker gives back the labels that were found to be the voice of
+  // the speaker this bubble shows: each reads as its own speaker again.
+  const separateSpeaker = async (mergedLabels: string[]) => {
+    try {
+      for (const speakerLabel of mergedLabels)
+        await recordingOperation('SeparateRecordingTemporarySpeaker', { recordingId, speakerLabel })
+      toast.done(t('recordingProcessing.saved'))
+    } catch (caught) {
+      toast.failure(caught, t('recordingProcessing.saved'))
+    }
+    onChanged()
+  }
+
   // What can be done to a bubble, the same set in its corner under a mouse
   // and in the pill a tap opens on a touch screen, as the agent's messages
   // have: play it, copy it, and, unless this is a version read for its
@@ -376,6 +403,18 @@ export function RecordingConversation({
           onAct: () => void setOwnership(firstSegment),
         },
       )
+    // A passage whose label was found to be another speaker's voice can be
+    // given back its own label.
+    const mergedLabels = [
+      ...new Set(group.segments.map((segment) => segment.mergedTemporarySpeakerLabel).filter(Boolean)),
+    ] as string[]
+    if (!isReadOnly && mergedLabels.length > 0)
+      actions.push({
+        actionKey: 'separate',
+        label: t('recordings.separateSpeaker', { speakerName: shownSpeakerLabel(group) }),
+        icon: <PeopleIcon size={16} />,
+        onAct: () => void separateSpeaker(mergedLabels),
+      })
     return actions
   }
 
@@ -392,14 +431,7 @@ export function RecordingConversation({
           </Tooltip>
         </div>
       )
-    const temporaryNumber = group.temporarySpeakerLabel ? temporarySpeakerNumber(group.temporarySpeakerLabel) : null
-    const speakerLabel =
-      group.speakerName ??
-      (group.temporarySpeakerLabel
-        ? temporaryNumber
-          ? t('recordings.temporarySpeakerLabel', { speakerNumber: temporaryNumber })
-          : group.temporarySpeakerLabel
-        : t('recordings.speakerLabel', { speakerLetter: group.speakerLetter }))
+    const speakerLabel = shownSpeakerLabel(group)
     const actions = bubbleActions(group)
     // Play and Copy are the swipe's own buttons in the corner; the rest follow.
     const cornerActions = actions.filter((action) => action.actionKey !== 'play' && action.actionKey !== 'copy')
