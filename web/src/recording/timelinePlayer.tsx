@@ -236,7 +236,6 @@ function RecordingPieceMedia({
     <>
       {isUsingPreview && playback ? (
         <>
-          {isActive ? <p className="muted">{t('recordings.compatibleAudio')}</p> : null}
           <audio
             ref={registerPreview}
             hidden
@@ -276,28 +275,19 @@ function RecordingPieceMedia({
           onError={(event) => originalError(event.currentTarget)}
         />
       )}
-      {isActive && playback ? (
+      {isActive && playback && isUsingPreview && !hasUnsupportedOriginal ? (
         <div className="page-actions">
-          {isUsingPreview && !hasUnsupportedOriginal ? (
-            <button
-              type="button"
-              disabled={isPreparing}
-              onClick={() => {
-                passagePlayback.stop()
-                setIsUsingPreview(false)
-                setPlaybackError(null)
-              }}
-            >
-              {t('recordings.useOriginal')}
-            </button>
-          ) : null}
-          <a
-            className="button"
-            href={playback.playbackPath}
-            download={`${media.originalFilename.replace(/\.[^.]+$/, '')}.preview.wav`}
+          <button
+            type="button"
+            disabled={isPreparing}
+            onClick={() => {
+              passagePlayback.stop()
+              setIsUsingPreview(false)
+              setPlaybackError(null)
+            }}
           >
-            {t('recordings.downloadPreview')}
-          </a>
+            {t('recordings.useOriginal')}
+          </button>
         </div>
       ) : null}
       {isActive && isOriginalUnplayable && (!isUsingPreview || playbackError) ? (
