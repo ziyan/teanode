@@ -4,6 +4,10 @@ import { recordingOperation, type TranscriptSegment, type TranscriptTimeline, ty
 // How many passages are read at a time as the reader scrolls.
 export const TRANSCRIPT_PAGE_SIZE = 100
 
+// How many of the unnamed passages are read at a time: the server reads the
+// whole timeline to find them, so they come in fewer, larger pages.
+export const UNNAMED_PAGE_SIZE = 500
+
 // readTranscriptPage reads the passages from an offset: the latest transcript of
 // the recording, or one earlier version of it that a citation points at.
 // isUnnamedOnly reads only the passages whose speaker nobody has named, and
@@ -25,7 +29,7 @@ export async function readTranscriptPage(
   return recordingOperation<TranscriptTimeline>('ReadRecordingTranscriptTimeline', {
     recordingId,
     segmentOffset,
-    pageSize: TRANSCRIPT_PAGE_SIZE,
+    pageSize: isUnnamedOnly ? UNNAMED_PAGE_SIZE : TRANSCRIPT_PAGE_SIZE,
     ...(isUnnamedOnly ? { isUnnamedOnly: true } : {}),
   })
 }

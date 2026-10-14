@@ -306,3 +306,31 @@ it("folds a named person's word thrown into the middle of another's sentence", (
     ['f5'],
   ])
 })
+
+it('takes a stop before a closing quote or an ellipsis as the end of a sentence', () => {
+  const named = (name: string) => ({
+    hasUserConfirmedSpeaker: true,
+    effectiveSpeakerIdentityId: `identity-${name}`,
+    effectiveSpeakerName: name,
+  })
+  for (const ending of ['He said "go."', 'We wait…', 'Ready (all of it).']) {
+    const groups = groupConversation([
+      segmentFixture({ id: 'g1', ...named('First'), segmentStartMS: 0, segmentEndMS: 3000, transcriptText: ending }),
+      segmentFixture({
+        id: 'g2',
+        ...named('Second'),
+        segmentStartMS: 3000,
+        segmentEndMS: 3400,
+        transcriptText: 'Yes.',
+      }),
+      segmentFixture({
+        id: 'g3',
+        ...named('First'),
+        segmentStartMS: 3400,
+        segmentEndMS: 6000,
+        transcriptText: 'Then the count starts.',
+      }),
+    ])
+    expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['g1'], ['g2'], ['g3']])
+  }
+})

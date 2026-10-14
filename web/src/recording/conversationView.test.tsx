@@ -525,7 +525,7 @@ it('narrows the conversation to the speakers nobody has named, and says how many
   fireEvent.click(screen.getByRole('button', { name: 'Unnamed speakers' }))
   await screen.findByText('2 passages left to name')
   const timelineCalls = calls('ReadRecordingTranscriptTimeline')
-  expect(timelineCalls[timelineCalls.length - 1][1]).toMatchObject({ isUnnamedOnly: true, segmentOffset: 0 })
+  expect(timelineCalls[timelineCalls.length - 1][1]).toMatchObject({ isUnnamedOnly: true, segmentOffset: 0, pageSize: 500 })
   expect(screen.queryByText('Text of named')).toBeNull()
   expect(screen.getByText('Text of unnamed-one')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Unnamed speakers' }).getAttribute('aria-pressed')).toBe('true')

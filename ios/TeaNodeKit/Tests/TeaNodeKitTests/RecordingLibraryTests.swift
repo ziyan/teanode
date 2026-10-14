@@ -251,6 +251,13 @@ final class RecordingConversationTests: XCTestCase {
         XCTAssertEqual(bubbles.map { $0.segments.map(\.id) }, [["f1", "f2", "f3"], ["f4"], ["f5"]])
     }
 
+    func testAStopBeforeAClosingQuoteOrAnEllipsisEndsASentence() {
+        for text in ["He said \"go.\"", "We wait…", "Ready (all of it).", "Done?"] {
+            XCTAssertTrue(RecordingConversation.endsSentence(text), text)
+        }
+        XCTAssertFalse(RecordingConversation.endsSentence("Did the crates come in from the"))
+    }
+
     func testSpeakerLettersRunPastTheAlphabetIntoNumbers() {
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 0), "A")
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 25), "Z")

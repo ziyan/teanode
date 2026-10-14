@@ -133,7 +133,7 @@ export function groupConversation(
       !isConfirmed ||
       (following !== undefined &&
         interrupted !== undefined &&
-        !/[.?!。？！]\s*$/.test(interrupted.effectiveTranscriptText || interrupted.transcriptText) &&
+        !/[.?!。？！…‥]["'”’»」』)\]）]*\s*$/.test(interrupted.effectiveTranscriptText || interrupted.transcriptText) &&
         previous?.groupKey.startsWith(`${speakerKeyOf(following)}@`))
     if (
       previous &&

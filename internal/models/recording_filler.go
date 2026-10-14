@@ -7,19 +7,23 @@ import (
 )
 
 // fillerWordPatterns are the words that carry nothing on their own: sounds of
-// listening and hesitation, laughter, and the bare acknowledgements said while
-// someone else talks. A plain yes or no is not among them; it answers
-// something.
-var fillerWordPatterns = regexp.MustCompile(`^(h+m+|m+|m+h+m+|u+h+|u+m+|e+r+m*|a+h+|o+h+|huh|aha|(ha)+h?|(he)+h?|okay|ok|yeah|yep|yup|alright|right|so|cool|wow)$`)
+// listening and hesitation, laughter, and the bare acknowledgements (okay,
+// yeah) said while someone else talks. A plain yes or no is not among them;
+// it answers something.
+var fillerWordPatterns = regexp.MustCompile(`^(h+m+|m+|m+h+m+|u+h+|u+m+|e+r+m*|a+h+|o+h+|huh|aha|(ha)+h?|(he)+h?|okay|ok|yeah|yep|yup|alright|right)$`)
 
 // fillerSyllables are the same for languages written without spaces: a passage
 // made only of these, as many times over as they come, is filler.
-var fillerSyllables = []string{"嗯", "啊", "哦", "噢", "呃", "唔", "哈", "嘿", "好", "对", "えー", "あー", "うーん", "うん", "ええ", "はい", "へえ", "ふーん", "ー", "음", "어", "아", "네"}
+var fillerSyllables = []string{"嗯", "啊", "哦", "噢", "呃", "唔", "哈", "嘿", "好", "えー", "あー", "うーん", "うん", "へえ", "ふーん", "ー", "음", "어", "아"}
 
 // IsFillerTranscriptText says whether a passage holds only filler ("Mm-hmm.
 // Okay. Okay."), which a reader skips and nobody needs to label. A passage
-// with no words at all is not filler; it is empty.
+// with no words at all is not filler; it is empty. Nor is a question ("Right?"),
+// however short: it asks something.
 func IsFillerTranscriptText(text string) bool {
+	if strings.ContainsAny(text, "?？") {
+		return false
+	}
 	hasWord := false
 	for _, word := range strings.FieldsFunc(strings.ToLower(text), func(character rune) bool {
 		return !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != 'ー'

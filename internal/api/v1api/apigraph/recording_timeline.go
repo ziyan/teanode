@@ -49,7 +49,9 @@ func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, argument
 	var transcriptRuns []*models.RecordingTranscriptRun
 	var segmentCount int64
 	if isUnnamedOnly {
-		if arguments.SegmentOffset < 0 || arguments.PageSize < 1 || arguments.PageSize > 250 {
+		// The whole timeline is read for each page of unnamed passages, so a
+		// page may be larger: the list is usually read in one or two.
+		if arguments.SegmentOffset < 0 || arguments.PageSize < 1 || arguments.PageSize > 1000 {
 			return nil, translateError(db.ErrInvalidArguments)
 		}
 		var unnamed []*models.RecordingTranscriptSegment

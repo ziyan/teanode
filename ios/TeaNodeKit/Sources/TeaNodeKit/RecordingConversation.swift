@@ -81,8 +81,10 @@ public enum RecordingConversation {
 
     /// Whether a passage's words end a sentence.
     static func endsSentence(_ text: String) -> Bool {
-        guard let last = text.trimmingCharacters(in: .whitespacesAndNewlines).last else { return true }
-        return ".?!。？！".contains(last)
+        // A closing quote or bracket after the stop still ends the sentence.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'”’»」』)]）"))
+        guard let last = trimmed.last else { return true }
+        return ".?!。？！…‥".contains(last)
     }
 
     /// How many people spoke, counting a confirmed person once however many requests they spoke in.

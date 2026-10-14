@@ -156,7 +156,9 @@ final class RecordingConversationModel {
                 }
             } else {
                 let page = try await connection.recordingTranscriptTimeline(
-                    recordingId: recordingId, segmentOffset: isAdditional ? segments.count : 0, isUnnamedOnly: isUnnamedOnly)
+                    recordingId: recordingId, segmentOffset: isAdditional ? segments.count : 0,
+                    // The server reads the whole timeline to find the unnamed passages, so they come in fewer, larger pages.
+                    pageSize: isUnnamedOnly ? 500 : 100, isUnnamedOnly: isUnnamedOnly)
                 if isAdditional, let current = timelineView, current.sourceGeneration != page.sourceGeneration {
                     // A new publication invalidates page offsets; refresh rather than duplicate or skip evidence.
                     await loadPage(isAdditional: false)

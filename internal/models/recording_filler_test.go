@@ -8,7 +8,7 @@ func TestFillerIsOnlyTheWordsThatCarryNothing(test *testing.T) {
 			test.Errorf("%q is filler", text)
 		}
 	}
-	for _, text := range []string{"Yes.", "No.", "Okay, let's ship it.", "So the shelf is full.", "", "  ", "好的", "我知道", "Hmm, the crate is late."} {
+	for _, text := range []string{"Yes.", "No.", "Right?", "Okay?", "So?", "Cool.", "对", "はい", "네", "42", "Okay, let's ship it.", "So the shelf is full.", "", "  ", "好的", "我知道", "Hmm, the crate is late."} {
 		if IsFillerTranscriptText(text) {
 			test.Errorf("%q is not filler", text)
 		}
