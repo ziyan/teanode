@@ -1,6 +1,6 @@
 Read the document below for {{.PersonName}} and answer with one JSON object and nothing else.
 
-First say what it is: a paystub, a W-2 or a 1099. A paystub (a pay statement, an earnings statement) is one paycheck's record: what was earned, the taxes withheld and the deductions, this period and year to date. A W-2 (Form W-2, Wage and Tax Statement, or a corrected W-2c) is an employer's statement of a year's wages and taxes. Anything else, or a document you cannot read, is neither: answer {"documentKind": "none", "why": "…"} and nothing more.
+First say what it is: a paystub, a W-2, a 1099 or a 1098. A paystub (a pay statement, an earnings statement) is one paycheck's record: what was earned, the taxes withheld and the deductions, this period and year to date. A W-2 (Form W-2, Wage and Tax Statement, or a corrected W-2c) is an employer's statement of a year's wages and taxes. Anything else, or a document you cannot read, is neither: answer {"documentKind": "none", "why": "…"} and nothing more.
 
 The person's taxpayer number (a Social Security number) is printed on both. Give only its last four digits, and never write more of it anywhere in your answer: not in a name, a description or a box.
 
@@ -40,6 +40,8 @@ How to read a 1099:
 - Leave out a 1099 whose boxes are all empty, and the forms a consolidated statement holds that are not 1099-INT, 1099-DIV or 1099-B (a 1099-MISC, a 1099-OID): say which in "why".
 - isCorrected is true for a corrected 1099 ("CORRECTED" checked).
 - Give each 1099's account number as an entry {"boxCode": "account", "textValue": "…"}, its last four letters or digits only; it tells a joint account's forms from an individual one's at the same broker.
+
+A 1098 (Mortgage Interest Statement) is a lender's statement of the mortgage interest a borrower paid in a year. Answer it as a 1099 is answered, with documentKind "1098" and one taxForm of taxFormKind "1098": the lender is payerName and payerTaxId, the borrower recipientName and recipientTaxIdMask (the last four digits). Its boxes: 1 mortgage interest received, 2 outstanding principal, 3 origination date (as textValue), 4 refund of overpaid interest, 5 mortgage insurance premiums, 6 points paid, 8 the property's address (textValue), 9 number of properties (textValue), 10 other, with what it is as boxQualifier (such as "Real estate taxes" or "Principal paid"), 11 acquisition date (textValue). Leave out box 7's checkbox.
 
 For all of them:
 - Amounts are decimal strings with no thousands separators and no currency sign: 1234.50, not $1,234.50.

@@ -178,3 +178,44 @@ func TestTaxDocumentAddressFromTheAPI(test *testing.T) {
 		test.Errorf("regenerated %+v", regenerated)
 	}
 }
+
+// A tax year's settings are read as zeros before any are given, changed
+// field by field, and counted by the tax year; another person reads none.
+func TestTaxYearSettingFromTheAPI(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	resolver := fixture.resolver
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		empty, err := resolver.TaxYearSetting(ctx, TaxYearSettingArguments{TaxYear: 2026})
+		if err != nil || empty.ChildCount != 0 || empty.OtherIncomeAmount != "0" {
+			test.Fatalf("zeros before any are given: %+v %v", empty, err)
+		}
+		children, care := 2, "6000"
+		if _, err := resolver.SetTaxYearSetting(ctx, SetTaxYearSettingArguments{TaxYear: 2026, ChildCount: &children, DependentCareExpenseAmount: &care}); err != nil {
+			test.Fatalf("SetTaxYearSetting: %s", err)
+		}
+		gains := "1500"
+		saved, err := resolver.SetTaxYearSetting(ctx, SetTaxYearSettingArguments{TaxYear: 2026, EstimatedLongTermGainAmount: &gains})
+		if err != nil || saved.ChildCount != 2 || saved.DependentCareExpenseAmount != "6000.0000" || saved.EstimatedLongTermGainAmount != "1500.0000" {
+			test.Fatalf("what is left out stays: %+v %v", saved, err)
+		}
+		isCleared := true
+		if cleared, err := resolver.SetTaxYearSetting(ctx, SetTaxYearSettingArguments{TaxYear: 2026, IsEstimatedGainCleared: &isCleared}); err != nil || cleared.EstimatedLongTermGainAmount != "" || cleared.ChildCount != 2 {
+			test.Fatalf("the gains are forgotten, the rest kept: %+v %v", cleared, err)
+		}
+		note := "SSN 123-45-6789"
+		if _, err := resolver.SetTaxYearSetting(ctx, SetTaxYearSettingArguments{TaxYear: 2026, EstimatedGainNote: &note}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Fatalf("a taxpayer number in the note is refused: %v", err)
+		}
+	})
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		summary, err := resolver.TaxYear(ctx, TaxYearArguments{TaxYear: 2026})
+		if err != nil || summary.TaxYearSetting == nil || summary.TaxYearSetting.ChildCount != 2 {
+			test.Fatalf("the tax year carries its settings: %+v %v", summary, err)
+		}
+	})
+	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
+		if setting, err := resolver.TaxYearSetting(ctx, TaxYearSettingArguments{TaxYear: 2026}); err != nil || setting.ChildCount != 0 {
+			test.Fatalf("another person's settings are their own: %+v %v", setting, err)
+		}
+	})
+}

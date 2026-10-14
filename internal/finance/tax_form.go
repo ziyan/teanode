@@ -118,6 +118,18 @@ var taxFormBoxesByKind = map[models.TaxFormKind]map[string]taxFormBox{
 		"16":      {boxQualifier: qualifierState},
 		"account": accountBox,
 	},
+	// 1098: 1 mortgage interest, 2 outstanding principal, 3 origination
+	// date, 4 refund of overpaid interest, 5 mortgage insurance premiums,
+	// 6 points, 8 the property's address, 9 how many properties, 10 other
+	// (labelled, such as real estate taxes paid from escrow), 11
+	// acquisition date. Box 7's checkbox is not kept.
+	models.TaxFormKind1098: {
+		"1": {}, "2": {}, "3": {isText: true}, "4": {}, "5": {}, "6": {},
+		"8":  {isText: true},
+		"9":  {isText: true},
+		"10": {boxQualifier: qualifierLabel},
+		"11": {isText: true},
+	},
 }
 
 // accountBox is a 1099's account number, kept as its last four letters
@@ -139,7 +151,7 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 	}
 	boxes, isKnown := taxFormBoxesByKind[taxForm.TaxFormKind]
 	if !isKnown {
-		return refuseTaxDocument("a tax form of kind %q is not one TeaNode reads; it reads w2, 1099_int, 1099_div and 1099_b", taxForm.TaxFormKind)
+		return refuseTaxDocument("a tax form of kind %q is not one TeaNode reads; it reads w2, 1099_int, 1099_div, 1099_b and 1098", taxForm.TaxFormKind)
 	}
 	if taxForm.TaxYear < 1900 || taxForm.TaxYear > 2999 {
 		return refuseTaxDocument("the tax year %d is not a year", taxForm.TaxYear)
@@ -267,6 +279,8 @@ func TaxFormKindName(taxFormKind models.TaxFormKind) string {
 		return "1099-DIV"
 	case models.TaxFormKind1099B:
 		return "1099-B"
+	case models.TaxFormKind1098:
+		return "1098"
 	}
 	return string(taxFormKind)
 }

@@ -124,6 +124,8 @@ func (self *taxFormAnswer) taxForm() *models.FinanceTaxForm {
 		taxFormKind = string(models.TaxFormKind1099Div)
 	case "1099b":
 		taxFormKind = string(models.TaxFormKind1099B)
+	case "form1098":
+		taxFormKind = string(models.TaxFormKind1098)
 	}
 	taxForm := &models.FinanceTaxForm{
 		TaxFormKind: models.TaxFormKind(taxFormKind), TaxYear: self.TaxYear, IsCorrected: isCorrected,
@@ -299,7 +301,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 		}); err != nil {
 			return err
 		}
-	case strings.HasPrefix(documentKind, "1099") && (len(answer.Value.TaxForms) > 0 || answer.Value.TaxForm != nil):
+	case (strings.HasPrefix(documentKind, "1099") || documentKind == "1098") && (len(answer.Value.TaxForms) > 0 || answer.Value.TaxForm != nil):
 		answers := answer.Value.TaxForms
 		if len(answers) == 0 {
 			answers = []*taxFormAnswer{answer.Value.TaxForm}
@@ -346,9 +348,9 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	default:
 		why := strings.TrimSpace(answer.Value.Why)
 		if why == "" {
-			why = "it is not a paystub, a W-2 or a 1099"
+			why = "it is not a paystub, a W-2, a 1099 or a 1098"
 		}
-		title = fmt.Sprintf("Read %s: not a paystub, a W-2 or a 1099, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
+		title = fmt.Sprintf("Read %s: not a paystub, a W-2, a 1099 or a 1098, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
 	}
 	self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(title))
 	return nil

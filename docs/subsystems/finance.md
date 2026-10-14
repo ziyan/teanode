@@ -777,6 +777,31 @@ credit; and counts a 1099's withholding as paid. A loss carried over from
 an earlier year is not known. A person's HSA contributions above the
 year's family limit are a finding (`hsaFamilyLimitByYear`).
 
+Before a year's 1099s come, `taxYearInvestmentPreview`
+(`internal/finance/tax_inputs.go`) takes the year's interest and dividends
+from the linked accounts (`ListAccountInvestmentIncome`: money in that the
+provider calls interest earned or dividends, or whose description says so
+when it names no category, USD only), leaves out accounts whose provider
+subtype says their income is not taxed (IRA, Roth, 401(k), HSA, 529), and
+projects the rest to December 31 at the same pace. The estimate counts it
+where no 1099 of the kind has been read; dividends count as ordinary.
+
+A year's settings (`agent_tax_year_setting`, migrations 0186 and 0187,
+`TaxYearSetting` and `SetTaxYearSetting`) hold what no document says:
+children under 17 and other dependents, dependent care paid, other
+household income (a spouse's pay no W-2 here shows), charitable gifts,
+property tax, state income tax paid besides withholding, and the gains
+realized so far in a year whose 1099-Bs have not come, which the agent
+reads from a brokerage when asked. Form 1098 (mortgage interest) is read
+like a 1099. The estimate itemizes when mortgage interest and points,
+state and local taxes up to the year's cap (`saltCap`: 10,000 until 2024,
+then 40,000 and 40,400 phasing down above 500,000 and 505,000, half
+filing separately) and gifts beat the standard deduction; takes the child
+tax credit (phased out above 400,000 jointly, 200,000 otherwise) and the
+child and dependent care credit (care paid less an employer plan's, up to
+the lower earner's pay, at the year's rate); and adds other income to
+adjusted gross income.
+
 The tax owed sits beside what was withheld in `taxYearEstimate`
 (`finance.estimateTaxYear`), the household's, to December 31 when anything
 is projected. It counts wages only, since nothing else is on a paystub or a

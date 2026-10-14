@@ -113,6 +113,31 @@ func financeTaxCommands() []*cli.Command {
 			Action: runFinanceTaxYear,
 		},
 		{
+			Name: "tax-year-setting", Usage: "what a tax year's estimate takes that no document says: children, dependent care, other income, gifts, property tax, gains so far",
+			ArgsUsage: "[year]", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxYearSetting,
+		},
+		{
+			Name: "set-tax-year-setting", Usage: "change a tax year's settings; what is not given stays",
+			ArgsUsage: "<year>",
+			Description: "--short-term-gain and --long-term-gain are the gains realized so far in a year whose 1099-Bs have\n" +
+				"not come (negative for a loss), as a brokerage reports them; a 1099-B read for the year takes their place.",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.IntFlag{Name: "child-count", Usage: "children under 17 at the year's end"},
+				&cli.IntFlag{Name: "other-dependent-count", Usage: "other dependents"},
+				&cli.StringFlag{Name: "dependent-care-paid", Usage: "what was paid for the care of children under 13 while you worked"},
+				&cli.StringFlag{Name: "other-income", Usage: "household income no paystub or form here shows, such as a spouse's pay"},
+				&cli.StringFlag{Name: "charitable", Usage: "charitable gifts, for itemizing"},
+				&cli.StringFlag{Name: "property-tax", Usage: "property tax paid that no 1098 shows, for itemizing"},
+				&cli.StringFlag{Name: "state-tax-paid", Usage: "state and local income tax paid besides withholding (an estimated payment, last year's balance), for itemizing"},
+				&cli.StringFlag{Name: "short-term-gain", Usage: "short-term gain realized so far"},
+				&cli.StringFlag{Name: "long-term-gain", Usage: "long-term gain realized so far"},
+				&cli.StringFlag{Name: "gain-note", Usage: "where the gains come from"},
+				&cli.BoolFlag{Name: "clear-gains", Usage: "forget the gains given"},
+			},
+			Action: runFinanceSetTaxYearSetting,
+		},
+		{
 			Name: "tax-document-address", Usage: "the address to mail paystubs and W-2s to: each PDF or picture mailed there is read and recorded",
 			Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxDocumentAddress,
 		},
@@ -463,6 +488,91 @@ func runFinanceDeleteTaxForm(ctx context.Context, command *cli.Command) error {
 	return printDone(command, map[string]any{"taxFormId": taxFormId, "isDeleted": isDeleted}, taxFormId+": deleted")
 }
 
+func taxYearArgument(command *cli.Command) (int, error) {
+	text := strings.TrimSpace(command.Args().First())
+	if text == "" {
+		return time.Now().Year(), nil
+	}
+	year, err := strconv.Atoi(text)
+	if err != nil || year < 1900 || year > 2999 {
+		return 0, usage("the tax year is a year, as 2026")
+	}
+	return year, nil
+}
+
+func runFinanceTaxYearSetting(ctx context.Context, command *cli.Command) error {
+	year, err := taxYearArgument(command)
+	if err != nil {
+		return err
+	}
+	var setting *models.TaxYearSetting
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"taxYear": year}, &setting); err != nil {
+		return err
+	}
+	return printTaxYearSetting(command, setting)
+}
+
+func runFinanceSetTaxYearSetting(ctx context.Context, command *cli.Command) error {
+	if strings.TrimSpace(command.Args().First()) == "" {
+		return usage("give the tax year, as 2026")
+	}
+	year, err := taxYearArgument(command)
+	if err != nil {
+		return err
+	}
+	variables := map[string]any{"taxYear": year}
+	for flag, variable := range map[string]string{"child-count": "childCount", "other-dependent-count": "otherDependentCount"} {
+		if command.IsSet(flag) {
+			variables[variable] = int(command.Int(flag))
+		}
+	}
+	for flag, variable := range map[string]string{
+		"dependent-care-paid": "dependentCareExpenseAmount", "other-income": "otherIncomeAmount", "charitable": "charitableContributionAmount",
+		"property-tax": "propertyTaxAmount", "state-tax-paid": "stateIncomeTaxPaidAmount", "short-term-gain": "estimatedShortTermGainAmount", "long-term-gain": "estimatedLongTermGainAmount",
+		"gain-note": "estimatedGainNote",
+	} {
+		if command.IsSet(flag) {
+			variables[variable] = command.String(flag)
+		}
+	}
+	if command.Bool("clear-gains") {
+		variables["isEstimatedGainCleared"] = true
+	}
+	var setting *models.TaxYearSetting
+	if err := financeCall(ctx, command, operationOf(command), variables, &setting); err != nil {
+		return err
+	}
+	return printTaxYearSetting(command, setting)
+}
+
+func printTaxYearSetting(command *cli.Command, setting *models.TaxYearSetting) error {
+	if command.Bool("json") {
+		return PrintJSON(setting)
+	}
+	gain := func(amount string) string {
+		if amount == "" {
+			return "not given"
+		}
+		return amount
+	}
+	rows := [][]string{
+		{"children under 17", fmt.Sprint(setting.ChildCount)},
+		{"other dependents", fmt.Sprint(setting.OtherDependentCount)},
+		{"dependent care paid", setting.DependentCareExpenseAmount},
+		{"other household income", setting.OtherIncomeAmount},
+		{"charitable gifts", setting.CharitableContributionAmount},
+		{"property tax", setting.PropertyTaxAmount},
+		{"state income tax paid besides withholding", setting.StateIncomeTaxPaidAmount},
+		{"short-term gain so far", gain(setting.EstimatedShortTermGainAmount)},
+		{"long-term gain so far", gain(setting.EstimatedLongTermGainAmount)},
+	}
+	if setting.EstimatedGainNote != "" {
+		rows = append(rows, []string{"gains from", setting.EstimatedGainNote})
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%d settings\n", setting.TaxYear)
+	return printTable([]string{"", ""}, rows)
+}
+
 func runFinanceTaxDocumentAddress(ctx context.Context, command *cli.Command) error {
 	var address *client.TaxDocumentAddress
 	if err := financeCall(ctx, command, operationOf(command), nil, &address); err != nil {
@@ -595,6 +705,29 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 	}
+	if preview := summary.TaxYearInvestmentPreview; preview != nil {
+		_, _ = fmt.Fprintln(command.Writer, "interest and dividends your linked accounts were paid")
+		rows := [][]string{}
+		for _, income := range preview.TaxYearAccountIncomes {
+			note := ""
+			if income.IsTaxAdvantaged {
+				note = "not taxed"
+			}
+			rows = append(rows, []string{forTerminal(income.AccountName), income.IncomeKind, income.Amount, note})
+		}
+		if err := printTable([]string{"account", "", "so far", ""}, rows); err != nil {
+			return err
+		}
+		counted := func(isCounted bool) string {
+			if isCounted {
+				return "counted"
+			}
+			return "a 1099 counts instead"
+		}
+		_, _ = fmt.Fprintf(command.Writer, "taxed interest %s, %s by December 31 (%s); taxed dividends %s, %s by December 31 (%s)\n",
+			preview.InterestAmount, preview.ProjectedInterestAmount, counted(preview.IsInterestCounted),
+			preview.DividendsAmount, preview.ProjectedDividendsAmount, counted(preview.IsDividendsCounted))
+	}
 	if estimate := summary.TaxYearEstimate; estimate != nil {
 		heading := "tax owed beside withheld, filing " + strings.ReplaceAll(string(estimate.TaxFilingStatus), "_", " ")
 		if estimate.IsTaxFilingStatusAssumed {
@@ -608,19 +741,42 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 		if estimate.InvestmentIncomeAmount != "0.00" {
 			rows = append(rows, []string{"investment income", estimate.InvestmentIncomeAmount}, []string{"adjusted gross income", estimate.AdjustedGrossIncomeAmount})
 		}
+		if estimate.OtherIncomeAmount != "0.00" {
+			rows = append(rows, []string{"other household income", estimate.OtherIncomeAmount})
+		}
 		if estimate.CapitalLossDeductionAmount != "0.00" {
 			rows = append(rows, []string{"capital loss taken", estimate.CapitalLossDeductionAmount})
 		}
-		rows = append(rows,
-			[]string{"standard deduction", estimate.StandardDeductionAmount},
-			[]string{"taxable income", estimate.TaxableIncomeAmount},
-		)
+		if estimate.IsItemized {
+			rows = append(rows, []string{"itemized deductions", estimate.ItemizedDeductionAmount})
+			for _, part := range [][]string{
+				{"  mortgage interest", estimate.MortgageInterestAmount},
+				{"  state and local taxes, up to the cap", estimate.StateAndLocalTaxDeductionAmount},
+				{"  charitable gifts", estimate.CharitableContributionAmount},
+			} {
+				if part[1] != "0.00" {
+					rows = append(rows, part)
+				}
+			}
+		} else {
+			rows = append(rows, []string{"standard deduction", estimate.StandardDeductionAmount})
+			if estimate.ItemizedDeductionAmount != "0.00" {
+				rows = append(rows, []string{"  itemized would be", estimate.ItemizedDeductionAmount})
+			}
+		}
+		rows = append(rows, []string{"taxable income", estimate.TaxableIncomeAmount})
 		if estimate.PreferentialIncomeAmount != "0.00" {
 			rows = append(rows, []string{"of it, qualified dividends and long-term gain", estimate.PreferentialIncomeAmount},
 				[]string{"their tax at 0%, 15% or 20%", estimate.PreferentialIncomeTaxAmount})
 		}
-		if estimate.ForeignTaxCreditAmount != "0.00" {
-			rows = append(rows, []string{"foreign tax credit", estimate.ForeignTaxCreditAmount})
+		for _, credit := range [][]string{
+			{"foreign tax credit", estimate.ForeignTaxCreditAmount},
+			{"child tax credit", estimate.ChildTaxCreditAmount},
+			{"dependent care credit", estimate.DependentCareCreditAmount},
+		} {
+			if credit[1] != "0.00" {
+				rows = append(rows, credit)
+			}
 		}
 		rows = append(rows,
 			[]string{"federal income tax", estimate.FederalIncomeTaxAmount},
@@ -647,7 +803,10 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 		if err := printTable([]string{"", ""}, rows); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintln(command.Writer, "wages and 1099s only: other income, itemized deductions and credits are not counted, nor a state's tax on investment income")
+		_, _ = fmt.Fprintln(command.Writer, "from your documents and teanode finance tax-year-setting; a state's tax on investment income is not counted")
+		if estimate.IsInvestmentIncomePreviewed {
+			_, _ = fmt.Fprintln(command.Writer, "investment income partly previewed from your accounts or the gains you gave, until the 1099s come")
+		}
 	}
 	for _, finding := range summary.TaxYearFindings {
 		_, _ = fmt.Fprintln(command.Writer, "- "+forTerminal(finding.FindingText))

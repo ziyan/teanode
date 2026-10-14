@@ -783,6 +783,8 @@ const (
     taxFormEntries { id entryNumber boxCode boxQualifier amount textValue isChecked } }
     taxFormFindings { taxFormFindingCode isAgreeing expectedAmount printedAmount findingText } }`
 
+	taxYearSettingFields = `{ taxYear childCount otherDependentCount dependentCareExpenseAmount otherIncomeAmount charitableContributionAmount propertyTaxAmount stateIncomeTaxPaidAmount estimatedShortTermGainAmount estimatedLongTermGainAmount estimatedGainNote modifiedAt }`
+
 	taxYearFiguresFields = `{ wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount } }`
 
 	taxYearFields = `{ taxYear socialSecurityWageBaseAmount retirementDeferralLimitAmount isYearOver paystubCount taxFormCount
@@ -792,8 +794,10 @@ const (
       taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + ` }
     taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+    taxYearInvestmentPreview { interestAmount dividendsAmount projectedInterestAmount projectedDividendsAmount isInterestCounted isDividendsCounted taxAdvantagedAmount taxYearAccountIncomes { financeAccountId accountName incomeKind amount isTaxAdvantaged } }
+    taxYearSetting ` + taxYearSettingFields + `
     taxYearInvestment { interestAmount taxExemptInterestAmount ordinaryDividendsAmount qualifiedDividendsAmount capitalGainDistributionsAmount shortTermGainAmount longTermGainAmount federalIncomeTaxWithheldAmount foreignTaxPaidAmount isCostBasisMissing taxFormIds }
-    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount foreignTaxCreditAmount netInvestmentIncomeTaxAmount standardDeductionAmount taxableIncomeAmount federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount } }`
+    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount foreignTaxCreditAmount netInvestmentIncomeTaxAmount isInvestmentIncomePreviewed otherIncomeAmount deductionAmount isItemized itemizedDeductionAmount mortgageInterestAmount stateAndLocalTaxDeductionAmount charitableContributionAmount childTaxCreditAmount dependentCareCreditAmount standardDeductionAmount taxableIncomeAmount federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount } }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -979,9 +983,13 @@ const (
   ImportFinanceCredential(providerKind: $providerKind, credential: $credential, institutionName: $institutionName) ` + financeSourceFields + `
 }`
 
-	DocumentSetReportingCurrency         = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
-	DocumentSetTaxFilingStatus           = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`
-	DocumentTaxDocumentAddress           = `query { TaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
+	DocumentSetReportingCurrency = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
+	DocumentSetTaxFilingStatus   = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`
+	DocumentTaxDocumentAddress   = `query { TaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
+	DocumentTaxYearSetting       = `query ($taxYear: Int!) { TaxYearSetting(taxYear: $taxYear) ` + taxYearSettingFields + ` }`
+	DocumentSetTaxYearSetting    = `mutation ($taxYear: Int!, $childCount: Int, $otherDependentCount: Int, $dependentCareExpenseAmount: String, $otherIncomeAmount: String, $charitableContributionAmount: String, $propertyTaxAmount: String, $stateIncomeTaxPaidAmount: String, $estimatedShortTermGainAmount: String, $estimatedLongTermGainAmount: String, $estimatedGainNote: String, $isEstimatedGainCleared: Boolean) {
+  SetTaxYearSetting(taxYear: $taxYear, childCount: $childCount, otherDependentCount: $otherDependentCount, dependentCareExpenseAmount: $dependentCareExpenseAmount, otherIncomeAmount: $otherIncomeAmount, charitableContributionAmount: $charitableContributionAmount, propertyTaxAmount: $propertyTaxAmount, stateIncomeTaxPaidAmount: $stateIncomeTaxPaidAmount, estimatedShortTermGainAmount: $estimatedShortTermGainAmount, estimatedLongTermGainAmount: $estimatedLongTermGainAmount, estimatedGainNote: $estimatedGainNote, isEstimatedGainCleared: $isEstimatedGainCleared) ` + taxYearSettingFields + `
+}`
 	DocumentRegenerateTaxDocumentAddress = `mutation { RegenerateTaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
 
 	DocumentCreateAsset = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean, $value: String, $valuedOn: String) {
@@ -1149,6 +1157,7 @@ var FinanceDocuments = map[string]string{
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
 	"SetTaxFilingStatus": DocumentSetTaxFilingStatus, "TaxDocumentAddress": DocumentTaxDocumentAddress,
+	"TaxYearSetting": DocumentTaxYearSetting, "SetTaxYearSetting": DocumentSetTaxYearSetting,
 	"RegenerateTaxDocumentAddress": DocumentRegenerateTaxDocumentAddress,
 	"CreateAsset":                  DocumentCreateAsset,
 	"UpdateAsset":                  DocumentUpdateAsset, "CloseAsset": DocumentCloseAsset, "DeleteAsset": DocumentDeleteAsset,

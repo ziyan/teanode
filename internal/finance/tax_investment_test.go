@@ -67,7 +67,7 @@ func TestEstimateTaxYearTaxesInvestmentIncome(t *testing.T) {
 	}
 	wages := newFigureSums()
 	wages.wages, wages.medicareWages, wages.socialSecurityWages = big.NewRat(180000, 1), big.NewRat(180000, 1), big.NewRat(180000, 1)
-	estimate := estimateTaxYear(2026, TaxFilingStatusMarriedFilingJointly, []*personSums{{figures: wages, projected: wages, investment: sums}}, false)
+	estimate := estimateTaxYear(2026, TaxFilingStatusMarriedFilingJointly, []*personSums{{figures: wages, projected: wages, investment: sums}}, false, nil)
 	// 180,000 + 1,000 + 2,000 + 8,600 = 191,600; less 32,200 is 159,400.
 	if estimate.InvestmentIncomeAmount != "11600.00" || estimate.AdjustedGrossIncomeAmount != "191600.00" || estimate.TaxableIncomeAmount != "159400.00" {
 		t.Fatalf("the income: %+v", estimate)
@@ -81,7 +81,7 @@ func TestEstimateTaxYearTaxesInvestmentIncome(t *testing.T) {
 
 	loss := newInvestmentSums()
 	loss.shortTermGain, loss.interest = big.NewRat(-10000, 1), big.NewRat(500, 1)
-	estimate = estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{{figures: wages, projected: wages, investment: loss}}, false)
+	estimate = estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{{figures: wages, projected: wages, investment: loss}}, false, nil)
 	if estimate.CapitalLossDeductionAmount != "3000.00" || estimate.InvestmentIncomeAmount != "-2500.00" {
 		t.Fatalf("a net loss is taken up to 3,000: %+v", estimate)
 	}
@@ -92,7 +92,7 @@ func TestEstimateTaxYearTaxesInvestmentIncome(t *testing.T) {
 	rich.wages, rich.medicareWages = big.NewRat(210000, 1), big.NewRat(210000, 1)
 	interest := newInvestmentSums()
 	interest.interest = big.NewRat(20000, 1)
-	estimate = estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{{figures: rich, projected: rich, investment: interest}}, false)
+	estimate = estimateTaxYear(2026, TaxFilingStatusSingle, []*personSums{{figures: rich, projected: rich, investment: interest}}, false, nil)
 	if estimate.NetInvestmentIncomeTaxAmount != "760.00" {
 		t.Fatalf("the net investment income tax: %+v", estimate)
 	}
@@ -105,7 +105,7 @@ func TestSummarizeTaxYearAddsUp1099s(t *testing.T) {
 	w2.TaxFormEntries = append(w2.TaxFormEntries, &models.FinanceTaxFormEntry{BoxCode: "12", BoxQualifier: "W", Amount: "9000.00"})
 	w2.TaxFormEntries = removeEntry(w2.TaxFormEntries, "12", "W", "900.00")
 	forms := append([]*models.FinanceTaxForm{w2}, inventedBrokerStatement()...)
-	summary := SummarizeTaxYear(2026, nil, forms, time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC), TaxFilingStatusSingle)
+	summary := SummarizeTaxYear(2026, nil, forms, time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC), TaxFilingStatusSingle, nil)
 	investment := summary.TaxYearInvestment
 	if investment == nil || investment.ShortTermGainAmount != "-1900.00" || investment.LongTermGainAmount != "10000.00" || len(investment.TaxFormIDs) != 3 ||
 		summary.TaxFormCount != 4 || len(summary.TaxYearPeople) != 1 {

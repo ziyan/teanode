@@ -200,10 +200,62 @@ const (
 	// transactions, kept as its totals by term and by whether the broker
 	// reported the cost basis, as a brokerage's summary prints them.
 	TaxFormKind1099B TaxFormKind = "1099_b"
+	// TaxFormKind1098 is a Form 1098, mortgage interest, which itemizing
+	// counts.
+	TaxFormKind1098 TaxFormKind = "1098"
 )
 
 // TaxFormKinds are every kind of tax form TeaNode reads.
-var TaxFormKinds = []TaxFormKind{TaxFormKindW2, TaxFormKind1099Int, TaxFormKind1099Div, TaxFormKind1099B}
+var TaxFormKinds = []TaxFormKind{TaxFormKindW2, TaxFormKind1099Int, TaxFormKind1099Div, TaxFormKind1099B, TaxFormKind1098}
+
+// TaxYearSetting is what a tax year's estimate needs that no paystub or
+// form says, as the person or the agent gave it. Amounts are dollars with
+// cents.
+type TaxYearSetting struct {
+	AgentID string `json:"-" graphapi:"ignore"`
+	TaxYear int    `json:"taxYear"`
+	// ChildCount is children under 17 at the year's end, for the child
+	// tax credit; OtherDependentCount other dependents, for the credit for
+	// them. Children under 13 are who dependent care is paid for.
+	ChildCount          int `json:"childCount"`
+	OtherDependentCount int `json:"otherDependentCount"`
+	// DependentCareExpenseAmount is what was paid for the care of a child
+	// under 13 so the parents could work.
+	DependentCareExpenseAmount string `json:"dependentCareExpenseAmount"`
+	// OtherIncomeAmount is the household's income no paystub or form here
+	// shows, such as a spouse's pay; it is taxed as wages are, without
+	// payroll taxes, and counts as the spouse's earned income.
+	OtherIncomeAmount string `json:"otherIncomeAmount"`
+	// CharitableContributionAmount and PropertyTaxAmount are itemized
+	// deductions no form here shows.
+	CharitableContributionAmount string `json:"charitableContributionAmount"`
+	PropertyTaxAmount            string `json:"propertyTaxAmount"`
+	// StateIncomeTaxPaidAmount is state and local income tax paid besides
+	// what paychecks withheld (an estimated payment, last year's balance
+	// due), which itemizing counts with the withholding.
+	StateIncomeTaxPaidAmount string `json:"stateIncomeTaxPaidAmount"`
+	// EstimatedShortTermGainAmount and EstimatedLongTermGainAmount are the
+	// gains (negative for losses) realized so far in a year whose 1099-Bs
+	// have not come, as a brokerage reports them; empty when not given.
+	// EstimatedGainNote says where they came from and when.
+	EstimatedShortTermGainAmount string     `json:"estimatedShortTermGainAmount,omitempty" graphapi:"nullable"`
+	EstimatedLongTermGainAmount  string     `json:"estimatedLongTermGainAmount,omitempty" graphapi:"nullable"`
+	EstimatedGainNote            string     `json:"estimatedGainNote"`
+	ModifiedAt                   *time.Time `json:"modifiedAt,omitempty" graphapi:"nullable"`
+}
+
+// AccountInvestmentIncome is the interest or the dividends one finance
+// account was paid within some days, as its transactions say.
+type AccountInvestmentIncome struct {
+	FinanceAccountID string `json:"financeAccountId"`
+	AccountName      string `json:"accountName"`
+	// AccountSubtype is the provider's (savings, brokerage, ira, hsa).
+	AccountSubtype string `json:"accountSubtype"`
+	// IncomeKind is "interest" or "dividend".
+	IncomeKind       string `json:"incomeKind"`
+	Amount           string `json:"amount"`
+	TransactionCount int    `json:"transactionCount"`
+}
 
 // IsValid says the kind is a known form.
 func (self TaxFormKind) IsValid() bool {

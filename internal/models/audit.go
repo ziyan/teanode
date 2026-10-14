@@ -119,6 +119,7 @@ const (
 	AuditResourceFinanceReceipt     AuditResourceType = "finance_receipt"     // and its lines and matches
 	AuditResourceFinancePaystub     AuditResourceType = "finance_paystub"     // and its lines
 	AuditResourceFinanceTaxForm     AuditResourceType = "finance_tax_form"    // and its boxes
+	AuditResourceTaxYearSetting     AuditResourceType = "tax_year_setting"    // a year's estimate inputs
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

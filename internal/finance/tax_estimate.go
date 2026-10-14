@@ -76,6 +76,29 @@ type TaxYearEstimate struct {
 	// NetInvestmentIncomeTaxAmount is the 3.8% tax on investment income
 	// above the filing status's threshold.
 	NetInvestmentIncomeTaxAmount string `json:"netInvestmentIncomeTaxAmount"`
+	// IsInvestmentIncomePreviewed says investment income counted comes
+	// from the linked accounts' transactions or the gains given in the
+	// settings rather than from 1099s.
+	IsInvestmentIncomePreviewed bool `json:"isInvestmentIncomePreviewed"`
+	// OtherIncomeAmount is the settings' other household income, part of
+	// adjusted gross income.
+	OtherIncomeAmount string `json:"otherIncomeAmount"`
+	// DeductionAmount is the deduction taken, the larger of the standard
+	// deduction and ItemizedDeductionAmount (IsItemized when that one):
+	// mortgage interest and points from 1098s, state and local taxes up
+	// to the year's cap, and charitable gifts.
+	DeductionAmount                 string `json:"deductionAmount"`
+	IsItemized                      bool   `json:"isItemized"`
+	ItemizedDeductionAmount         string `json:"itemizedDeductionAmount"`
+	MortgageInterestAmount          string `json:"mortgageInterestAmount"`
+	StateAndLocalTaxDeductionAmount string `json:"stateAndLocalTaxDeductionAmount"`
+	CharitableContributionAmount    string `json:"charitableContributionAmount"`
+	// ChildTaxCreditAmount is the child tax credit and the credit for
+	// other dependents; DependentCareCreditAmount the child and dependent
+	// care credit. Both are taken off the federal income tax, never below
+	// nothing.
+	ChildTaxCreditAmount      string `json:"childTaxCreditAmount"`
+	DependentCareCreditAmount string `json:"dependentCareCreditAmount"`
 	// The tax owed for the year, each kind, and all of it.
 	FederalIncomeTaxAmount  string `json:"federalIncomeTaxAmount"`
 	SocialSecurityTaxAmount string `json:"socialSecurityTaxAmount"`
@@ -207,7 +230,20 @@ func DefaultTaxFilingStatus(personCount int) TaxFilingStatus {
 // estimateTaxYear sets the tax a year's wages owe beside what was
 // withheld, from each person's figures to date and to December 31, or nil
 // when TeaNode does not know the year's brackets or there are no wages.
-func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, isProjected bool) *TaxYearEstimate {
+func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, isProjected bool, extras *estimateExtras) *TaxYearEstimate {
+	if extras == nil {
+		extras = &estimateExtras{}
+	}
+	setting := extras.setting
+	if setting == nil {
+		setting = &models.TaxYearSetting{}
+	}
+	if extras.mortgageInterest == nil {
+		extras.mortgageInterest = new(big.Rat)
+	}
+	if extras.mortgagePropertyTax == nil {
+		extras.mortgagePropertyTax = new(big.Rat)
+	}
 	table := federalTaxTableByYear[taxYear]
 	if table == nil || len(people) == 0 {
 		return nil
@@ -226,8 +262,16 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 	stateTax, localTax, withheld, paid := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
 	investmentIncome, adjustedGrossIncome, preferential, preferentialTax := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
 	capitalLossDeduction, foreignTaxCredit, netInvestmentIncomeTax := new(big.Rat), new(big.Rat), new(big.Rat)
-	for _, members := range returns {
+	otherIncome, deductionTaken, itemizedDeduction, mortgageInterest := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
+	stateAndLocalDeduction, charitable, childCredit, careCredit := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
+	isItemized := false
+	for returnIndex, members := range returns {
+		// The settings and the 1098s are the household's, on the first
+		// return when there are several.
+		isFirstReturn := returnIndex == 0
 		wages, medicareWages := new(big.Rat), new(big.Rat)
+		returnStateAndLocal, employerCare := new(big.Rat), new(big.Rat)
+		var earnedIncomes []*big.Rat
 		investment := newInvestmentSums()
 		for _, person := range members {
 			if person.investment != nil {
@@ -253,8 +297,16 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 			}
 			for _, amountValue := range year.stateTaxByCode {
 				stateTax.Add(stateTax, amountValue)
+				returnStateAndLocal.Add(returnStateAndLocal, amountValue)
 			}
 			localTax.Add(localTax, year.localIncomeTax)
+			returnStateAndLocal.Add(returnStateAndLocal, year.localIncomeTax)
+			employerCare.Add(employerCare, year.dependentCare)
+			earned := new(big.Rat).Set(year.medicareWages)
+			if earned.Sign() == 0 {
+				earned.Set(year.wages)
+			}
+			earnedIncomes = append(earnedIncomes, earned)
 			withheld.Add(withheld, withheldTax(year))
 			paid.Add(paid, withheldTax(person.figures))
 		}
@@ -265,9 +317,42 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 		investmentIncome.Add(investmentIncome, invested.income)
 		capitalLossDeduction.Add(capitalLossDeduction, invested.capitalLossDeduction)
 		grossIncome := new(big.Rat).Add(wages, invested.income)
+		returnOtherIncome := new(big.Rat)
+		if isFirstReturn {
+			returnOtherIncome = settingAmount(setting.OtherIncomeAmount)
+			otherIncome.Add(otherIncome, returnOtherIncome)
+			grossIncome.Add(grossIncome, returnOtherIncome)
+		}
 		adjustedGrossIncome.Add(adjustedGrossIncome, grossIncome)
-		deduction := big.NewRat(table.standardDeductionByStatus[status], 1)
-		standardDeduction.Add(standardDeduction, deduction)
+		standard := big.NewRat(table.standardDeductionByStatus[status], 1)
+		standardDeduction.Add(standardDeduction, standard)
+		// Itemized: state and local taxes up to the cap, and on the first
+		// return mortgage interest, property tax and charitable gifts.
+		returnItemized := new(big.Rat)
+		if isFirstReturn {
+			returnStateAndLocal.Add(returnStateAndLocal, settingAmount(setting.PropertyTaxAmount))
+			returnStateAndLocal.Add(returnStateAndLocal, settingAmount(setting.StateIncomeTaxPaidAmount))
+			returnStateAndLocal.Add(returnStateAndLocal, extras.mortgagePropertyTax)
+		}
+		salt := saltCap(taxYear, status, grossIncome)
+		if returnStateAndLocal.Cmp(salt) < 0 {
+			salt = returnStateAndLocal
+		}
+		returnItemized.Add(returnItemized, salt)
+		stateAndLocalDeduction.Add(stateAndLocalDeduction, salt)
+		if isFirstReturn {
+			gifts := settingAmount(setting.CharitableContributionAmount)
+			returnItemized.Add(returnItemized, extras.mortgageInterest).Add(returnItemized, gifts)
+			mortgageInterest.Add(mortgageInterest, extras.mortgageInterest)
+			charitable.Add(charitable, gifts)
+		}
+		itemizedDeduction.Add(itemizedDeduction, returnItemized)
+		deduction := standard
+		if returnItemized.Cmp(standard) > 0 {
+			deduction = returnItemized
+			isItemized = true
+		}
+		deductionTaken.Add(deductionTaken, deduction)
 		taxable := new(big.Rat).Sub(grossIncome, deduction)
 		if taxable.Sign() < 0 {
 			taxable = new(big.Rat)
@@ -307,7 +392,38 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 			credit.Set(returnTax)
 		}
 		foreignTaxCredit.Add(foreignTaxCredit, credit)
-		federal.Add(federal, new(big.Rat).Sub(returnTax, credit))
+		returnTax.Sub(returnTax, credit)
+		if isFirstReturn {
+			// The credits for children and care, on the tax left.
+			children := childTaxCredit(taxYear, status, setting.ChildCount, setting.OtherDependentCount, grossIncome)
+			// A joint return's care credit is up to the lower earner's
+			// pay: the other income stands for a spouse no W-2 shows.
+			if returnOtherIncome.Sign() > 0 {
+				earnedIncomes = append(earnedIncomes, returnOtherIncome)
+			}
+			lowerEarned := new(big.Rat)
+			if len(earnedIncomes) > 0 {
+				lowerEarned = earnedIncomes[0]
+				for _, earned := range earnedIncomes[1:] {
+					if earned.Cmp(lowerEarned) < 0 {
+						lowerEarned = earned
+					}
+				}
+			}
+			if status == TaxFilingStatusMarriedFilingJointly && len(earnedIncomes) < 2 {
+				// Only one earner known on a joint return.
+				lowerEarned = new(big.Rat)
+			}
+			care := dependentCareCredit(taxYear, status, setting.ChildCount, settingAmount(setting.DependentCareExpenseAmount), employerCare, lowerEarned, grossIncome)
+			for _, pair := range []struct{ credit, total *big.Rat }{{children, childCredit}, {care, careCredit}} {
+				if pair.credit.Cmp(returnTax) > 0 {
+					pair.credit = new(big.Rat).Set(returnTax)
+				}
+				returnTax.Sub(returnTax, pair.credit)
+				pair.total.Add(pair.total, pair.credit)
+			}
+		}
+		federal.Add(federal, returnTax)
 		if above := new(big.Rat).Sub(grossIncome, big.NewRat(netInvestmentIncomeThresholdByStatus[status], 1)); above.Sign() > 0 && invested.netInvestmentIncome.Sign() > 0 {
 			if invested.netInvestmentIncome.Cmp(above) < 0 {
 				above = invested.netInvestmentIncome
@@ -345,8 +461,12 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 		StandardDeductionAmount:   formatDollars(standardDeduction), TaxableIncomeAmount: formatDollars(taxableIncome),
 		PreferentialIncomeAmount: formatDollars(preferential), PreferentialIncomeTaxAmount: formatDollars(preferentialTax),
 		CapitalLossDeductionAmount: formatDollars(capitalLossDeduction), ForeignTaxCreditAmount: formatDollars(foreignTaxCredit),
-		NetInvestmentIncomeTaxAmount: formatDollars(netInvestmentIncomeTax),
-		FederalIncomeTaxAmount:       formatDollars(federal), SocialSecurityTaxAmount: formatDollars(socialSecurity), MedicareTaxAmount: formatDollars(medicare),
+		NetInvestmentIncomeTaxAmount: formatDollars(netInvestmentIncomeTax), IsInvestmentIncomePreviewed: extras.isPreviewed,
+		OtherIncomeAmount: formatDollars(otherIncome), DeductionAmount: formatDollars(deductionTaken), IsItemized: isItemized,
+		ItemizedDeductionAmount: formatDollars(itemizedDeduction), MortgageInterestAmount: formatDollars(mortgageInterest),
+		StateAndLocalTaxDeductionAmount: formatDollars(stateAndLocalDeduction), CharitableContributionAmount: formatDollars(charitable),
+		ChildTaxCreditAmount: formatDollars(childCredit), DependentCareCreditAmount: formatDollars(careCredit),
+		FederalIncomeTaxAmount: formatDollars(federal), SocialSecurityTaxAmount: formatDollars(socialSecurity), MedicareTaxAmount: formatDollars(medicare),
 		StateIncomeTaxAmount: formatDollars(stateTax), LocalIncomeTaxAmount: formatDollars(localTax), TotalTaxAmount: formatDollars(total),
 		PaidTaxAmount: formatDollars(paid), UpcomingWithheldTaxAmount: formatDollars(upcoming),
 		OwingTaxAmount: formatDollars(owing), RefundAmount: formatDollars(refund), RemainingIncomeAmount: formatDollars(remaining),
@@ -409,4 +529,13 @@ func retirementDeferralCeiling(taxYear int, yearToDate *big.Rat) *big.Rat {
 		}
 	}
 	return nil
+}
+
+// estimateExtras are what the estimate takes besides each person's
+// documents: the year's settings and its 1098s, and whether investment
+// income counted is previewed rather than read from 1099s.
+type estimateExtras struct {
+	setting                               *models.TaxYearSetting
+	mortgageInterest, mortgagePropertyTax *big.Rat
+	isPreviewed                           bool
 }

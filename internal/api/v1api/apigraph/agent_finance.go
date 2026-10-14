@@ -192,6 +192,12 @@ type FinanceQuery interface {
 	// in is read as a paystub or a W-2: their mailbox address with +taxes-
 	// and a token, made the first time this is asked.
 	TaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error)
+
+	// A tax year's settings: what its estimate needs that no document
+	// says (children, dependent care paid, other household income,
+	// charitable gifts, property tax, and the gains realized so far in a
+	// year whose 1099-Bs have not come). Nothing given yet is zeros.
+	TaxYearSetting(ctx context.Context, arguments TaxYearSettingArguments) (*models.TaxYearSetting, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -232,6 +238,9 @@ type FinanceMutation interface {
 	// Give the tax document address a new token. The old address stops
 	// taking mail at once.
 	RegenerateTaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error)
+
+	// Change a tax year's settings; what is not given stays as it was.
+	SetTaxYearSetting(ctx context.Context, arguments SetTaxYearSettingArguments) (*models.TaxYearSetting, error)
 
 	// Import an OFX statement (.ofx, .qfx or .qbo): a file uploaded to the
 	// agent's attachments, or every OFX attachment of a message in the
