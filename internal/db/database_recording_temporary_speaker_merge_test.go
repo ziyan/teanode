@@ -260,7 +260,9 @@ func TestNamingTheRootNamesTheMergedLabelToo(test *testing.T) {
 
 // A label merged into a speaker that is already named is named the way naming
 // would have, and separating takes off only what the merge wrote.
-func TestMergingIntoANamedSpeakerNamesItAndSeparatingOnlyRemovesThat(test *testing.T) {
+// The provider made the merge, not the person, so a label merged into a named
+// speaker reads as the name without a correction confirming it.
+func TestMergingIntoANamedSpeakerReadsAsTheNameWithoutConfirmingIt(test *testing.T) {
 	fixture := newMergeFixture(test)
 	fixture.name(test, "Speaker 1", "Participant One")
 	if count := fixture.activeCorrectionCount(test); count != "1" {
@@ -272,14 +274,14 @@ func TestMergingIntoANamedSpeakerNamesItAndSeparatingOnlyRemovesThat(test *testi
 	if names := fixture.timelineNames(test); names[1] != "Participant One/Speaker 2" {
 		test.Fatal("a label merged into a named speaker does not read as the name", names)
 	}
-	if count := fixture.activeCorrectionCount(test); count != "2" {
-		test.Fatal("the merge did not name the merged label's piece", count)
+	if count := fixture.activeCorrectionCount(test); count != "1" {
+		test.Fatal("the merge wrote a correction as if the person had confirmed it", count)
 	}
 	if err := fixture.separate(test, "Speaker 2"); err != nil {
 		test.Fatal(err)
 	}
 	if count := fixture.activeCorrectionCount(test); count != "1" {
-		test.Fatal("separating removed more than the merge wrote, or less", count)
+		test.Fatal("separating removed the earlier speaker's own naming", count)
 	}
 	names := fixture.timelineNames(test)
 	if names[0] != "Participant One/" || names[1] != "Speaker 2/" || names[2] != "Speaker 3/" {
@@ -326,10 +328,10 @@ func TestTwoLabelsOfOnePieceMergedIntoANamedSpeakerAreNamedAndSeparatedApart(tes
 	if err := fixture.merge(test, "Speaker 2", "Speaker 1"); err != nil {
 		test.Fatal(err)
 	}
-	fixture.name(test, "Speaker 1", "Participant One")
 	if err := fixture.merge(test, "Speaker 3", "Speaker 1"); err != nil {
 		test.Fatal(err)
 	}
+	fixture.name(test, "Speaker 1", "Participant One")
 	if count := fixture.activeCorrectionCount(test); count != "3" {
 		test.Fatal("each label of the piece was not named under its own key", count)
 	}

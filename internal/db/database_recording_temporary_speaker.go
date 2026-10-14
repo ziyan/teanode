@@ -364,8 +364,9 @@ func (self *transaction) writeTemporarySpeakerCorrections(userId string, source 
 // MergeRecordingTemporarySpeaker makes a label read as the voice of an earlier
 // one: the provider said they are the same person. The label's passages show
 // the earlier label, or its name once it has one, and its sample is no longer
-// sent. When the earlier speaker is already named, the merged label's pieces
-// are named the way naming would have, so the name is not missing from them.
+// sent. When the earlier speaker is already named, its passages read as that
+// name through the projection, as recognized rather than confirmed: the
+// provider made the merge, not the person, so no correction is written for it.
 func (self *transaction) MergeRecordingTemporarySpeaker(userId, recordingId, speakerLabel, intoSpeakerLabel string) error {
 	if speakerLabel == "" || intoSpeakerLabel == "" || speakerLabel == intoSpeakerLabel {
 		return ErrInvalidArguments
@@ -401,29 +402,8 @@ func (self *transaction) MergeRecordingTemporarySpeaker(userId, recordingId, spe
 		return ErrInvalidArguments
 	}
 	// Whatever was merged into this speaker follows it, so a pointer never has a chain of two.
-	var followers []*recordingTemporarySpeakerModel
-	if err := self.tx.Where("merged_into_temporary_speaker_id = ?", speaker.ID).Order("created_at, id").Find(&followers).Error; err != nil {
-		return err
-	}
 	if err := self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ? OR merged_into_temporary_speaker_id = ?", speaker.ID, speaker.ID).Update("merged_into_temporary_speaker_id", root.ID).Error; err != nil {
 		return err
-	}
-	if root.SpeakerIdentityID != nil {
-		var identity recordingSpeakerIdentityModel
-		if err := self.tx.Where("id = ? AND user_id = ?", *root.SpeakerIdentityID, userId).Take(&identity).Error; err != nil {
-			return err
-		}
-		var appearances []recordingSpeakerAppearance
-		for _, merged := range append([]*recordingTemporarySpeakerModel{speaker}, followers...) {
-			mergedAppearances, err := self.recordingTemporarySpeakerAppearances(source.ID, merged)
-			if err != nil {
-				return err
-			}
-			appearances = append(appearances, withMergedSpeakerID(mergedAppearances, merged.ID)...)
-		}
-		if err := self.writeTemporarySpeakerCorrections(userId, source, root.ID, appearances, identity.ConfirmedName, identity.IsAccountOwner); err != nil {
-			return err
-		}
 	}
 	return self.advanceRecordingSpeakerGeneration(source.ID)
 }
