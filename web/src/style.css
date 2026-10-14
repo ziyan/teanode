@@ -14739,3 +14739,28 @@ body.has-recording-bar .content {
   width: fit-content;
   max-width: 100%;
 }
+
+/* A paystub's lines carry up to five amounts each: the dialog is wider than
+   a receipt's, the line's name keeps room for a word or two before it is
+   cut, and on a narrow screen the table scrolls sideways inside its box
+   rather than squeezing the names to a letter. The totals row's label is
+   one line. */
+.dialog.dialog-wide:has(.finance-paystub-lines) {
+  max-width: min(780px, calc(100vw - 32px));
+}
+
+.finance-paystub-lines thead th:first-child,
+.finance-paystub-lines tbody td:first-child {
+  width: auto;
+  min-width: 11rem;
+  max-width: 16rem;
+}
+
+.finance-paystub-lines tfoot th {
+  white-space: nowrap;
+}
+
+.finance-paystub-lines th,
+.finance-paystub-lines td {
+  white-space: nowrap;
+}

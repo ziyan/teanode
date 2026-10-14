@@ -3809,7 +3809,7 @@ export const zh: Catalog = {
   'finance.taxHouseholdHint': '以上所有雇主的合计；有不止一人有收入时，也分别列出每个人的合计。',
   'finance.taxExcessSocialSecurity': '{employee} 在多个雇主处被预扣的社会保障税超出全年上限 {amount}，这部分会在报税时作为抵免退回。',
   'finance.taxFindingsTitle': '值得核对',
-  'finance.taxFindingsHint': '报税前需要看一看的地方：缺少的工资单、对不上的栏目、被重复预扣的社会保障税。',
+  'finance.taxFindingsHint': '报税前需要看一看的地方：缺少的工资单、对不上的栏目、超过全年上限预扣的社会保障税。',
   'finance.taxFindingBrokenChain': '与上一张接不上',
   'finance.taxFindingPayDateGap': '发薪日有空缺',
   'finance.taxFindingDuplicatePaystub': '重复读取',

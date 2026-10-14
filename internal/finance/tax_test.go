@@ -252,7 +252,7 @@ func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 	broken := checkedPaystub(t, "paystub-2", "2026-03-20", 6)
 	broken.PaystubLines[1].YearToDateAmount = "3100.0000"
 	summary := SummarizeTaxYear(2026, []*models.FinancePaystub{checkedPaystub(t, "paystub-1", "2026-03-06", 5), broken}, nil, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC))
-	if len(summary.TaxYearFindings) != 1 || summary.TaxYearFindings[0].TaxYearFindingCode != TaxYearFindingBrokenChain || !strings.Contains(summary.TaxYearFindings[0].FindingText, "3000.00") {
+	if len(summary.TaxYearFindings) != 1 || summary.TaxYearFindings[0].TaxYearFindingCode != TaxYearFindingBrokenChain || !strings.Contains(summary.TaxYearFindings[0].FindingText, "$3,000.00") {
 		t.Fatalf("a year to date that does not follow on is pointed out: %+v", summary.TaxYearFindings)
 	}
 
@@ -343,4 +343,13 @@ func findingCodes(summary *TaxYearSummary) []TaxYearFindingCode {
 		codes = append(codes, finding.TaxYearFindingCode)
 	}
 	return codes
+}
+
+func TestDollarsText(t *testing.T) {
+	for amount, want := range map[string]string{"0": "$0.00", "12.5": "$12.50", "1234.5": "$1,234.50", "1234567.891": "$1,234,567.89", "-1000": "-$1,000.00"} {
+		value, _ := new(big.Rat).SetString(amount)
+		if got := dollarsText(value); got != want {
+			t.Errorf("%s is written %s, not %s", amount, want, got)
+		}
+	}
 }

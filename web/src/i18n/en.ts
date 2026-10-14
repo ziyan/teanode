@@ -3949,7 +3949,7 @@ export const en = {
   'finance.taxHouseholdHint': 'Every employer above added up, and each person on their own when more than one person earned.',
   'finance.taxExcessSocialSecurity': "{employee} had {amount} of Social Security withheld beyond the year's maximum across employers. It comes back as a credit on the return.",
   'finance.taxFindingsTitle': 'Worth checking',
-  'finance.taxFindingsHint': 'What the paystubs and W-2s say that needs a look before filing: a missing paystub, a box that differs, Social Security withheld twice.',
+  'finance.taxFindingsHint': 'What the paystubs and W-2s say that needs a look before filing: a missing paystub, a box that differs, Social Security withheld beyond the yearly maximum.',
   'finance.taxFindingBrokenChain': 'Does not follow on',
   'finance.taxFindingPayDateGap': 'Gap in pay dates',
   'finance.taxFindingDuplicatePaystub': 'Read twice',

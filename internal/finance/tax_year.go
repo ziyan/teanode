@@ -639,7 +639,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 				if differing > 0 && employment.IsPaystubYearComplete {
 					summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
 						TaxYearFindingCode: TaxYearFindingW2DiffersFromPaystubs, EmployeeName: employment.EmployeeName, EmployerName: employment.EmployerName,
-						FindingText: fmt.Sprintf("the W-2 from %s differs from the year's last paystub in %d %s", employment.EmployerName, differing, pluralize(differing, "box", "boxes")),
+						FindingText: fmt.Sprintf("The W-2 from %s differs from the year's last paystub in %d %s", employment.EmployerName, differing, pluralize(differing, "box", "boxes")),
 						PaystubIDs:  []string{group.paystubs[len(group.paystubs)-1].ID},
 					})
 				}
@@ -651,7 +651,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			if summary.IsYearOver {
 				summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
 					TaxYearFindingCode: TaxYearFindingW2Missing, EmployeeName: employment.EmployeeName, EmployerName: employment.EmployerName,
-					FindingText: fmt.Sprintf("no W-2 from %s for %d yet; employers send them by January 31", employment.EmployerName, taxYear), PaystubIDs: []string{},
+					FindingText: fmt.Sprintf("No W-2 from %s for %d yet; employers send them by January 31", employment.EmployerName, taxYear), PaystubIDs: []string{},
 				})
 			} else if employment.RemainingPayCount > 0 {
 				group.projected = projectPaystubs(paystubYear, paystubSums(group.paystubs[len(group.paystubs)-1], true, wageBase), employment.RemainingPayCount, wageBase, isWageBaseKnown)
@@ -696,7 +696,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 				summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
 					TaxYearFindingCode: TaxYearFindingExcessSocialSecurity, EmployeeName: person.EmployeeName,
 					FindingText: fmt.Sprintf("%s had %s in Social Security tax withheld across employers, %s more than %d's maximum of %s; the excess comes back as a credit on the return",
-						person.EmployeeName, formatDollars(figures.socialSecurityTax), formatDollars(excess), taxYear, formatDollars(maximumTax)),
+						person.EmployeeName, dollarsText(figures.socialSecurityTax), dollarsText(excess), taxYear, dollarsText(maximumTax)),
 					PaystubIDs: []string{},
 				})
 			}
@@ -809,7 +809,7 @@ func paystubChainFindings(employment *TaxYearEmployment, paystubs []*models.Fina
 		if previous.PayDate == current.PayDate && previous.NetAmount == current.NetAmount {
 			findings = append(findings, &TaxYearFinding{
 				TaxYearFindingCode: TaxYearFindingDuplicatePaystub, EmployeeName: employment.EmployeeName, EmployerName: employment.EmployerName,
-				FindingText: fmt.Sprintf("two paystubs from %s for %s with the same take-home pay; one may be a copy", employment.EmployerName, current.PayDate), PaystubIDs: ids,
+				FindingText: fmt.Sprintf("Two paystubs from %s for %s with the same take-home pay; one may be a copy", employment.EmployerName, current.PayDate), PaystubIDs: ids,
 			})
 			continue
 		}
@@ -818,7 +818,7 @@ func paystubChainFindings(employment *TaxYearEmployment, paystubs []*models.Fina
 		if gap := int(currentDay.Sub(previousDay).Hours() / 24); gap*2 > cadence*3 {
 			findings = append(findings, &TaxYearFinding{
 				TaxYearFindingCode: TaxYearFindingPayDateGap, EmployeeName: employment.EmployeeName, EmployerName: employment.EmployerName,
-				FindingText: fmt.Sprintf("no paystub from %s between %s and %s, %d days apart when paychecks come every %d", employment.EmployerName, previous.PayDate, current.PayDate, gap, cadence),
+				FindingText: fmt.Sprintf("No paystub from %s between %s and %s, %d days apart when paychecks come every %d", employment.EmployerName, previous.PayDate, current.PayDate, gap, cadence),
 				PaystubIDs:  ids,
 			})
 			continue
@@ -826,7 +826,7 @@ func paystubChainFindings(employment *TaxYearEmployment, paystubs []*models.Fina
 		if line := brokenChainLine(previous, current); line != "" {
 			findings = append(findings, &TaxYearFinding{
 				TaxYearFindingCode: TaxYearFindingBrokenChain, EmployeeName: employment.EmployeeName, EmployerName: employment.EmployerName,
-				FindingText: fmt.Sprintf("the paystub of %s does not follow on from the one of %s: %s", current.PayDate, previous.PayDate, line),
+				FindingText: fmt.Sprintf("The paystub of %s does not follow on from the one of %s: %s", current.PayDate, previous.PayDate, line),
 				PaystubIDs:  ids,
 			})
 		}
@@ -849,7 +849,7 @@ func brokenChainLine(previous, current *models.FinancePaystub) string {
 		if expected.Cmp(currentYearToDateValue) == 0 {
 			return ""
 		}
-		return fmt.Sprintf("%s year to date should be %s and is %s", what, formatDollars(expected), formatDollars(currentYearToDateValue))
+		return fmt.Sprintf("%s year to date should be %s and is %s", what, dollarsText(expected), dollarsText(currentYearToDateValue))
 	}
 	if line := check("gross pay", previous.YearToDateGrossAmount, current.GrossAmount, current.YearToDateGrossAmount); line != "" {
 		return line

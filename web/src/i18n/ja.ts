@@ -3902,7 +3902,7 @@ export const ja: Catalog = {
   'finance.taxHouseholdHint': '上の雇用主すべての合計です。収入のある人が複数いる場合は、一人ずつの合計も示します。',
   'finance.taxExcessSocialSecurity': '{employee} は複数の雇用主で、年間上限を {amount} 超えて社会保障税を源泉徴収されています。この分は申告で税額控除として戻ってきます。',
   'finance.taxFindingsTitle': '確認すべきこと',
-  'finance.taxFindingsHint': '申告前に見ておきたい点です。抜けている給与明細、食い違うボックス、二重に引かれた社会保障税など。',
+  'finance.taxFindingsHint': '申告前に見ておきたい点です。抜けている給与明細、食い違うボックス、年間上限を超えて源泉徴収された社会保障税など。',
   'finance.taxFindingBrokenChain': '前の明細とつながらない',
   'finance.taxFindingPayDateGap': '支給日の空き',
   'finance.taxFindingDuplicatePaystub': '二重の読み取り',

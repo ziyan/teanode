@@ -297,6 +297,25 @@ func formatDollars(amountValue *big.Rat) string {
 	return amountValue.FloatString(2)
 }
 
+// dollarsText writes an amount for a sentence: a dollar sign and commas
+// between the thousands, $12,345.67.
+func dollarsText(amountValue *big.Rat) string {
+	text := formatDollars(new(big.Rat).Abs(amountValue))
+	whole, fraction, _ := strings.Cut(text, ".")
+	var builder strings.Builder
+	for index, digit := range whole {
+		if index > 0 && (len(whole)-index)%3 == 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteRune(digit)
+	}
+	sign := ""
+	if amountValue.Sign() < 0 {
+		sign = "-"
+	}
+	return sign + "$" + builder.String() + "." + fraction
+}
+
 // TaxFormFindings works out what a W-2 says about itself, within a dollar,
 // since payroll rounds each paycheck's tax to the cent: Social Security
 // tax against 6.2% of Social Security wages and tips, those wages against
@@ -316,9 +335,9 @@ func TaxFormFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
 		taxedWages := new(big.Rat).Add(socialSecurityWages, socialSecurityTips)
 		expected := roundToCents(new(big.Rat).Mul(taxedWages, socialSecurityRate))
 		isAgreeing := isWithinTolerance(expected, socialSecurityTax)
-		findingText := fmt.Sprintf("Social Security tax %s is 6.2%% of %s in Social Security wages", formatDollars(socialSecurityTax), formatDollars(taxedWages))
+		findingText := fmt.Sprintf("Social Security tax %s is 6.2%% of %s in Social Security wages", dollarsText(socialSecurityTax), dollarsText(taxedWages))
 		if !isAgreeing {
-			findingText = fmt.Sprintf("Social Security tax %s is not 6.2%% of %s in Social Security wages, which is %s", formatDollars(socialSecurityTax), formatDollars(taxedWages), formatDollars(expected))
+			findingText = fmt.Sprintf("Social Security tax %s is not 6.2%% of %s in Social Security wages, which is %s", dollarsText(socialSecurityTax), dollarsText(taxedWages), dollarsText(expected))
 		}
 		findings = append(findings, TaxFormFinding{
 			TaxFormFindingCode: TaxFormFindingSocialSecurityRate, IsAgreeing: isAgreeing,
@@ -326,9 +345,9 @@ func TaxFormFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
 		})
 		if wageBase, isKnown := SocialSecurityWageBase(taxForm.TaxYear); isKnown {
 			isAgreeing := taxedWages.Cmp(wageBase) <= 0
-			findingText := fmt.Sprintf("Social Security wages %s are within %d's wage base of %s", formatDollars(taxedWages), taxForm.TaxYear, formatDollars(wageBase))
+			findingText := fmt.Sprintf("Social Security wages %s are within %d's wage base of %s", dollarsText(taxedWages), taxForm.TaxYear, dollarsText(wageBase))
 			if !isAgreeing {
-				findingText = fmt.Sprintf("Social Security wages %s are more than %d's wage base of %s", formatDollars(taxedWages), taxForm.TaxYear, formatDollars(wageBase))
+				findingText = fmt.Sprintf("Social Security wages %s are more than %d's wage base of %s", dollarsText(taxedWages), taxForm.TaxYear, dollarsText(wageBase))
 			}
 			findings = append(findings, TaxFormFinding{
 				TaxFormFindingCode: TaxFormFindingSocialSecurityWageBase, IsAgreeing: isAgreeing,
@@ -345,9 +364,9 @@ func TaxFormFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
 		}
 		expected = roundToCents(expected)
 		isAgreeing := isWithinTolerance(expected, medicareTax)
-		findingText := fmt.Sprintf("Medicare tax %s agrees with %s in Medicare wages", formatDollars(medicareTax), formatDollars(medicareWages))
+		findingText := fmt.Sprintf("Medicare tax %s agrees with %s in Medicare wages", dollarsText(medicareTax), dollarsText(medicareWages))
 		if !isAgreeing {
-			findingText = fmt.Sprintf("Medicare tax %s does not agree with %s in Medicare wages, which come to %s", formatDollars(medicareTax), formatDollars(medicareWages), formatDollars(expected))
+			findingText = fmt.Sprintf("Medicare tax %s does not agree with %s in Medicare wages, which come to %s", dollarsText(medicareTax), dollarsText(medicareWages), dollarsText(expected))
 		}
 		findings = append(findings, TaxFormFinding{
 			TaxFormFindingCode: TaxFormFindingMedicareRate, IsAgreeing: isAgreeing,

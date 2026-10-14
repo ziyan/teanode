@@ -1068,7 +1068,9 @@ export function FinanceTaxesSection() {
             ) : null}
           </SettingsSection>
           <SettingsSection card title={t('finance.paystubsTitle')} description={t('finance.paystubsHint')}>
-            {shownPage ? <p className="muted finance-transaction-count">{paystubCountWords(totalCount)}</p> : null}
+            {shownPage && totalCount > 0 ? (
+              <p className="muted finance-transaction-count">{paystubCountWords(totalCount)}</p>
+            ) : null}
             <ErrorMessage error={paystubsQuery.error} />
             {/* Drawn before the first answer, since the table is what says
                 which page to ask for. */}
