@@ -541,10 +541,13 @@ struct RecordingRowView: View {
                     }
                 }
                 ViewThatFits(in: .horizontal) {
+                    // At its own width, or the status wraps beside the duration
+                    // ("Record-ing") instead of moving below it.
                     HStack(spacing: 6) {
                         duration
                         if row.status != .ready { RecordingStatusLabel(status: row.status) }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     VStack(alignment: .leading, spacing: 3) {
                         duration
                         if row.status != .ready { RecordingStatusLabel(status: row.status) }
