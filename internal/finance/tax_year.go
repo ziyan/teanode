@@ -620,9 +620,20 @@ func chooseW2(taxForms []*models.FinanceTaxForm) *models.FinanceTaxForm {
 }
 
 // payCadenceDayCount is the usual number of days between paychecks: the
-// median of the gaps between pay dates, else the pay period's length,
-// else 14.
+// latest paystub's pay period when it prints one of a week or more, else
+// the lower median of the gaps between pay dates, else 14. The period
+// comes first because the paystubs at hand are often a few out of the
+// year, and the gaps between them say more about what is missing than
+// about how often pay comes.
 func payCadenceDayCount(paystubs []*models.FinancePaystub) int {
+	latest := paystubs[len(paystubs)-1]
+	start, errStart := time.Parse(time.DateOnly, latest.PeriodStartOn)
+	end, errEnd := time.Parse(time.DateOnly, latest.PeriodEndOn)
+	if errStart == nil && errEnd == nil {
+		if length := int(end.Sub(start).Hours()/24) + 1; length >= 7 {
+			return length
+		}
+	}
 	var gaps []int
 	for index := 1; index < len(paystubs); index++ {
 		previous, errPrevious := time.Parse(time.DateOnly, paystubs[index-1].PayDate)
@@ -635,15 +646,7 @@ func payCadenceDayCount(paystubs []*models.FinancePaystub) int {
 	}
 	if len(gaps) > 0 {
 		sort.Ints(gaps)
-		return gaps[len(gaps)/2]
-	}
-	latest := paystubs[len(paystubs)-1]
-	start, errStart := time.Parse(time.DateOnly, latest.PeriodStartOn)
-	end, errEnd := time.Parse(time.DateOnly, latest.PeriodEndOn)
-	if errStart == nil && errEnd == nil {
-		if length := int(end.Sub(start).Hours()/24) + 1; length >= 7 {
-			return length
-		}
+		return gaps[(len(gaps)-1)/2]
 	}
 	return 14
 }

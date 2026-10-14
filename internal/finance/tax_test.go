@@ -265,6 +265,19 @@ func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 		t.Fatalf("four weeks between paychecks every two is a gap: %+v", summary.TaxYearFindings)
 	}
 
+	// A few paystubs out of the year: one in spring and two in the autumn,
+	// printing their two-week periods. The cadence is the period, so the
+	// months between are a gap, and the year is projected from October.
+	spring, september, october := checkedPaystub(t, "paystub-a", "2026-04-03", 7), checkedPaystub(t, "paystub-b", "2026-09-18", 18), checkedPaystub(t, "paystub-c", "2026-10-02", 19)
+	october.PeriodStartOn, october.PeriodEndOn = "2026-09-20", "2026-10-03"
+	summary = SummarizeTaxYear(2026, []*models.FinancePaystub{spring, september, october}, nil, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC))
+	if employment := summary.TaxYearEmployments[0]; employment.PayCadenceDayCount != 14 || employment.RemainingPayCount != 6 || employment.ProjectedFigures == nil {
+		t.Fatalf("paid every two weeks, six more paychecks to December 31: %+v", employment)
+	}
+	if codes := findingCodes(summary); len(codes) != 1 || codes[0] != TaxYearFindingPayDateGap {
+		t.Fatalf("the months between spring and autumn are a gap, not a broken chain: %v", codes)
+	}
+
 	summary = SummarizeTaxYear(2026, paystubs[:2], nil, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC))
 	if codes := findingCodes(summary); len(codes) != 1 || codes[0] != TaxYearFindingW2Missing {
 		t.Fatalf("after the year, paystubs without a W-2 are pointed out: %v", codes)
