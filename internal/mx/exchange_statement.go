@@ -73,8 +73,8 @@ type importAddress struct {
 	// isRefusedUnlessOpen says a message to the address without an open
 	// token is refused rather than matched as ordinary mail.
 	isRefusedUnlessOpen bool
-	isToken     func(tx db.Transaction, mailbox *models.Mailbox, token string) bool
-	onDelivery  func(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
+	isToken             func(tx db.Transaction, mailbox *models.Mailbox, token string) bool
+	onDelivery          func(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
 }
 
 // importAddresses are the kinds of import address the current hook
