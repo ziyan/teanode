@@ -227,7 +227,7 @@ struct KnowledgeSourcesView: View {
                 }
                 ForEach((sources ?? []).filter { highlightedSourceId == nil || $0.id == highlightedSourceId }) { source in
                         .confirmationDialog(
-                            "Stop reading it", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible,
+                            "Stop reading it", isPresented: Binding(get: { removing?.id == source.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible,
                             presenting: removing
                         ) { source in
                             Button("Stop reading it", role: .destructive) {
@@ -1100,16 +1100,16 @@ struct AgentMemorySettingsView: View {
                         Text(verbatim: "“\(quote)”").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
+                .confirmationDialog(
+                    "Forget", isPresented: Binding(get: { forgetting?.id == learned.id }, set: { if !$0 { forgetting = nil } }), titleVisibility: .visible,
+                    presenting: forgetting
+                ) { learned in
+                    Button("Forget", role: .destructive) { Task { await forget(learned) } }
+                } message: { learned in
+                    Text("Forget this, and show it to your agent as an example of what not to keep: \"\(learned.fact.text)\"")
+                }
                 .swipeActions {
                     Button("Forget", systemImage: "trash", role: .destructive) { forgetting = learned }
-                        .confirmationDialog(
-                            "Forget", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }), titleVisibility: .visible,
-                            presenting: forgetting
-                        ) { learned in
-                            Button("Forget", role: .destructive) { Task { await forget(learned) } }
-                        } message: { learned in
-                            Text("Forget this, and show it to your agent as an example of what not to keep: \"\(learned.fact.text)\"")
-                        }
                 }
             }
         } header: {
@@ -1963,7 +1963,7 @@ struct SchedulesView: View {
                         AgentScheduleRow(schedule: schedule)
                     }
                     .confirmationDialog(
-                        "Remove", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .hidden, presenting: removing
+                        "Remove", isPresented: Binding(get: { removing?.id == schedule.id }, set: { if !$0 { removing = nil } }), titleVisibility: .hidden, presenting: removing
                     ) { schedule in
                         Button("Remove", role: .destructive) {
                             Task { await act(saying: nil) { try await connection.deleteAgentSchedule(schedule.id) } }
@@ -2338,7 +2338,7 @@ struct MutedAlertsView: View {
                     }
                 }
                 .confirmationDialog(
-                    "Stop telling me about these", isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } }), titleVisibility: .visible,
+                    "Stop telling me about these", isPresented: Binding(get: { muting?.id == alert.id }, set: { if !$0 { muting = nil } }), titleVisibility: .visible,
                     presenting: muting
                 ) { alert in
                     ForEach(alert.muteChoices, id: \.muteScope) { choice in
@@ -2609,7 +2609,7 @@ struct ConnectionsView: View {
                     Text(verbatim: serverDetails(server)).font(.footnote).foregroundStyle(.secondary)
                 }
                 .confirmationDialog(
-                    "Disconnect", isPresented: Binding(get: { disconnecting != nil }, set: { if !$0 { disconnecting = nil } }), titleVisibility: .hidden,
+                    "Disconnect", isPresented: Binding(get: { disconnecting?.id == server.id }, set: { if !$0 { disconnecting = nil } }), titleVisibility: .hidden,
                     presenting: disconnecting
                 ) { server in
                     Button("Disconnect", role: .destructive) {
@@ -2707,7 +2707,7 @@ struct ConnectionsView: View {
                     }
                 }
                 .confirmationDialog(
-                    "Forget it", isPresented: Binding(get: { forgettingSecret != nil }, set: { if !$0 { forgettingSecret = nil } }), titleVisibility: .hidden,
+                    "Forget it", isPresented: Binding(get: { forgettingSecret?.id == secret.id }, set: { if !$0 { forgettingSecret = nil } }), titleVisibility: .hidden,
                     presenting: forgettingSecret
                 ) { secret in
                     Button("Forget it", role: .destructive) {
@@ -2872,7 +2872,7 @@ struct ConnectionsView: View {
                     }
                 }
                 .confirmationDialog(
-                    "Unlink", isPresented: Binding(get: { unlinking != nil }, set: { if !$0 { unlinking = nil } }), titleVisibility: .hidden,
+                    "Unlink", isPresented: Binding(get: { unlinking?.kind == kind }, set: { if !$0 { unlinking = nil } }), titleVisibility: .hidden,
                     presenting: unlinking
                 ) { channel in
                     Button("Unlink", role: .destructive) {
@@ -2882,7 +2882,7 @@ struct ConnectionsView: View {
                     Text("Linked to \(channel.linkedName ?? "")")
                 }
                 .confirmationDialog(
-                    "Remove", isPresented: Binding(get: { removingChannel != nil }, set: { if !$0 { removingChannel = nil } }), titleVisibility: .hidden,
+                    "Remove", isPresented: Binding(get: { removingChannel?.kind == kind }, set: { if !$0 { removingChannel = nil } }), titleVisibility: .hidden,
                     presenting: removingChannel
                 ) { channel in
                     Button("Remove", role: .destructive) {
@@ -3159,7 +3159,7 @@ struct AgentActivityView: View {
                 }
                 .disabled(!work.isOpenable && !work.isStoppable)
                 .confirmationDialog(
-                    "Stop", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), titleVisibility: .hidden, presenting: stopping
+                    "Stop", isPresented: Binding(get: { stopping?.id == work.id }, set: { if !$0 { stopping = nil } }), titleVisibility: .hidden, presenting: stopping
                 ) { work in
                     Button("Stop", role: .destructive) {
                         Task {
@@ -3257,22 +3257,22 @@ struct AgentActivityView: View {
                     }
                     Text(verbatim: replyDetails(reply)).font(.footnote).foregroundStyle(.secondary)
                 }
+                .confirmationDialog(
+                    "Cancel the reply", isPresented: Binding(get: { cancelling?.id == reply.id }, set: { if !$0 { cancelling = nil } }), titleVisibility: .hidden,
+                    presenting: cancelling
+                ) { reply in
+                    Button("Cancel the reply", role: .destructive) {
+                        Task {
+                            await act(saying: String(localized: "The reply will not be sent.")) { try await connection.cancelAgentReply(reply.id) }
+                            await loadReplies()
+                        }
+                    }
+                } message: { reply in
+                    Text(verbatim: reply.subject)
+                }
                 .swipeActions {
                     if reply.isHeld {
                         Button("Cancel", systemImage: "xmark.circle", role: .destructive) { cancelling = reply }
-                            .confirmationDialog(
-                                "Cancel the reply", isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .hidden,
-                                presenting: cancelling
-                            ) { reply in
-                                Button("Cancel the reply", role: .destructive) {
-                                    Task {
-                                        await act(saying: String(localized: "The reply will not be sent.")) { try await connection.cancelAgentReply(reply.id) }
-                                        await loadReplies()
-                                    }
-                                }
-                            } message: { reply in
-                                Text(verbatim: reply.subject)
-                            }
                     }
                 }
             }

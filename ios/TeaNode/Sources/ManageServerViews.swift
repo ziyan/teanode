@@ -2134,7 +2134,7 @@ private struct AgentListView: View {
                     ForEach(overview.agents) { summary in
                         row(summary)
                             .confirmationDialog(
-                                "Switch this agent off?", isPresented: Binding(get: { switchingOff != nil }, set: { if !$0 { switchingOff = nil } }),
+                                "Switch this agent off?", isPresented: Binding(get: { switchingOff?.id == summary.id }, set: { if !$0 { switchingOff = nil } }),
                                 titleVisibility: .visible, presenting: switchingOff
                             ) { summary in
                                 Button("Switch off", role: .destructive) {
@@ -2837,7 +2837,7 @@ private struct AgentProvidersView: View {
                             row(provider)
                         }
                         .confirmationDialog(
-                            "Remove the provider?", isPresented: Binding(get: { removingIndex != nil }, set: { if !$0 { removingIndex = nil } }),
+                            "Remove the provider?", isPresented: Binding(get: { removingIndex == index }, set: { if !$0 { removingIndex = nil } }),
                             titleVisibility: .visible, presenting: removingIndex
                         ) { index in
                             Button("Remove", role: .destructive) {
@@ -3711,7 +3711,7 @@ private struct ConnectedServersView: View {
                             row(server)
                         }
                         .confirmationDialog(
-                            "Remove the server?", isPresented: Binding(get: { removingIndex != nil }, set: { if !$0 { removingIndex = nil } }),
+                            "Remove the server?", isPresented: Binding(get: { removingIndex == index }, set: { if !$0 { removingIndex = nil } }),
                             titleVisibility: .visible, presenting: removingIndex
                         ) { index in
                             Button("Remove", role: .destructive) {
@@ -4391,7 +4391,7 @@ private struct AgentSourceTypesView: View {
                         row(sourceType)
                     }
                     .confirmationDialog(
-                        "Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                        "Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing?.id == sourceType.id }, set: { if !$0 { removing = nil } }),
                         titleVisibility: .visible, presenting: removing
                     ) { sourceType in
                         Button("Remove", role: .destructive) {

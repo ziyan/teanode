@@ -2532,23 +2532,23 @@ private struct DomainAliasesView: View {
                         } label: {
                             row(alias)
                         }
+                        .confirmationDialog(
+                            "Remove address", isPresented: Binding(get: { removing?.id == alias.id }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing
+                        ) { alias in
+                            Button("Remove", role: .destructive) {
+                                Task {
+                                    await model.act(saying: String(localized: "Removed")) {
+                                        try await model.connection.deleteDomainAlias(aliasId: alias.id)
+                                    }
+                                }
+                            }
+                        } message: { alias in
+                            let shownName = aliasName(alias)
+                            Text("Remove “\(shownName)”? Mail sent to it will be refused.")
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = alias }
-                                .confirmationDialog(
-                                    "Remove address", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                                    titleVisibility: .visible, presenting: removing
-                                ) { alias in
-                                    Button("Remove", role: .destructive) {
-                                        Task {
-                                            await model.act(saying: String(localized: "Removed")) {
-                                                try await model.connection.deleteDomainAlias(aliasId: alias.id)
-                                            }
-                                        }
-                                    }
-                                } message: { alias in
-                                    let shownName = aliasName(alias)
-                                    Text("Remove “\(shownName)”? Mail sent to it will be refused.")
-                                }
                         }
                     }
                 } footer: {
@@ -2847,23 +2847,23 @@ private struct DomainCredentialsView: View {
                                     .truncationMode(.middle)
                             }
                         }
+                        .confirmationDialog(
+                            "Remove credential", isPresented: Binding(get: { removing?.id == credential.id }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing
+                        ) { credential in
+                            Button("Remove", role: .destructive) {
+                                Task {
+                                    await model.act(saying: String(localized: "Removed")) {
+                                        try await model.connection.deleteDomainCredential(credentialId: credential.id)
+                                    }
+                                }
+                            }
+                        } message: { credential in
+                            let credentialName = (credential.comment ?? "").isEmpty ? credential.id : credential.comment ?? ""
+                            Text("Remove the credential “\(credentialName)”? Whatever sends with it stops being able to.")
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = credential }
-                                .confirmationDialog(
-                                    "Remove credential", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                                    titleVisibility: .visible, presenting: removing
-                                ) { credential in
-                                    Button("Remove", role: .destructive) {
-                                        Task {
-                                            await model.act(saying: String(localized: "Removed")) {
-                                                try await model.connection.deleteDomainCredential(credentialId: credential.id)
-                                            }
-                                        }
-                                    }
-                                } message: { credential in
-                                    let credentialName = (credential.comment ?? "").isEmpty ? credential.id : credential.comment ?? ""
-                                    Text("Remove the credential “\(credentialName)”? Whatever sends with it stops being able to.")
-                                }
                         }
                     }
                 } footer: {
@@ -3120,19 +3120,19 @@ private struct DomainTemplatesView: View {
                         } label: {
                             templateRow(template)
                         }
+                        .confirmationDialog(
+                            removingTemplate.map { String(localized: "Remove the template \($0.name)?") } ?? "",
+                            isPresented: Binding(get: { removingTemplate?.id == template.id }, set: { if !$0 { removingTemplate = nil } }),
+                            titleVisibility: .visible, presenting: removingTemplate
+                        ) { template in
+                            Button("Remove", role: .destructive) {
+                                Task { await act { try await connection.deleteDomainTemplate(templateId: template.id) } }
+                            }
+                        } message: { _ in
+                            Text("Anything sending it by name stops working at once. Mail already sent is unaffected.")
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingTemplate = template }
-                                .confirmationDialog(
-                                    removingTemplate.map { String(localized: "Remove the template \($0.name)?") } ?? "",
-                                    isPresented: Binding(get: { removingTemplate != nil }, set: { if !$0 { removingTemplate = nil } }),
-                                    titleVisibility: .visible, presenting: removingTemplate
-                                ) { template in
-                                    Button("Remove", role: .destructive) {
-                                        Task { await act { try await connection.deleteDomainTemplate(templateId: template.id) } }
-                                    }
-                                } message: { _ in
-                                    Text("Anything sending it by name stops working at once. Mail already sent is unaffected.")
-                                }
                         }
                     }
                 } header: {
@@ -3153,23 +3153,23 @@ private struct DomainTemplatesView: View {
                         } label: {
                             layoutRow(layout, templateCount: templateCountByLayoutId[layout.id] ?? 0)
                         }
+                        .confirmationDialog(
+                            "Remove this layout?", isPresented: Binding(get: { removingLayout?.id == layout.id }, set: { if !$0 { removingLayout = nil } }),
+                            titleVisibility: .visible, presenting: removingLayout
+                        ) { layout in
+                            Button("Remove", role: .destructive) {
+                                Task { await act { try await connection.deleteDomainLayout(layoutId: layout.id) } }
+                            }
+                        } message: { layout in
+                            let templateCount = DomainLayout.templateCountByLayoutId(templates ?? [])[layout.id] ?? 0
+                            if templateCount > 0 {
+                                Text("\(templateCount) templates sit in it. They keep working, rendered without a layout, until you choose another.")
+                            } else {
+                                Text("Nothing uses it, so nothing changes but the list.")
+                            }
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingLayout = layout }
-                                .confirmationDialog(
-                                    "Remove this layout?", isPresented: Binding(get: { removingLayout != nil }, set: { if !$0 { removingLayout = nil } }),
-                                    titleVisibility: .visible, presenting: removingLayout
-                                ) { layout in
-                                    Button("Remove", role: .destructive) {
-                                        Task { await act { try await connection.deleteDomainLayout(layoutId: layout.id) } }
-                                    }
-                                } message: { layout in
-                                    let templateCount = DomainLayout.templateCountByLayoutId(templates ?? [])[layout.id] ?? 0
-                                    if templateCount > 0 {
-                                        Text("\(templateCount) templates sit in it. They keep working, rendered without a layout, until you choose another.")
-                                    } else {
-                                        Text("Nothing uses it, so nothing changes but the list.")
-                                    }
-                                }
                         }
                     }
                 } header: {

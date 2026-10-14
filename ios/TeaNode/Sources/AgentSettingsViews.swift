@@ -1409,22 +1409,22 @@ struct AgentCategoriesView: View {
                                 }
                             }
                         }
+                        .confirmationDialog(
+                            "Remove the category", isPresented: Binding(get: { removing?.index == index }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing
+                        ) { removed in
+                            Button("Remove", role: .destructive) {
+                                var categories = model.agent?.categories ?? []
+                                if categories.indices.contains(removed.index) { categories.remove(at: removed.index) }
+                                let remaining = categories
+                                Task { _ = await save(remaining) }
+                            }
+                        } message: { removed in
+                            Text("Remove \(removed.name)? Mail already sorted into it keeps the label; new mail is sorted without it.")
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 removing = RemovedCategory(index: index, name: category.name)
-                            }
-                            .confirmationDialog(
-                                "Remove the category", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                                titleVisibility: .visible, presenting: removing
-                            ) { removed in
-                                Button("Remove", role: .destructive) {
-                                    var categories = model.agent?.categories ?? []
-                                    if categories.indices.contains(removed.index) { categories.remove(at: removed.index) }
-                                    let remaining = categories
-                                    Task { _ = await save(remaining) }
-                                }
-                            } message: { removed in
-                                Text("Remove \(removed.name)? Mail already sorted into it keeps the label; new mail is sorted without it.")
                             }
                         }
                     }

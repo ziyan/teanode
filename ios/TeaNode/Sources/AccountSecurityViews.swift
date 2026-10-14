@@ -85,19 +85,19 @@ struct SessionsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .confirmationDialog(
+            "Sign this browser out?", isPresented: Binding(get: { revoking?.id == session.id }, set: { if !$0 { revoking = nil } }),
+            titleVisibility: .visible, presenting: revoking
+        ) { session in
+            Button("Sign this browser out", role: .destructive) {
+                Task { await act(saying: String(localized: "Signed out")) { try await connection.revokeSession(session.id) } }
+            }
+        } message: { session in
+            Text(verbatim: browserName(session))
+        }
         .swipeActions {
             if session.canRevoke {
                 Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { revoking = session }
-                    .confirmationDialog(
-                        "Sign this browser out?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
-                        titleVisibility: .visible, presenting: revoking
-                    ) { session in
-                        Button("Sign this browser out", role: .destructive) {
-                            Task { await act(saying: String(localized: "Signed out")) { try await connection.revokeSession(session.id) } }
-                        }
-                    } message: { session in
-                        Text(verbatim: browserName(session))
-                    }
             }
         }
     }
@@ -231,19 +231,19 @@ struct TokensView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .confirmationDialog(
+            "Revoke this token?", isPresented: Binding(get: { revoking?.id == token.id }, set: { if !$0 { revoking = nil } }),
+            titleVisibility: .visible, presenting: revoking
+        ) { token in
+            Button("Revoke", role: .destructive) {
+                Task { await act(saying: String(localized: "Revoked")) { try await connection.deleteApiToken(token.id) } }
+            }
+        } message: { token in
+            Text("Anything using \(TokenWords.name(token)) stops working at once. This cannot be undone; issue a new token instead.")
+        }
         .swipeActions {
             if token.revoked == nil {
                 Button("Revoke", systemImage: "trash", role: .destructive) { revoking = token }
-                    .confirmationDialog(
-                        "Revoke this token?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
-                        titleVisibility: .visible, presenting: revoking
-                    ) { token in
-                        Button("Revoke", role: .destructive) {
-                            Task { await act(saying: String(localized: "Revoked")) { try await connection.deleteApiToken(token.id) } }
-                        }
-                    } message: { token in
-                        Text("Anything using \(TokenWords.name(token)) stops working at once. This cannot be undone; issue a new token instead.")
-                    }
                 Button("Edit", systemImage: "pencil") { editing = token }
                     .tint(.indigo)
             }
@@ -589,22 +589,22 @@ struct ConnectedAppsView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+        .confirmationDialog(
+            "Disconnect this app?", isPresented: Binding(get: { disconnecting?.id == connectedApp.id }, set: { if !$0 { disconnecting = nil } }),
+            titleVisibility: .visible, presenting: disconnecting
+        ) { connectedApp in
+            Button("Disconnect", role: .destructive) {
+                Task { await disconnect(connectedApp) }
+            }
+        } message: { connectedApp in
+            if connectedApp.clientId == thisClientId {
+                Text("This iPhone is signed out at once, and has to be connected again to come back.")
+            } else {
+                Text("\(appName(connectedApp)) stops working at once, and has to be authorized again to come back.")
+            }
+        }
         .swipeActions {
             Button("Disconnect", systemImage: "xmark.circle", role: .destructive) { disconnecting = connectedApp }
-                .confirmationDialog(
-                    "Disconnect this app?", isPresented: Binding(get: { disconnecting != nil }, set: { if !$0 { disconnecting = nil } }),
-                    titleVisibility: .visible, presenting: disconnecting
-                ) { connectedApp in
-                    Button("Disconnect", role: .destructive) {
-                        Task { await disconnect(connectedApp) }
-                    }
-                } message: { connectedApp in
-                    if connectedApp.clientId == thisClientId {
-                        Text("This iPhone is signed out at once, and has to be connected again to come back.")
-                    } else {
-                        Text("\(appName(connectedApp)) stops working at once, and has to be authorized again to come back.")
-                    }
-                }
             Button("Rename", systemImage: "pencil") {
                 newName = connectedApp.name
                 renaming = connectedApp
