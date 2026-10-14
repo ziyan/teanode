@@ -221,9 +221,14 @@ struct RecordingMiniPlayerView: View {
     let onToggle: @MainActor () -> Void
     let onSeek: @MainActor (Int64) -> Void
     @State private var scrubbedMS: Double?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 12) {
+        // At the largest text sizes the button goes above the slider, so the two times have the card's whole width and an
+        // hour-long length does not break across lines.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             Button(action: onToggle) {
                 if isPreparing {
                     ProgressView()
@@ -248,9 +253,9 @@ struct RecordingMiniPlayerView: View {
                 .disabled(!canPlay)
                 .accessibilityLabel("Position in the recording")
                 HStack {
-                    Text(RecordingDuration.text(Int64(scrubbedMS ?? Double(timelineMS))))
+                    Text(RecordingDuration.text(Int64(scrubbedMS ?? Double(timelineMS)))).fixedSize()
                     Spacer()
-                    Text(RecordingDuration.text(durationMS))
+                    Text(RecordingDuration.text(durationMS)).fixedSize()
                 }
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
