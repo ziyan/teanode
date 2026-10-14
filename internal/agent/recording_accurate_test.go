@@ -261,6 +261,17 @@ func TestASecondReadingThatIsNotWhatWasSaidKeepsTheFirstWords(test *testing.T) {
 			test.Fatalf("%q replaced the first reading: %q", accurateText, texts)
 		}
 	}
+	// Heard as another language: a script the first reading has none of.
+	for _, accurateText := range []string{"ザ フィクスチャー リフト ムーブス ザ クレート オンツー ザ セカンド シェルフ", "더 픽스처 리프트 무브스 더 크레이트 온투 더 세컨드 셸프 비포 눈"} {
+		if texts := splitRecordingTurnText(accurateText, first); texts != nil {
+			test.Fatalf("%q replaced the first reading: %q", accurateText, texts)
+		}
+	}
+	// A name in Latin letters inside speech in another script is fine.
+	chinese := []*models.RecordingTranscriptSegment{{ID: "c", SegmentStartMS: 0, SegmentEndMS: 6000, TranscriptText: "我们明天下午三点开会讨论托盘的问题"}}
+	if texts := splitRecordingTurnText("我们明天下午三点开会，讨论Fixture托盘的问题。", chinese); texts["c"] == "" {
+		test.Fatal("a Latin name inside Chinese was refused")
+	}
 	if texts := splitRecordingTurnText("The fixture lift moves the crate onto the second shelf before noon.", first); texts["a"] == "" {
 		test.Fatal("a faithful second reading was refused")
 	}

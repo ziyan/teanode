@@ -406,13 +406,26 @@ func splitRecordingTurnText(accurateText string, segments []*models.RecordingTra
 
 // isPlausibleAccurateText says whether the second reading of a turn can stand
 // for the first. A transcription model can answer with something other than
-// what was said: a few words of it wrapped as data, or text the audio does not
-// hold. Such an answer keeps the first words: one that looks like data, one
-// that lost more than half of the first reading's words, and one with more
+// what was said: a few words of it wrapped as data, text the audio does not
+// hold, or the words heard as another language (a short turn read alone has
+// no language but its own to go by). Such an answer keeps the first words: one
+// that looks like data, one written in a script the first reading has none of
+// (Latin aside, which names and terms are written in whatever the language),
+// one that lost more than half of the first reading's words, and one with more
 // than twice as many.
 func isPlausibleAccurateText(accurateText string, segments []*models.RecordingTranscriptSegment) bool {
 	if (strings.HasPrefix(accurateText, "{") && strings.HasSuffix(accurateText, "}")) || (strings.HasPrefix(accurateText, "[") && strings.HasSuffix(accurateText, "]")) {
 		return false
+	}
+	firstText := ""
+	for _, segment := range segments {
+		firstText += segment.TranscriptText + " "
+	}
+	firstScripts := recordingTextScripts(firstText)
+	for script := range recordingTextScripts(accurateText) {
+		if len(firstScripts) > 0 && script != "Latin" && !firstScripts[script] {
+			return false
+		}
 	}
 	firstWordCount := 0
 	for _, segment := range segments {
@@ -424,6 +437,23 @@ func isPlausibleAccurateText(accurateText string, segments []*models.RecordingTr
 		return true
 	}
 	return 2*len(accurateWords) >= firstWordCount && len(accurateWords) <= 2*firstWordCount
+}
+
+// recordingTextScripts names the scripts the letters of a text are written in.
+func recordingTextScripts(text string) map[string]bool {
+	scripts := map[string]bool{}
+	for _, character := range text {
+		if !unicode.IsLetter(character) {
+			continue
+		}
+		for name, table := range unicode.Scripts {
+			if unicode.Is(table, character) {
+				scripts[name] = true
+				break
+			}
+		}
+	}
+	return scripts
 }
 
 // Below this many words, a first reading is too short to judge a second one
