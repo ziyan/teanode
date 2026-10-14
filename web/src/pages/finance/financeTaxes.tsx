@@ -1163,7 +1163,8 @@ function PaystubLineGroup({
                   {/* Cut to one line; the whole of it on hover. */}
                   <td title={description}>
                     {line.description}
-                    {line.taxJurisdictionCode ? (
+                    {/* The state's code, unless the line's own words already say it. */}
+                    {line.taxJurisdictionCode && !line.description.includes(line.taxJurisdictionCode) ? (
                       <span className="muted finance-receipt-tax-mark"> {line.taxJurisdictionCode}</span>
                     ) : null}
                   </td>
