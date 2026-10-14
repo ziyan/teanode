@@ -313,6 +313,7 @@ struct SettingsForm: View {
     @Environment(AppModel.self) private var app
     @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
+    private static let signOutRowId = "sign-out"
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
@@ -324,157 +325,162 @@ struct SettingsForm: View {
     #endif
 
     var body: some View {
-        Form {
-            AccountsSection()
-            if let connection = app.connection {
-                Section("Your account") {
-                    NavigationLink {
-                        PreferencesView(connection: connection)
-                    } label: {
-                        Label("Profile", systemImage: "person.crop.circle")
-                    }
-                    NavigationLink {
-                        ChangePasswordView(connection: connection)
-                    } label: {
-                        Label("Password", systemImage: "key")
-                    }
-                    NavigationLink {
-                        PasskeysView(connection: connection)
-                    } label: {
-                        Label("Passkeys", systemImage: "person.badge.key")
-                    }
-                    NavigationLink {
-                        TokensView(connection: connection)
-                    } label: {
-                        Label("API tokens", systemImage: "terminal")
-                    }
-                    NavigationLink {
-                        DevicesView(connection: connection)
-                    } label: {
-                        Label("Devices", systemImage: "iphone")
-                    }
-                    NavigationLink {
-                        ConnectedAppsView(connection: connection)
-                    } label: {
-                        Label("Apps", systemImage: "app.badge.checkmark")
-                    }
-                    // Last, as on the dashboard's menu: the account's pages keep one order.
-                    NavigationLink {
-                        SessionsView(connection: connection)
-                    } label: {
-                        Label("Sessions", systemImage: "macbook.and.iphone")
-                    }
-                }
-            }
-            if let connection = app.connection {
-                Section("Your agent") {
-                    NavigationLink {
-                        AgentSettingsView(connection: connection)
-                    } label: {
-                        Label("Agent settings", systemImage: "slider.horizontal.3")
-                    }
-                    NavigationLink {
-                        KnowledgeSourcesView(connection: connection)
-                    } label: {
-                        Label("Sources", systemImage: "tray.2")
-                    }
-                    NavigationLink {
-                        AgentMemorySettingsView(connection: connection)
-                    } label: {
-                        Label("Memory", systemImage: "brain")
-                    }
-                    NavigationLink {
-                        DreamsView(connection: connection)
-                    } label: {
-                        Label("Dreams", systemImage: "moon.zzz")
-                    }
-                    NavigationLink {
-                        SchedulesView(connection: connection)
-                    } label: {
-                        Label("Schedules", systemImage: "clock")
-                    }
-                    NavigationLink {
-                        MutedAlertsView(connection: connection)
-                    } label: {
-                        Label("Alerts", systemImage: "bell.badge")
-                    }
-                    NavigationLink {
-                        ConnectionsView(connection: connection)
-                    } label: {
-                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
-                    NavigationLink {
-                        AgentActivityView(connection: connection)
-                    } label: {
-                        Label("Activity", systemImage: "list.bullet.rectangle")
+        // A reader around the form, so a screenshot can bring the Sign out row into view.
+        ScrollViewReader { scroller in
+            Form {
+                AccountsSection()
+                if let connection = app.connection {
+                    Section("Your account") {
+                        NavigationLink {
+                            PreferencesView(connection: connection)
+                        } label: {
+                            Label("Profile", systemImage: "person.crop.circle")
+                        }
+                        NavigationLink {
+                            ChangePasswordView(connection: connection)
+                        } label: {
+                            Label("Password", systemImage: "key")
+                        }
+                        NavigationLink {
+                            PasskeysView(connection: connection)
+                        } label: {
+                            Label("Passkeys", systemImage: "person.badge.key")
+                        }
+                        NavigationLink {
+                            TokensView(connection: connection)
+                        } label: {
+                            Label("API tokens", systemImage: "terminal")
+                        }
+                        NavigationLink {
+                            DevicesView(connection: connection)
+                        } label: {
+                            Label("Devices", systemImage: "iphone")
+                        }
+                        NavigationLink {
+                            ConnectedAppsView(connection: connection)
+                        } label: {
+                            Label("Apps", systemImage: "app.badge.checkmark")
+                        }
+                        // Last, as on the dashboard's menu: the account's pages keep one order.
+                        NavigationLink {
+                            SessionsView(connection: connection)
+                        } label: {
+                            Label("Sessions", systemImage: "macbook.and.iphone")
+                        }
                     }
                 }
-            }
-            if isOperator, let connection = app.connection {
+                if let connection = app.connection {
+                    Section("Your agent") {
+                        NavigationLink {
+                            AgentSettingsView(connection: connection)
+                        } label: {
+                            Label("Agent settings", systemImage: "slider.horizontal.3")
+                        }
+                        NavigationLink {
+                            KnowledgeSourcesView(connection: connection)
+                        } label: {
+                            Label("Sources", systemImage: "tray.2")
+                        }
+                        NavigationLink {
+                            AgentMemorySettingsView(connection: connection)
+                        } label: {
+                            Label("Memory", systemImage: "brain")
+                        }
+                        NavigationLink {
+                            DreamsView(connection: connection)
+                        } label: {
+                            Label("Dreams", systemImage: "moon.zzz")
+                        }
+                        NavigationLink {
+                            SchedulesView(connection: connection)
+                        } label: {
+                            Label("Schedules", systemImage: "clock")
+                        }
+                        NavigationLink {
+                            MutedAlertsView(connection: connection)
+                        } label: {
+                            Label("Alerts", systemImage: "bell.badge")
+                        }
+                        NavigationLink {
+                            ConnectionsView(connection: connection)
+                        } label: {
+                            Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                        }
+                        NavigationLink {
+                            AgentActivityView(connection: connection)
+                        } label: {
+                            Label("Activity", systemImage: "list.bullet.rectangle")
+                        }
+                    }
+                }
+                if isOperator, let connection = app.connection {
+                    Section {
+                        NavigationLink {
+                            ManageOverviewView(connection: connection)
+                        } label: {
+                            Label("Manage", systemImage: "server.rack")
+                        }
+                    } footer: {
+                        Text("The server: its mail, domains, people and settings.")
+                    }
+                }
+                DisplaySection()
+                if app.services?.isMailboxEnabled != false, let mail, mail.mailbox != nil {
+                    Section {
+                        NavigationLink {
+                            MailboxSettingsView(mail: mail)
+                        } label: {
+                            Label("Mailbox", systemImage: "tray")
+                        }
+                    }
+                }
+                NotificationsSection()
                 Section {
-                    NavigationLink {
-                        ManageOverviewView(connection: connection)
-                    } label: {
-                        Label("Manage", systemImage: "server.rack")
-                    }
-                } footer: {
-                    Text("The server: its mail, domains, people and settings.")
-                }
-            }
-            DisplaySection()
-            if app.services?.isMailboxEnabled != false, let mail, mail.mailbox != nil {
-                Section {
-                    NavigationLink {
-                        MailboxSettingsView(mail: mail)
-                    } label: {
-                        Label("Mailbox", systemImage: "tray")
-                    }
-                }
-            }
-            NotificationsSection()
-            Section {
-                Button(app.accounts.count > 1 ? String(localized: "Sign out of \(app.account?.server.host ?? "")") : String(localized: "Sign out"), role: .destructive) {
-                    isConfirmingSignOut = true
-                }
-                .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
-                    Button("Sign out", role: .destructive) {
-                        Task { await app.signOut() }
-                    }
-                } message: {
-                    Text("This phone stops talking to your agent until you connect it again.")
-                }
-            } footer: {
-                Text("To manage what this phone is told about, open Settings, then Devices, on your dashboard.")
-            }
-            Section("About") {
-                LabeledContent("Version", value: Self.version)
-            }
-        }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if let connection = app.connection {
-                isOperator = (try? await connection.isOperator()) ?? false
-            }
-        }
-        #if DEBUG
-            .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
-            .onAppear {
-                // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
-                if DemoServer.screen == "settings-sign-out", !hasShownDemoScreen {
-                    hasShownDemoScreen = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(1))
+                    Button(app.accounts.count > 1 ? String(localized: "Sign out of \(app.account?.server.host ?? "")") : String(localized: "Sign out"), role: .destructive) {
                         isConfirmingSignOut = true
                     }
-                    return
+                    .id(Self.signOutRowId)
+                    .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+                        Button("Sign out", role: .destructive) {
+                            Task { await app.signOut() }
+                        }
+                    } message: {
+                        Text("This phone stops talking to your agent until you connect it again.")
+                    }
+                } footer: {
+                    Text("To manage what this phone is told about, open Settings, then Devices, on your dashboard.")
                 }
-                guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings" else { return }
-                hasShownDemoScreen = true
-                isShowingDemoScreen = true
+                Section("About") {
+                    LabeledContent("Version", value: Self.version)
+                }
             }
-            .defaultScrollAnchor(DemoServer.screen == "settings-sign-out" ? .bottom : .top)
-        #endif
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                if let connection = app.connection {
+                    isOperator = (try? await connection.isOperator()) ?? false
+                }
+            }
+            #if DEBUG
+                .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
+                .onAppear {
+                    // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
+                    if DemoServer.screen == "settings-sign-out", !hasShownDemoScreen {
+                        hasShownDemoScreen = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1))
+                            withAnimation { scroller.scrollTo(Self.signOutRowId, anchor: .center) }
+                            try? await Task.sleep(for: .seconds(1))
+                            isConfirmingSignOut = true
+                        }
+                        return
+                    }
+                    guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings" else { return }
+                    hasShownDemoScreen = true
+                    isShowingDemoScreen = true
+                }
+            #endif
+        }
     }
 
     #if DEBUG
