@@ -165,4 +165,8 @@ func TestTaxFormAnswerReads1099Kinds(t *testing.T) {
 			t.Errorf("%s: %s", written, taxForm.TaxFormKind)
 		}
 	}
+	answer := &taxFormAnswer{TaxFormKind: "1099-INT", TaxYear: 2025, TaxFormEntries: []taxFormAnswerEntry{{BoxCode: "1", Amount: "6.35"}, {BoxCode: "2", Amount: "0.00"}, {BoxCode: "3", Amount: "0"}}}
+	if taxForm := answer.taxForm(); len(taxForm.TaxFormEntries) != 1 || taxForm.TaxFormEntries[0].EntryNumber != 1 {
+		t.Errorf("boxes of nothing are left out: %+v", taxForm.TaxFormEntries)
+	}
 }

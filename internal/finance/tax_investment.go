@@ -162,9 +162,9 @@ func investmentSumsByEmployee(taxYear int, taxForms []*models.FinanceTaxForm, id
 
 // hsaFamilyLimitByYear is the most that may go into a person's HSA in a
 // year with family coverage, theirs and their employer's together, before
-// the catch-up from 55 (IRS Rev. Proc. 2022-24, 2023-23, 2024-25,
-// 2025-19).
-var hsaFamilyLimitByYear = map[int]int64{2023: 7750, 2024: 8300, 2025: 8550, 2026: 8750}
+// the catch-up from 55 (IRS Rev. Proc. 2021-25, 2022-24, 2023-23,
+// 2024-25, 2025-19).
+var hsaFamilyLimitByYear = map[int]int64{2022: 7300, 2023: 7750, 2024: 8300, 2025: 8550, 2026: 8750}
 
 func (self *investmentSums) figures() *TaxYearInvestmentFigures {
 	return &TaxYearInvestmentFigures{
@@ -185,9 +185,10 @@ func IsInvestmentTaxForm(taxFormKind models.TaxFormKind) bool {
 
 // preferentialRateCeilingsByYear are, by filing status, the taxable income
 // up to which qualified dividends and long-term gains are taxed at 0%, and
-// up to which at 15%; 20% above (Rev. Proc. 2022-38, 2023-34, 2024-40,
-// 2025-32).
+// up to which at 15%; 20% above (Rev. Proc. 2021-45, 2022-38, 2023-34,
+// 2024-40, 2025-32).
 var preferentialRateCeilingsByYear = map[int]map[TaxFilingStatus][2]int64{
+	2022: {TaxFilingStatusSingle: {41675, 459750}, TaxFilingStatusMarriedFilingJointly: {83350, 517200}, TaxFilingStatusMarriedFilingSeparately: {41675, 258600}, TaxFilingStatusHeadOfHousehold: {55800, 488500}},
 	2023: {TaxFilingStatusSingle: {44625, 492300}, TaxFilingStatusMarriedFilingJointly: {89250, 553850}, TaxFilingStatusMarriedFilingSeparately: {44625, 276900}, TaxFilingStatusHeadOfHousehold: {59750, 523050}},
 	2024: {TaxFilingStatusSingle: {47025, 518900}, TaxFilingStatusMarriedFilingJointly: {94050, 583750}, TaxFilingStatusMarriedFilingSeparately: {47025, 291850}, TaxFilingStatusHeadOfHousehold: {63000, 551350}},
 	2025: {TaxFilingStatusSingle: {48350, 533400}, TaxFilingStatusMarriedFilingJointly: {96700, 600050}, TaxFilingStatusMarriedFilingSeparately: {48350, 300000}, TaxFilingStatusHeadOfHousehold: {64750, 566700}},

@@ -535,7 +535,7 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summary)
 	}
-	if len(summary.TaxYearEmployments) == 0 {
+	if summary.PaystubCount == 0 && summary.TaxFormCount == 0 {
 		_, _ = fmt.Fprintf(command.Writer, "no paystubs, W-2s or 1099s for %d; teanode finance read-tax-document adds them\n", taxYear)
 		return nil
 	}

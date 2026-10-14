@@ -114,9 +114,18 @@ var federalBracketRates = []*big.Rat{
 }
 
 // federalTaxTableByYear is as the IRS publishes each autumn for the year
-// after (Rev. Proc. 2022-38, 2023-34, 2024-40, 2025-32; 2025's standard
+// after (Rev. Proc. 2021-45, 2022-38, 2023-34, 2024-40, 2025-32; 2025's standard
 // deduction as Public Law 119-21 raised it).
 var federalTaxTableByYear = map[int]*federalTaxTable{
+	2022: {
+		standardDeductionByStatus: map[TaxFilingStatus]int64{TaxFilingStatusSingle: 12950, TaxFilingStatusMarriedFilingJointly: 25900, TaxFilingStatusMarriedFilingSeparately: 12950, TaxFilingStatusHeadOfHousehold: 19400},
+		bracketFloorsByStatus: map[TaxFilingStatus][6]int64{
+			TaxFilingStatusSingle:                  {10275, 41775, 89075, 170050, 215950, 539900},
+			TaxFilingStatusMarriedFilingJointly:    {20550, 83550, 178150, 340100, 431900, 647850},
+			TaxFilingStatusMarriedFilingSeparately: {10275, 41775, 89075, 170050, 215950, 323925},
+			TaxFilingStatusHeadOfHousehold:         {14650, 55900, 89050, 170050, 215950, 539900},
+		},
+	},
 	2023: {
 		standardDeductionByStatus: map[TaxFilingStatus]int64{TaxFilingStatusSingle: 13850, TaxFilingStatusMarriedFilingJointly: 27700, TaxFilingStatusMarriedFilingSeparately: 13850, TaxFilingStatusHeadOfHousehold: 20800},
 		bracketFloorsByStatus: map[TaxFilingStatus][6]int64{

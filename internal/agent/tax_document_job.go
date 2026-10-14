@@ -129,9 +129,14 @@ func (self *taxFormAnswer) taxForm() *models.FinanceTaxForm {
 		TaxFormKind: models.TaxFormKind(taxFormKind), TaxYear: self.TaxYear, IsCorrected: isCorrected,
 		PayerName: self.PayerName, PayerTaxID: self.PayerTaxID, RecipientName: self.RecipientName, RecipientTaxIDMask: string(self.RecipientTaxIDMask),
 	}
-	for index, entry := range self.TaxFormEntries {
+	for _, entry := range self.TaxFormEntries {
+		// A box the model gave as nothing is a box the form leaves empty:
+		// a consolidated statement prints every box, most of them 0.00.
+		if amountValue, err := finance.ParseAmount(string(entry.Amount)); err == nil && amountValue.Sign() == 0 && strings.TrimSpace(entry.TextValue) == "" && !entry.IsChecked {
+			continue
+		}
 		taxForm.TaxFormEntries = append(taxForm.TaxFormEntries, &models.FinanceTaxFormEntry{
-			EntryNumber: index + 1, BoxCode: string(entry.BoxCode), BoxQualifier: entry.BoxQualifier,
+			EntryNumber: len(taxForm.TaxFormEntries) + 1, BoxCode: string(entry.BoxCode), BoxQualifier: entry.BoxQualifier,
 			Amount: string(entry.Amount), TextValue: entry.TextValue, IsChecked: entry.IsChecked,
 		})
 	}
