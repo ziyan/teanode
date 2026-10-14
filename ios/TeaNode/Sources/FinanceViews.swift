@@ -1315,7 +1315,7 @@ struct AccountsView: View {
                         Task {
                             var renewed: StatementImport?
                             if await finance.act(saying: String(localized: "Import address changed. The old one no longer takes mail."), { renewed = try await finance.connection.regenerateStatementImportAddress() }) {
-                                statementImport = renewed
+                                self.statementImport = renewed
                             }
                         }
                     }

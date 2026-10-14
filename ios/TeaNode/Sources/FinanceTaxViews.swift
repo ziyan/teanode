@@ -216,7 +216,7 @@ struct TaxesView: View {
                         Task {
                             var renewed: TaxDocumentAddress?
                             if await finance.act(saying: String(localized: "Made a new tax document address"), { renewed = try await finance.connection.regenerateTaxDocumentAddress() }) {
-                                mailInAddress = renewed
+                                self.mailInAddress = renewed
                             }
                         }
                     }
