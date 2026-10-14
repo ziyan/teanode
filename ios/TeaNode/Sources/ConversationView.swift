@@ -330,6 +330,7 @@ struct ConversationFollowing: ViewModifier {
                     TurnActivities.start(runId: runId, agentTitle: app.agentTitle, connection: model.connection)
                 } else if phase == .active {
                     TurnActivities.endAll()
+                    if model.call == nil { Task { await CallActivities.endAll() } }
                 }
             }
             .onChange(of: model.voiceSampleRate) { startRequestedCall() }
