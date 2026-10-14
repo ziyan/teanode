@@ -237,6 +237,42 @@ func (self *Agent) QueueRecordingSummary(transaction db.Transaction, userId, rec
 	return transaction.MarkRecordingSummaryQueued(userId, recordingId)
 }
 
+// recordingSummaryEditDelay is how long after the last change to a
+// recording's speakers or words its summary is written again: long enough
+// that naming a dozen speakers in a row writes it once.
+const recordingSummaryEditDelay = 5 * time.Minute
+
+// QueueRecordingSummaryAfterEdit has the summary written again once the
+// person has stopped changing who said what, or the words: the job is
+// queued to start recordingSummaryEditDelay from now, and one already
+// queued is moved to then. A title the person set is kept; a generated one
+// may change with the summary.
+func (self *Agent) QueueRecordingSummaryAfterEdit(transaction db.Transaction, userId, recordingId string) error {
+	configuration := self.settings.Configuration()
+	if !configuration.Agent.Enabled || self.settings.Registry == nil || configuration.Agent.Models.ForWork(config.AgentWorkSummarize) == "" {
+		return nil
+	}
+	assistant, err := transaction.GetAgentByUser(userId)
+	if err != nil {
+		return err
+	}
+	if assistant == nil || !assistant.Active() {
+		return nil
+	}
+	// A capture still being recorded is named once it stops, from the whole
+	// of it; naming its speakers as they talk does not summarize half of it.
+	source, err := transaction.GetRecording(userId, recordingId)
+	if err != nil || !isRecordingCaptureFinished(source) {
+		return err
+	}
+	notBefore := time.Now().Add(recordingSummaryEditDelay)
+	job, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: assistant.ID, Kind: models.AgentJobRecordingSummary, SubjectID: recordingId, NotBefore: &notBefore})
+	if err != nil {
+		return err
+	}
+	return transaction.PostponeAgentJob(job.ID, notBefore)
+}
+
 // queueRecordingSummary queues the job once a transcript has completed, in a
 // transaction of its own: a failure to queue is logged and never fails the transcript.
 func (self *Agent) queueRecordingSummary(ctx context.Context, userId, recordingId string) {
@@ -279,11 +315,16 @@ func (self *Agent) runRecordingSummary(ctx context.Context, run *Run) error {
 		return nil
 	}
 	var lines []string
+	var startGeneration int64
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		if err := RequireBudget(transaction, configuration, run.Agent, run.Owner, time.Now()); err != nil {
 			return err
 		}
-		var err error
+		source, err := transaction.GetRecording(run.Agent.UserID, run.Job.SubjectID)
+		if err != nil {
+			return err
+		}
+		startGeneration = source.SourceGeneration
 		lines, err = recordingTranscriptLines(transaction, run.Agent.UserID, run.Job.SubjectID)
 		return err
 	}); err != nil {
@@ -302,11 +343,26 @@ func (self *Agent) runRecordingSummary(ctx context.Context, run *Run) error {
 	if answer == nil {
 		return nil
 	}
+	isChanged := false
 	err = self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
-		return transaction.StoreGeneratedRecordingSummary(run.Agent.UserID, run.Job.SubjectID, answer.RecordingTitle, answer.RecordingSummary)
+		if err := transaction.StoreGeneratedRecordingSummary(run.Agent.UserID, run.Job.SubjectID, answer.RecordingTitle, answer.RecordingSummary); err != nil {
+			return err
+		}
+		source, err := transaction.GetRecording(run.Agent.UserID, run.Job.SubjectID)
+		isChanged = err == nil && source.SourceGeneration != startGeneration
+		return err
 	})
 	if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrRecordingDeleted) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// Speakers named or words corrected while this ran are not in what it
+	// wrote; the job, still running, could not be queued again for them, so
+	// it comes back once the person has stopped.
+	if isChanged {
+		return &Deferral{Until: time.Now().Add(recordingSummaryEditDelay), Reason: "the recording changed while it was summarized"}
+	}
+	return nil
 }

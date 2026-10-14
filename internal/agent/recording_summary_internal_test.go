@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,8 @@ type summaryModel struct {
 	// that reads one part of a long recording gets.
 	answer string
 	notes  string
+	// whileAnswering runs while a summary is being written, before the answer.
+	whileAnswering func()
 }
 
 func newSummaryModel(test *testing.T, answer string) *summaryModel {
@@ -47,6 +50,9 @@ func newSummaryModel(test *testing.T, answer string) *summaryModel {
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Recording"},"finish_reason":"stop"}],"usage":{}}`))
 			return
+		}
+		if model.whileAnswering != nil {
+			model.whileAnswering()
 		}
 		model.mutex.Lock()
 		var contents []string
@@ -288,5 +294,74 @@ func TestRecordingTranscriptLinesNameOnlyConfirmedSpeakers(test *testing.T) {
 	})
 	if len(lines) != 2 || lines[0] != "Confirmed Fixture: I will send the notes." || lines[1] != "Speaker B: Thanks." {
 		test.Fatalf("a confirmed speaker is named and an unconfirmed one is labeled Speaker plus its letter: %q", lines)
+	}
+}
+
+// Naming speakers has the summary written again once the person stops: one
+// job, five minutes out, and none for a capture still being recorded, which is
+// named when it stops. A change made while the summary was being written
+// brings the job back.
+func TestASummaryAfterEditsWaitsAndComesBackForChangesMadeWhileItRan(test *testing.T) {
+	fixture := newRecordingCurationFixtureWithPassages(test, 1, []*models.RecordingTranscriptSegment{
+		{LocalSpeakerID: "speaker-one", SegmentStartMS: 0, SegmentEndMS: 6000, TranscriptText: "We decided to move the launch to spring."},
+	})
+	model := newSummaryModel(test, `{"recordingTitle":"Launch moved","recordingSummary":"The launch moves to spring."}`)
+	summary := summaryRun(test, fixture, model)
+	var capture *models.Recording
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		var err error
+		if capture, err = transaction.CreateRecording(&models.Recording{UserID: fixture.userId, ClientRecordingID: "capture-in-progress", RecordingOrigin: models.RecordingOriginCapture}); err != nil {
+			test.Fatal(err)
+		}
+		for range 2 {
+			if err := fixture.worker.QueueRecordingSummaryAfterEdit(transaction, fixture.userId, fixture.source.ID); err != nil {
+				test.Fatal(err)
+			}
+		}
+		if err := fixture.worker.QueueRecordingSummaryAfterEdit(transaction, fixture.userId, capture.ID); err != nil {
+			test.Fatal(err)
+		}
+	})
+	countSummaries := func(at time.Time) map[string]int {
+		counts := map[string]int{}
+		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+			jobs, err := transaction.ClaimAgentJobs("summary-worker", 10, at)
+			if err != nil {
+				test.Fatal(err)
+			}
+			for _, job := range jobs {
+				if job.Kind == models.AgentJobRecordingSummary {
+					counts[job.SubjectID]++
+				}
+			}
+		})
+		return counts
+	}
+	if counts := countSummaries(time.Now()); len(counts) != 0 {
+		test.Fatal("the summary did not wait for the person to stop", counts)
+	}
+	if counts := countSummaries(time.Now().Add(6 * time.Minute)); counts[fixture.source.ID] != 1 || counts[capture.ID] != 0 {
+		test.Fatal("the edits did not make one later summary, or a capture still recording got one", counts)
+	}
+	// A speaker renamed while the summary is written: the job comes back.
+	model.whileAnswering = func() {
+		model.whileAnswering = nil
+		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+			source, err := transaction.GetRecording(fixture.userId, fixture.source.ID)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if _, err := transaction.UpdateRecordingMetadata(fixture.userId, source.ID, source.SourceGeneration, new("Launch review"), nil); err != nil {
+				test.Fatal(err)
+			}
+		})
+	}
+	err := fixture.worker.runRecordingSummary(context.Background(), summary)
+	var deferral *Deferral
+	if !errors.As(err, &deferral) || deferral.Until.Before(time.Now().Add(4*time.Minute)) {
+		test.Fatal("a change made while the summary ran did not bring it back later", err)
+	}
+	if err := fixture.worker.runRecordingSummary(context.Background(), summary); err != nil {
+		test.Fatal("with nothing changed, the summary does not come back", err)
 	}
 }

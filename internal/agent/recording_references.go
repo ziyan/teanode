@@ -38,6 +38,7 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 	var identities []*models.RecordingSpeakerIdentity
 	var corrections []*models.RecordingSpeakerCorrection
 	var temporarySpeakers []*models.RecordingTemporarySpeaker
+	var recentSpeakerNames map[string]bool
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
 		references, err = transaction.ListUsableRecordingVoiceReferences(userId, 24)
 		if err != nil {
@@ -52,6 +53,10 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 			return err
 		}
 		temporarySpeakers, err = transaction.ListRecordingTemporarySpeakers(userId, recordingId)
+		if err != nil {
+			return err
+		}
+		recentSpeakerNames, err = recentRecordingSpeakerNames(transaction, userId, recordingId)
 		return err
 	}); err != nil {
 		return nil, nil, err
@@ -107,6 +112,13 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 	}
 	// The sample of a named speaker that is the person comes with the other named ones.
 	candidates := slices.Concat(namedCandidates, ownerCandidates, temporaryCandidates, otherCandidates)
+	// Who spoke in the latest pieces is the likeliest to speak in this one: a
+	// meeting of more people than there are samples otherwise gives everyone
+	// past the first few a new label in every piece. They go first, each group
+	// keeping the order above.
+	sort.SliceStable(candidates, func(left, right int) bool {
+		return recentSpeakerNames[candidates[left].SpeakerName] && !recentSpeakerNames[candidates[right].SpeakerName]
+	})
 	selectedNames := map[string]bool{}
 	var speakerReferences []llm.SpeakerReference
 	var referenceBlobIds []string
@@ -161,4 +173,62 @@ func spokenMS(temporarySpeakers []*models.RecordingTemporarySpeaker, blobId stri
 		}
 	}
 	return 0
+}
+
+// recordingRecentPieceCount is how many of a recording's latest finished
+// pieces say who has just been speaking.
+const recordingRecentPieceCount = 2
+
+// recentRecordingSpeakerNames are the names the speakers of a recording's
+// latest finished pieces on its timeline go by, the confirmed name or the
+// temporary label, which is the name their sample is sent under. Latest is by
+// where a piece sits on the timeline, not when it was transcribed: pieces are
+// transcribed side by side, and an old piece may be transcribed again.
+func recentRecordingSpeakerNames(transaction db.Transaction, userId, recordingId string) (map[string]bool, error) {
+	mediaFiles, err := transaction.ListRecordingMedia(userId, recordingId)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := transaction.ListRecordingTranscriptRuns(userId, recordingId)
+	if err != nil {
+		return nil, err
+	}
+	// The latest finished run of each piece; runs come newest first.
+	latestRunByMediaId := map[string]*models.RecordingTranscriptRun{}
+	for _, transcriptRun := range runs {
+		if transcriptRun.RecordingProcessingState == models.RecordingProcessingComplete && latestRunByMediaId[transcriptRun.RecordingMediaID] == nil {
+			latestRunByMediaId[transcriptRun.RecordingMediaID] = transcriptRun
+		}
+	}
+	sort.SliceStable(mediaFiles, func(left, right int) bool {
+		return mediaFiles[left].TimelineStartMS > mediaFiles[right].TimelineStartMS
+	})
+	names := map[string]bool{}
+	pieceCount := 0
+	for _, media := range mediaFiles {
+		transcriptRun := latestRunByMediaId[media.ID]
+		if transcriptRun == nil {
+			continue
+		}
+		if pieceCount == recordingRecentPieceCount {
+			break
+		}
+		pieceCount++
+		segments, err := transaction.ListRecordingTranscriptSegments(userId, transcriptRun.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := transaction.ProjectRecordingSpeakerCorrections(userId, segments); err != nil {
+			return nil, err
+		}
+		for _, segment := range segments {
+			switch {
+			case segment.EffectiveSpeakerIdentityID != "" && segment.EffectiveSpeakerName != "":
+				names[segment.EffectiveSpeakerName] = true
+			case segment.TemporarySpeakerLabel != "":
+				names[segment.TemporarySpeakerLabel] = true
+			}
+		}
+	}
+	return names, nil
 }

@@ -41,7 +41,13 @@ func (self *graph) CorrectRecordingTranscriptText(ctx context.Context, arguments
 		return nil, err
 	}
 	correction, err := self.transaction(ctx).CorrectRecordingTranscriptText(userId, db.RecordingTranscriptTextCorrectionInput{RecordingID: arguments.RecordingID, RecordingTranscriptSegmentID: arguments.RecordingTranscriptSegmentID, ClientCorrectionID: arguments.ClientCorrectionID, CorrectedTranscriptText: arguments.CorrectedTranscriptText, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration})
-	return correction, translateError(err)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
+	return correction, nil
 }
 func (self *graph) RemoveRecordingTranscriptTextCorrection(ctx context.Context, arguments RemoveRecordingTranscriptTextCorrectionArguments) (bool, error) {
 	userId, err := self.recordingSpeakerOwner(ctx)
@@ -49,5 +55,11 @@ func (self *graph) RemoveRecordingTranscriptTextCorrection(ctx context.Context, 
 		return false, err
 	}
 	err = self.transaction(ctx).RemoveRecordingTranscriptTextCorrection(userId, arguments.RecordingID, arguments.RecordingTranscriptTextCorrectionID, arguments.ExpectedSourceGeneration)
-	return err == nil, translateError(err)
+	if err != nil {
+		return false, translateError(err)
+	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return false, translateError(err)
+	}
+	return true, nil
 }
