@@ -32,6 +32,7 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 	var source *models.Recording
 	var corrections []*models.RecordingSpeakerCorrection
 	var references []*models.RecordingVoiceReference
+	var temporarySpeakers []*models.RecordingTemporarySpeaker
 	if err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
 		source, err = transaction.GetRecording(userId, recordingId)
 		if err != nil {
@@ -42,6 +43,10 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			return err
 		}
 		references, err = transaction.ListRecordingVoiceReferences(userId, recordingId)
+		if err != nil {
+			return err
+		}
+		temporarySpeakers, err = transaction.ListRecordingTemporarySpeakers(userId, recordingId)
 		return err
 	}); err != nil {
 		return err
@@ -85,6 +90,9 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			return ctx.Err()
 		}
 		if correction.IsRemoved || referenceCountByIdentity[correction.SpeakerIdentityID] >= 6 || correction.PassageEndMS-correction.PassageStartMS < 2400 {
+			continue
+		}
+		if !isConfirmedAsOneSpeaker(correction, temporarySpeakers) {
 			continue
 		}
 		hasOverride := false
@@ -217,6 +225,27 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		return transaction.MarkRecordingSpeakerCuration(userId, recordingId, source.SourceGeneration)
 	})
+}
+
+// isConfirmedAsOneSpeaker says whether a correction names passages the person
+// saw as one voice, so a sample may be cut from them. Naming a temporary
+// speaker also names every later piece where the provider answered with that
+// label, and the provider gives a label to whoever sounds closest to its
+// sample, which in a large meeting is often someone else. A sample cut there
+// teaches every later recording the wrong voice under the name, so only the
+// passages the label was first heard in, where its own sample came from,
+// qualify.
+func isConfirmedAsOneSpeaker(correction *models.RecordingSpeakerCorrection, temporarySpeakers []*models.RecordingTemporarySpeaker) bool {
+	temporarySpeakerId, _ := db.TemporarySpeakerNamingOf(correction.ClientCorrectionID)
+	if temporarySpeakerId == "" {
+		return true
+	}
+	for _, temporarySpeaker := range temporarySpeakers {
+		if temporarySpeaker.ID == temporarySpeakerId {
+			return correction.RecordingTranscriptionAttemptID == temporarySpeaker.SourceAttemptID && correction.LocalSpeakerID == temporarySpeaker.SourceLocalSpeakerID
+		}
+	}
+	return false
 }
 
 // The fixed normalized PCM format comes from TeaNode's own decoder. Conservative

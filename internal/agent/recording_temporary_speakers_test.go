@@ -111,6 +111,68 @@ func TestSpeakersKeepTheirLabelAcrossPiecesAndNamingAppliesToAll(test *testing.T
 	})
 }
 
+// Naming a temporary speaker names it in every piece where the provider
+// answered with its label, but the provider gives the label to whoever sounds
+// closest to the sample, so the voice samples kept under the name come only
+// from the piece the label was first heard in.
+func TestNamingASpeakerKeepsSamplesOnlyFromWhereItWasFirstHeard(test *testing.T) {
+	fixture := newLiveRecordingFixture(test)
+	fixture.provider.answer = answerAsTheProviderDoes("Speaker 1", "Speaker 2")
+	curate := func() {
+		test.Helper()
+		if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+			test.Fatal(err)
+		}
+	}
+	for pieceIndex := 0; pieceIndex < 3; pieceIndex++ {
+		fixture.transcribe(fixture.addPiece(8000, 0))
+		curate()
+	}
+	var sourceAttemptId string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		speakers, err := transaction.ListRecordingTemporarySpeakers(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, speaker := range speakers {
+			if speaker.SpeakerLabel == "Speaker 1" {
+				sourceAttemptId = speaker.SourceAttemptID
+			}
+		}
+		if err := transaction.NameRecordingTemporarySpeaker(fixture.userId, fixture.source.ID, "Speaker 1", "Participant One", false); err != nil {
+			test.Fatal(err)
+		}
+	})
+	curate()
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		corrections, err := transaction.ListRecordingSpeakerCorrections(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		correctedPieceCount := map[string]bool{}
+		attemptByCorrectionId := map[string]string{}
+		for _, correction := range corrections {
+			correctedPieceCount[correction.RecordingTranscriptionAttemptID] = true
+			attemptByCorrectionId[correction.ID] = correction.RecordingTranscriptionAttemptID
+		}
+		if len(correctedPieceCount) != 3 {
+			test.Fatal("naming did not name the speaker in all three pieces", len(correctedPieceCount))
+		}
+		references, err := transaction.ListRecordingVoiceReferences(fixture.userId, fixture.source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(references) == 0 {
+			test.Fatal("no sample was kept from the piece the speaker was first heard in")
+		}
+		for _, reference := range references {
+			if attemptByCorrectionId[reference.RecordingSpeakerCorrectionID] != sourceAttemptId {
+				test.Fatal("a sample was cut from a piece where only the provider said who spoke", reference.PassageStartMS)
+			}
+		}
+	})
+}
+
 // The samples of one recording's speakers are for that recording only.
 func TestTemporarySpeakerSamplesAreNotSentForAnotherRecording(test *testing.T) {
 	fixture := newLiveRecordingFixture(test)

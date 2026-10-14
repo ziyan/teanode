@@ -444,7 +444,7 @@ func (self *transaction) UndoRecordingSpeakerNaming(userId, recordingId, correct
 	}
 	var correctionIds []string
 	correctionQuery := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND NOT is_removed", recordingId)
-	temporarySpeakerId, nameDigest := temporarySpeakerNamingOf(named.ClientCorrectionID)
+	temporarySpeakerId, nameDigest := TemporarySpeakerNamingOf(named.ClientCorrectionID)
 	if temporarySpeakerId != "" {
 		// A temporary speaker is named with one correction per piece, each under its own key.
 		correctionQuery = correctionQuery.Where("client_correction_id LIKE ? AND client_correction_id LIKE ?", temporarySpeakerKeyPrefix+temporarySpeakerId+"-%", "%-"+nameDigest)
