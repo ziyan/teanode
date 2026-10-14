@@ -70,11 +70,11 @@ func financeReceiptCommands() []*cli.Command {
 			Action: runFinanceRecordReceipt,
 		},
 		{
-			Name: "read-receipt", Usage: "have your agent read a receipt from a photo or a text file, or from a message, record it and match it",
+			Name: "read-receipt", Usage: "have your agent read a receipt from a photo, a PDF or a text file, or from a message, record it and match it",
 			ArgsUsage: "<file | ->",
 			Description: "The file goes up the way a file for your agent does, and the receipt job reads it in the\n" +
-				"background: a picture is shown to a model, a text file is read; a PDF's text is not read on the\n" +
-				"server, so give a photo or a screenshot of one. --mailbox-item reads a message in a mailbox your\n" +
+				"background: a picture is shown to a model, a text file or a PDF's text is read, and a scanned\n" +
+				"PDF's first pages are shown as pictures. --mailbox-item reads a message in a mailbox your\n" +
 				"agent is granted instead of a file. --finance-transaction, with a file, matches what it reads\n" +
 				"to that transaction. teanode finance receipts shows the receipt once it is read.",
 			Flags: []cli.Flag{

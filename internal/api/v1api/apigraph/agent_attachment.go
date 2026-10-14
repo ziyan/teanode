@@ -105,7 +105,7 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 		// the database, so doing it under the transaction held one open
 		// for the length of a file.
 		contentType := contentTypeOf(upload.Filename, upload.ContentType, upload.Content)
-		text := agent.ExtractAttachmentText(upload.Filename, upload.ContentType, upload.Content)
+		text := agent.ExtractAttachmentText(ctx, upload.Filename, upload.ContentType, upload.Content)
 		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
 				AgentID:     found.ID,
@@ -138,6 +138,11 @@ func contentTypeOf(name, declared string, content []byte) string {
 	declared = strings.TrimSpace(declared)
 	if declared != "" && declared != "application/octet-stream" {
 		return declared
+	}
+	// A PDF by its bytes before anything else: a mail client sends one as
+	// application/octet-stream under any name.
+	if corrected := agent.AttachmentContentType(declared, content); corrected != declared {
+		return corrected
 	}
 	// The name's extension first — a command line sends no type — then
 	// the bytes.

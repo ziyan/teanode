@@ -12,20 +12,20 @@ import (
 // A text file is read to the model, capped; a picture is not text; what
 // is neither is named, never read.
 func TestExtractAttachmentTextReadsTextOnly(t *testing.T) {
-	if got := ExtractAttachmentText("notes.txt", "text/plain", []byte("hello")); got != "hello" {
+	if got := ExtractAttachmentText(t.Context(), "notes.txt", "text/plain", []byte("hello")); got != "hello" {
 		t.Fatalf("a text file: %q", got)
 	}
-	if got := ExtractAttachmentText("data.csv", "", []byte("a,b\n1,2")); got != "a,b\n1,2" {
+	if got := ExtractAttachmentText(t.Context(), "data.csv", "", []byte("a,b\n1,2")); got != "a,b\n1,2" {
 		t.Fatalf("a csv by name: %q", got)
 	}
-	if got := ExtractAttachmentText("photo.jpg", "image/jpeg", []byte{0xff, 0xd8, 0xff}); got != "" {
+	if got := ExtractAttachmentText(t.Context(), "photo.jpg", "image/jpeg", []byte{0xff, 0xd8, 0xff}); got != "" {
 		t.Fatalf("a picture became text: %q", got)
 	}
-	if got := ExtractAttachmentText("clip.mp4", "video/mp4", []byte("not a video")); got != "" {
+	if got := ExtractAttachmentText(t.Context(), "clip.mp4", "video/mp4", []byte("not a video")); got != "" {
 		t.Fatalf("a video became text: %q", got)
 	}
 	long := strings.Repeat("x", attachmentTextCharacters+100)
-	if got := ExtractAttachmentText("long.txt", "text/plain", []byte(long)); len(got) > attachmentTextCharacters+100 || !strings.HasSuffix(got, "the file goes on]") {
+	if got := ExtractAttachmentText(t.Context(), "long.txt", "text/plain", []byte(long)); len(got) > attachmentTextCharacters+100 || !strings.HasSuffix(got, "the file goes on]") {
 		t.Fatalf("a long file was not cut: %d characters", len(got))
 	}
 }

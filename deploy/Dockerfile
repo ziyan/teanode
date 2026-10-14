@@ -33,12 +33,18 @@ RUN CGO_ENABLED=0 go generate -mod=vendor ./internal/util/commentparse \
       -X github.com/ziyan/teanode/internal/version.commit=${COMMIT}" \
     -o /teanode ./cmd/teanode
 
+# poppler reads the text out of an uploaded PDF and renders a scanned one
+# as pictures. poppler-data holds the character maps a PDF in Chinese,
+# Japanese or Korean names its fonts by; without them that text reads empty.
+# The fontconfig files and the DejaVu fonts it installs with are what
+# pdftoppm draws a font the PDF does not carry with.
 FROM debian:trixie-slim AS media-readers
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg poppler-utils poppler-data \
  && mkdir -p /reader-root/usr/local/bin /reader-root/usr/share/doc \
- && cp /usr/bin/ffmpeg /usr/bin/ffprobe /reader-root/usr/local/bin/ \
- && ldd /usr/bin/ffmpeg /usr/bin/ffprobe \
+ && cp /usr/bin/ffmpeg /usr/bin/ffprobe /usr/bin/pdftotext /usr/bin/pdftoppm /reader-root/usr/local/bin/ \
+ && cp -a --parents /usr/share/poppler /etc/fonts /usr/share/fonts /usr/share/fontconfig /reader-root \
+ && ldd /usr/bin/ffmpeg /usr/bin/ffprobe /usr/bin/pdftotext /usr/bin/pdftoppm \
     | awk '/=> \// {print $3} $1 ~ /^\// && $2 ~ /^\(/ {print $1}' \
     | sed -e 's@^/lib/@/usr/lib/@' -e 's@^/lib64/@/usr/lib64/@' \
     | sort -u | xargs -r cp -L --parents -t /reader-root \

@@ -15,10 +15,10 @@ import (
 )
 
 // Files a person hands their agent with a turn. A picture is shown to the
-// model as an image, once, in the turn it came with; a text file is read
-// to it, capped; everything else — a video, a recording, an archive, a
-// document nobody here can parse — is named, with its type and size and a
-// line saying the agent cannot open it. Earlier turns name every file
+// model as an image, once, in the turn it came with; a text file, or the
+// text of a PDF, is read to it, capped; everything else (a video, a
+// recording, an archive, a document nobody here can parse) is named, with
+// its type and size and a line saying the agent cannot open it. Earlier turns name every file
 // rather than carry it again, so a conversation with pictures in it does
 // not cost the pictures every round.
 
@@ -74,15 +74,34 @@ func isTextAttachment(name, contentType string) bool {
 }
 
 // ExtractAttachmentText is what a model reads of a file: its text when it
-// is a text file, valid UTF-8, capped; empty otherwise. Called once, when
-// the file is uploaded, and kept on the row.
-func ExtractAttachmentText(name, contentType string, content []byte) string {
-	if !isTextAttachment(name, contentType) || !utf8.Valid(content) {
+// is a text file, valid UTF-8, or a PDF with a text layer, capped; empty
+// otherwise. Called once, when the file is uploaded, and kept on the row.
+// A PDF is known by its bytes, whatever it was declared as.
+func ExtractAttachmentText(ctx context.Context, name, contentType string, content []byte) string {
+	var text string
+	switch {
+	case isPDFContent(content):
+		read, err := readPDFText(ctx, content)
+		if err != nil {
+			// Not fatal to the upload: the file is kept, and named to the
+			// model as one it cannot open.
+			log.Warningf("cannot read the text of the PDF %q: %s", name, err)
+			return ""
+		}
+		text = read
+	case isTextAttachment(name, contentType) && utf8.Valid(content):
+		text = strings.ToValidUTF8(string(content), "")
+	default:
 		return ""
 	}
-	text := strings.ToValidUTF8(string(content), "")
+	return capAttachmentText(text)
+}
+
+// capAttachmentText is the most of a file's text a model reads, marked
+// where it was cut.
+func capAttachmentText(text string) string {
 	if len(text) > attachmentTextCharacters {
-		text = text[:attachmentTextCharacters] + "\n[cut here: the file goes on]"
+		text = strings.ToValidUTF8(text[:attachmentTextCharacters], "") + "\n[cut here: the file goes on]"
 	}
 	return text
 }

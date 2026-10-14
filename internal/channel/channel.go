@@ -867,15 +867,18 @@ func (self *chatState) attachments(ctx context.Context, found *models.Agent, inc
 		if err != nil {
 			return nil, err
 		}
-		contentType := file.ContentType
+		contentType := agent.AttachmentContentType(file.ContentType, content)
 		if contentType == "" {
 			contentType = http.DetectContentType(content)
 		}
+		// Read before the transaction opens: a PDF's text is read by an
+		// outside program, and nothing here needs the database for it.
+		text := agent.ExtractAttachmentText(ctx, file.Name, contentType, content)
 		var created *models.AgentAttachment
 		if err := self.manager.settings.Database.Transaction(func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
 				AgentID: found.ID, Name: file.Name, ContentType: contentType, Size: int64(len(content)),
-				Text: agent.ExtractAttachmentText(file.Name, contentType, content),
+				Text: text,
 			})
 			if err != nil {
 				return err

@@ -636,6 +636,18 @@ Deleting a conversation leaves a receipt's photo to the receipt
 (`DetachReceiptAttachments`); deleting the receipt deletes it unless a
 message holds it.
 
+A PDF is read on the server with poppler, which the production image
+carries beside ffmpeg. It is known by its first bytes (`%PDF-`), so one a
+mail client sent as `application/octet-stream` is kept as
+`application/pdf`. Its text is read at upload into the attachment's text,
+cut like a text file's, and the receipt job reads it as text. A PDF with no
+text layer (a scan) has its first three pages rendered and shown to the
+model as pictures, each within the picture size limit. On a server without
+poppler, `ReadReceipt` refuses a PDF that has no text kept, saying the
+server cannot read PDFs. `agent.ReadAttachmentText` reads a stored file's
+text on demand from storage, for files whose text is not kept in the
+database.
+
 ## Mirrored copies
 
 Some providers report one charge on every account of a connection: an

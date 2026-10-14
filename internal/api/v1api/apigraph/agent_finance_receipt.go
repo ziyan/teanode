@@ -613,9 +613,15 @@ func (self *graph) ReadReceipt(ctx context.Context, arguments ReadReceiptArgumen
 			return nil, api.ErrNotFound
 		}
 		// Refused now rather than queued to fail: the server reads a
-		// picture and a file with text in it, not a PDF.
+		// picture, a file with text in it, and a PDF when it has poppler
+		// (a scan with no text is rendered and shown as pictures).
 		if !agent.IsImageAttachment(attachment.ContentType) && strings.TrimSpace(attachment.Text) == "" {
-			return nil, fmt.Errorf("%w: %s has no text the server can read; a PDF's text is not read here, so upload a photo or a screenshot of the receipt", api.ErrInvalidArguments, attachment.Name)
+			if !agent.IsPDFAttachment(attachment) {
+				return nil, fmt.Errorf("%w: %s has no text the server can read; upload a photo, a screenshot or a PDF of the receipt", api.ErrInvalidArguments, attachment.Name)
+			}
+			if !agent.CanReadPDFs() {
+				return nil, fmt.Errorf("%w: this server cannot read PDFs, so upload a photo or a screenshot of the receipt in %s", api.ErrInvalidArguments, attachment.Name)
+			}
 		}
 	} else {
 		items, mailbox, err := self.requireItems(ctx, models.PermissionMailRead, []string{itemId})
