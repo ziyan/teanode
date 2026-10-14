@@ -179,7 +179,7 @@ func TaxMailSummary(copied []*models.AgentAttachment, canReadPDFs bool) string {
 		names = append(names, attachment.Name)
 		hasPDF = hasPDF || IsPDFAttachment(attachment)
 	}
-	summary := fmt.Sprintf("Received %s at your tax document address (%s) and reading %s as paystubs, W-2s or 1099s; they show under Finance, Taxes once read.",
+	summary := fmt.Sprintf("Received %s at your tax document address (%s) and reading %s as paystubs, W-2s, 1099s or 1098s; they show under Finance, Taxes once read.",
 		countOf(len(copied), "file", "files"), strings.Join(names, ", "), map[bool]string{true: "it", false: "them"}[len(copied) == 1])
 	if hasPDF && !canReadPDFs {
 		summary += " This server cannot read PDFs, so send a photo or a screenshot of a PDF instead."

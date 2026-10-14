@@ -113,6 +113,11 @@ const (
 	// name no W-2 or paystub names, so it is counted as the first
 	// person's.
 	TaxYearFindingInvestmentRecipientAssumed TaxYearFindingCode = "investment_recipient_assumed"
+	// TaxYearFindingMortgageOverLimit: the 1098s' outstanding principal is
+	// more than the debt whose interest a return deducts (750,000, or
+	// 1,000,000 taken out before December 16, 2017), so only the share of
+	// the interest under the limit counts.
+	TaxYearFindingMortgageOverLimit TaxYearFindingCode = "mortgage_over_limit"
 )
 
 // TaxYearFinding is one thing worth knowing about a tax year, in a
@@ -873,10 +878,20 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			})
 		}
 	}
-	mortgageInterest, mortgagePropertyTax, mortgageFormIds := mortgageSums(taxYear, taxForms)
-	summary.TaxFormCount += len(mortgageFormIds)
+	mortgage := sumMortgages(taxYear, filingStatus, taxForms)
+	summary.TaxFormCount += len(mortgage.taxFormIds)
+	if mortgage.isOverLimit() {
+		findingText := fmt.Sprintf("the mortgages' principal of %s is more than the %s whose interest is deducted, so %s of the %s interest counts",
+			formatDollars(mortgage.principal), formatDollars(mortgage.debtLimit), formatDollars(mortgage.interest), formatDollars(mortgage.printedInterest))
+		if mortgage.isOriginationUnknown {
+			findingText += "; a 1098 prints no origination date, so its loan is taken to be from after 2017"
+		}
+		summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
+			TaxYearFindingCode: TaxYearFindingMortgageOverLimit, FindingText: findingText, PaystubIDs: []string{},
+		})
+	}
 	summary.TaxYearEstimate = estimateTaxYear(taxYear, filingStatus, everyoneSums, isAnythingProjected, &estimateExtras{
-		setting: inputs.Setting, mortgageInterest: mortgageInterest, mortgagePropertyTax: mortgagePropertyTax, isPreviewed: isPreviewed,
+		setting: inputs.Setting, mortgage: mortgage, isPreviewed: isPreviewed,
 	})
 	if summary.TaxYearEstimate != nil {
 		summary.TaxYearEstimate.IsTaxFilingStatusAssumed = isAssumed

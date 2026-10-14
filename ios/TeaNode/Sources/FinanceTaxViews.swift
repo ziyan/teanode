@@ -529,6 +529,8 @@ struct TaxEstimateSection: View {
                 }
                 if estimate.isItemized == true {
                     Text("An estimate from your documents and this year's settings: \(money(estimate.taxableIncomeAmount)) taxable after \(money(estimate.deductionAmount)) of itemized deductions (mortgage interest \(money(estimate.mortgageInterestAmount)), state and local taxes \(money(estimate.stateAndLocalTaxDeductionAmount)), gifts \(money(estimate.charitableContributionAmount))). A state's tax on investment income is not counted.")
+                } else if (Double(estimate.charitableContributionAmount ?? "") ?? 0) > 0 {
+                    Text("An estimate from your documents and this year's settings: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction and \(money(estimate.charitableContributionAmount)) of charitable gifts. A state's tax on investment income is not counted.")
                 } else {
                     Text("An estimate from your documents and this year's settings: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. A state's tax on investment income is not counted.")
                 }

@@ -8,7 +8,7 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// What the estimate takes besides paystubs, W-2s and 1099s:
+// What the estimate takes besides paystubs, W-2s, 1099s and 1098s:
 //
 //   - A preview of the year's interest and dividends from the person's
 //     linked accounts, for a year whose 1099s have not come: what the
@@ -155,11 +155,9 @@ func childTaxCredit(taxYear int, status TaxFilingStatus, childCount, otherDepend
 		return new(big.Rat)
 	}
 	credit := big.NewRat(perChild*int64(childCount)+500*int64(otherDependentCount), 1)
-	if above := new(big.Rat).Sub(adjustedGrossIncome, big.NewRat(childTaxCreditThresholdByStatus[status], 1)); above.Sign() > 0 {
-		// 50 for each 1,000 above, a part of 1,000 counting whole.
-		thousands := new(big.Int).Quo(new(big.Int).Add(new(big.Int).Quo(above.Num(), above.Denom()), big.NewInt(999)), big.NewInt(1000))
-		credit.Sub(credit, new(big.Rat).SetInt(new(big.Int).Mul(thousands, big.NewInt(50))))
-	}
+	// 50 for each 1,000 above, a part of 1,000 counting whole.
+	thousands := partsAbove(adjustedGrossIncome, childTaxCreditThresholdByStatus[status], 1000)
+	credit.Sub(credit, big.NewRat(50*thousands, 1))
 	if credit.Sign() < 0 {
 		return new(big.Rat)
 	}
@@ -197,12 +195,7 @@ func dependentCareCredit(taxYear int, status TaxFilingStatus, childCount int, ex
 // jointly) above 75,000 (150,000 filing jointly), to 20%.
 func dependentCareRate(taxYear int, status TaxFilingStatus, adjustedGrossIncome *big.Rat) *big.Rat {
 	stepsAbove := func(floor, step int64) int64 {
-		above := new(big.Rat).Sub(adjustedGrossIncome, big.NewRat(floor, 1))
-		if above.Sign() <= 0 {
-			return 0
-		}
-		whole := new(big.Int).Quo(above.Num(), above.Denom())
-		return new(big.Int).Quo(new(big.Int).Add(whole, big.NewInt(step-1)), big.NewInt(step)).Int64()
+		return partsAbove(adjustedGrossIncome, floor, step)
 	}
 	if taxYear < 2026 {
 		return big.NewRat(max(35-stepsAbove(15000, 2000), 20), 100)
@@ -246,28 +239,162 @@ func saltCap(taxYear int, status TaxFilingStatus, adjustedGrossIncome *big.Rat) 
 	return result
 }
 
-// mortgageSums are a year's 1098s: interest and points, and real estate
-// taxes when a lender prints what it paid from escrow in box 10.
-func mortgageSums(taxYear int, taxForms []*models.FinanceTaxForm) (interest, propertyTax *big.Rat, taxFormIds []string) {
-	interest, propertyTax, taxFormIds = new(big.Rat), new(big.Rat), []string{}
+// acquisitionDebtLimit is the most mortgage debt whose interest a return
+// deducts: 750,000 (375,000 filing separately), or up to 1,000,000
+// (500,000) of debt taken out before December 16, 2017, which also uses
+// up the 750,000 (IRS Publication 936).
+func acquisitionDebtLimit(status TaxFilingStatus, grandfatheredPrincipal *big.Rat) *big.Rat {
+	limit, grandfatheredLimit := big.NewRat(750000, 1), big.NewRat(1000000, 1)
+	if status == TaxFilingStatusMarriedFilingSeparately {
+		limit, grandfatheredLimit = big.NewRat(375000, 1), big.NewRat(500000, 1)
+	}
+	grandfathered := new(big.Rat).Set(grandfatheredPrincipal)
+	if grandfathered.Cmp(grandfatheredLimit) > 0 {
+		grandfathered = grandfatheredLimit
+	}
+	if grandfathered.Cmp(limit) > 0 {
+		return grandfathered
+	}
+	return limit
+}
+
+// grandfatheredBefore is the day from which a mortgage's debt counts
+// against the 750,000 limit rather than the 1,000,000 one.
+var grandfatheredBefore = time.Date(2017, time.December, 16, 0, 0, 0, 0, time.UTC)
+
+// originationDate is a 1098's box 3, as the lender printed it.
+func originationDate(text string) (time.Time, bool) {
+	text = strings.TrimSpace(text)
+	for _, layout := range []string{"2006-01-02", "1/2/2006", "01/02/2006", "1/2/06", "01/02/06"} {
+		if day, err := time.Parse(layout, text); err == nil {
+			return day, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// mortgageSums are what a year's 1098s give the estimate.
+type mortgageSums struct {
+	// interest is the interest and points the return deducts, scaled
+	// down when the loans' principal is more than the limit.
+	interest *big.Rat
+	// printedInterest is boxes 1 and 6 as printed, before the limit.
+	printedInterest *big.Rat
+	// propertyTax is the real estate taxes lenders paid from escrow.
+	propertyTax *big.Rat
+	// refundedInterest is box 4, interest overpaid in an earlier year and
+	// paid back in this one, which is income when it was deducted then.
+	refundedInterest *big.Rat
+	// principal is the loans' outstanding principal (box 2) together,
+	// and debtLimit the most of it whose interest is deducted.
+	principal, debtLimit *big.Rat
+	// isOriginationUnknown: a loan over the limit printed no origination
+	// date, so it is counted as taken out after 2017.
+	isOriginationUnknown bool
+	taxFormIds           []string
+}
+
+// isOverLimit is whether the loans' principal is more than the limit.
+func (self *mortgageSums) isOverLimit() bool {
+	return self.principal.Cmp(self.debtLimit) > 0
+}
+
+// sumMortgages adds up a year's 1098s. One loan's statement counts once:
+// co-borrowers each get a copy, and a statement may be read twice, so
+// forms of one lender, loan number and principal are one loan, of them a
+// correction over the form it corrects, else the latest read. Box 10
+// counts only when its label says it is a tax, since lenders print
+// principal paid and insurance there as well.
+func sumMortgages(taxYear int, status TaxFilingStatus, taxForms []*models.FinanceTaxForm) *mortgageSums {
+	sums := &mortgageSums{
+		interest: new(big.Rat), printedInterest: new(big.Rat), propertyTax: new(big.Rat), refundedInterest: new(big.Rat),
+		principal: new(big.Rat), taxFormIds: []string{},
+	}
+	latestByKey := map[string]*models.FinanceTaxForm{}
+	var keys []string
 	for _, taxForm := range taxForms {
 		if taxForm == nil || taxForm.TaxYear != taxYear || taxForm.TaxFormKind != models.TaxFormKind1098 {
 			continue
 		}
+		principal, _ := taxFormAmount(taxForm, "2")
+		payer := strings.ToLower(strings.TrimSpace(taxForm.PayerTaxID))
+		if payer == "" {
+			payer = strings.ToLower(strings.Join(strings.Fields(taxForm.PayerName), " "))
+		}
+		key := payer + "\x00" + TaxFormAccount(taxForm) + "\x00" + principal.RatString()
+		earlier := latestByKey[key]
+		if earlier == nil {
+			keys = append(keys, key)
+		}
+		switch {
+		case earlier == nil, taxForm.IsCorrected && !earlier.IsCorrected:
+			latestByKey[key] = taxForm
+		case taxForm.IsCorrected == earlier.IsCorrected && !taxForm.CreatedAt.Before(earlier.CreatedAt):
+			latestByKey[key] = taxForm
+		}
+	}
+	grandfathered := new(big.Rat)
+	for _, key := range keys {
+		taxForm := latestByKey[key]
 		mortgageInterest, _ := taxFormAmount(taxForm, "1")
 		points, _ := taxFormAmount(taxForm, "6")
-		interest.Add(interest, mortgageInterest).Add(interest, points)
+		refunded, _ := taxFormAmount(taxForm, "4")
+		principal, _ := taxFormAmount(taxForm, "2")
+		sums.printedInterest.Add(sums.printedInterest, mortgageInterest).Add(sums.printedInterest, points)
+		sums.refundedInterest.Add(sums.refundedInterest, refunded)
+		sums.principal.Add(sums.principal, principal)
+		origination, isKnown := originationDate(taxFormText(taxForm, "3"))
+		if isKnown && origination.Before(grandfatheredBefore) {
+			grandfathered.Add(grandfathered, principal)
+		} else if !isKnown && principal.Sign() > 0 {
+			sums.isOriginationUnknown = true
+		}
 		for _, entry := range taxForm.TaxFormEntries {
 			if entry == nil || entry.BoxCode != "10" || !strings.Contains(strings.ToLower(entry.BoxQualifier), "tax") {
 				continue
 			}
 			if amountValue, err := parseDecimal(entry.Amount); err == nil {
-				propertyTax.Add(propertyTax, amountValue)
+				sums.propertyTax.Add(sums.propertyTax, amountValue)
 			}
 		}
-		taxFormIds = append(taxFormIds, taxForm.ID)
+		sums.taxFormIds = append(sums.taxFormIds, taxForm.ID)
 	}
-	return interest, propertyTax, taxFormIds
+	sums.debtLimit = acquisitionDebtLimit(status, grandfathered)
+	sums.interest.Set(sums.printedInterest)
+	if sums.isOverLimit() {
+		// Interest in the share of the debt under the limit. Publication
+		// 936 divides by the year's average balance; box 2 is the balance
+		// at the start of the year, close to it for a loan a year old.
+		sums.interest = roundToCents(new(big.Rat).Mul(sums.printedInterest, new(big.Rat).Quo(sums.debtLimit, sums.principal)))
+	} else {
+		sums.isOriginationUnknown = false
+	}
+	return sums
+}
+
+// taxFormText is a box's text, or "".
+func taxFormText(taxForm *models.FinanceTaxForm, boxCode string) string {
+	for _, entry := range taxForm.TaxFormEntries {
+		if entry != nil && entry.BoxCode == boxCode {
+			return entry.TextValue
+		}
+	}
+	return ""
+}
+
+// partsAbove is how many steps of a size an amount is above a floor, a
+// part of a step counting whole ("or fraction thereof").
+func partsAbove(amountValue *big.Rat, floor, step int64) int64 {
+	above := new(big.Rat).Sub(amountValue, big.NewRat(floor, 1))
+	if above.Sign() <= 0 {
+		return 0
+	}
+	steps := new(big.Rat).Quo(above, big.NewRat(step, 1))
+	whole := new(big.Int).Quo(steps.Num(), steps.Denom())
+	if !steps.IsInt() {
+		whole.Add(whole, big.NewInt(1))
+	}
+	return whole.Int64()
 }
 
 // settingAmount is one of the settings' amounts, nothing when empty or

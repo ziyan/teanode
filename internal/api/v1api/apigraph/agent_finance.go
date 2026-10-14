@@ -170,7 +170,7 @@ type FinanceQuery interface {
 	// One paystub with its lines.
 	FinancePaystub(ctx context.Context, arguments PaystubArguments) (*models.FinancePaystub, error)
 
-	// One page of the caller's tax forms (W-2s and 1099s), each with its boxes and
+	// One page of the caller's tax forms (W-2s, 1099s and 1098s), each with its boxes and
 	// what it says about itself, the latest tax year first.
 	FinanceTaxForms(ctx context.Context, arguments TaxFormsArguments) (*TaxFormPageView, error)
 
@@ -386,7 +386,7 @@ type FinanceMutation interface {
 	// file, in place of the form of the same kind read from the same file.
 	RecordTaxForm(ctx context.Context, arguments RecordTaxFormArguments) (*TaxFormView, error)
 
-	// Queue the job that reads a paystub, a W-2 or 1099s out of a file uploaded
+	// Queue the job that reads a paystub, a W-2, 1099s or a 1098 out of a file uploaded
 	// to the agent's attachments, or out of each PDF and picture a message
 	// in the person's mailbox carries, and records it.
 	ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumentArguments) (*TaxDocumentReadingView, error)

@@ -125,10 +125,11 @@ var taxFormBoxesByKind = map[models.TaxFormKind]map[string]taxFormBox{
 	// acquisition date. Box 7's checkbox is not kept.
 	models.TaxFormKind1098: {
 		"1": {}, "2": {}, "3": {isText: true}, "4": {}, "5": {}, "6": {},
-		"8":  {isText: true},
-		"9":  {isText: true},
-		"10": {boxQualifier: qualifierLabel},
-		"11": {isText: true},
+		"8":       {isText: true},
+		"9":       {isText: true},
+		"10":      {boxQualifier: qualifierLabel},
+		"11":      {isText: true},
+		"account": accountBox,
 	},
 }
 
@@ -540,7 +541,8 @@ func lastFourAlphanumerics(text string) string {
 	return strings.ToUpper(string(kept))
 }
 
-// TaxFormAccount is a 1099's account number's last four, or "".
+// TaxFormAccount is a 1099's account number's or a 1098's loan number's
+// last four, or "".
 func TaxFormAccount(taxForm *models.FinanceTaxForm) string {
 	for _, entry := range taxForm.TaxFormEntries {
 		if entry != nil && entry.BoxCode == "account" {

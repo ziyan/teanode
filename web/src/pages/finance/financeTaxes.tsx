@@ -694,10 +694,16 @@ function TaxEstimatePanel({
               gifts: formatDollars(estimate.charitableContributionAmount),
               taxable: formatDollars(estimate.taxableIncomeAmount),
             })
-          : t('finance.taxEstimateNote', {
-              deduction: formatDollars(estimate.standardDeductionAmount),
-              taxable: formatDollars(estimate.taxableIncomeAmount),
-            })}
+          : isZero(estimate.charitableContributionAmount)
+            ? t('finance.taxEstimateNote', {
+                deduction: formatDollars(estimate.standardDeductionAmount),
+                taxable: formatDollars(estimate.taxableIncomeAmount),
+              })
+            : t('finance.taxEstimateNoteGifts', {
+                deduction: formatDollars(estimate.standardDeductionAmount),
+                gifts: formatDollars(estimate.charitableContributionAmount),
+                taxable: formatDollars(estimate.taxableIncomeAmount),
+              })}
       </p>
     </SettingsSection>
   )
@@ -861,6 +867,7 @@ const FINDING_KIND_LABELS: Record<string, Key> = {
   hsa_over_limit: 'finance.taxFindingHSAOverLimit',
   cost_basis_missing: 'finance.taxFindingCostBasisMissing',
   investment_recipient_assumed: 'finance.taxFindingRecipientAssumed',
+  mortgage_over_limit: 'finance.taxFindingMortgageOverLimit',
 }
 
 // TaxInvestmentPanel is the year's investment income from its 1099s: each

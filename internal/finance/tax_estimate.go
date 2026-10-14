@@ -238,11 +238,9 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 	if setting == nil {
 		setting = &models.TaxYearSetting{}
 	}
-	if extras.mortgageInterest == nil {
-		extras.mortgageInterest = new(big.Rat)
-	}
-	if extras.mortgagePropertyTax == nil {
-		extras.mortgagePropertyTax = new(big.Rat)
+	mortgage := extras.mortgage
+	if mortgage == nil {
+		mortgage = sumMortgages(taxYear, status, nil)
 	}
 	table := federalTaxTableByYear[taxYear]
 	if table == nil || len(people) == 0 {
@@ -264,6 +262,7 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 	capitalLossDeduction, foreignTaxCredit, netInvestmentIncomeTax := new(big.Rat), new(big.Rat), new(big.Rat)
 	otherIncome, deductionTaken, itemizedDeduction, mortgageInterest := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
 	stateAndLocalDeduction, charitable, childCredit, careCredit := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
+	nonItemizerCharitable := new(big.Rat)
 	isItemized := false
 	for returnIndex, members := range returns {
 		// The settings and the 1098s are the household's, on the first
@@ -319,7 +318,10 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 		grossIncome := new(big.Rat).Add(wages, invested.income)
 		returnOtherIncome := new(big.Rat)
 		if isFirstReturn {
+			// Interest a lender paid back from an earlier year is income
+			// in this one, taking it that the earlier return itemized.
 			returnOtherIncome = settingAmount(setting.OtherIncomeAmount)
+			returnOtherIncome.Add(returnOtherIncome, mortgage.refundedInterest)
 			otherIncome.Add(otherIncome, returnOtherIncome)
 			grossIncome.Add(grossIncome, returnOtherIncome)
 		}
@@ -328,11 +330,11 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 		standardDeduction.Add(standardDeduction, standard)
 		// Itemized: state and local taxes up to the cap, and on the first
 		// return mortgage interest, property tax and charitable gifts.
-		returnItemized := new(big.Rat)
+		returnItemized, gifts := new(big.Rat), new(big.Rat)
 		if isFirstReturn {
 			returnStateAndLocal.Add(returnStateAndLocal, settingAmount(setting.PropertyTaxAmount))
 			returnStateAndLocal.Add(returnStateAndLocal, settingAmount(setting.StateIncomeTaxPaidAmount))
-			returnStateAndLocal.Add(returnStateAndLocal, extras.mortgagePropertyTax)
+			returnStateAndLocal.Add(returnStateAndLocal, mortgage.propertyTax)
 		}
 		salt := saltCap(taxYear, status, grossIncome)
 		if returnStateAndLocal.Cmp(salt) < 0 {
@@ -341,16 +343,22 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 		returnItemized.Add(returnItemized, salt)
 		stateAndLocalDeduction.Add(stateAndLocalDeduction, salt)
 		if isFirstReturn {
-			gifts := settingAmount(setting.CharitableContributionAmount)
-			returnItemized.Add(returnItemized, extras.mortgageInterest).Add(returnItemized, gifts)
-			mortgageInterest.Add(mortgageInterest, extras.mortgageInterest)
-			charitable.Add(charitable, gifts)
+			gifts = settingAmount(setting.CharitableContributionAmount)
+			itemizedGifts := charitableItemized(taxYear, gifts, grossIncome)
+			returnItemized.Add(returnItemized, mortgage.interest).Add(returnItemized, itemizedGifts)
+			mortgageInterest.Add(mortgageInterest, mortgage.interest)
+			charitable.Add(charitable, itemizedGifts)
 		}
 		itemizedDeduction.Add(itemizedDeduction, returnItemized)
 		deduction := standard
 		if returnItemized.Cmp(standard) > 0 {
 			deduction = returnItemized
 			isItemized = true
+		} else if nonItemizer := charitableNonItemizer(taxYear, status, gifts); nonItemizer.Sign() > 0 {
+			// From 2026 gifts are deducted beside the standard deduction
+			// too, up to a limit.
+			deduction = new(big.Rat).Add(standard, nonItemizer)
+			nonItemizerCharitable.Add(nonItemizerCharitable, nonItemizer)
 		}
 		deductionTaken.Add(deductionTaken, deduction)
 		taxable := new(big.Rat).Sub(grossIncome, deduction)
@@ -445,6 +453,10 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 	if refund.Sign() < 0 {
 		refund = new(big.Rat)
 	}
+	if !isItemized {
+		// The gifts deducted are those beside the standard deduction.
+		charitable = nonItemizerCharitable
+	}
 	upcoming := new(big.Rat).Sub(withheld, paid)
 	if upcoming.Sign() < 0 {
 		upcoming = new(big.Rat)
@@ -531,11 +543,41 @@ func retirementDeferralCeiling(taxYear int, yearToDate *big.Rat) *big.Rat {
 	return nil
 }
 
+// charitableItemized is the gifts itemizing deducts: all of them until
+// 2026, then those above 0.5% of the adjusted gross income.
+func charitableItemized(taxYear int, gifts, adjustedGrossIncome *big.Rat) *big.Rat {
+	if taxYear < 2026 {
+		return new(big.Rat).Set(gifts)
+	}
+	deducted := new(big.Rat).Sub(gifts, new(big.Rat).Mul(adjustedGrossIncome, big.NewRat(5, 1000)))
+	if deducted.Sign() < 0 {
+		return new(big.Rat)
+	}
+	return roundToCents(deducted)
+}
+
+// charitableNonItemizer is the gifts deducted beside the standard
+// deduction from 2026: up to 1,000, 2,000 filing jointly. Only gifts of
+// cash count, which the settings take the gifts to be.
+func charitableNonItemizer(taxYear int, status TaxFilingStatus, gifts *big.Rat) *big.Rat {
+	if taxYear < 2026 || gifts.Sign() <= 0 {
+		return new(big.Rat)
+	}
+	limit := big.NewRat(1000, 1)
+	if status == TaxFilingStatusMarriedFilingJointly {
+		limit = big.NewRat(2000, 1)
+	}
+	if gifts.Cmp(limit) < 0 {
+		return new(big.Rat).Set(gifts)
+	}
+	return limit
+}
+
 // estimateExtras are what the estimate takes besides each person's
 // documents: the year's settings and its 1098s, and whether investment
 // income counted is previewed rather than read from 1099s.
 type estimateExtras struct {
-	setting                               *models.TaxYearSetting
-	mortgageInterest, mortgagePropertyTax *big.Rat
-	isPreviewed                           bool
+	setting     *models.TaxYearSetting
+	mortgage    *mortgageSums
+	isPreviewed bool
 }

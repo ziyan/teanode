@@ -32,10 +32,10 @@ func financeTaxCommands() []*cli.Command {
 	}
 	return []*cli.Command{
 		{
-			Name: "read-tax-document", Usage: "have your agent read paystubs, W-2s or 1099s from PDFs or photos, or from a message, and record them",
+			Name: "read-tax-document", Usage: "have your agent read paystubs, W-2s, 1099s or 1098s from PDFs or photos, or from a message, and record them",
 			ArgsUsage: "<file>... | --mailbox-item <id>",
 			Description: "Each file goes up as a tax document, whose text the server never keeps, and the reading\n" +
-				"job reads it in the background: whether it is a paystub, a W-2 or 1099s, and every line or box. Only the\n" +
+				"job reads it in the background: whether it is a paystub, a W-2, 1099s or a 1098, and every line or box. Only the\n" +
 				"last four digits of your taxpayer number are kept. --mailbox-item reads each PDF and picture a\n" +
 				"message carries instead. teanode finance paystubs and teanode finance tax-forms show them once\n" +
 				"read, and teanode finance tax-year puts the year together.",
@@ -76,19 +76,20 @@ func financeTaxCommands() []*cli.Command {
 			ArgsUsage: "<paystub-id>", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runFinanceDeletePaystub,
 		},
 		{
-			Name: "tax-forms", Usage: "your W-2s and 1099s, the latest tax year first, each with what it says about itself",
+			Name: "tax-forms", Usage: "your W-2s, 1099s and 1098s, the latest tax year first, each with what it says about itself",
 			Flags: []cli.Flag{JSONFlag(), taxYearFlag("only this year's"),
 				&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 60},
 				&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
 			},
 			Action: runFinanceTaxForms,
 		},
-		{Name: "tax-form", Usage: "one W-2 or 1099, box by box", ArgsUsage: "<tax-form-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxForm},
+		{Name: "tax-form", Usage: "one W-2, 1099 or 1098, box by box", ArgsUsage: "<tax-form-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxForm},
 		{
-			Name: "record-tax-form", Usage: "record a W-2 or a 1099 from a JSON file of its boxes",
+			Name: "record-tax-form", Usage: "record a W-2, a 1099 or a 1098 from a JSON file of its boxes",
 			ArgsUsage: "<file.json | ->",
 			Description: "The file is one JSON object with the RecordTaxForm arguments: agentAttachmentId (the uploaded\n" +
-				"file it was read from), taxFormKind (w2, 1099_int, 1099_div or 1099_b), taxYear, isCorrected, payerName, payerTaxId,\n" +
+				"file it was read from), taxFormKind (w2, 1099_int, 1099_div,\n" +
+				"1099_b or 1098), taxYear, isCorrected, payerName, payerTaxId,\n" +
 				"recipientName, recipientTaxIdMask (the last four digits only) and taxFormEntries ([{boxCode,\n" +
 				"boxQualifier, amount, textValue, isChecked}]): box 12's letter, a state's code in boxes 15 to 17\n" +
 				"and box 14's label are the qualifier. Recording the same file again replaces what was read from it.",
@@ -96,7 +97,7 @@ func financeTaxCommands() []*cli.Command {
 			Action: runFinanceRecordTaxForm,
 		},
 		{
-			Name: "delete-tax-form", Usage: "delete a W-2, its boxes and the file it was read from",
+			Name: "delete-tax-form", Usage: "delete a W-2, 1099 or 1098, its boxes and the file it was read from",
 			ArgsUsage: "<tax-form-id>", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runFinanceDeleteTaxForm,
 		},
 		{
@@ -158,7 +159,7 @@ func runFinanceReadTaxDocument(ctx context.Context, command *cli.Command) error 
 	itemId := strings.TrimSpace(command.String("mailbox-item"))
 	paths := command.Args().Slice()
 	if (itemId == "") == (len(paths) == 0) {
-		return usage("give the files of the paystubs, W-2s or 1099s, or --mailbox-item with the message they are in, one of the two")
+		return usage("give the files of the paystubs, W-2s, 1099s or 1098s, or --mailbox-item with the message they are in, one of the two")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -601,7 +602,7 @@ func printTaxDocumentAddress(command *cli.Command, address *client.TaxDocumentAd
 		return nil
 	}
 	_, _ = fmt.Fprintf(command.Writer, "tax document address: %s\n", address.TaxDocumentAddress)
-	_, _ = fmt.Fprintln(command.Writer, "each PDF or picture mailed there is read as a paystub, a W-2 or 1099s and shows in teanode finance tax-year")
+	_, _ = fmt.Fprintln(command.Writer, "each PDF or picture mailed there is read as a paystub, a W-2, 1099s or a 1098 and shows in teanode finance tax-year")
 	if !address.CanReadPDFs {
 		_, _ = fmt.Fprintln(command.Writer, "this server cannot read PDFs: mail photos or screenshots")
 	}
@@ -646,7 +647,7 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(summary)
 	}
 	if summary.PaystubCount == 0 && summary.TaxFormCount == 0 {
-		_, _ = fmt.Fprintf(command.Writer, "no paystubs, W-2s or 1099s for %d; teanode finance read-tax-document adds them\n", taxYear)
+		_, _ = fmt.Fprintf(command.Writer, "no paystubs, W-2s, 1099s or 1098s for %d; teanode finance read-tax-document adds them\n", taxYear)
 		return nil
 	}
 	for _, employment := range summary.TaxYearEmployments {
@@ -760,6 +761,9 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 			}
 		} else {
 			rows = append(rows, []string{"standard deduction", estimate.StandardDeductionAmount})
+			if estimate.CharitableContributionAmount != "0.00" {
+				rows = append(rows, []string{"charitable gifts, beside it", estimate.CharitableContributionAmount})
+			}
 			if estimate.ItemizedDeductionAmount != "0.00" {
 				rows = append(rows, []string{"  itemized would be", estimate.ItemizedDeductionAmount})
 			}

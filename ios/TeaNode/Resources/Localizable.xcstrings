@@ -3861,6 +3861,22 @@
         }
       }
     },
+    "An estimate from your documents and this year's settings: %@ taxable after the %@ standard deduction and %@ of charitable gifts. A state's tax on investment income is not counted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書類とこの年の設定からの見積もりです。標準控除 %2$@ と寄付 %3$@ を引いた課税所得は %1$@ です。投資所得への州税は含みません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "根据你的文件和本年度设置估算：减去 %2$@ 标准扣除额和 %3$@ 慈善捐款后应税收入为 %1$@。未计入州对投资收入征的税。"
+          }
+        }
+      }
+    },
     "An estimate from your documents and this year's settings: %@ taxable after the %@ standard deduction. A state's tax on investment income is not counted.": {
       "localizations": {
         "ja": {
