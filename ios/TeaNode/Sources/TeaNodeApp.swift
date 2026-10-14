@@ -344,11 +344,6 @@ struct SettingsForm: View {
                         Label("Passkeys", systemImage: "person.badge.key")
                     }
                     NavigationLink {
-                        SessionsView(connection: connection)
-                    } label: {
-                        Label("Sessions", systemImage: "macbook.and.iphone")
-                    }
-                    NavigationLink {
                         TokensView(connection: connection)
                     } label: {
                         Label("API tokens", systemImage: "terminal")
@@ -362,6 +357,12 @@ struct SettingsForm: View {
                         ConnectedAppsView(connection: connection)
                     } label: {
                         Label("Apps", systemImage: "app.badge.checkmark")
+                    }
+                    // Last, as on the dashboard's menu: the account's pages keep one order.
+                    NavigationLink {
+                        SessionsView(connection: connection)
+                    } label: {
+                        Label("Sessions", systemImage: "macbook.and.iphone")
                     }
                 }
             }
