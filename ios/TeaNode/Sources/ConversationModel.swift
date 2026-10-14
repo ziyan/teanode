@@ -82,6 +82,8 @@ final class ConversationModel {
 
     /// Changes when something is sent or a card is settled, for the haptic.
     private(set) var sentCount = 0
+    /// Counts the cards settled from this app as soon as they were answered, which shrink the list under the scroll.
+    private(set) var cardSettledCount = 0
 
     /// The call with the agent, while there is one, and whether the server
     /// offers calls and at what rate it takes speech.
@@ -458,10 +460,20 @@ final class ConversationModel {
     /// what to type into it.
     @discardableResult
     func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async -> Bool {
-        guard let question = line.codingQuestion else { return false }
+        // The card as it is now, not as the view last drew it: a second tap
+        // before the view caught up, or an answer from the computer, finds
+        // it settled already.
+        guard let question = line.codingQuestion, transcript.lines.first(where: { $0.id == line.id })?.isDone == false else { return false }
+        // The card shows the answer as soon as it is chosen: typing it into
+        // the session at the computer takes a few seconds, and a card that
+        // stays as it was looks like a tap that did nothing. It opens again
+        // if the answer does not go through.
+        let chosenWords = freeText ?? options.map(\.optionLabel).joined(separator: ", ")
+        transcript.settleAwaiting(cardId: line.id, resolution: chosenWords)
+        cardSettledCount += 1
         do {
             let answeredWith = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
-            transcript.settle(cardId: line.id, resolution: answeredWith)
+            transcript.settle(cardId: line.id, resolution: answeredWith.isEmpty ? chosenWords : answeredWith)
             sentCount += 1
             return true
         } catch TeaNodeError.refused(let reason) where reason.contains("already answered") {
@@ -471,6 +483,7 @@ final class ConversationModel {
             // it fills in what it was answered with.
             transcript.settle(cardId: line.id, resolution: "")
         } catch {
+            transcript.reopen(cardId: line.id)
             sendProblemText = app.describe(error)
         }
         return false

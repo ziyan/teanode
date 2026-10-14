@@ -268,6 +268,32 @@ final class TranscriptTests: XCTestCase {
                 kind: "note", runId: "", sequence: 0, noteKind: "herdr_answered",
                 noteDetail: #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1"}"#))
         XCTAssertEqual(transcript.lines[0].resolution, "2. No")
+
+        // A card settled here, then confirmed: an answer that later fails does not open it again.
+        transcript.reopen(cardId: transcript.lines[0].id)
+        XCTAssertTrue(transcript.lines[0].isDone, "a confirmed card was opened again")
+    }
+
+    func testACardAnsweredHereOpensAgainOnlyIfNothingElseSettledIt() {
+        let asked = #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1","herdrSession":{"paneName":"site","codingAgentKind":"codex","question":{"questionFingerprint":"f1","questionText":"Run the tests?","isMultipleChoice":false,"options":[{"optionNumber":1,"optionLabel":"Yes","herdrOptionKind":"choice"}]}}}"#
+        var transcript = Transcript(messages: [
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:01Z", role: "note", content: asked, name: "herdr_asked")
+        ])
+        guard let cardId = transcript.lines.first?.id else { return XCTFail("the question was not drawn as a card") }
+        // Settled as soon as it was tapped; the answer did not go through, so it opens again.
+        transcript.settleAwaiting(cardId: cardId, resolution: "Yes")
+        transcript.reopen(cardId: cardId)
+        XCTAssertFalse(transcript.lines[0].isDone)
+        XCTAssertEqual(transcript.lines[0].resolution, "")
+        // Settled when tapped, then answered at the computer while the answer was on its way: it stays answered.
+        transcript.settleAwaiting(cardId: cardId, resolution: "Yes")
+        transcript.apply(
+            AgentEvent(
+                kind: "note", runId: "", sequence: 0, noteKind: "herdr_answered",
+                noteDetail: #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1","answerText":"1. Yes"}"#))
+        transcript.reopen(cardId: cardId)
+        XCTAssertTrue(transcript.lines[0].isDone, "an answer from the computer was undone")
+        XCTAssertEqual(transcript.lines[0].resolution, "1. Yes")
     }
 
     func testAReplayedTurnIsNotDrawnTwice() {
