@@ -61,6 +61,10 @@ final class ShareModel: ObservableObject {
     @Published var fileDestination = ShareFileDestination.agent
     /// What came of files sent to finance, shown before the sheet closes.
     @Published var resultText: String?
+    /// The files finance has taken already, so trying again after a
+    /// failure sends only the rest, and what each import said.
+    private var handledFileIds = Set<UUID>()
+    private var statementSummaries: [String] = []
     @Published var isReading = true
     @Published var isSending = false
     @Published var problemText: String?
@@ -206,12 +210,18 @@ final class ShareModel: ObservableObject {
     }
 
     /// Hands each PDF and picture in as a tax document, so the server keeps
-    /// no text of it, and has it read as a paystub or a W-2.
+    /// no text of it, and has it read as a paystub or a W-2. A failure says
+    /// how many went before it; trying again sends only the rest.
     private func readTaxDocuments(_ connection: Connection) async throws {
         let taxDocuments = files.filter(\.isTaxDocument)
-        for file in taxDocuments {
-            let attachmentId = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data, isTaxDocument: true)
-            _ = try await connection.readTaxDocument(attachmentId: attachmentId)
+        for file in taxDocuments where !handledFileIds.contains(file.id) {
+            do {
+                let attachmentId = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data, isTaxDocument: true)
+                _ = try await connection.readTaxDocument(attachmentId: attachmentId)
+                handledFileIds.insert(file.id)
+            } catch {
+                throw partialFailure(error, handledCount: handledFileIds.count, totalCount: taxDocuments.count, fileName: file.name)
+            }
         }
         var said = taxDocuments.count == 1
             ? String(localized: "Reading 1 document as a paystub or W-2. It shows under Finance, Taxes once read.")
@@ -225,16 +235,29 @@ final class ShareModel: ObservableObject {
     /// Uploads each OFX statement and imports it, saying what each import
     /// did.
     private func importStatements(_ connection: Connection) async throws {
-        var summaries: [String] = []
-        for file in files.filter(\.isStatement) {
-            let attachmentId = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data)
-            let imported = try await connection.importStatement(attachmentId: attachmentId)
-            summaries.append(StatementImportWords.summary(imported, isDated: false))
+        let statements = files.filter(\.isStatement)
+        for file in statements where !handledFileIds.contains(file.id) {
+            do {
+                let attachmentId = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data)
+                let imported = try await connection.importStatement(attachmentId: attachmentId)
+                handledFileIds.insert(file.id)
+                statementSummaries.append(StatementImportWords.summary(imported))
+            } catch {
+                throw partialFailure(error, handledCount: handledFileIds.count, totalCount: statements.count, fileName: file.name)
+            }
         }
+        var summaries = statementSummaries
         if files.contains(where: { !$0.isStatement }) {
             summaries.append(String(localized: "Files that are not OFX statements were left out."))
         }
         resultText = summaries.joined(separator: "\n")
+    }
+
+    /// A failure partway through, saying what went before it, so trying
+    /// again is known to send only the rest.
+    private func partialFailure(_ error: Error, handledCount: Int, totalCount: Int, fileName: String) -> Error {
+        guard handledCount > 0 else { return error }
+        return TeaNodeError.refused(String(localized: "\(handledCount) of \(totalCount) files went; \(fileName) did not: \(error.localizedDescription) Send again for the rest."))
     }
 
     func finish() {
@@ -371,9 +394,9 @@ struct ShareView: View {
                         } footer: {
                             switch model.effectiveFileDestination {
                             case .taxDocuments:
-                                Text("Each PDF or picture is read as a paystub or W-2 on its own, and the server keeps no text of it.")
+                                Text("Each PDF or picture is read as a paystub or W-2 on its own, and the server keeps no text of it. No note goes with them.")
                             case .statements:
-                                Text("Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once.")
+                                Text("Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once. No note goes with them.")
                             case .agent:
                                 EmptyView()
                             }
@@ -381,7 +404,7 @@ struct ShareView: View {
                     }
                     if let resultText = model.resultText {
                         Section {
-                            Label(resultText, systemImage: "checkmark.circle").foregroundStyle(.green)
+                            Label(resultText, systemImage: "checkmark.circle")
                         }
                     }
                     if model.effectiveFileDestination == .agent {

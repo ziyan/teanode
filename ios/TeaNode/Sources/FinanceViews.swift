@@ -1283,10 +1283,10 @@ struct AccountsView: View {
                 try? await Task.sleep(for: .seconds(10))
             }
         }
-        .task { statementImport = try? await finance.connection.statementImport() }
+        .task { await loadStatementImport() }
         .refreshable {
             await load()
-            statementImport = try? await finance.connection.statementImport()
+            await loadStatementImport()
         }
         .confirmationDialog("New import address?", isPresented: $isRegeneratingStatementAddress, titleVisibility: .visible) {
             Button("Make a new address", role: .destructive) {
@@ -1313,25 +1313,41 @@ struct AccountsView: View {
                     Text(verbatim: address)
                         .font(.callout.monospaced())
                         .textSelection(.enabled)
-                    Button("Copy address", systemImage: "doc.on.doc") { UIPasteboard.general.string = address }
+                    Button("Copy address", systemImage: "doc.on.doc") {
+                        UIPasteboard.general.string = address
+                        finance.doneText = String(localized: "Address copied")
+                    }
                 } else {
                     Text("You have no mailbox address to receive statements at.")
                         .foregroundStyle(.secondary)
                 }
                 Button("New address", systemImage: "arrow.clockwise") { isRegeneratingStatementAddress = true }
                 if statementImport.isEnabled == false {
-                    Text("Importing is off. Turn the Imported statements source on to import again.")
-                        .foregroundStyle(.orange)
+                    Label("Importing is off. Turn the Imported statements source on to import again.", systemImage: "pause.circle")
+                        .foregroundStyle(.secondary)
                 }
-                LabeledContent("Last import") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last import").foregroundStyle(.secondary).font(.subheadline)
                     Text(StatementImportWords.summary(statementImport.lastStatementImport))
-                        .multilineTextAlignment(.trailing)
+                    if let day = StatementImportWords.dayText(statementImport.lastStatementImport) {
+                        Text(day).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             } header: {
                 Text("Import statements")
             } footer: {
                 Text("For an account no provider reaches. From a phone's wallet: open the card's statement, choose Export Transactions, pick OFX, then share the file to Mail and send it to this address. A transaction imported twice is kept once, and your agent tells you what was imported.")
             }
+        }
+    }
+
+    /// Reads the statement import; a failure says so and keeps what is
+    /// shown.
+    private func loadStatementImport() async {
+        do {
+            if let read = try await finance.connection.statementImport() { statementImport = read }
+        } catch {
+            finance.problemText = error.localizedDescription
         }
     }
 
