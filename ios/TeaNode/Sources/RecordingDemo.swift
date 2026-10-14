@@ -22,14 +22,15 @@
 
         static func conversationSegmentJSON(
             _ id: String, speaker: String, startMS: Int, endMS: Int, text: String, identityId: String? = nil, name: String? = nil,
-            isAccountOwner: Bool = false, temporaryLabel: String? = nil
+            isAccountOwner: Bool = false, temporaryLabel: String? = nil, mergedLabel: String? = nil
         ) -> String {
             let speakerFields =
                 identityId.map {
                     #","hasUserConfirmedSpeaker":true,"effectiveSpeakerIdentityId":"\#($0)","effectiveSpeakerName":"\#(name ?? "")","isAccountOwner":\#(isAccountOwner)"#
                 }
                 ?? (#","hasUserConfirmedSpeaker":false,"isAccountOwner":false"#
-                    + (temporaryLabel.map { #","effectiveSpeakerName":"\#($0)","temporarySpeakerLabel":"\#($0)""# } ?? ""))
+                    + (temporaryLabel.map { #","effectiveSpeakerName":"\#($0)","temporarySpeakerLabel":"\#($0)""# } ?? "")
+                    + (mergedLabel.map { #","mergedTemporarySpeakerLabel":"\#($0)""# } ?? ""))
             return
                 #"{"id":"\#(id)","recordingTranscriptRunId":"run-a","recordingTranscriptionAttemptId":"attempt-a","localSpeakerId":"\#(speaker)","segmentStartMS":\#(startMS),"segmentEndMS":\#(endMS),"transcriptText":"\#(text)"\#(speakerFields),"hasUnalignedSpeakerCorrection":false}"#
         }
@@ -74,8 +75,12 @@
                 conversationSegmentJSON(
                     "live-segment-3", speaker: "speaker-c", startMS: 17000, endMS: 23000, text: "How many people will test it?",
                     temporaryLabel: "Speaker 1"),
+                // The voice of "Speaker 1" heard again under a label of its own, which the capture found to be the same speaker.
                 conversationSegmentJSON(
-                    "live-segment-4", speaker: "speaker-a", startMS: 23000, endMS: 27000, text: "Ten people, for one week.", identityId: "identity-b",
+                    "live-segment-3b", speaker: "speaker-d", startMS: 23000, endMS: 24500, text: "Is it ten, or more?",
+                    temporaryLabel: "Speaker 1", mergedLabel: "Speaker 4"),
+                conversationSegmentJSON(
+                    "live-segment-4", speaker: "speaker-a", startMS: 24500, endMS: 28000, text: "Ten people, for one week.", identityId: "identity-b",
                     name: "Priya"),
             ]
         }
@@ -367,7 +372,8 @@
                 actions: RecordingPassageActions(
                     play: { _ in }, copy: { _ in }, correctText: { _ in }, nameSpeaker: { segment in conversation.beginNaming(segment) },
                     thisIsMe: { segment in Task { await conversation.confirmAsAccountOwner(segment) } },
-                    notMe: { segment in conversation.beginNaming(segment, startsBlank: true) }, clearName: { segments in Task { await conversation.clearName(segments) } }, isPlaybackAvailable: false),
+                    notMe: { segment in conversation.beginNaming(segment, startsBlank: true) }, clearName: { segments in Task { await conversation.clearName(segments) } },
+                    separateSpeaker: { segment in Task { await conversation.separateSpeaker(segment) } }, isPlaybackAvailable: false),
                 microphoneModeText: String(localized: "Voice Isolation"), onMicrophoneModes: {}, onPauseOrResume: {}, onStop: {}
             )
             .recordingPassageSheets(conversation)

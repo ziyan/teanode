@@ -287,6 +287,22 @@ final class RecordingConversationModel {
         }
     }
 
+    /// "Separate from": the passage's label was found to be another speaker's voice, and reads as that speaker. Separated, the
+    /// label is its own speaker again in every piece.
+    func separateSpeaker(_ segment: RecordingTranscriptSegment) async {
+        guard let label = segment.mergedTemporarySpeakerLabel, !label.isEmpty, !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await connection.separateRecordingTemporarySpeaker(recordingId: recordingId, speakerLabel: label)
+            await loadPage(isAdditional: false)
+            problemText = nil
+            doneText = String(localized: "Speaker separated.")
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
     func saveSpeaker(isAccountOwner: Bool = false) async {
         if let label = selectedSegment?.speakerLabelOfTemporarySpeaker {
             await nameTemporarySpeaker(label: label, confirmedName: confirmedName, isAccountOwner: isAccountOwner)
@@ -351,6 +367,7 @@ struct RecordingPassageActions {
     var notMe: @MainActor (RecordingTranscriptSegment) -> Void
     var clearName: @MainActor ([RecordingTranscriptSegment]) -> Void
     var inMemory: @MainActor (RecordingTranscriptSegment) -> Void = { _ in }
+    var separateSpeaker: @MainActor (RecordingTranscriptSegment) -> Void = { _ in }
     /// False on the screen of a capture under way, where there is no finished audio to play and no finished text to correct yet.
     var isPlaybackAvailable = true
 
@@ -471,8 +488,22 @@ struct RecordingBubbleView: View {
                             }
                         }
                     }
+                    // A label found to be another speaker's voice reads as that speaker: it can be given back.
+                    if segment.mergedTemporarySpeakerLabel?.isEmpty == false {
+                        Button {
+                            actions.separateSpeaker(segment)
+                        } label: {
+                            Label("Separate from \(shownSpeakerName)", systemImage: "person.2.slash")
+                        }
+                    }
                 }
         }
+    }
+
+    /// The name the bubble shows over it, as the header does.
+    private var shownSpeakerName: String {
+        bubble.confirmedSpeakerName ?? bubble.temporarySpeakerLabel
+            ?? String(localized: "Speaker \(RecordingConversation.speakerLetter(ordinal: bubble.unconfirmedSpeakerOrdinal))")
     }
 
     @ViewBuilder
@@ -566,7 +597,8 @@ struct RecordingConversationSection: View {
             thisIsMe: { segment in Task { await model.confirmAsAccountOwner(segment) } },
             notMe: { segment in model.beginNaming(segment, startsBlank: true) },
             clearName: { segments in Task { await model.clearName(segments) } },
-            inMemory: { segment in model.memorySegment = segment })
+            inMemory: { segment in model.memorySegment = segment },
+            separateSpeaker: { segment in Task { await model.separateSpeaker(segment) } })
     }
 }
 

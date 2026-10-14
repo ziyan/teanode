@@ -32565,6 +32565,22 @@
         }
       }
     },
+    "Separate from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@から分ける"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@分开"
+          }
+        }
+      }
+    },
     "Separate several with commas.": {
       "localizations": {
         "ja": {
@@ -50252,6 +50268,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已命名说话人。"
+          }
+        }
+      }
+    },
+    "Speaker separated.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者を分けました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已分开说话人。"
           }
         }
       }

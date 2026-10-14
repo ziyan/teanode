@@ -89,7 +89,8 @@ struct RecordingCaptureScreen: View {
             },
             correctText: { _ in }, nameSpeaker: { segment in conversation.beginNaming(segment) },
             thisIsMe: { segment in Task { await conversation.confirmAsAccountOwner(segment) } },
-            notMe: { segment in conversation.beginNaming(segment, startsBlank: true) }, clearName: { segments in Task { await conversation.clearName(segments) } }, isPlaybackAvailable: false)
+            notMe: { segment in conversation.beginNaming(segment, startsBlank: true) }, clearName: { segments in Task { await conversation.clearName(segments) } },
+            separateSpeaker: { segment in Task { await conversation.separateSpeaker(segment) } }, isPlaybackAvailable: false)
     }
 }
 

@@ -35,6 +35,9 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     /// "Speaker 1" and so on for a speaker of a capture under way whom nobody has named: the same speaker has the same label in
     /// every piece. Empty or nil otherwise.
     public var temporarySpeakerLabel: String? = nil
+    /// The passage's own label ("Speaker 9") when it was found to be the voice of another speaker and reads as that one, which
+    /// is what the person separates from. Empty or nil for a passage that stands on its own.
+    public var mergedTemporarySpeakerLabel: String? = nil
     /// Whether the passage is only filler ("Mm-hmm. Okay."), which the conversation leaves out. Older servers do not say.
     public var isFiller: Bool? = nil
     /// The speaker's name when the person confirmed it or a voice sample recognized it; nil while it is only a label.
@@ -154,6 +157,10 @@ extension Documents {
         NameRecordingTemporarySpeaker(recordingId: $recordingId, speakerLabel: $speakerLabel, confirmedName: $confirmedName, isAccountOwner:
         $isAccountOwner) }
         """
+    public static let separateRecordingTemporarySpeaker = """
+        mutation ($recordingId: String!, $speakerLabel: String!) {
+        SeparateRecordingTemporarySpeaker(recordingId: $recordingId, speakerLabel: $speakerLabel) }
+        """
     public static let renameRecordingSpeaker = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $confirmedName: String!) {
         RenameRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, speakerIdentityId:
@@ -267,6 +274,15 @@ extension Connection {
                 "isAccountOwner": isAccountOwner ? .bool(true) : .null,
             ], as: Answer.self
         ).NameRecordingTemporarySpeaker
+        guard answer else { throw TeaNodeError.unreadableAnswer }
+    }
+    /// Gives a label that was found to be another speaker's voice its own speaker again, by the label the passage was merged under.
+    public func separateRecordingTemporarySpeaker(recordingId: String, speakerLabel: String) async throws {
+        struct Answer: Decodable, Sendable { let SeparateRecordingTemporarySpeaker: Bool }
+        let answer = try await execute(
+            Documents.separateRecordingTemporarySpeaker,
+            variables: ["recordingId": .string(recordingId), "speakerLabel": .string(speakerLabel)], as: Answer.self
+        ).SeparateRecordingTemporarySpeaker
         guard answer else { throw TeaNodeError.unreadableAnswer }
     }
     public func renameRecordingSpeaker(recordingId: String, expectedSourceGeneration: Int64, speakerIdentityId: String, confirmedName: String)
