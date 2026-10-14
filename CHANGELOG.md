@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.6] - 2026-10-14
+
+### Fixed
+
+- Recordings no longer show empty speaker bubbles, and long recordings open without loading every piece's audio. (#476)
+- A long recording's originals can be told apart in its details. (#476)
+- Naming a speaker sticks on every passage, and a recording's words are no longer replaced by a shorter or garbled second reading. (#476)
+- Tool calls in the chat are named in words on the dashboard, as on the iPhone. (#476)
+
 ## [0.154.5] - 2026-10-14
 
 ### Fixed
