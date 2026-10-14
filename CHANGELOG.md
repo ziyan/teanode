@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.7] - 2026-10-14
+
+### Fixed
+
+- On the iPhone, a confirmation now points at the button or row that asked for it. (#490)
+
 ## [0.159.6] - 2026-10-14
 
 ### Fixed
