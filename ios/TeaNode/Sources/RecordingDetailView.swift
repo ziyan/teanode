@@ -32,6 +32,15 @@ final class RecordingDetailModel {
     var completeMediaFiles: [RecordingMedia] { (recordingView?.mediaFiles ?? []).filter { $0.recordingUploadState == "complete" } }
     var isTranscriptionAvailable: Bool { limits?.isTranscriptionAvailable == true }
 
+    /// What an original is called: a recording made in pieces has one original per piece, all with the same file name, so each
+    /// is told by where it sits on the recording.
+    func mediaTitle(_ media: RecordingMedia) -> String {
+        guard (recordingView?.mediaFiles.count ?? 0) > 1 else { return media.originalFilename }
+        let start = Duration.milliseconds(media.timelineStartMS).formatted(.time(pattern: .hourMinuteSecond))
+        let end = Duration.milliseconds(media.timelineStartMS + media.mediaDurationMS).formatted(.time(pattern: .hourMinuteSecond))
+        return String(localized: "\(start) to \(end)")
+    }
+
     var serverProgress: RecordingServerProgress? { recordingView.map(RecordingServerProgress.init(view:)) }
     var status: RecordingRowStatus {
         let status = RecordingLibrary.status(recording: recording, localRecording: nil, progress: serverProgress)
@@ -312,7 +321,7 @@ struct RecordingDetailScreen: View {
             } else if model.completeMediaFiles.count > 1 {
                 Menu {
                     ForEach(model.completeMediaFiles) { media in
-                        Button(media.originalFilename) { sharedMedia = media }
+                        Button(model.mediaTitle(media)) { sharedMedia = media }
                     }
                 } label: {
                     Label("Share original", systemImage: "square.and.arrow.up")
@@ -490,7 +499,7 @@ struct RecordingDetailsSheet: View {
                                 selectedMedia = media
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Label(media.originalFilename, systemImage: media.originalContentType.hasPrefix("video/") ? "video" : "waveform")
+                                    Label(model.mediaTitle(media), systemImage: media.originalContentType.hasPrefix("video/") ? "video" : "waveform")
                                     Text(
                                         media.recordingUploadState == "complete"
                                             ? String(localized: "Ready to play") : String(localized: "Upload pending")

@@ -4483,6 +4483,7 @@ export const en = {
   'recordings.originalsHint': 'Original bytes remain private and unchanged. Playback is available after verification.',
   'recordings.noOriginals': 'This recording has no uploaded media yet.',
   'recordings.size': '{byteCount} bytes',
+  'recordings.pieceRange': '{start} to {end}',
   'recordings.verified': 'Verified',
   'recordings.pending': 'Upload incomplete',
   'recordings.download': 'Download original',

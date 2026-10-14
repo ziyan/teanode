@@ -4342,6 +4342,7 @@ export const zh: Catalog = {
   'recordings.originalsHint': '原始文件保持私密且不作修改。完整文件验证后即可播放。',
   'recordings.noOriginals': '此录音尚未上传媒体。',
   'recordings.size': '{byteCount} 字节',
+  'recordings.pieceRange': '{start} 至 {end}',
   'recordings.verified': '已验证',
   'recordings.pending': '上传未完成',
   'recordings.download': '下载原始文件',

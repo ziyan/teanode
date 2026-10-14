@@ -4436,6 +4436,7 @@ export const ja: Catalog = {
   'recordings.originalsHint': '原本は非公開のまま変更せずに保存します。ファイル全体の検証後に再生できます。',
   'recordings.noOriginals': 'この録音にはまだメディアがアップロードされていません。',
   'recordings.size': '{byteCount} バイト',
+  'recordings.pieceRange': '{start}から{end}',
   'recordings.verified': '検証済み',
   'recordings.pending': 'アップロード未完了',
   'recordings.download': '原本をダウンロード',
