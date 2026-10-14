@@ -226,6 +226,7 @@ struct KnowledgeSourcesView: View {
                     Text("Nothing is indexed yet.").foregroundStyle(.secondary)
                 }
                 ForEach((sources ?? []).filter { highlightedSourceId == nil || $0.id == highlightedSourceId }) { source in
+                    row(source)
                         .confirmationDialog(
                             "Stop reading it", isPresented: Binding(get: { removing?.id == source.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible,
                             presenting: removing
@@ -236,7 +237,6 @@ struct KnowledgeSourcesView: View {
                         } message: { source in
                             Text("Stop reading \(RecordingWords.sourceName(source)) and forget the \(source.documentCount) document(s) it found. What your agent learned from it stays on its pages.")
                         }
-                    row(source)
                 }
             } footer: {
                 Text("Places you have pointed your agent at: a checkout on one of your computers, a chat export, your notes. It reads them on a schedule and can search them.")

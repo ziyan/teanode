@@ -310,7 +310,7 @@ struct PersonDetailView: View {
                         Button("Set password", systemImage: "key") { isSettingPassword = true }
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
-                                .confirmationDialog("Remove \(user?.username ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
+                                .confirmationDialog("Remove \(user.username)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                     Button("Remove", role: .destructive) {
                                         Task {
                                             let isRemoved = await directory.act(saying: String(localized: "Removed")) {
@@ -716,7 +716,7 @@ struct GroupDetailView: View {
                     }
                     Section {
                         Button("Remove this group", systemImage: "trash", role: .destructive) { isRemoving = true }
-                            .confirmationDialog("Remove the group \(group?.name ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
+                            .confirmationDialog("Remove the group \(group.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {
                                         let isRemoved = await directory.act(saying: String(localized: "Removed")) {
@@ -1161,7 +1161,7 @@ struct RoleDetailView: View {
                 if directory.canManageRoles {
                     Section {
                         Button("Remove this role", systemImage: "trash", role: .destructive) { isRemoving = true }
-                            .confirmationDialog("Remove the role \(role?.name ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
+                            .confirmationDialog("Remove the role \(role.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {
                                         let isRemoved = await directory.act(saying: String(localized: "Removed")) {

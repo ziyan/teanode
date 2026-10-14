@@ -370,7 +370,7 @@ struct ContactDetailView: View {
                         Button("Delete contact", role: .destructive) {
                             isConfirmingDelete = true
                         }
-                        .confirmationDialog("Delete \(contact?.name ?? "")?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                        .confirmationDialog("Delete \(contact.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                             Button("Delete contact", role: .destructive) {
                                 Task {
                                     if await model.delete(contactId) { dismiss() }
