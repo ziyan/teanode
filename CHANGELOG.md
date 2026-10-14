@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.6] - 2026-10-14
+
+### Fixed
+
+- iPhone: on the Taxes screen, "Federal income tax withheld" no longer shows its amounts centered under the name. (#489)
+
 ## [0.159.5] - 2026-10-14
 
 ### Fixed
