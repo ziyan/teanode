@@ -439,6 +439,44 @@ func (self *graph) FinanceTaxForms(ctx context.Context, arguments TaxFormsArgume
 	return view, nil
 }
 
+// TaxDocumentAddressView is the caller's tax document address.
+type TaxDocumentAddressView struct {
+	// TaxDocumentAddress is empty when the caller has no mailbox with an
+	// address for it to be delivered into.
+	TaxDocumentAddress string `json:"taxDocumentAddress"`
+	// CanReadPDFs says this server reads PDFs; without it only pictures
+	// mailed in are read.
+	CanReadPDFs bool `json:"canReadPdfs"`
+}
+
+func (self *graph) TaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return self.taxDocumentAddressView(ctx, principal, found, false)
+}
+
+func (self *graph) RegenerateTaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return self.taxDocumentAddressView(ctx, principal, found, true)
+}
+
+func (self *graph) taxDocumentAddressView(ctx context.Context, principal *api.Principal, found *models.Agent, isRenewed bool) (*TaxDocumentAddressView, error) {
+	worker, err := self.taxDocumentWorker()
+	if err != nil {
+		return nil, err
+	}
+	address, err := worker.TaxDocumentAddress(ctx, found, principal.User, isRenewed)
+	if err != nil {
+		return nil, financeError(err)
+	}
+	return &TaxDocumentAddressView{TaxDocumentAddress: address, CanReadPDFs: agent.CanReadPDFs()}, nil
+}
+
 // SetTaxFilingStatusArguments name the filing status to keep; empty
 // clears it.
 type SetTaxFilingStatusArguments struct {

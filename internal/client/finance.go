@@ -637,6 +637,13 @@ type StatementAccountDeleted struct {
 	DeletedAssetCount       int    `json:"deletedAssetCount"`
 }
 
+// TaxDocumentAddress is the address to mail paystubs and W-2s to, empty
+// without a mailbox address, and whether the server reads PDFs.
+type TaxDocumentAddress struct {
+	TaxDocumentAddress string `json:"taxDocumentAddress"`
+	CanReadPDFs        bool   `json:"canReadPdfs"`
+}
+
 // StatementImport is the address to mail statements to, whether importing
 // is on, and what the last import did.
 type StatementImport struct {
@@ -971,8 +978,10 @@ const (
   ImportFinanceCredential(providerKind: $providerKind, credential: $credential, institutionName: $institutionName) ` + financeSourceFields + `
 }`
 
-	DocumentSetReportingCurrency = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
-	DocumentSetTaxFilingStatus   = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`
+	DocumentSetReportingCurrency         = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
+	DocumentSetTaxFilingStatus           = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`
+	DocumentTaxDocumentAddress           = `query { TaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
+	DocumentRegenerateTaxDocumentAddress = `mutation { RegenerateTaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
 
 	DocumentCreateAsset = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean, $value: String, $valuedOn: String) {
   CreateAsset(assetName: $assetName, assetKind: $assetKind, currencyCode: $currencyCode, valuationSource: $valuationSource, estimateDescription: $estimateDescription, isEstimateAllowed: $isEstimateAllowed, value: $value, valuedOn: $valuedOn) ` + assetFields + `
@@ -1138,9 +1147,10 @@ var FinanceDocuments = map[string]string{
 	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
-	"SetTaxFilingStatus": DocumentSetTaxFilingStatus,
-	"CreateAsset":        DocumentCreateAsset,
-	"UpdateAsset":        DocumentUpdateAsset, "CloseAsset": DocumentCloseAsset, "DeleteAsset": DocumentDeleteAsset,
+	"SetTaxFilingStatus": DocumentSetTaxFilingStatus, "TaxDocumentAddress": DocumentTaxDocumentAddress,
+	"RegenerateTaxDocumentAddress": DocumentRegenerateTaxDocumentAddress,
+	"CreateAsset":                  DocumentCreateAsset,
+	"UpdateAsset":                  DocumentUpdateAsset, "CloseAsset": DocumentCloseAsset, "DeleteAsset": DocumentDeleteAsset,
 	"RecordValuation": DocumentRecordValuation, "DeleteValuation": DocumentDeleteValuation,
 	"CreateSpendingCategory": DocumentCreateSpendingCategory, "UpdateSpendingCategory": DocumentUpdateSpendingCategory,
 	"DeleteSpendingCategory": DocumentDeleteSpendingCategory, "CreateSpendingRule": DocumentCreateSpendingRule,

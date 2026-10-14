@@ -186,6 +186,11 @@ type FinanceQuery interface {
 	// owe beside what was withheld, for the filing status the person
 	// keeps unless another is asked.
 	TaxYear(ctx context.Context, arguments TaxYearArguments) (*finance.TaxYearSummary, error)
+
+	// The caller's tax document address, where a PDF or a picture mailed
+	// in is read as a paystub or a W-2: their mailbox address with +taxes-
+	// and a token, made the first time this is asked.
+	TaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -222,6 +227,10 @@ type FinanceMutation interface {
 	// estimate works the federal tax out for; empty goes back to assuming
 	// one from the number of people.
 	SetTaxFilingStatus(ctx context.Context, arguments SetTaxFilingStatusArguments) (string, error)
+
+	// Give the tax document address a new token. The old address stops
+	// taking mail at once.
+	RegenerateTaxDocumentAddress(ctx context.Context) (*TaxDocumentAddressView, error)
 
 	// Import an OFX statement (.ofx, .qfx or .qbo): a file uploaded to the
 	// agent's attachments, or every OFX attachment of a message in the

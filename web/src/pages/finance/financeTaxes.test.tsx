@@ -284,6 +284,9 @@ const yearSummary: TaxYearSummary = {
   },
 }
 
+// The tax document address's token, as the server keeps it.
+let taxDocumentToken = 'invented0token01'
+
 // answer plays the server: the document says which operation is asked.
 function answer({
   summary = () => yearSummary,
@@ -319,6 +322,13 @@ function answer({
     }
     if (document.includes('ReadTaxDocument(')) {
       return { ReadTaxDocument: { agentAttachmentIds: [variables?.agentAttachmentId], agentJobIds: ['job-invented'] } }
+    }
+    if (document.includes('RegenerateTaxDocumentAddress')) {
+      taxDocumentToken = 'invented0token02'
+      return { RegenerateTaxDocumentAddress: { taxDocumentAddress: `pat+taxes-${taxDocumentToken}@example.com`, canReadPdfs: true } }
+    }
+    if (document.includes('TaxDocumentAddress')) {
+      return { TaxDocumentAddress: { taxDocumentAddress: `pat+taxes-${taxDocumentToken}@example.com`, canReadPdfs: true } }
     }
     if (document.includes('SetTaxFilingStatus(')) return { SetTaxFilingStatus: variables?.taxFilingStatus }
     if (document.includes('DeletePaystub(')) return { DeletePaystub: true }
@@ -425,6 +435,18 @@ describe('the Taxes section', () => {
     await waitFor(() => expect(calledWith('SetTaxFilingStatus')).toEqual([{ taxFilingStatus: 'single' }]))
     await waitFor(() => expect(calledWith('TaxYear').length).toBeGreaterThan(1))
     expect(toast.done).toHaveBeenCalledWith(expect.stringContaining('finance.taxFilingStatusSaved'))
+  })
+
+  it('shows the address to mail paystubs and W-2s to, and makes a new one after asking', async () => {
+    taxDocumentToken = 'invented0token01'
+    answer()
+    renderSection()
+    expect(await screen.findByText('pat+taxes-invented0token01@example.com')).toBeTruthy()
+    expect(screen.getByText('finance.taxAddressHint')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'finance.taxAddress: finance.taxAddressRegenerate' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'finance.taxAddressRegenerateConfirm' }))
+    expect(await screen.findByText('pat+taxes-invented0token02@example.com')).toBeTruthy()
+    expect(toast.done).toHaveBeenCalledWith('finance.taxAddressRegenerated')
   })
 
   it('says to add paystubs or W-2s when the year has none, and nothing else', async () => {

@@ -1096,6 +1096,17 @@ export const TAX_YEAR = `query ($taxYear: Int!) {
   }
 }`
 
+// The address paystubs and W-2s are mailed to, empty without a mailbox
+// address, and whether the server reads PDFs.
+export type TaxDocumentAddress = {
+  taxDocumentAddress: string
+  canReadPdfs: boolean
+}
+
+export const TAX_DOCUMENT_ADDRESS = `query { TaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
+
+export const REGENERATE_TAX_DOCUMENT_ADDRESS = `mutation { RegenerateTaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
+
 // SET_TAX_FILING_STATUS keeps how the person files, which the estimate
 // works the federal tax out for; empty clears it.
 export const SET_TAX_FILING_STATUS = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`

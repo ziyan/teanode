@@ -113,6 +113,14 @@ func financeTaxCommands() []*cli.Command {
 			Action: runFinanceTaxYear,
 		},
 		{
+			Name: "tax-document-address", Usage: "the address to mail paystubs and W-2s to: each PDF or picture mailed there is read and recorded",
+			Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxDocumentAddress,
+		},
+		{
+			Name: "regenerate-tax-document-address", Usage: "give the tax document address a new token; the old address stops taking mail",
+			Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runFinanceRegenerateTaxDocumentAddress,
+		},
+		{
 			Name: "set-tax-filing-status", Usage: "keep how you file your tax return, which teanode finance tax-year estimates the tax for",
 			ArgsUsage: "single|married_filing_jointly|married_filing_separately|head_of_household",
 			Flags:     []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "clear", Usage: "go back to assuming one from the number of people on your paystubs and W-2s"}},
@@ -453,6 +461,41 @@ func runFinanceDeleteTaxForm(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	return printDone(command, map[string]any{"taxFormId": taxFormId, "isDeleted": isDeleted}, taxFormId+": deleted")
+}
+
+func runFinanceTaxDocumentAddress(ctx context.Context, command *cli.Command) error {
+	var address *client.TaxDocumentAddress
+	if err := financeCall(ctx, command, operationOf(command), nil, &address); err != nil {
+		return err
+	}
+	return printTaxDocumentAddress(command, address)
+}
+
+func runFinanceRegenerateTaxDocumentAddress(ctx context.Context, command *cli.Command) error {
+	if err := confirm(command, "Give the tax document address a new token? Mail to the old address will be refused."); err != nil {
+		return err
+	}
+	var address *client.TaxDocumentAddress
+	if err := financeCall(ctx, command, operationOf(command), nil, &address); err != nil {
+		return err
+	}
+	return printTaxDocumentAddress(command, address)
+}
+
+func printTaxDocumentAddress(command *cli.Command, address *client.TaxDocumentAddress) error {
+	if command.Bool("json") {
+		return PrintJSON(address)
+	}
+	if address.TaxDocumentAddress == "" {
+		_, _ = fmt.Fprintln(command.Writer, "tax document address: none, since you have no mailbox address to receive mail; teanode finance read-tax-document takes files")
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Writer, "tax document address: %s\n", address.TaxDocumentAddress)
+	_, _ = fmt.Fprintln(command.Writer, "each PDF or picture mailed there is read as a paystub or W-2 and shows in teanode finance tax-year")
+	if !address.CanReadPDFs {
+		_, _ = fmt.Fprintln(command.Writer, "this server cannot read PDFs: mail photos or screenshots")
+	}
+	return nil
 }
 
 func runFinanceSetTaxFilingStatus(ctx context.Context, command *cli.Command) error {

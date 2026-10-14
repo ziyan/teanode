@@ -682,6 +682,21 @@ the first. Only the last four digits of a taxpayer number are stored
 written is refused when it holds a number shaped like one; an employer's
 identification number is a business's and is kept as printed.
 
+Paystubs and W-2s can also be mailed in. The tax document address is the
+person's own mailbox address with `+taxes-` and a random token after the
+local part (`reader+taxes-<token>@example.com`), made the first time it is
+asked for (`TaxDocumentAddress`) and kept sealed on the agent
+(`agent.tax_document_token`, migration 0183); `RegenerateTaxDocumentAddress`
+ends the old one. Delivery treats it as it treats the statement import
+address (`internal/mx/exchange_statement.go`): only the person's own
+mailbox address, never a catch-all, filed in the Archive as read, a wrong
+token refused, a message the spam filter failed put in Junk unread. The
+`tax_mail` job (`internal/agent/finance_tax_address.go`) copies the
+message's PDFs and pictures with `CopyMailTaxDocuments`, queues the
+`tax_document` job for each, and tells the person in their main
+conversation what arrived, as a mailed statement's import is told. A
+payroll email forwarded there works the same.
+
 A paystub is stored line by line as printed (`agent_finance_paystub`,
 `agent_finance_paystub_line`): each earning, each tax with its kind
 (`federal_income`, `social_security`, `medicare`, `medicare_additional`,

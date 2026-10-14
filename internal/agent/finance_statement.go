@@ -1018,8 +1018,14 @@ func countOf(count int, singular, plural string) string {
 // the alert decision, which may stay quiet: the person sent the statement
 // and is waiting to hear whether it arrived.
 func (self *Agent) tellStatementImport(ctx context.Context, run *Run, result *models.FinanceStatementImport) error {
-	summary := StatementImportSummary(result)
 	checkIn := models.AlertMarker + " A statement arrived at " + personName(run.Owner) + "'s statement import address and was read; you told them what came of it. This is not the person speaking. What you said follows."
+	return self.tellMailImport(ctx, run, checkIn, StatementImportSummary(result))
+}
+
+// tellMailImport says what came of files mailed to one of the person's
+// import addresses, as tellStatementImport says it: checkIn marks it as
+// the agent's own, and summary is what the person reads.
+func (self *Agent) tellMailImport(ctx context.Context, run *Run, checkIn, summary string) error {
 	var conversation *models.AgentConversation
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		conversation, err = scheduleConversation(tx, run.Agent.ID, "")

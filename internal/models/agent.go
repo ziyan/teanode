@@ -138,6 +138,11 @@ type Agent struct {
 	// TaxFilingStatuses. Empty means they have not said, and the tax
 	// year's estimate assumes one from the number of people.
 	TaxFilingStatus string `json:"taxFilingStatus,omitempty" graphapi:"nullable"`
+
+	// TaxDocumentToken is the token of the person's tax document address,
+	// sealed with the server's secret; empty until the address is first
+	// asked for. Never shown: the address is the way in.
+	TaxDocumentToken string `json:"-" graphapi:"ignore"`
 }
 
 // TaxFilingStatuses are the ways a US tax return is filed.
@@ -663,6 +668,12 @@ const (
 	// a file handed in as one and records it. Its subject is the uploaded
 	// file.
 	AgentJobTaxDocument AgentJobKind = "tax_document"
+
+	// AgentJobTaxMail copies the PDFs and pictures of a message that
+	// arrived at the person's tax document address into tax document
+	// uploads, queues the reading of each, and tells the person. Its
+	// subject is the message.
+	AgentJobTaxMail AgentJobKind = "tax_mail"
 
 	// AgentJobWatch is one look by one watch of an installed skill: it
 	// lists what arrived since the last look through the skill's own

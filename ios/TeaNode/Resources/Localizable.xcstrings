@@ -9686,6 +9686,22 @@
         }
       }
     },
+    "Copy address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレスをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制地址"
+          }
+        }
+      }
+    },
     "Copy password": {
       "localizations": {
         "ja": {
@@ -11974,6 +11990,22 @@
         }
       }
     },
+    "Each PDF or photo mailed or forwarded here is read as a paystub or W-2.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに送ったり転送したりした PDF や写真は、給与明細か W-2 として読み取られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送或转发到这里的每个 PDF 或照片都会作为工资单或 W-2 读取。"
+          }
+        }
+      }
+    },
     "Each person's own": {
       "localizations": {
         "ja": {
@@ -11986,6 +12018,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "每人各自填写"
+          }
+        }
+      }
+    },
+    "Each photo mailed or forwarded here is read as a paystub or W-2; this server cannot read PDFs.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに送ったり転送したりした写真は、給与明細か W-2 として読み取られます。このサーバーは PDF を読めません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送或转发到这里的每张照片都会作为工资单或 W-2 读取；此服务器无法读取 PDF。"
           }
         }
       }
@@ -18454,6 +18502,22 @@
         }
       }
     },
+    "Made a new tax document address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい税務書類アドレスを作りました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已生成新的税务文件地址"
+          }
+        }
+      }
+    },
     "Mail": {
       "localizations": {
         "ja": {
@@ -18662,6 +18726,22 @@
         }
       }
     },
+    "Mail them in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールで送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过邮件发送"
+          }
+        }
+      }
+    },
     "Mailbox": {
       "localizations": {
         "ja": {
@@ -18722,6 +18802,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "主对话"
+          }
+        }
+      }
+    },
+    "Make a new address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいアドレスを作る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成新地址"
           }
         }
       }
@@ -20514,6 +20610,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "从未使用"
+          }
+        }
+      }
+    },
+    "New address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新地址"
+          }
+        }
+      }
+    },
+    "New address?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいアドレスにしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要换新地址吗？"
           }
         }
       }
@@ -25222,6 +25350,22 @@
         }
       }
     },
+    "Paystubs or W-2s mailed in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールで届いた給与明細や W-2"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件送来的工资单或 W-2"
+          }
+        }
+      }
+    },
     "Pending": {
       "localizations": {
         "ja": {
@@ -26386,6 +26530,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "阅读"
+          }
+        }
+      }
+    },
+    "Read a paystub or W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細・W-2の読み取り"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取工资单或 W-2"
           }
         }
       }
@@ -33990,6 +34150,22 @@
         }
       }
     },
+    "The current address stops taking mail at once. Anything set to forward paystubs to it needs the new one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今のアドレスはすぐにメールを受け付けなくなります。給与明細の転送先に設定している場合は、新しいアドレスに変えてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前地址会立即停止接收邮件。设置了把工资单转发到这里的地方需要改用新地址。"
+          }
+        }
+      }
+    },
     "The filing status is assumed from the number of people; pick yours above and it is kept.": {
       "localizations": {
         "ja": {
@@ -41413,6 +41589,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你"
+          }
+        }
+      }
+    },
+    "You have no mailbox address to receive them; add the files instead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受け取れるメールボックスのアドレスがありません。ファイルを追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你没有可接收邮件的邮箱地址；请改为添加文件。"
           }
         }
       }

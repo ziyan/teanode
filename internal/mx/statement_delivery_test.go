@@ -371,3 +371,81 @@ func TestSplitStatementAddress(t *testing.T) {
 		}
 	}
 }
+
+// taxDocumentHook takes statements with one token and tax documents with
+// another, and records which it was told about.
+type taxDocumentHook struct {
+	statementHook
+	taxDocumentToken   string
+	taxDocumentItemIds []string
+}
+
+func (self *taxDocumentHook) IsTaxDocumentToken(_ db.Transaction, _ *models.Mailbox, token string) bool {
+	return token == self.taxDocumentToken
+}
+
+func (self *taxDocumentHook) OnTaxDocumentDelivery(_ db.Transaction, _ *models.Mailbox, item *models.MailboxItem, _ *models.Mail) {
+	self.taxDocumentItemIds = append(self.taxDocumentItemIds, item.ID)
+}
+
+// A message to the person's address with "+taxes-" and their tax document
+// token is filed in the Archive, read, and handed to the tax document
+// reading, never to the statement import; the statement token at the tax
+// address, and a wrong token, are refused.
+func TestTaxDocumentAddress(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	hook := &taxDocumentHook{statementHook: statementHook{token: "invented0token01"}, taxDocumentToken: "invented0token02"}
+	exchange := &exchange{database: database}
+	exchange.SetAgentHook(hook)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "reader"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Personal"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		domain := &models.Domain{ID: "domain-one", Domain: "example.com", Aliases: []*models.Alias{
+			{ID: "alias-reader", Pattern: models.PatternForLocalPart("reader"), Kind: models.AliasKindMailbox, MailboxID: mailbox.ID},
+		}}
+		deliver := func(localPart string) []*models.Delivery {
+			t.Helper()
+			stored, err := tx.CreateMail(&models.Mail{From: "payroll@example.org", ReceivedAt: time.Now(), Headers: []string{"From: payroll@example.org"}}, nil)
+			if err != nil {
+				t.Fatalf("CreateMail: %s", err)
+			}
+			deliveries, err := exchange.matchAliases(tx, domain, localPart, stored)
+			if err != nil {
+				t.Fatalf("matchAliases: %s", err)
+			}
+			return deliveries
+		}
+
+		if deliveries := deliver("reader+Taxes-INVENTED0TOKEN02"); len(deliveries) != 1 || deliveries[0].Kind != models.DeliveryKindMailbox {
+			t.Fatalf("deliveries %+v", deliveries)
+		}
+		if len(hook.taxDocumentItemIds) != 1 || len(hook.statementItemIds) != 0 || len(hook.mailboxDeliveryIds) != 0 {
+			t.Fatalf("told %v about tax documents, %v about statements, %v about mail", hook.taxDocumentItemIds, hook.statementItemIds, hook.mailboxDeliveryIds)
+		}
+		item, err := tx.GetItem(hook.taxDocumentItemIds[0])
+		if err != nil || item == nil {
+			t.Fatalf("GetItem: %v %v", item, err)
+		}
+		archive, _ := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindArchive)
+		if archive == nil || item.FolderID != archive.ID || !item.Seen {
+			t.Errorf("filed in %s, seen %v; want the Archive, seen", item.FolderID, item.Seen)
+		}
+		for _, localPart := range []string{"reader+taxes-invented0token01", "reader+taxes-wrong0token00000"} {
+			if deliveries := deliver(localPart); len(deliveries) != 0 {
+				t.Errorf("%s delivered: %+v", localPart, deliveries)
+			}
+		}
+		if len(hook.taxDocumentItemIds) != 1 || len(hook.statementItemIds) != 0 {
+			t.Errorf("a refused address was read: %v %v", hook.taxDocumentItemIds, hook.statementItemIds)
+		}
+	})
+}

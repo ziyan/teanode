@@ -13571,6 +13571,12 @@ button.idea-history-title {
   color: var(--good);
 }
 
+/* What mailing to the tax document address does, under the address. */
+.finance-tax-address-hint {
+  display: block;
+  margin-top: 2px;
+}
+
 /* A name, an amount and its share of pay. The columns meet with no gap,
    each figure padded off the one before, so a total's rule runs across
    the line unbroken. */

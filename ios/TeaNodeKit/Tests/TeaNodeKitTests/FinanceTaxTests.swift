@@ -68,6 +68,17 @@ final class FinanceTaxTests: XCTestCase {
         XCTAssertEqual((keptBody?["variables"] as? [String: Any])?["taxFilingStatus"] as? String, "single")
     }
 
+    func testTheTaxDocumentAddressIsReadAndRenewed() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"TaxDocumentAddress":{"taxDocumentAddress":"robin+taxes-invented0token01@example.com","canReadPdfs":true},"RegenerateTaxDocumentAddress":{"taxDocumentAddress":"robin+taxes-invented0token02@example.com","canReadPdfs":true}}}"#)
+        let address = try await connection.taxDocumentAddress()
+        XCTAssertEqual(address?.taxDocumentAddress, "robin+taxes-invented0token01@example.com")
+        XCTAssertEqual(address?.canReadPdfs, true)
+        let renewed = try await connection.regenerateTaxDocumentAddress()
+        XCTAssertEqual(renewed?.taxDocumentAddress, "robin+taxes-invented0token02@example.com")
+        let sentQuery = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
+        XCTAssertTrue((sentQuery?["query"] as? String)?.contains("RegenerateTaxDocumentAddress") == true)
+    }
+
     func testZeroRowsAreLeftOutExceptWagesAndFederalTax() throws {
         let figures = try JSONDecoder().decode(TaxYearFigures.self, from: Data(#"{"wagesAmount":"0.00","federalIncomeTaxAmount":"0.00","medicareTaxAmount":"0.00"}"#.utf8))
         let rows = figures.rows()

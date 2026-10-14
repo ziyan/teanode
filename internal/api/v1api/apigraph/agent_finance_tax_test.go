@@ -148,3 +148,33 @@ func TestPaystubsAndTaxFormsOnTheAPI(test *testing.T) {
 		}
 	})
 }
+
+// The tax document address is the person's mailbox address with +taxes-
+// and a token, the same each time it is asked, and another once
+// regenerated.
+func TestTaxDocumentAddressFromTheAPI(test *testing.T) {
+	fixture, _, _ := newStatementFixture(test)
+	var first, second, regenerated *TaxDocumentAddressView
+	for _, step := range []struct {
+		view    **TaxDocumentAddressView
+		isRenew bool
+	}{{&first, false}, {&second, false}, {&regenerated, true}} {
+		fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+			var err error
+			if step.isRenew {
+				*step.view, err = fixture.resolver.RegenerateTaxDocumentAddress(ctx)
+			} else {
+				*step.view, err = fixture.resolver.TaxDocumentAddress(ctx)
+			}
+			if err != nil {
+				test.Fatalf("tax document address: %s", err)
+			}
+		})
+	}
+	if !strings.HasPrefix(first.TaxDocumentAddress, "reader+taxes-") || !strings.HasSuffix(first.TaxDocumentAddress, "@example.com") || first.TaxDocumentAddress != second.TaxDocumentAddress {
+		test.Errorf("first %+v, second %+v", first, second)
+	}
+	if regenerated.TaxDocumentAddress == first.TaxDocumentAddress || !strings.HasPrefix(regenerated.TaxDocumentAddress, "reader+taxes-") {
+		test.Errorf("regenerated %+v", regenerated)
+	}
+}

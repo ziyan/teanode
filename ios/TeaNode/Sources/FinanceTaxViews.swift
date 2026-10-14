@@ -23,6 +23,8 @@ struct TaxesView: View {
     @State private var isPickingPhotos = false
     @State private var isPickingFiles = false
     @State private var isTakingPicture = false
+    @State private var mailInAddress: TaxDocumentAddress?
+    @State private var isRegeneratingAddress = false
 
     /// This year and the four before it.
     private var taxYears: [Int] {
@@ -39,6 +41,7 @@ struct TaxesView: View {
                     }
                 }
             }
+            mailInSection
             if !uploads.isEmpty {
                 Section("Adding") {
                     ForEach(uploads) { upload in
@@ -150,6 +153,23 @@ struct TaxesView: View {
             }
             await load()
         }
+        .task {
+            if mailInAddress == nil {
+                mailInAddress = try? await finance.connection.taxDocumentAddress()
+            }
+        }
+        .confirmationDialog("New address?", isPresented: $isRegeneratingAddress, titleVisibility: .visible) {
+            Button("Make a new address", role: .destructive) {
+                Task {
+                    var renewed: TaxDocumentAddress?
+                    if await finance.act(saying: String(localized: "Made a new tax document address"), { renewed = try await finance.connection.regenerateTaxDocumentAddress() }) {
+                        mailInAddress = renewed
+                    }
+                }
+            }
+        } message: {
+            Text("The current address stops taking mail at once. Anything set to forward paystubs to it needs the new one.")
+        }
         .refreshable { await load() }
         .overlay {
             if !isLoaded { ProgressView() }
@@ -174,6 +194,34 @@ struct TaxesView: View {
                     }
                 }
                 await add(files)
+            }
+        }
+    }
+
+    /// The address paystubs and W-2s are mailed to: each PDF or picture
+    /// mailed or forwarded there is read on its own, as the dashboard says.
+    @ViewBuilder
+    private var mailInSection: some View {
+        if let mailInAddress {
+            Section {
+                if let address = mailInAddress.taxDocumentAddress, !address.isEmpty {
+                    Text(verbatim: address)
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                    Button("Copy address", systemImage: "doc.on.doc") { UIPasteboard.general.string = address }
+                } else {
+                    Text("You have no mailbox address to receive them; add the files instead.")
+                        .foregroundStyle(.secondary)
+                }
+                Button("New address", systemImage: "arrow.clockwise") { isRegeneratingAddress = true }
+            } header: {
+                Text("Mail them in")
+            } footer: {
+                if mailInAddress.canReadPdfs == false {
+                    Text("Each photo mailed or forwarded here is read as a paystub or W-2; this server cannot read PDFs.")
+                } else {
+                    Text("Each PDF or photo mailed or forwarded here is read as a paystub or W-2.")
+                }
             }
         }
     }

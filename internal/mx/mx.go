@@ -140,6 +140,16 @@ type StatementHook interface {
 	OnStatementDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
 }
 
+// TaxDocumentHook is what an AgentHook also is when it reads paystubs and
+// W-2s mailed to a person's tax document address: their own mailbox
+// address with "+taxes-" and a token after the local part. It is asked and
+// told as a StatementHook is, and for the same reason never does anything
+// slow.
+type TaxDocumentHook interface {
+	IsTaxDocumentToken(tx db.Transaction, mailbox *models.Mailbox, token string) bool
+	OnTaxDocumentDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
+}
+
 // CalendarHook is told the same thing, and for the same reason: a message may
 // carry an invitation, and working out whether it does means reading the
 // message from storage. It notes the message in the delivery transaction and

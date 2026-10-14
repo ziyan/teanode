@@ -313,6 +313,13 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
     public var findings: [Finding] { (taxYearFindings ?? []).compactMap { $0 } }
 }
 
+/// TaxDocumentAddress is the address paystubs and W-2s are mailed to,
+/// empty without a mailbox address, and whether the server reads PDFs.
+public struct TaxDocumentAddress: Codable, Hashable, Sendable {
+    public let taxDocumentAddress: String?
+    public let canReadPdfs: Bool?
+}
+
 /// TaxFilingStatus is how a return is filed, which the estimate's federal
 /// tax depends on.
 public enum TaxFilingStatus: String, CaseIterable, Hashable, Sendable, Identifiable {
@@ -401,6 +408,12 @@ extension Documents {
           }
         }
         """
+    public static let taxDocumentAddress = """
+        query { TaxDocumentAddress { taxDocumentAddress canReadPdfs } }
+        """
+    public static let regenerateTaxDocumentAddress = """
+        mutation { RegenerateTaxDocumentAddress { taxDocumentAddress canReadPdfs } }
+        """
     public static let setTaxFilingStatus = """
         mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }
         """
@@ -425,6 +438,18 @@ extension Connection {
         var variables: [String: JSONValue] = ["taxYear": .number(Double(year))]
         if let filingStatus { variables["taxFilingStatus"] = .string(filingStatus.rawValue) }
         return try await execute(Documents.taxYear, variables: variables, as: Answer.self).TaxYear
+    }
+
+    /// The address to mail paystubs and W-2s to, made the first time.
+    public func taxDocumentAddress() async throws -> TaxDocumentAddress? {
+        struct Answer: Decodable, Sendable { let TaxDocumentAddress: TaxDocumentAddress? }
+        return try await execute(Documents.taxDocumentAddress, as: Answer.self).TaxDocumentAddress
+    }
+
+    /// A new tax document address; the old one stops taking mail at once.
+    public func regenerateTaxDocumentAddress() async throws -> TaxDocumentAddress? {
+        struct Answer: Decodable, Sendable { let RegenerateTaxDocumentAddress: TaxDocumentAddress? }
+        return try await execute(Documents.regenerateTaxDocumentAddress, as: Answer.self).RegenerateTaxDocumentAddress
     }
 
     /// Keeps how the person files, which every tax year's estimate is

@@ -2,14 +2,14 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
-import { ErrorMessage, Loading, Tag, formatMoney } from '../../components/common'
+import { CopyIconButton, ErrorMessage, Loading, Tag, formatMoney } from '../../components/common'
 import { Column, DataTable, Range } from '../../components/dataTable'
 import { ConfirmDialog } from '../../components/dialog'
-import { PictureIcon } from '../../components/icons'
+import { PictureIcon, RefreshIcon } from '../../components/icons'
 import { ZoomablePicture } from '../../components/lightbox'
 import { usePageInAddress } from '../../components/pager'
 import { Select } from '../../components/select'
-import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
+import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
@@ -28,10 +28,13 @@ import {
   FinanceTaxFormEntry,
   MAXIMUM_LISTED_TAX_DOCUMENT_COUNT,
   READ_TAX_DOCUMENT,
+  REGENERATE_TAX_DOCUMENT_ADDRESS,
   SET_TAX_FILING_STATUS,
   TAX_DOCUMENT_UPLOAD_PATH,
+  TAX_DOCUMENT_ADDRESS,
   TAX_FILING_STATUSES,
   TAX_YEAR,
+  TaxDocumentAddress,
   TaxDocumentReading,
   TaxFilingStatus,
   TaxFormPage,
@@ -408,6 +411,84 @@ function HouseholdPanel({ summary }: { summary: TaxYearSummary }) {
         </div>
       ))}
     </SettingsSection>
+  )
+}
+
+// TaxDocumentAddressRow is the address paystubs and W-2s are mailed to:
+// the person's own mailbox address with a token after a plus. Each PDF or
+// picture mailed there, or forwarded from a payroll email, is read as a
+// paystub or a W-2 on its own. Made the first time it is shown; a new one
+// ends the old address, after asking.
+function TaxDocumentAddressRow() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, error, reload } = useQuery(
+    async () => (await graphql<{ TaxDocumentAddress: TaxDocumentAddress }>(TAX_DOCUMENT_ADDRESS)).TaxDocumentAddress,
+    [],
+    { refresh: false },
+  )
+  const [isBusy, setIsBusy] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  const regenerate = async () => {
+    setIsBusy(true)
+    try {
+      await graphql(REGENERATE_TAX_DOCUMENT_ADDRESS)
+      toast.done(t('finance.taxAddressRegenerated'))
+      setIsRegenerating(false)
+      await reload(true)
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+  if (!data) return <ErrorMessage error={error} />
+  return (
+    <>
+      <SettingsRow
+        title={t('finance.taxAddress')}
+        subtitle={
+          data.taxDocumentAddress ? (
+            <>
+              <code className="statement-address">{data.taxDocumentAddress}</code>
+              <span className="muted finance-tax-address-hint">
+                {t(data.canReadPdfs ? 'finance.taxAddressHint' : 'finance.taxAddressHintPictures')}
+              </span>
+            </>
+          ) : (
+            t('finance.taxAddressNone')
+          )
+        }
+        actions={
+          <div className="row-actions">
+            {data.taxDocumentAddress ? (
+              <CopyIconButton value={data.taxDocumentAddress} label={t('finance.taxAddressCopy')} />
+            ) : null}
+            <Tooltip label={t('finance.taxAddressRegenerate')}>
+              <button
+                type="button"
+                className="icon-action"
+                disabled={isBusy}
+                aria-label={`${t('finance.taxAddress')}: ${t('finance.taxAddressRegenerate')}`}
+                onClick={() => setIsRegenerating(true)}
+              >
+                <RefreshIcon size={16} />
+              </button>
+            </Tooltip>
+          </div>
+        }
+      />
+      {isRegenerating ? (
+        <ConfirmDialog
+          title={t('finance.taxAddressRegenerate')}
+          body={t('finance.taxAddressRegenerateBody')}
+          confirmLabel={t('finance.taxAddressRegenerateConfirm')}
+          busy={isBusy}
+          onClose={() => setIsRegenerating(false)}
+          onConfirm={() => void regenerate()}
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -1166,6 +1247,7 @@ export function FinanceTaxesSection() {
         <ErrorMessage error={taxYearQuery.error} />
         {!summary && !taxYearQuery.error ? <Loading /> : null}
         {isEmptyYear ? <SettingsEmpty>{t('finance.noTaxDocuments', { year: String(year) })}</SettingsEmpty> : null}
+        <TaxDocumentAddressRow />
       </SettingsSection>
       {summary && !isEmptyYear ? (
         <>

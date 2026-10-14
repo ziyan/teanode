@@ -36,6 +36,8 @@ export const RUN_KINDS = [
   // A receipt read out of a message or an upload, recorded and matched.
   'read_receipt',
   'tax_document',
+  // Paystubs and W-2s mailed to the tax document address, copied to be read.
+  'tax_mail',
   // An item a skill's watch found -- mail, a transaction, a mention --
   // judged.
   'watch',
