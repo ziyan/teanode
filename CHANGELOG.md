@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.4] - 2026-10-14
+
+### Changed
+
+- Connected phones show their model by name, such as iPhone 17 Pro Max. (#473)
+
 ## [0.154.3] - 2026-10-14
 
 ### Changed
