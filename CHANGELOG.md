@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.5] - 2026-10-14
+
+### Fixed
+
+- The iPhone's contact list no longer leaves a large gap between letters. (#475)
+- A phone with notifications off says so once, instead of also listing what it would be told about. (#475)
+
 ## [0.154.4] - 2026-10-14
 
 ### Changed
