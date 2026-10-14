@@ -44,7 +44,14 @@ type fakeTranscriptionRequest struct {
 	// model takes a prompt.
 	Model  string
 	Prompt string
+	// IsMergeCheck is a request that carries one speaker's sample clip, which
+	// is how the server asks whether a new label is an earlier one, not a piece.
+	IsMergeCheck bool
 }
+
+// fakeMergeCheckClipLimitMS is the longest request that counts as a merge check
+// when the fake is told to expect them: a sample clip is at most six seconds.
+const fakeMergeCheckClipLimitMS = 6200
 
 // fakeTranscriptionProvider speaks the file-transcription protocol of the
 // speaker-separating model, so the whole job runs against the real client.
@@ -59,6 +66,14 @@ type fakeTranscriptionProvider struct {
 	// they are refused with instead.
 	plainAnswer func(plainIndex int, request fakeTranscriptionRequest) string
 	plainStatus int
+	// checkAnswer decides the passages for a merge check, which never reaches
+	// answer. Without it the provider hears a voice it does not know and answers
+	// with a letter. checkStatus, when set, is the error status checks are refused with.
+	checkAnswer func(request fakeTranscriptionRequest) []fakeTranscriptionSegment
+	checkStatus int
+	// hasMergeChecks says the test uses pieces longer than a sample clip, so a
+	// request of clip length is a merge check; other tests have short pieces.
+	hasMergeChecks bool
 	// hold, when set, is called with each request before it is answered, and
 	// may block until the test lets it go or the client hangs up.
 	hold func(requestContext context.Context, request fakeTranscriptionRequest)
@@ -89,6 +104,7 @@ func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
 		}
 		received := fakeTranscriptionRequest{AudioDurationMS: int64(len(waveBytes)-44) / 32, KnownSpeakerNames: request.MultipartForm.Value["known_speaker_names[]"], WaveBytes: waveBytes, Model: request.FormValue("model"), Prompt: request.FormValue("prompt")}
 		provider.lock.Lock()
+		received.IsMergeCheck = provider.hasMergeChecks && strings.Contains(received.Model, "diarize") && received.AudioDurationMS <= fakeMergeCheckClipLimitMS
 		requestIndex := len(provider.requests)
 		plainIndex := 0
 		for _, earlier := range provider.requests {
@@ -99,6 +115,7 @@ func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
 		provider.requests = append(provider.requests, received)
 		answer := provider.answer
 		plainAnswer, plainStatus := provider.plainAnswer, provider.plainStatus
+		checkAnswer, checkStatus := provider.checkAnswer, provider.checkStatus
 		hold := provider.hold
 		provider.inFlight++
 		provider.maxInFlight = max(provider.maxInFlight, provider.inFlight)
@@ -125,7 +142,15 @@ func newFakeTranscriptionProvider(test *testing.T) *fakeTranscriptionProvider {
 			return
 		}
 		var segments []fakeTranscriptionSegment
-		if answer != nil {
+		switch {
+		case received.IsMergeCheck && checkStatus != 0:
+			http.Error(writer, "refused", checkStatus)
+			return
+		case received.IsMergeCheck && checkAnswer != nil:
+			segments = checkAnswer(received)
+		case received.IsMergeCheck:
+			segments = []fakeTranscriptionSegment{{SpeakerLabel: "A", StartMS: 100, EndMS: received.AudioDurationMS - 100, Text: "A voice."}}
+		case answer != nil:
 			segments = answer(requestIndex, received)
 		}
 		type wireSegment struct {
@@ -171,6 +196,19 @@ func (self *fakeTranscriptionProvider) diarizedRequestCount() int {
 		}
 	}
 	return count
+}
+
+// mergeCheckRequests are the requests that asked whether a new label is an earlier one.
+func (self *fakeTranscriptionProvider) mergeCheckRequests() []fakeTranscriptionRequest {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	var checks []fakeTranscriptionRequest
+	for _, received := range self.requests {
+		if received.IsMergeCheck {
+			checks = append(checks, received)
+		}
+	}
+	return checks
 }
 
 func (self *fakeTranscriptionProvider) requestCount() int {
