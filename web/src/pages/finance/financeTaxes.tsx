@@ -2019,7 +2019,7 @@ const W2_CHECKBOX_LABELS: Record<string, Key> = {
   third_party_sick_pay: 'finance.w2ThirdPartySickPay',
 }
 
-// TaxFormDialog is one W-2 or 1099: whose and from whom, its check, its file, its
+// TaxFormDialog is one W-2, 1099 or 1098: whose and from whom, its check, its file, its
 // boxes as printed, what its checks of itself found, and Delete.
 function TaxFormDialog({
   taxFormView,
