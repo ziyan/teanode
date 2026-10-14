@@ -7,13 +7,11 @@ package models
 // iPhone.
 //
 // Every row was checked against two published tables, which agreed on each
-// identifier: EveryMac's lists of model identifiers
-// (https://everymac.com/devices/by-identifier/all-iphone-model-identifiers.html
-// and .../all-ipad-model-identifiers.html) and the community table of Apple
-// device identifiers kept in https://gist.github.com/adamawolf/3048717. The
-// newest iPhones were also checked against The Apple Wiki and the firmware
-// listings at iclarified.com. An identifier that could not be confirmed in two
-// places is left out, so it shows as itself rather than as a wrong name.
+// identifier: EveryMac's lists of iPhone and iPad model identifiers and the
+// community table of Apple device identifiers kept as a GitHub gist. The
+// newest iPhones were also checked against The Apple Wiki and iClarified's
+// firmware listings. An identifier that could not be confirmed in two places
+// is left out, so it shows as itself rather than as a wrong name.
 // Macs are left out: the app is built for iPhone and iPad, and a Mac running
 // it does not report a Mac identifier.
 var phoneModelNames = map[string]string{
